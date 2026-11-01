@@ -177,6 +177,35 @@ pub const RETENTION_ENDED: &str = "RetentionEnded";
 /// The `reason` of both.
 pub const RETENTION_REASON: &str = "Retention";
 
+/// **The least a Pool's retention can say** (#4405): a volume is not lost on a typed `30s`, as a
+/// Pool's times have no bound of their own. A time under it is read as it, and the notice's words
+/// say the time that holds. The kind run alone sets them lower
+/// (`PURLIS_OPERATOR_RETENTION_FLOOR`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetentionFloor {
+    pub delete_suspended_after: Duration,
+    pub notice_before_delete: Duration,
+}
+
+impl Default for RetentionFloor {
+    fn default() -> RetentionFloor {
+        RetentionFloor {
+            delete_suspended_after: Duration::from_secs(2 * 60 * 60),
+            notice_before_delete: Duration::from_secs(60 * 60),
+        }
+    }
+}
+
+impl RetentionFloor {
+    /// A floor of `seconds` for both: for a run on a kind cluster, whose times are short.
+    pub fn of(seconds: u64) -> RetentionFloor {
+        RetentionFloor {
+            delete_suspended_after: Duration::from_secs(seconds),
+            notice_before_delete: Duration::from_secs(seconds),
+        }
+    }
+}
+
 /// What a Claim's retention asks now (#3981).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Retention {
@@ -196,12 +225,23 @@ fn since(duration: Duration) -> SignedDuration {
 /// deleted (ruled 2026-11-01): never a stopped one, by itself or by its pool, and nothing while
 /// its runner runs. It counts from upstream's `Suspended` condition, so running again starts it
 /// over. A requester is always given the whole notice, however late the operator looks: the
-/// deletion waits for it.
+/// deletion waits for it. The Pool's times hold above [`RetentionFloor::default`].
 pub fn retention(
     claim: &Claim,
     pool: &Pool,
     sandbox: Option<&Sandbox>,
     now: Timestamp,
+) -> Retention {
+    retention_above(claim, pool, sandbox, now, RetentionFloor::default())
+}
+
+/// [`retention`], the Pool's times holding above `floor`.
+pub fn retention_above(
+    claim: &Claim,
+    pool: &Pool,
+    sandbox: Option<&Sandbox>,
+    now: Timestamp,
+    floor: RetentionFloor,
 ) -> Retention {
     if !claim.spec.kept || upstream::is_stopped(claim, Some(pool)) {
         return Retention::Keep;
@@ -225,11 +265,19 @@ pub fn retention(
         .last_transition_time
         .0
         .max(idle.last_transition_time.0)
-        .checked_add(since(pool.spec.delete_suspended_after()))
+        .checked_add(since(
+            pool.spec
+                .delete_suspended_after()
+                .max(floor.delete_suspended_after),
+        ))
     else {
         return Retention::Keep;
     };
-    let notice = since(pool.spec.notice_before_delete());
+    let notice = since(
+        pool.spec
+            .notice_before_delete()
+            .max(floor.notice_before_delete),
+    );
     let noticed = claim.status.as_ref().and_then(|status| {
         status
             .conditions

@@ -427,7 +427,10 @@ async fn the_windows_steps_towards_a_chat_ask_a_runner_to_run_again() {
     let asked = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let a = a.running_again_with({
         let asked = Arc::clone(&asked);
-        Arc::new(move |name: &str| asked.lock().unwrap().push(name.to_owned()))
+        Arc::new(move |name: &str| {
+            asked.lock().unwrap().push(name.to_owned());
+            None
+        })
     });
     let window = routed(Scope::LocalUi, a).await;
     tokio::time::timeout(PATIENCE, window.relay_to("builds"))
@@ -452,6 +455,205 @@ async fn the_windows_steps_towards_a_chat_ask_a_runner_to_run_again() {
             .all(|name| name.starts_with("builds")),
         "{asked:?}"
     );
+}
+
+/// A runner on its way back: each link is refused, as [`Self::refused_with`] says, for the first
+/// `refusals` tries, then answered.
+#[derive(Clone)]
+struct ComingBack {
+    to: ToTheRunner,
+    refusals: u32,
+    tries: Arc<std::sync::atomic::AtomicU32>,
+    refused_with: fn() -> std::io::Error,
+}
+
+impl Connector for ComingBack {
+    type Io = DuplexStream;
+
+    fn connect(&self) -> BoxFuture<'static, std::io::Result<DuplexStream>> {
+        let tried = self.tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if tried < self.refusals {
+            let refused = (self.refused_with)();
+            return Box::pin(async move { Err(refused) });
+        }
+        self.to.connect()
+    }
+}
+
+/// The desktop's host, relaying `builds` to a runner that refuses its first `refusals` links with
+/// `refused_with`, whose start waits for `patience` where it is given one.
+fn a_desktop_whose_runner_comes_back(
+    refusals: u32,
+    refused_with: fn() -> std::io::Error,
+    runs_again: RunsAgain,
+) -> Hosting {
+    let (desktop, runner) = (Arc::new(Kept::new(DESKTOP)), Arc::new(Kept::new(RUNNER)));
+    let pinned = runner.pinned();
+    let connector = ComingBack {
+        to: ToTheRunner {
+            b: Hosting::running_with(Echo, StandIns::default()),
+            runner,
+            desktop: desktop.pinned(),
+        },
+        refusals,
+        tries: Arc::default(),
+        refused_with,
+    };
+    let relays: RelaysTo = Arc::new(move |name: &str| {
+        let (connector, desktop, pinned) =
+            (connector.clone(), Arc::clone(&desktop), pinned.clone());
+        Ok((
+            Arc::new(move || {
+                keep_linked(
+                    connector.clone(),
+                    Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    Liveness::default(),
+                )
+            }) as Keep,
+            format!("{name}/{name}"),
+        ))
+    });
+    Hosting::running_with(Echo, StandIns::default())
+        .relaying_with(relays)
+        .running_again_with(runs_again)
+}
+
+/// Every word of a window's brings the runner back, and a start waits `patience`.
+fn waiting(patience: Option<Duration>) -> RunsAgain {
+    Arc::new(move |_: &str| patience)
+}
+
+fn not_vouched_yet() -> std::io::Error {
+    std::io::Error::other("the cluster operator no longer vouches for this runner")
+}
+
+fn its_key_changed() -> std::io::Error {
+    std::io::Error::other(hostlink::KeyNoLongerHeld("another key".to_owned()))
+}
+
+/// What a link opened as a window opens one, relayed to `host`'s runner, was refused with first:
+/// its subscription or its hold; and what its start was refused with.
+async fn refused_a_hold_and_a_start(host: Hosting) -> (Option<String>, Option<String>) {
+    let window = routed(Scope::LocalUi, host).await;
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    // As a window's link opens: its log's end, which may be refused, then its subscription.
+    let _ = window.log_end().await;
+    let subscribed = window.subscribe(session::Since::default()).await;
+    if let Err(refused) = subscribed {
+        return (code(&refused).map(str::to_owned), None);
+    }
+    let held = tokio::time::timeout(
+        PATIENCE,
+        window.hold_project("01J9PRJCT00000000000000000", ""),
+    )
+    .await
+    .expect("the hold is answered");
+    let start =
+        session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell);
+    let started = tokio::time::timeout(PATIENCE, window.start_program(start))
+        .await
+        .expect("the start is answered");
+    (
+        held.err().as_ref().and_then(code).map(str::to_owned),
+        started.err().as_ref().and_then(code).map(str::to_owned),
+    )
+}
+
+/// **A start on a runner on its way back waits for it, with no second try** (#4403): each link is
+/// refused until the operator vouches for it, and neither the hold nor the start hears of that.
+#[tokio::test]
+async fn a_start_on_a_runner_on_its_way_back_waits_for_it() {
+    let host = a_desktop_whose_runner_comes_back(3, not_vouched_yet, waiting(Some(PATIENCE)));
+    let (held, started) = refused_a_hold_and_a_start(host).await;
+    assert_ne!(held.as_deref(), Some(session::NOT_STARTED), "the hold");
+    assert_ne!(started.as_deref(), Some(session::NOT_STARTED), "the start");
+}
+
+/// A runner that is not on its way back is said to be down at once, as it always was.
+#[tokio::test]
+async fn a_start_on_a_runner_that_is_merely_down_is_refused_at_once() {
+    let host = a_desktop_whose_runner_comes_back(u32::MAX, not_vouched_yet, waiting(None));
+    let (held, _) = refused_a_hold_and_a_start(host).await;
+    assert_eq!(held.as_deref(), Some(session::NOT_STARTED));
+}
+
+/// The wait has an end, and what ends it says what any start on a down runner says.
+#[tokio::test]
+async fn a_runner_that_does_not_come_back_in_time_refuses_the_start() {
+    let host = a_desktop_whose_runner_comes_back(
+        u32::MAX,
+        not_vouched_yet,
+        waiting(Some(Duration::from_millis(300))),
+    );
+    let (held, _) = refused_a_hold_and_a_start(host).await;
+    assert_eq!(held.as_deref(), Some(session::NOT_STARTED));
+}
+
+/// **A wake is the runner's, not the link's** (#4403): a second link's start waits for the wake the
+/// first asked for, though its own word finds the runner no longer idle.
+#[tokio::test]
+async fn a_second_links_start_waits_for_the_same_wake() {
+    let first_word = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let host = a_desktop_whose_runner_comes_back(
+        3,
+        not_vouched_yet,
+        Arc::new(move |_: &str| {
+            first_word
+                .swap(false, std::sync::atomic::Ordering::SeqCst)
+                .then_some(PATIENCE)
+        }),
+    );
+    let first = routed(Scope::LocalUi, host.clone()).await;
+    tokio::time::timeout(PATIENCE, first.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    let (held, _) = refused_a_hold_and_a_start(host).await;
+    assert_ne!(held.as_deref(), Some(session::NOT_STARTED));
+}
+
+/// **A stopped host wakes nothing** (#2051, #4403): neither its relaying nor its hold asks.
+#[tokio::test]
+async fn a_stopped_desktop_asks_no_runner_to_run_again() {
+    let asked = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let host = a_desktop_whose_runner_comes_back(0, not_vouched_yet, {
+        let asked = Arc::clone(&asked);
+        Arc::new(move |_: &str| {
+            asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            None
+        })
+    });
+    straight(host.clone()).await.stop_all().await.unwrap();
+    let window = routed(Scope::LocalUi, host).await;
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    let _ = tokio::time::timeout(
+        PATIENCE,
+        window.hold_project("01J9PRJCT00000000000000000", ""),
+    )
+    .await
+    .expect("the hold is answered");
+    assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+/// **A changed key is never waited out** (#4403): it is the person's to answer, at once, however
+/// long the runner was given.
+#[tokio::test]
+async fn a_changed_key_is_refused_at_once_however_long_the_wait() {
+    let host = a_desktop_whose_runner_comes_back(
+        u32::MAX,
+        its_key_changed,
+        waiting(Some(Duration::from_secs(3600))),
+    );
+    let (held, _) = refused_a_hold_and_a_start(host).await;
+    assert_eq!(held.as_deref(), Some(session::KEY_CHANGED));
 }
 
 /// **A link relayed to a draining runner keeps its chats and starts no new one** (#2865): the

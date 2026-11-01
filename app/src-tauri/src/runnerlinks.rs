@@ -369,16 +369,16 @@ pub fn relaying(
     })
 }
 
-/// **Asks for a cluster pool's idle runner to run again** (#3980), as a chat starts on it. A Docker
-/// pool's runner is started by its link, and asks nothing here.
+/// **Asks for a cluster pool's idle runner to run again** (#3980), as a chat starts on it, and
+/// answers how long that start waits for it (#4403). A Docker pool's runner is started by its link,
+/// and asks nothing here: its link's own check waits for its start.
 pub fn runs_again(config_root: PathBuf) -> purlis_host::RunsAgain {
     Arc::new(move |pool: &str| {
         let Ok(Some((cluster, _))) = cluster_reached(&config_root, pool) else {
-            return;
+            return None;
         };
-        if let Ok(kubectl) = crate::clusterpools::kubectl(&config_root) {
-            purlis_core::pools::run_cluster_runner_again(&config_root, &kubectl, cluster.name());
-        }
+        let kubectl = crate::clusterpools::kubectl(&config_root).ok()?;
+        purlis_core::pools::run_cluster_runner_again(&config_root, &kubectl, cluster.name())
     })
 }
 

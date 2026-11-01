@@ -1878,3 +1878,131 @@ fn the_homes_git_config_made_is_one_the_floor_holds() {
         claude::HOME_GIT_CONFIG
     );
 }
+
+/// A machine whose home is `home`, with `env` beside an empty `PATH`.
+fn homed(home: &Path, env: &[(&str, &str)]) -> Machine {
+    Machine {
+        env: crate::secrets::Env::of(env),
+        home: Some(home.to_path_buf()),
+        os: Os::MacOs,
+    }
+}
+
+#[test]
+fn the_floor_lists_the_homes_shared_folders_each_before_what_is_in_it() {
+    let home = Path::new("/home/op");
+    assert_eq!(
+        usual_home_folders(Level::Floor, &homed(home, &[])),
+        [
+            home.join(".local"),
+            home.join(".local/share"),
+            home.join(".config"),
+        ]
+    );
+    assert_eq!(
+        usual_home_folders(Level::Full, &homed(home, &[])),
+        Vec::<PathBuf>::new(),
+        "the full sandbox keeps a chat out of the home anyway"
+    );
+}
+
+#[test]
+fn an_xdg_folder_is_listed_only_where_it_is_in_the_home() {
+    let home = Path::new("/home/op");
+    let moved = homed(
+        home,
+        &[
+            ("XDG_DATA_HOME", "/home/op/my/data"),
+            ("XDG_CONFIG_HOME", "/elsewhere/config"),
+        ],
+    );
+    assert_eq!(
+        usual_home_folders(Level::Floor, &moved),
+        [
+            home.join(".local"),
+            home.join(".local/share"),
+            home.join(".config"),
+            home.join("my"),
+            home.join("my/data"),
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn folders_are_made_private_and_what_is_there_is_left_as_it_is() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().expect("a folder");
+    let home = dir.path().canonicalize().expect("a real folder");
+    std::fs::create_dir(home.join(".config")).expect("a folder there already");
+    std::fs::set_permissions(home.join(".config"), std::fs::Permissions::from_mode(0o755))
+        .expect("its mode");
+    std::fs::write(home.join(".local"), "a file holds the name").expect("a file");
+    let folders = usual_home_folders(Level::Floor, &homed(&home, &[]));
+    make_folders(&folders);
+    let mode = |at: &Path| std::fs::metadata(at).expect("there").permissions().mode() & 0o777;
+    assert_eq!(mode(&home.join(".config")), 0o755, "left as it was");
+    assert_eq!(
+        std::fs::read_to_string(home.join(".local")).expect("still a file"),
+        "a file holds the name"
+    );
+
+    std::fs::remove_file(home.join(".local")).expect("the file taken away");
+    make_folders(&folders);
+    assert!(home.join(".local/share").is_dir());
+    assert_eq!(mode(&home.join(".local")), 0o700);
+    assert_eq!(mode(&home.join(".local/share")), 0o700);
+
+    let gone = home.join("no-such-home");
+    make_folders(&usual_home_folders(Level::Floor, &homed(&gone, &[])));
+    assert!(!gone.exists(), "a home that is not there is not made");
+}
+
+#[test]
+fn a_chat_starting_at_the_floor_finds_the_homes_shared_folders_made() {
+    let (_project, root) = project();
+    let dir = tempfile::tempdir().expect("a home");
+    let home = dir.path().canonicalize().expect("a real folder");
+    let machine = homed(&home, &[("PATH", "/opt/none")]);
+    let applied = floor_of(decided(Harness::Codex, &root, &machine));
+    assert!(!home.join(".local").exists(), "deciding makes nothing");
+    // Whether the line is then given depends on the chat's proxy, which no test starts.
+    let _ = applied.line(
+        Words {
+            program: "codex".to_owned(),
+            command: Vec::new(),
+            armed: Vec::new(),
+            charters: Vec::new(),
+        },
+        &At::default(),
+    );
+    assert!(home.join(".local/share").is_dir());
+    assert!(home.join(".config").is_dir());
+}
+
+#[test]
+fn an_xdg_folder_that_climbs_out_of_the_home_is_not_listed() {
+    let home = Path::new("/home/op");
+    let climbing = homed(home, &[("XDG_DATA_HOME", "/home/op/../other/data")]);
+    assert_eq!(
+        usual_home_folders(Level::Floor, &climbing),
+        [
+            home.join(".local"),
+            home.join(".local/share"),
+            home.join(".config"),
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn nothing_is_made_through_a_link_at_a_shared_folders_name() {
+    let dir = tempfile::tempdir().expect("a home");
+    let home = dir.path().canonicalize().expect("a real folder");
+    let elsewhere = home.join("elsewhere");
+    std::fs::create_dir(&elsewhere).expect("a folder");
+    std::os::unix::fs::symlink(&elsewhere, home.join(".local")).expect("a link");
+    make_folders(&usual_home_folders(Level::Floor, &homed(&home, &[])));
+    assert!(!elsewhere.join("share").exists(), "made through the link");
+    assert!(home.join(".config").is_dir(), "the others are still made");
+}

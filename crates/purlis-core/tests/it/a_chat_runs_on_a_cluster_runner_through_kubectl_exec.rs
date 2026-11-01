@@ -142,6 +142,116 @@ async fn linked(
     }
 }
 
+/// Nothing runs on the desktop's own host in these tests: it only relays.
+struct NothingHere;
+
+impl purlis_host::Compose for NothingHere {
+    fn compose(
+        &self,
+        starting: &purlis_host::ToCompose<'_>,
+    ) -> Result<purlis_terminal::session::Spec, String> {
+        Ok(purlis_terminal::session::Spec::new(
+            "/bin/echo",
+            starting.size,
+        ))
+    }
+}
+
+/// **The desktop's host as the window starts it** (#4403), relaying to the one runner `paired`
+/// and asking for it to run again as the desktop does: what its start waits, it waits as the app's
+/// `runnerlinks::runs_again` has it.
+fn desktops_host(
+    kubectl: &Kubectl,
+    operator: &PoolPin,
+    paired: &Paired,
+    ours: &Identity,
+    namespace: &str,
+) -> purlis_host::Hosting {
+    let relays: purlis_host::RelaysTo = {
+        let (kubectl, operator, paired, ours) = (
+            kubectl.clone(),
+            operator.clone(),
+            paired.clone(),
+            Identity {
+                device: ours.device.clone(),
+                key: ours.key.clone(),
+            },
+        );
+        Arc::new(move |name: &str| {
+            let (kubectl, operator, paired, device, key) = (
+                kubectl.clone(),
+                operator.clone(),
+                paired.clone(),
+                ours.device.clone(),
+                ours.key.clone(),
+            );
+            Ok((
+                Arc::new(move || {
+                    let checking = (kubectl.clone(), operator.clone(), paired.clone());
+                    hostlink::keep_linked(
+                        CommandConnector::new(
+                            kubectl.program(),
+                            kubectl.connect_args(
+                                &paired.vouched.runner_namespace,
+                                &paired.vouched.pod,
+                            ),
+                            Arc::new(move || {
+                                clusterpool::still_vouched(&checking.0, &checking.1, &checking.2)
+                                    .map_err(|why| why.to_string())
+                            }),
+                        ),
+                        Handshake::THIS_BUILD,
+                        Identity {
+                            device: device.clone(),
+                            key: key.clone(),
+                        },
+                        paired.pinned.clone(),
+                        Liveness::default(),
+                    )
+                }) as purlis_host::Keep,
+                format!("{name}/{name}"),
+            ))
+        })
+    };
+    let (asks, namespace) = (kubectl.clone(), namespace.to_owned());
+    purlis_host::Hosting::new(NothingHere)
+        .relaying_with(relays)
+        .running_again_with(Arc::new(move |name: &str| {
+            let claim = name.split('/').next().unwrap_or(name);
+            asks.run_again_if_idle(&namespace, claim)
+                .expect("the word is written")
+                .then_some(Duration::from_secs(240))
+        }))
+}
+
+/// A window's link to `host`, routed as the desktop's host routes one.
+async fn a_window_on(host: purlis_host::Hosting) -> (Client, Acceptor) {
+    use purlis_session_protocol::auth::{Credentials, Scope};
+    use purlis_session_protocol::{link, session};
+    let held = Credentials::mint().unwrap();
+    let (a, b) = tokio::io::duplex(256 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            held.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &held)
+    );
+    tokio::spawn(session::serve(
+        served.unwrap(),
+        purlis_host::Routed::new(host),
+        None,
+    ));
+    let (client, views, events) = Client::new(client.unwrap());
+    tokio::spawn(async move {
+        let _kept = events;
+        std::future::pending::<()>().await;
+    });
+    (client, views)
+}
+
 #[test]
 #[ignore = "needs a cluster with purlis's cluster operator: operator/e2e/kind.sh"]
 fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for() {
@@ -595,18 +705,41 @@ fn an_idle_kept_runner_is_suspended_and_its_desktop_runs_it_again() {
         "{.metadata.uid}",
     )
     .expect("its volume is kept");
-    // A word from its desktop runs it again, on its volume, with the key it was paired with.
-    kubectl
-        .run_again_if_idle(&namespace, "ada-idle")
-        .expect("the word is written");
-    let resumed = within(
-        Duration::from_secs(240),
-        "the runner run again is vouched for",
-        || {
-            let now = clusterpool::vouched_for(&kubectl, &operator, &kept).ok()??;
-            clusterpool::held_to(&paired, &now).is_ok().then_some(now)
-        },
-    );
+    // The window's own start, through the desktop's host, runs it again, on its volume, with the
+    // key it was paired with, and waits for it: nothing here writes a word or tries twice (#4403).
+    let window_side = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    window_side.block_on(async {
+        let host = desktops_host(&kubectl, &operator, &paired, &ours, &namespace);
+        let (window, mut views) = a_window_on(host).await;
+        window.relay_to("ada-idle").await.expect("relayed");
+        // As a window's link opens, before anything it holds or starts.
+        let _ = window.log_end().await;
+        window
+            .subscribe(Default::default())
+            .await
+            .expect("a link opens while its runner comes back");
+        tokio::time::timeout(Duration::from_secs(300), window.hold_project(PROJECT, ""))
+            .await
+            .expect("the hold waited, and no longer than its time")
+            .expect("the runner came back and holds the project");
+        let said = ran(
+            &window,
+            &mut views,
+            "cat \"$HOME/idle-kept\"; echo finished",
+            "finished",
+        )
+        .await;
+        assert!(said.contains("kept"), "{said}");
+    });
+    window_side.shutdown_timeout(Duration::from_secs(5));
+    let resumed = clusterpool::vouched_for(&kubectl, &operator, &kept)
+        .expect("the statement checks")
+        .expect("vouched for");
+    clusterpool::held_to(&paired, &resumed).expect("the runner it was paired with");
     assert_eq!(resumed.key, paired.pinned.key);
     assert_eq!(idle(), None, "no longer idle");
     assert_eq!(

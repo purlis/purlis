@@ -1236,6 +1236,21 @@ fn parse_knowing(text: &str, known: &[Capability]) -> Result<Manifest, String> {
             "has the id {id:?}, which does not start with a letter or a digit"
         ));
     }
+    // A Grader's id is what the eval record names its grades by, and a row naming more is not read
+    // back (#4243): refused here, so no grade is lost after its chats were paid for.
+    // And the record reads that name as purlis's own runner, so no Grader takes it.
+    if id == purlis_skills::grade::BUILT_IN && capabilities.contains(&Capability::Grader) {
+        return Err(format!(
+            "declares \"grader\" with the id {id:?}, which names purlis's own runner"
+        ));
+    }
+    if id.len() > MOST_GRADER_ID_BYTES && capabilities.contains(&Capability::Grader) {
+        return Err(format!(
+            "declares \"grader\" with an id of {} bytes, and a Grader's id is at most \
+             {MOST_GRADER_ID_BYTES}, as the eval record names its grades by it",
+            id.len()
+        ));
+    }
     // An id is what a command line reaches an extension by, so it is never a core word — for
     // every extension, whether or not it adds commands today (charter-app#342).
     if let Some(why) = cli::takes_a_core_word(id) {
@@ -1624,6 +1639,10 @@ fn title_of(value: Option<&serde_json::Value>, what: &str, id: &str) -> Result<S
     }
     Ok(title.to_owned())
 }
+
+/// **The longest id a Grader extension may have**: the longest name the eval record reads back in
+/// `report.grader` (`skills::grades::plain`).
+pub const MOST_GRADER_ID_BYTES: usize = 64;
 
 fn ok_in_an_id(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.'

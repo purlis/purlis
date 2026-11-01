@@ -351,7 +351,8 @@ fn tints_found(report: &Report) -> Vec<Option<&'static str>> {
             | Finding::Ansi { tint, .. }
             | Finding::SelectedNotApart { tint, .. }
             | Finding::CardNotApart { tint, .. }
-            | Finding::NoticeWayNotApart { tint, .. } => *tint,
+            | Finding::NoticeWayNotApart { tint, .. }
+            | Finding::ScrimTooThin { tint, .. } => *tint,
             // Said of the theme as written, never of a tint.
             Finding::ContrastBetweenTints { .. }
             | Finding::SelectionTextAlone

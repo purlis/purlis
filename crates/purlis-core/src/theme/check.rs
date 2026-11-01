@@ -62,6 +62,10 @@ mod card_ground_tests;
 #[path = "notice_ways_tests.rs"]
 mod notice_ways_tests;
 
+#[cfg(test)]
+#[path = "scrim_cursor_diff_tests.rs"]
+mod scrim_cursor_diff_tests;
+
 /// What a token of [`super::vocabulary::PLATFORM_DRAWN`] left to the platform is measured as
 /// when it is drawn on something: selected text the theme leaves alone keeps the words' own
 /// colour. One with no stand-in is the platform's, and a pair with it in is not measured.
@@ -766,6 +770,22 @@ pub const PAIRS: &[Pair] = &[
     .over("terminal.background"),
     // - The terminal's scrollbar, a hairline on the terminal.
     p("terminal.scrollbar", "terminal.background", 1.2),
+    // - The terminal's cursor (#2987), and the editor's caret, which is drawn in it: a mark on
+    //   the terminal's ground. A block cursor is drawn over its whole cell, so the cell's word is
+    //   the accent on the cursor: words, at the window's text size.
+    p("terminal.cursor", "terminal.background", 3.0),
+    p("terminal.cursor-accent", "terminal.cursor", TEXT),
+    // - The editor's words on the diff's washes (#2987, `editor/look.ts`): a changed line's wash
+    //   on the editor's ground, and a changed word's laid on its line's. The syntax roles are
+    //   drawn there too, and are not held here: see #2987's pull request for what they measure.
+    p("terminal.foreground", "diff.inserted", TEXT).over("terminal.background"),
+    p("terminal.foreground", "diff.deleted", TEXT).over("terminal.background"),
+    p("terminal.foreground", "diff.inserted-text", TEXT)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("terminal.foreground", "diff.deleted-text", TEXT)
+        .over("diff.deleted")
+        .over("terminal.background"),
     // **Every grey tier on every ground a part draws it on** (#2902, ruling #2803): the four text
     // tiers at the window's text size, faint at the mark floor, on each of `TIER_GROUNDS`. The
     // pairs above already hold the rest of them.
@@ -890,6 +910,26 @@ pub const CARD_STEP: f64 = 1.05;
 /// window's are, so a theme can draw its cards on the panel's own ground inside an edge.
 pub const CARD_EDGE: f64 = 1.2;
 
+/// **How far the modal scrim has to move the window it lies over** (#2987), so a modal ask reads
+/// as modal. A scrim is neither words nor a mark: it is a change to the whole window, read at
+/// less than a mark's 3:1 as a card's step is read at less than a hairline's. It is not raised by
+/// more contrast, as no floor under a mark's is ([`super::least::Least::floor`]).
+pub const SCRIM_DIM: f64 = 2.0;
+
+/// **How far the scrim moves the window** ([`SCRIM_DIM`]): the further it moves the window's
+/// ground or its words, each against itself with the scrim laid on it. A contrast against the
+/// ground alone cannot hold both ways: black over a dark window is about 1.1:1 at any alpha, and
+/// what dims there is the words; over a light window the words are already near black, and what
+/// dims is the ground.
+pub(super) fn scrim_dim(theme: &ResolvedTheme) -> f64 {
+    let scrim = theme.value("overlay.scrim");
+    let moved = |token: &str| {
+        let under = solid(theme.value(token));
+        contrast(&under, &onto(scrim, &under))
+    };
+    two_places(moved("surface.base").max(moved("text.primary")))
+}
+
 /// What [`check`] found: nothing, for a theme whose words can be read.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Report {
@@ -955,6 +995,13 @@ pub enum Finding {
         ground: &'static str,
         pointed: bool,
         distance: f64,
+        floor: f64,
+    },
+    /// A modal scrim that hardly moves the window it lies over (#2987): `ratio` is
+    /// [`scrim_dim`], under [`SCRIM_DIM`], so a modal ask does not read as modal.
+    ScrimTooThin {
+        tint: Option<&'static str>,
+        ratio: f64,
         floor: f64,
     },
     /// A colour for selected text with the selection left to the platform (#2327): the window
@@ -1241,6 +1288,14 @@ fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut V
                 floor,
             });
         }
+    }
+    let dim = scrim_dim(theme);
+    if dim < SCRIM_DIM {
+        findings.push(Finding::ScrimTooThin {
+            tint,
+            ratio: dim,
+            floor: SCRIM_DIM,
+        });
     }
     let selected = theme.value("list.selected").to_lowercase();
     for other in SELECTED_APART_FROM {

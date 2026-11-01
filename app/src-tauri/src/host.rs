@@ -480,6 +480,14 @@ pub trait SessionHost: Send + Sync {
         false
     }
 
+    /// Whether the host session `id`'s program ended with was a pool's runner gone for good
+    /// (#4350), whose home its conversation went with. Never, where chats run in the window's own
+    /// process.
+    fn lost_with_its_runner(&self, id: u32) -> bool {
+        let _ = id;
+        false
+    }
+
     /// The sessions that are running, in the order they were opened.
     fn running(&self) -> Vec<u32>;
 
@@ -795,6 +803,9 @@ pub(crate) mod pretend {
         /// How many ends of every session are under way now, and the most there were at once.
         ending: AtomicU32,
         most_ending: AtomicU32,
+        /// The sessions whose program ended with a runner gone for good
+        /// ([`Pretend::program_ends_with_its_runner`]).
+        lost_with_runner: Mutex<Vec<u32>>,
         /// The sessions whose program ended with their host ([`Pretend::program_ends_with_its_host`]).
         lost: Mutex<Vec<u32>>,
         /// The chats left running from before this window, and the plan each ran in
@@ -1016,6 +1027,12 @@ pub(crate) mod pretend {
             self.program_ends(id, Exit::Signal("Hangup".to_owned()));
         }
 
+        /// Session `id`'s program ends with a pool's runner gone for good (#4350).
+        pub fn program_ends_with_its_runner(&self, id: u32) {
+            lock(&self.seen.lost_with_runner).push(id);
+            self.program_ends_with_its_host(id);
+        }
+
         fn here(&self, id: u32) -> Result<(), String> {
             if lock(&self.seen.running).contains(&id) {
                 Ok(())
@@ -1190,6 +1207,9 @@ pub(crate) mod pretend {
         }
         fn lost_with_its_host(&self, id: u32) -> bool {
             lock(&self.seen.lost).contains(&id)
+        }
+        fn lost_with_its_runner(&self, id: u32) -> bool {
+            lock(&self.seen.lost_with_runner).contains(&id)
         }
         fn running(&self) -> Vec<u32> {
             lock(&self.seen.running).clone()

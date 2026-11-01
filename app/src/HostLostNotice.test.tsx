@@ -21,7 +21,13 @@ afterEach(() => {
 
 const PLANE = "/home/dev/plane";
 
-const FAILED: LostChat = { plane: PLANE, session: 7, left_in: "failed", resumable: true };
+const FAILED: LostChat = {
+  plane: PLANE,
+  session: 7,
+  left_in: "failed",
+  resumable: true,
+  with_the_runner: false,
+};
 const HIBERNATED: LostChat = { ...FAILED, left_in: "hibernated" };
 const NO_CONVERSATION: LostChat = { ...FAILED, resumable: false };
 
@@ -52,6 +58,17 @@ function core(held: LostChat | null) {
 const notice = () => screen.findByRole("status", { name: "Session host stopped" });
 
 describe("the Notice of a chat lost with its session host", () => {
+  it("says a chat that ended with a gone runner lost its conversation, with no Resume", async () => {
+    core({ ...HIBERNATED, resumable: false, with_the_runner: true });
+    render(<HostLostNotice plane={PLANE} session={7} onRestart={() => {}} />);
+    const said = await screen.findByRole("status", { name: "Ended with its runner" });
+    expect(said).toHaveTextContent(
+      "This chat ended with its pool's runner, which this machine no longer keeps, and its conversation was on that runner. Start a new chat to go on.",
+    );
+    expect(said).not.toHaveTextContent("nothing was lost");
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  });
+
   it("says a chat lost mid-turn failed, with Resume", async () => {
     core(FAILED);
     render(<HostLostNotice plane={PLANE} session={7} onRestart={() => {}} />);

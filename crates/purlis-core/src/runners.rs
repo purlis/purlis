@@ -964,8 +964,11 @@ pub struct Removed {
     pub container: Result<(), String>,
     /// The runner's home volume.
     pub volume: Result<(), String>,
-    /// Whether its row is gone: only once its container and volume both are.
+    /// Whether its row is gone: once its container and volume both are, or are on an engine this
+    /// `docker` no longer reaches (#4325).
     pub forgotten: bool,
+    /// What an earlier runner of the same pool left, as [`Removed::left`] said it.
+    pub earlier: Option<String>,
 }
 
 impl Removed {
@@ -976,7 +979,7 @@ impl Removed {
             .filter_map(|part| part.as_ref().err().map(String::as_str))
             .collect();
         if left.is_empty() {
-            return None;
+            return self.earlier.clone();
         }
         let mut said = left.join("; ");
         if !self.forgotten {
@@ -984,7 +987,57 @@ impl Removed {
                 "; purlis keeps the runner until they are gone, so it can be removed again",
             );
         }
-        Some(said)
+        Some(match &self.earlier {
+            Some(earlier) => format!("{earlier}; {said}"),
+            None => said,
+        })
+    }
+}
+
+/// **Whether a removal may act on `kept` through `docker`** (#4325): `Ok` where the engine that
+/// made it answers, or none was noted of it, whose removal goes by name and id as it always did.
+/// Otherwise what stands in the way, with nothing touched: a same-named volume on another engine
+/// is not this runner's. `forgotten` says whether its row goes: on another engine it does, so a
+/// pool whose engine is gone for good can still be removed; where nothing says which engine
+/// answers, it stays.
+fn engine_stands(kept: &Kept, docker: &Docker) -> Result<(), Removed> {
+    let Some(made_on) = kept.engine.as_deref() else {
+        return Ok(());
+    };
+    let (id, volume) = (kept.made.container.as_str(), kept.made.runner.volume());
+    let name = kept.name();
+    match docker.engine_id() {
+        Ok(Some(now)) if now == made_on => Ok(()),
+        Ok(Some(_)) => Err(Removed {
+            peer: None,
+            container: Err(format!(
+                "runner {name}'s container {id} stays on Docker engine {made_on}, which made it \
+                 and which Docker does not reach now, and any chats running in it may go on \
+                 there. Once Docker points back at that engine: docker container rm --force {id}"
+            )),
+            volume: Err(format!(
+                "its home volume {volume} stays there too, with the sign-ins in it: docker volume \
+                 rm --force {volume}"
+            )),
+            forgotten: true,
+            earlier: None,
+        }),
+        unsure => {
+            let why = unsure.err().map_or_else(
+                || "this Docker does not say which engine it is".to_owned(),
+                |why| why.to_string(),
+            );
+            Err(Removed {
+                peer: None,
+                container: Err(format!(
+                    "runner {name}'s container {id} was not removed: {why}, so purlis cannot tell \
+                     whether the engine that made it answers"
+                )),
+                volume: Err(format!("its home volume {volume} was not removed either")),
+                forgotten: false,
+                earlier: None,
+            })
+        }
     }
 }
 
@@ -1015,6 +1068,12 @@ pub fn remove_locked(
 ) -> Result<Removed, Refused> {
     let kept = named(config_root, name)?
         .ok_or_else(|| Refused::Other(format!("no runner named {name} is kept on this machine")))?;
+    if let Err(stands) = engine_stands(&kept, docker) {
+        if stands.forgotten {
+            forget_locked(config_root, name, locked)?;
+        }
+        return Ok(stands);
+    }
     let peer = unpair.map(|unpair| unpair(&kept));
     // When it ran, as Docker last says, before its container goes (#3492).
     if let Ok(ran) = docker.ran(&kept.made) {
@@ -1044,6 +1103,7 @@ pub fn remove_locked(
         container: container.map_err(|why| why.to_string()),
         volume: volume.map_err(|why| why.to_string()),
         forgotten,
+        earlier: None,
     })
 }
 
@@ -1544,6 +1604,15 @@ pub struct ClusterPool {
 }
 
 impl ClusterPool {
+    /// How long this pool waits for its operator to vouch for a runner: what the person raised it
+    /// to, or purlis's default (spec #4275).
+    #[must_use]
+    pub fn vouch_wait(&self) -> std::time::Duration {
+        self.chosen
+            .wait(crate::poollimits::LimitId::VouchWait)
+            .unwrap_or(crate::pools::VOUCHED_WITHIN)
+    }
+
     /// This pool with its limit `id` set to `value`: what its add was retried with (spec #4275).
     #[must_use]
     pub fn with_limit(mut self, id: crate::poollimits::LimitId, value: u64) -> ClusterPool {

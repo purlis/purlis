@@ -1391,3 +1391,32 @@ fn a_claims_deletion_notice_is_read_only_where_it_is_true() {
     assert_eq!(deletion_notice_of(&with("False")), None);
     assert_eq!(deletion_notice_of(&serde_json::json!({})), None);
 }
+
+/// **What a start waits for on a Claim** (#4403): a runner suspended for being idle, and nothing
+/// else its Claim may say.
+#[test]
+fn a_start_waits_only_for_a_runner_suspended_for_being_idle() {
+    use serde_json::json;
+    let claim = |conditions: serde_json::Value| json!({ "status": { "conditions": conditions } });
+    let idle = |status: &str| json!({ "type": "Idle", "status": status, "lastTransitionTime": "2026-11-01T08:00:00Z" });
+    let ready = |reason: &str| json!({ "type": "Ready", "status": "False", "reason": reason });
+
+    assert!(suspended_for_being_idle(&claim(json!([
+        idle("True"),
+        ready("Idle")
+    ]))));
+    for other in ["UpstreamObjectInTheWay", "PoolDeleted", "PoolNotFound"] {
+        assert!(
+            !suspended_for_being_idle(&claim(json!([idle("True"), ready(other)]))),
+            "{other} is not acted on"
+        );
+    }
+    assert!(
+        !suspended_for_being_idle(&claim(json!([idle("Unknown"), ready("Stopped")]))),
+        "stopped"
+    );
+    assert!(
+        !suspended_for_being_idle(&claim(json!([ready("Starting")]))),
+        "a restart"
+    );
+}
