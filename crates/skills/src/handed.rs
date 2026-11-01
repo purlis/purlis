@@ -264,6 +264,56 @@ fn fenced(text: &str) -> Option<(&str, usize)> {
     None
 }
 
+/// **Where `text`'s frontmatter is, as bytes, and what it says as plain values** (#3866): the one
+/// strict reader ([`document`]), for what is taken out of one before it leaves this machine. `None`
+/// where it has none. Refused where it is not one document with plain keys, each set once. A
+/// mapping is one only if it says so: text between two rules reads as a value that is no object. A
+/// plain boolean, null or number is that value where it writes back the same, and anything else
+/// is its text.
+pub fn frontmatter_value(
+    text: &str,
+) -> Option<(std::ops::Range<usize>, Result<serde_json::Value, Refusal>)> {
+    let (yaml, _) = fenced(text)?;
+    let start = yaml.as_ptr() as usize - text.as_ptr() as usize;
+    let read = document(yaml).and_then(|root| {
+        if !keys_once(&root) {
+            return Err(Refusal::Twice(String::new()));
+        }
+        as_value(&root)
+    });
+    Some((start..start + yaml.len(), read))
+}
+
+fn as_value(node: &Node) -> Result<serde_json::Value, Refusal> {
+    use serde_json::Value;
+    Ok(match node {
+        Node::Scalar { text, plain: true } => match text.as_str() {
+            "true" | "True" | "TRUE" => Value::Bool(true),
+            "false" | "False" | "FALSE" => Value::Bool(false),
+            "" | "~" | "null" => Value::Null,
+            other => match serde_json::from_str::<serde_json::Number>(other) {
+                Ok(number) if number.to_string() == other => Value::Number(number),
+                _ => Value::String(other.to_owned()),
+            },
+        },
+        Node::Scalar { text, .. } => Value::String(text.clone()),
+        Node::Seq(items) => Value::Array(items.iter().map(as_value).collect::<Result<_, _>>()?),
+        Node::Map(pairs) => {
+            let mut map = serde_json::Map::with_capacity(pairs.len());
+            for (key, value) in pairs {
+                let Node::Scalar { text: key, .. } = key else {
+                    return Err(Refusal::OddKey);
+                };
+                if key == "<<" {
+                    return Err(Refusal::Reused);
+                }
+                map.insert(key.clone(), as_value(value)?);
+            }
+            Value::Object(map)
+        }
+    })
+}
+
 /// The spelling a key is compared by when purlis looks for one that reads as a widening key:
 /// lowercase, with no `-`, `_` or blank.
 fn folded(key: &str) -> String {
