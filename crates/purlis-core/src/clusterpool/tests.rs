@@ -1419,6 +1419,7 @@ fn a_start_waits_only_for_a_runner_suspended_for_being_idle() {
         !suspended_for_being_idle(&claim(json!([ready("Starting")]))),
         "a restart"
     );
+}
 
 /// **The runs of one check share one time**: past it, a run is ended at once, whatever each is
 /// given.
