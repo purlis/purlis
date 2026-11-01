@@ -131,8 +131,17 @@ fn carried(count: usize) -> String {
 fn going_out(dir: &Path, tip: &str, remote: &str) -> Result<Vec<Pointer>, String> {
     let failed = |why: String| format!("purlis could not read what this push sends: {why}");
     crate::hookwire::alive::beat();
-    let not = format!("--remotes={remote}");
-    let listed = git::run(
+    // Read one at a time, rather than `--not --remotes`: one broken ref must not refuse a push.
+    // A ref that says nothing only makes the walk longer.
+    let tracking = format!("refs/remotes/{remote}/");
+    let there = git::run(
+        dir,
+        &["for-each-ref", "--format=^%(objectname)", tracking.as_str()],
+        git::READ,
+    )
+    .map_err(|e| failed(e.to_string()))?;
+    let there = if there.ok() { there.out } else { String::new() };
+    let listed = git::run_with_input(
         dir,
         &[
             "-c",
@@ -142,18 +151,21 @@ fn going_out(dir: &Path, tip: &str, remote: &str) -> Result<Vec<Pointer>, String
             "rev-list",
             "--objects",
             "--filter=blob:limit=1025",
+            "--ignore-missing",
+            "--stdin",
             tip,
-            "--not",
-            not.as_str(),
         ],
+        there.into_bytes(),
         READING,
     )
     .map_err(|e| failed(e.to_string()))?;
-    if !listed.ok() {
-        return Err(failed(listed.err.trim().to_owned()));
+    if listed.code != Some(0) {
+        return Err(failed(
+            String::from_utf8_lossy(&listed.err).trim().to_owned(),
+        ));
     }
-    let named: Vec<(&str, &str)> = listed
-        .out
+    let listed_out = String::from_utf8_lossy(&listed.out);
+    let named: Vec<(&str, &str)> = listed_out
         .lines()
         .filter_map(|line| line.split_once(' '))
         .collect();
@@ -788,6 +800,17 @@ mod tests {
     #[test]
     fn pointers_already_on_the_remote_are_not_going_out() {
         let (_dir, repo) = repo_with("large.bin", &pointer(OID, "12"));
+        assert_eq!(going_out(&repo, "HEAD", "origin").unwrap().len(), 1);
+        assert!(testgit::run(&repo, &["update-ref", "refs/remotes/origin/main", "HEAD"]).ok());
+        assert_eq!(going_out(&repo, "HEAD", "origin").unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn a_broken_tracking_ref_refuses_nothing_and_a_good_one_still_counts() {
+        let (_dir, repo) = repo_with("large.bin", &pointer(OID, "12"));
+        let refs = repo.join(".git/refs/remotes/origin");
+        std::fs::create_dir_all(&refs).unwrap();
+        std::fs::write(refs.join("broken"), "not a ref\n").unwrap();
         assert_eq!(going_out(&repo, "HEAD", "origin").unwrap().len(), 1);
         assert!(testgit::run(&repo, &["update-ref", "refs/remotes/origin/main", "HEAD"]).ok());
         assert_eq!(going_out(&repo, "HEAD", "origin").unwrap(), Vec::new());

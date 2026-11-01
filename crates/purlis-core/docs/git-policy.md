@@ -245,7 +245,8 @@ saying what to do. The upload:
   bytes hold no NUL is read as a commit's added lines are, and a finding refuses the push.
 - **Starts no program.** A repository whose own config names one git-lfs would start, or an
   `alias.lfs`, moves its store (`lfs.storage`), or sets `http.extraheader`, is refused before
-  git-lfs is asked anything.
+  git-lfs is asked anything. The exact helper `purlis git-policy` writes is let through: the
+  one-credential rule empties the helper list before the push's own helper, so it never runs.
 - **Is stopped at the stall limit** (`cloning::STALL`) rather than a total deadline.
 
 What is on the remote is read from the clone's tracking refs, as `pre-push` reads it, so a ref a
@@ -259,6 +260,7 @@ folder being pushed, so a `.lfsconfig` there that is a link is read outside the 
 are outranked or harmless, and a pipe there only waits for the stall limit. A global `lfs.storage`
 shared by several repositories can serve any object whose id and size a chat already knows. A
 project's first publish to a folder on this machine uploads nothing, and crosses no network.
+The first push of a project purlis creates uploads nothing either: it holds only what purlis wrote.
 
 An object that is not in the clone refuses the push even where the server has it already: purlis
 does not ask. `git lfs fetch --all` brings it here.
