@@ -222,6 +222,15 @@ fn a_terminal() -> (std::fs::File, std::fs::File, String) {
         .expect("its name")
         .display()
         .to_string();
+    // `openpty` leaves both ends to be inherited, as a session never does: a chat that inherited
+    // this other end would hold it.
+    for end in [&pair.master, &pair.slave] {
+        nix::fcntl::fcntl(
+            end,
+            nix::fcntl::FcntlArg::F_SETFD(nix::fcntl::FdFlag::FD_CLOEXEC),
+        )
+        .expect("not inherited");
+    }
     (pair.master.into(), pair.slave.into(), name)
 }
 
