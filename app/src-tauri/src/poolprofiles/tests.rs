@@ -892,7 +892,7 @@ fn a_pools_page_shows_what_the_team_set() {
 /// Q15: the window's check and the file's refusal are one, word for word.
 #[test]
 fn the_windows_check_refuses_as_the_file_does() {
-    use purlis_core::poollimits::Chosen;
+    use purlis_core::poollimits::{Chosen, of_key};
     for (key, typed, held) in [
         ("profileSize", "0", serde_json::json!(0)),
         ("signInWait", "121", serde_json::json!(121)),
