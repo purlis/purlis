@@ -1615,6 +1615,16 @@ impl ChatBrowsers {
         true
     }
 
+    /// **Whether chat `session`'s browser may be used now**: the person allowed it, or `always`
+    /// answers for its persona. A login's notice waits behind the browser's own Ask (#4595).
+    pub fn may_browse(&self, session: u32, always: bool) -> bool {
+        always
+            || self
+                .lock()
+                .get(&session)
+                .is_some_and(|chat| matches!(chat.posture, Posture::Allowed { .. }))
+    }
+
     /// **Allow** on chat `session`'s Ask, with the open web or not. Answers whether it waited.
     pub fn allow(&self, session: u32, open_web: bool) -> bool {
         self.answered(session, Posture::Allowed { open_web })
@@ -2226,7 +2236,7 @@ impl ChatBrowsers {
         let persona = as_persona();
         self.follow_always(driver, browse.chat, &persona);
         let read = match &browse.asked {
-            Browsing::LogIn { login }
+            Browsing::LogIn { login, .. }
                 if self
                     .lock()
                     .get(&browse.chat)
@@ -2546,7 +2556,7 @@ impl ChatBrowsers {
                 );
             }
             Browsing::Act(act) => Doing::Act(act.clone()),
-            Browsing::LogIn { login } => match read {
+            Browsing::LogIn { login, .. } => match read {
                 Some(Ok(read)) => Doing::LogIn(login.clone(), read),
                 Some(Err(why)) => return (no(&why), false),
                 None => {
@@ -2567,10 +2577,14 @@ impl ChatBrowsers {
         // A login whose kept store is there opens in a browser of its own, from that store
         // (#2021), already held to the login's site: the chat's other browsers stay as they are.
         let named = match &act {
-            Doing::LogIn(_, read) if read.opens => match start(chat, read.login.keep.clone()) {
-                Ok(name) => Some(name),
-                Err(why) => return (no(&why), false),
-            },
+            // So is one the person allowed from its notice (#4595): the password goes into a
+            // browser the chat has done nothing in.
+            Doing::LogIn(_, read) if read.opens || read.fresh => {
+                match start(chat, read.login.keep.clone()) {
+                    Ok(name) => Some(name),
+                    Err(why) => return (no(&why), false),
+                }
+            }
             _ => named,
         };
         let (name, program) = match named {
@@ -2709,6 +2723,8 @@ pub struct LoginRead {
     pub login: LogIn,
     pub opens: bool,
     pub identity: String,
+    /// It's filled in a browser of its own, opened for it (#4595).
+    pub fresh: bool,
 }
 
 /// What a runner chat is told of its browser login `login` while the person is asked whether
@@ -2870,12 +2886,17 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         }
         return answer;
     }
+    // A login its persona doesn't declare waits on the person's answer here (#4595), under no
+    // lock of the browsers'.
+    let pool = held.chats().pool_of(browse.chat);
+    if let Some(answer) = crate::loginasks::before_the_login(held, browse, pool.as_deref(), now) {
+        return answer;
+    }
     let reach = || reach_of(held, browse.chat);
     let unsandboxed = held.chats().started_unsandboxed(browse.chat);
     let as_persona = || as_persona_of(held, browse.chat);
     // A chat on a pool's runner has its browsers there, and its logins wait on the person's
     // opt-in for that pool (#2050).
-    let pool = held.chats().pool_of(browse.chat);
     let logins = |name: &str| match &pool {
         Some(pool) => pool_login_of(held, browse, name, pool, now),
         None => login_of(held, browse.chat, name),
@@ -2955,7 +2976,7 @@ pub fn timeline_of(
             };
             timeline::acted(browser, act, browsed, at, seen)
         }
-        Browsing::LogIn { login } => Some(timeline::signed_in(browser, login, at)),
+        Browsing::LogIn { login, .. } => Some(timeline::signed_in(browser, login, at)),
         Browsing::New | Browsing::Close | Browsing::NeedsYou { .. } => None,
     }
 }
@@ -3100,6 +3121,18 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     let (asker, unconfined) = login_asker_of(held, session, name).map_err(|why| {
         why.unwrap_or_else(|| format!("chat {session} is not one this app has open"))
     })?;
+    // One the person allowed from its notice (#4595): nothing of it is kept, on disk or sealed.
+    let grants = held.login_grants();
+    if let Some(tool) = grants.granted(session, asker.persona.as_deref(), name) {
+        let (login, identity) = purlis_core::secrets::brokered::granted_login(&asker, &tool)?;
+        grants.used(session, name);
+        return Ok(LoginRead {
+            login,
+            opens: false,
+            identity,
+            fresh: true,
+        });
+    }
     let persona = asker.persona.clone().unwrap_or_default();
     let (mut login, identity) =
         purlis_core::secrets::brokered::login_and_identity_for(&asker, name, unconfined)?;
@@ -3131,6 +3164,7 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         login,
         opens,
         identity,
+        fresh: false,
     })
 }
 
@@ -3178,7 +3212,13 @@ fn pool_login_of(
     // Its tools are the runner's, never this window's record of a sandbox here: the login is
     // the persona's as declared and allowed here, checked before anyone is asked about it.
     asker.confines = None;
-    let identity = purlis_core::secrets::brokered::login_allowed(&asker, name, true)?;
+    // One the person allowed from its notice still needs its opt-in here (#4595, ADR 0089).
+    let grants = held.login_grants();
+    let granted = grants.granted(session, asker.persona.as_deref(), name);
+    let identity = match &granted {
+        Some(tool) => purlis_core::secrets::brokered::granted_login_identity(&asker, tool)?,
+        None => purlis_core::secrets::brokered::login_allowed(&asker, name, true)?,
+    };
     if let Err((why, raised)) = held.browsers().pool_login(
         session,
         &persona,
@@ -3197,8 +3237,12 @@ fn pool_login_of(
         }
         return Err(why);
     }
-    let (login, identity) =
-        purlis_core::secrets::brokered::login_and_identity_for(&asker, name, true)?;
+    let (login, identity) = match &granted {
+        Some(tool) => purlis_core::secrets::brokered::granted_login(&asker, tool)?,
+        None => purlis_core::secrets::brokered::login_and_identity_for(&asker, name, true)?,
+    };
+    let fresh = granted.is_some();
+    grants.used(session, name);
     // Again once it is read: a vault may wait on a sign-in for as long as it takes (#4071).
     if purlis_core::poollogins::Bound::over_the_link(&config, pool, reached.as_deref()).as_ref()
         != Ok(&bound)
@@ -3211,6 +3255,7 @@ fn pool_login_of(
         login,
         opens: false,
         identity,
+        fresh,
     })
 }
 
@@ -3252,7 +3297,7 @@ fn persona_of(held: &crate::planes::Held, session: u32) -> Option<String> {
 /// what that persona declares in the project's root `charter.toml`, and Always for it as this
 /// machine keeps it and policy leaves it in force. Nothing of it is read from a file a chat
 /// writes.
-fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
+pub(crate) fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
     use purlis_core::sandbox;
     let Some(persona) = persona_of(held, session) else {
         return AsPersona::default();

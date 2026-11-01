@@ -980,6 +980,7 @@ pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, Site), String> {
                 .map(|user| zeroize::Zeroizing::new(user.expose().to_owned())),
             password: zeroize::Zeroizing::new(login.password.expose().to_owned()),
             only_if_asked: false,
+            suggested: login.suggested,
         },
         Site::of(&host, port),
     ))

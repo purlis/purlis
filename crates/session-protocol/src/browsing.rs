@@ -405,6 +405,11 @@ pub struct LogIn {
     /// that comes back after a crash knows every login it holds (1.39, #2025). Never a value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
+    /// **A chat chose this page and these keys** (#4595): a user name goes only into a field
+    /// that says it's one, or beside a password field. A host that doesn't read this fills as it
+    /// always has, on the same origin.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub suggested: bool,
 }
 
 /// **A kept login** (1.27, #2021, the person's rulings of 2026-10-18): a profile, the persona

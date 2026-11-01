@@ -23,6 +23,7 @@ import { TaskQuietNotice } from "./TaskQuietNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { TasksSharingNotice } from "./TasksSharingNotice";
+import { BrowserLoginNotice } from "./BrowserLoginNotice";
 import { WorkspaceRemovalNotice } from "./WorkspaceRemovalNotice";
 import { ProposedChangeNotice } from "./ProposedChangeNotice";
 import { asksOf, isAnAsk, noticeKey } from "./sandboxBlocks";
@@ -386,6 +387,8 @@ export function ChatNotices({
       <WorkspaceRemovalNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A change this chat proposed to purlis's own configuration (#1975): only you apply it. */}
       <ProposedChangeNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
+      {/* A browser login this chat suggested (#4595): only your press fills it. */}
+      <BrowserLoginNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A skill this chat drafted (#2772): ready in the Skill studio, which alone asks for it. */}
       <DraftReadyNotice plane={plane} session={session} />
       {/* Two of this chat's tasks in one folder with no branch of their own (#1511). */}

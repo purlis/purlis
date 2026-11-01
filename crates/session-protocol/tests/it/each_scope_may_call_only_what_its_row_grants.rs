@@ -373,6 +373,7 @@ fn every_command() -> Vec<Command> {
                 keep: None,
                 identity: None,
             },
+            suggested: false,
         },
         // A login that keeps its login on this device once the browser ends (1.27, #2021): the
         // window's alone, never relayed to a runner (1.38, #2050).
@@ -391,6 +392,7 @@ fn every_command() -> Vec<Command> {
                 }),
                 identity: None,
             },
+            suggested: false,
         },
         // A browser opened from kept logins (1.27, #2021): the window's alone, as a login is.
         Command::StartProgram(Box::new(session::StartProgram {

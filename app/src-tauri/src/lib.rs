@@ -113,6 +113,7 @@ mod killswitch;
 mod kubectl;
 mod lifecycle;
 mod live;
+mod loginasks;
 mod mcpfailed;
 mod memories;
 mod nativewindow;

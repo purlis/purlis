@@ -305,9 +305,11 @@ fn logins(name: &str) -> super::ReadLogin {
             password: Secret::new(LOGIN_VALUE.into()),
             keep: Some(kept_as(name)),
             identity: Some(IDENTITY.into()),
+            suggested: false,
         },
         opens: name == "kept-login",
         identity: IDENTITY.into(),
+        fresh: false,
     })
 }
 
@@ -1462,7 +1464,10 @@ fn a_stuck_browser_is_ended_off_the_calls_path_once_the_host_answers_and_its_row
 // ---- Logins purlis performs (#2016) ----
 
 fn log_in(name: &str) -> Browsing {
-    Browsing::LogIn { login: name.into() }
+    Browsing::LogIn {
+        login: name.into(),
+        suggested: None,
+    }
 }
 
 #[test]

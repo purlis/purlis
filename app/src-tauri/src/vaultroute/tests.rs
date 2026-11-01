@@ -95,6 +95,7 @@ fn a_refused_vault_raises_one_notice_however_often_the_chat_tries() {
             // The fixture defines no persona, so there is nobody to dispatch to.
             dispatch_to: None,
             locked: None,
+            login: None,
         }]
     );
     assert_eq!(refusals.of(3).len(), 1);
