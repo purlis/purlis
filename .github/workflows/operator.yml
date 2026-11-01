@@ -17,12 +17,14 @@ on:
   pull_request:
     paths:
       - operator/**
+      - docs/cluster-pool-setup.md
       - runner-image/**
       - deny.toml
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
       - .github/actions/helm/**
       - tools/operator-install*
+      - tools/guide-commands*
       - .github/workflows/operator.yml
       # The desktop's side of a cluster runner, which the kind run checks too (#2056).
       - crates/purlis-core/src/clusterpool*
@@ -41,12 +43,14 @@ on:
     branches: [main]
     paths:
       - operator/**
+      - docs/cluster-pool-setup.md
       - runner-image/**
       - deny.toml
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
       - .github/actions/helm/**
       - tools/operator-install*
+      - tools/guide-commands*
       - .github/workflows/operator.yml
       # The desktop's side of a cluster runner, which the kind run checks too (#2056).
       - crates/purlis-core/src/clusterpool*

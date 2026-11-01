@@ -123,10 +123,23 @@ echo "runner image: $runner"
 echo "operator image: $operator"
 node "$repo/tools/operator-install.mjs" "$install" "$operator"
 
+# The commands of docs/cluster-pool-setup.md (#4537), run as the guide gives them, on this run's
+# own kubeconfig, whose current context is the cluster's. tools/guide-commands.test.mjs holds the
+# guide and these calls to each other.
+guide_text() {
+  name=$1
+  shift
+  node "$repo/tools/guide-commands.mjs" "$repo/docs/cluster-pool-setup.md" "$name" "$@"
+}
+guide_run() {
+  kubectl config use-context "$context" >/dev/null
+  commands=$(guide_text "$@")
+  (cd "$repo" && sh -eu -c "$commands")
+}
+
 # Doctor (#2236) with the cluster's admin credentials, as a team admin runs it before installing.
 doctor() {
-  kubectl config use-context "$context" >/dev/null
-  cargo run --manifest-path "$here/Cargo.toml" --locked --quiet -- doctor
+  guide_run doctor
 }
 
 step "doctor on a bare cluster: upstream agent-sandbox is missing"
@@ -153,8 +166,7 @@ if [ "${published#*@}" != "$recorded" ]; then
 fi
 
 step "upstream agent-sandbox v1.0.6, its controller by digest"
-kubectl --context "$context" apply --server-side -k "$upstream" >/dev/null
-kubectl --context "$context" -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --timeout=180s
+guide_run upstream
 running=$(kubectl --context "$context" -n agent-sandbox-system get deployment/agent-sandbox-controller \
   -o jsonpath='{.spec.template.spec.containers[0].image}')
 case $running in
@@ -169,22 +181,35 @@ step "doctor with the pinned upstream: nothing missing"
 doctor
 
 step "purlis's definitions, policy and operator, by the chart"
-# The release's namespace, made as docs/cluster-operator.md makes it: only pods that meet the
-# restricted Pod Security Standard are admitted in it, so the operator's pod has to.
-kubectl --context "$context" create namespace purlis-system
-kubectl --context "$context" label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
-# The key the operator signs runners' link keys with, made before it is installed, as
-# docs/cluster-operator.md makes it (#2056).
-# Piped, so the key is never written to a file.
-openssl genpkey -algorithm ed25519 |
-  kubectl --context "$context" -n purlis-system create secret generic purlis-cluster-operator-signing-key \
-    --from-file=key.pem=/dev/stdin >/dev/null
+# The release's namespace, in which only pods that meet the restricted Pod Security Standard are
+# admitted, and the key the operator signs runners' link keys with (#2056), as the guide makes them.
+guide_run key
 # The chart's own default names the image, as in the install a person downloads.
 # It names the one GitHub App key tests/on_a_kind_cluster.rs makes, and no other (#4204).
 helm install purlis-cluster-operator "$install/charts/purlis-cluster-operator" --kube-context "$context" --namespace purlis-system \
   --set 'forge.keySecretNames[0]=e2e-forge-app-key' --wait --timeout 180s
 kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev
-kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
+guide_run installed
+
+step "the guide's helm install makes what the chart above installed"
+# Rendered from the checkout, with the guide's own values, against the install CI ran.
+guide_install=$(guide_text install --value "<your registry>=${operator%/*}" --value "<operator digest>=${operator#*@}")
+case $guide_install in
+  "helm install "*) ;;
+  *)
+    echo "the guide's install no longer starts with helm install" >&2
+    exit 1
+    ;;
+esac
+guide_rendered=$(cd "$repo" && sh -eu -c "helm template ${guide_install#helm install }")
+pinned_rendered=$(helm template purlis-cluster-operator "$install/charts/purlis-cluster-operator" --namespace purlis-system)
+if [ "$guide_rendered" != "$pinned_rendered" ]; then
+  printf '%s\n' "$guide_rendered" >"$helm_home/guide.yaml"
+  printf '%s\n' "$pinned_rendered" >"$helm_home/pinned.yaml"
+  diff "$helm_home/guide.yaml" "$helm_home/pinned.yaml" >&2 || true
+  annotate "the guide's helm install is not what the chart installed" "see the log"
+  exit 1
+fi
 
 step "the plain manifests are what the chart installed"
 # `kubectl diff` exits 1 when applying them would change anything the chart made. Helm owns
@@ -245,6 +270,19 @@ step "a whole chat on a Pool that mints, with its desktop away"
 CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context FAKE_GITHUB_PORT=$fake_github_port \
   "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
   --test it -- a_chat_mints_on_a_cluster_runner_with_its_desktop_away:: --ignored --test-threads=1
+
+step "the guide's pool, its key and a teammate's rights"
+guide_run pool --value "<your registry>/purlis-runner@<runner digest>=$runner"
+tries=0
+until [ -n "$(guide_run pool-key)" ]; do
+  tries=$((tries + 1))
+  if [ "$tries" -ge 60 ]; then
+    echo "the guide's pool named no key within a minute" >&2
+    exit 1
+  fi
+  sleep 1
+done
+guide_run teammate --value "<their name>=guide-teammate@example.com"
 
 step "uninstalled, the chart leaves the definitions and the policy"
 helm uninstall purlis-cluster-operator --kube-context "$context" --namespace purlis-system --wait

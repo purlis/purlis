@@ -59,6 +59,7 @@ const a_cluster_pool = (name: string): ClusterPoolRow => ({
 let pools: PoolRow[];
 let clusters: ClusterPoolRow[];
 let clustersAdded: unknown[];
+let opened: string[];
 let link: PoolLink;
 let version: PoolVersion;
 let added: unknown[];
@@ -94,6 +95,7 @@ beforeEach(() => {
   pools = [];
   clusters = [];
   clustersAdded = [];
+  opened = [];
   link = { state: "linked" };
   version = {
     runner: "0.4.2",
@@ -125,6 +127,7 @@ beforeEach(() => {
       if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
       if (cmd === "planes_to_restore") return { windows: [], dropped: [], gone: [] };
       if (cmd === "this_machine") return { projects: [], dropped: [], forgetful: null };
+      if (cmd === "plugin:opener|open_url") opened.push(String(a.url));
       if (cmd === "update_channel") return "stable";
       if (cmd === "docker_pools")
         return {
@@ -863,6 +866,33 @@ describe("You › This machine › Pools", () => {
       ),
     ).toBeInTheDocument();
     expect(group).not.toHaveTextContent(/has no runner image/);
+  });
+});
+
+describe("The guide to setting a pool up on a cluster (#4537)", () => {
+  const GUIDE = "https://github.com/purlis/purlis/blob/main/docs/cluster-pool-setup.md";
+
+  it("opens from where a cluster pool is added, and stays there when the check fails", async () => {
+    render(<App />);
+    await palette("Add a pool…");
+    const first = await screen.findByRole("dialog", { name: "Add a pool" });
+    expect(within(first).queryByRole("link", { name: "Here's how" })).toBeNull();
+    await userEvent.click(within(first).getByRole("radio", { name: /Cluster/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
+    await userEvent.click(within(dialog).getByRole("link", { name: "Here's how" }));
+    await waitFor(() => expect(opened).toEqual([GUIDE]));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Check its key" }));
+    expect(await within(dialog).findByRole("alert")).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "Here's how" })).toBeInTheDocument();
+  });
+
+  it("opens from the pools settings", async () => {
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await userEvent.click(await within(group).findByRole("link", { name: "Here's how" }));
+    await waitFor(() => expect(opened).toEqual([GUIDE]));
   });
 });
 
