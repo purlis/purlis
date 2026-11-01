@@ -135,10 +135,12 @@ function MoveFailed({
     };
   }, []);
   useEffect(() => {
-    if (to === null || why === null) return;
+    // A move back here is refused on the pool it is leaving (#4397).
+    const pool = to ?? from;
+    if (pool === null || why === null) return;
     let gone = false;
     void commands
-      .poolLimitOfferForMove(to, why)
+      .poolLimitOfferForMove(pool, why)
       .catch(() => null)
       .then((said) => {
         if (!gone) setOffer(said);
@@ -146,7 +148,7 @@ function MoveFailed({
     return () => {
       gone = true;
     };
-  }, [to, why]);
+  }, [to, from, why]);
   const apply = async (values: ReadonlyArray<readonly [string, number]>) => {
     if (offer === null) return;
     setSaving(true);

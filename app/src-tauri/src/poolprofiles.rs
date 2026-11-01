@@ -777,15 +777,18 @@ fn keep_on_as(
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
         .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
-        .map_err(|why| {
-            if why == crate::runnerlinks::ANSWER_LATE {
-                let secs = kept.limits.in_force(LimitId::AnswerWait);
-                let hit = LimitId::AnswerWait.limit().waited(secs, None);
-                format!("{why}: {}", purlis_core::poollimits::hit_on(pool, hit))
-            } else {
-                why
-            }
-        })
+        .map_err(|why| late_said(pool, kept.limits.in_force(LimitId::AnswerWait), why))
+}
+
+/// `why` a runner kept no profile: where the pool's wait of `secs` ran out, in words the window can
+/// ask of for what to raise it to (spec #4275). By purlis's own constant, never a runner's words.
+fn late_said(pool: &str, secs: u64, why: String) -> String {
+    if why == crate::runnerlinks::ANSWER_LATE {
+        let hit = LimitId::AnswerWait.limit().waited(secs, None);
+        format!("{why}: {}", purlis_core::poollimits::hit_on(pool, hit))
+    } else {
+        why
+    }
 }
 
 /// **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275).
@@ -1164,9 +1167,17 @@ pub async fn pool_profiles(
             && purlis_core::pools::claim_keeps_its_home(&config, &pool) == Ok(false);
         let (on_pool, addable) = chosen(&records, &names);
         // Each that goes to a runner, kept there over one link.
+        // Held to the pool's limits, so a value raised applies to the next ask (#4397).
+        let limits = purlis_core::runners::chosen_limits_of(&config, &pool)
+            .map_err(|why| why.to_string())?;
         let kept: Vec<_> = on_pool
             .iter()
-            .map(|record| record.clone().and_then(onrunner::Kept::of))
+            .map(|record| {
+                record
+                    .clone()
+                    .and_then(onrunner::Kept::of)
+                    .map(|kept| kept.held_to(limits))
+            })
             .collect();
         let sent: Vec<_> = kept
             .iter()
@@ -1184,7 +1195,8 @@ pub async fn pool_profiles(
                     Some(said) => said
                         .next()
                         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
-                        .map(|kept| onrunner::standing_on_the_wire(kept.standing)),
+                        .map(|kept| onrunner::standing_on_the_wire(kept.standing))
+                        .map_err(|why| late_said(&pool, limits.in_force(LimitId::AnswerWait), why)),
                 });
                 match record {
                     Ok(record) => row(record, standing),

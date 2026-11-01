@@ -990,4 +990,21 @@ fn a_keep_the_command_asks_is_held_to_the_strips_gate_and_named_on_the_pool() {
     });
     assert_eq!(failed, Err("the runner did not answer".to_owned()));
     assert_eq!(chosen(), Some(names(&["home"])), "named only by this try");
+
+/// **A row kept off a runner by the answer wait offers to raise it, on its pool** (#4397); any
+/// other reason offers nothing.
+#[test]
+fn a_profile_row_late_by_the_pools_wait_offers_double_and_no_other_does() {
+    use purlis_core::poollimits::{LimitId, hits_said_in};
+    let said = late_said(
+        "late-on-a-row",
+        30,
+        crate::runnerlinks::ANSWER_LATE.to_owned(),
+    );
+    assert!(said.contains("raise it to 60 seconds"), "{said}");
+    let hits = hits_said_in("late-on-a-row", &said);
+    assert_eq!(hits[0].limit, LimitId::AnswerWait);
+    let other = late_said("other-on-a-row", 30, "the runner said: no".to_owned());
+    assert_eq!(other, "the runner said: no");
+    assert!(hits_said_in("other-on-a-row", &other).is_empty());
 }
