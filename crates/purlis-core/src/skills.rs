@@ -1253,9 +1253,12 @@ impl ChatSkills {
 /// `skill_load` tool, with `given` in plain words. The same on every harness.
 fn load_text(name: &str, given: &Given) -> String {
     match given.in_words() {
-        None => format!("Load the skill {name} with skill_load and follow it."),
+        None => format!("Load the skill {name} with skill_load, person_asked true, and follow it."),
         Some(words) => {
-            format!("Load the skill {name} with skill_load and follow it, with {words}")
+            format!(
+                "Load the skill {name} with skill_load, person_asked true, and follow it, with \
+                 {words}"
+            )
         }
     }
 }

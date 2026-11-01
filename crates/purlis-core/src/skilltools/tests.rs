@@ -197,10 +197,41 @@ fn a_manual_only_skill_is_not_loaded_opens_no_run_and_says_to_ask_the_person_to_
         );
         assert_eq!(
             said.unwrap(),
-            "`deploy` is manual-only, so it was not loaded. Ask the person to run it.",
+            "`deploy` is manual-only, so it was not loaded. Load it again with person_asked \
+             true only if the person named this skill. Otherwise ask the person to run it.",
             "{harness}"
         );
         assert!(started.is_empty(), "{harness}");
+    }
+}
+
+#[test]
+fn a_manual_only_skill_loads_and_opens_its_run_when_the_person_asked_for_it() {
+    let p = a_plane();
+    skill(
+        &p.path().join("skills"),
+        "deploy",
+        "Ship the service.",
+        "disable-model-invocation: true\n",
+    );
+    let load = |asked: Value| {
+        let started = RefCell::new(Vec::new());
+        let mut with = args(&[("name", "deploy")]);
+        with.insert(PERSON_ASKED.to_owned(), asked);
+        let said = call(&chat(p.path(), None), SKILL_LOAD, &with, &|skill| {
+            started.borrow_mut().push(skill.to_owned());
+        });
+        (said.unwrap(), started.into_inner())
+    };
+
+    let (said, started) = load(json!(true));
+    assert!(said.starts_with("Loaded the skill `deploy`"), "{said}");
+    assert_eq!(started, ["deploy"]);
+
+    for not_asked in [json!(false), json!("true")] {
+        let (said, started) = load(not_asked);
+        assert!(said.contains("manual-only"), "{said}");
+        assert!(started.is_empty());
     }
 }
 
