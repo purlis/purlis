@@ -209,7 +209,9 @@ pub async fn agent_identities(
             owners: owners(&root),
             personas: purlis_core::workspaces::Plane::open(root.clone())
                 .personas()
-                .map_err(|e| e.to_string())?,
+                .map_err(|_| {
+                    "purlis couldn't read this project's personas. Try again.".to_owned()
+                })?,
         })
     })
     .await
