@@ -637,7 +637,7 @@ fn refused_by_the_runner(why: &purlis_session_protocol::session::CallError) -> S
 
 /// **`sending`, kept over `client`'s link** (#4081): its batches first, each answered before the
 /// next and each given [`ANSWER_WITHIN`], so a large profile is held to a runner that keeps
-/// answering, within [`ALL_KEPT_WITHIN`]. The first refused stops them, and no keep is sent: what the link
+/// answering, within [`all_kept_within`]. The first refused stops them, and no keep is sent: what the link
 /// staged is dropped there, so nothing of it is kept.
 async fn keep_one(
     client: &purlis_session_protocol::session::Client,
@@ -748,12 +748,13 @@ async fn sent_what_differs(
 /// (`keep_profile`, 1.43, #2049), in order: whether each is signed in there, or why the runner
 /// did not keep it, its own words marked as its and cut short. `None` for a runner of a purlis
 /// before 1.43, which is sent nothing and runs chats on profiles of its own. Each call is held to
-/// its own time ([`keep_one`]), and all of them together to [`ALL_KEPT_WITHIN`].
+/// its own time ([`keep_one`]), and all of them together to [`all_kept_within`].
 pub fn keep_profiles(
     to: &ToARunner,
     profiles: Vec<purlis_core::profilestore::onrunner::Kept>,
 ) -> Result<Option<ProfilesKept>, String> {
-    on_one_link_within(to, ALL_KEPT_WITHIN, async |linked| match linked {
+    let within = all_kept_within(&profiles);
+    on_one_link_within(to, within, async |linked| match linked {
         Ok(client) if !keeps_profiles(client.version()) => Ok(None),
         Ok(client) => {
             let version = client.version();
@@ -994,6 +995,26 @@ const KEPT_WITHIN: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// How long one link waits for every profile it keeps, batches and all.
 const ALL_KEPT_WITHIN: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// **How much longer each MiB a profile may send gives its keep, in seconds** (#4314): twice
+/// what a send took measured at 128 MiB, on a debug build of both ends through `docker exec` on
+/// a CI runner: 137 seconds.
+const SECONDS_KEPT_PER_MIB: u64 = 2;
+
+/// **How long keeping `profiles` may take all told** (#4314, sorted by the spec's rule): not a
+/// limit of its own, since a person should never have to reckon it: it follows what those
+/// profiles may send, so any value of `profileSize` has the time to go, and a runner that stops
+/// answering is still held to the wait on each batch and to this.
+fn all_kept_within(profiles: &[purlis_core::profilestore::onrunner::Kept]) -> std::time::Duration {
+    use purlis_core::poollimits::LimitId::ProfileSize;
+    let mib: u64 = profiles
+        .iter()
+        .map(|kept| kept.limits.in_force(ProfileSize))
+        .sum();
+    ALL_KEPT_WITHIN.max(std::time::Duration::from_secs(
+        mib.saturating_mul(SECONDS_KEPT_PER_MIB),
+    ))
+}
 
 #[cfg(test)]
 mod tests;
