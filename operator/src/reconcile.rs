@@ -1067,10 +1067,6 @@ async fn delete_retained(client: &Client, claim: &Claim, namespace: &str) -> Res
 /// is upstream's to remove.
 async fn sweep_orphans(client: Client, claims: Store<Claim>, every: Duration) {
     use lifecycle::{pool_object_is_orphaned, upstream_claim_is_orphaned};
-    if let Err(error) = claims.wait_until_ready().await {
-        tracing::warn!(%error, "what claims leave behind will not be looked for");
-        return;
-    }
     tracing::info!(?every, "looking for what claims leave behind");
     let mut ticks = tokio::time::interval(every);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -1080,6 +1076,14 @@ async fn sweep_orphans(client: Client, claims: Store<Claim>, every: Duration) {
     let mut seen = std::collections::HashSet::<String>::new();
     loop {
         ticks.tick().await;
+        // Never before its watch has every Claim: an empty store says nothing of what has gone.
+        if tokio::time::timeout(Duration::from_secs(1), claims.wait_until_ready())
+            .await
+            .is_err()
+        {
+            tracing::info!("what claims left behind is not looked for yet: the watch is starting");
+            continue;
+        }
         let mut found = std::collections::HashSet::<String>::new();
         let looked: Result<(), Error> = async {
             let held = claims.state();
