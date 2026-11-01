@@ -180,7 +180,7 @@ struct RefusesItsPrograms<H> {
     refused: bool,
 }
 
-impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for RefusesItsPrograms<H> {
+impl<H: session::Host> session::Host for RefusesItsPrograms<H> {
     async fn call(
         &self,
         command: session::Command,
