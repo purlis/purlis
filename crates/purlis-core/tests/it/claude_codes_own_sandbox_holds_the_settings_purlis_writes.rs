@@ -502,10 +502,11 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
     }
 }
 
-/// **What a chat at the floor can make in a home missing the usual folders** (#4357), each home
-/// laid out as named and tried once through Claude Code's own sandbox. Measuring for now.
+/// **What a chat at the floor can make in a home with no `~/.local` or `~/.config`** (#4357),
+/// tried through Claude Code's own sandbox. Measuring for now: each home as named, with and
+/// without what a start makes.
 #[test]
-fn a_chat_at_the_floor_makes_the_usual_folders_in_its_home() {
+fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
     purlis_core::unsteered!();
     let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
         return;
@@ -513,15 +514,17 @@ fn a_chat_at_the_floor_makes_the_usual_folders_in_its_home() {
     let scratch = tempfile::tempdir().expect("a folder");
     let out = scratch.path().canonicalize().expect("a real folder");
     let mut said = String::new();
-    let layouts: [(&str, &[&str]); 3] = [
-        ("bare", &[]),
-        ("parents", &[".local", ".config"]),
+    let layouts: [(&str, &[&str], bool); 4] = [
+        ("bare-unmade", &[], false),
+        ("parents-unmade", &[".local", ".config"], false),
         (
-            "usual",
+            "usual-unmade",
             &[".local/share", ".local/state", ".local/lib", ".config"],
+            false,
         ),
+        ("bare-made", &[], true),
     ];
-    for (name, folders) in layouts {
+    for (name, folders, made) in layouts {
         let at = out.join(name);
         let home = at.join("home");
         let bin = at.join("bin");
@@ -539,6 +542,16 @@ fn a_chat_at_the_floor_makes_the_usual_folders_in_its_home() {
             home: Some(home.clone()),
             os: Os::this(),
         };
+        if made {
+            let decided =
+                sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+                    .expect("decided")
+                    .expect("a sandbox in force");
+            let Decided::Sandboxed(applied) = decided else {
+                panic!("not sandboxed: {decided:?}");
+            };
+            applied.make_usual_folders();
+        }
         let (level, settings) = settings_for(&root, &machine);
         assert_eq!(level, Level::Floor);
         let file = at.join("claude.json");
@@ -546,7 +559,7 @@ fn a_chat_at_the_floor_makes_the_usual_folders_in_its_home() {
         let screened = purlis_core::harness::claude::project::screen_with(Some(&root), None);
         let what = format!("claude-code {name}");
         let command = format!(
-            "/bin/sh '{}' '{}' '{what}'",
+            "/bin/sh '{}' --installers '{}' '{what}' .codex .local/share/opencode",
             Path::new(HOME_PATHS)
                 .canonicalize()
                 .expect("the script")
@@ -565,7 +578,13 @@ fn a_chat_at_the_floor_makes_the_usual_folders_in_its_home() {
         ));
         said.push('\n');
         // What stayed once the chat ended, from outside its sandbox.
-        for entry in [".local", ".local/share", ".config"] {
+        for entry in [
+            ".local",
+            ".local/share",
+            ".config",
+            ".codex",
+            ".local/share/opencode",
+        ] {
             let kind = fs::symlink_metadata(home.join(entry)).map(|meta| meta.file_type());
             said.push_str(&format!("{what}: after: {entry}: {kind:?}\n"));
         }
