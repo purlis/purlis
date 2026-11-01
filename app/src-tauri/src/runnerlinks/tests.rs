@@ -565,6 +565,7 @@ fn work_with_settings_in(folder: &std::path::Path) -> purlis_core::profilestore:
         settings_in: Some(folder.to_path_buf()),
         limits: Default::default(),
         highest: Default::default(),
+        mcp_state: None,
     }
 }
 

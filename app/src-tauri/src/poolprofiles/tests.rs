@@ -13,6 +13,7 @@ fn work() -> onrunner::Kept {
         settings_in: None,
         limits: Default::default(),
         highest: Default::default(),
+        mcp_state: None,
     }
 }
 

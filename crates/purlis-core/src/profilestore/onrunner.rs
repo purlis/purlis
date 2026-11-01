@@ -62,8 +62,9 @@ pub struct Kept {
     pub limits: Chosen,
     /// The highest those can be on the runner it goes to, where that is lower than any pool's.
     pub highest: Chosen,
-    /// Whether the runner it goes to keeps its user-scope MCP servers (1.66, #3846).
-    pub mcp_servers: bool,
+    /// The Claude Code state file its user-scope MCP servers are read from, where the runner it
+    /// goes to keeps them (1.66, #3846).
+    pub mcp_state: Option<PathBuf>,
 }
 
 /// **The most bytes of settings files sent in one `keep_profile`**, to a runner before 1.56
@@ -124,7 +125,7 @@ impl Kept {
             settings_in: None,
             limits: Chosen::default(),
             highest: Chosen::default(),
-            mcp_servers: true,
+            mcp_state: None,
         })
     }
 
@@ -134,6 +135,8 @@ impl Kept {
     #[must_use]
     pub fn with_settings_of(mut self, record: &MachineProfile) -> Self {
         self.settings_in = (!record.sandbox_only).then(|| record.folders.config.clone());
+        self.mcp_state = (!record.sandbox_only && record.harness == "claude")
+            .then(|| super::sent::claude_state_file(record));
         self
     }
 
@@ -147,7 +150,7 @@ impl Kept {
     /// This profile, going to a runner before 1.66, which keeps no MCP servers.
     #[must_use]
     pub fn with_no_mcp_servers(mut self) -> Self {
-        self.mcp_servers = false;
+        self.mcp_state = None;
         self
     }
 
@@ -480,9 +483,10 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
     // Only what the state file says: a file of that name in the folder is no server of its.
     read.files
         .retain(|(path, _)| path != super::sent::MCP_SERVERS_FILE);
-    if kept.mcp_servers
-        && kept.harness == "claude"
-        && let Some(servers) = super::sent::mcp_servers_of(folder)
+    if let Some(servers) = kept
+        .mcp_state
+        .as_deref()
+        .and_then(super::sent::mcp_servers_of)
     {
         read.files
             .push((super::sent::MCP_SERVERS_FILE.to_owned(), servers));
@@ -835,7 +839,7 @@ impl From<&purlis_session_protocol::session::ProfileToKeep> for Kept {
             settings_in: None,
             limits: Chosen::default(),
             highest: Chosen::default(),
-            mcp_servers: false,
+            mcp_state: None,
         }
     }
 }
@@ -957,7 +961,7 @@ fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) {
         .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok());
     if let Some(servers) = servers.as_ref().and_then(|doc| doc.get("mcpServers")) {
         crate::sandbox::claude_wrap::keep_mcp_servers(
-            &super::sent::claude_state_file(&record.folders.config),
+            &super::sent::claude_state_file(record),
             servers,
         );
     }

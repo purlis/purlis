@@ -401,10 +401,20 @@ pub fn keep_mcp_servers(state: &Path, servers: &serde_json::Value) {
                 .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
             {
                 Some(doc) if doc.is_object() => doc,
-                _ => return,
+                _ => {
+                    tracing::warn!(
+                        "purlis: a runner's state file is not JSON, so its MCP servers stay"
+                    );
+                    return;
+                }
             }
         }
-        Ok(_) => return,
+        Ok(_) => {
+            tracing::warn!(
+                "purlis: a runner's state file is no plain file, so its MCP servers stay"
+            );
+            return;
+        }
         Err(_) if empty => return,
         Err(_) => serde_json::json!({}),
     };

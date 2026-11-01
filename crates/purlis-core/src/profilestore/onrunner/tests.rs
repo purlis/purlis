@@ -2535,16 +2535,46 @@ fn a_runner_that_keeps_no_servers_is_sent_none() {
     );
 }
 
-/// Claude Code's default folder keeps its state file in the home, and any other folder in itself.
+/// **The state file is where Claude Code reads it, by the profile**: a made one's in its folder,
+/// an adopted default's in the home, and one adopted from a variable's in that folder, whatever the
+/// folder is called.
 #[test]
 fn claude_codes_state_file_is_where_it_reads_it() {
     use crate::profilestore::sent::claude_state_file;
+    let dir = tempfile::tempdir().unwrap();
+    let made = a_desktop_profile_with_settings(dir.path());
     assert_eq!(
-        claude_state_file(Path::new("/h/.claude")),
-        Path::new("/h/.claude.json")
+        claude_state_file(&made),
+        made.folders.config.join(".claude.json")
     );
+
+    let mut adopted = the_desktops_adopted_folder(dir.path());
+    let config = adopted.folders.config.clone();
     assert_eq!(
-        claude_state_file(Path::new("/p/work")),
-        Path::new("/p/work/.claude.json")
+        claude_state_file(&adopted),
+        config.parent().unwrap().join(".claude.json")
     );
+
+    adopted
+        .adopted
+        .as_mut()
+        .unwrap()
+        .variables
+        .push("CLAUDE_CONFIG_DIR".into());
+    assert_eq!(claude_state_file(&adopted), config.join(".claude.json"));
+}
+
+/// An address that signs its requests in its query is a credential written out.
+#[test]
+fn a_server_whose_address_asks_with_a_credential_stays_behind() {
+    let sent = crate::profilestore::sent::without_credentials(
+        "claude",
+        "mcp-servers.json",
+        br#"{"mcpServers":{"a":{"url":"https://h/mcp?key=of-the-desktop"},
+                           "b":{"url":"https://h/mcp?limit=5"}}}"#,
+    )
+    .unwrap();
+    let text = String::from_utf8(sent).unwrap();
+    assert!(!text.contains("of-the-desktop"), "{text}");
+    assert!(text.contains("limit=5"), "{text}");
 }

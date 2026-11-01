@@ -10,6 +10,8 @@ ownership rule stands: only a runner shown to be the person's own is sent any. E
 2. **The runner puts them into its own state file**, which only purlis writes, in place of the
    servers it held. What else that file holds stays. No servers sent is a list too, so a server taken
    out on the desktop goes there.
+   A server's command goes as written, so a path of this machine in it fails there as any missing
+   program does, and a server whose address signs its requests in its query stays behind.
 3. **A runner before 1.66 is sent none**, since it refuses a settings file it does not know, and
    with it all the others.
 4. **Plugins are not sent** (#4441). They are not settings files: a real plugin cache is past a pool's
