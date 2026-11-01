@@ -80,6 +80,7 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   "commit-refused": "Commit refused",
   "root-update-refused": "Asks you to update the project",
   "browser-ask-ended": "Browser ended",
+  "question-closed": "Question closed",
 };
 
 /**

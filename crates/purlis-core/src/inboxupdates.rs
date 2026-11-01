@@ -81,6 +81,8 @@ pub enum Kind {
     RootUpdateRefused,
     /// A chat asked the person to take its browser over, and the browser ended first (#2015).
     BrowserAskEnded,
+    /// A task ended with its question unanswered (#4556).
+    QuestionClosed,
 }
 
 /// One update, as it is kept.

@@ -8,6 +8,7 @@ use super::*;
 
 use crate::asking::{AnswerPath, AskSource, ReachedWhy, every_ask};
 use purlis_core::dispatchtalk::Kind;
+use std::time::SystemTime;
 
 fn a_steward_and_a_working_task() -> (Plane, Pretend, Planes, PlaneId, Arc<Held>, u32, u32) {
     let plane = a_plane_with_personas();
@@ -205,4 +206,43 @@ fn a_redirect_the_app_refuses_leaves_the_question_to_the_person() {
 
     assert!(matches!(said, Answer::No { .. }), "{said:?}");
     assert_eq!(held.tasks().ledger().talk.asks(task), None);
+}
+
+#[test]
+fn a_question_whose_asking_chat_has_closed_reaches_the_person_with_that_reason() {
+    let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_a_working_task();
+    routed(&held, &id, task, "Which one?");
+    held.close_chat(steward).expect("closed");
+
+    crate::dispatched::look_at_questions(&held);
+
+    let listed = asks_of(&held, task);
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert!(matches!(
+        &listed[0].answer,
+        AnswerPath::TaskQuestion {
+            why: ReachedWhy::AskerGone,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_question_a_turn_was_handed_waits_its_time_and_then_reaches_the_person() {
+    let (_plane, _host, _planes, id, held, _steward, task) = a_steward_and_a_working_task();
+    routed(&held, &id, task, "Which one?");
+    crate::dispatched::look_at_questions(&held);
+    assert!(asks_of(&held, task).is_empty(), "no turn has seen it");
+
+    let long_ago = purlis_core::dispatchtalk::A_QUESTION_WAITS_SECS + 1;
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("the clock")
+        .as_secs();
+    held.tasks().ledger().talk.show(task);
+    let gone = std::collections::HashSet::new();
+    let moved = held.tasks().ledger().talk.look(now + long_ago, &gone);
+
+    assert_eq!(moved.len(), 1, "{moved:?}");
+    assert_eq!(asks_of(&held, task).len(), 1);
 }

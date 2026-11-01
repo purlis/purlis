@@ -1245,8 +1245,9 @@ fn answer_waited_for(
             what: Reply::AskerGone,
         }) => Ok(format!(
             "{SAYS} '{asker}', the chat that asked for this task, has closed, so the question \
-             has nobody to answer it. Finish what you can and send the task's report, saying \
-             what the question was."
+             went to the person. This chat is paused on it: do not guess, carry on with any \
+             other work you can, and end this turn. The answer is handed to a later turn as \
+             context, quoted as data."
         )),
         // The question is asked either way: an app that stopped answering leaves this chat
         // where a wait that ran out does.
