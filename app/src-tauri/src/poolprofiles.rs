@@ -553,7 +553,7 @@ fn keep_for_the_command(
         .map_err(|why| why.to_string())?
         .ok_or_else(|| {
             format!(
-                "pool {pool} does not name its profiles yet, so this line cannot add one: use Add \
+                "pool {pool} does not name its profiles, so this line cannot add one: use Add \
                  a profile… on its row in Settings › Pools"
             )
         })?;

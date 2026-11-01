@@ -1491,8 +1491,8 @@ enum ProfileCommand {
         #[arg(long)]
         provider: Option<String>,
         /// Sign it in on this pool's runner: it opens the sign-in page in your browser, reads
-        /// the code it shows, and exits non-zero if it did not sign in. A profile the runner does
-        /// not keep yet is put there by the running purlis window.
+        /// the code it shows, and exits non-zero if it did not sign in. The running purlis window
+        /// puts a profile there that the runner does not keep.
         #[arg(long, value_name = "POOL", conflicts_with = "check")]
         pool: Option<String>,
         /// Ends the sign-in when this command's input closes: how a desktop drives it on a
@@ -4571,7 +4571,7 @@ fn kept_first(
     standing: impl Fn() -> Result<Option<purlis_core::profilestore::sign_in::Standing>, String>,
 ) -> Result<purlis_core::profilestore::sign_in::Standing, String> {
     purlis_core::windowline::kept_first(pool, name, standing, |asked| {
-        eprintln!("it does not keep '{name}' yet: asking the purlis window to keep it there…");
+        eprintln!("it does not keep '{name}': asking the purlis window to keep it there…");
         purlis_core::windowline::ask(asked)
     })
 }
