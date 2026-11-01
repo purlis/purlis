@@ -15,7 +15,7 @@
  * - **A grade running** shows its chats done, what it has spent against its dollar limit and its
  *   tokens against its cap, with Stop fixed at the bottom. A grade's chats are drawn nowhere.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   commands,
@@ -792,9 +792,9 @@ export function RunningGradePage<Step extends RunningStepShown>({
   const [stopRefused, setStopRefused] = useState<string>();
   // The latest of each, used as an event lands: the listener is not attached anew with them, so
   // no step is lost while it would be.
-  const latest = useRef({ isOurs, read, opensItsScorecard, onEnded });
-  useEffect(() => {
-    latest.current = { isOurs, read, opensItsScorecard, onEnded };
+  const latest = useRef({ isOurs, read, onEnded });
+  useLayoutEffect(() => {
+    latest.current = { isOurs, read, onEnded };
   });
 
   // Listened to first, then the app's word on whether it runs and its latest step: an end told
@@ -838,11 +838,9 @@ export function RunningGradePage<Step extends RunningStepShown>({
   // The one place an end opens its scorecard, however it came to: told, read, or an end that stayed
   // on the page until what the scorecard needs held (its router chosen again). Once, for all three.
   const opens = step !== undefined && opensItsScorecard(step);
-  const opened = useRef(false);
-  useEffect(() => {
-    if (!opens || opened.current) return;
-    opened.current = true;
-    latest.current.onEnded();
+  // Before the browser paints, so a dead page with no notice never flashes before its scorecard.
+  useLayoutEffect(() => {
+    if (opens) latest.current.onEnded();
   }, [opens]);
 
   const graded = of(step);
@@ -872,7 +870,7 @@ export function RunningGradePage<Step extends RunningStepShown>({
       />
     );
   const over = step !== undefined && step.ended !== null;
-  const end = over && !opensItsScorecard(step) ? endWords(step) : undefined;
+  const end = over && !opens ? endWords(step) : undefined;
   return (
     <ReviewPage
       label={`Grading ${graded}`}

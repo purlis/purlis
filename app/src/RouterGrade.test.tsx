@@ -698,6 +698,23 @@ describe("A router's grade running, a page on Routing (#4222)", () => {
     await waitFor(() => expect(told.ended).toHaveBeenCalledTimes(1));
   });
 
+  it("says an end with words the read brings after an older step was told, with Stop done (#4338)", async () => {
+    let answer: (now: RouterGradeStep) => void = () => undefined;
+    const read = new Promise<RouterGradeStep>((resolve) => {
+      answer = resolve;
+    });
+    mockIPC((cmd) => (cmd === "router_grade_running" ? read : null), { shouldMockEvents: true });
+    const told = renderRunning();
+    await new Promise((settled) => setTimeout(settled, 0));
+    await emit("router-grade", step({ ran: 1 }));
+    answer(step({ ran: 2, ended: "whole", said: "The scorecard could not be saved." }));
+    expect(await screen.findByTestId("router-grade-ended")).toHaveTextContent(
+      "The scorecard could not be saved.",
+    );
+    expect(screen.getByRole("button", { name: "Stop" })).toBeDisabled();
+    expect(told.ended).not.toHaveBeenCalled();
+  });
+
   it("says a grade that ended while the page was away, and opens its scorecard", async () => {
     mockIPC((cmd) => (cmd === "router_grade_running" ? null : null), { shouldMockEvents: true });
     const told = renderRunning();
