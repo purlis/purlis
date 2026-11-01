@@ -104,10 +104,22 @@ fn a_kept_claim_is_noticed_then_deleted_and_never_sooner() {
     let mut told = status.conditions[0].clone();
     told.type_ = DELETION_NOTICE.into();
     told.status = "True".into();
+    told.message = format!(
+        "it is deleted, with its volume, at {}, unless",
+        start + hours(100)
+    );
     told.last_transition_time = Time(start + hours(90));
     status.conditions.push(told);
     assert!(matches!(at(&noticed, 99), Retention::Notice { .. }));
     assert!(matches!(at(&noticed, 100), Retention::Delete { .. }));
+    // A Pool whose times are shortened later does not bring forward the time it told.
+    let mut hurried = pool();
+    hurried.spec.delete_suspended_after = "2h".into();
+    hurried.spec.notice_before_delete = "1h".into();
+    assert!(matches!(
+        retention(&noticed, &hurried, Some(&sandbox), start + hours(99)),
+        Retention::Notice { .. }
+    ));
 }
 
 #[test]
