@@ -3,7 +3,8 @@
 
 //! `purlis skill grade --run` against `purlis serve`, with a test standing in for the window
 //! (SK-61, #3241): a no starts nothing, a yes starts the plan the window answered by its digest,
-//! and a plan other than the one printed is never asked about.
+//! and a plan other than the one printed is never asked about. An outcome eval runs only where
+//! named, on a yes typed at a real terminal (#4312).
 
 #![cfg(unix)]
 
@@ -15,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::time::Duration;
 
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use purlis_core::skills::grades;
 use purlis_core::skills::verbs::Level;
 use purlis_session_protocol::auth::{Credential, Scope};
@@ -73,6 +75,14 @@ fn a_place() -> Place {
         r#"[{"query": "ship it", "should_trigger": true}]"#,
     )
     .unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [
+            {"id": 1, "prompt": "ship v2", "expectations": ["It ships"]},
+            {"id": 2, "prompt": "ship v3", "expectations": ["It ships"]}
+        ]}"#,
+    )
+    .unwrap();
     let mut serve = support::purlis();
     serve
         .arg("serve")
@@ -124,8 +134,8 @@ async fn a_window(place: &Place) -> (Client, Events) {
     (client, events)
 }
 
-/// `purlis skill grade deploy --run` with `args`, answering its question with `stdin`.
-fn the_terminal(place: &Place, args: &[&str], stdin: &str) -> tokio::task::JoinHandle<String> {
+/// `purlis skill grade deploy --run` with `args`, as a person's terminal would start it.
+fn the_command(place: &Place, args: &[&str]) -> std::process::Command {
     let mut command = support::purlis();
     command
         .args(["skill", "grade", "deploy", "--run"])
@@ -141,11 +151,18 @@ fn the_terminal(place: &Place, args: &[&str], stdin: &str) -> tokio::task::JoinH
         .env_remove("CHARTER_CHAT")
         .env_remove("CHARTER_HOOK_SOCKET")
         .env_remove("CHARTER_SANDBOXED")
-        .env_remove("CHARTER_SESSION_ID")
+        .env_remove("CHARTER_SESSION_ID");
+    homes(&mut command, &place.at);
+    command
+}
+
+/// [`the_command`], piped, answering its question with `stdin`.
+fn the_terminal(place: &Place, args: &[&str], stdin: &str) -> tokio::task::JoinHandle<String> {
+    let mut command = the_command(place, args);
+    command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    homes(&mut command, &place.at);
     let stdin = stdin.to_owned();
     tokio::task::spawn_blocking(move || {
         let mut child = command.spawn().unwrap();
@@ -171,6 +188,50 @@ fn the_terminal(place: &Place, args: &[&str], stdin: &str) -> tokio::task::JoinH
             .unwrap();
         let code = child.wait().unwrap();
         format!("{said}{err}exit {}", code.code().unwrap_or(-1))
+    })
+}
+
+/// [`the_command`], on a real terminal a person types `typed` at.
+fn at_a_real_terminal(
+    place: &Place,
+    args: &[&str],
+    typed: &str,
+) -> tokio::task::JoinHandle<String> {
+    let command = the_command(place, args);
+    let mut starts = CommandBuilder::new(command.get_program());
+    starts.args(command.get_args());
+    starts.cwd(command.get_current_dir().unwrap());
+    for (name, value) in command.get_envs() {
+        match value {
+            Some(value) => starts.env(name, value),
+            None => starts.env_remove(name),
+        }
+    }
+    let pair = native_pty_system()
+        .openpty(PtySize {
+            rows: 50,
+            cols: 200,
+            ..PtySize::default()
+        })
+        .unwrap();
+    let mut child = pair.slave.spawn_command(starts).unwrap();
+    drop(pair.slave);
+    let master = pair.master;
+    let mut reader = master.try_clone_reader().unwrap();
+    let mut writer = master.take_writer().unwrap();
+    // It waits on the terminal's line until the program asks.
+    writer.write_all(typed.as_bytes()).unwrap();
+    tokio::task::spawn_blocking(move || {
+        let mut said = Vec::new();
+        // A terminal whose program ended is an end of file on macOS and an error on Linux.
+        let _ = reader.read_to_end(&mut said);
+        let code = child.wait().unwrap();
+        drop((writer, master));
+        format!(
+            "{}exit {}",
+            String::from_utf8_lossy(&said),
+            code.exit_code()
+        )
     })
 }
 
@@ -200,6 +261,17 @@ fn plan_of(place: &Place, graded: Option<String>) -> GradePlanTold {
         running: None,
         graded: graded.or(planned.consent),
         consent: Some("the-windows-digest".into()),
+    }
+}
+
+/// [`plan_of`] with the outcome evals `named` in it, as the window answers it.
+fn plan_naming(place: &Place, named: &[&str]) -> GradePlanTold {
+    let named: Vec<String> = named.iter().map(|id| (*id).to_owned()).collect();
+    let planned =
+        grades::planned_named(&place.root, &Level::project(), "deploy", None, &named).unwrap();
+    GradePlanTold {
+        chats: planned.plan.unwrap().chats,
+        ..plan_of(place, planned.consent)
     }
 }
 
@@ -304,4 +376,111 @@ async fn a_yes_starts_the_plan_by_its_digest_and_follows_it_to_its_end() {
     let said = terminal.await.unwrap();
     assert!(said.contains("3 of 6 chats, $0.10 so far"), "{said}");
     assert!(said.ends_with("exit 0"), "a whole grade succeeds: {said}");
+}
+
+#[tokio::test]
+async fn a_named_eval_is_in_the_plan_the_person_says_yes_to_and_in_the_start() {
+    let place = a_place();
+    let (window, mut told) = a_window(&place).await;
+    let terminal = at_a_real_terminal(&place, &["--eval", "1"], "y\n");
+    let (question, ask) = next_ask(&mut told, PATIENCE).await.expect("the plan's ask");
+    let GradeAsk::Plan { of } = ask else {
+        panic!("not a plan: {ask:?}");
+    };
+    assert_eq!(of.evals, ["1"]);
+    answers(
+        &window,
+        question,
+        GradeAnswer::Plan(Box::new(plan_naming(&place, &["1"]))),
+    )
+    .await;
+    let (question, ask) = next_ask(&mut told, PATIENCE).await.expect("the start");
+    let GradeAsk::Start { of, consent } = ask else {
+        panic!("not a start: {ask:?}");
+    };
+    assert_eq!(of.evals, ["1"], "the start is of what was named");
+    assert_eq!(consent, "the-windows-digest");
+    answers(
+        &window,
+        question,
+        GradeAnswer::Started { grade: "g".into() },
+    )
+    .await;
+    window
+        .call(Command::GradeStep {
+            question,
+            step: GradeStepTold {
+                grade: "g".into(),
+                ran: 18,
+                of: 18,
+                tokens: None,
+                cost_micro_usd: None,
+                asked: 0,
+                ended: Some(GradeEndTold::Whole),
+                said: None,
+            },
+        })
+        .await
+        .unwrap();
+    let said = terminal.await.unwrap();
+    assert!(said.contains("Outcome eval 1. ship v2  (on:"), "{said}");
+    assert!(said.contains("Outcome eval 2. ship v3  (off:"), "{said}");
+    assert!(said.contains("1 outcome eval"), "{said}");
+    assert!(said.ends_with("exit 0"), "a whole grade succeeds: {said}");
+}
+
+#[tokio::test]
+async fn with_no_eval_named_no_eval_runs() {
+    let place = a_place();
+    let (window, mut told) = a_window(&place).await;
+    let terminal = the_terminal(&place, &[], "y\n");
+    let (question, ask) = next_ask(&mut told, PATIENCE).await.expect("the plan's ask");
+    let GradeAsk::Plan { of } = ask else {
+        panic!("not a plan: {ask:?}");
+    };
+    assert!(of.evals.is_empty(), "{of:?}");
+    answers(
+        &window,
+        question,
+        GradeAnswer::Plan(Box::new(plan_of(&place, None))),
+    )
+    .await;
+    let (question, ask) = next_ask(&mut told, PATIENCE).await.expect("the start");
+    let GradeAsk::Start { of, .. } = ask else {
+        panic!("not a start: {ask:?}");
+    };
+    assert!(of.evals.is_empty(), "{of:?}");
+    answers(
+        &window,
+        question,
+        GradeAnswer::Refused {
+            why: "Enough seen.".into(),
+        },
+    )
+    .await;
+    let said = terminal.await.unwrap();
+    assert!(said.contains("Outcome eval 1. ship v2  (off:"), "{said}");
+    assert!(!said.contains("(on:"), "{said}");
+    assert!(
+        !said.contains("outcome eval"),
+        "only the offers say it: {said}"
+    );
+}
+
+#[tokio::test]
+async fn a_named_eval_takes_no_yes_from_a_pipe_or_from_its_flag_and_the_window_is_never_asked() {
+    let place = a_place();
+    let (_window, mut told) = a_window(&place).await;
+    let piped = the_terminal(&place, &["--eval", "1"], "y\n").await.unwrap();
+    assert!(piped.contains("typed at a terminal"), "{piped}");
+    assert!(piped.ends_with("exit 1"), "{piped}");
+    let skipped = at_a_real_terminal(&place, &["--eval", "1", "--yes"], "")
+        .await
+        .unwrap();
+    assert!(skipped.contains("typed at a terminal"), "{skipped}");
+    assert!(
+        next_ask(&mut told, Duration::from_millis(500))
+            .await
+            .is_none()
+    );
 }

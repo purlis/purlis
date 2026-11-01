@@ -939,23 +939,43 @@ impl From<&SkillGradeStep> for session::GradeStepTold {
 /// The plan a terminal is told, as a press would start it: the words of [`SkillGradePlan::of`].
 fn plan_told(planned: &Planned, on: &On, running: Option<String>) -> session::GradePlanTold {
     let terms = terms_of(planned, on);
+    let evals = evals_can_run(planned, on.evals_refused.as_ref());
     session::GradePlanTold {
         profile: on.profile.clone(),
         model: terms.model.map(str::to_owned),
         sandbox: on.checked.as_ref().ok().cloned(),
-        refused: on.checked.as_ref().err().cloned(),
+        refused: on
+            .checked
+            .as_ref()
+            .err()
+            .cloned()
+            .or_else(|| evals.as_ref().err().cloned()),
         chats: planned.plan.map(|plan| plan.chats).unwrap_or_default(),
         token_cap: terms.token_cap,
         limit_micro_usd: micro_usd(terms.limit_usd),
         running,
         graded: planned.consent.clone(),
-        consent: consent_shown(planned, on),
+        consent: consent_shown(planned, on).filter(|_| evals.is_ok()),
     }
+}
+
+/// **Whether a terminal's start of `planned` holds**: the checks a press takes, the Grader's
+/// aside. A terminal's grade is purlis's own runner, as its plan names no Grader and `GradeOf`
+/// has no word for one, so a Grader cannot stand beside the evals it named.
+fn a_terminals_start_holds(
+    planned: &Planned,
+    on: &On,
+    consent: &str,
+    skill: &str,
+) -> Result<(), String> {
+    evals_can_run(planned, on.evals_refused.as_ref())?;
+    plan_holds(planned, on, None, consent, skill, "nothing was started")
 }
 
 /// **The window's answer to a grade a person asked for at a terminal** (SK-61, #3241): `project`'s
 /// plan, or its start through the one check a press of Grade takes ([`plan_holds`]), on the plan's
-/// cap and limit. `follower` hears each step. Named outcome evals are refused until #3235 runs them.
+/// cap and limit. `follower` hears each step. The outcome evals it named are the ones ticked, and
+/// one that would not run refuses the plan and the start (#4312).
 pub(crate) fn asked_at_a_terminal(
     project: &str,
     path: &str,
@@ -988,33 +1008,26 @@ fn answering_a_terminal(
     let of = match &ask {
         session::GradeAsk::Plan { of } | session::GradeAsk::Start { of, .. } => of.clone(),
     };
-    if !of.evals.is_empty() {
-        return Err(
-            "Outcome evals do not run from a terminal yet (#3235), so nothing was started.".into(),
-        );
-    }
     let level: SkillLevel = level_named(of.level);
     let level: Level = (&level).into();
     let on = chats_on(held.root(), of.profile.clone(), of.model.clone());
     match ask {
         session::GradeAsk::Plan { .. } => {
-            let planned = grades::planned(held.root(), &level, &of.skill, on.profile.as_deref())?;
+            let planned = grades::planned_named(
+                held.root(),
+                &level,
+                &of.skill,
+                on.profile.as_deref(),
+                &of.evals,
+            )?;
             let running = running_of(&plane, &of.skill);
             Ok(session::GradeAnswer::Plan(Box::new(plan_told(
                 &planned, &on, running,
             ))))
         }
         session::GradeAsk::Start { consent, .. } => {
-            let planned = grades::planned(held.root(), &level, &of.skill, None)?;
-            // A terminal's grade is purlis's own runner: its plan names no Grader.
-            plan_holds(
-                &planned,
-                &on,
-                None,
-                &consent,
-                &of.skill,
-                "nothing was started",
-            )?;
+            let planned = grades::planned_named(held.root(), &level, &of.skill, None, &of.evals)?;
+            a_terminals_start_holds(&planned, &on, &consent, &of.skill)?;
             let grade = begin(
                 app.clone(),
                 held,
