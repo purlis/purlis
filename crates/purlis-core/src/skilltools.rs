@@ -93,7 +93,8 @@ pub static TOOLS: [Tool; 4] = [
         name: SKILL_LOAD,
         description: "Load one of this chat's skills by its name: its instructions, and the \
                       paths of the other files in its folder, which it may tell you to read or \
-                      run. Follow it before acting on the request it matches.",
+                      run. Follow it before acting on the request it matches. A manual-only \
+                      skill is not loaded: it says to ask the person to run it.",
         schema: || {
             one_string(
                 "name",

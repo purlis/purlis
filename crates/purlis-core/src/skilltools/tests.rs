@@ -199,6 +199,32 @@ fn a_manual_only_skill_is_not_loaded_opens_no_run_and_says_to_ask_the_person_to_
 }
 
 #[test]
+fn manual_only_is_read_as_yaml_as_every_harness_is_told_it() {
+    let p = a_plane();
+    let skills = p.path().join("skills");
+    skill(
+        &skills,
+        "commented",
+        "Ship the service.",
+        "disable-model-invocation: true # the person's\n",
+    );
+    skill(
+        &skills,
+        "nested",
+        "Ship the service.",
+        "metadata:\n  disable-model-invocation: true\n",
+    );
+    let load = |name: &str| called(&chat(p.path(), None), SKILL_LOAD, &[("name", name)]);
+
+    let (said, started) = load("commented");
+    assert!(said.unwrap().contains("manual-only"));
+    assert!(started.is_empty());
+    let (said, started) = load("nested");
+    assert!(said.unwrap().starts_with("Loaded the skill `nested`"));
+    assert_eq!(started, ["nested"]);
+}
+
+#[test]
 fn a_skill_that_says_disable_model_invocation_false_still_loads() {
     let p = a_plane();
     skill(

@@ -8,4 +8,6 @@ Use skill… does not rely on this path for such a skill: no router hides a manu
 
 ## Not fixed
 
-A harness on the `Mcp` route has no start of its own, so a person there has no way yet to run a manual-only skill.
+A chat with no start of its own, on the `Mcp` route or a terminal's own Claude Code, which was handed none of the plane's skills, leaves a person no way yet to run a manual-only skill. The answer still tells the chat to ask them, as the tool cannot tell a model's own pick from a person's request.
+
+`skill_list` and `skill_find` still list a manual-only skill with its description.
