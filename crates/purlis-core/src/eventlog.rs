@@ -44,6 +44,7 @@ use crate::state::run::{Cause, RunState};
 
 pub mod browsing;
 mod entry;
+pub mod questions;
 pub use entry::Entry;
 
 /// One event, in ADR 0066's envelope.

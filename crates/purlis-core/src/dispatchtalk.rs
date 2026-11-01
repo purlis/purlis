@@ -42,6 +42,9 @@
 //! nested task's question goes one level up, and passed on it goes straight to the person as
 //! one item, labelled with its chain. It is closed everywhere when its task ends.
 //!
+//! **Each step leaves a trail** ([`Talk::take_trail`]): metadata alone, never the question's
+//! words (ADR 0075, [`crate::eventlog::questions`]), and a failure is said once.
+//!
 //! The asking chat answers it or **passes it on** ([`Talk::pass_on`]): the question reaches the
 //! person in the task's own words, with at most a short note marked as the asking chat's. What
 //! must always be passed on is a written rule in the briefing and in the question as it is
@@ -92,6 +95,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::dispatchdecision::Mode;
+use crate::eventlog::questions::{By, Failure, Step};
 use crate::reopen::{HandedFrom, Owed};
 
 /// What kind of message it is.
@@ -253,6 +257,10 @@ pub struct Talk {
     questions_unread: bool,
     /// The questions closed unanswered and not said yet ([`Talk::take_closed_unanswered`]).
     closed_unanswered: Vec<ClosedUnanswered>,
+    /// By task, each step of a question not yet written ([`Talk::take_trail`]).
+    trail: Vec<(u32, Step)>,
+    /// What has failed for each task, each said once ([`Talk::failed`]).
+    failures: HashSet<(u32, Failure)>,
     /// What became of each chat's messages, and its instruction numbers (#3902, #3904): kept
     /// on disk where [`Talk::keep_at`] says, so a restart of the app forgets neither.
     messages: Sent,
@@ -548,6 +556,16 @@ struct Question {
 }
 
 impl Question {
+    /// How long it has waited at `now`: on the person where it reached them, else since it was
+    /// asked.
+    fn waited(&self, now: u64) -> u64 {
+        let since = match self.standing {
+            Standing::WithAskingChat => self.asked_at,
+            Standing::ReachedPerson { at, .. } => at,
+        };
+        now.saturating_sub(since)
+    }
+
     /// Unanswered, and still its asking chat's to answer or pass on.
     fn waits_on_its_asking_chat(&self) -> bool {
         self.answer.is_none() && self.standing == Standing::WithAskingChat
@@ -977,6 +995,12 @@ impl Talk {
             return false;
         }
         question.standing = Standing::ReachedPerson { why, at: now, note };
+        let step = Step::Reached {
+            number: question.number,
+            why,
+            waited_secs: now.saturating_sub(question.asked_at),
+        };
+        self.trail.push((task, step));
         self.save();
         true
     }
@@ -1006,20 +1030,47 @@ impl Talk {
             } => return Err(passed_on_already(name, task)),
             Standing::ReachedPerson { at, .. } => at,
         };
+        let newly = question.standing == Standing::WithAskingChat;
+        let noted = note.is_some();
         question.standing = Standing::ReachedPerson {
             why: Reached::PassedOn,
             at,
             note,
         };
+        self.trail.push((task, Step::PassedOn { number, noted }));
+        if newly {
+            let waited_secs = now.saturating_sub(question.asked_at);
+            let step = Step::Reached {
+                number,
+                why: Reached::PassedOn,
+                waited_secs,
+            };
+            self.trail.push((task, step));
+        }
         self.save();
         Ok(number)
+    }
+
+    /// **Each step of a question since this was last asked**, by task, oldest first: what the
+    /// app writes to the event log, metadata alone (#4557, [`crate::eventlog::questions`]).
+    pub fn take_trail(&mut self) -> Vec<(u32, Step)> {
+        std::mem::take(&mut self.trail)
+    }
+
+    /// **`what` failed for `task`'s question** (#4557). **Said once**: the first time goes on the
+    /// trail, which is what makes its Update and log line, and the same failure again says
+    /// nothing while the task lives.
+    pub fn failed(&mut self, task: u32, what: Failure) {
+        if self.failures.insert((task, what)) {
+            self.trail.push((task, Step::Failed { what }));
+        }
     }
 
     /// **The messages named `names` were handed to a turn at `now`** (#4556): a question among
     /// them has been seen by its asking chat, and its time starts. Its file is gone.
     pub fn handed(&mut self, names: &[String], now: u64) {
         let mut any = false;
-        for question in self.questions.values_mut() {
+        for (task, question) in &mut self.questions {
             let named = question
                 .file
                 .as_deref()
@@ -1028,7 +1079,11 @@ impl Talk {
                 .is_some_and(|name| names.iter().any(|one| one == name));
             if named {
                 question.file = None;
-                question.handed_at.get_or_insert(now);
+                if question.handed_at.is_none() {
+                    question.handed_at = Some(now);
+                    let number = question.number;
+                    self.trail.push((*task, Step::Shown { number }));
+                }
                 any = true;
             }
         }
@@ -1078,6 +1133,12 @@ impl Talk {
                 at: now,
                 note: None,
             };
+            let step = Step::Reached {
+                number: question.number,
+                why,
+                waited_secs: now.saturating_sub(question.asked_at),
+            };
+            self.trail.push((*task, step));
             moved.push((*task, why));
         }
         if !moved.is_empty() {
@@ -1101,6 +1162,11 @@ impl Talk {
                 task,
                 number: question.number,
             });
+            let step = Step::Closed {
+                number: question.number,
+                by: By::Nobody,
+            };
+            self.trail.push((task, step));
         }
     }
 
@@ -1207,6 +1273,7 @@ impl Talk {
         if !self.restored.insert(task) {
             return;
         }
+        self.failed(task, Failure::NotReadBack);
         self.network = self.network.wrapping_add(1) % NETWORK_NUMBERS;
         let number = NETWORK_NUMBERS + self.network;
         self.person
@@ -1245,6 +1312,7 @@ impl Talk {
         // does the restart before it.
         self.closed.remove(&task);
         self.restored.remove(&task);
+        self.trail.push((task, Step::Asked { number }));
         self.save();
         Ok(number)
     }
@@ -1274,9 +1342,11 @@ impl Talk {
             .filter(|question| question.answer.is_none() && !question.shown)?;
         question.shown = true;
         // A wait of the asking chat's has it: that turn has seen it (#4556).
-        question
-            .handed_at
-            .get_or_insert(secs(std::time::SystemTime::now()));
+        if question.handed_at.is_none() {
+            question.handed_at = Some(secs(std::time::SystemTime::now()));
+            let number = question.number;
+            self.trail.push((task, Step::Shown { number }));
+        }
         let text = question.text.clone();
         self.save();
         Some(text)
@@ -1343,7 +1413,22 @@ impl Talk {
                 Closed::ByChat(given.from.clone())
             },
         );
+        let by = if given.by_person {
+            By::Person
+        } else {
+            By::AskingChat
+        };
         question.answer = Some(given);
+        let waited_secs = question.waited(secs(std::time::SystemTime::now()));
+        self.trail.push((
+            task,
+            Step::Answered {
+                number,
+                by,
+                waited_secs,
+            },
+        ));
+        self.trail.push((task, Step::Closed { number, by }));
         self.save();
         Ok(number)
     }
@@ -1407,6 +1492,22 @@ impl Talk {
         });
         let unread = question.file.take();
         let asked = question.text.clone();
+        let waited_secs = question.waited(secs(std::time::SystemTime::now()));
+        self.trail.push((
+            task,
+            Step::Answered {
+                number,
+                by: By::Person,
+                waited_secs,
+            },
+        ));
+        self.trail.push((
+            task,
+            Step::Closed {
+                number,
+                by: By::Person,
+            },
+        ));
         self.closed.insert(task, Closed::ByPerson);
         self.person
             .entry(task)
@@ -1679,6 +1780,7 @@ impl Talk {
         self.person.remove(&chat);
         self.closed_unread.remove(&chat);
         self.restored.remove(&chat);
+        self.failures.retain(|(task, _)| *task != chat);
         self.sent
             .retain(|(asker, task), _| *asker != chat && *task != chat);
         self.save();
@@ -2370,3 +2472,5 @@ mod reach_tests;
 mod restart_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod trail_tests;

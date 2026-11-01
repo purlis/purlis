@@ -2924,6 +2924,29 @@ impl Hooks {
             .map_err(|why| why.to_string())
     }
 
+    /// **Writes a step of a question of task `number`'s** (#4557): metadata alone. Refused where
+    /// this machine has no event log open, or the log refused it.
+    pub fn record_question(
+        &self,
+        root: &Path,
+        number: u32,
+        step: purlis_core::eventlog::questions::Step,
+    ) -> Result<(), String> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| "purlis's event log is not open on this machine".to_owned())?;
+        events
+            .record(Entry::Question {
+                plane: root.to_path_buf(),
+                number,
+                step,
+            })
+            .map_err(|why| why.to_string())
+    }
+
     /// **Use skill… typed a skill into chat `number`**, unsent (SK-12): `typed` is held for its
     /// run, which opens once a prompt shows it was sent, in the event log and on the chat's tab
     /// alike, started by Use skill…. Best effort: a log that is not open, or refused the line,

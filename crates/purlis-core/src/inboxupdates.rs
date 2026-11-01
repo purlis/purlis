@@ -83,6 +83,8 @@ pub enum Kind {
     BrowserAskEnded,
     /// A task ended with its question unanswered (#4556).
     QuestionClosed,
+    /// A task's question could not be taken its route (#4557).
+    QuestionFailed,
 }
 
 /// One update, as it is kept.

@@ -114,7 +114,9 @@ pub fn asked_text(payload: &Value) -> Option<String> {
 
 /// One question of the tool's and the answers it offers.
 fn one_said(question: &Value) -> Option<String> {
-    let asked = question["question"].as_str().filter(|one| !one.is_empty())?;
+    let asked = question["question"]
+        .as_str()
+        .filter(|one| !one.is_empty())?;
     let mut said = asked.to_owned();
     for option in question["options"].as_array().into_iter().flatten() {
         let Some(label) = option["label"].as_str() else {

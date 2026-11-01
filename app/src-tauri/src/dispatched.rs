@@ -520,6 +520,7 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
             ledger(held)
                 .talk
                 .handed(&taken, now_secs(SystemTime::now()));
+            written_trail(held);
             task(Answered::TookMessages { taken })
         }
     }
@@ -1520,6 +1521,7 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
             ledger.noted(sender, &text, SystemTime::now());
         }
     }
+    written_trail(held);
     // Kept, so it counts on this task's dispatch record (#1452): a note as a question does.
     crate::dispatches::message(held, sender, &message);
     // When it last sent a note, for its liveness (#3900).
@@ -1609,6 +1611,7 @@ fn answer_it(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, Str
         ledger.landed(to, Landed::Answer);
         number
     };
+    written_trail(held);
     crate::dispatches::answered(held, to, &message, number);
     // Answered: its row stops saying it is asking (#1484).
     held.rows_changed();
@@ -1650,7 +1653,15 @@ fn route(held: &Held, chat: u32, text: &str) -> Answer {
             why: dispatchtalk::ALREADY_ASKING.to_owned(),
         });
     }
-    send_up(held, chat, Kind::Question, text).unwrap_or_else(no)
+    send_up(held, chat, Kind::Question, text).unwrap_or_else(|why| {
+        // The harness's prompt asks in the pane and the Inbox: said once (#4557).
+        ledger(held).talk.failed(
+            chat,
+            purlis_core::eventlog::questions::Failure::NotRedirected,
+        );
+        written_trail(held);
+        no(why)
+    })
 }
 
 /// **Chat `asker` passes the question task `to` asked it on to the person** (#4554, ADR 0107).
@@ -1670,6 +1681,7 @@ fn pass_on(held: &Held, asker: u32, to: u32, note: Option<&str>) -> Result<Answe
             .talk
             .pass_on(to, asker, &name, note, now_secs(SystemTime::now()))?;
     }
+    written_trail(held);
     held.rows_changed();
     held.tasks().changed();
     held.chats().asks_may_have_moved();
@@ -1800,11 +1812,15 @@ pub fn look_at_questions(held: &Held) {
     let now = now_secs(SystemTime::now());
     let (moved, closed) = {
         let mut ledger = ledger(held);
-        (ledger.talk.look(now, &gone), ledger.talk.take_closed_unanswered())
+        (
+            ledger.talk.look(now, &gone),
+            ledger.talk.take_closed_unanswered(),
+        )
     };
     for one in &closed {
-        question_closed(held, *one, now);
+        question_closed(held, *one);
     }
+    written_trail(held);
     if !moved.is_empty() || !closed.is_empty() {
         held.rows_changed();
         held.tasks().changed();
@@ -1812,21 +1828,70 @@ pub fn look_at_questions(held: &Held) {
     }
 }
 
+/// **Writes each step of a question since the last write** (#4557), metadata alone, with one
+/// Update and one log line for a failure. Best effort, as a browser's events are: a log that is
+/// not open costs the record and nothing of the question. No ledger may be held here.
+fn written_trail(held: &Held) {
+    use purlis_core::eventlog::questions::{Failure, Step};
+    let trail = ledger(held).talk.take_trail();
+    for (task, step) in trail {
+        if let Err(why) = held.hooks().record_question(held.root(), task, step) {
+            tracing::debug!("purlis: a step of a question was not recorded ({why})");
+        }
+        let Step::Failed { what } = step else {
+            continue;
+        };
+        let name = held
+            .chats()
+            .shown_name(task)
+            .unwrap_or_else(|| "A task".to_owned());
+        let says = match what {
+            Failure::NotReadBack => format!(
+                "'{name}' asked a question before purlis restarted that could not be read back, \
+                 so it was told to ask again."
+            ),
+            Failure::NotRedirected => format!(
+                "'{name}' asked a question that could not go to its asking chat, so it stays in \
+                 its pane and the Inbox."
+            ),
+        };
+        tracing::warn!("purlis: {says}");
+        noted(
+            held,
+            format!("question-failed:{task}:{what:?}"),
+            purlis_core::inboxupdates::Kind::QuestionFailed,
+            task,
+            says,
+        );
+    }
+}
+
 /// The one Update and log line for a question closed unanswered, because its task ended.
-fn question_closed(held: &Held, closed: dispatchtalk::ClosedUnanswered, now: u64) {
-    use purlis_core::inboxupdates::{Kind, Store, Update};
-    let name = held.chats().shown_name(closed.task);
-    let says = name.as_deref().map_or_else(
+fn question_closed(held: &Held, closed: dispatchtalk::ClosedUnanswered) {
+    let says = held.chats().shown_name(closed.task).map_or_else(
         || "A task ended before its question was answered.".to_owned(),
         |name| format!("'{name}' ended before its question was answered."),
     );
     tracing::info!("purlis: {says}");
+    noted(
+        held,
+        format!("task-question:{}:{}", closed.task, closed.number),
+        purlis_core::inboxupdates::Kind::QuestionClosed,
+        closed.task,
+        says,
+    );
+}
+
+/// Keeps one Update about task `task`. A key kept already is left as it is, so it is said once.
+fn noted(held: &Held, key: String, kind: purlis_core::inboxupdates::Kind, task: u32, says: String) {
+    use purlis_core::inboxupdates::{Store, Update};
+    let now = now_secs(SystemTime::now());
     let update = Update {
-        key: format!("task-question:{}:{}", closed.task, closed.number),
-        kind: Kind::QuestionClosed,
+        key,
+        kind,
         at: now,
-        session: Some(closed.task),
-        chain: name.into_iter().collect(),
+        session: Some(task),
+        chain: held.chats().shown_name(task).into_iter().collect(),
         says,
         read: false,
         dismissed: false,
@@ -1834,7 +1899,7 @@ fn question_closed(held: &Held, closed: dispatchtalk::ClosedUnanswered, now: u64
     if let Some(store) = Store::here()
         && let Err(why) = store.note(held.root(), vec![update], now)
     {
-        tracing::warn!("purlis: a closed question's Update was not kept ({why})");
+        tracing::warn!("purlis: a question's Update was not kept ({why})");
     }
 }
 
@@ -1905,6 +1970,7 @@ pub fn person_answers(
     if let Some(file) = unread {
         purlis_core::handback::took(held.root(), &file);
     }
+    written_trail(held);
     // One more message on the task's dispatch record, kept as the person's (#1495).
     crate::dispatches::person_answered(held, task, &text, number);
     held.tasks().changed();

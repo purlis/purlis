@@ -38,7 +38,10 @@ fn the_clock_starts_when_a_turn_is_handed_the_question() {
     talk.handed(&["q.json".to_owned()], NOW);
 
     assert_eq!(talk.handed_at(TASK), Some(NOW));
-    assert_eq!(talk.look(NOW + A_QUESTION_WAITS_SECS - 1, &nobody()), vec![]);
+    assert_eq!(
+        talk.look(NOW + A_QUESTION_WAITS_SECS - 1, &nobody()),
+        vec![]
+    );
     assert_eq!(
         talk.look(NOW + A_QUESTION_WAITS_SECS, &nobody()),
         vec![(TASK, Reached::NoReply)]
@@ -109,7 +112,8 @@ fn a_nested_question_goes_to_the_chat_above_it_and_passed_on_it_is_one_item() {
     talk.ask(NESTED, "Which port?", None).expect("asked");
     assert_eq!(talk.asked_of(NESTED), Some(TASK), "one level up");
 
-    talk.pass_on(NESTED, TASK, "nested", None, NOW).expect("passed");
+    talk.pass_on(NESTED, TASK, "nested", None, NOW)
+        .expect("passed");
 
     let reached = talk.reached();
     assert_eq!(reached.len(), 1, "{reached:?}");

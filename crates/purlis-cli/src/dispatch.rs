@@ -1148,9 +1148,7 @@ fn routed_on(on: &mut (purlis_core::hookwire::Asking, u32), text: &str) -> Route
         text: text.to_owned(),
     };
     match answered(asking, *chat, what, crate::handoff::A_TICKET_TAKES_AT_MOST) {
-        Ok(Answered::Sent { to, .. }) => {
-            Routed::AskingChat(purlis_core::personas::one_line(&to))
-        }
+        Ok(Answered::Sent { to, .. }) => Routed::AskingChat(purlis_core::personas::one_line(&to)),
         Ok(Answered::AlreadyAsking { why }) => Routed::AlreadyAsking(why),
         Ok(_) | Err(_) => Routed::ThePerson,
     }

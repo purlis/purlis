@@ -12740,7 +12740,9 @@ export type UpdateKind =
 /**  A chat asked the person to take its browser over, and the browser ended first (#2015). */
 "browser-ask-ended" | 
 /**  A task ended with its question unanswered (#4556). */
-"question-closed";
+"question-closed" | 
+/**  A task's question could not be taken its route (#4557). */
+"question-failed";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {
