@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793510217487,
+  "lastUpdate": 1793511739907,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34692,6 +34692,48 @@ window.BENCHMARK_DATA = {
             "value": 101.35048950000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.498, 100.870, 101.350, 101.420, 101.512 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4ad81f8755835fa914d3ed64498b3da005520166",
+          "message": "Theme roles: a hot-count colour with its own contrast floor (#4361)\n\n* Theme roles: a hot-count colour with its own contrast floor (#3098)\n\nneeds-you.count and needs-you.count-text draw the Needs-you count on the activity bars. They follow needs-you.base and needs-you.text for a theme that leaves them out. The words are held to 4.5:1 on the fill, the fill to 3:1 on each bar ground and 0.1 OKLab from the plain count, and a plain count rule that comes near the hot fill draws its default.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X689001F6F4CGVFK50B73\nPurlis-Persona: steward\n\n* Hot count: print its import recipe, and test the plain-count floor alone (#3098)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X689001F6F4CGVFK50B73\nPurlis-Persona: steward\n\n* Hot count: story themes in the order the core writes them (#3098)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X689001F6F4CGVFK50B73\nPurlis-Persona: steward\n\n* Hot count: failing tests for the review findings (#3098)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A3QCWKRKJGG7KBXVSEA3SR\nPurlis-Persona: steward\n\n* Hot count: follow the person's colours, measure as drawn, fall with the mark (#3098)\n\nF1: the person's layer follows KIN, and a colour left out takes what follows it.\nF2: the apart floor lays the pill and the count on each bar ground first.\nF3: a count drawn as its mark falls with it either way round, and is raised with it.\nF4: import no longer lists a token it never writes.\nF7: restore the closing parenthesis in the floors' docs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A3QCWKRKJGG7KBXVSEA3SR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T04:54:51Z",
+          "tree_id": "8d5e0b733c532114535b406fa93faefcb4006ee1",
+          "url": "https://github.com/purlis/purlis/commit/4ad81f8755835fa914d3ed64498b3da005520166"
+        },
+        "date": 1793511732800,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6714765,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.670, 0.671, 0.671, 0.673, 0.680 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.41977,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.374, 16.385, 16.420, 16.497, 16.601 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9133275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.291, 101.899, 101.913, 102.063, 102.270 ms"
           }
         ]
       }
