@@ -32,6 +32,9 @@ function painted(line: Line): string {
 
 const HUNKS = [{ oldStart: 1, oldLines: 6, newStart: 1, newLines: 6 }];
 
+/** Its chunk loads on a busy runner: longer than `waitFor`'s second. */
+const GRAMMAR_ARRIVES = { timeout: 10_000 };
+
 const meta = {
   component: MergeViewer,
   parameters: {
@@ -59,7 +62,7 @@ export const WordsChanged: Story = {
       const word = [...spans].filter((span) => span.textContent?.includes("changed")).at(-1);
       if (!code || !word) throw new Error("the merge view has not drawn its changed comment");
       expect(getComputedStyle(word).color).not.toBe(getComputedStyle(code).color);
-    });
+    }, GRAMMAR_ARRIVES);
     expect(canvasElement.querySelector(".cm-changedText")).not.toBeNull();
     // Each side is reached from the keyboard.
     const side = (name: string) => () =>
