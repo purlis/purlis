@@ -328,6 +328,43 @@ pub async fn set_cluster_pool_owned(
     .await
 }
 
+/// The event a pool's beginning to mint without asking raises its Notice on (#4442).
+pub const POOL_MINTS_WITHOUT_ASKING: &str = "pool-mints-without-asking";
+
+/// [`pools_minting_without_asking`], on `config`.
+fn minting_without_asking(config: &Path) -> Result<Vec<String>, String> {
+    Ok(purlis_core::runners::cluster_pools(config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .filter(|pool| pool.mint_notice_due())
+        .map(|pool| pool.name().to_owned())
+        .collect())
+}
+
+/// **The cluster pools whose Pool began minting without asking, for the person to be told** (#4442,
+/// the person's ruling of 2026-11-01): one Notice for each change. It holds and refuses nothing, as
+/// the admin's opt-in stands. The window's alone (`ui::WINDOW_ONLY`).
+#[tauri::command]
+#[specta::specta]
+pub async fn pools_minting_without_asking() -> Result<Vec<String>, String> {
+    crate::off_the_window("reading the pools that mint without asking", move || {
+        minting_without_asking(&config_root()?)
+    })
+    .await
+}
+
+/// **The person put away the Notice of [`pools_minting_without_asking`] for pool `name`** (#4442).
+/// The window's alone (`ui::WINDOW_ONLY`): a chat that could press it could hide the Notice.
+#[tauri::command]
+#[specta::specta]
+pub async fn put_away_pool_minting_notice(name: String) -> Result<(), String> {
+    crate::off_the_window("putting away a pool's notice", move || {
+        purlis_core::runners::put_away_mint_notice(&config_root()?, &name)
+            .map_err(|why| why.to_string())
+    })
+    .await
+}
+
 /// **Removes the cluster pool `name`** on `config` (#3292): this machine out of its runner's
 /// peers over a link of its own while it answers, then its claim deleted, and with it its runner.
 ///

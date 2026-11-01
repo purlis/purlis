@@ -839,6 +839,10 @@ spec:
 - **The desktop reads `mintInCluster` from the Pool** as the pool is added and again at each link
   to its runner, and records it ([`runners.json`](plane-format.md)); the person does not choose it.
   The operator goes by the Pool as it is now.
+- **A pool that turns it on is said once in the window.** When a link finds a Pool went from off to
+  on, each desktop using it shows one Notice saying the pool's chats no longer ask before each token,
+  and that the cluster's admin controls that. It holds nothing back, and a Pool that was already on
+  when the pool was added says what adding it says and no more. Turned off and on again, it says so again.
 
 ### How a runner gets a token
 

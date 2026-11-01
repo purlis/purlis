@@ -1220,15 +1220,80 @@ mod cluster {
         )
         .unwrap();
         let before = file(config.path());
-        runners::keep_cluster_minting(config.path(), "team", true).unwrap();
+        assert!(runners::keep_cluster_minting(config.path(), "team", true).unwrap());
         let mut after = file(config.path());
         assert_eq!(after["pools"][0]["mintInCluster"], true);
-        after["pools"][0]
-            .as_object_mut()
-            .unwrap()
-            .remove("mintInCluster");
+        assert_eq!(after["pools"][0]["mintNoticeDue"], true);
+        let row = after["pools"][0].as_object_mut().unwrap();
+        row.remove("mintInCluster");
+        row.remove("mintNoticeDue");
         assert_eq!(after, before);
-        runners::keep_cluster_minting(config.path(), "no-such-pool", true).unwrap();
+        assert!(!runners::keep_cluster_minting(config.path(), "no-such-pool", true).unwrap());
+    }
+
+    /// The Notice of #4442: one for each change from asking to not asking, nothing for a change
+    /// the other way or for reading the same again, and it lasts until it is put away.
+    #[test]
+    fn a_pool_that_begins_minting_has_one_notice_for_that_change() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let claim = claim_name(OURS, "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let due = || runners::cluster_pools(config.path()).unwrap()[0].mint_notice_due();
+        let keep =
+            |opted_in| runners::keep_cluster_minting(config.path(), "team", opted_in).unwrap();
+        assert!(!due(), "added as it asks, nothing is due");
+        assert!(!keep(false), "still asking");
+        assert!(keep(true), "the change is told");
+        assert!(due());
+        assert!(!keep(true), "read again, it is told no more");
+        assert!(due(), "and stays due until it is put away");
+        runners::put_away_mint_notice(config.path(), "team").unwrap();
+        assert!(!due());
+        assert!(
+            !keep(true),
+            "put away, the same state does not bring it back"
+        );
+        assert!(!due());
+        assert!(!keep(false), "back to asking raises nothing");
+        assert!(keep(true), "and the next change is told again");
+        assert!(due());
+        assert!(!keep(false));
+        assert!(!due(), "back to asking, what was due is not true now");
+        runners::put_away_mint_notice(config.path(), "no-such-pool").unwrap();
+    }
+
+    /// A Pool that already mints when first seen follows what adding a pool says (#4442).
+    #[test]
+    fn a_pool_that_mints_as_it_is_added_has_no_notice() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let claim = claim_name(OURS, "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        cluster.pool_says_forge(serde_json::json!({
+            "appKeySecretRef": {"name": "org-app"}, "repos": ["acme/*"], "mintInCluster": true,
+        }));
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(file(config.path())["pools"][0]["mintInCluster"], true);
+        assert!(!runners::keep_cluster_minting(config.path(), "team", true).unwrap());
+        assert!(
+            file(config.path())["pools"][0]
+                .get("mintNoticeDue")
+                .is_none()
+        );
     }
 
     /// A chat's start waits for its repos, and past its time goes on, the work finishing by itself

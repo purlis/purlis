@@ -1595,6 +1595,10 @@ pub struct ClusterPool {
     /// the Pool's spec said when it was added: the admin's word, never the person's or a chat's.
     /// The operator holds the Pool itself and refuses by it, so this says only how to ask.
     mint_in_cluster: bool,
+    /// **The Pool went from asking before each token to minting without asking, and the person has
+    /// not put that Notice away** (`mintNoticeDue`, #4442): set only where a recorded `false` turns
+    /// `true` ([`keep_cluster_minting`]), so a pool that minted when it was added never has it.
+    mint_notice_due: bool,
     /// The profiles chosen for it (`profiles`, #3819), in order, as a Docker pool's are;
     /// `None` where none were.
     profiles: Option<Vec<String>>,
@@ -1694,6 +1698,7 @@ impl ClusterPool {
             holds: Vec::new(),
             owned: false,
             mint_in_cluster: false,
+            mint_notice_due: false,
             profiles: None,
             chosen: Box::default(),
         })
@@ -1710,6 +1715,11 @@ impl ClusterPool {
     /// Whether the cluster's Pool opted it in to minting there as it was added (#4204).
     pub fn mints_in_cluster(&self) -> bool {
         self.mint_in_cluster
+    }
+
+    /// Whether the person is still to be told it began minting without asking (#4442).
+    pub fn mint_notice_due(&self) -> bool {
+        self.mint_notice_due
     }
 
     /// This pool, holding `holds`, the programs its kubectl runs as named, every link on the way
@@ -2121,23 +2131,49 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
 /// **Keeps whether the cluster pool `name`'s Pool opts in to minting now** (#4330): a Pool may opt in
 /// after it was added. Read only to say whether a chat's repos are sent to the Claim, so it decides
 /// nothing the cluster's own policy and operator do not.
-pub fn keep_cluster_minting(config_root: &Path, name: &str, opted_in: bool) -> Result<(), Refused> {
+///
+/// **Answers whether the Pool just began minting without asking** (#4442): that leaves its Notice
+/// due, kept here so a window opened later still shows it. Going back to asking takes it away, so
+/// the next change shows it again. It holds and refuses nothing.
+pub fn keep_cluster_minting(
+    config_root: &Path,
+    name: &str,
+    opted_in: bool,
+) -> Result<bool, Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
+        return Ok(false);
+    };
+    if held.clusters[at].mints_in_cluster() == opted_in {
+        return Ok(false);
+    }
+    held.clusters[at] = ClusterPool {
+        mint_notice_due: opted_in,
+        ..held.clusters[at].clone().minting_in_cluster(opted_in)
+    };
+    write(config_root, &held)?;
+    Ok(opted_in)
+}
+
+/// **The person put away the Notice that the cluster pool `name` mints without asking** (#4442).
+pub fn put_away_mint_notice(config_root: &Path, name: &str) -> Result<(), Refused> {
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
     let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
         return Ok(());
     };
-    if held.clusters[at].mints_in_cluster() == opted_in {
+    if !held.clusters[at].mint_notice_due {
         return Ok(());
     }
-    held.clusters[at] = held.clusters[at].clone().minting_in_cluster(opted_in);
+    held.clusters[at].mint_notice_due = false;
     write(config_root, &held)
 }
 
 /// A cluster pool's row (#3292): `{"name", "kind": "cluster", "kubeconfig", "context", "pool",
-/// "namespace", "operatorKey", "cluster", "holds", "owned", "mintInCluster", "profiles"}`,
-/// `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned` and
-/// `mintInCluster` `true` alone, left out otherwise (#4071, #4204), and `profiles` as a Docker
+/// "namespace", "operatorKey", "cluster", "holds", "owned", "mintInCluster", "mintNoticeDue",
+/// "profiles"}`, `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned`,
+/// `mintInCluster` and `mintNoticeDue` `true` alone, left out otherwise (#4071, #4204, #4442), and `profiles` as a Docker
 /// pool's, left out where none were chosen (#3819).
 fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     let mut row = serde_json::json!({
@@ -2163,6 +2199,9 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     if pool.mint_in_cluster {
         row["mintInCluster"] = true.into();
     }
+    if pool.mint_notice_due {
+        row["mintNoticeDue"] = true.into();
+    }
     if let Some(profiles) = pool.profiles() {
         row["profiles"] = profiles.into();
     }
@@ -2185,6 +2224,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "holds",
         "owned",
         "mintInCluster",
+        "mintNoticeDue",
         "profiles",
     ];
     if fields
@@ -2205,6 +2245,11 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         Some(_) => return None,
     };
     let mint_in_cluster = match fields.get("mintInCluster") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let mint_notice_due = match fields.get("mintNoticeDue") {
         None => false,
         Some(serde_json::Value::Bool(true)) => true,
         Some(_) => return None,
@@ -2237,6 +2282,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
     .map(|pool| ClusterPool {
         owned,
         mint_in_cluster,
+        mint_notice_due,
         profiles,
         chosen: Box::new(chosen),
         ..pool

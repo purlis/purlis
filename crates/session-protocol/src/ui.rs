@@ -756,6 +756,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's mark that a cluster pool is their own (#4071): half of what lets its runner
     // receive vault values and tokens, so only their own press in their window sets it.
     "set_cluster_pool_owned",
+    // The Notice that a cluster pool began minting without asking (#4442): the person's to read
+    // and to put away, so no chat can hide it from them.
+    "pools_minting_without_asking",
+    "put_away_pool_minting_notice",
     // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
     // runner, so only the person's own look in their window does.
     "pool_profiles",

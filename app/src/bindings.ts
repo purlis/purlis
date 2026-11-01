@@ -3124,6 +3124,17 @@ export const commands = {
 	 */
 	setClusterPoolOwned: (name: string, owned: boolean) => typedError<null, string>(__TAURI_INVOKE("set_cluster_pool_owned", { name, owned })),
 	/**
+	 *  **The cluster pools whose Pool began minting without asking, for the person to be told** (#4442,
+	 *  the person's ruling of 2026-11-01): one Notice for each change. It holds and refuses nothing, as
+	 *  the admin's opt-in stands. The window's alone (`ui::WINDOW_ONLY`).
+	 */
+	poolsMintingWithoutAsking: () => typedError<string[], string>(__TAURI_INVOKE("pools_minting_without_asking")),
+	/**
+	 *  **The person put away the Notice of [`pools_minting_without_asking`] for pool `name`** (#4442).
+	 *  The window's alone (`ui::WINDOW_ONLY`): a chat that could press it could hide the Notice.
+	 */
+	putAwayPoolMintingNotice: (name: string) => typedError<null, string>(__TAURI_INVOKE("put_away_pool_minting_notice", { name })),
+	/**
 	 *  **The profiles chosen for pool `pool`, kept on its runner** (#2049, #4047), as the runner
 	 *  stands with each, and this machine's others Add a profile… offers: the ones its `profiles`
 	 *  names, or, where it names none, the profile a new chat in the open project `plane` gets. What
@@ -4461,6 +4472,7 @@ export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
 export const ENGINE_DOWNLOAD = "engine-download" as const;
 
 export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
+export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
 export const PERSONA_SCOPE_KEY = "persona/" as const;
 
