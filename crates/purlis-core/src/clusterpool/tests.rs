@@ -1471,3 +1471,82 @@ fn a_found_kubectl_runs_with_its_preferences_file_off() {
     let (env, _) = kubectl.environment();
     assert!(env.contains(&("KUBERC".into(), "off".into())), "{env:?}");
 }
+
+fn a_claim_saying(status: &str, reason: &str, message: &str) -> serde_json::Value {
+    serde_json::json!({ "status": { "conditions": [
+        { "type": "Idle", "status": "True", "reason": "NothingRuns" },
+        { "type": "Ready", "status": status, "reason": reason, "message": message },
+    ]}})
+}
+
+#[test]
+fn a_cold_claims_stages_are_said_in_plain_words() {
+    let said = |reason| stage_of(&a_claim_saying("False", reason, "")).map(|stage| stage.said);
+    assert_eq!(said("Scheduling"), Some("Waiting for room in the cluster"));
+    assert_eq!(said("Pulling"), Some("Downloading the runner image"));
+    assert_eq!(said("Starting"), Some("Starting your runner"));
+    assert_eq!(
+        said("Idle"),
+        Some("Your runner was resting, and is coming back")
+    );
+}
+
+#[test]
+fn the_operators_ordinary_words_are_no_reason_to_worry() {
+    for (reason, message) in [
+        ("Scheduling", "The runner's pod waits for a node."),
+        (
+            "Scheduling",
+            "The runner's pod is being made, and waits for a node.",
+        ),
+        ("Pulling", "The runner's node is pulling its image."),
+        (
+            "Starting",
+            "The runner's node is attaching its volume and making its sandbox.",
+        ),
+        ("Idle", "The runner said it was idle."),
+    ] {
+        let stage = stage_of(&a_claim_saying("False", reason, message)).unwrap();
+        assert_eq!(stage.cluster_said, None, "{message}");
+        let words = format!("{} {}", stage.said, stage.more).to_lowercase();
+        for jargon in ["pod", "claim", "node", "scheduling", "kept", "while"] {
+            assert!(!words.contains(jargon), "{words}");
+        }
+    }
+}
+
+#[test]
+fn what_is_wrong_is_said_in_the_clusters_own_words() {
+    let stage = stage_of(&a_claim_saying(
+        "False",
+        "Scheduling",
+        "The runner's pod waits for a node. The scheduler: 0/4 nodes are available: 4 Insufficient memory.",
+    ))
+    .unwrap();
+    assert_eq!(
+        stage.cluster_said.as_deref(),
+        Some("0/4 nodes are available: 4 Insufficient memory.")
+    );
+    assert!(stage.more.contains("taking a while"));
+    let stage = stage_of(&a_claim_saying(
+        "False",
+        "Pulling",
+        "The runner's image is not pulled yet: ImagePullBackOff back-off pulling image",
+    ))
+    .unwrap();
+    assert_eq!(
+        stage.cluster_said.as_deref(),
+        Some("ImagePullBackOff back-off pulling image")
+    );
+}
+
+#[test]
+fn only_a_runner_on_its_way_has_a_stage() {
+    assert_eq!(stage_of(&a_claim_saying("True", "Running", "")), None);
+    assert_eq!(
+        stage_of(&a_claim_saying("False", "OverQuota", "too many")),
+        None
+    );
+    assert_eq!(stage_of(&a_claim_saying("True", "Pulling", "")), None);
+    assert_eq!(stage_of(&serde_json::json!({})), None);
+}
