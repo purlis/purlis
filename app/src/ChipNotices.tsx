@@ -410,6 +410,7 @@ export function ChipCard({
     let asked = 0;
     const land = () => {
       const at = region.current;
+      (window as unknown as {__trail?: string[]}).__trail?.push(`land#${frames} t=${Math.round(performance.now())} at=${at !== null} active=${document.activeElement?.tagName}`);
       if (at !== null && !at.contains(document.activeElement)) at.focus({ preventScroll: true });
       if (at !== null && !at.contains(document.activeElement) && frames >= 10) {
         const c = at.closest<HTMLElement>('[data-part="root"]');
@@ -423,7 +424,11 @@ export function ChipCard({
       asked = requestAnimationFrame(land);
     };
     asked = requestAnimationFrame(land);
-    return () => cancelAnimationFrame(asked);
+    (window as unknown as {__trail?: string[]}).__trail?.push(`land asked t=${Math.round(performance.now())}`);
+    return () => {
+      (window as unknown as {__trail?: string[]}).__trail?.push(`land cleanup t=${Math.round(performance.now())}`);
+      cancelAnimationFrame(asked);
+    };
   }, [takesKeyboard]);
   // **The keyboard back on the chip** (#3648's review, WCAG 2.4.3): a card the keyboard was in
   // that goes (its last notice dismissed) hands it to the chip it hung from, which is still

@@ -94,6 +94,15 @@ export function expectAnchored(dialog: Element): void {
     );
 }
 
+const TRAIL: string[] = [];
+(window as unknown as {__trail?: string[]}).__trail = TRAIL;
+for (const kind of ["focusin", "focusout", "pointerdown", "click"])
+  document.addEventListener(kind, (e) => {
+    const t = e.target as Element;
+    const r = (e as FocusEvent).relatedTarget as Element | null;
+    TRAIL.push(`${kind} ${t?.tagName}.${t?.getAttribute?.("role") ?? ""}.${t?.getAttribute?.("aria-label") ?? ""} rel=${r?.tagName ?? "-"} connected=${t?.isConnected} t=${Math.round(performance.now())}`);
+  }, true);
+
 /** The next frame drawn. */
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
@@ -150,7 +159,7 @@ async function untilTheKeyboard(
     const on = at === null || at === document.body ? "nothing" : describe(at);
     throw new Error(
       `${step}: the keyboard is on ${on}, not ${where} ` +
-        (wanted === null ? "an element that is not drawn" : describe(wanted)) + ` [land: ${String((window as unknown as Record<string, unknown>).__landGaveUp)}; hasFocus=${document.hasFocus()}]`,
+        (wanted === null ? "an element that is not drawn" : describe(wanted)) + ` [land: ${String((window as unknown as Record<string, unknown>).__landGaveUp)}; hasFocus=${document.hasFocus()}; now=${Math.round(performance.now())}; TRAIL ${((window as unknown as {__trail?: string[]}).__trail ?? []).slice(-40).join(" ; ")}]`,
     );
   }
   // The frame the engine scrolls the focus into sight on: its callback was asked for as the focus
