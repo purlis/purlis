@@ -2356,19 +2356,8 @@ pub fn brought_back(
     } else {
         Restart::StartedAgain
     };
-    let key = key(held, task);
-    let mut ledger = ledger(held);
-    // What it had open is open again, where it stood (#4553): its asking chat is told of it
-    // again if it has not had it, since a line it was due died with the last run.
-    let back = ledger
-        .talk
-        .restored(task, &key, held.root(), now_secs(SystemTime::now()));
-    if back == dispatchtalk::Restored::Open
-        && ledger.talk.handed_at(task).is_none()
-        && let Some(asker) = ledger.talk.asked_of(task)
-    {
-        ledger.landed(asker, Landed::Question(task));
-    }
+    question_brought_back(held, task);
+    let mut ledger = held.tasks().ledger();
     ledger.brought_back(task, record.map(|record| record.started.as_str()), restart);
     // The last note it sent is on its record, which a restart keeps (#3900): it was heard from
     // then, though not by this app. What it ran is kept in memory only. And its list row says
@@ -2377,6 +2366,23 @@ pub fn brought_back(
         let at = SystemTime::from(note.at);
         ledger.heard_doing(task, purlis_core::dispatchliveness::Did::SentANote, at);
         ledger.noted_before(task, note);
+    }
+}
+
+/// **Task `task` is back from a restart** (#4553): what it had open is open again, where it
+/// stood, and its asking chat is told of it again if it has not had it, since a line it was due
+/// died with the last run.
+pub fn question_brought_back(held: &Held, task: u32) {
+    let key = key(held, task);
+    let mut ledger = ledger(held);
+    let back = ledger
+        .talk
+        .restored(task, &key, held.root(), now_secs(SystemTime::now()));
+    if back == dispatchtalk::Restored::Open
+        && ledger.talk.handed_at(task).is_none()
+        && let Some(asker) = ledger.talk.asked_of(task)
+    {
+        ledger.landed(asker, Landed::Question(task));
     }
 }
 

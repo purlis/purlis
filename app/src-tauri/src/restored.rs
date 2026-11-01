@@ -141,7 +141,7 @@ pub(crate) fn finish(
         .back
         .chats
         .iter()
-        .filter_map(|chat| chat.id.clone())
+        .filter_map(|chat| chat.identity.id.clone())
         .collect();
     crate::dispatched::only_these_came_back(held, &back);
     after_put_back(held, &launch, coming, settles);
@@ -486,14 +486,9 @@ pub(crate) fn retrying(
     if ended {
         held.chats().tell_nothing(id);
     }
-    let told = held
-        .chats()
-        .waiting_to_start()
-        .into_iter()
-        .any(|one| one.chat.identity.id.as_deref() == Some(id) && one.told.is_some());
     let started = coming_back_as(held, id, start);
-    if let (true, Ok(task)) = (told, &started) {
-        questions_were_not_kept(held, *task);
+    if let Ok(task) = &started {
+        crate::dispatched::question_brought_back(held, *task);
     }
     started
 }
