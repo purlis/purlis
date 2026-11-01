@@ -263,6 +263,7 @@ fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
     );
     let scratch = tempfile::tempdir().expect("a folder");
     let out = scratch.path().canonicalize().expect("a real folder");
+    let mut measured = String::new();
     for (harness, called, others) in [
         (
             Harness::Codex,
@@ -291,8 +292,8 @@ fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
         let Decided::Sandboxed(applied) = decided else {
             panic!("not sandboxed: {decided:?}");
         };
-        applied.make_usual_folders();
         let (level, profile) = emitted(harness, &root, &tmp, &machine);
+        applied.make_usual_folders();
         assert_eq!(level, Level::Floor);
         let done = purlis_core::forklock::output(
             std::process::Command::new("/usr/bin/sandbox-exec")
@@ -306,9 +307,11 @@ fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
         .expect("sandbox-exec runs");
         let said = String::from_utf8_lossy(&done.stdout);
         assert!(
-            done.status.success() && said.contains(" 999 wrong"),
+            done.status.success() && said.contains(" 0 wrong"),
             "{called}:\n{said}\n{}",
             String::from_utf8_lossy(&done.stderr)
         );
+        measured.push_str(&said);
     }
+    panic!("measured:\n{measured}");
 }

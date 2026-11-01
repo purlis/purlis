@@ -1957,3 +1957,39 @@ fn folders_are_made_private_and_what_is_there_is_left_as_it_is() {
     make_folders(&usual_home_folders(Level::Floor, &homed(&gone, &[])));
     assert!(!gone.exists(), "a home that is not there is not made");
 }
+
+#[test]
+fn a_chat_starting_at_the_floor_finds_the_homes_shared_folders_made() {
+    let (_project, root) = project();
+    let dir = tempfile::tempdir().expect("a home");
+    let home = dir.path().canonicalize().expect("a real folder");
+    let machine = homed(&home, &[("PATH", "/opt/none")]);
+    let applied = floor_of(decided(Harness::Codex, &root, &machine));
+    assert!(!home.join(".local").exists(), "deciding makes nothing");
+    // Whether the line is then given depends on the chat's proxy, which no test starts.
+    let _ = applied.line(
+        Words {
+            program: "codex".to_owned(),
+            command: Vec::new(),
+            armed: Vec::new(),
+            charters: Vec::new(),
+        },
+        &At::default(),
+    );
+    assert!(home.join(".local/share").is_dir());
+    assert!(home.join(".config").is_dir());
+}
+
+#[test]
+fn an_xdg_folder_that_climbs_out_of_the_home_is_not_listed() {
+    let home = Path::new("/home/op");
+    let climbing = homed(home, &[("XDG_DATA_HOME", "/home/op/../other/data")]);
+    assert_eq!(
+        usual_home_folders(Level::Floor, &climbing),
+        [
+            home.join(".local"),
+            home.join(".local/share"),
+            home.join(".config"),
+        ]
+    );
+}

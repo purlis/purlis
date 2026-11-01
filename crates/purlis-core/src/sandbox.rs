@@ -4280,6 +4280,8 @@ impl Applied {
                  so nothing was started."
             )));
         }
+        // Made once the checks above have let this start go ahead.
+        self.make_usual_folders();
         let mut line = self
             .harness
             .adapter()
@@ -4290,7 +4292,6 @@ impl Applied {
         if let Form::ClaudeCode(settings) = &*self.form {
             settings.make_empty();
         }
-        self.make_usual_folders();
         // ssh, and git over ssh, through the chat's SOCKS port (#1667): each harness wrapped
         // whole ([`Self::ssh_route`]).
         if let Some(route) = self.ssh_route(at.confinement) {
@@ -6562,7 +6563,10 @@ fn usual_home_folders(level: Level, machine: &Machine) -> Vec<PathBuf> {
         .chain(homes.data.iter())
         .chain(homes.config.iter())
     {
-        if folder.starts_with(home) && folder != home {
+        let plain = folder
+            .components()
+            .all(|part| part != std::path::Component::ParentDir);
+        if plain && folder.starts_with(home) && folder != home {
             for made in ancestors_within(folder, home)
                 .into_iter()
                 .chain([folder.clone()])
@@ -6578,7 +6582,7 @@ fn usual_home_folders(level: Level, machine: &Machine) -> Vec<PathBuf> {
 
 /// `folders`, each made where it is missing and its parent is there, private to the person as the
 /// XDG base directory rules ask. One not made is left to the chat, which is refused as it would
-/// have been; nothing is followed or changed where a name is already taken.
+/// have been, and a name already taken is left as it is.
 fn make_folders(folders: &[PathBuf]) {
     for folder in folders {
         let mut builder = std::fs::DirBuilder::new();

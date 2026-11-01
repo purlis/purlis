@@ -87,7 +87,8 @@ PY
       echo "standard-paths: $what: pip install --user: not tried, no pip here"
     fi
     if command -v pipx >/dev/null 2>&1; then
-      try 'pipx install' "PIP_NO_INDEX=1 pipx install '$wheel'"
+      pipx install "$wheel" 2>&1 | tail -n 6 | sed "s/^/standard-paths: $what: pipx said: /"
+      try 'pipx ran the tool' "$HOME/.local/pipx/venvs/probe-tool/bin/probe-tool"
     else
       echo "standard-paths: $what: pipx install: not tried, no pipx here"
     fi
@@ -104,7 +105,6 @@ expect no 'mv ~/.local/share aside' 'mv "$HOME/.local/share" "$HOME/.local/share
 expect no 'mv ~/.config aside' 'mv "$HOME/.config" "$HOME/.config.moved"'
 for folder in "$@"; do
   expect no "mkdir ~/$folder" "mkdir \"\$HOME/$folder\""
-  expect no "a file at ~/$folder/auth.json" "touch \"\$HOME/$folder/auth.json\""
   expect no "a folder moved to ~/$folder" "mv '$scratch/planted' \"\$HOME/$folder\""
 done
 

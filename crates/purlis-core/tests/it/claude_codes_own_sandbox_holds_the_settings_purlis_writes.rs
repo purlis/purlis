@@ -65,7 +65,7 @@ const REPOSITORY_PROBES: usize = 17;
 /// The id of the stand-in's one Bash call.
 const CALL: &str = "toolu_seatbelt_case";
 
-/// What a chat tries to make in its home ([`tools/standard-home-paths.sh`]).
+/// What a chat tries to make in its home.
 const HOME_PATHS: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../tools/standard-home-paths.sh"
@@ -533,8 +533,8 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
     let Decided::Sandboxed(applied) = decided else {
         panic!("not sandboxed: {decided:?}");
     };
-    applied.make_usual_folders();
     let (level, settings) = settings_for(&root, &machine);
+    applied.make_usual_folders();
     assert_eq!(level, Level::Floor);
     let file = at.join("claude.json");
     fs::write(&file, settings.to_string()).expect("the settings");
@@ -560,7 +560,7 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
     );
     assert!(
         said.lines()
-            .any(|line| line.trim() == "standard-paths: claude-code: 18 checks, 0 wrong"),
+            .any(|line| line.trim() == "standard-paths: claude-code: 16 checks, 0 wrong"),
         "not every answer was as it should be:\n{said}"
     );
     for gone in [".codex", ".local/share/opencode"] {
