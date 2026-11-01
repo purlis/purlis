@@ -202,8 +202,16 @@ fn answer(
                 hold_until_over(asked);
                 return Ok(());
             }
+            // Only what was asked for, as a server answers: git-lfs panics on any other object.
+            let wanted: Value = serde_json::from_slice(&body).unwrap_or_default();
+            let wanted = |oid: &str| {
+                wanted["objects"]
+                    .as_array()
+                    .is_some_and(|asked| asked.iter().any(|one| one["oid"] == oid))
+            };
             let rows: Vec<Value> = objects
                 .iter()
+                .filter(|object| wanted(&object.oid))
                 .map(|object| {
                     json!({
                         "oid": object.oid,
@@ -659,8 +667,7 @@ fn real_git_lfs_a_helper_the_repository_wrote_still_holds_the_filter() {
         "the filter reached the server"
     );
 
-    // Control: the person's own git, with that config, does ask it. git-lfs 3.8.1 may panic as
-    // it ends here, so only what it asked is read.
+    // Control: the person's own git, with that config, does ask it.
     std::fs::remove_file(dest.join("file0.bin")).unwrap();
     let mut control = std::process::Command::new("git");
     control
