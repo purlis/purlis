@@ -129,6 +129,27 @@ fn a_bad_value_is_refused_in_the_checks_own_words_and_nothing_changes() {
     assert!(said(&docker).contains(&why), "{}", said(&docker));
 }
 
+/// #4281: a limit that can't change is refused by name, with why and what to do instead.
+#[test]
+fn a_fixed_limit_is_refused_saying_why() {
+    let machine = a_machine();
+    let config = machine.path();
+    let before = std::fs::read_to_string(
+        purlis_core::machine::dir(config).join(purlis_core::machine::RUNNERS_FILE),
+    )
+    .unwrap();
+    for fixed in purlis_core::poollimits::fixed() {
+        let out = purlis(config, &["pool", "limit", "builds", fixed.key, "60"], &[]);
+        assert!(!out.status.success(), "{}", fixed.key);
+        assert!(said(&out).contains(&fixed.said()), "{}", said(&out));
+    }
+    let after = std::fs::read_to_string(
+        purlis_core::machine::dir(config).join(purlis_core::machine::RUNNERS_FILE),
+    )
+    .unwrap();
+    assert_eq!(before, after);
+}
+
 /// In a chat the value goes to the app, and nothing is written here.
 #[test]
 fn in_a_chat_the_value_is_handed_to_the_app_and_nothing_is_written() {

@@ -103,6 +103,10 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             value,
             reset: _,
         } => {
+            // A limit that can't change says so, why, and what to do instead (#4281).
+            if let Some(fixed) = poollimits::fixed().iter().find(|one| one.key == *key) {
+                return Err(format!("{}: {}", fixed.plain, fixed.said()));
+            }
             let limit = poollimits::of_key(key).ok_or_else(|| {
                 format!(
                     "a pool has no limit named {}: `purlis pool limits <pool>` lists them",

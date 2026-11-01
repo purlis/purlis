@@ -65,6 +65,8 @@ pub(crate) struct Runners {
     kept: Option<PathBuf>,
     /// How often the runners owed a stop are tried again.
     again_every: Duration,
+    /// How long one runner is waited on: [`REACHED_WITHIN`], but for a test.
+    reached_within: Duration,
     /// Whether this host's start was looked at: a host that starts stopped sends its stop once.
     started: std::sync::atomic::AtomicBool,
 }
@@ -88,6 +90,7 @@ impl Default for Runners {
             sending: tokio::sync::Mutex::new(()),
             kept: None,
             again_every: TRIED_AGAIN_EVERY,
+            reached_within: REACHED_WITHIN,
             started: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -132,6 +135,12 @@ impl Runners {
     /// The runners owed a stop are tried again every `every` (a test's shorter).
     pub(crate) fn trying_again_every(mut self, every: Duration) -> Runners {
         self.again_every = every;
+        self
+    }
+
+    /// One runner is waited on for `within` (a test's shorter).
+    pub(crate) fn reaching_within(mut self, within: Duration) -> Runners {
+        self.reached_within = within;
         self
     }
 
@@ -203,7 +212,7 @@ impl Runners {
             .await
             .unwrap_or_default();
         self.held().tried = Some(Instant::now());
-        for (runner, sent) in send_to_each(runners, Command::StopAll).await {
+        for (runner, sent) in send_to_each(runners, Command::StopAll, self.reached_within).await {
             self.stopped(runner, sent);
         }
         self.keep();
@@ -250,7 +259,7 @@ impl Runners {
             .into_iter()
             .filter(|(name, _)| owed.contains(name))
             .collect();
-        for (runner, sent) in send_to_each(due, Command::StopAll).await {
+        for (runner, sent) in send_to_each(due, Command::StopAll, self.reached_within).await {
             self.stopped(runner, sent);
         }
         self.keep();
@@ -284,7 +293,7 @@ impl Runners {
             .into_iter()
             .filter(|(name, _)| reached.contains(name))
             .collect();
-        let sent = send_to_each(due, Command::Rearm).await;
+        let sent = send_to_each(due, Command::Rearm, self.reached_within).await;
         let mut missed = BTreeMap::new();
         let mut rearmed = BTreeSet::new();
         for (runner, sent) in sent {
@@ -311,7 +320,9 @@ impl Runners {
                     .into_iter()
                     .filter(|(name, _)| rearmed.contains(name))
                     .collect();
-                for (runner, sent) in send_to_each(again, Command::StopAll).await {
+                for (runner, sent) in
+                    send_to_each(again, Command::StopAll, self.reached_within).await
+                {
                     self.stopped(runner, sent);
                 }
             }
@@ -326,6 +337,7 @@ impl Runners {
 async fn send_to_each(
     runners: Vec<(String, Result<Keep, String>)>,
     command: Command,
+    within: Duration,
 ) -> Vec<(String, Sent)> {
     let sending: Vec<_> = runners
         .into_iter()
@@ -333,14 +345,9 @@ async fn send_to_each(
             let command = command.clone();
             tokio::spawn(async move {
                 let sent = match keep {
-                    Ok(keep) => tokio::time::timeout(REACHED_WITHIN, send(keep, command))
+                    Ok(keep) => tokio::time::timeout(within, send(keep, command))
                         .await
-                        .unwrap_or_else(|_| {
-                            Sent::NotReached(format!(
-                                "it did not answer within {} seconds",
-                                REACHED_WITHIN.as_secs()
-                            ))
-                        }),
+                        .unwrap_or_else(|_| Sent::NotReached(wait_ran_out(within))),
                     Err(why) => Sent::NotReached(why),
                 };
                 (runner, sent)
@@ -429,21 +436,38 @@ impl StopFirst {
         if !(self.stopped)() {
             return true;
         }
-        let sent = tokio::time::timeout(REACHED_WITHIN, client.call(Command::StopAll))
+        let within = self.runners.reached_within;
+        let sent = tokio::time::timeout(within, client.call(Command::StopAll))
             .await
             .map_or_else(
-                |_| {
-                    Sent::NotReached(format!(
-                        "it did not answer within {} seconds",
-                        REACHED_WITHIN.as_secs()
-                    ))
-                },
+                |_| Sent::NotReached(wait_ran_out(within)),
                 |answer| answered(answer, &Command::StopAll),
             );
         let carries_on = !matches!(sent, Sent::NotReached(_));
         self.runners.stopped(self.runner.clone(), sent);
         self.runners.keep();
         carries_on
+    }
+}
+
+/// How a runner's reason opens where the wait for it ran out: a limit that can't change (#4281).
+const WAIT_RAN_OUT: &str = "it did not answer within ";
+
+/// Why a runner was not reached when the wait for it ran out.
+fn wait_ran_out(within: Duration) -> String {
+    format!("{WAIT_RAN_OUT}{} seconds", within.as_secs())
+}
+
+/// **What is added once, after naming runners, where any wait ran out**: that the wait is fixed,
+/// why, and what to do instead. Empty where none did.
+pub(crate) fn fixed_wait_said<'a>(mut why: impl Iterator<Item = &'a str>) -> String {
+    if why.any(|why| why.starts_with(WAIT_RAN_OUT)) {
+        format!(
+            " {}",
+            purlis_session_protocol::fixedlimits::STOP_WAIT.said()
+        )
+    } else {
+        String::new()
     }
 }
 
@@ -463,8 +487,9 @@ pub(crate) fn not_reached_said(owed: &BTreeMap<String, String>) -> Option<String
     };
     Some(format!(
         "The stop did not reach {runner} {}. {keeps} running until it does, and purlis keeps \
-         trying.",
-        named.join(", ")
+         trying.{}",
+        named.join(", "),
+        fixed_wait_said(owed.values().map(String::as_str))
     ))
 }
 

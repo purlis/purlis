@@ -1027,8 +1027,10 @@ impl Kubectl {
                     format!("{} could not be run: {why}", self.program.display())
                 }
                 Unanswered::PrintedTooMuch => format!(
-                    "kubectl {} printed more than the {most} bytes purlis reads of it, so it was ended",
-                    what()
+                    "kubectl {} printed more than the {most} bytes purlis reads of it, so it was \
+                     ended. {}",
+                    what(),
+                    purlis_session_protocol::fixedlimits::RUNNER_OUTPUT.said()
                 ),
                 Unanswered::NotFinished(why) => {
                     format!("{} did not finish: {why}", self.program.display())
