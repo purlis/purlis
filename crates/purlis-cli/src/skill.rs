@@ -1830,7 +1830,6 @@ fn unsettled(review: &source::Review, new_names: &source::Renames) -> Vec<String
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn install(
     cx: &mut verbs::Ctx<'_>,
     source: &Source,
