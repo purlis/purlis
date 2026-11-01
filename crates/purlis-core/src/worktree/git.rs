@@ -749,6 +749,8 @@ pub(crate) fn lfs_would_start_a_program(dir: &Path) -> Result<bool, GitUnavailab
         if matches!(scope, "global" | "system" | "unknown" | "command") {
             return false;
         }
+        // Lowered whole: a sub-section keeps its case in git's listing, and git-lfs may not.
+        let key = key.to_ascii_lowercase();
         let Some((section, rest)) = key.split_once('.') else {
             return false;
         };
@@ -760,7 +762,7 @@ pub(crate) fn lfs_would_start_a_program(dir: &Path) -> Result<bool, GitUnavailab
         // command line ([`crate::lfsupload`]): anything that spells one counts, at any depth.
         lfs_names_a_program(section, sub, variable)
             || (section == "lfs" && variable == "storage")
-            || (section == "alias" && sub.is_none() && variable == "lfs")
+            || (section == "alias" && (variable == "lfs" || sub == Some("lfs")))
             || (section == "http" && variable == "extraheader")
             || key.contains("customtransfer")
             || key.contains("standalonetransferagent")

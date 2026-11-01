@@ -161,6 +161,7 @@ fn going_out(dir: &Path, tip: &str, remote: &str) -> Result<Vec<Pointer>, String
         return Ok(Vec::new());
     }
     let ask = |args: &[&str], input: Vec<u8>| -> Result<Vec<u8>, String> {
+        crate::hookwire::alive::beat();
         let run =
             git::run_with_input(dir, args, input, READING).map_err(|e| failed(e.to_string()))?;
         if run.code == Some(0) {
@@ -260,6 +261,7 @@ fn pointer_in(blob: &[u8]) -> Blob {
         return Blob::Other;
     };
     let mut lines = text
+        .trim()
         .split('\n')
         .map(|line| line.strip_suffix('\r').unwrap_or(line))
         .filter(|line| !line.is_empty());
@@ -268,6 +270,7 @@ fn pointer_in(blob: &[u8]) -> Blob {
         Some(
             "version https://git-lfs.github.com/spec/v1"
                 | "version https://hawser.github.com/spec/v1"
+                | "version http://git-media.io/v/2"
         )
     ) {
         return Blob::Other;
@@ -381,18 +384,32 @@ impl Store {
             format!("purlis could not set the Git LFS files aside to upload them: {why}")
         };
         let theirs = store_of(dir)?;
-        let config = crate::machine::config_root().ok_or_else(|| {
+        let aside = aside().ok_or_else(|| {
             "purlis could not find its own folder to set the Git LFS files aside in, so nothing \
              was pushed"
                 .to_owned()
         })?;
-        let aside = crate::machine::dir(&config).join(ASIDE);
         std::fs::create_dir_all(&aside).map_err(could_not)?;
         clear_what_a_crash_left(&aside);
         let held = tempfile::Builder::new()
             .prefix("upload-")
             .tempdir_in(&aside)
             .map_err(could_not)?;
+        // A sparse file a chat planted would be written out whole here.
+        let needed: u64 = pointers
+            .iter()
+            .map(|one| one.size)
+            .fold(0, u64::saturating_add);
+        let free = rustix::fs::statvfs(held.path())
+            .map(|at| at.f_bavail.saturating_mul(at.f_frsize))
+            .map_err(|why| could_not(why.into()))?;
+        if needed >= free {
+            return Err(format!(
+                "This push's Git LFS files need more free space than this machine has to set \
+                 them aside for upload, so nothing was pushed. Free {} and push again",
+                crate::shown::line(&format!("{needed} bytes"))
+            ));
+        }
         let store = Self { held };
         let mut unread = Vec::new();
         for one in pointers {
@@ -427,6 +444,15 @@ const ASIDE: &str = "lfs-upload";
 /// What a call older than this left behind can only be a crash's.
 const A_CRASH_LEFT_IT: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
+fn aside() -> Option<PathBuf> {
+    // A test's build is fenced from this machine's own folder.
+    #[cfg(test)]
+    if stand_in().is_some() {
+        return Some(std::env::temp_dir().join(ASIDE));
+    }
+    crate::machine::config_root().map(|config| crate::machine::dir(&config).join(ASIDE))
+}
+
 fn clear_what_a_crash_left(aside: &Path) {
     let Ok(entries) = std::fs::read_dir(aside) else {
         return;
@@ -448,7 +474,7 @@ fn clear_what_a_crash_left(aside: &Path) {
 /// chat can write, opened like everything below it.
 struct Theirs {
     root: PathBuf,
-    inside: Option<&'static str>,
+    inside: Vec<String>,
 }
 
 /// The folder git-lfs keeps objects under here: yours where your own config moved it (a
@@ -466,12 +492,26 @@ fn store_of(dir: &Path) -> Result<Theirs, String> {
     Ok(if moved.is_empty() {
         Theirs {
             root: common,
-            inside: Some("lfs"),
+            inside: vec!["lfs".to_owned()],
+        }
+    } else if Path::new(moved).is_absolute() {
+        Theirs {
+            root: PathBuf::from(moved),
+            inside: Vec::new(),
         }
     } else {
+        // Relative to the git directory, which a chat can write in: opened like what is below.
+        let inside: Vec<String> = moved
+            .split('/')
+            .filter(|name| !name.is_empty() && *name != ".")
+            .map(str::to_owned)
+            .collect();
+        if inside.iter().any(|name| name == "..") {
+            return Err(lost());
+        }
         Theirs {
-            root: common.join(moved),
-            inside: None,
+            root: common,
+            inside,
         }
     })
 }
@@ -484,7 +524,7 @@ fn opened(store: &Theirs, oid: &str) -> std::io::Result<Option<std::fs::File>> {
     let mut at = openat(CWD, &store.root, folder, Mode::empty())?;
     let held = folder | OFlags::NOFOLLOW;
     let below = ["objects", &oid[..2], &oid[2..4]];
-    for name in store.inside.iter().copied().chain(below) {
+    for name in store.inside.iter().map(String::as_str).chain(below) {
         at = match openat(&at, name, held, Mode::empty()) {
             Ok(next) => next,
             Err(rustix::io::Errno::NOENT) => return Ok(None),
@@ -542,32 +582,51 @@ fn copied(
         std::fs::create_dir_all(parent).map_err(could_not)?;
     }
     let mut copy = std::fs::File::create(to).map_err(could_not)?;
-    let mut hash = Sha256::new();
     let mut head = Vec::new();
     let keep = usize::try_from(one.size)
         .ok()
         .filter(|size| *size as u64 <= crate::diffscan::PROBE_MOST);
+    let (read, oid) = capped_copy(&mut source, &mut copy, one.size, keep.is_some(), &mut head)
+        .map_err(could_not)?;
+    copy.sync_all().map_err(could_not)?;
+    if read != one.size || oid != one.oid {
+        return Err(wrong());
+    }
+    let is_text = keep.is_some() && crate::diffscan::reads_as_text(&head);
+    Ok(is_text.then_some(head))
+}
+
+/// `source` copied to `copy`, read no further than one byte past `size`: a file a chat grows
+/// after it was measured stops here. How much was read, and its hash; its bytes in `head` where
+/// `keeping`.
+fn capped_copy(
+    source: &mut impl Read,
+    copy: &mut impl Write,
+    size: u64,
+    keeping: bool,
+    head: &mut Vec<u8>,
+) -> std::io::Result<(u64, String)> {
+    let mut hash = Sha256::new();
+    let mut capped = source.take(size.saturating_add(1));
     let mut chunk = vec![0; 256 * 1024];
     let mut read: u64 = 0;
     loop {
-        let got = source.read(&mut chunk).map_err(could_not)?;
+        let got = capped.read(&mut chunk)?;
         if got == 0 {
             break;
         }
         read += got as u64;
         crate::hookwire::alive::beat();
+        if read > size {
+            break;
+        }
         hash.update(&chunk[..got]);
-        copy.write_all(&chunk[..got]).map_err(could_not)?;
-        if keep.is_some() {
+        copy.write_all(&chunk[..got])?;
+        if keeping {
             head.extend_from_slice(&chunk[..got]);
         }
     }
-    copy.sync_all().map_err(could_not)?;
-    if read != one.size || crate::extension::hex(&hash.finalize()) != one.oid {
-        return Err(wrong());
-    }
-    let is_text = keep.is_some() && crate::diffscan::reads_as_text(&head);
-    Ok(is_text.then_some(head))
+    Ok((read, crate::extension::hex(&hash.finalize())))
 }
 
 /// **What the upload is held to**, each after the repository's own config and `.lfsconfig`, so
@@ -763,6 +822,11 @@ mod tests {
             pointer(OID, "12").replace('\n', "\r\n"),
             pointer(OID, "12").replace('\n', "\n\n"),
             pointer(OID, "12").replace("git-lfs.github", "hawser.github"),
+            pointer(OID, "12").replace(
+                "https://git-lfs.github.com/spec/v1",
+                "http://git-media.io/v/2",
+            ),
+            format!(" \n{}\n ", pointer(OID, "12")),
         ] {
             assert_eq!(
                 pointer_in(same.as_bytes()),
@@ -801,7 +865,7 @@ mod tests {
         std::fs::create_dir(&common).unwrap();
         let theirs = Theirs {
             root: common.clone(),
-            inside: Some("lfs"),
+            inside: vec!["lfs".to_owned()],
         };
         assert!(opened(&theirs, OID).unwrap().is_none());
         std::os::unix::fs::symlink(&kept, common.join("lfs")).unwrap();
@@ -809,6 +873,16 @@ mod tests {
         std::fs::remove_file(common.join("lfs")).unwrap();
         std::fs::rename(&kept, common.join("lfs")).unwrap();
         assert!(opened(&theirs, OID).unwrap().is_some());
+    }
+
+    #[test]
+    fn a_file_grown_past_its_size_is_read_no_further() {
+        let mut grown = std::io::repeat(0);
+        let (mut copy, mut head) = (Vec::new(), Vec::new());
+        let (read, _) = capped_copy(&mut grown, &mut copy, 12, true, &mut head).unwrap();
+        assert_eq!(read, 13);
+        assert!(copy.len() <= 12, "{}", copy.len());
+        assert!(head.len() <= 12, "{}", head.len());
     }
 
     #[test]

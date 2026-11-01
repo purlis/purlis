@@ -254,6 +254,12 @@ object. It gains no reach. A pointer that names extensions is refused. Reading a
 history can take as long as the stall limit; past that, the push is refused. The copy needs free
 space for what it sends.
 
+Recorded limits, none of which gains a chat another host or credential. git-lfs runs in the
+folder being pushed, so a `.lfsconfig` there that is a link is read outside the sandbox; its values
+are outranked or harmless, and a pipe there only waits for the stall limit. A global `lfs.storage`
+shared by several repositories can serve any object whose id and size a chat already knows. A
+project's first publish to a folder on this machine uploads nothing, and crosses no network.
+
 An object that is not in the clone refuses the push even where the server has it already: purlis
 does not ask. `git lfs fetch --all` brings it here.
 
