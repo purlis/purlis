@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793518075314,
+  "lastUpdate": 1793519342029,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34902,6 +34902,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5547915,
             "unit": "ms",
             "extra": "median of 5 runs: 101.185, 101.305, 101.555, 101.987, 102.120 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0707eef545765f77cc822846e0151da9b399e2c0",
+          "message": "Runners: --check answers in a status, --pool keeps first, a gone runner's chats, Remove on another engine (#4418)\n\n* Runners: a runner's sign-in check answers in an exit status a desktop reads without its words (#4113)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR420DB1MR8F3YVTWRWR98\nPurlis-Persona: steward\n\n* Runners: purlis profile sign-in --pool keeps the profile on the runner first, through the window (#4112)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR420DB1MR8F3YVTWRWR98\nPurlis-Persona: steward\n\n* Runners: a chat that ended with a gone runner says so and offers no Resume; a task on it reports (#4350)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR420DB1MR8F3YVTWRWR98\nPurlis-Persona: steward\n\n* Runners: removing a pool on another engine touches nothing there and says what stays (#4325)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR420DB1MR8F3YVTWRWR98\nPurlis-Persona: steward\n\n* Runners: review fixes: Remove acts only on what the person was told, a failed keep leaves no name, window line serves peers apart\n\nRefs #4112 #4325 #4350. Also fixes the inline LostChat type and a clippy type complexity.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR420DB1MR8F3YVTWRWR98\nPurlis-Persona: steward\n\n* Runners: the generated doc of remove_docker_pool, and words the deferral check reads\n\nRefs #4112 #4325\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR420DB1MR8F3YVTWRWR98\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T07:21:17Z",
+          "tree_id": "b908fbc23cef29a84adfa20868ab25fe3523620a",
+          "url": "https://github.com/purlis/purlis/commit/0707eef545765f77cc822846e0151da9b399e2c0"
+        },
+        "date": 1793519335613,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5331545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.531, 0.533, 0.535, 0.542 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.412457500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.257, 16.410, 16.412, 16.455, 16.474 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.8420935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.270, 102.015, 102.842, 103.005, 104.374 ms"
           }
         ]
       }
