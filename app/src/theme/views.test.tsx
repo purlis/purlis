@@ -1604,6 +1604,7 @@ const STATES: State[] = [
       }),
     answers: {
       skill_grade_scorecard: {
+        evals: [],
         grade: "01GRADE",
         skill: "deploy",
         graded: "2026-10-28 10:00 UTC",

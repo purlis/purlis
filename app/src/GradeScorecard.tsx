@@ -279,11 +279,14 @@ export function GradeScorecardPage({
       {it.asked > 0 && (
         <p className="honest" data-testid="grade-scorecard-asked">
           {counted(it.asked, "chat", "chats")} asked you something. A grade's chat waits on nobody,
-          so purlis ended each at its ask and counts none of them: open its chat below to read what
-          it asked.
+          so purlis ended each at its ask
+          {it.evals.length > 0
+            ? ": a trigger test's is not counted, and an outcome eval's fails that run. Open"
+            : " and counts none of them: open"}{" "}
+          its chat below to read what it asked.
         </p>
       )}
-      {it.outcome !== "interrupted" && (
+      {it.outcome !== "interrupted" && (it.tests.length > 0 || it.evals.length === 0) && (
         <Totals aria-label={`Totals of the grade of ${name}`}>
           <Tile label="With it" value={pointsSaid(it.arms.with)} line="of tests passed" />
           <Tile
@@ -472,12 +475,13 @@ function EvalCell({
 
 /** What the runs of one expectation came to in one arm, in words. */
 function checksSaid(arm: ScoredEvalArm, at: number): string {
-  const judged = arm.results.flatMap((run) => {
-    const check = run.checks[at];
-    return check === undefined ? [] : [check];
-  });
+  // A run with a score counts, its failure among them: that is what its arm's rate counts.
+  const judged = arm.results.filter((run) => run.passed !== null);
   if (judged.length === 0) return "not judged";
-  const passed = judged.filter((check) => check.passed).length;
+  // A row too long for the record keeps each run's count and drops its verdicts.
+  if (judged.some((run) => run.checks.length === 0 && run.failed === null))
+    return "its verdicts were not kept";
+  const passed = judged.filter((run) => run.checks[at]?.passed === true).length;
   return `${passed} of ${judged.length} passed`;
 }
 

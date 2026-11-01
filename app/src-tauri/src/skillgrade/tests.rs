@@ -1044,4 +1044,17 @@ fn a_scorecard_shows_each_outcome_eval_in_each_arm_and_why_a_run_failed() {
         Some("The judge's answer is not whole.")
     );
     assert!(without.checks.is_empty());
+    let marked = scored_evals(
+        &[score(
+            Arm::With,
+            vec![run("01A", 0, Some("It\u{200b} failed."))],
+            0.0,
+        )],
+        &|_: &str| false,
+    );
+    assert_eq!(
+        marked[0].arms[0].results[0].failed.as_deref(),
+        Some("It⟦U+200B⟧ failed."),
+        "a teammate's row can say anything"
+    );
 }

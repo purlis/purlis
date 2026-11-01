@@ -1556,6 +1556,8 @@ fn scored_evals(
     outcomes: &[grading::OutcomeScore],
     kept: &impl Fn(&str) -> bool,
 ) -> Vec<ScoredEval> {
+    // A teammate's row can say anything: each character no reader would see is marked.
+    let marked = |text: &str| purlis_unicode::marked(text, purlis_unicode::Breaks::Marked);
     let chat_of = |id: &Option<String>, run: u32| {
         id.as_ref().map(|id| ScoredChat {
             id: id.clone(),
@@ -1583,10 +1585,10 @@ fn scored_evals(
                         .iter()
                         .map(|check| ScoredCheck {
                             passed: check.passed,
-                            evidence: check.evidence.clone(),
+                            evidence: marked(&check.evidence),
                         })
                         .collect(),
-                    failed: one.failed.clone(),
+                    failed: one.failed.as_deref().map(marked),
                 })
                 .collect(),
         };
@@ -1595,11 +1597,7 @@ fn scored_evals(
             Some(eval) => eval.arms.push(arm),
             None => evals.push(ScoredEval {
                 id,
-                expectations: score
-                    .expectations
-                    .iter()
-                    .map(|text| purlis_unicode::marked(text, purlis_unicode::Breaks::Marked))
-                    .collect(),
+                expectations: score.expectations.iter().map(|text| marked(text)).collect(),
                 arms: vec![arm],
             }),
         }
@@ -1640,11 +1638,10 @@ pub struct GradeScorecard {
     pub outcome: GradeOutcome,
     pub arms: GradeArms,
     pub spent: GradeSpent,
-    /// **Its outcome evals** (SK-55, #3235), each in each arm, each arm's pass rate in points,
-    /// and the difference the skill made there: none, and null, in a grade that ran none.
+    /// **Its outcome evals** (SK-55, #3235), each in each arm, and each arm's pass rate in points:
+    /// none, and null, in a grade that scored none.
     pub evals: Vec<ScoredEval>,
     pub outcome_arms: Option<GradeArms>,
-    pub outcome_delta: Option<f64>,
 }
 
 /// **How a grade ended, as its list marks it** (S6): graded whole, stopped by the person, stopped
@@ -1696,7 +1693,7 @@ pub struct GradeSpent {
 }
 
 impl GradeArms {
-    /// Each arm's outcome pass rate, in a grade that ran an outcome eval (SK-55).
+    /// Each arm's outcome pass rate, in a grade that scored an outcome eval (SK-55).
     fn of_outcomes(graded: &Graded) -> Option<GradeArms> {
         let points = |arm: Arm| {
             graded
@@ -1705,11 +1702,12 @@ impl GradeArms {
                 .and_then(|score| score.outcome_pass_rate)
                 .map(|stat| (stat.mean * 100.0).round())
         };
-        (!graded.report.outcomes.is_empty()).then(|| GradeArms {
+        let arms = GradeArms {
             with: points(Arm::With),
             without: points(Arm::Without),
             previous: points(Arm::Previous),
-        })
+        };
+        (arms.with.is_some() || arms.without.is_some() || arms.previous.is_some()).then_some(arms)
     }
 
     fn of(graded: &Graded) -> GradeArms {
@@ -1949,10 +1947,6 @@ impl GradeScorecard {
             spent: GradeSpent::of(graded),
             evals,
             outcome_arms: GradeArms::of_outcomes(graded),
-            outcome_delta: graded
-                .report
-                .outcome_delta
-                .map(|delta| (delta * 100.0).round()),
         }
     }
 }
@@ -2400,6 +2394,23 @@ impl InChats<'_> {
                 }
             },
         };
+        // What it asked for, where the ask's notice came ahead of its hook.
+        if whole_turn
+            && end == ChatEnd::Asked
+            && let Some((_, heard)) = &told
+        {
+            let until = Instant::now() + ANSWER_COMES_WITHIN;
+            while let Some(left) = until.checked_duration_since(Instant::now()) {
+                match heard.recv_timeout(left) {
+                    Ok(Watched::AsksFor(what)) => {
+                        end = ChatEnd::AskedFor { what };
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+        }
         // What the turn ended saying, where it is heard just after the turn's end.
         if whole_turn
             && answer.is_none()

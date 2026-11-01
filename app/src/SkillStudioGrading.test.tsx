@@ -58,7 +58,6 @@ function card(level: SkillLevel): GradeScorecard {
     outcome: "graded",
     arms: { with: 60, without: 50, previous: null },
     outcome_arms: null,
-    outcome_delta: null,
     evals: [],
     spent: { chats: 4, tokens: 1000, cost_usd: 0.2, limit_usd: 3 },
     tests: [],

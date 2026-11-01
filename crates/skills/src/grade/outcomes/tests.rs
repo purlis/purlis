@@ -313,6 +313,22 @@ fn a_chat_that_asked_says_for_what() {
         "{why}"
     );
     assert_eq!(report.asked(), 6);
+
+    let mut host = Judged {
+        asked: Vec::new(),
+        eval_end: turns,
+        judge: |_| {
+            (
+                ChatEnd::AskedFor {
+                    what: "the tool Write".into(),
+                },
+                None,
+            )
+        },
+    };
+    let report = grade(&request(), &mut host, None);
+    let why = report.outcomes[0].results[0].failed.as_deref().unwrap();
+    assert!(why.contains("The judge asked for the tool Write"), "{why}");
 }
 
 /// A chat that closed mid-turn and said no spend stops a capped grade, as the cap could not be

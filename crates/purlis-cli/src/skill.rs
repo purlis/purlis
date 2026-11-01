@@ -1482,6 +1482,13 @@ fn grade_said(
         // The chats that asked the person something (SK-59): ended there, and said here.
         let asked = match one.report.asked() {
             0 => String::new(),
+            // An outcome eval's ask fails its run, as a trigger test's does not count (SK-55).
+            asked if !one.report.outcomes.is_empty() => format!(
+                "  {} asked you something, and purlis ended {them} there: a trigger test's is not \
+                 counted, and an outcome eval's fails that run",
+                counted(asked, "chat", "chats"),
+                them = if asked == 1 { "it" } else { "them" }
+            ),
             asked => format!(
                 "  {} asked you something, and purlis ended {them} there without counting {them}",
                 counted(asked, "chat", "chats"),
@@ -1516,16 +1523,24 @@ fn grade_said(
                     .unwrap_or_default(),
             )
         };
+        // Its trigger tests, where it ran any: a grade of outcome evals alone says nothing of them.
+        let tests = if one.report.triggers.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "  {passed} of {} passed  with {}  without {}{}",
+                counted(of, "test", "tests"),
+                rate(Arm::With),
+                rate(Arm::Without),
+                previous
+                    .map(|commit| format!("  previous {commit} {}", rate(Arm::Previous)))
+                    .unwrap_or_default(),
+            )
+        };
         text.push_str(&format!(
-            "  {}  {}  {passed} of {} passed  with {}  without {}{}{}{outcomes}{asked}  ({}){}\n",
+            "  {}  {}{tests}{}{outcomes}{asked}  ({}){}\n",
             purlis_core::skills::review::escaped_line(&one.ts),
             one.commit.as_deref().map_or("uncommitted", history::short),
-            counted(of, "test", "tests"),
-            rate(Arm::With),
-            rate(Arm::Without),
-            previous
-                .map(|commit| format!("  previous {commit} {}", rate(Arm::Previous)))
-                .unwrap_or_default(),
             one.report
                 .delta
                 .map(|delta| match previous {
@@ -1546,6 +1561,22 @@ fn grade_said(
                 ""
             },
         ));
+        // Why a run of an outcome eval failed (SK-55).
+        for eval in &one.report.outcomes {
+            for (run, why) in eval
+                .results
+                .iter()
+                .zip(1u32..)
+                .filter_map(|(one, run)| one.failed.as_deref().map(|why| (run, why)))
+            {
+                text.push_str(&format!(
+                    "    Outcome eval {}, {}, run {run}: {}\n",
+                    eval.eval,
+                    eval.arm.word(),
+                    purlis_core::skills::review::escaped_line(why),
+                ));
+            }
+        }
     }
     text
 }

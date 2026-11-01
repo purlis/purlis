@@ -1300,10 +1300,14 @@ fn verdict_of(run: &mut OutcomeRun, verdict: &ChatRan, expectations: &[String]) 
                 Err(why) => failed(run, format!("{why} So the eval failed.")),
             },
         },
-        ChatEnd::Asked | ChatEnd::AskedFor { .. } => failed(
+        ChatEnd::Asked => failed(
             run,
             "The judge asked the person something, which a judge may not, so the eval failed."
                 .to_owned(),
+        ),
+        ChatEnd::AskedFor { what } => failed(
+            run,
+            format!("The judge asked for {what}, which a judge may not, so the eval failed."),
         ),
         ChatEnd::ReadPast => failed(
             run,

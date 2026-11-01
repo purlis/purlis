@@ -8074,12 +8074,11 @@ export type GradeScorecard = {
 	arms: GradeArms,
 	spent: GradeSpent,
 	/**
-	 *  **Its outcome evals** (SK-55, #3235), each in each arm, each arm's pass rate in points,
-	 *  and the difference the skill made there: none, and null, in a grade that ran none.
+	 *  **Its outcome evals** (SK-55, #3235), each in each arm, and each arm's pass rate in points:
+	 *  none, and null, in a grade that scored none.
 	 */
 	evals: ScoredEval[],
 	outcome_arms: GradeArms | null,
-	outcome_delta: number | null,
 };
 
 /**

@@ -360,6 +360,7 @@ describe("a skill's page", () => {
         delta_without: null,
         asked: 0,
         tests: [],
+        evals: [],
       }),
     });
     const onOpenView = vi.fn();
