@@ -349,7 +349,11 @@ fn skills_used(root: &Path, name: &str) -> BTreeSet<String> {
                 continue;
             }
             let skill = crate::pyrepr::str_json(&row["skill"]);
-            out.insert(purlis_skills::run_name(&skill).into_owned());
+            let level = row
+                .get("level")
+                .and_then(|level| level.as_str())
+                .and_then(purlis_skills::runs::Level::parse);
+            out.insert(crate::skilluse::own_name(&skill, level).into_owned());
         }
     }
     out

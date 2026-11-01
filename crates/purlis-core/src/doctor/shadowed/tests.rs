@@ -57,7 +57,13 @@ fn a_copy_of_a_shipped_skill_is_named() {
     std::fs::create_dir_all(skills.join("purlis-browser")).unwrap();
     std::fs::create_dir_all(skills.join("ours")).unwrap();
     std::fs::write(skills.join("ours/SKILL.md"), "---\nname: ours\n---\n").unwrap();
-    assert_eq!(shadowed(dir.path()).unwrap().skills, ["purlis-secrets"]);
+    // And one kept from before the prefix.
+    std::fs::create_dir_all(skills.join("handoff")).unwrap();
+    std::fs::write(skills.join("handoff/SKILL.md"), "---\nname: handoff\n---\n").unwrap();
+    assert_eq!(
+        shadowed(dir.path()).unwrap().skills,
+        ["handoff", "purlis-secrets"]
+    );
 }
 
 #[test]

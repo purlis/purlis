@@ -349,6 +349,41 @@ fn the_index_has_one_name_on_every_route_and_a_skill_of_its_old_name_is_another_
 }
 
 #[test]
+fn a_repo_copy_of_the_index_skills_name_is_a_clash_by_how_the_route_reads_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    let theirs = || crate::OutsideSkill {
+        skill: crate::Skill {
+            name: INDEX.to_owned(),
+            description: "The repo's.".to_owned(),
+            path: tmp.path().join("clone").join(INDEX).join("SKILL.md"),
+        },
+        root: tmp.path().join("clone"),
+        origin: crate::Origin::Repo,
+        id: INDEX.to_owned(),
+        owner: crate::Owner::Repo("app".to_owned()),
+        switch: crate::Switch::Alone,
+        off: false,
+        unread: None,
+    };
+    for (route, outcome) in [
+        (Route::Config, crate::Outcome::EitherOne),
+        (Route::Plugin, crate::Outcome::BothLoad),
+        (Route::Briefing, crate::Outcome::BothLoad),
+    ] {
+        let set = set_on(&plane, &built_in, route).with_outside(route, [theirs()]);
+        assert_eq!(
+            set.clashes
+                .iter()
+                .map(|c| (c.name.as_str(), c.plane.origin, c.outcome))
+                .collect::<Vec<_>>(),
+            [(INDEX, crate::Origin::BuiltIn, outcome)],
+            "{route:?}"
+        );
+    }
+}
+
+#[test]
 fn the_index_costs_one_skill_and_its_description_of_what_is_left_listed() {
     let tmp = tempfile::tempdir().unwrap();
     let (plane, built_in) = three(tmp.path());

@@ -50,7 +50,11 @@ fn a_skill_with_a_name_of_purlis_s_own_goes_nowhere() {
                 purpose
             )
             .err(),
-            Some(crate::skills::NAME_RESERVED.to_owned()),
+            Some(
+                "purlis-mine cannot be shared: a name starting with purlis- belongs to purlis, \
+                 so rename it first"
+                    .to_owned()
+            ),
         );
     }
 }

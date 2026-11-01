@@ -1233,7 +1233,7 @@ fn a_briefed_chat_in_a_clone_is_told_the_repos_copy_of_a_name_and_not_the_projec
 }
 
 #[test]
-fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_and_is_another_on_opencode() {
+fn a_repo_skill_with_a_reserved_name_one_never_replaces_it_on_codex_and_is_another_on_opencode() {
     // SK-6 (#2769): a clone's `secrets` must not take purlis's own away from a chat.
     let tmp = tempfile::tempdir().unwrap();
     let plane = tmp.path().join("plane");

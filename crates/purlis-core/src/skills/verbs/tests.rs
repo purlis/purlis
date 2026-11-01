@@ -1955,7 +1955,7 @@ fn a_rename_to_a_built_in_skills_name_is_refused_at_every_level_and_changes_noth
 }
 
 #[test]
-fn a_skill_named_as_a_built_in_one_is_not_moved_or_shared_to_any_level() {
+fn a_skill_with_a_reserved_name_one_is_not_moved_or_shared_to_any_level() {
     let tmp = plane();
     let root = tmp.path();
     // Written by hand, or by a purlis older than the built-in skill.
@@ -1993,7 +1993,7 @@ fn a_skill_named_as_a_built_in_one_is_not_moved_or_shared_to_any_level() {
 }
 
 #[test]
-fn a_deleted_skill_named_as_a_built_in_one_is_not_restored() {
+fn a_deleted_skill_with_a_reserved_name_one_is_not_restored() {
     let tmp = plane();
     let root = tmp.path();
     skill(root, "skills/purlis-secrets", "purlis-secrets", "Mine.");
@@ -2014,7 +2014,7 @@ fn a_deleted_skill_named_as_a_built_in_one_is_not_restored() {
 /// #3729: a deleted skill whose name a built-in skill took comes back under a name the person
 /// picks, its `name:` and folder renamed, from this machine's kept copy.
 #[test]
-fn a_deleted_skill_named_as_a_built_in_one_is_restored_under_a_new_name() {
+fn a_deleted_skill_with_a_reserved_name_one_is_restored_under_a_new_name() {
     let tmp = plane();
     let root = tmp.path();
     skill(root, "skills/purlis-secrets", "purlis-secrets", "Mine.");
@@ -2125,7 +2125,7 @@ fn a_skill_on_disk_with_a_reserved_name_is_a_clash_to_rename_at_every_level() {
     // A built-in skill's old name is anyone's.
     skill(root, "skills/handoff", "handoff", "Mine.");
 
-    let clashes = crate::skills::named_as_a_built_in(root);
+    let clashes = crate::skills::with_a_reserved_name(root);
 
     let mut wanted: Vec<(String, Level, String)> = every_level()
         .into_iter()

@@ -169,7 +169,10 @@ pub fn gather(
     let mut waiting = vec![(level.clone(), name.to_owned())];
     while let Some((level, name)) = waiting.pop() {
         if crate::skills::name_reserved(&name) {
-            return Err(crate::skills::NAME_RESERVED.to_owned());
+            return Err(format!(
+                "{name} cannot be shared: a name starting with purlis- belongs to purlis, so \
+                 rename it first"
+            ));
         }
         let skill = one_skill(plane, &level, &name)?;
         if purpose == Purpose::Publish && grades::is_local(plane, &level) {

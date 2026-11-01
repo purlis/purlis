@@ -12,7 +12,7 @@
 ## Old names keep working
 
 - `purlis:handoff` and `charter:handoff`, in a persona's `skills:` list, a skill's or a curation action's text or a name given to `skill_load`, read as `purlis:purlis-handoff`. Nobody's plane has to change. `Reference::parse` is the one reading.
-- **A bare `handoff` is an ordinary skill name.** It means the plane's or the harness's skill of that name and never falls back to the built-in one, so a name has one meaning however many skills exist. A bare `/smart-close` is no longer purlis's smart close. `/purlis:smart-close` still is.
+- **A bare `handoff` is an ordinary skill name.** It means the plane's or the harness's skill of that name and never falls back to the built-in one, so a name has one meaning however many skills exist. A bare `/smart-close` is no longer purlis's smart close. purlis still hears `/purlis:smart-close` as one, though a harness that knows only the new command may not run it.
 
 ## The prefix is reserved
 
@@ -20,7 +20,7 @@
 - **A plane skill already named so is left out, never deleted**: `Reason::ReservedName`, whose text asks for a rename. Needs you lists it, as it listed a plane skill with a built-in skill's name.
 - **The prefix replaces the list.** Which names are reserved no longer depends on which built-in skills exist, so a later built-in skill cannot take a name a plane already uses.
 - **A plane skill named `handoff` loads**, and so does one named `skill-index`. A built-in skill still never loses, because no plane skill can have its name.
-- **A repo or harness skill named `purlis-<name>` is not left out**, because the harness reads it whatever purlis says. The built-in lints warn of it. Where it has the name of a skill purlis hands, it is a `Clash`: `Outcome::BothLoad`, or on opencode, which keeps one skill per bare name, `Outcome::EitherOne`.
+- **A repo or harness skill named `purlis-<name>` is not left out**, because the harness reads it whatever purlis says. The built-in lints warn of it. Where it has the name of a skill purlis hands, the index skill's among them, it is a `Clash`: `Outcome::BothLoad`, or on opencode, which keeps one skill per bare name, `Outcome::EitherOne`.
 
 ## What goes
 

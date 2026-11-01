@@ -420,6 +420,10 @@ fn a_run_of_a_built_in_skill_by_any_of_its_names_is_a_run_of_that_skill() {
     // A run recorded before the skill took the prefix is of it too.
     assert!(run("purlis:secrets", Origin::BuiltIn).is_of("purlis-secrets"));
     assert!(!run("purlis-secrets", Origin::BuiltIn).is_of("secrets"));
+    // And of a row that does not say which copy, by its namespace, and a bare one by its copy.
+    assert!(run("secrets", Origin::BuiltIn).is_of("purlis-secrets"));
+    assert!(!run("secrets", Origin::BuiltIn).is_of("secrets"));
+    assert_eq!(own_name("purlis:secrets", None), "purlis-secrets");
     // A plane skill's run keeps the name it has.
     assert!(run("deploy", Origin::Project).is_of("deploy"));
     assert!(!run("deploy", Origin::Project).is_of("purlis-deploy"));

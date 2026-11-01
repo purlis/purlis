@@ -106,11 +106,7 @@ pub fn by_name<'a>(set: &'a SkillSet, name: &str) -> Option<&'a Effective> {
         });
     }
     let bare = match name.rsplit_once(':') {
-        Some((namespace, leaf))
-            if namespace == "skills" || crate::BUILT_IN_PREFIXES.contains(&namespace) =>
-        {
-            leaf
-        }
+        Some(("skills", leaf)) => leaf,
         _ => name,
     };
     set.effective

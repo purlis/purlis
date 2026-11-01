@@ -756,6 +756,24 @@ impl SkillSet {
                 .parent()
                 .map(Path::to_path_buf)
                 .unwrap_or_default();
+            // The index skill is no effective skill, so no lookup finds it, and a harness reads a
+            // copy of its name beside it all the same.
+            if one.id == router::INDEX && !one.off {
+                self.clashes.push(Clash {
+                    name: one.id.clone(),
+                    plane: At {
+                        origin: Origin::BuiltIn,
+                        local: false,
+                    },
+                    outside: one.origin,
+                    owner: one.owner.clone(),
+                    outcome: if route == Route::Config {
+                        Outcome::EitherOne
+                    } else {
+                        Outcome::BothLoad
+                    },
+                });
+            }
             if let Some(at) = handed {
                 let plane = &self.effective[at];
                 // A built-in skill never loses to any other copy, and purlis never turns off a

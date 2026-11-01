@@ -143,7 +143,7 @@ pub fn skills_off_for(
     chosen
         .skills_off
         .iter()
-        .filter(|name| !built_in.contains(*name))
+        .filter(|name| !built_in.contains(*name) && name.as_str() != INDEX)
         .filter(|name| adapter.skill_named_alone(name).is_none())
         .cloned()
         .collect()
@@ -188,7 +188,7 @@ pub const NAME_RESERVED: &str = "A name starting with purlis- belongs to purlis;
 /// made before the prefix was reserved, or written into the plane by hand. No chat gets it, and
 /// it stays on disk; Needs you lists it as a clash to rename (#3689).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NamedAsABuiltIn {
+pub struct WithAReservedName {
     pub name: String,
     pub level: verbs::Level,
     /// Its folder, relative to the plane, `/` between the parts.
@@ -197,7 +197,7 @@ pub struct NamedAsABuiltIn {
 
 /// **Every skill of the plane at `plane` with a name of purlis's own** ([`name_reserved`]), at
 /// every level ([`verbs::Level::every`]), in that order.
-pub fn named_as_a_built_in(plane: &Path) -> Vec<NamedAsABuiltIn> {
+pub fn with_a_reserved_name(plane: &Path) -> Vec<WithAReservedName> {
     let mut out = Vec::new();
     for level in verbs::Level::every(plane) {
         let Some(dir) = level.dir(plane) else {
@@ -205,7 +205,7 @@ pub fn named_as_a_built_in(plane: &Path) -> Vec<NamedAsABuiltIn> {
         };
         for skill in read(&dir) {
             if name_reserved(&skill.name) {
-                out.push(NamedAsABuiltIn {
+                out.push(WithAReservedName {
                     folder: verbs::rel(plane, skill.path.parent().unwrap_or(&skill.path)),
                     name: skill.name,
                     level: level.clone(),

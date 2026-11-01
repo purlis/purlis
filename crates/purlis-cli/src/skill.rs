@@ -1833,10 +1833,17 @@ fn install(
                 // Those the level has already, made there or from another source, or a
                 // name of purlis's own: left as they are, and said (#4153).
                 for name in &there {
-                    voice::info(format!(
-                        "{} is there already at {level}, so it is left as it is.",
-                        esc(name)
-                    ));
+                    voice::info(if purlis_core::skills::name_reserved(name) {
+                        format!(
+                            "{} is left out: a name starting with purlis- belongs to purlis.",
+                            esc(name)
+                        )
+                    } else {
+                        format!(
+                            "{} is there already at {level}, so it is left as it is.",
+                            esc(name)
+                        )
+                    });
                 }
                 if review.skills.is_empty() {
                     voice::info(format!(
