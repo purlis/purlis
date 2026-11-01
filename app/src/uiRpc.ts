@@ -8307,6 +8307,8 @@ export type PoolLimitHitRow = {
 	needed: number,
 	/**  The value offered, which the person can edit; none where no value would hold it. */
 	suggested: number | null,
+	/**  That value is what the team defining the pool suggests (#4287). */
+	team_suggests: boolean,
 };
 
 /**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */

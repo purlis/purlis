@@ -14,7 +14,7 @@ import { SettingRow } from "./components";
 
 /** What the page says of limits, over its groups (A1, Q11). */
 const ABOUT =
-  "Every default is already the best value, so most people never change these. A limit left empty follows purlis's default as it improves. One you set stays, and is marked.";
+  "Every default is already the best value, so most people never change these. A limit left empty follows the default as it improves. One you set stays, and is marked.";
 
 /**
  * What Replace does, said before it does it (#4286, Q13): running chats carry on where they are,
@@ -261,8 +261,9 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
     else save(checked.data, mine);
   };
   const refused = why !== undefined;
+  const whole = useRef<HTMLDivElement>(null);
   return (
-    <div className="pool-limit">
+    <div className="pool-limit" ref={whole}>
       <SettingRow
         label={row.plain}
         reset={{
@@ -336,6 +337,8 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
               setWhy(undefined);
               setTyped(undefined);
               save(row.suggested, mine);
+              // The button goes with the save: the person is left on the value it set.
+              void saves.current.then(() => whole.current?.querySelector("input")?.focus());
             }}
           >
             Use {row.suggested_said}

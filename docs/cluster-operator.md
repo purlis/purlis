@@ -455,8 +455,9 @@ spec:
   next link. A value above the highest is refused as it is typed and everywhere else, a suggestion stops
   at it, and a value kept from before holds to it.
 - **At the highest**, the error says the team set it and to ask whoever looks after the Pool.
-- **A value that limit can't be, or a key a desktop doesn't know, says nothing**, so a Pool can't make a
-  limit more than purlis can carry.
+- **A value above what a limit can carry, or a key a desktop doesn't know, says nothing**, so a Pool can't
+  make a limit more than purlis can carry. A highest below what a limit can be holds at the least it can
+  be, and a default above the highest is dropped.
 - **These bound a person's own desktop, which they run.** They are an agreement a team keeps, not a
   boundary against that person. What the cluster itself enforces is the quota and the Pool's other
   settings. These are the Pool's, not the chart's: the chart installs the operator and defines no Pool.

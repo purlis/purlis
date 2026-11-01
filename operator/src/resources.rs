@@ -73,7 +73,7 @@ pub struct PoolSpec {
     /// What the team set for the limits of chats on this pool (#4287), by the limit's key
     /// (docs/plane-format.md): each one's default, and the highest a person may choose. Each
     /// desktop reads them as the pool is added and at each link, and holds its person to them; a
-    /// key it doesn't know, or a value that limit can't be, says nothing. No limit is set unless
+    /// key it doesn't know, or a value that limit can't carry, says nothing. No limit is set unless
     /// the pool says so.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub limits: std::collections::BTreeMap<String, PoolLimit>,
@@ -112,7 +112,7 @@ pub struct PoolForge {
 #[derive(KubeSchema, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolLimit {
-    /// The value a person who chose none has, in the limit's unit.
+    /// Holds for a person who chose none where it is below purlis's default; a higher one is only offered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<u32>,
     /// The highest value a person may choose, in the limit's unit.
