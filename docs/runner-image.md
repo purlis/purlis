@@ -8,15 +8,13 @@ own, as long as it keeps the contract below.
 
 ## purlis's own image
 
-- **Where:** `ghcr.io/purlis/purlis-runner`, a private package of the `purlis` organisation
-  on GitHub. It stays private until the maintainer rules to publish it, and pulling it needs
-  a GitHub sign-in with read access to the package. Before each push, the workflow checks
-  through GitHub's packages API that the package is private. On the very first run there is
-  no package yet, so a placeholder holding one small text file is pushed to create it, and
-  the package is shown to be private before any of purlis goes in. Before any tag or
-  signature, the workflow checks again that the package is private, and that the registry
-  refuses both images to anyone who has not signed in. If either check cannot get a clear
-  answer, the run stops.
+- **Where:** `ghcr.io/purlis/purlis-runner`, a public package of the `purlis` organisation on
+  GitHub. Pulling it needs no sign-in. Before each push, the workflow checks through GitHub's
+  packages API that the package is public. Before any tag or signature, it checks again, and
+  that the registry serves both images to anyone who has not signed in. If either check cannot
+  get a clear answer, the run stops. Once the image is signed and attested, a job with no
+  registry sign-in pulls it and runs the checks below, and a release does not name an image
+  that fails them.
 - **What:** `linux/amd64` and `linux/arm64` under one index. Each architecture is built on
   a GitHub runner of that architecture, from the `purlis` binary compiled there the way the
   Linux release binary is: the pinned toolchain, `cargo auditable`, the `dev-release`
@@ -46,8 +44,8 @@ own, as long as it keeps the contract below.
 - **Signed:** each image is signed keyless with [cosign](https://docs.sigstore.dev/), by the
   `runner-image.yml` workflow on `main`, through GitHub's OIDC identity. No signing key is
   stored anywhere. Keyless signing writes an entry to Sigstore's public transparency log.
-  The entry names the image and its digest, and the image itself stays private. The
-  maintainer accepted that entry (ruled 2026-10-15). To check an image before you use it:
+  The entry names the image and its digest. To check an image before you use it, with no
+  sign-in:
 
   ```bash
   cosign verify ghcr.io/purlis/purlis-runner@sha256:<digest> \
@@ -67,8 +65,8 @@ own, as long as it keeps the contract below.
   of each architecture's image. The SBOM lists the image's Ubuntu packages and the crates the
   `purlis` binary was built from. Each is stored by GitHub and pushed to the registry beside
   the image, and the run that pushed the image verifies each one before it ends, so a release
-  never names an image without them. To check them yourself, signed in to the registry
-  (`gh auth token | docker login ghcr.io -u <you> --password-stdin`):
+  never names an image without them. To check them yourself (`gh attestation` needs `gh` signed
+  in to any GitHub account, to read GitHub's attestation API; the registry needs no sign-in):
 
   ```bash
   # Provenance: built by runner-image.yml in purlis/purlis, on a GitHub-hosted runner.

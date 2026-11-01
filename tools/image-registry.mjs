@@ -3,18 +3,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // What `runner-image.yml` (#2043) and `operator-image.yml` (#2238) ask before they push, tag or
-// sign an image into a private package of the organisation.
+// sign an image into a public package of the organisation (#4498).
 //
 //   node tools/image-registry.mjs visibility
-//       `private` or `absent` (no package yet), from the forge's packages API; exits 1 on any
-//       other answer, or none.
-//   node tools/image-registry.mjs ensure-private ARCH
-//       `private` once the packages API shows the package private. When there is no package
-//       yet, it first pushes a placeholder for linux/ARCH (one small text file, nothing of
-//       purlis) to make it, and asks again until it is shown; exits 1 on any other answer.
+//       `public`, from the forge's packages API; exits 1 on any other answer, or none. A package
+//       that is not there is one of the other answers: a new package starts private, and a
+//       release that names an image nobody can pull helps no one.
 //   node tools/image-registry.mjs anonymous DIGEST...
-//       `refused` when the registry refuses each digest to a puller who has not signed in;
-//       exits 1 when it serves one, or when its answers do not show that it refuses.
+//       `served` when the registry serves each digest to a puller who has not signed in; exits 1
+//       when it refuses one, or when its answers do not show that it serves.
 //   node tools/image-registry.mjs order SHA
 //       `main: <why>` when the image of SHA may be tagged `main`, `sha-only: <why>` when it may
 //       not (an image of a later commit holds `main`); exits 1 when it cannot place SHA.
@@ -24,10 +21,6 @@
 // package), GITHUB_REPOSITORY and GITHUB_REPOSITORY_OWNER, as the workflows' jobs have them.
 // **Every question fails closed:** a guess never pushes, tags or signs.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -46,60 +39,37 @@ export function packageOf({ image, owner }) {
 }
 
 /**
- * The package's visibility: `private`, or `absent` when it does not exist yet. Throws for any
- * other visibility, and when the forge's answer does not say.
+ * The package's visibility: `public`. Throws for any other visibility, for a package that is not
+ * there, and when the forge's answer does not say.
  */
 export function visibility({ org, name, api }) {
   let text;
   try {
     text = api([`orgs/${org}/packages/container/${name}`]);
   } catch (error) {
-    if (/HTTP 404/.test(String(error.message))) return "absent";
-    throw new Error(`cannot tell whether ${org}/${name} is private: ${error.message}`);
+    throw new Error(`cannot tell whether ${org}/${name} is public: ${error.message}`);
   }
   let shown;
   try {
     shown = JSON.parse(text).visibility;
   } catch {
-    throw new Error(`cannot tell whether ${org}/${name} is private: the forge's answer is not JSON`);
+    throw new Error(`cannot tell whether ${org}/${name} is public: the forge's answer is not JSON`);
   }
-  if (shown !== "private") {
-    throw new Error(
-      `the package ${org}/${name} is not private (its visibility is ${JSON.stringify(shown ?? null)}); it is published only on the operator's ruling`,
-    );
+  if (shown !== "public") {
+    throw new Error(`the package ${org}/${name} is not public (its visibility is ${JSON.stringify(shown ?? null)})`);
   }
-  return "private";
+  return "public";
 }
 
 /**
- * `private` once the packages API shows the package private. A package that does not exist yet
- * is made by `pushPlaceholder()` and asked about again, `tries` times with `wait()` before each,
- * until it is there. Throws when it is shown anything but private, when it cannot be asked, and
- * when it is still not there, so nothing of purlis is pushed into it.
- */
-export async function ensurePrivate({ org, name, api, pushPlaceholder, wait, tries = 6 }) {
-  let state = visibility({ org, name, api });
-  if (state === "absent") {
-    await pushPlaceholder();
-    for (let left = tries; left > 0 && state === "absent"; left -= 1) {
-      await wait();
-      state = visibility({ org, name, api });
-    }
-  }
-  if (state !== "private") {
-    throw new Error(`the package ${org}/${name} is still not there after its placeholder was pushed, so nothing is pushed into it`);
-  }
-  return state;
-}
-
-/**
- * `refused` when the registry refuses every one of `digests` of `repository` to a puller who has
+ * `served` when the registry serves every one of `digests` of `repository` to a puller who has
  * not signed in. `get(url, headers)` answers `{ status, body }` or throws. Throws when the
- * registry serves one, and when its answers do not show that it refuses.
+ * registry refuses one, and when its answers do not show that it serves.
  */
 export async function anonymousPull({ repository, digests, get }) {
   if (digests.length === 0) throw new Error("no digest to ask about");
-  const unclear = (why) => new Error(`cannot show that ${repository} refuses an anonymous pull: ${why}`);
+  const refused = (what) => new Error(`${repository} cannot be pulled without signing in: ${what}`);
+  const unclear = (why) => new Error(`cannot show that ${repository} serves an anonymous pull: ${why}`);
 
   let answer;
   try {
@@ -107,8 +77,7 @@ export async function anonymousPull({ repository, digests, get }) {
   } catch (error) {
     throw unclear(`asking for an anonymous token failed: ${error.message}`);
   }
-  // A registry that will not even hand out an anonymous token for the package refuses the pull.
-  if (answer.status === 401 || answer.status === 403) return "refused";
+  if (answer.status === 401 || answer.status === 403) throw refused(`the token endpoint answered ${answer.status}`);
   if (answer.status !== 200) throw unclear(`the token endpoint answered ${answer.status}`);
   let token;
   try {
@@ -116,8 +85,6 @@ export async function anonymousPull({ repository, digests, get }) {
   } catch {
     throw unclear("the token endpoint's answer is not JSON");
   }
-  // Without a token every manifest request is refused, whatever the package's visibility, so
-  // a refusal then would show nothing.
   if (typeof token !== "string" || token === "") throw unclear("the token endpoint gave no token");
 
   const accept = [
@@ -135,12 +102,10 @@ export async function anonymousPull({ repository, digests, get }) {
     } catch (error) {
       throw unclear(`asking for ${digest} failed: ${error.message}`);
     }
-    if (pulled.status === 200) {
-      throw new Error(`${repository}@${digest} can be pulled without signing in: the package is public`);
-    }
-    if (![401, 403, 404].includes(pulled.status)) throw unclear(`${digest} answered ${pulled.status}`);
+    if ([401, 403, 404].includes(pulled.status)) throw refused(`${digest} answered ${pulled.status}`);
+    if (pulled.status !== 200) throw unclear(`${digest} answered ${pulled.status}`);
   }
-  return "refused";
+  return "served";
 }
 
 /** The commit of the image tagged `main` (from its `sha-<commit>` tag), or `null` when none is. */
@@ -199,54 +164,20 @@ async function httpGet(url, headers) {
   return { status: response.status, body: await response.text() };
 }
 
-/** Pushes a placeholder for linux/`arch` into `image`, by digest: one text file, nothing of purlis. */
-function pushPlaceholder(image, arch) {
-  const context = mkdtempSync(join(tmpdir(), "placeholder-"));
-  try {
-    writeFileSync(join(context, "README"), `The package of ${image}, made private before the image is pushed.\n`);
-    writeFileSync(join(context, "Dockerfile"), "FROM scratch\nCOPY README /README\n");
-    execFileSync(
-      "docker",
-      [
-        "buildx",
-        "build",
-        "--platform",
-        `linux/${arch}`,
-        "--provenance=false",
-        "--output",
-        `type=image,name=${image},push-by-digest=true,name-canonical=true,push=true`,
-        context,
-      ],
-      { stdio: ["ignore", "inherit", "inherit"] },
-    );
-  } finally {
-    rmSync(context, { recursive: true, force: true });
-  }
-}
-
 async function main([command, ...rest]) {
   const org = process.env.GITHUB_REPOSITORY_OWNER;
   const repo = process.env.GITHUB_REPOSITORY;
   if (!org || !repo) throw new Error("GITHUB_REPOSITORY and GITHUB_REPOSITORY_OWNER have to be set");
-  const image = process.env.IMAGE;
-  const pkg = packageOf({ image, owner: org });
+  const pkg = packageOf({ image: process.env.IMAGE, owner: org });
   if (command === "visibility" && rest.length === 0) {
     console.log(visibility({ ...pkg, api: ghApi }));
-  } else if (command === "ensure-private" && rest.length === 1 && /^(amd64|arm64)$/.test(rest[0])) {
-    const shown = await ensurePrivate({
-      ...pkg,
-      api: ghApi,
-      pushPlaceholder: () => pushPlaceholder(image, rest[0]),
-      wait: () => sleep(10_000),
-    });
-    console.log(shown);
   } else if (command === "anonymous" && rest.length > 0) {
     console.log(await anonymousPull({ repository: `${pkg.org}/${pkg.name}`, digests: rest, get: httpGet }));
   } else if (command === "order" && rest.length === 1) {
     const order = mainTag({ ...pkg, repo, sha: rest[0], api: ghApi });
     console.log(`${order.main ? "main" : "sha-only"}: ${order.why}`);
   } else {
-    throw new Error("usage: image-registry.mjs visibility | ensure-private amd64|arm64 | anonymous DIGEST... | order SHA");
+    throw new Error("usage: image-registry.mjs visibility | anonymous DIGEST... | order SHA");
   }
 }
 
