@@ -607,6 +607,7 @@ fn the_session_s_own_stop_racing_the_last_report_is_looked_at_once_it_is_applied
             its_asker: false,
             line_coming: false,
             on_a_notice: false,
+            background_turn: false,
             now: 0,
         },
     );
