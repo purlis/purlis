@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
-import { DoorPage, Launcher } from "./DoorPage";
+import { useCallback, useContext, useEffect, useRef, useState, type ComponentProps } from "react";
+import { DoorPage, Launcher, WindowLinesAt } from "./DoorPage";
 import { GitMissing } from "./GitMissing";
 import type { GitGate } from "./gitPresence";
 import { HarnessSetupTab } from "./HarnessSetupTab";
@@ -58,6 +58,7 @@ export function Onboarding({
 }) {
   const { progress, counted, dispatch, reread } = steps;
   const { step } = progress;
+  const linesAt = useContext(WindowLinesAt);
 
   // Each time the steps appear, at the place this machine kept: a quit, or a project the person
   // went to and came back from, picks up where it was. The read is normally one IPC round trip;
@@ -172,27 +173,30 @@ export function Onboarding({
             </Launcher>
           )}
           <div ref={page} className="onboarding-page" hidden={step === "git"}>
-            <Welcome
-              {...welcome}
-              onOpenRepo={openRepoWithGit}
-              door={door}
-              onChose={chose}
-              withGit={withGit}
-              onSignedIn={() => setSignedIn(true)}
-              stepSaid={stepSaid}
-              signInEnd={
-                step === "sign-in" && (
-                  <div className="doing">
-                    <Button
-                      variant={signedIn ? "primary" : "secondary"}
-                      onPress={() => dispatch({ kind: "skip" })}
-                    >
-                      {signedIn ? "Continue" : "Skip for now"}
-                    </Button>
-                  </div>
-                )
-              }
-            />
+            {/* Hidden under the git check, it gives the window's lines to that launcher. */}
+            <WindowLinesAt.Provider value={step === "git" ? null : linesAt}>
+              <Welcome
+                {...welcome}
+                onOpenRepo={openRepoWithGit}
+                door={door}
+                onChose={chose}
+                withGit={withGit}
+                onSignedIn={() => setSignedIn(true)}
+                stepSaid={stepSaid}
+                signInEnd={
+                  step === "sign-in" && (
+                    <div className="doing">
+                      <Button
+                        variant={signedIn ? "primary" : "secondary"}
+                        onPress={() => dispatch({ kind: "skip" })}
+                      >
+                        {signedIn ? "Continue" : "Skip for now"}
+                      </Button>
+                    </div>
+                  )
+                }
+              />
+            </WindowLinesAt.Provider>
           </div>
         </>
       )}

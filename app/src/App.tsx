@@ -87,6 +87,7 @@ import { useAlertFix } from "./alertFix";
 import { waitingAsk, type Elsewhere } from "./InboxElsewhere";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
+import { WindowLinesAt } from "./DoorPage";
 import { Onboarding } from "./Onboarding";
 import { useGitPresence } from "./gitPresence";
 import { useOnboarding } from "./useOnboarding";
@@ -839,7 +840,7 @@ function App() {
       setMakingProject(true);
       setCreateForgeAsk(undefined);
       const answer = await commands
-        .createProject(path, planeIsThisRepo, adopt === "" ? null : adopt, forge)
+        .createProject(path, planeIsThisRepo, adopt === "" ? null : adopt, forge, null)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       setMakingProject(false);
       if (answer.status === "error") {
@@ -961,12 +962,12 @@ function App() {
    * refusal kept on the page that asked. It comes through the trust gate, and the guided steps
    * take it up as they take up a repo opened there.
    */
-  const firstRunMake = useCallback((folder: string) => {
+  const firstRunMake = useCallback((folder: string, template: string | null) => {
     setRepoTrouble(undefined);
     setRepoForgeAsk(undefined);
     setOpeningRepo(true);
     void commands
-      .createProject(folder, false, null, null)
+      .createProject(folder, false, null, null, template)
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
       .then((answer) => {
         setOpeningRepo(false);
@@ -2639,32 +2640,33 @@ function App() {
             {openerUp && !settingsAlone && (
               <div className="body">
                 <div className="panes">
-                  <div className="window-notices-at" ref={setWindowLinesAt} />
-                  <Onboarding
-                    steps={steps}
-                    gate={gitGate}
-                    holdsMade={steps.holding !== undefined && planes.includes(steps.holding)}
-                    reopen={(path) => void openInto(path, true)}
-                    here={!heldSomething && (launch?.here ?? false)}
-                    reason={launch?.reason ?? ""}
-                    adding={planes.length > 0}
-                    onOpen={(path) => void openInto(path, true)}
-                    onGoneListed={setOpenerGone}
-                    onGoneSettled={goneSettled}
-                    goneChanged={goneChanged}
-                    trouble={openTrouble}
-                    // Create a project's act, on every window: a repo into this machine's project
-                    // (FR-4), laid out from the template picked beside it (FR-17).
-                    onOpenRepo={firstRunRepo}
-                    onMakeProject={firstRunMake}
-                    onSignInToForge={(row) => {
-                      setRepoTrouble(undefined);
-                      void signInToForge(row).then(setRepoTrouble);
-                    }}
-                    openingRepo={openingRepo}
-                    repoTrouble={repoTrouble}
-                    repoForgeAsk={repoForgeAsk}
-                  />
+                  <WindowLinesAt.Provider value={setWindowLinesAt}>
+                    <Onboarding
+                      steps={steps}
+                      gate={gitGate}
+                      holdsMade={steps.holding !== undefined && planes.includes(steps.holding)}
+                      reopen={(path) => void openInto(path, true)}
+                      here={!heldSomething && (launch?.here ?? false)}
+                      reason={launch?.reason ?? ""}
+                      adding={planes.length > 0}
+                      onOpen={(path) => void openInto(path, true)}
+                      onGoneListed={setOpenerGone}
+                      onGoneSettled={goneSettled}
+                      goneChanged={goneChanged}
+                      trouble={openTrouble}
+                      // Create a project's act, on every window: a repo into this machine's project
+                      // (FR-4), laid out from the template picked beside it (FR-17).
+                      onOpenRepo={firstRunRepo}
+                      onMakeProject={firstRunMake}
+                      onSignInToForge={(row) => {
+                        setRepoTrouble(undefined);
+                        void signInToForge(row).then(setRepoTrouble);
+                      }}
+                      openingRepo={openingRepo}
+                      repoTrouble={repoTrouble}
+                      repoForgeAsk={repoForgeAsk}
+                    />
+                  </WindowLinesAt.Provider>
                 </div>
               </div>
             )}
