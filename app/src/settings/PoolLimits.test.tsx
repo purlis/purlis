@@ -24,6 +24,8 @@ const row = (over: Partial<PoolLimitRow> & { key: string }): PoolLimitRow => ({
   refused: null,
   highest_said: null,
   default_by_team: false,
+  suggested: null,
+  suggested_said: null,
   ...over,
 });
 
@@ -132,6 +134,42 @@ describe("a pool's limits page", () => {
     expect(screen.queryByText("You set this")).toBeNull();
     const reset = resetOf("first", POOL);
     expect((reset as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("offers what the team suggests, and one press sets it", async () => {
+    const set: { key: unknown; value: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "pool_limits") {
+        return {
+          groups: [
+            {
+              label: "Sign-in",
+              help: "Help.",
+              applies: null,
+              limits: [
+                row({
+                  key: "first",
+                  suggested: 256,
+                  suggested_said: "256 MiB",
+                }),
+              ],
+            },
+          ],
+          advanced: [],
+        } satisfies PoolLimitsPage;
+      }
+      if (cmd === "pool_limit_set") {
+        const { key, value } = args as { key: unknown; value: unknown };
+        set.push({ key, value });
+      }
+      return null;
+    });
+    render(<PoolLimits pool="builds" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Limits of pool builds" }));
+    await screen.findByText("The team suggests 256 MiB.");
+    expect(set).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: /^Use 256 MiB/ }));
+    await waitFor(() => expect(set).toEqual([{ key: "first", value: 256 }]));
   });
 
   it("says which limit the file got wrong, and Reset puts it right", async () => {

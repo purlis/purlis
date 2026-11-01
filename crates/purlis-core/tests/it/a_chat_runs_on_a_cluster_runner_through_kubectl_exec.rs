@@ -283,7 +283,7 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
         "metadata": { "name": pool },
         "spec": {
             "image": image,
-            "limits": { "signInWait": { "default": 20, "highest": 40 } },
+            "limits": { "signInWait": { "default": 10, "highest": 40 } },
         },
     });
     kubectl
@@ -299,7 +299,7 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
         use purlis_core::poollimits::{Chosen, LimitId::SignInWait};
         let seen = kubectl.pool(&pool).expect("the pool, read");
         let chosen = Chosen::default().under_team(seen.team_limits.as_ref());
-        assert_eq!(chosen.in_force(SignInWait), 20);
+        assert_eq!(chosen.in_force(SignInWait), 10);
         let why = SignInWait
             .limit()
             .check(41, chosen.team_highest(SignInWait))

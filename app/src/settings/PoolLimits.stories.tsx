@@ -32,6 +32,8 @@ const row = (
   refused: null,
   highest_said: null,
   default_by_team: false,
+  suggested: null,
+  suggested_said: null,
   ...over,
 });
 
@@ -110,7 +112,13 @@ function theCore(
               ...group,
               limits: group.limits.map((one) =>
                 one.key === "profileSize"
-                  ? { ...one, refused: refusedInFile ?? null, highest_said: teamHighest ?? null }
+                  ? {
+                      ...one,
+                      refused: refusedInFile ?? null,
+                      highest_said: teamHighest ?? null,
+                      suggested: teamHighest === undefined ? null : 256,
+                      suggested_said: teamHighest === undefined ? null : "256 MiB",
+                    }
                   : one,
               ),
             })),
@@ -275,12 +283,13 @@ export const RefusedInTheFile: Story = {
   },
 };
 
-/** **A cluster pool's team set a highest** (#4287): said under the limit. */
+/** **A cluster pool's team set a highest and suggests a value** (#4287): said under the limit. */
 export const TeamHighest: Story = {
   parameters: { teamHighest: "The team allows up to 512 MiB." },
   play: async ({ canvas }) => {
     await open(canvas);
     await canvas.findByText("The team allows up to 512 MiB.");
+    await canvas.findByRole("button", { name: /^Use 256 MiB/ });
   },
 };
 

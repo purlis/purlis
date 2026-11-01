@@ -1338,13 +1338,13 @@ fn a_cluster_pool_holds_to_what_the_team_set_and_follows_its_pool() {
     let config = tempfile::tempdir().unwrap();
     a_cluster_pool_in(config.path());
     let name = "team";
-    let team = serde_json::json!({"signInWait": {"default": 20, "highest": 40}});
+    let team = serde_json::json!({"signInWait": {"default": 10, "highest": 40}});
     keep_cluster_team_limits(config.path(), name, Some(&team)).unwrap();
 
     let chosen = |config: &Path| chosen_limits_of(config, name).unwrap();
     assert_eq!(
         chosen(config.path()).in_force(SignInWait),
-        20,
+        10,
         "kept in its row"
     );
     let refused = set_pool_limit(config.path(), name, SignInWait, Some(41))

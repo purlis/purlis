@@ -909,6 +909,10 @@ pub struct PoolLimitRow {
     pub highest_said: Option<String>,
     /// Whether its default is what the team defining the pool set (#4287).
     pub default_by_team: bool,
+    /// The value the team suggests, above what holds: one press sets it, as the person's (#4287).
+    pub suggested: Option<u32>,
+    /// That value in words.
+    pub suggested_said: Option<String>,
 }
 
 /// **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced.
@@ -956,6 +960,10 @@ fn limits_shown(
             .map(purlis_core::poollimits::RefusedValue::said)
             .or_else(|| chosen.over_team_said(limit.id)),
         default_by_team: chosen.default_by_team(limit.id),
+        suggested: chosen.team_suggests(limit.id).map(number),
+        suggested_said: chosen
+            .team_suggests(limit.id)
+            .map(|value| limit.unit.said(value)),
         highest_said: chosen
             .team_highest(limit.id)
             .map(|top| format!("The team allows up to {}.", limit.unit.said(top))),
