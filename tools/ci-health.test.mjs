@@ -9,6 +9,7 @@ import { test } from "node:test";
 
 import {
   ISSUE_TITLE,
+  evidenceRed,
   findIssue,
   flakyTests,
   headline,
@@ -27,6 +28,20 @@ const fixture = (name) =>
   JSON.parse(readFileSync(new URL(`./ci-health-fixtures/${name}`, import.meta.url), "utf8"));
 
 const runs = fixture("runs.json").workflow_runs;
+
+test("a job red on a green run is named, each time it was, with its time limit counted as red", () => {
+  const job = (name, conclusion) => ({ name, conclusion });
+  const suites = [
+    { checkRuns: { nodes: [job("outcome bars (macos-latest)", "FAILURE"), job("rust", "SUCCESS")] } },
+    { checkRuns: { nodes: [job("outcome bars (macos-latest)", "TIMED_OUT"), job("fedora", "FAILURE")] } },
+    { checkRuns: { nodes: [job("skipped one", "SKIPPED"), job("cancelled one", "CANCELLED")] } },
+    null,
+  ];
+  assert.deepEqual(evidenceRed(suites), [
+    { name: "outcome bars (macos-latest)", times: 2 },
+    { name: "fedora", times: 1 },
+  ]);
+});
 
 test("runs are counted per day, and cancelled runs count toward neither success nor failure", () => {
   const stats = runStats(runs);
@@ -171,7 +186,13 @@ const week = {
   flaky: flakyTests(suites),
   slowest: slowestTests([annotations]),
   slowestFrom: 1,
+  red: { runs: 8, jobs: [{ name: "outcome bars (macos-latest)", times: 5 }] },
 };
+
+test("the report names a job red on a green run, and says when there were none", () => {
+  assert.match(report(week), /Red on a green run[\s\S]*read from 8 of main's[\s\S]*\| 5 \| outcome bars \(macos-latest\) \|/);
+  assert.match(report({ ...week, red: { runs: 8, jobs: [] } }), /Red on a green run[\s\S]*None\./);
+});
 
 test("the report warns when main's required checks and the push-job check's list have parted", () => {
   const drift = { missing: ["parity"], extra: [] };

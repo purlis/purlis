@@ -1899,6 +1899,10 @@ jobs:
     # which refuses to land while main's newest finished `ci` run failed. This line goes once #4351
     # and #4352 are fixed, and the job is made required before the flag's flip (#2786).
     continue-on-error: true
+    # Twice the slowest seen (9 to 18 minutes). A timed-out job still turns the run `cancelled`,
+    # which skips the release: this bounds that, and main's queue behind it, from the 6 hours a job
+    # gets by default.
+    timeout-minutes: 40
     if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
     strategy:
       fail-fast: false
