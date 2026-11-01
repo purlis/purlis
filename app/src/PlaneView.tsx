@@ -9415,7 +9415,8 @@ export const PlaneView = memo(function PlaneView({
           workspace: frontWorkspace === OUTSIDE ? undefined : frontWorkspace,
           persona: personaOf(frontSession),
           harness: harnessOf(frontSession),
-          ...(worktree === undefined
+          // Only where it is filed: the view names a checkout by the chat's workspace.
+          ...(worktree === undefined || worktree.workspace !== frontWorkspace
             ? {}
             : { branchFolder: { repo: worktree.repo, piece: worktree.piece } }),
         };

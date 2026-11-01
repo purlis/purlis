@@ -4,7 +4,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { BranchChanged, PlaneId } from "./bindings";
 import { branchKey, type BranchRef } from "./branchStatus";
-import { listenToBranches } from "./branchWatchSet";
+import { answeredBy } from "./branchFolders";
+import { listenToBranches, newestListen } from "./branchWatchSet";
 import { listen } from "./here";
 
 /**
@@ -37,7 +38,8 @@ export function useRepoSkillsMoved(
     let gone = false;
     const wanted =
       workspace === undefined ? [] : mine.current.map((one) => ({ plane, workspace, ...one }));
-    void listenToBranches(owner, wanted).then(() => {
+    void listenToBranches(owner, wanted);
+    void answeredBy(newestListen).then(() => {
       if (!gone && wanted.length > 0) latest.current();
     });
     return () => {

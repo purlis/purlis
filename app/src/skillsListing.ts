@@ -548,7 +548,7 @@ export function filePlaceOf(skill: StudioSkill): FilePlace | { reason: string } 
 const BUILT_IN_FILE = "It ships with purlis: Make my own copy in the Skill studio to edit one.";
 /** Why Open in Skill studio cannot show a branch folder's copy (#4376). */
 const NOT_IN_THE_STUDIO = (piece: string) =>
-  `The Skill studio lists each clone's own folder, not branch ${piece}. Open the file shows this copy.`;
+  `The Skill studio lists each clone's own folder, not branch folder ${piece}. Open the file shows this copy.`;
 /** Why Use in this chat waits while no chat is in front. */
 const NO_CHAT = "No chat is in front to use it in.";
 

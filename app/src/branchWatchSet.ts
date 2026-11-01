@@ -14,6 +14,10 @@ const wantedBy = new Map<symbol, readonly WatchedBranch[]>();
 let listening = false;
 let newest: Promise<unknown> = Promise.resolve();
 
+/** The newest set sent, from any owner: what a read waits on (`answeredBy`), since the core
+ *  answers a set it passes over at once, before the newer one holds. */
+export const newestListen = (): Promise<unknown> => newest;
+
 /**
  * Sets what `owner` wants listened to, none to let go. Settles once the newest set sent by then,
  * from any owner, has been answered: the core passes over an older set.

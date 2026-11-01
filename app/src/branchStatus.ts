@@ -10,7 +10,7 @@ import {
   type PlaneId,
 } from "./bindings";
 import { answeredBy, heldWithin } from "./branchFolders";
-import { listenToBranches } from "./branchWatchSet";
+import { listenToBranches, newestListen } from "./branchWatchSet";
 import { listen } from "./here";
 
 /**
@@ -158,15 +158,13 @@ export function useBranchStatus(
   });
 
   const [owner] = useState(() => Symbol("explorer"));
-  /** The newest `branch_watch` this explorer has sent, answered or not. */
-  const newestWatch = useRef<Promise<unknown>>(Promise.resolve());
   useEffect(() => {
     const refs = keys === "" ? [] : keys.split("\0").map(unkey);
     const wanted =
       plane === undefined || workspace === undefined
         ? []
         : refs.map((ref) => ({ plane, workspace, ...ref }));
-    newestWatch.current = listenToBranches(owner, wanted);
+    void listenToBranches(owner, wanted);
     if (plane === undefined || workspace === undefined) return;
     if (asked.current.workspace !== workspace) asked.current = { workspace, keys: new Set() };
     byKey.current = new Map(refs.map((ref) => [branchKey(ref), ref]));
@@ -179,7 +177,7 @@ export function useBranchStatus(
         if (byKey.current.has(branchKey(ref))) read.current(ref);
       }
     };
-    const latest = () => newestWatch.current;
+    const latest = newestListen;
     void heldWithin(latest).then((inTime) => {
       readFresh();
       // Read before its watch held: read again once it holds, so a change in between is marked.

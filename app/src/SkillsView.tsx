@@ -225,6 +225,9 @@ export function SkillsView({
   const [restarted, setRestarted] = useState(0);
   // Asked again when the checkout the chat works in moves its skills (#4377).
   const [skillsMoved, setSkillsMoved] = useState(0);
+  // The clones the last read named, kept while another chat's is read: one watch, not a new set
+  // each way, for a move to a chat in the same clone.
+  const [repos, setRepos] = useState<readonly string[]>(NO_REPOS);
   const [read, setRead] = useState<{ of: FrontChat | undefined; read: Read }>();
   const [said, setSaid] = useState<{ label: string; text: string }>();
   const [busy, setBusy] = useState(false);
@@ -242,7 +245,10 @@ export function SkillsView({
     void readSkills(plane, place, of, () => planeUpdatedAt(plane, instructions))
       .catch((err: unknown): Read => ({ refused: String(err) }))
       .then((answer) => {
-        if (live) setRead({ of, read: answer });
+        if (!live) return;
+        setRead({ of, read: answer });
+        // A refused read names no clones, which is no reason to stop listening to them.
+        if ("rows" in answer) setRepos(answer.repos ?? NO_REPOS);
       });
     return () => {
       live = false;
@@ -262,18 +268,14 @@ export function SkillsView({
     skillsMoved,
   ]);
 
-  // Its branch folder, else the clones its read named: a chat's, and only the one in front's.
-  const repos =
-    read?.of?.session === session && read !== undefined && "rows" in read.read
-      ? read.read.repos
-      : undefined;
+  // Its branch folder, else the clones its read named.
   const branchFolder = chat?.branchFolder;
   const checkouts =
     session === undefined
       ? []
       : branchFolder !== undefined
         ? [branchFolder]
-        : (repos ?? []).map((repo) => ({ repo, piece: null }));
+        : repos.map((repo) => ({ repo, piece: null }));
   useRepoSkillsMoved(plane, chatWorkspace, checkouts, () => setSkillsMoved((was) => was + 1));
 
   // Its "started without" notice put away is put away in the core: its card goes as the Skills
@@ -482,3 +484,5 @@ export function SkillsView({
 
 /** No rows yet. */
 const NO_ROWS: ListedSkill[] = [];
+/** No clones yet. */
+const NO_REPOS: readonly string[] = [];

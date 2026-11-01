@@ -829,7 +829,7 @@ describe("a chat in a branch folder (#4326)", () => {
 
     expect(studio).toHaveAttribute("aria-disabled", "true");
     expect(studio).toHaveAccessibleDescription(
-      "The Skill studio lists each clone's own folder, not branch fix. Open the file shows this copy.",
+      "The Skill studio lists each clone's own folder, not branch folder fix. Open the file shows this copy.",
     );
   });
 
@@ -896,11 +896,35 @@ describe("a checkout that changes its skills (#4377)", () => {
 
     await moved("svc", "other");
     await moved("web", "fix");
+    await moved("svc", "fix");
 
-    expect(reads(asked)).toBe(before);
+    // Only the last was this chat's.
+    await waitFor(() => expect(reads(asked)).toBe(before + 1));
   });
 
-  it("asks to listen to nothing with no chat in front, or once it is gone", async () => {
+  it("keeps listening to a clone through a read the core refuses", async () => {
+    let refuse = false;
+    const asked = core(
+      () => {
+        if (refuse) throw new Error("not read");
+        return studio([skill("deploy")]);
+      },
+      { repos: ["svc"] },
+    );
+    view({ chat: inClone });
+    await list();
+    await waitFor(() => expect(listens(asked)).toHaveLength(1));
+    await act(async () => {});
+
+    refuse = true;
+    await moved("svc", null);
+    await screen.findByTestId("skills-view-refused");
+    await act(async () => {});
+
+    expect(listens(asked)).toHaveLength(1);
+  });
+
+  it("lets go of what it listened to once it is gone", async () => {
     const asked = core(() => studio([skill("deploy")]));
     const { unmount } = render(
       <SkillsView

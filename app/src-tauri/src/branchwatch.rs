@@ -52,7 +52,10 @@
 //!
 //! **A move in a repo skill's folder is told apart** (#4377): [`SKILLS_MOVED`], for the Skills view,
 //! which reads a whole set again on it and so must not on an agent's every other write. It is told
-//! before git is asked, since a repo may ignore the folder its harness still reads skills from.
+//! from the burst itself, on the watch's thread, since it reads nothing: before git is asked, as a
+//! repo may ignore the folder its harness still reads skills from, and before a check that hangs.
+//! A branch watched folder by folder (inotify) has no watch on a folder git ignores, so there such
+//! a folder's moves are not heard, as they are not by the rest of this watch.
 //!
 //! **Every burst is told by what it named** ([`crate::watchset::bursts`], #1139): a file made
 //! and removed inside one is still a move. A burst that is everything — the platform lost
@@ -501,8 +504,18 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
             }
             inner.follow();
         }
-        // Outside the lock, as the watch's own thread tells.
+        // Outside the lock, as the watch's own thread tells. What moved before it held was heard
+        // by nothing, a repo skill's folder among it.
         if !moved.is_empty() {
+            let skills_told = self
+                .inner
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .skills_told
+                .clone();
+            if let Some(skills_told) = skills_told {
+                skills_told(window, moved.clone());
+            }
             (self.told)(window, moved);
         }
         true
@@ -728,9 +741,27 @@ fn heard<W: notify::Watcher + Send + 'static>(
                 .cloned()
                 .collect()
         };
-        if !inside.is_empty() {
-            check(inner, reader, told, root, inside, burst.made_folder);
+        if inside.is_empty() {
+            continue;
         }
+        if inside.iter().any(|path| {
+            path.strip_prefix(root.path())
+                .is_ok_and(purlis_core::harness_plugin::moves_a_repo_skill)
+        }) {
+            let (skills_told, by_window) = {
+                let held = inner.lock().unwrap_or_else(PoisonError::into_inner);
+                (
+                    held.skills_told.clone(),
+                    windows_listening(&held, root.path()),
+                )
+            };
+            if let Some(skills_told) = skills_told {
+                for (window, branches) in by_window {
+                    skills_told(&window, branches);
+                }
+            }
+        }
+        check(inner, reader, told, root, inside, burst.made_folder);
     }
 }
 
@@ -815,22 +846,6 @@ fn check<W: notify::Watcher + Send + 'static>(
                     std::mem::take(&mut waiting.made_folder),
                 )
             };
-            // Past what one check looks at, a skill's folder may be among what was left out.
-            if moved.len() > purlis_core::files::ASKED
-                || moved.iter().any(|path| {
-                    path.strip_prefix(root.path())
-                        .is_ok_and(purlis_core::harness_plugin::moves_a_repo_skill)
-                })
-            {
-                let held = inner.lock().unwrap_or_else(PoisonError::into_inner);
-                if let Some(skills_told) = held.skills_told.clone() {
-                    let by_window = windows_listening(&held, root.path());
-                    drop(held);
-                    for (window, branches) in by_window {
-                        skills_told(&window, branches);
-                    }
-                }
-            }
             // Outside the lock: this is the read that can take until the reader's deadline.
             if !root.matters(&reader, &moved) {
                 continue;
