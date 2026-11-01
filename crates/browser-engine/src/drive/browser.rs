@@ -1904,6 +1904,16 @@ impl Browser {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .0;
         }
+        crate::cdp::probe_trace(
+            "OPEN-WAITED",
+            format!(
+                "target {target} known {} pages {:?} ended {}",
+                state.page(&target).is_some(),
+                state.pages.iter().map(|p| p.target.clone()).collect::<Vec<_>>(),
+                state.ended
+            )
+            .as_bytes(),
+        );
         drop(state);
         let session = self.page_session(&target)?;
         lock(&self.inner.state).current = Some(target.clone());
@@ -3834,6 +3844,7 @@ impl Inner {
 
     /// Takes in one event from the engine.
     fn take_in(&self, event: &Event) {
+        crate::cdp::probe_trace("TAKE", event.method.as_bytes());
         // The front end of the person's DevTools is DevTools' own, never one of the browser's
         // pages (#2028): its session is tapped, so nothing of it is the driver's.
         if let Some(session) = event.session_id.as_deref()

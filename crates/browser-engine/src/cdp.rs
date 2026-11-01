@@ -482,6 +482,7 @@ fn write_until_dropped(mut to_engine: impl Write, calls: &Receiver<Outgoing>, sh
         if !waiting {
             continue;
         }
+        probe_trace("->", &call.bytes);
         let failed = match broken {
             Some(kind) => Some(io::Error::from(kind)),
             None => to_engine
@@ -722,6 +723,21 @@ pub(crate) fn repaired(message: &[u8]) -> Vec<u8> {
 
 /// Reads messages until the pipe ends or carries something that is not one, then fails every
 /// waiting call and refuses every later one, keeping why it stopped.
+/// [DEBUG-4472] Probe only.
+pub(crate) fn probe_trace(way: &str, bytes: &[u8]) {
+    use std::io::Write as _;
+    let Some(path) = std::env::var_os("PURLIS_PROBE_TRACE") else {
+        return;
+    };
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis());
+    let text = String::from_utf8_lossy(&bytes[..bytes.len().min(260)]).replace('\n', " ");
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{at} {way} {text}");
+    }
+}
+
 fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender<Event>) {
     let mut frames = Frames::new(from_engine);
     loop {
@@ -741,7 +757,10 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
             Some(Ok(frame)) => frame,
         };
         let message = match frame {
-            Frame::Whole(message) => message,
+            Frame::Whole(message) => {
+                probe_trace("<-", &message);
+                message
+            }
             Frame::Over { head, tail } if too_large(shared, &head, &tail) => continue,
             Frame::Over { .. } => break,
         };
