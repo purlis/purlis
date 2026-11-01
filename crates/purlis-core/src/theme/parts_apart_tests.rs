@@ -112,7 +112,7 @@ fn an_open_crumb_is_measured_on_the_card_s_fill_not_the_chip_s() {
     assert_eq!(fell(&theme), ["titlebar.crumb"]);
     assert_eq!(
         parts::apart_look("titlebar", "pin", Some(parts::State::Selected)).words,
-        "accent.base"
+        "accent.text"
     );
 }
 

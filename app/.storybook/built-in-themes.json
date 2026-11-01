@@ -648,6 +648,12 @@
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true
+          },
+          {
+            "token": "accent.text",
+            "from": "accent.base",
+            "distance": 0.0,
+            "alone": true
           }
         ]
       },
@@ -1317,6 +1323,12 @@
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.text",
+            "from": "accent.base",
+            "distance": 0.0,
             "alone": true
           }
         ]
@@ -1988,6 +2000,12 @@
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true
+          },
+          {
+            "token": "accent.text",
+            "from": "accent.base",
+            "distance": 0.0,
+            "alone": true
           }
         ]
       },
@@ -2491,6 +2509,12 @@
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.text",
+            "from": "accent.base",
+            "distance": 0.0,
             "alone": true
           }
         ]
@@ -3011,6 +3035,12 @@
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.text",
+            "from": "accent.base",
+            "distance": 0.0,
             "alone": true
           }
         ]

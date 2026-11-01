@@ -409,8 +409,8 @@ pub fn follow_kin(
     below: &std::collections::BTreeMap<&'static str, String>,
 ) {
     for (token, drew) in KIN {
-        let alike = below.get(token) == below.get(drew);
-        if given.contains_key(token) || !(alike || token == ACCENT_WORDS) {
+        let follows = below.get(token) == below.get(drew) || token == ACCENT_WORDS;
+        if given.contains_key(token) || !follows {
             continue;
         }
         if let Some(value) = given.get(drew).cloned() {
