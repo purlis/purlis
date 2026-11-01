@@ -42,6 +42,9 @@ const ANOTHER_WINDOW: &str = "01JA0WNDW0000000000000001";
 const COMPOSED: &str = "01J9CNFNMNT0000000000000001";
 /// A chat's confinement the window made, and a chat started in it.
 const MADE: &str = "01J9CNFNMNT0000000000000002";
+/// A chat's confinement composed for another window's start, and for a link that named none.
+const OTHERS: &str = "01J9CNFNMNT0000000000000003";
+const UNNAMED: &str = "01J9CNFNMNT0000000000000004";
 
 static HELD: std::sync::LazyLock<Credentials> =
     std::sync::LazyLock::new(|| Credentials::mint().unwrap());
@@ -458,6 +461,76 @@ async fn a_window_whose_link_ended_is_not_named_to_another_window_s_next_link() 
     assert_eq!(
         reach_of(&relayed, COMPOSED).await,
         Err(session::NO_SUCH_CHAT.into())
+    );
+}
+
+/// The programs `client` is answered, each by its id.
+async fn programs_of(client: &Client) -> Vec<String> {
+    client
+        .programs_of(PROJECT)
+        .await
+        .expect("answered")
+        .into_iter()
+        .map(|program| program.program)
+        .collect()
+}
+
+#[tokio::test]
+async fn a_window_started_again_is_answered_its_own_chats_on_the_runner_alone() {
+    let runner = a_runner();
+    let (own_window, _own_events) = runner.linked(Scope::LocalUi).await;
+    own_window
+        .call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined by the runner's window");
+    let the_runners = own_window.start_program(running_in(MADE)).await.unwrap();
+    let (first, _first_events, _) = runner.relayed_for(WINDOW).await;
+    let mine = first.start_program(composed(COMPOSED)).await.unwrap();
+    let (other, _other_events, _) = runner.relayed_for(ANOTHER_WINDOW).await;
+    let theirs = other.start_program(composed(OTHERS)).await.unwrap();
+    let (unnamed, _unnamed_events) = runner.linked(Scope::RemoteLink).await;
+    unnamed.start_program(composed(UNNAMED)).await.unwrap();
+
+    drop(first);
+    let (back, _back_events, _) = runner.relayed_for(WINDOW).await;
+
+    assert_eq!(programs_of(&back).await, [mine]);
+    assert_eq!(programs_of(&other).await, [theirs]);
+    assert!(
+        programs_of(&unnamed).await.is_empty(),
+        "a link that named no window is answered nothing"
+    );
+    assert!(
+        programs_of(&own_window).await.contains(&the_runners),
+        "the runner's own window is answered as before"
+    );
+    assert!(
+        reach_of(&back, MADE).await.is_err(),
+        "it is named none of the runner's own window's sandboxes"
+    );
+    assert!(
+        reach_of(&back, OTHERS).await.is_err(),
+        "it is named none of another window's sandboxes"
+    );
+}
+
+#[tokio::test]
+async fn a_link_between_hosts_keeps_no_note_of_a_program() {
+    let runner = a_runner();
+    let (window, _events, _) = runner.relayed_for(WINDOW).await;
+    let program = window.start_program(composed(COMPOSED)).await.unwrap();
+
+    let refused = window
+        .call(Command::NoteProgram {
+            program,
+            note: session::ProgramNote(Default::default()),
+        })
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NOT_ALLOWED)
     );
 }
 

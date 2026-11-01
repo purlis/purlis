@@ -337,7 +337,8 @@ pub struct Connection {
     /// 1.33), once the window's is ready (#2046).
     relayed: Mutex<Option<RelayedDial>>,
     /// The window's own connection and the pool, for a connection whose every project link its
-    /// host relays to that pool's runner (#2046): it waits on, and dials through, that one.
+    /// host relays to that pool's runner (#2046): it waits on, and dials through, that one. Or
+    /// `<pool>/<runner>`, for one that reaches a draining runner of the pool (#4271).
     to_a_pool: Option<(Arc<Connection>, String)>,
     /// The window's own link that this connection's project links were opened beside: one to a
     /// host started again after it ended holds every root on a link of its own anew (#2007).
@@ -358,6 +359,11 @@ pub struct Connection {
     /// Ends the browsers the window started on a pool once it is untrusted (D-2050-28), on the
     /// window's own: told the pool, off no link's thread.
     ending_browsers: Mutex<Option<EndingBrowsers>>,
+}
+
+/// The pool of what a connection's links name: a pool, or `<pool>/<runner>` (#4271).
+fn pool_named(named: &str) -> &str {
+    named.split_once('/').map_or(named, |(pool, _)| pool)
 }
 
 /// What ends the browsers the window started on the pool it is told (D-2050-28).
@@ -471,7 +477,7 @@ impl Connection {
             .map(|(pool, of_it)| (pool.clone(), Arc::clone(of_it)))
             .collect();
         for (pool, of_it) in pools {
-            if purlis_core::runners::runner_for(config, &pool).is_err() {
+            if purlis_core::runners::runner_for(config, pool_named(&pool)).is_err() {
                 continue;
             }
             let mut ended = Vec::new();
@@ -505,17 +511,21 @@ impl Connection {
         }
     }
 
-    /// Every link the window holds to the runner of `pool`, let go of for a removal.
+    /// Every link the window holds to a runner of `pool`, its draining ones too (#4271), let go
+    /// of for a removal.
     fn links_of_pool(&self, pool: &str) -> Vec<Arc<HostLink>> {
-        let Some(of_it) = lock(&self.pools).get(pool).cloned() else {
-            return Vec::new();
-        };
-        of_it.removals.fetch_add(1, Ordering::SeqCst);
-        lock(&of_it.projects)
-            .drain()
-            .map(|(_, link)| link)
-            .chain(lock(&of_it.left_on_draining).drain().flat_map(|(_, on)| on))
-            .collect()
+        let of_the_pool: Vec<Arc<Connection>> = lock(&self.pools)
+            .iter()
+            .filter(|(named, _)| pool_named(named) == pool)
+            .map(|(_, of_it)| Arc::clone(of_it))
+            .collect();
+        let mut links = Vec::new();
+        for of_it in of_the_pool {
+            of_it.removals.fetch_add(1, Ordering::SeqCst);
+            links.extend(lock(&of_it.projects).drain().map(|(_, link)| link));
+            links.extend(lock(&of_it.left_on_draining).drain().flat_map(|(_, on)| on));
+        }
+        links
     }
 
     /// How many times the pool `pool` was removed.
@@ -550,11 +560,17 @@ impl Connection {
 
     /// The pool whose runner this connection's links reach, where they reach one.
     pub(crate) fn pool(&self) -> Option<&str> {
-        self.to_a_pool.as_ref().map(|(_, pool)| pool.as_str())
+        self.to_a_pool.as_ref().map(|(_, named)| pool_named(named))
+    }
+
+    /// The draining runner this connection's links name, where they name one (#4271).
+    fn draining_runner(&self) -> Option<&str> {
+        let (_, named) = self.to_a_pool.as_ref()?;
+        named.split_once('/').map(|(_, runner)| runner)
     }
 
     /// Whether a runner of this connection's pool drains now: neither runner's fetch removes what
-    /// only the other has (#4248), after a window's restart too, with one link open (#4271).
+    /// only the other has (#4248), after a window's restart too (#4271).
     fn pool_drains(&self) -> bool {
         let (Some(pool), Some(config)) = (self.pool(), self.runners_config()) else {
             return false;
@@ -575,10 +591,11 @@ impl Connection {
     /// data folders with them. Nothing for a connection to this machine's host. Answers why the
     /// runners could not be kept so.
     pub(crate) fn ran_unsandboxed(&self) -> Result<(), String> {
-        let Some((window, pool)) = &self.to_a_pool else {
+        let Some((window, named)) = &self.to_a_pool else {
             return Ok(());
         };
-        lock(&window.untrusted).insert(pool.clone());
+        let pool = pool_named(named);
+        lock(&window.untrusted).insert(pool.to_owned());
         let kept = match window.runners_config() {
             Some(config) => purlis_core::runnertaint::mark_pool(&config, pool),
             None => Ok(()),
@@ -768,14 +785,16 @@ impl Connection {
         // A link to a pool's runner is named apart from the root's link to this machine's host,
         // and the same each time: one name is never two links' (#2046).
         let (config, keyed) = match &self.to_a_pool {
-            Some((window, pool)) => (
+            // The one name for a pool, its draining runners too: a name takes back only what that
+            // runner started for it, and each of them started under this one (#4271).
+            Some((window, named)) => (
                 lock(&window.names_in).clone()?,
-                root.join(RELAYED_NAMES).join(pool),
+                root.join(RELAYED_NAMES).join(pool_named(named)),
             ),
             None => (lock(&self.names_in).clone()?, root.to_path_buf()),
         };
         let mut open: Vec<PathBuf> = lock(&self.projects).keys().cloned().collect();
-        if let Some(pool) = self.to_a_pool.as_ref().map(|(_, pool)| pool) {
+        if let Some(pool) = self.pool() {
             open = open
                 .into_iter()
                 .map(|root| root.join(RELAYED_NAMES).join(pool))
@@ -3133,9 +3152,9 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
                 tracing::warn!("purlis: the session host answered its programs with {other:?}");
                 let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
-            // A link between hosts is never granted this question (`Power::Reattach`), so that
-            // refusal says nothing of what runs there. This desktop keeps a mark of each chat as
-            // it starts it, and a runner is paired with this desktop alone.
+            // A runner from before #4271 refuses this over a link between hosts, so that refusal
+            // says nothing of what runs there. This desktop keeps a mark of each chat as it
+            // starts it, and a runner is paired with this desktop alone.
             Err(refused) if refused.code == session::NOT_ALLOWED => {}
             Err(refused) => {
                 tracing::warn!(
@@ -4139,16 +4158,22 @@ impl SessionHost for HostedSessions {
     /// held on a pool's runner.
     /// Whether the runner these chats stayed on is kept no more: its link ends with it.
     fn runner_is_gone(&self) -> bool {
-        let Some(link) = lock(&self.stays_on).clone() else {
-            return false;
+        let link = lock(&self.stays_on).clone();
+        let runner = match &link {
+            Some(link) => link.reached_runner().unwrap_or_default().to_owned(),
+            // Taken back after a restart (#4271): its links end as it goes
+            // ([`Connection::links_to_gone_runners_end`]).
+            None => match self.connection.draining_runner() {
+                Some(runner) => runner.to_owned(),
+                None => return false,
+            },
         };
-        let runner = link.reached_runner().unwrap_or_default().to_owned();
         let gone = self.connection.runners_config().is_some_and(|config| {
             !runner.is_empty()
                 && matches!(purlis_core::runners::named(&config, &runner), Ok(None))
                 && purlis_core::runners::read(&config).is_ok_and(|kept| !kept.is_empty())
         });
-        if gone {
+        if let (true, Some(link)) = (gone, link) {
             self.connection.lets_go_of_left(&self.root, link.id());
             link.end();
         }

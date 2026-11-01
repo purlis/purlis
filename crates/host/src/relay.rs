@@ -1361,7 +1361,8 @@ fn ids_for_the_window_alone(command: Command, scope: Scope) -> Command {
 
 /// Whether `power` is one only the window holds of those the relay meets in a command or a
 /// push: holding a project, replying to its hook lines, saving it, confining a chat, moving
-/// code (1.34, #2046), and a browser, its acts, its driving and its login (1.38, #2050).
+/// code (1.34, #2046), a browser, its acts, its driving and its login (1.38, #2050), and asking
+/// which of its programs run (#4271).
 fn the_windows_power(power: Power) -> bool {
     matches!(
         power,
@@ -1374,6 +1375,7 @@ fn the_windows_power(power: Power) -> bool {
             | Power::LogIn
             | Power::EventLog
             | Power::Rearm
+            | Power::ProgramsOf
     )
 }
 

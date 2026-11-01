@@ -867,8 +867,9 @@ pub enum Command {
     },
     /// Every program a held project still has, running or ended, that no client has closed
     /// (1.13): what a window that comes back to the host takes back. Answered
-    /// [`Answer::Programs`]. The window's alone ([`crate::grants::Power::Reattach`]). Each
-    /// confinement it answers is named to the link that asked, which may act on it and hear it
+    /// [`Answer::Programs`]. The window's ([`crate::grants::Power::ProgramsOf`]), and, for a
+    /// window it relays, its host's on a link between hosts, answered only what was opened for
+    /// the window that link named (#4271). Each confinement it answers is named to the link that asked, which may act on it and hear it
     /// from then on (#2444).
     ProgramsOf { project: String },
     /// The window is quitting (1.13, ADR 0068 §2): the host ends every program it runs as a quit
@@ -2559,7 +2560,8 @@ impl Command {
             | Command::CancelEngineDownload { .. } => Power::Browser,
             Command::LogIn { .. } => Power::LogIn,
             Command::Inspect { .. } | Command::InspectorInput { .. } => Power::Inspect,
-            Command::ProgramsOf { .. } | Command::NoteProgram { .. } => Power::Reattach,
+            Command::ProgramsOf { .. } => Power::ProgramsOf,
+            Command::NoteProgram { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
