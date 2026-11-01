@@ -929,6 +929,10 @@ mod rest_kept_tests;
 mod part_fills_tests;
 
 #[cfg(test)]
+#[path = "drawn_looks_tests.rs"]
+mod drawn_looks_tests;
+
+#[cfg(test)]
 #[path = "see_through_tints_tests.rs"]
 mod see_through_tints_tests;
 #[cfg(test)]
