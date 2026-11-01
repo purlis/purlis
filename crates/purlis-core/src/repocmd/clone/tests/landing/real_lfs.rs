@@ -20,6 +20,8 @@ use sha2::{Digest, Sha256};
 
 use super::*;
 
+mod push;
+
 /// git-lfs is here, and the filter a person's `git lfs install` writes is in git's config.
 /// `false`, having said so, where this is not CI and it is not.
 fn real_git_lfs() -> bool {

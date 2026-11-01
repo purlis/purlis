@@ -1324,6 +1324,14 @@ fn pushed(
         args.push(leased);
     }
     args.extend([remote.as_str(), refspec.as_str()]);
+    // Its Git LFS objects first: a hook would have sent them, and purlis's git runs none (#4399).
+    crate::lfsupload::before_push(&crate::lfsupload::Push {
+        dir: &here.folder,
+        helper: helper.as_deref(),
+        args: &args,
+        tip: &ours,
+        remote: &remote,
+    })?;
     let sent =
         git::run_network(&here.folder, helper.as_deref(), &args).map_err(|e| e.to_string())?;
     if !sent.ok() {

@@ -136,6 +136,7 @@ pub mod inventory;
 pub mod layer;
 pub mod leakguard;
 pub mod leftovers;
+pub(crate) mod lfsupload;
 #[cfg(test)]
 mod lineartime;
 #[cfg(unix)]
