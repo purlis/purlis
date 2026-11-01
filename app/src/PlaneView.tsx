@@ -110,8 +110,11 @@ import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { AddVision } from "./AddVision";
+import { failedNotNamed } from "./NotCloned";
 import {
   cloneRepos,
+  forgetEndedClones,
+  forgetFailedClone,
   forgetLandedClones,
   settleRepoClones,
   stopRepoClones,
@@ -4882,6 +4885,7 @@ export const PlaneView = memo(function PlaneView({
       }
       setMakingWorkspace(false);
       setWorkspaceTrouble(undefined);
+      forgetEndedClones(plane, name);
       // **Made here, so pinned** (ADR 0054): the operator made it in order to work in it, and
       // the workspace strip draws what is pinned. A pin the store refused leaves the
       // workspace made and says why, beside what charter said about making it.
@@ -6953,6 +6957,8 @@ export const PlaneView = memo(function PlaneView({
       newBranch,
       cloneMissing,
       askDropMembership: (workspace: string, repo: string) => setMembershipAsk({ workspace, repo }),
+      forgetFailedClone: (workspace: string, repo: string) =>
+        forgetFailedClone(plane, workspace, repo),
       newChatIn: newTabIn,
       sendKey,
       openProject: windowDoes.openProject,
@@ -7660,6 +7666,10 @@ export const PlaneView = memo(function PlaneView({
     () => [...cloning].filter(([, one]) => one.state !== "failed").map(([repo]) => repo),
     [cloning],
   );
+  const failedHere = useMemo(
+    () => failedNotNamed(absentHere ?? [], cloneNames ?? [], cloning),
+    [absentHere, cloneNames, cloning],
+  );
   useEffect(() => {
     if (ofWorkspace !== undefined && cloneNames !== undefined)
       settleRepoClones(plane, ofWorkspace, cloneNames);
@@ -7757,6 +7767,7 @@ export const PlaneView = memo(function PlaneView({
             pieces,
             clones,
             absent: absentHere,
+            failedNotNamed: failedHere,
             cloning: cloningNow,
             startsIn: spot?.path,
             personas,
@@ -7835,6 +7846,7 @@ export const PlaneView = memo(function PlaneView({
       clones,
       cloningNow,
       absentHere,
+      failedHere,
       curations,
       focused,
       inFront,

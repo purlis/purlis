@@ -531,6 +531,7 @@ export type Does =
    *  the workspace (#1228). It writes nothing by itself: the question's yes calls
    *  `drop_repo_membership`, which drops only the repo's row in `workspace.json`. */
   | { verb: "askDropMembership"; workspace: string; repo: string }
+  | { verb: "forgetFailedClone"; workspace: string; repo: string }
   /** Shows the opener, so another project can be opened into this window beside the ones it
    *  already holds. It opens nothing by itself — the trust gate is the opener's (ADR 0035). */
   | { verb: "openProject" }
@@ -753,6 +754,9 @@ export type Now = {
    * `Clone <repo>` row each, and one row that clones them all (#1215).
    */
   absent?: readonly string[];
+  /** Repos whose clone failed here that the workspace does not name, so not among `absent`: a
+   *  `Clone <repo>` row each as well, for their Retry, and a row that puts each away (#4395). */
+  failedNotNamed?: readonly string[];
   /** Of those, the ones this window is cloning or about to: their rows say so rather than
    *  start a second clone of the same repo. */
   cloning?: readonly string[];
@@ -1104,6 +1108,8 @@ export type Doing = {
   /** Asks whether to take that repo out of the workspace's membership. Nothing is written
    *  until it is answered. */
   askDropMembership: (workspace: string, repo: string) => void;
+  /** Puts away the row of a failed clone the workspace does not name (#4395). */
+  forgetFailedClone: (workspace: string, repo: string) => void;
   /** Opens the picker for a new tab whose chat starts in that directory, and nowhere else. */
   newChatIn: (path: string) => void;
   sendKey: (key: string) => Promise<Ran>;
@@ -1422,6 +1428,10 @@ export const cloneMissingId = (repo: string) => `absent.clone:${repo}`;
 /** The row that asks to take one of them out of the workspace (#1228) — the explorer's row
  *  button presses it, and its menu draws it last, uncoloured: nothing is deleted. */
 export const dropMembershipId = (repo: string) => `absent.drop:${repo}`;
+
+/** The row that puts away a failed clone the workspace does not name (#4395): the explorer's row
+ *  button presses it, and its menu draws it where Remove from workspace… would be. */
+export const forgetFailedCloneId = (repo: string) => `absent.forget:${repo}`;
 
 /** What the row that takes a repo out of the workspace says, wherever it is drawn. */
 export const dropMembershipTitle = (repo: string) => `Remove ${repo} from workspace…`;
@@ -2871,7 +2881,9 @@ export function catalogue(now: Now): Offer[] {
   // there. A repo already being cloned says so instead of starting a second clone of itself.
   const workspace = now.focused;
   if (workspace !== undefined && workspace !== OUTSIDE) {
-    const missing = now.absent ?? [];
+    const named = now.absent ?? [];
+    const notNamed = now.failedNotNamed ?? [];
+    const missing = [...named, ...notNamed];
     const busy = new Set(now.cloning ?? []);
     for (const repo of missing) {
       const title = `Clone ${repo}`;
@@ -2885,14 +2897,16 @@ export function catalogue(now: Now): Offer[] {
                 { verb: "cloneMissing", workspace, repos: [repo] },
                 repo,
               ),
-              note: `${workspace} names it and it is not cloned on this machine.`,
+              note: named.includes(repo)
+                ? `${workspace} names it and it is not cloned on this machine.`
+                : `Its clone into ${workspace} failed.`,
             },
       );
     }
     // **And the way to take each out of the workspace** (#1228). Below the line, in a menu: the
     // workspace stops naming it. It asks first, and a repo being cloned is not offered it —
     // that clone would land in a workspace that no longer names it.
-    for (const repo of missing) {
+    for (const repo of named) {
       const title = dropMembershipTitle(repo);
       offers.push(
         busy.has(repo)
@@ -2908,6 +2922,18 @@ export function catalogue(now: Now): Offer[] {
             },
       );
     }
+    // **Nothing to take out where the workspace does not name it** (#4395): the row is this
+    // window's alone, so it goes at once, with nothing to ask.
+    for (const repo of notNamed)
+      offers.push({
+        ...can(
+          forgetFailedCloneId(repo),
+          `Dismiss ${repo}`,
+          { verb: "forgetFailedClone", workspace, repo },
+          repo,
+        ),
+        note: `${workspace} does not name it. Nothing was cloned.`,
+      });
     // Listed while something is missing, like the per-repo rows: with every repo cloned there
     // is nothing for it to be about, and a greyed row in every palette query that shares its
     // letters would be noise, not a reason (D-1215-3).
@@ -3564,6 +3590,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return doing.cloneMissing(does.workspace, does.repos);
     case "askDropMembership":
       doing.askDropMembership(does.workspace, does.repo);
+      return DID;
+    case "forgetFailedClone":
+      doing.forgetFailedClone(does.workspace, does.repo);
       return DID;
     case "newTabIn":
     case "newChatIn":
@@ -5166,8 +5195,12 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
       // Merge above; Discard, which removes the folder, below the line.
       return { above: [taskMergeId(what.id)], below: [taskDiscardId(what.id)] };
     case "absent":
-      // Clone above; taking the repo out of the workspace below the line (#1228).
-      return { above: [cloneMissingId(what.repo)], below: [dropMembershipId(what.repo)] };
+      // Clone above; taking the repo out of the workspace below the line (#1228), or putting
+      // away a failed clone it does not name (#4395).
+      return {
+        above: [cloneMissingId(what.repo)],
+        below: [dropMembershipId(what.repo), forgetFailedCloneId(what.repo)],
+      };
     case "pane":
       return {
         above: ["chat.new", "shell.new", "pane.split.right", "pane.split.down", PASS_THROUGH_ID],

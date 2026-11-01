@@ -330,15 +330,7 @@ export function useRepoClones(plane: PlaneId, workspace: string): Clones {
  * then means a folder deleted later can be cloned again, and a repo dropped later leaves no row.
  */
 export function settleRepoClones(plane: PlaneId, workspace: string, clones: readonly string[]) {
-  const key = keyOf(plane, workspace);
-  const held = byWorkspace.get(key);
-  if (held === undefined) return;
-  const next = new Map(
-    [...held].filter(([repo, one]) => one.state !== "cloned" || !clones.includes(repo)),
-  );
-  if (next.size === held.size) return;
-  byWorkspace.set(key, next);
-  tell();
+  forgetSome(plane, workspace, (repo, one) => one.state === "cloned" && clones.includes(repo));
 }
 
 /**
@@ -348,10 +340,33 @@ export function settleRepoClones(plane: PlaneId, workspace: string, clones: read
  * them, whether cloned, dropped or deleted, and a row kept for them would never go.
  */
 export function forgetLandedClones(plane: PlaneId, workspace: string) {
+  forgetSome(plane, workspace, (_, one) => one.state === "cloned");
+}
+
+/** **Puts away a failed clone's row** (#4395), the person's Dismiss. It can be asked for again. */
+export function forgetFailedClone(plane: PlaneId, workspace: string, repo: string) {
+  forgetSome(plane, workspace, (one, clone) => one === repo && clone.state === "failed");
+}
+
+/**
+ * **A workspace made starts with no clone of an earlier one of that name** (#4395): a failure of
+ * the one it replaced would otherwise come back as a row of a repo nobody picked for this one.
+ * Clones still under way are left to end.
+ */
+export function forgetEndedClones(plane: PlaneId, workspace: string) {
+  forgetSome(plane, workspace, (_, one) => !underWay(one));
+}
+
+/** Forgets what `gone` picks of what this window holds of `workspace`, and says so. */
+function forgetSome(
+  plane: PlaneId,
+  workspace: string,
+  gone: (repo: string, state: CloneState) => boolean,
+) {
   const key = keyOf(plane, workspace);
   const held = byWorkspace.get(key);
   if (held === undefined) return;
-  const next = new Map([...held].filter(([, one]) => one.state !== "cloned"));
+  const next = new Map([...held].filter(([repo, one]) => !gone(repo, one)));
   if (next.size === held.size) return;
   byWorkspace.set(key, next);
   tell();

@@ -8,6 +8,7 @@ import {
   CLONE_ALL_ID,
   cloneMissingId,
   dropMembershipId,
+  forgetFailedCloneId,
   type Catalogued,
   type Offer,
 } from "./actions";
@@ -26,6 +27,9 @@ const NOTHING_CLONING: Cloning = new Map();
  * cloning into it that it does not name. A workspace names a repo once it lands, so a new
  * workspace's repos would otherwise have no row, and its Repos view would say it has none, for
  * as long as their clones run.
+ *
+ * One that failed keeps its row, with the failure and a Retry, for the same reason (#4395). One the
+ * person stopped does not: stopping it was their answer, and nothing of it is left to show.
  */
 export function notClonedRows(
   absent: readonly string[],
@@ -36,12 +40,29 @@ export function notClonedRows(
     .filter(
       ([repo, state]) =>
         // Cloned stays until the panels read it among the clones: no gap between the two.
-        (underWay(state) || state.state === "cloned") &&
+        (underWay(state) || state.state === "cloned" || state.state === "failed") &&
         !absent.includes(repo) &&
         !here.includes(repo),
     )
     .map(([repo]) => repo);
   return coming.length === 0 ? absent : [...absent, ...coming];
+}
+
+/**
+ * **The repos whose clone failed that the workspace does not name** (#4395): each has a row with
+ * no line in `workspace.json` behind it, so its Retry is the catalogue's Clone like any other, and
+ * what clears it is Dismiss rather than Remove….
+ */
+export function failedNotNamed(
+  absent: readonly string[],
+  here: readonly string[],
+  cloning: Cloning,
+): readonly string[] {
+  return [...cloning]
+    .filter(
+      ([repo, state]) => state.state === "failed" && !absent.includes(repo) && !here.includes(repo),
+    )
+    .map(([repo]) => repo);
 }
 
 /** **How far a repo's clone has got, as a bar under its row** (#4079), until it lands. */
@@ -78,6 +99,9 @@ export function CloneBar({ repo, state }: { repo: string; state: CloneState | un
  *
  * **While a clone is under way, the row offers Cancel** (#4079): a clone has no deadline, so the
  * person can always stop one from where it is drawn. `onStop` is what stops it.
+ *
+ * **A failed repo the workspace does not name offers Dismiss in place of Remove…** (#4395): no line
+ * of `workspace.json` is there to take out, so nothing is asked and only this window's row goes.
  */
 export function NotClonedHere({
   absent,
@@ -120,6 +144,7 @@ export function NotClonedHere({
             state={cloning.get(repo)}
             offer={offers.get(cloneMissingId(repo))}
             drop={offers.get(dropMembershipId(repo))}
+            forget={offers.get(forgetFailedCloneId(repo))}
             offers={offers}
             onPress={onPress}
             onStop={onStop}
@@ -135,6 +160,7 @@ function AbsentRow({
   state,
   offer,
   drop,
+  forget,
   offers,
   onPress,
   onStop,
@@ -144,6 +170,8 @@ function AbsentRow({
   offer: Offer | undefined;
   /** The row that asks to take the repo out of the workspace (#1228). */
   drop: Offer | undefined;
+  /** The row that puts away a failed clone the workspace does not name (#4395). */
+  forget: Offer | undefined;
   offers: Catalogued;
   onPress: (offer: Offer) => void;
   onStop?: (repo: string) => void;
@@ -179,7 +207,7 @@ function AbsentRow({
               )}
             </span>
           ) : (
-            (offer !== undefined || drop !== undefined) && (
+            (offer !== undefined || drop !== undefined || forget !== undefined) && (
               <div className={`absent-actions${state?.state === "failed" ? "" : " row-action"}`}>
                 <SettingActions>
                   {offer !== undefined && (
@@ -201,6 +229,15 @@ function AbsentRow({
                       onPress={() => onPress(drop)}
                     >
                       Remove…
+                    </Button>
+                  )}
+                  {forget !== undefined && (
+                    <Button
+                      aria-label={forget.title}
+                      tooltip={forget.note}
+                      onPress={() => onPress(forget)}
+                    >
+                      Dismiss
                     </Button>
                   )}
                 </SettingActions>

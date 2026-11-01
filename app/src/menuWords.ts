@@ -68,6 +68,7 @@ export const SAID = {
   discardAnyway: "Discard that work and remove anyway",
   clone: "Clone",
   dropFromWorkspace: "Remove from workspace…",
+  dismiss: "Dismiss",
   // A secret's row in a vault's tab (`VaultTab.tsx`).
   editValue: "Edit value…",
   copy: "Copy",
