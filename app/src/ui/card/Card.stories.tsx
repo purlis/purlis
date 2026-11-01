@@ -375,7 +375,7 @@ const launcherRowsAt = (inlineSize: string) => (
         Mark: FolderOpen,
       },
     ].map(({ title, line, Mark }, at) => (
-      <li key={title}>
+      <li key={title} style={{ display: "grid" }}>
         <CardButton
           variant="row"
           title={title}
@@ -393,7 +393,15 @@ const launcherRowsAt = (inlineSize: string) => (
 export const LauncherRows: Story = { render: () => launcherRowsAt("18rem") };
 
 /** **At the narrowest window**: a line that wraps leaves every row the same height (#4602). */
-export const LauncherRowsNarrow: Story = { render: () => launcherRowsAt("12rem") };
+export const LauncherRowsNarrow: Story = {
+  render: () => launcherRowsAt("13rem"),
+  play: async ({ canvasElement }) => {
+    const heights = [...canvasElement.querySelectorAll("button")].map(
+      (row) => row.getBoundingClientRect().height,
+    );
+    await expect(new Set(heights).size).toBe(1);
+  },
+};
 
 /** **Repos to get** (#3655): a pick a line of a list, one unavailable while another is on its way. */
 function Picks() {

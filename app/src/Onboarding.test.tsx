@@ -326,6 +326,26 @@ describe("a machine with no git (#1813's guided screen, mounted)", () => {
     expect(calls("open_plane").map((one) => one.args.path)).toEqual(["/home/dev/Projects/team"]);
   });
 
+  it("keeps the window's lines on the launcher in sight, through the git check (#4601)", async () => {
+    machine({ git: () => ({ kind: "missing", install: { kind: "developer-tools" } }) });
+    render(<App />);
+    const person = userEvent.setup();
+    const linesInSight = () => {
+      const places = [...document.querySelectorAll(".window-notices-at")];
+      expect(places).toHaveLength(1);
+      expect(places[0].closest("[hidden]")).toBeNull();
+    };
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+    await openRepoByPath(REPO);
+
+    await screen.findByRole("heading", { level: 1, name: "Install git" });
+    await waitFor(linesInSight);
+
+    await person.click(screen.getByRole("button", { name: "Not now" }));
+    await screen.findByRole("heading", { level: 1, name: "Create a project" });
+    await waitFor(linesInSight);
+  });
+
   it("goes back to the project's page on Not now, with nothing run", async () => {
     const { calls } = machine({
       git: () => ({ kind: "missing", install: { kind: "download", page: "https://git-scm.com" } }),

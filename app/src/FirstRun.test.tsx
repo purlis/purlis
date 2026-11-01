@@ -395,7 +395,7 @@ describe("the first run", () => {
           path: "/home/dev/Projects/garden",
           planeIsThisRepo: false,
           adopt: null,
-          forge: null,
+          forge: "github",
           template: null,
         },
       ]),

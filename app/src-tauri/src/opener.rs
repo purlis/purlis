@@ -907,7 +907,8 @@ fn make_from_template(
     if let (Some(template), false) = (template, already) {
         purlis_core::template::apply(&root, template, None).map_err(|why| {
             NotMade::Refused(format!(
-                "purlis made the project at {} but could not lay out its template: {why}",
+                "purlis made the project at {} without its template: {why} Creating it again \
+                 opens it with no template.",
                 root.display()
             ))
         })?;
