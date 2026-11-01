@@ -673,6 +673,29 @@ mod limit {
         assert!(proposals.every().is_empty());
     }
 
+    /// #4381: a chat can reset a value the file can't use, and is shown as replacing it.
+    #[test]
+    fn a_reset_of_a_value_the_file_cannot_use_is_held_and_says_what_it_replaces() {
+        let project = tempfile::tempdir().unwrap();
+        let config = a_machine();
+        let file =
+            purlis_core::machine::dir(config.path()).join(purlis_core::machine::RUNNERS_FILE);
+        let edited = std::fs::read_to_string(&file).unwrap().replacen(
+            "\"name\"",
+            "\"signInWait\":\"lots\",\"name\"",
+            1,
+        );
+        std::fs::write(&file, edited).unwrap();
+        let proposals = Proposals::default();
+        limit_asked_in(project.path(), config.path(), &proposals, &asks(None), 1).unwrap();
+        let change = proposals.every().remove(0).limit.unwrap();
+        let Now::Made { before, .. } = limit_now(config.path(), &change) else {
+            panic!("it is shown");
+        };
+        assert!(before.contains("can't be used"), "{before}");
+        assert!(!before.contains("lots"), "{before}");
+    }
+
     /// PC-8: another value since makes it stale, and Apply saves nothing.
     #[test]
     fn a_limit_changed_since_makes_it_stale() {

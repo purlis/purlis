@@ -141,7 +141,7 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
     if (typed === undefined) return;
     const mine = typing.current;
     if (typed.trim() === "") {
-      if (isSet || saving.current > 0) save(null, mine);
+      if (isSet || row.refused !== null || saving.current > 0) save(null, mine);
       else setTyped(undefined);
       return;
     }

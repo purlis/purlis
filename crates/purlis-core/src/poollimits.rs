@@ -587,7 +587,8 @@ impl RefusedValue {
     #[must_use]
     pub fn said(&self) -> String {
         format!(
-            "The value in this pool's file can't be used, so this follows purlis's default: {}.",
+            "The value in this pool's file can't be used, so this follows purlis's default. {}. \
+             Set a value or reset it.",
             self.why
         )
     }

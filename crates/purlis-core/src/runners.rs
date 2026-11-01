@@ -782,7 +782,9 @@ fn limit_may_be(
         id.limit().check(value, None).map_err(Refused::Other)?;
     }
     let limits = limits_in(held, name).ok_or_else(|| no_such_pool(name))?;
-    if limits.docker
+    // A reset takes a value the file should never have held off the row (#4381).
+    if value.is_some()
+        && limits.docker
         && let Some(why) = id.limit().not_on_docker(name)
     {
         return Err(Refused::Other(why));
@@ -824,6 +826,33 @@ pub fn set_pool_limit(
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
     limit_may_be(&held, name, id, value)?;
+    set_limit_in(config_root, &mut held, name, id, value)
+}
+
+/// [`set_pool_limit`], **only while the person's value is still `was`**, compared under the file's
+/// lock: `Ok(false)`, and nothing written, where it has changed (PC-8, a chat's proposal).
+pub fn set_pool_limit_if(
+    config_root: &Path,
+    name: &str,
+    id: crate::poollimits::LimitId,
+    value: Option<u64>,
+    was: Option<u64>,
+) -> Result<bool, Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    if limit_may_be(&held, name, id, value)?.chosen.get(id) != was {
+        return Ok(false);
+    }
+    set_limit_in(config_root, &mut held, name, id, value).map(|()| true)
+}
+
+fn set_limit_in(
+    config_root: &Path,
+    held: &mut Held,
+    name: &str,
+    id: crate::poollimits::LimitId,
+    value: Option<u64>,
+) -> Result<(), Refused> {
     // A value set or reset replaces whatever the file held that it couldn't use (#4381).
     if let Some(pool) = held.pools.iter_mut().find(|pool| pool.name == name) {
         pool.set.chosen = pool.set.chosen.with(id, value);
@@ -832,7 +861,7 @@ pub fn set_pool_limit(
         *pool.chosen = pool.chosen.with(id, value);
         pool.refused_limits.retain(|one| one.limit != id);
     }
-    write(config_root, &held)
+    write(config_root, held)
 }
 
 /// Forget the pool recorded as `name`; nothing where none is. Its runner is [`remove`]d first.

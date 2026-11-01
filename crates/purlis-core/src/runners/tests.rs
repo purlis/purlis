@@ -1382,6 +1382,13 @@ fn a_docker_pools_row_holding_the_vouch_wait_refuses_that_limit_in_the_commands_
         .unwrap_err()
         .to_string();
     assert_eq!(held.refused[0].why, by_the_command);
+
+    // A reset is the way to put it right.
+    set_pool_limit(dir.path(), "builds", VouchWait, None).unwrap();
+    assert_eq!(
+        limits_held_of(dir.path(), "builds").unwrap().refused,
+        Vec::new()
+    );
 }
 
 /// **#4381**: one bad value leaves every pool and runner on the machine listed; the value stays
@@ -1411,27 +1418,17 @@ fn a_bad_limit_in_the_file_costs_that_limit_alone_and_stays_until_it_is_put_righ
     assert!(!std::fs::read_to_string(&file).unwrap().contains("lots"));
 }
 
-/// **A project reaches no limit** (Q6, story 27): a limit is read from this machine's file alone,
-/// and a chat may propose no change to that file: it proposes a value (`Ask::ProposeLimit`).
+/// **A project reaches no limit, and a chat can't propose the file** (Q6, story 27): the real
+/// file is no proposable path, wherever it sits. `a_pools_limits_at_the_command_line` drives a
+/// project that names a limit; the sandbox's own tests hold the file denied to a chat.
 #[test]
-fn a_projects_files_change_no_limit_and_the_pools_file_cannot_be_proposed() {
-    use crate::poollimits::LimitId::ProfileSize;
+fn the_pools_file_cannot_be_proposed_from_a_project() {
+    let project = tempfile::tempdir().unwrap();
     let config = tempfile::tempdir().unwrap();
     record_pool(config.path(), &pool("builds", Set::default())).unwrap();
-    let project = tempfile::tempdir().unwrap();
-    std::fs::write(
-        project.path().join("purlis.toml"),
-        "[pool.builds]\nprofileSize = 1024\n[pools.builds]\nprofileSize = 1024\n",
-    )
-    .unwrap();
-    assert_eq!(
-        chosen_limits_of(config.path(), "builds")
-            .unwrap()
-            .get(ProfileSize),
-        None
-    );
-
-    // Even with the config home inside the project, the file is no proposable file.
+    let real = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    assert!(real.is_file());
+    assert!(crate::proposed::proposable(project.path(), &real).is_err());
     let inside = project.path().join(crate::machine::RUNNERS_FILE);
     std::fs::write(&inside, "{}").unwrap();
     assert!(crate::proposed::proposable(project.path(), &inside).is_err());
@@ -1458,4 +1455,16 @@ fn a_sign_out_in_progress_holds_the_running_runner_until_a_sign_in_there() {
 
     carries_again(config.path(), kept.pool(), "work").unwrap();
     assert!(read(config.path()).unwrap()[0].signed_out.is_empty());
+}
+
+/// PC-8, under the file's lock: another value since writes nothing.
+#[test]
+fn a_set_held_to_what_was_there_writes_nothing_where_it_changed() {
+    use crate::poollimits::LimitId::SignInWait;
+    let dir = tempfile::tempdir().unwrap();
+    record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
+    assert!(set_pool_limit_if(dir.path(), "builds", SignInWait, Some(30), None).unwrap());
+    assert!(!set_pool_limit_if(dir.path(), "builds", SignInWait, Some(60), None).unwrap());
+    let chosen = chosen_limits_of(dir.path(), "builds").unwrap();
+    assert_eq!(chosen.get(SignInWait), Some(30));
 }

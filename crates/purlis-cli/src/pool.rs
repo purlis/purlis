@@ -57,7 +57,28 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
         purlis_core::machine::config_root()
             .ok_or_else(|| "There is no config home on this machine to keep a pool in.".to_owned())
     };
+    let in_a_chat = crate::gradelink::in_a_chat(&purlis_core::envvar::var);
     match command {
+        // A chat can't read the pool's file, so it is told what can be asked for, and no value.
+        PoolCommand::Limits { json, .. } if in_a_chat => {
+            let held = runners::PoolLimitsHeld {
+                chosen: poollimits::Chosen::default(),
+                refused: Vec::new(),
+                docker: false,
+            };
+            if *json {
+                println!("{}", limits_json(&held));
+            } else {
+                for line in limits_lines(&held) {
+                    println!("{line}");
+                }
+                crate::voice::info(
+                    "In a chat these are purlis's defaults, not this pool's values: only the \
+                     person sees those, in the window.",
+                );
+            }
+            Ok(0)
+        }
         PoolCommand::Limits { pool, json } => {
             let held = runners::limits_held_of(&config()?, pool).map_err(|why| why.to_string())?;
             if *json {
@@ -85,7 +106,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
                 .as_deref()
                 .map(|typed| limit.check_typed(typed, None))
                 .transpose()?;
-            if crate::memory::in_a_chat() {
+            if in_a_chat {
                 return crate::brokered::propose_limit(pool, limit, value);
             }
             runners::set_pool_limit(&config()?, pool, limit.id, value)
@@ -117,9 +138,11 @@ fn saved_said(pool: &str, limit: &Limit, value: Option<u64>) -> String {
 /// The limits this kind of pool has, under `held`.
 fn listed(held: &runners::PoolLimitsHeld) -> impl Iterator<Item = &'static Limit> + use<> {
     let docker = held.docker;
+    let refused: Vec<_> = held.refused.iter().map(|one| one.limit).collect();
+    // A value a Docker pool should never have held is still listed, so it can be reset.
     poollimits::all()
         .iter()
-        .filter(move |limit| !(docker && limit.clusters_only))
+        .filter(move |limit| !(docker && limit.clusters_only) || refused.contains(&limit.id))
 }
 
 fn limits_lines(held: &runners::PoolLimitsHeld) -> Vec<String> {
@@ -131,15 +154,17 @@ fn limits_lines(held: &runners::PoolLimitsHeld) -> Vec<String> {
         } else {
             "default"
         };
+        let refused = held
+            .refused
+            .iter()
+            .find(|one| one.limit == limit.id)
+            .map_or_else(String::new, poollimits::RefusedValue::said);
         lines.push(format!(
-            "{}\t{}\t{whose}\t{}",
+            "{}\t{}\t{whose}\t{}\t{refused}",
             limit.key,
             limit.unit.said(value),
             limit.plain
         ));
-    }
-    for refused in &held.refused {
-        lines.push(format!("{}\t{}", refused.limit.limit().key, refused.said()));
     }
     lines
 }

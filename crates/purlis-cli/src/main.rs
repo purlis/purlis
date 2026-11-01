@@ -1307,6 +1307,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Update { .. }
         | Command::Version { .. }
         | Command::News(_)
+        // This machine's pools, in its config home: nothing of a project's.
+        | Command::Pool(_)
         // This machine's themes and the theme folders of the plane and its workspaces: read
         // through the theme engine, and nothing is written.
         | Command::Theme(_)

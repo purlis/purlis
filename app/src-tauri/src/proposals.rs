@@ -77,6 +77,8 @@ pub struct LimitChange {
     pub value: Option<u64>,
     /// What the person had set when it was proposed: another value at Apply makes it stale.
     pub was: Option<u64>,
+    /// The file held a value this limit can't be: shown, since Apply replaces it (#4381).
+    pub file_refused: bool,
 }
 
 /// The proposals of a project's chats, until the person answers.
@@ -359,7 +361,8 @@ pub fn limit_asked_in(
     let held = purlis_core::runners::limit_may_be_set(config, &ask.pool, limit.id, ask.value)
         .map_err(|why| why.to_string())?;
     let was = held.chosen.get(limit.id);
-    if was == ask.value {
+    let file_refused = held.refused.iter().any(|one| one.limit == limit.id);
+    if was == ask.value && !file_refused {
         return Err(format!("{} is that already", limit.plain));
     }
     let path = format!("pool {}: {}", ask.pool, limit.plain);
@@ -372,6 +375,7 @@ pub fn limit_asked_in(
                 id: limit.id,
                 value: ask.value,
                 was,
+                file_refused,
             },
             now,
         )
@@ -398,6 +402,13 @@ fn limit_line(change: &LimitChange, value: Option<u64>) -> String {
 pub fn limit_now(config: &Path, change: &LimitChange) -> Now {
     match purlis_core::runners::limit_may_be_set(config, &change.pool, change.id, change.value) {
         Ok(held) if held.chosen.get(change.id) != change.was => Now::Stale,
+        Ok(_) if change.file_refused => Now::Made {
+            before: format!(
+                "{}: a value in the pool's file that can't be used\n",
+                change.id.limit().plain
+            ),
+            after: limit_line(change, change.value),
+        },
         Ok(_) => Now::Made {
             before: limit_line(change, change.was),
             after: limit_line(change, change.value),
@@ -452,17 +463,21 @@ pub fn waiting(held: &Held) -> Vec<(Proposal, Now)> {
         .map(|one| {
             let now = now_of(root, &one);
             if now == Now::Stale && held.proposals().stale(one.id) {
-                tell(
-                    held,
-                    one.session,
-                    ProposalWord::Stale {
-                        path: one.path.clone(),
-                    },
-                );
+                tell(held, one.session, stale_word(&one));
             }
             (one, now)
         })
         .collect()
+}
+
+/// What a chat is told of `one` gone stale.
+fn stale_word(one: &Proposal) -> ProposalWord {
+    let path = one.path.clone();
+    if one.limit.is_some() {
+        ProposalWord::LimitStale { path }
+    } else {
+        ProposalWord::Stale { path }
+    }
 }
 
 /// Tells chat `session` `word` on its next turn.
@@ -618,33 +633,24 @@ pub fn applied(held: &Held, id: u32, from: From) -> Result<String, String> {
             held.proposals().take(id);
             crate::oldplugins::purlis_change_applied(root, &one);
             for session in held.proposals().others_stale(&one.path) {
-                tell(
-                    held,
-                    session,
-                    ProposalWord::Stale {
-                        path: one.path.clone(),
-                    },
-                );
+                tell(held, session, stale_word(&one));
             }
-            tell(
-                held,
-                one.session,
+            let word = if one.limit.is_some() {
+                ProposalWord::LimitApplied {
+                    path: one.path.clone(),
+                }
+            } else {
                 ProposalWord::Applied {
                     path: one.path.clone(),
-                },
-            );
+                }
+            };
+            tell(held, one.session, word);
             held.chats().asks_may_have_moved();
             Ok(said)
         }
         Err(Refusal::Stale) => {
             if held.proposals().stale(id) {
-                tell(
-                    held,
-                    one.session,
-                    ProposalWord::Stale {
-                        path: one.path.clone(),
-                    },
-                );
+                tell(held, one.session, stale_word(&one));
             }
             held.chats().asks_may_have_moved();
             Err(stale_said.to_owned())
@@ -771,7 +777,7 @@ pub fn apply_in(
 
 /// **Saves a limit's proposal**, on the machine at `config`: judged again, audited and saved
 /// through [`purlis_core::runners::set_pool_limit`], so only that value changes.
-pub fn apply_limit(
+pub(crate) fn apply_limit(
     config: &Path,
     one: &Proposal,
     change: &LimitChange,
@@ -796,16 +802,26 @@ pub fn apply_limit(
         })
     };
     record(proposed::Outcome::Intent, None).map_err(Refusal::Not)?;
-    let saved = purlis_core::runners::set_pool_limit(config, &change.pool, change.id, change.value)
-        .map_err(|why| why.to_string());
+    // Compared again under the file's lock: the file is the machine's, `lock` the project's.
+    let saved = purlis_core::runners::set_pool_limit_if(
+        config,
+        &change.pool,
+        change.id,
+        change.value,
+        change.was,
+    )
+    .map_err(|why| why.to_string());
     let (outcome, why) = match &saved {
-        Ok(()) => (proposed::Outcome::Applied, None),
+        Ok(true) => (proposed::Outcome::Applied, None),
+        Ok(false) => (proposed::Outcome::Stale, None),
         Err(why) => (proposed::Outcome::Failed, Some(why.as_str())),
     };
     if let Err(why) = record(outcome, why) {
         tracing::warn!("purlis: a proposed limit's outcome was not recorded ({why})");
     }
-    saved.map_err(Refusal::Not)?;
+    if !saved.map_err(Refusal::Not)? {
+        return Err(Refusal::Stale);
+    }
     Ok(format!(
         "Saved to pool {}. {}",
         change.pool,

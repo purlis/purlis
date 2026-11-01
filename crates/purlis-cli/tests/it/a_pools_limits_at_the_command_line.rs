@@ -172,6 +172,60 @@ fn in_a_chat_the_value_is_handed_to_the_app_and_nothing_is_written() {
     }
 }
 
+/// **Clearing only the chat's number doesn't make it a terminal**: the socket still says chat.
+#[test]
+fn a_chat_with_its_number_cleared_still_writes_nothing() {
+    let machine = a_machine();
+    let config = machine.path();
+    let env = [
+        (
+            SOCKET_ENV.to_owned(),
+            config.join("none.sock").display().to_string(),
+        ),
+        (CHAT_ENV.to_owned(), String::new()),
+    ];
+    let out = purlis(
+        config,
+        &["pool", "limit", "builds", "signInWait", "30"],
+        &env,
+    );
+    assert!(!out.status.success(), "{}", said(&out));
+    assert_eq!(set(config), None);
+}
+
+/// **Story 27**: a project that names a limit, however it is spelled, changes nothing, and a
+/// project this purlis can't write doesn't stop a machine's pool being read.
+#[test]
+fn a_projects_files_change_no_limit_and_a_read_only_project_stops_nothing() {
+    let machine = a_machine();
+    let config = machine.path();
+    let project = config.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("purlis.toml"),
+        "schema = 9999\n[pool.builds]\nsignInWait = 120\n[pools.builds]\nsignInWait = 120\n",
+    )
+    .unwrap();
+    let out = support::purlis()
+        .args(["pool", "limits", "builds", "--json"])
+        .current_dir(&project)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", config)
+        .env("PURLIS_CONFIG_HOME", config)
+        .env("CHARTER_ROOT", &project)
+        .env("CHARTER_NO_BACKGROUND_CHECKS", "1")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", said(&out));
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rows = json["limits"].as_array().unwrap();
+    let row = rows.iter().find(|row| row["key"] == "signInWait").unwrap();
+    assert_eq!(row["set"], serde_json::Value::Null);
+    assert_eq!(row["inForce"], 15);
+}
+
 /// A chat the app doesn't answer is refused: it never falls back to writing the file.
 #[test]
 fn a_chat_that_cannot_reach_the_app_writes_nothing() {
