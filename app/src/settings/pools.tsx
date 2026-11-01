@@ -538,7 +538,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
               onCancel={() => setAsking(undefined)}
               onRemove={() => {
                 setAsking(undefined);
-                void removePool(asking);
+                void removePool(asking, linkOnAnotherEngine(now.links[asking]));
               }}
             />
           )}

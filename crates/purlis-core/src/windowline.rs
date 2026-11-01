@@ -288,12 +288,13 @@ pub fn ask_on(socket: &Path, asked: &Asked, within: Duration) -> Answered {
     answered().map_or(Answered::NoAnswer, Answered::Said)
 }
 
-/// **Serves `answer` on `socket`**, one peer at a time on a thread for the app's life: a removal
-/// is rare, and a peer has [`A_PEER_HAS`] for its whole line. A socket another window answers on is left alone, and said as the error; one
+/// **Serves `answer` on `socket`** for the app's life, each peer on a thread of its own, since a
+/// keep can wait minutes on a runner and holds no other up. A peer has [`A_PEER_HAS`] for its whole
+/// line. A socket another window answers on is left alone, and said as the error; one
 /// nothing answers on is what a last window left.
 pub fn serve_on(
     socket: &Path,
-    answer: impl Fn(Asked) -> Said + Send + 'static,
+    answer: impl Fn(Asked) -> Said + Send + Sync + 'static,
 ) -> std::io::Result<()> {
     crate::hostsocket::make_the_folder(socket)?;
     match UnixStream::connect(socket) {
@@ -318,6 +319,7 @@ pub fn serve_on(
         _ => {}
     }
     let listener = UnixListener::bind(socket)?;
+    let answer = std::sync::Arc::new(answer);
     std::thread::Builder::new()
         .name("window-line".to_owned())
         .spawn(move || {
@@ -328,7 +330,8 @@ pub fn serve_on(
                     continue;
                 };
                 if this_user(&peer) {
-                    let _ = serve_one(&peer, &answer);
+                    let answer = std::sync::Arc::clone(&answer);
+                    std::thread::spawn(move || serve_one(&peer, answer.as_ref()));
                 }
             }
         })?;

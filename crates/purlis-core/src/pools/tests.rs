@@ -2569,6 +2569,7 @@ fn a_pool_removed_while_another_engine_answers_names_what_stays_there() {
     fake.set("engine", "engine-b\n");
     std::fs::write(fake.file_path("log"), "").unwrap();
 
+    assert!(on_another_engine(config.path(), &fake.docker(), "first"));
     let removed = remove(config.path(), &fake.docker(), "first", None)
         .unwrap()
         .unwrap();
@@ -2591,6 +2592,9 @@ fn a_pool_removed_while_another_engine_answers_names_what_stays_there() {
         "{left}"
     );
     assert!(left.contains("stays"), "{left}");
+    assert!(left.contains("engine-a"), "names the engine: {left}");
+    assert!(left.contains("chats"), "{left}");
+    assert!(left.contains("sign-ins"), "{left}");
     assert!(runners::runner_for(config.path(), "first").is_err());
     assert!(
         !runners::pools(config.path())
@@ -2635,7 +2639,9 @@ fn a_runner_is_not_removed_where_no_engine_says_which_it_is() {
     let fake = a_docker(&runner_answers());
     fake.set("engine", "engine-a\n");
     a_pool_added(config.path(), &fake, &ours);
+    assert!(!on_another_engine(config.path(), &fake.docker(), "first"));
     fake.set("engine", "\n");
+    assert!(!on_another_engine(config.path(), &fake.docker(), "first"));
     std::fs::write(fake.file_path("log"), "").unwrap();
 
     let removed = remove(config.path(), &fake.docker(), "first", None)

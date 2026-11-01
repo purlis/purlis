@@ -840,6 +840,11 @@ export const commands = {
 	left_in: LeftIn,
 	/**  It has a conversation to resume, so Resume puts it back. */
 	resumable: boolean,
+	/**
+	 *  Its host was a pool's runner, gone for good, and its conversation went with that runner's
+	 *  home (#4350).
+	 */
+	with_the_runner: boolean,
 } | null, string>(__TAURI_INVOKE("chat_lost_with_the_host", { plane, session })),
 	/**
 	 *  **Dismiss** on the Notice, and what Resume does once it has asked for the chat's restart:
@@ -3067,7 +3072,7 @@ export const commands = {
 	 *  all of it is gone. Once it is gone from this machine, the window's links to its runner end, and
 	 *  the chats on them with them ([`links_end_once_gone`]).
 	 */
-	removeDockerPool: (name: string) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name })),
+	removeDockerPool: (name: string, elsewhere: boolean) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere })),
 	/**
 	 *  **Whether the pool `name`'s runner answers with the key pinned for it**: one link, made and
 	 *  let go of.

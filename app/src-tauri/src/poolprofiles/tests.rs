@@ -869,7 +869,7 @@ fn a_keep_the_command_asks_is_held_to_the_strips_gate_and_named_on_the_pool() {
     let not_yours = keep_for_the_command(Err("not yours".into()), &config, "team", "work", &never);
     assert_eq!(not_yours, Err("not yours".to_owned()));
     let names_none = keep_for_the_command(an_owned(), &config, "team", "work", &never);
-    assert!(names_none.unwrap_err().contains("open one"));
+    assert!(names_none.unwrap_err().contains("Add a profile"));
     assert_eq!(chosen(), None, "nothing was named");
 
     purlis_core::runners::add_pool_profile(&config, "team", "home", None).unwrap();
@@ -882,4 +882,12 @@ fn a_keep_the_command_asks_is_held_to_the_strips_gate_and_named_on_the_pool() {
 
     let older = keep_for_the_command(an_owned(), &config, "team", "work", &|_, _| Ok(None));
     assert!(older.unwrap_err().contains("before 1.43"));
+    assert_eq!(chosen(), Some(names(&["home", "work"])), "named before");
+
+    purlis_core::runners::remove_pool_profile(&config, "team", "work", None).unwrap();
+    let failed = keep_for_the_command(an_owned(), &config, "team", "work", &|_, _| {
+        Err("the runner did not answer".to_owned())
+    });
+    assert_eq!(failed, Err("the runner did not answer".to_owned()));
+    assert_eq!(chosen(), Some(names(&["home"])), "named only by this try");
 }

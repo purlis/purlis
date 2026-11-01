@@ -124,6 +124,18 @@ fn forgotten(config_root: &Path, pool: &Pool, why: Refused, locked: &runners::Lo
     }
 }
 
+/// **Whether the pool `name`'s runner is on another engine than `docker` reaches** (#4325), by the
+/// engine that made it. Not where no engine was noted of it, or none says which it is now.
+pub fn on_another_engine(config_root: &Path, docker: &Docker, name: &str) -> bool {
+    let Ok(kept) = runners::runner_for(config_root, name) else {
+        return false;
+    };
+    let Some(made_on) = kept.engine.as_deref() else {
+        return false;
+    };
+    matches!(docker.engine_id(), Ok(Some(now)) if now != made_on)
+}
+
 /// **Removes the pool `name`**: its runner whole ([`runners::remove`]), with `unpair` taking
 /// this desktop out of its peers when its link is up, then the pool's record once its runner is
 /// gone. A pool whose runner was never kept is forgotten at once. What [`runners::remove`] did,

@@ -1011,12 +1011,13 @@ fn engine_stands(kept: &Kept, docker: &Docker) -> Result<(), Removed> {
         Ok(Some(_)) => Err(Removed {
             peer: None,
             container: Err(format!(
-                "runner {name}'s container {id} stays on the Docker engine that made it, which \
-                 Docker does not reach now. Once Docker points back: docker container rm --force \
-                 {id}"
+                "runner {name}'s container {id} stays on Docker engine {made_on}, which made it \
+                 and which Docker does not reach now, and any chats running in it may go on \
+                 there. Once Docker points back at that engine: docker container rm --force {id}"
             )),
             volume: Err(format!(
-                "its home volume {volume} stays there too: docker volume rm --force {volume}"
+                "its home volume {volume} stays there too, with the sign-ins in it: docker volume \
+                 rm --force {volume}"
             )),
             forgotten: true,
             earlier: None,

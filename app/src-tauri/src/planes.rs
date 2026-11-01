@@ -4251,7 +4251,7 @@ impl Planes {
                     // **Its program ended with its session host** (#2007): what its run is left
                     // in is read from the board as it was, before its end moves it, and said on
                     // its pane with Resume. It did not end by itself: like a quit, it fails no
-                    // task, and a task chat reports when it is resumed.
+                    // task, and a task chat reports when it is resumed, unless its runner is gone.
                     let lost_with = me
                         .get()
                         .and_then(std::sync::Weak::upgrade)

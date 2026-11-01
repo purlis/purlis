@@ -536,26 +536,45 @@ pub fn listen_for_the_command_line() {
 /// **`purlis profile sign-in --pool` keeps `name` on pool `pool`'s runner through this window**
 /// (#4112), as Sign in on its line does, behind the same gate, `yours` being what it said of the
 /// pool: nothing is written or sent where it said no. The pool names it first, so no tidy has the
-/// runner forget what the person just signed in. A pool that names none is refused, as Add a
-/// profile… is with no project open: naming it would drop the open project's default.
+/// runner forget what the person just signed in, and leaves it out again where nothing was kept.
+/// A pool that names none is refused, as Add a profile… is with no project open: naming it would
+/// drop the open project's default, which this line does not know.
 #[cfg(unix)]
 fn keep_for_the_command(
     yours: Result<Yours, String>,
     config: &Path,
     pool: &str,
     name: &str,
-    keep: &dyn Fn(Yours, &onrunner::Kept) -> Result<Option<Standing>, String>,
+    keep: &KeepOnARunner<'_>,
 ) -> Result<Option<String>, String> {
     let yours = yours?;
     let kept = onrunner::Kept::of(&record_named(config, name)?)?;
-    changeable(config, pool, None)?;
+    let named = purlis_core::runners::profiles_of(config, pool)
+        .map_err(|why| why.to_string())?
+        .ok_or_else(|| {
+            format!(
+                "pool {pool} does not name its profiles yet, so this line cannot add one: use Add \
+                 a profile… on its row in Settings › Pools"
+            )
+        })?;
     purlis_core::runners::add_pool_profile(config, pool, name, None)
         .map_err(|why| why.to_string())?;
-    match keep(yours, &kept)? {
-        Some(_) => Ok(None),
-        None => Err(format!("Pool {pool}: {OLDER_RUNNER}")),
+    let said = match keep(yours, &kept) {
+        Ok(Some(_)) => return Ok(None),
+        Ok(None) => format!("Pool {pool}: {OLDER_RUNNER}"),
+        Err(why) => why,
+    };
+    if !named.iter().any(|one| one == name)
+        && let Err(why) = purlis_core::runners::remove_pool_profile(config, pool, name, None)
+    {
+        tracing::warn!("purlis: pool {pool} still names the profile {name}: {why}");
     }
+    Err(said)
 }
+
+/// What has a pool's runner keep a profile, for [`keep_for_the_command`].
+#[cfg(unix)]
+type KeepOnARunner<'a> = dyn Fn(Yours, &onrunner::Kept) -> Result<Option<Standing>, String> + 'a;
 
 /// What the person is told of the pools in `older`, whose runner keeps the removed profile
 /// `name` as it runs a purlis before 1.52; none where there is none.

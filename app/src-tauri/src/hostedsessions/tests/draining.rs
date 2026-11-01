@@ -366,7 +366,7 @@ fn links_to_a_runner_kept_no_more_end_as_it_goes() {
     let (_dir, root) = a_project();
     let to_it = pool.connection.to_a_pool("builds");
     let sessions = routed(&pool, &root);
-    started(&sessions).expect("it starts");
+    let on_the_old = started(&sessions).expect("it starts");
     pool.follows();
     started(&sessions).expect("it starts");
     assert_eq!(to_it.links_of(&root).len(), 2);
@@ -374,6 +374,7 @@ fn links_to_a_runner_kept_no_more_end_as_it_goes() {
     pool.connection
         .links_to_gone_runners_end(pool.config.path());
     assert_eq!(to_it.links_of(&root).len(), 2, "both are still kept");
+    assert!(!sessions.lost_with_its_runner(on_the_old));
 
     let path =
         purlis_core::machine::dir(pool.config.path()).join(purlis_core::machine::RUNNERS_FILE);
@@ -386,6 +387,11 @@ fn links_to_a_runner_kept_no_more_end_as_it_goes() {
         .links_to_gone_runners_end(pool.config.path());
 
     assert_eq!(to_it.links_of(&root).len(), 1, "only the pool's runner's");
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    while !sessions.lost_with_its_runner(on_the_old) && std::time::Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(sessions.lost_with_its_runner(on_the_old), "#4350");
 }
 
 /// **A chat on a removed pool's runner ended with that runner** (#4350), and not merely with its

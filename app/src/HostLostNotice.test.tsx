@@ -61,9 +61,9 @@ describe("the Notice of a chat lost with its session host", () => {
   it("says a chat that ended with a gone runner lost its conversation, with no Resume", async () => {
     core({ ...HIBERNATED, resumable: false, with_the_runner: true });
     render(<HostLostNotice plane={PLANE} session={7} onRestart={() => {}} />);
-    const said = await screen.findByRole("status", { name: "Runner gone" });
+    const said = await screen.findByRole("status", { name: "Ended with its runner" });
     expect(said).toHaveTextContent(
-      "This chat ended with its pool's runner, which is gone, and its conversation was kept on that runner. Start a new chat to go on.",
+      "This chat ended with its pool's runner, which this machine no longer keeps, and its conversation was on that runner. Start a new chat to go on.",
     );
     expect(said).not.toHaveTextContent("nothing was lost");
     expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();

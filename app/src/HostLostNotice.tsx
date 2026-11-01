@@ -45,7 +45,7 @@ export function HostLostNotice({
   };
 
   const said = lost.with_the_runner
-    ? `${offScreen ? "That chat" : "This chat"} ended with its pool's runner, which is gone, and its conversation was kept on that runner.`
+    ? `${offScreen ? "That chat" : "This chat"} ended with its pool's runner, which this machine no longer keeps, and its conversation was on that runner.`
     : lost.left_in === "hibernated"
       ? `purlis's session host stopped unexpectedly while ${chat} was waiting for you, so nothing was lost.`
       : `purlis's session host stopped unexpectedly in the middle of ${chat}'s turn, so that turn was lost.`;
@@ -60,7 +60,7 @@ export function HostLostNotice({
       cause={`chat-lost-with-the-host:${session}`}
       at="pane"
       tone="trouble"
-      label={lost.with_the_runner ? "Runner gone" : "Session host stopped"}
+      label={lost.with_the_runner ? "Ended with its runner" : "Session host stopped"}
       fixes={
         lost.resumable
           ? [

@@ -1907,7 +1907,7 @@ const DOCKER_IN_HOME: &[&str] = &[
 /// **Whether the runner `login` reaches says `name` is signed in** (#4046, #4164): that login's
 /// own words, with `--check`. Bounded, in time and in what is kept of it: the runner's answer is
 /// its own. A runner that fetches the harness first (#4007) is given the time a fetch takes.
-/// `Err` where it says neither, as for a profile it does not keep. A check is no login, so it
+/// `None` where it keeps no such profile, `Err` where it could not say. A check is no login, so it
 /// is not held to its input: the runner refuses the two together.
 pub fn standing_by_login(
     login: &crate::profilestore::sign_in::Login,
