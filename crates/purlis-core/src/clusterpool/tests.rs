@@ -1392,66 +1392,31 @@ fn a_claims_deletion_notice_is_read_only_where_it_is_true() {
     assert_eq!(deletion_notice_of(&serde_json::json!({})), None);
 }
 
-/// **What a start waits for on a Claim** (#4403): a runner its desktop's word for this suspension
-/// has brought back, and nothing else.
+/// **What a start waits for on a Claim** (#4403): a runner suspended for being idle, and nothing
+/// else its Claim may say.
 #[test]
-fn a_start_waits_only_for_a_runner_on_its_way_back() {
+fn a_start_waits_only_for_a_runner_suspended_for_being_idle() {
     use serde_json::json;
-    const SINCE: &str = "2026-11-01T08:00:00Z";
-    let claim = |word: Option<&str>, conditions: serde_json::Value| {
-        let annotations = word.map_or(json!({}), |word| json!({ RUN_AGAIN_ANNOTATION: word }));
-        json!({ "metadata": { "annotations": annotations }, "status": { "conditions": conditions } })
-    };
-    let idle =
-        |status: &str| json!({ "type": "Idle", "status": status, "lastTransitionTime": SINCE });
+    let claim = |conditions: serde_json::Value| json!({ "status": { "conditions": conditions } });
+    let idle = |status: &str| json!({ "type": "Idle", "status": status, "lastTransitionTime": "2026-11-01T08:00:00Z" });
     let ready = |reason: &str| json!({ "type": "Ready", "status": "False", "reason": reason });
 
-    assert!(
-        coming_back(&claim(Some(SINCE), json!([idle("True")]))),
-        "not acted on yet"
-    );
-    assert!(
-        !coming_back(&claim(Some("2026-10-01T08:00:00Z"), json!([idle("True")]))),
-        "a word for an earlier suspension"
-    );
-    assert!(
-        !coming_back(&claim(None, json!([idle("True")]))),
-        "nobody asked"
-    );
-    assert!(
-        !coming_back(&claim(Some(SINCE), json!([idle("Unknown")]))),
-        "stopped"
-    );
-    for starting in ["Starting", "Scheduling", "Pulling"] {
+    assert!(suspended_for_being_idle(&claim(json!([
+        idle("True"),
+        ready("Idle")
+    ]))));
+    for other in ["UpstreamObjectInTheWay", "PoolDeleted", "PoolNotFound"] {
         assert!(
-            coming_back(&claim(Some(SINCE), json!([ready(starting)]))),
-            "{starting}"
+            !suspended_for_being_idle(&claim(json!([idle("True"), ready(other)]))),
+            "{other} is not acted on"
         );
     }
     assert!(
-        coming_back(&claim(
-            Some(SINCE),
-            json!([idle("False"), ready("Starting")])
-        )),
-        "an Idle that is over says nothing"
+        !suspended_for_being_idle(&claim(json!([idle("Unknown"), ready("Stopped")]))),
+        "stopped"
     );
     assert!(
-        !coming_back(&claim(None, json!([ready("Starting")]))),
-        "never idle"
-    );
-    assert!(!coming_back(&claim(Some(SINCE), json!([ready("Stopped")]))));
-    assert!(
-        !coming_back(&claim(
-            Some(SINCE),
-            json!([ready("Starting"), { "type": "Stuck", "status": "True" }])
-        )),
-        "its Claim says it has stopped coming"
-    );
-    assert!(
-        !coming_back(&claim(
-            Some(SINCE),
-            json!([ready("Starting"), { "type": "KeyPublished", "status": "True" }])
-        )),
-        "vouched for, so it is back"
+        !suspended_for_being_idle(&claim(json!([ready("Starting")]))),
+        "a restart"
     );
 }

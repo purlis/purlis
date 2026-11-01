@@ -275,25 +275,35 @@ impl Relay {
     /// **Waits, for at most `patience`, for the link `peer`'s commands go over to come up** (#4403):
     /// for a runner on its way back, which refuses each link until it is vouched for. It ends at
     /// once on what waiting cannot mend, a changed key or a runner gone for good, and whatever it
-    /// ends on, the command that waited goes on to say so as it would have.
-    pub(crate) async fn waits_for_its_runner(&self, peer: &Peer, patience: std::time::Duration) {
+    /// ends on, the command that waited goes on to say so as it would have. Answers whether the
+    /// link came up.
+    pub(crate) async fn waits_for_its_runner(
+        &self,
+        peer: &Peer,
+        patience: std::time::Duration,
+    ) -> bool {
         // Only the watch is held: a link that ends lets its relayed link go, and that ends this.
         let Ok(mut standing) = self.relayed(peer).map(|relayed| relayed.standing.clone()) else {
-            return;
+            return false;
         };
-        let _ = tokio::time::timeout(patience, async {
+        tokio::time::timeout(patience, async {
             loop {
-                let waits = match &*standing.borrow_and_update() {
-                    Standing::Linking => true,
-                    Standing::Down(down) => !down.key_changed && !down.gone,
-                    Standing::Up(_) | Standing::Over(_) => false,
+                let (waits, up) = match &*standing.borrow_and_update() {
+                    Standing::Linking => (true, false),
+                    Standing::Down(down) => (!down.key_changed && !down.gone, false),
+                    Standing::Up(_) => (false, true),
+                    Standing::Over(_) => (false, false),
                 };
-                if !waits || standing.changed().await.is_err() {
-                    return;
+                if !waits {
+                    return up;
+                }
+                if standing.changed().await.is_err() {
+                    return false;
                 }
             }
         })
-        .await;
+        .await
+        .unwrap_or(false)
     }
 
     /// **`peer`'s link is the window that keeps `name` for it** (#2623): every link to the other

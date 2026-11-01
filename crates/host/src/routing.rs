@@ -36,8 +36,8 @@ pub type RelaysTo = Arc<dyn Fn(&str) -> Result<(Keep, String), String> + Send + 
 /// a program. A link that redials, a check or a view never does, so a runner's own link does not
 /// undo its suspension.
 ///
-/// **Answers how long a start waits for that runner** (#4403), where it is on its way back; `None`
-/// where it is not, which leaves the start to go on as it would.
+/// **Answers how long a start waits for that runner** (#4403), where this word brings it back;
+/// `None` where it does not. A start waits out a wake another link asked for too.
 pub type RunsAgain = Arc<dyn Fn(&str) -> Option<std::time::Duration> + Send + Sync>;
 
 /// **The `<pool>/<runner>` a link's `relay_to` answer names** (#4071): a cluster runner's answer
@@ -204,17 +204,35 @@ impl Routed {
     }
 
     /// Asks for the runner this link is relayed to to run again, off the runtime: how long a
-    /// start waits for it, where it is on its way back.
+    /// start waits for it, where it is on its way back. A stopped host wakes nothing.
     async fn run_again(&self) -> Option<std::time::Duration> {
         let (Some(runs_again), Some(runner)) =
             (self.hosting.runs_again(), lock(&self.runner).clone())
         else {
             return None;
         };
-        tokio::task::spawn_blocking(move || runs_again(&runner))
+        if self.hosting.is_stopped() {
+            return None;
+        }
+        let asking = runner.clone();
+        let asked = tokio::task::spawn_blocking(move || runs_again(&asking))
             .await
             .ok()
-            .flatten()
+            .flatten();
+        self.hosting.waits_for(&runner, asked)
+    }
+
+    /// `peer`'s hold or start waits for its runner where that is on its way back (#4403).
+    async fn waits_for_the_runner(&self, relay: &Relay, peer: &Peer) -> bool {
+        let Some(patience) = self.run_again().await else {
+            return false;
+        };
+        if relay.waits_for_its_runner(peer, patience).await
+            && let Some(runner) = lock(&self.runner).clone()
+        {
+            self.hosting.came_back(&runner);
+        }
+        true
     }
 
     /// The window's name, kept while the link was undecided, handed to this host now that the
@@ -275,9 +293,12 @@ impl session::Host for Routed {
                 if matches!(
                     command,
                     Command::HoldProject { .. } | Command::StartProgram(_)
-                ) && let Some(patience) = self.run_again().await
+                ) && self.waits_for_the_runner(&relay, peer).await
+                    && matches!(command, Command::StartProgram(_))
+                    && self.drains().await
                 {
-                    relay.waits_for_its_runner(peer, patience).await;
+                    // Replaced while it waited: the rule above holds at the end of the wait too.
+                    return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
                 }
                 session::Host::call(&relay, command, peer).await
             }

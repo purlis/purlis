@@ -277,8 +277,9 @@ spec:
     you can do by hand too. **That start waits for the runner** (#4403), with the window at its
     usual *Starting…* and its Cancel, until the operator vouches for it, for at most the pool's
     longest wait for that (`vouchWait`, 5 minutes unless raised); past it, it is refused as any
-    start on a runner that is down, and the runner still comes back. A start from a dispatch
-    waits at most 30 seconds on its first try, then is refused while the runner comes back.
+    start on a runner that is down, and the runner still comes back. A dispatch's first hold of
+    its project waits at most 30 seconds, then is refused while the runner comes back. A runner
+    with anything else on its Claim, an upstream object in the way among it, is not waited for.
     **A fresh Claim's runner keeps nothing**, so it comes back with a new key, which its desktop
     refuses as it does after `stopped`: make its Claim again. This reaches no one through purlis
     today, since a desktop makes only kept Claims, and #4404 settles it as purlis starts making
