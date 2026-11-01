@@ -574,13 +574,20 @@ pub(crate) fn a_window_again_on_a_pool_of(
 }
 
 /// A `local-ui` link to `host` over an in-memory stream, served as the window's host serves
-/// each link it admits. `cuts` holds what ends it as a crash ends it.
+/// each link it admits. `cuts` holds what cuts its bytes as a crash cuts them: the host still sees
+/// the link end, and lets go of what it held for it.
 async fn a_local_ui_link_to(
     host: purlis_host::Hosting,
     cuts: &Mutex<Vec<tokio::task::AbortHandle>>,
 ) -> link::Link {
     let held = Credentials::mint().expect("credentials");
-    let (a, b) = tokio::io::duplex(1 << 20);
+    let (a, near) = tokio::io::duplex(1 << 20);
+    let (far, b) = tokio::io::duplex(1 << 20);
+    let carrying = tokio::spawn(async move {
+        let (mut near, mut far) = (near, far);
+        let _ = tokio::io::copy_bidirectional(&mut near, &mut far).await;
+    });
+    cuts.lock().expect("the cuts").push(carrying.abort_handle());
     let (client, served) = tokio::join!(
         link::connect(
             a,
@@ -590,12 +597,11 @@ async fn a_local_ui_link_to(
         ),
         link::serve_any(b, session::speaks(), &held)
     );
-    let serving = tokio::spawn(session::serve(
+    tokio::spawn(session::serve(
         served.expect("the host admits the window"),
         purlis_host::Routed::new(host),
         None,
     ));
-    cuts.lock().expect("the cuts").push(serving.abort_handle());
     client.expect("the window links to its host")
 }
 

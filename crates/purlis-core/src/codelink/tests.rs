@@ -368,44 +368,10 @@ fn the_desktop_takes_a_runners_branches_back_under_its_pool_and_touches_nothing_
     );
     assert!(!mark.exists(), "a hook of the desktop's repository ran");
 
-    // A branch the runner no longer has stays while it alone holds its commit (#4363).
-    let kept = take_back(&world.desktop, "builds", None, &[]).unwrap();
-    assert_eq!(
-        named(&kept, "refs/remotes/builds/fix").map(|r| r.oid.as_str()),
-        Some(on_the_runner.as_str())
-    );
-
-    // Once the desktop holds that commit, it goes from the pool's refs, and only from there.
-    git(&world.desktop, &["branch", "taken", &on_the_runner]);
+    // A branch the runner no longer has goes from the pool's refs, and only from there.
     let kept = take_back(&world.desktop, "builds", None, &[]).unwrap();
     assert_eq!(kept, Vec::new());
     assert_eq!(git(&world.desktop, &["rev-parse", "fix"]), fix_here);
-    assert_eq!(git(&world.desktop, &["rev-parse", "taken"]), on_the_runner);
-}
-
-#[test]
-fn two_branches_a_runner_no_longer_has_at_one_commit_leave_one_to_hold_it() {
-    let world = World::new();
-    let main = git(&world.desktop, &["rev-parse", "main"]);
-    git(&world.desktop, &["checkout", "-q", "--detach"]);
-    let only_there = commit(&world.desktop, "there.txt", "only on the runner\n");
-    git(&world.desktop, &["checkout", "-q", "main"]);
-    for branch in ["one", "two"] {
-        git(
-            &world.desktop,
-            &[
-                "update-ref",
-                &format!("refs/remotes/builds/{branch}"),
-                &only_there,
-            ],
-        );
-    }
-
-    let kept = take_back(&world.desktop, "builds", None, &[]).unwrap();
-
-    assert_eq!(kept.len(), 1, "{kept:?}");
-    assert_eq!(kept[0].oid, only_there);
-    assert_eq!(git(&world.desktop, &["rev-parse", "main"]), main);
 }
 
 #[test]

@@ -3152,10 +3152,6 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
                 tracing::warn!("purlis: the session host answered its programs with {other:?}");
                 let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
-            // A runner from before #4271 refuses this over a link between hosts, so that refusal
-            // says nothing of what runs there. This desktop keeps a mark of each chat as it
-            // starts it, and a runner is paired with this desktop alone.
-            Err(refused) if refused.code == session::NOT_ALLOWED => {}
             Err(refused) => {
                 tracing::warn!(
                     "purlis: the session host did not say its programs: {}",

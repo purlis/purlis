@@ -2788,6 +2788,12 @@ impl Hosting {
             OpenedBy::Relayed(None) => false,
             OpenedBy::Relayed(Some(_)) => hosted.opened_by == asked_for,
         };
+        // Only the sandbox `take_back` names that window: one composed for a start that named
+        // none to its link stays unnamed, its chat answered without it.
+        let names_it = |held: &Confinement| match &asked_for {
+            OpenedBy::ThisHost => true,
+            OpenedBy::Relayed(window) => window.is_some() && held.window == *window,
+        };
         let mut programs: Vec<HeldProgram> = state
             .programs
             .iter()
@@ -2806,7 +2812,7 @@ impl Hosting {
                 confined: state
                     .confinements
                     .iter()
-                    .find(|(_, held)| held.owner == Owner::Program(id.clone()))
+                    .find(|(_, held)| held.owner == Owner::Program(id.clone()) && names_it(held))
                     .map(|(confinement, held)| Confined {
                         confinement: confinement.clone(),
                         ..held.confining.confined()
@@ -2814,7 +2820,7 @@ impl Hosting {
                 plan: state
                     .confinements
                     .values()
-                    .find(|held| held.owner == Owner::Program(id.clone()))
+                    .find(|held| held.owner == Owner::Program(id.clone()) && names_it(held))
                     .map(|held| held.plan.clone()),
                 sandbox: Some(hosted.sandbox.clone()),
                 cols: hosted.size.columns,

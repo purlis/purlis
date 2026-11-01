@@ -515,6 +515,26 @@ async fn a_window_started_again_is_answered_its_own_chats_on_the_runner_alone() 
 }
 
 #[tokio::test]
+async fn a_sandbox_composed_for_a_start_that_named_none_stays_unnamed_as_its_chat_is_answered() {
+    let runner = a_runner();
+    let (first, _first_events, _) = runner.relayed_for(WINDOW).await;
+    let chat = first
+        .start_program(StartProgram::of(PROJECT, ProgramKind::Harness))
+        .await
+        .unwrap();
+
+    drop(first);
+    let (back, _back_events, _) = runner.relayed_for(WINDOW).await;
+    let programs = back.programs_of(PROJECT).await.expect("answered");
+
+    assert_eq!(programs.len(), 1);
+    assert_eq!(programs[0].program, chat);
+    assert!(programs[0].confined.is_none());
+    assert!(programs[0].plan.is_none());
+    assert!(reach_of(&back, "unused").await.is_err());
+}
+
+#[tokio::test]
 async fn a_link_between_hosts_keeps_no_note_of_a_program() {
     let runner = a_runner();
     let (window, _events, _) = runner.relayed_for(WINDOW).await;

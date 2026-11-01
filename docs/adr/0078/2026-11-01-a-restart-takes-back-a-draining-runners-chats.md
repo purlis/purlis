@@ -22,11 +22,16 @@ rest are *decided in implementation, to be confirmed*.
 5. **The window asks its pool's runner now as it asks a draining one.** The refusal this replaces
    kept a restarted window from finding a chat on any runner.
 6. **A runner answers a link between hosts only what was opened for the window that link named.**
-   Never its own window's, another window's, or anything for a link that named none, so a
-   confinement it answers is one `take_back` already names to that link. A chat now records who
-   opened it, as a browser does.
+   Never its own window's, another window's, or anything for a link that named none, and only a
+   confinement `take_back` names that window: a chat composed with none named is answered without
+   it. A chat now records who opened it, as a browser does.
 7. **A program's note stays the window's on its own host** (`note_program`, a start's `note`), and
    a link between hosts still does not count as coming back when its ports are withdrawn: its
    `take_back` gives them back.
-8. **A runner of an earlier build refuses the question**, and the window goes on as it did. No
-   minor of the session protocol is taken.
+8. **A runner that does not say its programs counts as one that may have run outside the sandbox**
+   (D-2050-27), one of an earlier build too. No minor of the session protocol is taken.
+9. **What a restarted window finds and no tab takes back is closed**, on a pool's runners as on this
+   machine's host (#2006).
+
+This replaces item 4 of the amendment for #2407 and item 1 of the amendment for #2025 in ADR 0068,
+which kept `programs_of` to the window on its own host.
