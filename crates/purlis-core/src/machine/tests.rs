@@ -2604,7 +2604,7 @@ fn a_workspace_runs_on_a_pool_named_as_a_pool_is_and_in_a_plane_purlis_remembers
 }
 
 #[test]
-fn a_pool_name_purlis_would_not_write_runs_the_workspace_on_this_machine_and_says_so() {
+fn a_pool_name_purlis_would_not_write_is_dropped_and_says_so() {
     let machine = machine();
     write(machine.path(), &remembering(&["/planes/a"])).unwrap();
     let path = dir(machine.path()).join(FILE);
@@ -2625,7 +2625,8 @@ fn a_pool_name_purlis_would_not_write_runs_the_workspace_on_this_machine_and_say
     assert!(
         back.dropped
             .iter()
-            .all(|dropped| dropped.to_string().contains("on this machine")),
+            .all(|dropped| dropped.is_a_place()
+                && dropped.to_string().contains("so it was not kept")),
         "{:?}",
         back.dropped
     );
