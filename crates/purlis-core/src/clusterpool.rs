@@ -2005,14 +2005,7 @@ pub fn claim_and_pair(
         )));
     }
     let requester = kubectl.whoami()?;
-    let uid = kubectl.claim_marked(
-        namespace,
-        name,
-        pool,
-        &requester,
-        keeping,
-        Some(label),
-    )?;
+    let uid = kubectl.claim_marked(namespace, name, pool, &requester, keeping, Some(label))?;
     let claimed = Claimed {
         namespace: namespace.to_owned(),
         name: name.to_owned(),
