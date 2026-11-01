@@ -28,6 +28,7 @@ fn ask(session: u32, key: &str, says: &str, source: AskSource) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -74,6 +75,30 @@ fn a_new_ask_is_one_notification_titled_by_who_asks_and_saying_what_kind() {
             sessions: vec![3],
             title: "steward 12 › chat 3".to_owned(),
             body: "Asks your permission".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn a_notification_says_a_question_s_kind_and_never_what_the_chat_said() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let mut question = ask(
+        3,
+        "question:3",
+        "Waiting on your reply",
+        AskSource::Question,
+    );
+    question.last_message = Some("Which branch should I use?".to_owned());
+    let sent = heard(&mut rules, &a, &[question], Instant::now());
+    assert_eq!(
+        sent,
+        vec![Notice {
+            plane: a,
+            session: 3,
+            sessions: vec![3],
+            title: "steward 12 › chat 3".to_owned(),
+            body: "Waiting on your reply".to_owned(),
         }]
     );
 }

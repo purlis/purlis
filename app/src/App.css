@@ -2581,6 +2581,12 @@ body {
   line-clamp: 2;
   overflow: hidden;
 }
+/* What a chat said, over the lines it wrote (#4550). Never clamped: a report's bound is the cap,
+   and the list scrolls. */
+.inbox-said {
+  margin: 0;
+  white-space: pre-wrap;
+}
 /* A command over several lines, one per line (#3502). */
 .ask-lines {
   display: flex;

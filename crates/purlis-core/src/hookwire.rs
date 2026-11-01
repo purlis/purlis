@@ -2799,10 +2799,10 @@ pub type DoingHeard = Box<dyn Fn(Doing) + Send + Sync + 'static>;
 /// from, as **a report purlis made from its last message**.
 ///
 /// **The line itself is never recorded**, as a [`Doing`] is not: a line of its own, sent once
-/// and never spooled ([`tell_turn_output`]), which the host keeps in memory, for a task alone,
-/// until its next turn begins or its chat closes. The text is the chat's own words: the host
-/// masks what looks like a credential before it keeps any of it, and hands it on only quoted
-/// as data. **A report purlis makes from it is recorded, by design**: that masked text is the
+/// and never spooled ([`tell_turn_output`]), which the host keeps in memory, for every chat
+/// (#4550), until its next turn begins or its chat closes. The text is the chat's own words: the
+/// host masks what looks like a credential before it keeps any of it, and hands it on only
+/// quoted as data. **A report purlis makes from it is recorded, by design**: that masked text is the
 /// report, left for the chat that asked and kept on the task's dispatch record as any report is.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TurnOutput {

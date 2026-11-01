@@ -110,6 +110,11 @@ pub struct Shown {
     /// one: their count, and each as [`Shown::says`] shows it. Absent for an action on one line.
     #[specta(optional)]
     pub lines: Option<LinesShown>,
+    /// **What its chat's turn ended on** (#4550): on a chat waiting on the person's reply, its
+    /// last message, masked and bounded as a report's text is, over the lines it has. Data,
+    /// never markup. Absent where the app heard none, and on every other ask.
+    #[specta(optional)]
+    pub last_message: Option<String>,
 }
 
 /// The lines an action runs over, as a row draws them under its line (#3502). An action whose
@@ -327,6 +332,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         held_until: None,
         writes,
         lines,
+        last_message: None,
     })
 }
 
@@ -522,6 +528,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -563,6 +570,7 @@ pub fn sandbox_host(
             held_until: None,
             writes: None,
             lines: None,
+            last_message: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -596,6 +604,7 @@ pub fn sandbox_host(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     })
 }
 
@@ -659,6 +668,7 @@ pub fn sandbox_write(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     })
 }
 
@@ -722,6 +732,7 @@ pub fn sandbox_runner(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     })
 }
 
@@ -796,6 +807,7 @@ pub fn sandbox_port(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     })
 }
 
@@ -867,6 +879,7 @@ pub fn sandbox_local(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     })
 }
 
@@ -887,12 +900,14 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
 /// **The question adapter**: chat `session` is in the needs-you queue with no prompt open,
-/// its turn over and the next move the person's. Answered by replying in the chat.
-pub fn question(session: u32) -> Shown {
+/// its turn over and the next move the person's. Answered by replying in the chat. `says` is
+/// its kind; what its chat said is `last_message`, where the app heard any (#4550).
+pub fn question(session: u32, last_message: Option<String>) -> Shown {
     Shown {
         session,
         ask: format!("question:{session}"),
@@ -905,6 +920,7 @@ pub fn question(session: u32) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message,
     }
 }
 
@@ -960,6 +976,7 @@ pub fn workspace_removal(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1072,6 +1089,7 @@ pub fn browser_posture(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1136,6 +1154,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1201,6 +1220,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1262,6 +1282,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1304,6 +1325,7 @@ pub fn browser_sites(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1473,6 +1495,7 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         held_until: None,
         writes,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1498,6 +1521,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1551,6 +1575,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1605,6 +1630,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1659,6 +1685,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1714,6 +1741,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1742,6 +1770,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1836,6 +1865,8 @@ pub struct Waiting<'a> {
     /// Whether a chat is in the queue only for what is an update ([`only_updates`]): each is
     /// an update in the Inbox (#1693, #1694), and nothing of it waits on the person.
     pub only_updates: &'a dyn Fn(u32) -> bool,
+    /// What a chat's turn last ended on, as kept (#4550): what a question shows.
+    pub last_message: &'a dyn Fn(u32) -> Option<String>,
     /// Until when a chat's proxy holds a connection to a host, where it holds one now, asking
     /// the person (#1709), given when the ask began.
     pub held: &'a HoldEnds<'a>,
@@ -1913,7 +1944,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .filter(|session| !said.contains(session) && !(waiting.only_updates)(**session))
             .map(|&session| match (waiting.at_its_prompt)(session) {
                 Some(prompt) => terminal(session, prompt),
-                None => question(session),
+                None => question(session, (waiting.last_message)(session)),
             }),
     );
     asks.extend(waiting.blocks.iter().filter_map(|(session, block)| {
@@ -2105,6 +2136,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         since.insert(pool_tool_key(one.session, one.run), one.since);
     }
     let declared = purlis_core::sandbox::services::declared(root);
+    let tasks = held.tasks();
     let waiting = Waiting {
         browsers,
         needs_you,
@@ -2146,6 +2178,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 at_its_prompt: hooks.waits_on_its_prompt(session),
             })
         },
+        last_message: &|session| tasks.ledger().last_said(session).map(str::to_owned),
         held: &|session, target, began| {
             chats.asking(session, Some(target)).then(|| {
                 let ends = hold_ends(began.map(u64::from), now_secs);

@@ -111,6 +111,7 @@ mod a_runners_browser_opens_and_reads_a_page_and_is_taken_over_and_handed_back {
                     within: None,
                     from: None,
                     lines: None,
+                    last_message: None,
                 },
                 web.clone(),
             )
