@@ -6420,6 +6420,11 @@ export type LostChat = {
 	left_in: LeftIn,
 	/**  It has a conversation to resume, so Resume puts it back. */
 	resumable: boolean,
+	/**
+	 *  Its host was a pool's runner, gone for good, and its conversation went with that runner's
+	 *  home (#4350).
+	 */
+	with_the_runner: boolean,
 };
 
 /**  A profile made or imported into, and what its import did. */

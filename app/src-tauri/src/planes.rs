@@ -4256,7 +4256,11 @@ impl Planes {
                         .get()
                         .and_then(std::sync::Weak::upgrade)
                         .filter(|held| held.chats.sessions().lost_with_its_host(session));
-                    let with_the_host = lost_with.is_some();
+                    // One whose runner is gone for good cannot be resumed, so a task on it reports
+                    // now, as one that ended on its own does (#4350).
+                    let with_the_host = lost_with
+                        .as_ref()
+                        .is_some_and(|held| !held.chats.sessions().lost_with_its_runner(session));
                     if let Some(held) = lost_with {
                         let resumes_by_id = held
                             .chats
@@ -4270,15 +4274,26 @@ impl Planes {
                                 board.conversation(session).is_some(),
                             )
                         };
+                        // Its conversation went with a runner gone for good (#4350): no Resume.
+                        let with_the_runner = held.chats.sessions().lost_with_its_runner(session);
                         if let Some(left_in) =
                             crate::hostlost::after_the_host(state, asking, resumes_by_id, resumable)
                         {
-                            lost.note(session, crate::hostlost::LostRun { left_in, resumable });
+                            let resumable = resumable && !with_the_runner;
+                            lost.note(
+                                session,
+                                crate::hostlost::LostRun {
+                                    left_in,
+                                    resumable,
+                                    with_the_runner,
+                                },
+                            );
                             tell_lost(crate::hostlost::LostChat {
                                 plane: plane.clone(),
                                 session,
                                 left_in,
                                 resumable,
+                                with_the_runner,
                             });
                         }
                     }

@@ -388,6 +388,27 @@ fn links_to_a_runner_kept_no_more_end_as_it_goes() {
     assert_eq!(to_it.links_of(&root).len(), 1, "only the pool's runner's");
 }
 
+/// **A chat on a removed pool's runner ended with that runner** (#4350), and not merely with its
+/// host: its conversation went with the runner's home.
+#[test]
+fn a_chat_of_a_removed_pool_ended_with_its_runner() {
+    let runtime = a_runtime();
+    let pool = Pool::on(&runtime);
+    let (_dir, root) = a_project();
+    let sessions = routed(&pool, &root);
+    let chat = started(&sessions).expect("it starts");
+
+    assert!(!sessions.lost_with_its_runner(chat));
+    pool.connection.pool_removed("builds");
+
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    while !sessions.lost_with_its_host(chat) && std::time::Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(sessions.lost_with_its_host(chat), "its link ended");
+    assert!(sessions.lost_with_its_runner(chat));
+}
+
 /// A host that answers a program's start only after `after`, and counts what it closes.
 #[derive(Clone)]
 struct SlowToStart<H> {
