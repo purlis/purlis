@@ -43,6 +43,7 @@ import {
   SidebarIcon,
 } from "./ui/rail/Rail";
 import { useProjectTints } from "./ui/rail/projectColour";
+import { watchWindowLeft } from "./ui/windowLeft";
 import type { RailMode } from "./railMode";
 
 /**
@@ -522,27 +523,15 @@ function useEdgePeek(active: boolean, edge: RefObject<HTMLElement | null>) {
       now.current = next;
       setHeld(next);
     };
-    const root = document.documentElement;
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerdown", move);
-    // Gone from the window: an `out` into nothing, which WebKit says where it does not say the
-    // root's `pointerleave`.
-    const out = (event: MouseEvent) => {
-      if (event.relatedTarget === null) away();
-    };
-    root.addEventListener("pointerleave", away);
-    document.addEventListener("pointerout", out);
-    document.addEventListener("mouseout", out);
-    window.addEventListener("blur", away);
+    const unwatch = watchWindowLeft(away);
     return () => {
       clearTimeout(rest);
       sized.disconnect();
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerdown", move);
-      root.removeEventListener("pointerleave", away);
-      document.removeEventListener("pointerout", out);
-      document.removeEventListener("mouseout", out);
-      window.removeEventListener("blur", away);
+      unwatch();
     };
   }, [active, edge]);
   // The peek's slide out ends it; where no animation runs to say so (reduced motion plays none

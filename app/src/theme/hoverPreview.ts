@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { drawIn, inForce, onDrawn, sameTheme, type Theme } from "./theme";
+import { watchWindowLeft } from "../ui/windowLeft";
 
 /**
  * **A theme drawn live while the pointer or the keyboard is on its card** (Settings › Theme,
@@ -136,13 +137,17 @@ function watch(): void {
     if (within !== null && !within.isConnected) putBack();
   }, LOOK_MS);
   document.addEventListener("visibilitychange", hidden);
-  window.addEventListener("blur", putBack);
+  // The window from the front: the pointer gone from it is the gallery's to weigh, as the keyboard
+  // may still be on the card (#3095).
+  const unwatchLeft = watchWindowLeft((why) => {
+    if (why === "focus") putBack();
+  });
   document.addEventListener("keydown", escape, true);
   unwatch = () => {
     stopDrawn();
     clearInterval(gone);
     document.removeEventListener("visibilitychange", hidden);
-    window.removeEventListener("blur", putBack);
+    unwatchLeft();
     document.removeEventListener("keydown", escape, true);
   };
 }
