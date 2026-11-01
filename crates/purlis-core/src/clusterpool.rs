@@ -666,8 +666,8 @@ pub struct Kubectl {
 }
 
 /// The variables a run of kubectl is never handed from this process: the kubeconfig is named,
-/// never inherited (#3292).
-pub const CLEARED: [&str; 1] = ["KUBECONFIG"];
+/// never inherited (#3292), and its own preferences are its default file's, if any.
+pub const CLEARED: [&str; 2] = ["KUBECONFIG", "KUBERC"];
 
 /// Where a `kubectl` command is looked for first, before the home's installers and `PATH`:
 /// Homebrew's, `/usr/local`'s, Docker Desktop's own, the system's and snap's.

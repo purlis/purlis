@@ -451,6 +451,22 @@ fn a_cluster_pool(
         .unwrap()
 }
 
+/// **A claim made again is a runner not yet tidied**: a tidy is remembered by the claim, and a
+/// Docker pool's by its name.
+#[cfg(unix)]
+#[test]
+fn a_tidy_is_remembered_by_the_claim_a_runner_was_made_by() {
+    let config = tempfile::tempdir().unwrap();
+    let (_, kept) = a_cluster_pool(config.path());
+    let mut remade = kept.clone();
+    remade.claimed.uid = format!("{}-again", kept.claimed.uid);
+    assert_ne!(
+        tidied_as("team", &Yours::Cluster(Box::new(kept))),
+        tidied_as("team", &Yours::Cluster(Box::new(remade)))
+    );
+    assert_eq!(tidied_as("team", &Yours::Docker("/s".into())), "team");
+}
+
 /// **A cluster pool's runner keeps a profile only where the person marked the pool and its
 /// claim is vouched for now** (#3819, the gate of #4071): unmarked, nothing asks its cluster and
 /// nothing is sent; marked, the cluster is asked, and a refusal there sends nothing and tells

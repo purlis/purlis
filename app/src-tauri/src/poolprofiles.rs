@@ -352,7 +352,7 @@ fn readying(pool: &str, name: &str) -> bool {
         .any(|(p, n)| p == pool && n == name)
 }
 
-/// The pools whose runner was asked this run to keep only what is chosen ([`tidy`]): a chat's
+/// The runners ([`tidied_as`]) asked this run to keep only what is chosen ([`tidy`]): a chat's
 /// start asks only the first time, and asks again where it could not be told, nothing could be
 /// judged, or the runner refused a forget.
 static TIDIED: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -364,12 +364,13 @@ fn tidy_once(yours: &Result<Yours, String>, config: &Path, root: &Path, pool: &s
     let Ok(yours) = yours else {
         return;
     };
+    let runner = tidied_as(pool, yours);
     {
         let mut tidied = TIDIED.lock().unwrap_or_else(PoisonError::into_inner);
-        if tidied.iter().any(|one| one == pool) {
+        if tidied.contains(&runner) {
             return;
         }
-        tidied.push(pool.to_owned());
+        tidied.push(runner.clone());
     }
     let tidied = profilestore::list(config).and_then(|records| {
         let default = default_in(Some(root), &records);
@@ -380,9 +381,9 @@ fn tidy_once(yours: &Result<Yours, String>, config: &Path, root: &Path, pool: &s
     });
     match tidied {
         Ok(Tidied::Older | Tidied::Done { refused: false, .. }) => {}
-        Ok(Tidied::NothingToJudge | Tidied::Done { refused: true, .. }) => untidied(pool),
+        Ok(Tidied::NothingToJudge | Tidied::Done { refused: true, .. }) => untidied(&runner),
         Err(why) => {
-            untidied(pool);
+            untidied(&runner);
             tracing::warn!(
                 "purlis: pool {pool}'s runner was not told what it no longer keeps: {why}"
             );
@@ -390,12 +391,21 @@ fn tidy_once(yours: &Result<Yours, String>, config: &Path, root: &Path, pool: &s
     }
 }
 
-/// Pool `pool`'s runner is asked again, at the next chat's start there, what it keeps.
-fn untidied(pool: &str) {
+/// What [`TIDIED`] knows pool `pool`'s runner by: on a cluster pool, the claim it was made by, so
+/// a claim made again is asked again.
+fn tidied_as(pool: &str, yours: &Yours) -> String {
+    match yours {
+        Yours::Docker(_) => pool.to_owned(),
+        Yours::Cluster(judged) => format!("{pool}/{}", judged.claimed.uid),
+    }
+}
+
+/// `runner` ([`tidied_as`]) is asked again, at the next chat's start there, what it keeps.
+fn untidied(runner: &str) {
     TIDIED
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .retain(|one| one != pool);
+        .retain(|one| one != runner);
 }
 
 /// **Has each pool's runner forget profile `name`, just removed on this machine** (#3849), its
