@@ -278,8 +278,10 @@ spec:
     usual *Starting…* and its Cancel, until the operator vouches for it, for at most the pool's
     longest wait for that (`vouchWait`, 5 minutes unless raised); past it, it is refused as any
     start on a runner that is down, and the runner still comes back. **A dispatched task waits the
-    same way** (#4415), with no second try and no Cancel, and the window's commands don't wait
-    on either: a command that needs the project held while its runner comes back says so at once.
+    same way** (#4415), with no second try and no Cancel. The `purlis dispatch` command stops
+    listening sooner, so it can say it cannot tell yet whether the chat started; the chat is still
+    on its way, so don't dispatch it again. The window's commands wait on neither: one that needs
+    the project held while its runner comes back says so at once.
     Only a start wakes a runner. A runner
     with anything else on its Claim, an upstream object in the way among it, is not waited for.
     **A fresh Claim's runner keeps nothing**, so it comes back with a new key, which its desktop
