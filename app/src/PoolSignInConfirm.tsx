@@ -9,8 +9,34 @@ import { AlertDialog } from "./ui/dialog/Dialog";
 /** The event the core sends each time the question changes. */
 export const POOL_SIGN_IN_CONFIRM = "pool-sign-in-confirm";
 
+/** How long after the last key pressed its yes can be pressed. */
+export const SIGN_IN_ARMS_AFTER_MS = 1500;
+
+/** Whether its yes can be pressed: nothing typed for a moment, so no typing lands on it. */
+function useArmed(asked: PoolSignInAsk | null): boolean {
+  const [armed, setArmed] = useState(false);
+  const id = asked?.id;
+  useEffect(() => {
+    setArmed(false);
+    if (id === undefined) return undefined;
+    let timer: ReturnType<typeof setTimeout>;
+    const again = () => {
+      setArmed(false);
+      clearTimeout(timer);
+      timer = setTimeout(() => setArmed(true), SIGN_IN_ARMS_AFTER_MS);
+    };
+    again();
+    document.addEventListener("keydown", again, true);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("keydown", again, true);
+    };
+  }, [id]);
+  return armed;
+}
+
 /** The question waiting, read as the window comes up and each time the core says it changed. */
-function useAsked(): PoolSignInAsk | null {
+function useAsked(): [PoolSignInAsk | null, () => void] {
   const [asked, setAsked] = useState<PoolSignInAsk | null>(null);
   useEffect(() => {
     let gone = false;
@@ -40,19 +66,22 @@ function useAsked(): PoolSignInAsk | null {
       stop?.();
     };
   }, []);
-  return asked;
+  return [asked, () => setAsked(null)];
 }
 
 /**
  * **A pool sign-in started from the command is confirmed here**: `purlis profile sign-in --pool`
  * waits for this answer. It starts on Cancel, so a Return meant for something else declines it,
- * and its yes is pressed or not taken (`variant: "grants"`). Escape declines too. Each window
- * draws it, and the question going takes it from all of them.
+ * and its yes is pressed or not taken (`variant: "grants"`), and only once nothing has been typed
+ * for a moment. Escape declines too. It shows the code the command's terminal shows, to tell one
+ * command from another. Each window draws it, and the question going takes it from all of them.
  */
 export function PoolSignInConfirm() {
-  const asked = useAsked();
+  const [asked, answered] = useAsked();
+  const armed = useArmed(asked);
   if (!asked) return null;
   const answer = (yes: boolean) => {
+    answered();
     void commands.answerPoolSignIn(asked.id, yes).catch(() => {
       // Taken back already: the core says so, and the dialog goes with it.
     });
@@ -67,12 +96,14 @@ export function PoolSignInConfirm() {
       main={{
         children: "Sign in",
         variant: "grants",
+        isDisabled: !armed,
         onPress: () => answer(true),
       }}
     >
       <p id="pool-sign-in-confirm-said">
-        The purlis profile sign-in command asks to sign this profile in on this pool&apos;s runner.
-        Sign in only if you ran it. Otherwise, cancel and nothing starts.
+        The <code>purlis profile sign-in</code> command asks to sign this profile in on this
+        pool&apos;s runner. Sign in only if you ran it and your terminal shows the code{" "}
+        <code>{asked.code}</code>. Otherwise, cancel and nothing starts.
       </p>
     </AlertDialog>
   );

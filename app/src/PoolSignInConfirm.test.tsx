@@ -13,7 +13,7 @@ afterEach(() => {
   clearMocks();
 });
 
-const ASK = { id: 4, profile: "work", pool: "team" };
+const ASK = { id: 4, profile: "work", pool: "team", code: "A1B2C3" };
 
 function core(first: typeof ASK | null) {
   const state = { asked: first, answers: [] as unknown[] };
@@ -48,14 +48,27 @@ describe("a pool sign-in confirmed in the window", () => {
     expect(
       await screen.findByRole("alertdialog", { name: "Sign work in on team?" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("A1B2C3")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus());
   });
 
   it("says yes only on Sign in pressed", async () => {
     const state = core(ASK);
     render(<PoolSignInConfirm />);
-    await userEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    const signIn = await screen.findByRole("button", { name: "Sign in" });
+    await waitFor(() => expect(signIn).toBeEnabled(), { timeout: 4000 });
+    await userEvent.click(signIn);
     await waitFor(() => expect(state.answers).toEqual([{ id: 4, yes: true }]));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("takes no yes from typing meant for somewhere else", async () => {
+    const state = core(ASK);
+    render(<PoolSignInConfirm />);
+    const signIn = await screen.findByRole("button", { name: "Sign in" });
+    expect(signIn).toBeDisabled();
+    await userEvent.keyboard("{Tab}{Enter}");
+    expect(state.answers).not.toContainEqual({ id: 4, yes: true });
   });
 
   it("says no on Cancel and on Escape", async () => {

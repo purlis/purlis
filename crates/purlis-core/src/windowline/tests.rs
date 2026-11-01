@@ -14,7 +14,7 @@ fn no_keep(_: &str, _: &str) -> Result<Option<String>, String> {
     panic!("no runner is asked to keep anything")
 }
 
-fn no_approve(_: &str, _: &str) -> Result<Option<String>, String> {
+fn no_approve(_: &str, _: &str, _: &str) -> Result<Option<String>, String> {
     panic!("the person is asked nothing")
 }
 
@@ -271,10 +271,12 @@ mod on_a_socket {
     }
 }
 
-fn sign_in(name: &str, pool: &str) -> Asked {
+fn sign_in(name: &str, pool: &str, config: &Path) -> Asked {
     Asked::ApproveSignIn {
         name: name.to_owned(),
         pool: pool.to_owned(),
+        code: "A1B2C3".to_owned(),
+        config: config.to_path_buf(),
     }
 }
 
@@ -321,21 +323,56 @@ fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
     }
     let yes = answer(
         &config,
-        sign_in("work", "team"),
+        sign_in("work", "team", &config),
         no_forget,
         no_keep,
-        |name, pool| {
-            assert_eq!((name, pool), ("work", "team"));
+        |name, pool, code| {
+            assert_eq!((name, pool, code), ("work", "team", "A1B2C3"));
             Ok(None)
         },
     );
     assert_eq!(yes, Said::Asked { note: None });
-    let no = answer(
+
+    // A command reading another config home, and a code this purlis would not write.
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let another = answer(
         &config,
-        sign_in("work", "team"),
+        sign_in("work", "team", &elsewhere),
         no_forget,
         no_keep,
-        |_, _| Err("you said no".to_owned()),
+        no_approve,
+    );
+    assert!(matches!(another, Said::Refused { why } if why.contains("another config home")));
+    let Asked::ApproveSignIn {
+        name,
+        pool,
+        config: theirs,
+        ..
+    } = sign_in("work", "team", &config)
+    else {
+        unreachable!()
+    };
+    let bad_code = answer(
+        &config,
+        Asked::ApproveSignIn {
+            name,
+            pool,
+            code: "<b>\u{202e}".to_owned(),
+            config: theirs,
+        },
+        no_forget,
+        no_keep,
+        no_approve,
+    );
+    assert!(matches!(bad_code, Said::Refused { .. }));
+
+    let no = answer(
+        &config,
+        sign_in("work", "team", &config),
+        no_forget,
+        no_keep,
+        |_, _, _| Err("you said no".to_owned()),
     );
     assert_eq!(
         no,
@@ -350,12 +387,13 @@ fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
 #[test]
 fn a_sign_in_goes_on_only_on_the_windows_yes() {
     let asked = std::cell::Cell::new(None);
-    let yes = approved("team", "work", |what| {
+    let config = Path::new("/the/config");
+    let yes = approved(config, "team", "work", "A1B2C3", |what| {
         asked.set(Some(what.clone()));
         Answered::Said(Said::Asked { note: None })
     });
     assert_eq!(yes, Ok(()));
-    assert_eq!(asked.take(), Some(sign_in("work", "team")));
+    assert_eq!(asked.take(), Some(sign_in("work", "team", config)));
 
     for (answered, says) in [
         (Answered::NoWindow, "none is running"),
@@ -367,10 +405,27 @@ fn a_sign_in_goes_on_only_on_the_windows_yes() {
             "you said no",
         ),
     ] {
-        let said = approved("team", "work", |_| answered).unwrap_err();
+        let said = approved(config, "team", "work", "A1B2C3", |_| answered).unwrap_err();
         assert!(said.contains(says), "{said}");
         assert!(said.contains("othing was started"), "{said}");
     }
+}
+
+/// **A code reads as one**, so the window draws nothing else, and two differ.
+#[test]
+fn a_new_code_reads_as_a_code() {
+    let code = a_new_code();
+    assert!(a_code(&code), "{code}");
+    assert_ne!(code, a_new_code());
+}
+
+/// **What waits long hears its peer hang up**, and not before.
+#[test]
+fn a_peer_that_closes_reads_as_hung_up() {
+    let (near, far) = UnixStream::pair().unwrap();
+    assert!(!hung_up(&far));
+    drop(near);
+    assert!(hung_up(&far));
 }
 
 /// A peer that dribbles is cut off at its whole line's deadline, however often it writes.

@@ -8327,12 +8327,6 @@ export type PoolLink =
 { state: "on_another_engine" };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
-export type PoolSignInAsk = {
-	id: number;
-	profile: string;
-	pool: string;
-};
-
 export type PoolProfileRow = {
 	name: string,
 	/**  The harness, as a profile's kind names it. */
@@ -8405,6 +8399,15 @@ export type PoolRow = {
 	 *  itself, as `runners.json` spells it (`24h`, `90m`; #3471).
 	 */
 	suspend_after: string,
+};
+
+/**  What the person is asked. */
+export type PoolSignInAsk = {
+	id: number,
+	profile: string,
+	pool: string,
+	/**  What the terminal of the command that asks shows. */
+	code: string,
 };
 
 /**

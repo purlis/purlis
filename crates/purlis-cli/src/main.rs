@@ -4479,7 +4479,7 @@ fn pool_sign_in(
             record.name
         ));
     }
-    confirmed_in_the_window(pool, name)?;
+    confirmed_in_the_window(config, pool, name)?;
     if let Some((cluster, kept)) =
         runners::cluster_runner_for(config, pool).map_err(|why| why.to_string())?
     {
@@ -4549,16 +4549,20 @@ fn pool_sign_in(
 
 /// The person's yes, in their running window, to signing `name` in on pool `pool` from here.
 #[cfg(unix)]
-fn confirmed_in_the_window(pool: &str, name: &str) -> Result<(), String> {
-    purlis_core::windowline::approved(pool, name, |asked| {
-        eprintln!("confirm signing '{name}' in on pool {pool} in the purlis window…");
+fn confirmed_in_the_window(config: &std::path::Path, pool: &str, name: &str) -> Result<(), String> {
+    let code = purlis_core::windowline::a_new_code();
+    purlis_core::windowline::approved(config, pool, name, &code, |asked| {
+        eprintln!(
+            "confirm signing '{name}' in on pool {pool} in the purlis window, if it shows the \
+             code {code}…"
+        );
         purlis_core::windowline::ask(asked)
     })
 }
 
 /// A runner is never Windows, and no window line reaches one from there.
 #[cfg(not(unix))]
-fn confirmed_in_the_window(pool: &str, name: &str) -> Result<(), String> {
+fn confirmed_in_the_window(_config: &std::path::Path, pool: &str, name: &str) -> Result<(), String> {
     Err(format!(
         "signing '{name}' in on pool {pool} from here is confirmed in the purlis window, which \
          this command cannot reach on this system, so nothing was started. Sign it in from its \
