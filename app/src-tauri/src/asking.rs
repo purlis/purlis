@@ -633,6 +633,10 @@ pub fn sandbox_write(
         return None;
     }
     let folder = What::Write(std::path::PathBuf::from(&block.target));
+    // A held folder is answered on its own Notice, which has room for what allowing it means.
+    if purlis_core::sandbox::names_what_may_be_lifted(std::path::Path::new(&block.target)) {
+        return None;
+    }
     let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
         .into_iter()
         .filter(|level| locks.refuses_grant(&folder, (*level).into()).is_none())
