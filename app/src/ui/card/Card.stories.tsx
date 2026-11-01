@@ -350,9 +350,21 @@ export const LauncherRows: Story = {
   render: () => (
     <ul style={{ listStyle: "none", margin: 0, padding: 0, inlineSize: "18rem" }}>
       {[
-        { title: "Create a project", line: "On GitHub, on GitLab or only on this Mac.", Mark: FolderPlus },
-        { title: "Get a project from your forge", line: "Clone your team's from GitHub or GitLab.", Mark: CloudDownload },
-        { title: "Open a folder on this machine…", line: "Open a project you already have.", Mark: FolderOpen },
+        {
+          title: "Create a project",
+          line: "On GitHub, on GitLab or only on this Mac.",
+          Mark: FolderPlus,
+        },
+        {
+          title: "Get a project from your forge",
+          line: "Clone your team's from GitHub or GitLab.",
+          Mark: CloudDownload,
+        },
+        {
+          title: "Open a folder on this machine…",
+          line: "Open a project you already have.",
+          Mark: FolderOpen,
+        },
       ].map(({ title, line, Mark }, at) => (
         <li key={title}>
           <CardButton

@@ -148,8 +148,8 @@ export function YourRepos({
                 (reach.login === null
                   ? `You are not signed in to ${reach.host}.`
                   : reach.listed === 0
-                  ? `${reach.login} reaches no repos on ${reach.host}. Paste a project's URL above, or sign in as another account.`
-                  : `${reach.listed} ${reach.listed === 1 ? "repo" : "repos"} on ${reach.host} as ${reach.login}.`)}{" "}
+                    ? `${reach.login} reaches no repos on ${reach.host}. Paste a project's URL above, or sign in as another account.`
+                    : `${reach.listed} ${reach.listed === 1 ? "repo" : "repos"} on ${reach.host} as ${reach.login}.`)}{" "}
               {(reach.login === null || reach.trouble !== null) && (
                 <Button
                   variant="link"
