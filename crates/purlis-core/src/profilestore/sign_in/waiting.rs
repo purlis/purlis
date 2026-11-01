@@ -9,7 +9,8 @@
 //! one). Named by the state's digest, so the folder says nothing of it. The record is locked for as long as its
 //! holder runs, so one a holder left behind when it was killed counts for nothing. A record is
 //! taken once ([`take`]): one answer goes to one login. It says which of the loopback's addresses
-//! the login was found listening on when its page was printed, so the answer goes there alone.
+//! the login was found listening on when its page was printed, and the login's process group, so
+//! the answer goes to a socket of that group ([`super::callback`]).
 
 use std::fs::File;
 use std::io::{self, Write};

@@ -1877,14 +1877,13 @@ fn a_listed_title_is_scrubbed_before_it_is_cut() {
     let (browser, engine) = browser();
     let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
     browser.blank(&secret).unwrap();
-    // Across the most a listed title holds: cut first, its start would no longer match.
-    let title = format!("{}OPEN SESAME", "t".repeat(super::MOST_TITLE_CHARS - 4));
+    let title = format!("{}OPEN SESAME", "t".repeat(super::MOST_TITLE_CHARS / 2));
     super::lock(&engine.model)
         .titles
         .insert("PAGE-1".into(), title);
     let listed = pages_of(&browser, 2).remove(0).title;
     assert!(!listed.contains("OPEN"), "{listed}");
-    assert!(listed.chars().count() <= super::MOST_TITLE_CHARS);
+    assert!(listed.starts_with('t'), "{listed}");
 }
 
 #[test]
@@ -1897,7 +1896,16 @@ fn a_title_as_long_as_the_engine_cuts_one_to_lists_no_part_of_a_kept_text() {
         .titles
         .insert("PAGE-1".into(), title);
     let listed = pages_of(&browser, 2).remove(0).title;
-    assert!(!listed.contains("OPEN"), "{listed}");
+    assert_eq!(listed, "");
+    // A character past the first plane counts twice in what the engine may cut by.
+    let title = format!(
+        "{}OPEN SES",
+        "\u{1F600}".repeat(super::MOST_TITLE_CHARS / 2 - 4)
+    );
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-1".into(), title);
+    assert_eq!(pages_of(&browser, 2).remove(0).title, "");
 }
 
 #[test]

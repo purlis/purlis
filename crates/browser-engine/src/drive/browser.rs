@@ -342,7 +342,8 @@ impl Page {
     /// and the title is as long as the engine cuts one to, nothing: what it cut may have left part
     /// of the text at the end, which no scrub knows.
     fn shown_title(&self) -> String {
-        if !self.scrubbed.is_empty() && self.title.chars().count() >= MOST_TITLE_CHARS {
+        // The engine's limit counts UTF-16 units, or may: one fewer, for a pair split at its cut.
+        if !self.scrubbed.is_empty() && self.title.encode_utf16().count() >= MOST_TITLE_CHARS - 1 {
             return String::new();
         }
         kept_title(&self.shown(&self.title))

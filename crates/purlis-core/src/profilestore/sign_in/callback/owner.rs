@@ -78,9 +78,12 @@ fn sockets_of_group(group: u32) -> Option<std::collections::HashSet<u64>> {
         if !in_group {
             continue;
         }
-        // One that ended since, or isn't this user's, holds nothing to answer with.
-        let Ok(held) = std::fs::read_dir(path.join("fd")) else {
-            continue;
+        let held = match std::fs::read_dir(path.join("fd")) {
+            Ok(held) => held,
+            // It ended since, and holds nothing.
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => continue,
+            // The system won't say what it holds, so this says nothing of owners.
+            Err(_) => return None,
         };
         for fd in held.flatten() {
             let Ok(link) = std::fs::read_link(fd.path()) else {
@@ -103,7 +106,11 @@ fn sockets_of_group(group: u32) -> Option<std::collections::HashSet<u64>> {
 pub(super) fn own_addresses(port: u16, group: u32) -> Option<Vec<IpAddr>> {
     let v4 = std::fs::read_to_string("/proc/net/tcp").ok()?;
     // A machine with IPv6 off has no such table: nothing listens there.
-    let v6 = std::fs::read_to_string("/proc/net/tcp6").unwrap_or_default();
+    let v6 = match std::fs::read_to_string("/proc/net/tcp6") {
+        Ok(table) => table,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(_) => return None,
+    };
     let (v4, v6) = (listeners_in(&v4, port), listeners_in(&v6, port));
     let sockets = sockets_of_group(group)?;
     Some(

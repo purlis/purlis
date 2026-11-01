@@ -283,6 +283,37 @@ fn a_listener_of_another_group_is_never_answered() {
     drop(listener);
 }
 
+/// **A login on both addresses is answered on either.**
+#[cfg(target_os = "linux")]
+#[test]
+fn a_login_on_both_addresses_owns_both() {
+    let v4 = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = v4.local_addr().unwrap().port();
+    let Ok(_v6) = TcpListener::bind(("::1", port)) else {
+        return;
+    };
+    let stat = std::fs::read_to_string("/proc/self/stat").unwrap();
+    let ours: u32 = stat
+        .rsplit_once(')')
+        .unwrap()
+        .1
+        .split_whitespace()
+        .nth(2)
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        answered_at(
+            waiting::Taken {
+                at: None,
+                group: Some(ours)
+            },
+            port
+        ),
+        LOOPBACK.to_vec()
+    );
+}
+
 /// **It listens on the loopback alone**.
 #[test]
 fn it_listens_on_the_loopback_alone() {
