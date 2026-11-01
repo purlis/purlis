@@ -1663,6 +1663,8 @@ fn evidence_is_masked_before_it_is_cut() {
     let evidence = &kept.report.outcomes[0].results[0].checks[0].evidence;
     assert!(evidence.len() <= grade::outcomes::MOST_EVIDENCE_BYTES);
     assert!(!evidence.contains("ghp_"), "{evidence}");
+}
+
 #[test]
 fn the_record_reads_back_a_grader_at_the_longest_id_a_grader_may_declare() {
     let by = |grader: String| purlis_skills::grade::GradeReport {

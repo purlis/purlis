@@ -489,9 +489,8 @@ pub const OUTCOME_FOLDER_ENV: &str = "PURLIS_OUTCOME_FOLDER";
 /// chat's settings allows a write, so one this hook did not answer for asks, and the run ends.
 fn outcome_write(hook: &Hook) -> Option<Answer> {
     let folder = (hook.env)(OUTCOME_FOLDER_ENV)?;
-    let refused = || {
-        deny("a grade's chat writes inside the folder purlis laid out for it alone".to_owned())
-    };
+    let refused =
+        || deny("a grade's chat writes inside the folder purlis laid out for it alone".to_owned());
     let Ok(folder) = std::fs::canonicalize(&folder) else {
         return Some(refused());
     };

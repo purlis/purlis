@@ -1404,13 +1404,24 @@ fn an_outcome_chats_writes_are_allowed_by_its_guard_alone() {
     ) else {
         panic!("armed per session");
     };
-    assert!(env.iter().any(|(name, _)| name == crate::toolhooks::OUTCOME_FOLDER_ENV));
-    let at = args.iter().position(|arg| arg == "--settings").expect("--settings");
+    assert!(
+        env.iter()
+            .any(|(name, _)| name == crate::toolhooks::OUTCOME_FOLDER_ENV)
+    );
+    let at = args
+        .iter()
+        .position(|arg| arg == "--settings")
+        .expect("--settings");
     let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
-    let allow = settings["permissions"]["allow"].as_array().cloned().unwrap_or_default();
+    let allow = settings["permissions"]["allow"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     assert!(!allow.iter().any(|one| {
         one.as_str().is_some_and(|one| {
-            ["Write", "Edit", "MultiEdit"].iter().any(|tool| one.starts_with(tool))
+            ["Write", "Edit", "MultiEdit"]
+                .iter()
+                .any(|tool| one.starts_with(tool))
         })
     }));
 }
