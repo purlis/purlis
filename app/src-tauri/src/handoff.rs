@@ -1832,7 +1832,10 @@ fn start_on(
     if own && crate::stopping::refuses_a_start(held, opening.from.chat) {
         return Err(crate::stopping::STARTS_NOTHING.to_owned());
     }
-    let session = held.chats().start_ready(&chat, &ready, size)?;
+    // No lock is held here: the deciding lock was let go before the start (#4415).
+    let session = crate::hostedsessions::a_dispatchs_start(|| {
+        held.chats().start_ready(&chat, &ready, size)
+    })?;
     // **The stop may have been pressed while this chat was starting** (#1448). The press reads
     // the lineage and records the stop in one hold, and this asks in the same hold: either the
     // press saw this chat and stops it with the rest, or this sees the stop and ends the chat

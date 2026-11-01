@@ -277,8 +277,10 @@ spec:
     you can do by hand too. **That start waits for the runner** (#4403), with the window at its
     usual *Starting…* and its Cancel, until the operator vouches for it, for at most the pool's
     longest wait for that (`vouchWait`, 5 minutes unless raised); past it, it is refused as any
-    start on a runner that is down, and the runner still comes back. A dispatch's first hold of
-    its project waits at most 30 seconds, then is refused while the runner comes back. A runner
+    start on a runner that is down, and the runner still comes back. **A dispatched task waits the
+    same way** (#4415), with no second try and no Cancel, and the window's commands don't wait
+    on either: a command that needs the project held while its runner comes back says so at once.
+    Only a start wakes a runner. A runner
     with anything else on its Claim, an upstream object in the way among it, is not waited for.
     **A fresh Claim's runner keeps nothing**, so it comes back with a new key, which its desktop
     refuses as it does after `stopped`: make its Claim again. This reaches no one through purlis

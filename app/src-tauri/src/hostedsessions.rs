@@ -57,7 +57,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -188,10 +188,37 @@ pub(crate) const START_CANCELLED: &str = "the person cancelled this start";
 /// The code of a start that was cancelled, which is the window's own, never a host's.
 const CANCELLED: &str = "cancelled";
 
+/// What anything but a start waiting for it says while a start waits for its runner (#4415): it
+/// waits on nothing, so the window's commands never wait on a runner coming back.
+const THE_RUNNER_COMES_BACK: &str =
+    "this project's runner is on its way back, so it is not held yet";
+
 std::thread_local! {
     /// The person's Cancel of the start this thread runs, while one can be cancelled (#4264).
     static CANCEL: std::cell::RefCell<Option<Arc<std::sync::atomic::AtomicBool>>> =
         const { std::cell::RefCell::new(None) };
+    /// Whether this thread runs a dispatch's start, which holds no lock around it (#4415).
+    static A_DISPATCHS_START: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `start` as a dispatch's start: it waits for a runner on its way back as a person's does,
+/// with no Cancel. The host's own limit on that wait, the pool's `vouchWait`, ends it (#4415).
+pub(crate) fn a_dispatchs_start<T>(start: impl FnOnce() -> T) -> T {
+    struct Forgets;
+    impl Drop for Forgets {
+        fn drop(&mut self) {
+            A_DISPATCHS_START.set(false);
+        }
+    }
+    A_DISPATCHS_START.set(true);
+    let _forgets = Forgets;
+    start()
+}
+
+/// Whether this thread's start may wait for a runner on its way back: the person's, and a
+/// dispatch's. Any other may run under a lock window commands wait on.
+fn waits_for_its_runner() -> bool {
+    can_be_cancelled() || A_DISPATCHS_START.get()
 }
 
 /// Runs `start` with `cancel` able to cancel it: a start from the person's dialog.
@@ -1130,6 +1157,8 @@ struct Shared {
         Mutex<HashMap<u64, tokio::sync::oneshot::Sender<purlis_session_protocol::link::Stream>>>,
     /// What this link holds of the event log of the runner its host relays it to (#3393).
     runner_log: Mutex<crate::runnerlog::RunnerLog>,
+    /// How many starts are waiting, off the hold's lock, for the runner to come back (#4415).
+    holds_waiting: AtomicUsize,
     /// Who logs each skill run that runner's log says started or ended, by the project's id: each
     /// project held on it in the runner's own checkout (SK-20b, #3084).
     skill_runs: Mutex<HashMap<String, crate::host::SkillRunsHeard>>,
@@ -1458,6 +1487,11 @@ impl HostLink {
             // It may run under a lock window commands wait on: never a pool's raised wait.
             return self.call_within(command, ANSWER_WITHIN);
         }
+        self.call_until_answered(command)
+    }
+
+    /// Waits until the host answers, its link ends or the person cancels, where one can.
+    fn call_until_answered(&self, command: Command) -> Result<Answer, String> {
         let (answered, answer) = std::sync::mpsc::channel();
         let client = Arc::clone(&self.client);
         self.runtime.spawn(async move {
@@ -2775,7 +2809,13 @@ impl HostedSessions {
 
     /// The link, with this project held on it.
     fn link(&self) -> Result<(Arc<HostLink>, String), String> {
-        held_on(&self.holding())
+        held_on(&self.holding(), false)
+    }
+
+    /// [`Self::link`] for a chat's start, the one thing that wakes an idle runner: a project held
+    /// on a link that is down is held again, and that hold waits for the runner (#4403, #4415).
+    fn link_of_a_start(&self) -> Result<(Arc<HostLink>, String), String> {
+        held_on(&self.holding(), true)
     }
 
     /// [`Self::moving_link`], for the tests of what moves over it.
@@ -2971,7 +3011,11 @@ fn reconnects_of(
 /// and after it the host is told the numbers `opened` has dealt (#2000); the window takes the
 /// board the host kept, or keeps why it could not in `untaken` (#2194, #2006), and what the
 /// host still runs of the project from before this window in `left` (#2006).
-fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
+///
+/// `for_a_start` is whether a chat is starting. Only then is a project on a link that is down held
+/// again. A person's or dispatch's start waits for a runner on its way back before it takes the
+/// hold's lock, so the window's commands, which take that lock, do not wait on the runner (#4415).
+fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, String), String> {
     let Holding {
         connection,
         stays_on,
@@ -2993,23 +3037,32 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         None if can_be_cancelled() => connection.of_project(root, UNTIL_THE_HOST_SAYS)?,
         None => connection.of_project(root, LINK_WITHIN)?,
     };
+    // A runner this was held on is kept no more (Make the runner again, a drain's end): the
+    // relay holds the project on the one after it, which answers yes and holds none of its
+    // code, so no word comes back that it does not hold it. While its link is down a start holds
+    // it again too: a hold is the step that wakes an idle runner and waits for it, and what
+    // comes next on the link would only be refused (#4403).
+    let stays_held = |on: &Held| {
+        on.on == link.id
+            && !(*kept_on_the_runner
+                && ((for_a_start && lock(&link.shared.runner_log).link_is_down())
+                    || a_runner_is_gone(connection, &on.runners)))
+    };
+    let waits = for_a_start && *kept_on_the_runner && waits_for_its_runner();
+    if waits && !lock(held).as_ref().is_some_and(&stays_held) {
+        waits_off_the_lock(holding, &link)?;
+    }
     let mut held = lock(held);
-    if let Some(Held {
-        project,
-        on,
-        runners,
-    }) = &*held
-        && *on == link.id
+    if let Some(on) = &*held
+        && stays_held(on)
     {
-        // A runner this was held on is kept no more (Make the runner again, a drain's end): the
-        // relay holds the project on the one after it, which answers yes and holds none of its
-        // code, so no word comes back that it does not hold it. While its link is down it is held
-        // again too: a hold is the step that wakes an idle runner and waits for it, and what
-        // comes next on the link would only be refused (#4403).
-        let link_is_down = lock(&link.shared.runner_log).link_is_down();
-        if !(*kept_on_the_runner && (link_is_down || a_runner_is_gone(connection, runners))) {
-            return Ok((link, project.clone()));
-        }
+        return Ok((link, on.project.clone()));
+    }
+    // Another start waits for the runner: this would hold the lock until a quick command's limit.
+    if !waits && link.shared.holds_waiting.load(Ordering::SeqCst) > 0 {
+        return Err(THE_RUNNER_COMES_BACK.to_owned());
+    }
+    if held.as_ref().is_some_and(|on| on.on == link.id) {
         crate::runnercode::forget(sent);
     }
     // Read before the hold and the send, so a runner removed during them is seen as gone next.
@@ -3286,7 +3339,7 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
             sent: Arc::clone(&sent),
             skill_runs: Arc::clone(&skill_runs),
         };
-        if let Err(again) = held_on(&holding) {
+        if let Err(again) = held_on(&holding, false) {
             tracing::warn!("purlis: project {project} is not held where its chats run: {again}");
             // Marked in the Pools group until a hold is taken (#2846), in the runner's words:
             // only a refusal of the hold, never what purlis itself could not do.
@@ -3295,6 +3348,33 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
             }
         }
     })
+}
+
+/// **A start's first hold, off the hold's lock** (#4415): the host's answer waits while the runner
+/// comes back, for at most the pool's `vouchWait`, and nothing else waits on it. Holding again is
+/// harmless, so [`held_on`] goes on as it does for any hold, and is answered at once.
+fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> {
+    struct Waited<'a>(&'a AtomicUsize);
+    impl Drop for Waited<'_> {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&holding.root)
+        .map_err(|why| format!("this project has no id the session host can name it by: {why}"))?;
+    // Before the hold, as in `held_on`, so the host's first line for the project is heard.
+    if let Some(relayed) = lock(&holding.relayed).clone() {
+        link.hear_project(&project, relayed);
+    }
+    link.when_reconnecting(Arc::clone(&holding.reconnects));
+    link.shared.holds_waiting.fetch_add(1, Ordering::SeqCst);
+    let _waited = Waited(&link.shared.holds_waiting);
+    link.call_until_answered(Command::HoldProject {
+        project,
+        project_path: String::new(),
+    })
+    .map(|_| ())
+    .map_err(|why| format!("{NOT_HELD} {why}"))
 }
 
 /// How long a window waits to send its `relay_to` once more, where the host refused it because
@@ -3475,7 +3555,7 @@ fn ask_to_save(
     board: &Arc<Mutex<Option<crate::autosave::MidTurn>>>,
 ) -> bool {
     let root = &holding.root;
-    let (link, project) = match held_on(holding) {
+    let (link, project) = match held_on(holding, false) {
         Ok(held) => held,
         Err(why) => {
             tracing::warn!(
@@ -3779,7 +3859,7 @@ impl SessionHost for HostedSessions {
         if self.on_a_runner && opening.harness.is_some() {
             return Err(COMPOSED_ON_THE_RUNNER.to_owned());
         }
-        let (link, project) = self.link()?;
+        let (link, project) = self.link_of_a_start()?;
         let program = opening
             .program
             .clone()
@@ -3817,7 +3897,7 @@ impl SessionHost for HostedSessions {
         if self.on_a_runner && named.without_sandbox {
             return Err(SANDBOXED_ON_A_RUNNER.to_owned());
         }
-        let (link, project) = self.link()?;
+        let (link, project) = self.link_of_a_start()?;
         // The workspace's clones as they are here, uncommitted work and all, before the chat
         // starts on them there (#2046).
         if let (true, Some(workspace)) = (self.kept_on_the_runner, &named.workspace) {
