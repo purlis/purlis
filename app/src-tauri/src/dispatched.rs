@@ -1835,6 +1835,13 @@ pub fn person_typed(held: &Held, chat: u32, bytes: &[u8], submitted: Option<Opti
     if !crate::smartclose::typed_by_the_operator(bytes) {
         return;
     }
+    // **A line the person sends is their reply** (#4562), before the bytes go: it ends a wait a
+    // background turn runs over, and whatever turn begins next is theirs. An answer to a prompt
+    // the turn showed them is no reply to what they were waited on for.
+    if dispatched::steps_in(false, submitted) && !held.board().glance(chat).asking {
+        held.tasks().ledger().person_sent(chat);
+        held.person_replied(chat);
+    }
     let (took_over, first_key, stepped_in) = {
         let mut ledger = held.tasks().ledger();
         let first_key = !ledger.keyed(chat);
@@ -2229,6 +2236,9 @@ pub fn waits(held: &Held, chat: u32) -> purlis_core::state::Waits {
 /// about to start.
 pub fn waits_as(held: &Held, chat: u32, turn_ends: bool) -> purlis_core::state::Waits {
     let tasks = crate::handoff::owing_below(held, chat).len();
+    // Read off the ledger before the turn that begins makes it forget (#4562).
+    let own_work = held.board().glance(chat).own_work;
+    let background_turn = held.tasks().ledger().background_turn(chat, own_work);
     // Only while it still owes its report, and only while the chat it asked can answer: a
     // question to a chat that has closed, or whose program has ended, is nobody's.
     let its_asker = held
@@ -2254,6 +2264,7 @@ pub fn waits_as(held: &Held, chat: u32, turn_ends: bool) -> purlis_core::state::
         its_asker,
         line_coming,
         on_a_notice,
+        background_turn,
         // Stamped as the report is applied (`hooks::waits_at`).
         now: 0,
     }

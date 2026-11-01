@@ -607,6 +607,7 @@ fn the_session_s_own_stop_racing_the_last_report_is_looked_at_once_it_is_applied
             its_asker: false,
             line_coming: false,
             on_a_notice: false,
+            background_turn: false,
             now: 0,
         },
     );
@@ -821,4 +822,114 @@ fn a_session_at_its_limit_is_listed_with_the_count_a_dispatch_is_decided_over() 
     reports_as(&held, &id, one, Outcome::Done);
 
     assert_eq!(running_of(steward), Some(1));
+}
+
+/// A steward whose turn ended on the person, with a task that is about to report: it was
+/// dispatched after that turn, so nothing holds the end, and the chat is in the queue.
+fn a_steward_waiting_on_the_person_with_a_task()
+-> (Plane, Pretend, Planes, PlaneId, Arc<Held>, u32, u32, Told) {
+    let (plane, host, planes, id, held, steward, told) = a_steward_chat_telling();
+    has_a_turn(&held, &told, steward);
+    assert_eq!(queue(&held), vec![steward]);
+    let task = a_task_of(&held, &id, steward, "check the queue");
+    hears(&held, &told, task, Event::UserPromptSubmit);
+    (plane, host, planes, id, held, steward, task, told)
+}
+
+/// Whether chat `chat`'s reply is an ask in the registry, as the Inbox and the ✋ read it.
+fn asks_for_a_reply(held: &Held, chat: u32) -> bool {
+    let ask = format!("question:{chat}");
+    crate::asking::every_ask(held)
+        .asks
+        .iter()
+        .any(|shown| shown.ask == ask)
+}
+
+#[test]
+fn a_task_reporting_while_the_chat_waits_on_the_person_leaves_the_wait_as_it_was() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    assert!(asks_for_a_reply(&held, steward));
+    let before = told_so_far(&told);
+
+    // The report lands, purlis types the line, and the turn it begins runs and ends.
+    reports_as(&held, &id, task, Outcome::Done);
+    assert!(held.tasks().ledger().line_coming(
+        steward,
+        crate::dispatched::seen_now(&held, steward),
+        false
+    ));
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+
+    assert_eq!(queue(&held), vec![steward], "the turn cleared the wait");
+    assert!(asks_for_a_reply(&held, steward));
+    assert_eq!(held.board().glance(steward).state, State::Running);
+    assert_eq!(held.board().now(steward).state, "waiting");
+
+    hears(&held, &told, steward, Event::Stop);
+
+    assert_eq!(queue(&held), vec![steward]);
+    assert!(asks_for_a_reply(&held, steward));
+    assert_eq!(
+        interruptions(&told, before, steward),
+        0,
+        "the wait never left, so nothing is raised again"
+    );
+}
+
+#[test]
+fn the_person_s_reply_after_a_background_turn_clears_the_wait() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    reports_as(&held, &id, task, Outcome::Done);
+    has_a_turn(&held, &told, steward);
+
+    held.operator_input(steward, b"the second one\r")
+        .expect("sent");
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+
+    assert!(queue(&held).is_empty());
+    assert!(!asks_for_a_reply(&held, steward));
+}
+
+#[test]
+fn the_person_s_reply_during_a_background_turn_clears_the_wait_at_once() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    reports_as(&held, &id, task, Outcome::Done);
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    assert_eq!(queue(&held), vec![steward]);
+
+    held.operator_input(steward, b"the second one\r")
+        .expect("sent");
+
+    assert!(queue(&held).is_empty(), "no hook says their line was taken");
+    assert!(!asks_for_a_reply(&held, steward));
+    assert_eq!(held.board().now(steward).state, "running");
+}
+
+#[test]
+fn a_line_of_the_person_s_that_beats_purlis_s_own_to_the_harness_is_their_reply() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    reports_as(&held, &id, task, Outcome::Done);
+
+    // purlis's line is typed and not yet heard; the person's arrives in the same moment.
+    held.operator_input(steward, b"the second one\r")
+        .expect("sent");
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+
+    assert!(queue(&held).is_empty());
+}
+
+#[test]
+fn a_half_typed_reply_during_a_background_turn_is_no_reply() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    reports_as(&held, &id, task, Outcome::Done);
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+
+    held.operator_input(steward, b"the sec").expect("sent");
+
+    assert_eq!(queue(&held), vec![steward]);
 }

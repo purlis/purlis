@@ -110,6 +110,11 @@ export type ChatStates = {
    * Such a chat is waiting, and not on the person. Under `heardAt`'s rule.
    */
   readonly ownWork: Readonly<Record<number, OwnWork>>;
+  /**
+   * **The chats a background turn runs in, over a wait on the person** (#4562,
+   * `Moved.background_turn`): each reads `waiting`, and is at work.
+   */
+  readonly backgroundTurns: Readonly<Record<number, true>>;
 };
 
 /** One task that came to nothing, as its asking chat's item is told it (`Need`'s
@@ -138,6 +143,7 @@ export const nothingKnown: ChatStates = {
   children: {},
   asking: {},
   ownWork: {},
+  backgroundTurns: {},
 };
 
 /** The state of one chat, which is `unknown` until something says otherwise. */
@@ -405,6 +411,9 @@ export function moved(states: ChatStates, move: Moved): ChatStates {
     ownWork: newerChat
       ? withOwnWork(states.ownWork, move.session, move.own_work ?? undefined)
       : states.ownWork,
+    backgroundTurns: newerChat
+      ? withAsking(states.backgroundTurns, move.session, move.background_turn === true)
+      : states.backgroundTurns,
   };
 }
 
@@ -416,11 +425,16 @@ export function ownWorkOf(states: ChatStates, session: number): OwnWork | undefi
 /**
  * **Whether `session` is in its turn, as a restart or a move owed it counts it** (#3887): running,
  * or waiting on work of its own (#3878), whose monitors and background shells a restart or a move
- * would cut off. Either waits for the turn to end with nothing in flight.
+ * would cut off, or in a background turn over its wait on the person (#4562). Each waits for the
+ * turn to end with nothing in flight.
  */
 export function inItsTurn(states: ChatStates, session: number): boolean {
   const state = stateOf(states, session);
-  return state === "running" || (state === "waiting" && ownWorkOf(states, session) !== undefined);
+  return (
+    state === "running" ||
+    (state === "waiting" &&
+      (ownWorkOf(states, session) !== undefined || states.backgroundTurns[session] === true))
+  );
 }
 
 /**

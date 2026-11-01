@@ -616,6 +616,9 @@ pub struct Ledger {
     /// `UserPromptSubmit` or `Stop`. They may have a harness's own picker open, which no hook
     /// reports, so nothing is typed into one until its harness says a turn began or ended.
     keyed: std::collections::HashSet<u32>,
+    /// The chats the person sent a line since their last `UserPromptSubmit` or `Stop` (#4562):
+    /// the turn that begins next is theirs, and no background turn.
+    sent: std::collections::HashSet<u32>,
     /// Tasks whose chats have closed, oldest first: who asked, what it was called, and its
     /// report where it sent one. So a wait on one says how it ended.
     gone: std::collections::VecDeque<(u32, Gone)>,
@@ -1736,6 +1739,20 @@ impl Ledger {
         }
     }
 
+    /// **The person sent chat `chat` a line of theirs** (#4562): the next turn it begins is
+    /// theirs, whatever else is about to begin one. Forgotten as that turn begins or the one it
+    /// waited behind ends.
+    pub fn person_sent(&mut self, chat: u32) {
+        self.sent.insert(chat);
+    }
+
+    /// **Whether the turn chat `chat` begins now is a background turn** (#4562): purlis typed its
+    /// line, or `own_work` wakes it, and the person has sent nothing since. Asked before
+    /// [`Self::turn_began`] forgets either.
+    pub fn background_turn(&self, chat: u32, own_work: bool) -> bool {
+        !self.sent.contains(&chat) && (own_work || self.typed.contains(&chat))
+    }
+
     /// **What the app does next for task `task`, which has reported** (#1485): its program is
     /// ended once its report is delivered and the turn that sent it is over.
     ///
@@ -2134,6 +2151,7 @@ impl Ledger {
         self.landed.remove(&chat);
         self.typed.remove(&chat);
         self.keyed.remove(&chat);
+        self.sent.remove(&chat);
         self.talk.turn_began(chat);
     }
 
@@ -2167,6 +2185,7 @@ impl Ledger {
     /// behind it.
     pub fn turn_ended(&mut self, chat: u32) {
         self.keyed.remove(&chat);
+        self.sent.remove(&chat);
     }
 
     /// What chat `chat` is typed a line about now, or nothing: something was left for its next

@@ -1092,6 +1092,12 @@ title bar's ✋, which opens the **Inbox**, and each is counted in red on its ta
 show-more hiding it. **Ignore** clears a chat's items until the next one arrives (ADR 0076).
 _Avoid_: notification, alert (an alert is a **Notice**), waiting (for the state)
 
+**Background turn**:
+A turn of a chat that the person did not begin: a line of purlis's own, such as a task reporting
+back, or the chat's own work waking it. It is no reply, so a chat that **needs you** keeps its
+wait through it, and only a line the person sends ends that wait (#4562).
+_Avoid_: silent turn, automatic turn
+
 **Component family**:
 One kind of control the window draws one way everywhere, such as the button (with the icon button
 and the toggle button), the field, the select or the dialog: its variants, its sizes and its

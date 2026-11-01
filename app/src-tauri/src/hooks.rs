@@ -89,6 +89,10 @@ pub struct Moved {
     /// `null` for every other chat.
     #[specta(optional)]
     pub own_work: Option<OwnWork>,
+    /// **A background turn runs over its wait on the person** (#4562): `state` says `waiting`,
+    /// as it did, and the chat is at work, so a restart or a move owed it waits. Absent otherwise.
+    #[specta(optional)]
+    pub background_turn: Option<bool>,
     /// Which snapshot of the board this is — bigger was taken later (charter-app#248).
     ///
     /// **What lets the window put its events back in order.** Every `Moved` is built under the
@@ -3374,6 +3378,13 @@ impl ChatBoard for Hooks {
         seen_by(&board, &self.plane, session)
     }
 
+    fn replied(&self, session: u32) -> Option<Moved> {
+        let mut board = self.board();
+        board
+            .replied(session)
+            .then(|| seen_by(&board, &self.plane, session))
+    }
+
     fn reported_back(&self, session: u32, from: &str) -> Option<Moved> {
         let mut board = self.board();
         board
@@ -3511,9 +3522,10 @@ fn moving(
 }
 
 /// What the chat `report` names waits on, asked only of a report that can end its turn or
-/// nudge it after one: a `Stop` or a `Notification` of the chat's own. Every other report
-/// raises no needs-you item this could hold back, so the project's records are not read for
-/// it. **Asked before the board is taken**, never under it: the answer reads the chats, the
+/// nudge it after one, a `Stop` or a `Notification` of the chat's own, or begin one, a
+/// `UserPromptSubmit`, whose cause says whether it is the person's reply (#4562). Every other
+/// report moves no needs-you item this could bear on, so the project's records are not read
+/// for it. **Asked before the board is taken**, never under it: the answer reads the chats, the
 /// board and the tasks' ledger in turn.
 ///
 /// **Every report carries the app's clock** (`Waits::now`, #3878): what a turn's end on work of
@@ -3521,7 +3533,12 @@ fn moving(
 fn waits_at(waits: &Mutex<Option<WaitsOf>>, report: &Report) -> purlis_core::state::Waits {
     use purlis_core::state::Event;
     let now = chrono::Utc::now().timestamp();
-    if report.agent.is_some() || !matches!(report.event, Event::Stop | Event::Notification) {
+    if report.agent.is_some()
+        || !matches!(
+            report.event,
+            Event::Stop | Event::Notification | Event::UserPromptSubmit
+        )
+    {
         return purlis_core::state::Waits {
             now,
             ..purlis_core::state::Waits::default()
@@ -3618,7 +3635,7 @@ fn seen_by(board: &Board, plane: &PlaneId, session: u32) -> Moved {
         sequence: sequence(),
         plane: plane.clone(),
         session,
-        state: word(board.state(session)),
+        state: word(board.shown_state(session)),
         needs_you: queue.contains(&session),
         queue,
         moved_at: board.moved_at(session),
@@ -3638,6 +3655,7 @@ fn seen_by(board: &Board, plane: &PlaneId, session: u32) -> Moved {
         .filter(|needs| !needs.is_empty()),
         asking: board.waits_on_its_prompt(session).then_some(true),
         own_work: board.own_work(session).map(OwnWork::from),
+        background_turn: board.background_turn(session).then_some(true),
         counts_only: false,
         raised: false,
         children: board
