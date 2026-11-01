@@ -8,8 +8,8 @@
 
 ### Fixed
 
-- `purlis change push`, a repo save and a plane's save push their commit by its id. A branch whose
-  local ref went bad could delete the branch on the remote and report success.
+- Every push purlis makes names its commit in a form no ref can stand for. A branch whose local ref
+  went bad could delete the branch on the remote and report success.
 - `purlis change push` refuses a member's branch that git's own grammar refuses. A `:` in the name
   could send the push to another branch.
 - The check of a clone's Git LFS store no longer takes a `.git` folder that git itself climbs past.

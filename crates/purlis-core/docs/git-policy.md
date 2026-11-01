@@ -241,17 +241,21 @@ call site.
 | `run_in_hook` | a read from inside a git hook, of the index the hook's command is using |
 | `spawn_persons_clone` | the person's own clone from the welcome's Get a project (see below) |
 
-### A push names its commit by id
+### A push names its commit, and nothing a ref could be
 
 A local ref holding garbage or all zeros reads to git as a ref that is not there, and a push of
-that name, `HEAD` included, as a push of nothing: it deletes the remote's branch and exits 0
-(#4515, measured on git 2.50.1). All zeros given as an id mean the same. So a push of a repo save,
-`purlis worktree push`, `purlis change push`, a skill's publish and a plane's own save hands git
-`<commit>:refs/heads/<branch>`, with the commit resolved through `^{commit}`, which refuses both.
+that name, `HEAD` or a short branch name included, as a push of nothing: it deletes the remote's
+branch and exits 0 (#4515, measured on git 2.50.1). A bare id is no way out: a push reads a source
+of forty hex digits as a ref's name first, so a planted `refs/heads/<id>` deletes the branch the
+same way, and one holding another commit sends that commit.
+
+So every push purlis makes of a commit, a repo save, `purlis worktree push`, `purlis change push`,
+a skill's publish, a plane's own saves and a project's first push, hands git
+`<commit>^{commit}:refs/heads/<branch>`, with the commit first resolved through `^{commit}`, which
+refuses garbage and zeros. `^{commit}` cannot be a ref's name, so the source is that commit. A
+first push sets the branch to follow `origin` itself, since `--set-upstream` needs a branch's name.
 `purlis change push` also refuses a member's branch that `git check-ref-format` refuses, since a
-`:` in a committed name would end the refspec at another branch. A project's first publish and
-`createproject`'s first push still name the branch, with `--set-upstream`: their remote was made
-for them a moment before, so there is nothing on it to delete.
+`:` in a committed name would end the refspec at another branch.
 
 ### A push sends its Git LFS objects first
 

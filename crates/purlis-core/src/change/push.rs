@@ -11,10 +11,10 @@
 //! Every destination is printed before anything is pushed, so an agent's run is readable.
 //!
 //! **What it never does.** It commits nothing, and it never force-pushes: each push is the one
-//! refspec `<commit>:refs/heads/<branch>`, with no `+` and no flag, so it can only fast-forward
-//! the remote's branch or create it. It ignores a repo's `[repos.<name>] mode`, `off` included:
-//! `off` governs saves, and this verb is run by hand over repos somebody named (ADR 0060 D4, ADR
-//! 0051 amended).
+//! refspec `<commit>^{commit}:refs/heads/<branch>`, with no `+` and no flag, so it can only
+//! fast-forward the remote's branch or create it. It ignores a repo's `[repos.<name>] mode`, `off`
+//! included: `off` governs saves, and this verb is run by hand over repos somebody named (ADR 0060
+//! D4, ADR 0051 amended).
 //!
 //! **It pushes the commit, not the name** (#4515). git takes a local ref that holds garbage for a
 //! ref that is not there, and a push of that name for a push of nothing, which deletes the remote
@@ -272,7 +272,7 @@ fn plan(
             "its origin is not a GitHub or GitLab URL purlis can push to over HTTPS".into(),
         );
     };
-    if !is_a_branch_name(&clone.path, branch) {
+    if !git::is_a_ref_name(&clone.path, &crate::worktree::name::as_ref(branch)) {
         return fail(
             say,
             format!(
@@ -342,13 +342,6 @@ fn plan(
         to,
         base,
     })
-}
-
-/// Whether git's own grammar takes `branch`. The value comes out of a committed file, and a
-/// `rev-parse` or a refspec reads a `:` or a `^` in it as syntax rather than as a name.
-fn is_a_branch_name(clone: &Path, branch: &str) -> bool {
-    let name = crate::worktree::name::as_ref(branch);
-    git::run(clone, &["check-ref-format", &name], git::READ).is_ok_and(|run| run.ok())
 }
 
 /// The commit `branch` is at in `clone` ([`git::commit_at`]).
@@ -835,7 +828,7 @@ fn pushing(
 /// What git is handed to push: the commit planned by its id, which unlike a ref's name cannot
 /// come to mean nothing (#4515).
 fn refspec_of(p: &Plan) -> String {
-    format!("{}:refs/heads/{}", p.head, p.branch)
+    git::push_refspec(&p.head, &crate::worktree::name::as_ref(&p.branch))
 }
 
 /// Push one member's branch to its own name on its origin, and nothing else. `false` with

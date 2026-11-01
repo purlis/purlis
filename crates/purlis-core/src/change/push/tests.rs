@@ -446,7 +446,7 @@ fn every_git_call_is_recorded_and_the_push_is_one_refspec_with_no_force() {
     let (code, said, _) = first_push(&world);
     assert_eq!(code, 0, "{said}");
     let asked = crate::worktree::git::tally::asked(&widget)[before..].to_vec();
-    let refspec = format!("{head}:refs/heads/{BRANCH}");
+    let refspec = format!("{head}^{{commit}}:refs/heads/{BRANCH}");
     let commit = format!("{head}^{{commit}}");
     let to = world.route("https://github.com/acme/widget.git");
     assert_eq!(
@@ -955,6 +955,60 @@ fn a_branch_gone_bad_at_the_last_moment_cannot_delete_the_remote_branch() {
     let sent = git::run_network(&widget, None, &["push", &member.to, &refspec]).unwrap();
 
     assert_eq!(world.remote_has("widget", BRANCH), Some(there), "{sent:?}");
+}
+
+/// The plan of `widget`, its branch, in `world`.
+fn the_plan(world: &World) -> Plan {
+    let Ok(member) = plan(
+        &world.plane,
+        "alpha",
+        SLUG,
+        "widget",
+        BRANCH,
+        &|https| world.route(https),
+        &mut |_| {},
+    ) else {
+        panic!("a plan");
+    };
+    member
+}
+
+/// A push reads a source of forty hex digits as a ref's name first, so a bare id is one more name
+/// that can be planted: every check of the branch itself still answers the commit planned.
+#[test]
+fn a_ref_named_after_the_commit_neither_deletes_the_remote_branch_nor_changes_what_is_sent() {
+    let world = World::new("schema = 1\n");
+    let (widget, there) = with_the_branch_on_its_remote(&world);
+    run(&widget, &["switch", "-q", "-c", "other"]);
+    std::fs::write(widget.join("other.rs"), "pub fn other() {}\n").unwrap();
+    run(&widget, &["add", "-A"]);
+    run(&widget, &["commit", "-q", "-m", "not planned"]);
+    let other = run(&widget, &["rev-parse", "HEAD"]);
+    run(&widget, &["switch", "-q", BRANCH]);
+    let refs = widget.join(".git/refs");
+    let zeros = format!("{}\n", "0".repeat(40));
+
+    for (at, planted) in [
+        ("heads", "garbage\n"),
+        ("heads", zeros.as_str()),
+        ("heads", other.as_str()),
+        ("tags", other.as_str()),
+    ] {
+        let member = the_plan(&world);
+        let named = refs.join(at).join(&member.head);
+        std::fs::write(&named, planted).unwrap();
+
+        let mut said = String::new();
+        let sent = pushed(&member, &mut |line| said.push_str(&line.to_string()));
+        std::fs::remove_file(&named).unwrap();
+
+        assert!(sent, "{at} {planted}: {said}");
+        assert_eq!(
+            world.remote_has("widget", BRANCH),
+            Some(there.clone()),
+            "{at} {planted}: {said}"
+        );
+    }
 }
 
 #[test]

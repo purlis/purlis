@@ -2338,10 +2338,7 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
 }
 
 /// The commit `name` is at in `dir`, or `None` where it names none: not there, holding garbage,
-/// or an id with no commit behind it, all zeros included. **What a push hands git** (#4515): git
-/// takes a local ref holding garbage or zeros for one that is not there, and a push of that name
-/// for a push of nothing, which deletes the remote's branch and exits 0. And zeros given as an id
-/// mean the same, so an id is only safe from here, where a commit stands behind it.
+/// or an id with no commit behind it, all zeros included. What [`push_refspec`] is given.
 pub(crate) fn commit_at(dir: &Path, name: &str) -> Option<String> {
     let commit = format!("{name}^{{commit}}");
     run(dir, &["rev-parse", "--verify", "--quiet", &commit], READ)
@@ -2349,6 +2346,26 @@ pub(crate) fn commit_at(dir: &Path, name: &str) -> Option<String> {
         .filter(Run::ok)
         .map(|run| run.line().trim().to_owned())
         .filter(|id| !id.is_empty())
+}
+
+/// **The refspec of every push that names a commit** (#4515): `<commit>^{commit}:<to>`, with `to`
+/// a full ref and `commit` from [`commit_at`].
+///
+/// git takes a local ref holding garbage or zeros for one that is not there, and a push of that
+/// name for a push of nothing, which deletes the remote's branch and exits 0. **A bare id does not
+/// escape it**: a push reads a source of forty hex digits as a ref's name first, so a planted
+/// `refs/heads/<id>` holding garbage deletes the branch again, and one holding another commit sends
+/// that commit, unscanned (both measured on git 2.50.1). `^{commit}` cannot be a ref's name, so
+/// the source is the commit and nothing else.
+pub(crate) fn push_refspec(commit: &str, to: &str) -> String {
+    format!("{commit}^{{commit}}:{to}")
+}
+
+/// Whether git's own grammar takes `name` for a ref. What reaches a push from a committed file or
+/// a `HEAD` a chat can write may not be one: a refspec reads a `:` in it as syntax, and would end
+/// at another branch.
+pub(crate) fn is_a_ref_name(dir: &Path, name: &str) -> bool {
+    run(dir, &["check-ref-format", name], READ).is_ok_and(|run| run.ok())
 }
 
 /// What a push of a `HEAD` that names no commit answers.
@@ -2367,7 +2384,7 @@ pub(crate) fn push_head_by_id(
     let Some(commit) = commit_at(dir, "HEAD") else {
         return Ok(refused(HEAD_NAMES_NO_COMMIT));
     };
-    let refspec = format!("{commit}:{to}");
+    let refspec = push_refspec(&commit, to);
     let mut args = vec!["push"];
     args.extend_from_slice(options);
     args.extend([url, refspec.as_str()]);

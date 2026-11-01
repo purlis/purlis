@@ -1884,11 +1884,15 @@ fn push_head_within(
         }
     };
     let cli = forge.kind.cli();
-    // A detached HEAD has no branch to say: left to fail, and never a remote branch called HEAD.
-    let to = if branch == "HEAD" {
-        branch.clone()
-    } else {
-        crate::worktree::name::as_ref(&branch)
+    // The full ref, asked for: `--abbrev-ref` answers `heads/main` where a tag is called `main`. A
+    // detached HEAD has none to say, and `HEAD` is left to fail, never to make a remote branch.
+    let to = match target {
+        Some(target) if target.starts_with("refs/heads/") => target.to_owned(),
+        Some(target) => crate::worktree::name::as_ref(target),
+        None => git::run(root, &["symbolic-ref", "--quiet", "HEAD"], git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .map_or_else(|| "HEAD".to_owned(), |run| run.line().trim().to_owned()),
     };
     let push = |root: &Path| git::push_head_by_id(root, Some(helper.as_str()), &[], &https, &to);
 

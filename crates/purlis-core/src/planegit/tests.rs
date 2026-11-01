@@ -2478,6 +2478,22 @@ fn a_planes_push_names_its_commit_by_id() {
     }
 }
 
+#[test]
+fn a_tag_called_as_the_branch_does_not_send_a_planes_push_to_a_branch_of_its_own() {
+    // `rev-parse --abbrev-ref HEAD` answers `heads/main` here.
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote();
+    run(&fixture.root, &["tag", "main"]);
+    std::fs::write(fixture.root.join("work.md"), "work").unwrap();
+
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    let refs = run(&bare, &["for-each-ref", "--format=%(refname)"]);
+    assert!(refs.lines().any(|name| name == "refs/heads/main"), "{refs}");
+    assert!(!refs.contains("refs/heads/heads"), "{refs}");
+}
+
 const REFUSED_SIGN_CHILD: &str = "CHARTER_TEST_REFUSED_SIGN_MARK";
 
 #[test]

@@ -171,7 +171,7 @@ fn a_save_pushes_its_commit_by_id() {
     let (code, said) = f.save();
 
     assert_eq!(code, 0, "{said}");
-    let refspec = format!("{}:refs/heads/feature/x", f.head());
+    let refspec = format!("{}^{{commit}}:refs/heads/feature/x", f.head());
     let asked = crate::worktree::git::tally::asked(&f.clone);
     assert!(
         asked

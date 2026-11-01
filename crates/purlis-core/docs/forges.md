@@ -141,7 +141,7 @@ owner, repo, branch, number or commit. The CLI transport's argv for each is pinn
 `purlis change push <slug>` is the first change verb that writes to a forge (ADR 0060, #471).
 For each member it reads the forge, the repository path and the HTTPS push URL from the
 member's own repo's `origin`, and prints every repo, branch and destination before it pushes
-anything. Each push is `git push <https-url> <commit>:refs/heads/<branch>`, through
+anything. Each push is `git push <https-url> <commit>^{commit}:refs/heads/<branch>`, through
 the forge CLI's credential helper and nothing else: no `+`, no `--force` of any spelling, so it
 can only create the branch or fast-forward it. The push's own command line turns off tags,
 push options and submodules. The destination printed is the one git pushes to: a repo whose
