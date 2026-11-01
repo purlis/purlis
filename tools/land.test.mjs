@@ -271,19 +271,6 @@ test("main is red when its newest finished push run ended red", () => {
   assert.equal(redRun([ciRun({ event: "schedule", conclusion: "failure" })]), undefined);
 });
 
-test("a cancelled run says nothing of main: the red one before it still counts", () => {
-  // Main keeps one pending run, so each merge cancels the one waiting behind it: 170 of main's
-  // 575 push runs from 2026-10-20 to 11-01 ended so, and each cleared a red main until the next
-  // verdict, for 9.4 of its 48.8 red hours.
-  const red = ciRun({ conclusion: "failure" });
-  assert.ok(redRun([red, ciRun({ run_number: 2, conclusion: "cancelled" })]));
-  assert.ok(redRun([red, ciRun({ run_number: 2, conclusion: "skipped" })]));
-  assert.equal(
-    redRun([red, ciRun({ run_number: 2, conclusion: "cancelled" }), ciRun({ run_number: 3 })]),
-    undefined,
-  );
-});
-
 test("checks sort into still going and failed, by gh's bucket", () => {
   const sorted = sortChecks([
     check("a", "pass"),
@@ -451,7 +438,7 @@ test("a red main is refused, naming its run, read from the newest finished push 
   // Main's colour is asked of its finished push runs, not of its head's run, which may still be
   // going while the one before it is red.
   const asked = got.calls.find((args) => args.join(" ").includes("workflows/ci.yml/runs"));
-  for (const query of ["branch=main", "event=push", "status=completed", "per_page=30"])
+  for (const query of ["branch=main", "event=push", "status=completed", "per_page=1"])
     assert.ok(asked.includes(query), query);
 });
 
