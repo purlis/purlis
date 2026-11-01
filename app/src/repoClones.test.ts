@@ -2,14 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderHook } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   cloneRepos,
   clonesInAll,
   cloningWords,
   forgetRepoClones,
+  settleRepoClones,
   stopRepoClones,
   subscribeRepoClones,
+  useRepoClones,
 } from "./repoClones";
 
 /**
@@ -387,5 +390,46 @@ describe("a store listener that throws (#4177)", () => {
       later();
       said.restore();
     }
+  });
+});
+
+describe("settling a workspace's clones against the clones its panels list", () => {
+  const held = () =>
+    [...renderHook(() => useRepoClones("/plane", "alpha")).result.current].map(([repo, clone]) => [
+      repo,
+      clone.state,
+    ]);
+
+  it("forgets a landed repo only once the panels list it", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "clone_repo") return ["✓ cloned"];
+      return cmd === "workspace_panels" ? { absent: [] } : null;
+    });
+    await cloneRepos("/plane", "alpha", ["web"]);
+
+    settleRepoClones("/plane", "alpha", ["svc"]);
+    expect(held()).toEqual([["web", "cloned"]]);
+
+    settleRepoClones("/plane", "alpha", ["svc", "web"]);
+    expect(held()).toEqual([]);
+  });
+
+  it("keeps a failed clone and one still running, though the panels list the repo", async () => {
+    mockIPC((cmd, args) => {
+      if (cmd !== "clone_repo") return null;
+      return (args as { repo: string }).repo === "bad"
+        ? Promise.reject("refused")
+        : new Promise(() => {});
+    });
+    await cloneRepos("/plane", "alpha", ["bad"]);
+    void cloneRepos("/plane", "alpha", ["slow"]);
+    await vi.waitFor(() => expect(held()).toContainEqual(["slow", "cloning"]));
+
+    settleRepoClones("/plane", "alpha", ["bad", "slow"]);
+
+    expect(held()).toEqual([
+      ["bad", "failed"],
+      ["slow", "cloning"],
+    ]);
   });
 });

@@ -13,9 +13,10 @@ import {
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { forgetRepoClones } from "./repoClones";
+import { cloneRepos, forgetRepoClones } from "./repoClones";
 import { forgetThisLaunch } from "./regions";
 import { showTheChanges, showTheExplorer } from "./test-strips";
 
@@ -67,77 +68,103 @@ function core(
   const fails = { ...over.fails };
   let inFlight = 0;
   let peak = 0;
-  mockIPC(async (cmd, args) => {
-    const a = (args ?? {}) as Record<string, unknown>;
-    asked.push({ cmd, args: a });
-    if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
-    if (cmd === "opened_chats") return [];
-    if (cmd === "plane_pins") return { project: false, workspaces: ["alpha"], missing: [] };
-    if (cmd === "plane_sidebar")
-      return {
-        root: PLANE,
-        personas: ["steward"],
-        persona: "steward",
-        unfiled: [],
-        workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [] }],
-      };
-    if (cmd === "workspace_panels")
-      return {
-        workspace: a.workspace,
-        repos: [...cloned],
-        paths: Object.fromEntries(cloned.map((repo) => [repo, `${ALPHA}/${repo}`])),
-        absent: [...missing],
-        refused: [],
-        todos: [],
-        todos_refused: null,
-        personas: ["steward"],
-        persona: "steward",
-        sessions: [],
-        contributed: [],
-      };
-    if (cmd === "workspace_repos")
-      return { workspace: a.workspace, repos: [], cache_refused: null };
-    if (cmd === "worktree_list") return [];
-    if (cmd === "take_repos") return null;
-    if (cmd === "clone_repo") {
-      const repo = String(a.repo);
-      over.told?.((now) => (a.progress as { onmessage: (n: typeof now) => void }).onmessage(now));
-      inFlight += 1;
-      peak = Math.max(peak, inFlight);
-      try {
-        if (over.held) await over.held;
-        await over.holds?.[repo];
-      } finally {
-        inFlight -= 1;
+  mockIPC(
+    async (cmd, args) => {
+      const a = (args ?? {}) as Record<string, unknown>;
+      asked.push({ cmd, args: a });
+      if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+      if (cmd === "opened_chats") return [];
+      if (cmd === "plane_pins") return { project: false, workspaces: ["alpha"], missing: [] };
+      if (cmd === "plane_sidebar")
+        return {
+          root: PLANE,
+          personas: ["steward"],
+          persona: "steward",
+          unfiled: [],
+          workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [] }],
+        };
+      if (cmd === "workspace_panels")
+        return {
+          workspace: a.workspace,
+          repos: [...cloned],
+          paths: Object.fromEntries(cloned.map((repo) => [repo, `${ALPHA}/${repo}`])),
+          absent: [...missing],
+          refused: [],
+          todos: [],
+          todos_refused: null,
+          personas: ["steward"],
+          persona: "steward",
+          sessions: [],
+          contributed: [],
+        };
+      if (cmd === "workspace_repos")
+        return { workspace: a.workspace, repos: [], cache_refused: null };
+      if (cmd === "worktree_list") return [];
+      if (cmd === "take_repos") return null;
+      if (cmd === "clone_repo") {
+        const repo = String(a.repo);
+        over.told?.((now) => (a.progress as { onmessage: (n: typeof now) => void }).onmessage(now));
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        try {
+          if (over.held) await over.held;
+          await over.holds?.[repo];
+        } finally {
+          inFlight -= 1;
+        }
+        const failing = fails[repo];
+        if (failing && failing.times > 0) {
+          failing.times -= 1;
+          throw failing.said;
+        }
+        if (over.stillAbsent?.includes(repo)) {
+          over.stillAbsent.splice(over.stillAbsent.indexOf(repo), 1);
+          return [`${repo}: already cloned in 'alpha'`];
+        }
+        if (missing.includes(repo)) missing.splice(missing.indexOf(repo), 1);
+        if (!cloned.includes(repo)) cloned.push(repo);
+        return [`✓ ${repo} → workspaces/alpha/${repo}`];
       }
-      const failing = fails[repo];
-      if (failing && failing.times > 0) {
-        failing.times -= 1;
-        throw failing.said;
+      if (cmd === "drop_repo_membership") {
+        if (over.refuseDrop !== undefined) throw over.refuseDrop;
+        const repo = String(a.repo);
+        missing.splice(missing.indexOf(repo), 1);
+        return [
+          `Removed '${repo}' from workspace 'alpha'. Nothing was deleted: it was not cloned here.`,
+        ];
       }
-      if (over.stillAbsent?.includes(repo)) {
-        over.stillAbsent.splice(over.stillAbsent.indexOf(repo), 1);
-        return [`${repo}: already cloned in 'alpha'`];
-      }
-      missing.splice(missing.indexOf(repo), 1);
-      cloned.push(repo);
-      return [`✓ ${repo} → workspaces/alpha/${repo}`];
-    }
-    if (cmd === "drop_repo_membership") {
-      if (over.refuseDrop !== undefined) throw over.refuseDrop;
-      const repo = String(a.repo);
-      missing.splice(missing.indexOf(repo), 1);
-      return [
-        `Removed '${repo}' from workspace 'alpha'. Nothing was deleted: it was not cloned here.`,
-      ];
-    }
-    if (cmd === "chat_states") return [];
-    if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "running_sessions") return [];
-    return null;
-  });
+      if (cmd === "chat_states") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      if (cmd === "running_sessions") return [];
+      return null;
+    },
+    { shouldMockEvents: true },
+  );
+  /** Something changed the plane, and the core says so: the window reads the panels again. */
+  const planeChanged = async () => {
+    await act(async () => {
+      await emit("plane-changed", { plane: PLANE });
+    });
+  };
   return {
     asked,
+    planeChanged,
+    /** The repo's folder and its line in the manifest went: it is neither cloned nor named. */
+    dropped: async (repo: string) => {
+      cloned.splice(cloned.indexOf(repo), 1);
+      await planeChanged();
+    },
+    /** The repo's folder went by hand, and the manifest still names it. */
+    deleted: async (repo: string) => {
+      cloned.splice(cloned.indexOf(repo), 1);
+      missing.push(repo);
+      await planeChanged();
+    },
+    /** The repo is among the clones already, while its clone has yet to answer. */
+    listed: async (repo: string) => {
+      cloned.push(repo);
+      await planeChanged();
+    },
     clones: () => asked.filter((one) => one.cmd === "clone_repo"),
     cancels: () => asked.filter((one) => one.cmd === "cancel_clone_repo"),
     drops: () => asked.filter((one) => one.cmd === "drop_repo_membership"),
@@ -162,6 +189,75 @@ const absent = async () => {
   return await screen.findByTestId("absent");
 };
 const absentRow = (repo: string) => screen.getByTestId(`absent-${repo}`);
+
+describe("a repo the workspace did not name until its clone landed", () => {
+  /** The way Settings and the new-workspace dialog ask: a clone of a repo with no row yet. */
+  const landed = async (repo: string, seen: ReturnType<typeof core>) => {
+    await showTheExplorer();
+    await screen.findByTestId("clone-svc");
+    await act(async () => {
+      await cloneRepos(PLANE, "alpha", [repo]);
+    });
+    await seen.planeChanged();
+    expect(await screen.findByTestId(`clone-${repo}`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`absent-${repo}`)).toBeNull();
+  };
+
+  it("leaves no row once it is dropped, and the view says the workspace has no repos", async () => {
+    const seen = core({ missing: [] });
+    render(<App />);
+    await landed("newcomer", seen);
+
+    await seen.dropped("newcomer");
+    await seen.dropped("svc");
+
+    await waitFor(() => expect(screen.queryByTestId("clone-svc")).toBeNull());
+    expect(screen.queryByTestId("absent-newcomer")).toBeNull();
+    expect(await screen.findAllByText("No repos in this workspace")).not.toEqual([]);
+  });
+
+  it("offers Clone again when its folder is deleted by hand", async () => {
+    const seen = core({ missing: [] });
+    render(<App />);
+    await landed("newcomer", seen);
+
+    await seen.deleted("newcomer");
+
+    expect(
+      await within(await screen.findByTestId("absent-newcomer")).findByRole("button", {
+        name: "Clone newcomer",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves no row when the panels listed it before its clone answered", async () => {
+    let land = () => {};
+    const seen = core({
+      missing: [],
+      held: new Promise<void>((resolve) => {
+        land = resolve;
+      }),
+    });
+    render(<App />);
+    await showTheExplorer();
+    await screen.findByTestId("clone-svc");
+    let asked: Promise<unknown> = Promise.resolve();
+    await act(async () => {
+      asked = cloneRepos(PLANE, "alpha", ["newcomer"]);
+    });
+    await seen.listed("newcomer");
+    expect(await screen.findByTestId("clone-newcomer")).toBeInTheDocument();
+
+    land();
+    await act(async () => {
+      await asked;
+    });
+    await seen.dropped("newcomer");
+
+    await waitFor(() => expect(screen.queryByTestId("clone-newcomer")).toBeNull());
+    expect(screen.queryByTestId("absent-newcomer")).toBeNull();
+  });
+});
 
 describe("a repo that is not cloned here", () => {
   it("has a Clone button on its row, which clones it where the workspace says and moves it to the clones", async () => {

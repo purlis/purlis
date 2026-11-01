@@ -116,6 +116,10 @@ impl Route<'_> {
         if let Some(stall) = self.watch.and_then(|watch| watch.stand_in.stall) {
             return stall;
         }
+        #[cfg(feature = "fenced")]
+        if let Some(stall) = cloning::stall_of_a_scenario() {
+            return stall;
+        }
         cloning::STALL
     }
 
