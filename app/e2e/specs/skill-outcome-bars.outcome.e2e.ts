@@ -223,7 +223,6 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       { timeout: 30_000, interval: 100, timeoutMsg: "the studio's Library drew no row in 30 s" },
     );
     samples.push(took as number);
-    await browser.pause(2600);
     console.log(
       `DEBUG-4351 ${harness.kind} #${n} ${Math.round(took as number)} ms: ` +
         (await browser.execute(() => (globalThis as any).__calls.join(" | "))),
