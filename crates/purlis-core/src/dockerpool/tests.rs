@@ -1236,6 +1236,13 @@ fn a_pairing_that_prints_more_than_one_line_of_its_length_is_refused() {
     };
     let refused = fake.docker().pair(&made(), &desktop).unwrap_err();
     assert!(refused.0.contains("printed more"), "{refused}");
+    // #4281: fixed, why, and what to do instead; never an offer to raise it.
+    let fixed = purlis_session_protocol::fixedlimits::RUNNER_OUTPUT;
+    assert!(refused.0.contains(&fixed.said()), "{refused}");
+    assert_eq!(
+        crate::poollimits::hits_said_in("first", &refused.0),
+        Vec::new()
+    );
 }
 
 #[test]
@@ -3336,6 +3343,25 @@ fn a_standing_is_not_held_to_its_input() {
         standing_by_login(&login, "work"),
         Ok(Some(crate::profilestore::sign_in::Standing::SignedOut))
     );
+}
+
+/// **#4281**: a status check that prints past what purlis reads says the limit is fixed.
+#[cfg(unix)]
+#[test]
+fn a_standing_that_prints_too_much_says_the_limit_is_fixed() {
+    let login = crate::profilestore::sign_in::Login {
+        program: "/bin/sh".to_owned(),
+        args: vec![
+            "-c".to_owned(),
+            "head -c 131072 /dev/zero | tr '\\000' x".to_owned(),
+        ],
+        env: Vec::new(),
+        cleared: Vec::new(),
+    };
+    let said = standing_by_login(&login, "work").unwrap_err();
+    assert!(said.contains("printed more"), "{said}");
+    let fixed = purlis_session_protocol::fixedlimits::RUNNER_OUTPUT.said();
+    assert!(said.contains(&fixed), "{said}");
 }
 
 #[test]

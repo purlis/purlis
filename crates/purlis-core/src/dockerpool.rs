@@ -1933,7 +1933,10 @@ pub fn standing_by_login(
             format!("{} could not be run: {e}", login.program)
         }
         crate::boundedrun::Unanswered::PrintedTooMuch => {
-            "it printed more than a status check does".to_owned()
+            format!(
+                "it printed more than a status check does. {}",
+                purlis_session_protocol::fixedlimits::RUNNER_OUTPUT.said()
+            )
         }
         crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
     })?;
@@ -2193,8 +2196,10 @@ impl Docker {
                     format!("{} could not be run: {why}", self.program.display())
                 }
                 Unanswered::PrintedTooMuch => format!(
-                    "docker {} printed more than the {most} bytes purlis reads of it, so it was ended",
-                    first()
+                    "docker {} printed more than the {most} bytes purlis reads of it, so it was \
+                     ended. {}",
+                    first(),
+                    purlis_session_protocol::fixedlimits::RUNNER_OUTPUT.said()
                 ),
                 Unanswered::NotFinished(why) => {
                     format!("{} did not finish: {why}", self.program.display())

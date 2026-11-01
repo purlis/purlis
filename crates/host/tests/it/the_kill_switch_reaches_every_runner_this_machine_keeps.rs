@@ -263,6 +263,51 @@ async fn a_link_whose_runner_does_not_take_the_stop_carries_nothing_and_it_is_na
     assert!(said.contains("pool/b"), "{said}");
 }
 
+/// A runner's host that never answers a stop.
+#[derive(Clone)]
+struct NeverAnswers;
+
+impl session::Host for NeverAnswers {
+    async fn call(
+        &self,
+        command: session::Command,
+        _peer: &session::Peer,
+    ) -> Result<session::Answer, session::Refusal> {
+        match command {
+            session::Command::StopAll | session::Command::KillSwitch => {
+                std::future::pending().await
+            }
+            session::Command::List => Ok(session::Answer::Chats(Vec::new())),
+            _ => Ok(session::Answer::Done),
+        }
+    }
+}
+
+/// **#4281**: the wait for a stop to reach one runner, driven until it runs out: fixed, why, and
+/// what to do instead, and the other runners are stopped meanwhile.
+#[tokio::test]
+async fn a_stop_that_runs_out_of_its_fixed_wait_says_it_is_fixed_and_what_to_do_instead() {
+    let keep = Cable::to(&NeverAnswers).keep();
+    let every: EveryRunner =
+        Arc::new(move || vec![("pool/slow".to_owned(), Ok(Arc::clone(&keep)))]);
+    let a = Hosting::running_with(Echo, StandIns::default())
+        .reaching_runners_within(Duration::from_secs(1))
+        .stopping_runners_with(every);
+    let window = a_window(&a).await;
+
+    let switch = timeout(PATIENCE, window.stop_all()).await.unwrap().unwrap();
+
+    assert!(
+        switch.stopped,
+        "this machine stops whatever one runner does"
+    );
+    let said = switch.why.expect("the runner not reached is named");
+    assert!(said.contains("pool/slow"), "{said}");
+    assert!(said.contains("did not answer within 1 seconds"), "{said}");
+    let fixed = purlis_session_protocol::fixedlimits::STOP_WAIT.said();
+    assert!(said.contains(&fixed), "{said}");
+}
+
 #[tokio::test]
 async fn a_runner_not_reached_is_tried_again_while_the_desktop_stays_stopped() {
     let b = Hosting::running_with(Echo, StandIns::default());

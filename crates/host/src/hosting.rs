@@ -1292,6 +1292,18 @@ impl Hosting {
         self
     }
 
+    /// One runner is waited on for `within`, in place of [`crate::REACHED_WITHIN`]: a test's.
+    /// Given before the host is shared.
+    #[doc(hidden)]
+    pub fn reaching_runners_within(mut self, within: std::time::Duration) -> Hosting {
+        let inner = Arc::get_mut(&mut self.inner).expect("given before the host is shared");
+        let runners = std::mem::take(
+            Arc::get_mut(&mut inner.runners).expect("given before the host is shared"),
+        );
+        inner.runners = Arc::new(runners.reaching_within(within));
+        self
+    }
+
     /// What a link relayed to `runner` sends first while this host is stopped (#2051).
     pub(crate) fn stop_first(&self, runner: String) -> crate::reach::StopFirst {
         let inner = Arc::downgrade(&self.inner);
