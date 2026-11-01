@@ -1067,9 +1067,11 @@ async fn delete_retained(client: &Client, claim: &Claim, namespace: &str) -> Res
 /// is upstream's to remove.
 async fn sweep_orphans(client: Client, claims: Store<Claim>, every: Duration) {
     use lifecycle::{pool_object_is_orphaned, upstream_claim_is_orphaned};
-    if claims.wait_until_ready().await.is_err() {
+    if let Err(error) = claims.wait_until_ready().await {
+        tracing::warn!(%error, "what claims leave behind will not be looked for");
         return;
     }
+    tracing::info!(?every, "looking for what claims leave behind");
     let mut ticks = tokio::time::interval(every);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // Not at the operator's start, when what it holds is newest.
@@ -1087,6 +1089,11 @@ async fn sweep_orphans(client: Client, claims: Store<Claim>, every: Duration) {
                 .list_metadata(&params)
                 .await?
                 .items;
+            tracing::info!(
+                claims = held.len(),
+                upstream_claims = upstream_claims.len(),
+                "looking for what claims left behind"
+            );
             for object in upstream_claims {
                 let object = object.metadata;
                 if upstream_claim_is_orphaned(&object, &held, every, now)
@@ -1180,6 +1187,7 @@ where
         return Ok(());
     };
     let Found::Ours { uid } = made_for(Some(object), &runner) else {
+        tracing::info!(%name, %namespace, "left: its claim has gone, but the operator did not make it");
         return Ok(());
     };
     tracing::info!(%name, %namespace, "removed: its claim has gone");
