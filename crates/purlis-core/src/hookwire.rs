@@ -117,6 +117,8 @@ pub const CLAUDE_PID_ENV: &str = "CLAUDE_PID";
 ///
 /// **Nor the host's relaunch marker** ([`crate::noterminal::RELAUNCHED_ENV`]): it names the
 /// app's own parent, and an app started from a chat's shell leaves that shell's terminal.
+///
+/// **Nor a harness's internal variable** ([`HARNESS_INTERNAL_ENV`]).
 pub const NOT_INHERITED: &[&str] = &[
     CLAUDE_CONVERSATION_ENV,
     CLAUDE_PID_ENV,
@@ -131,7 +133,18 @@ pub const NOT_INHERITED: &[&str] = &[
     CHAT_ID_ENV,
     PROMPT_KEY_ENV,
     crate::sandbox::tools::POOL_IMAGE_VAR,
+    HARNESS_INTERNAL_ENV,
 ];
+
+/// A harness's internal variable. It stays out of a chat's environment: never inherited
+/// ([`NOT_INHERITED`]), and refused in a profile's `env` and a declaration's namespace
+/// ([`harness_internal`]).
+pub const HARNESS_INTERNAL_ENV: &str = "CLAUDE_CODE_SANDBOXED";
+
+/// Whether `name` is a harness's internal variable, in any case.
+pub fn harness_internal(name: &str) -> bool {
+    name.eq_ignore_ascii_case(HARNESS_INTERNAL_ENV)
+}
 
 /// Which conversation a report is of, and how well that is known.
 ///

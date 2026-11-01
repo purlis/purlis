@@ -890,6 +890,28 @@ mod tests {
     }
 
     #[test]
+    fn a_harnesss_internal_variable_stays_out_of_a_chat_whatever_admits_it() {
+        let internal = "CLAUDE_CODE_SANDBOXED";
+        let names = [internal, "CLAUDE_CONFIG_DIR"];
+        // Its harness's own namespace, then the operator's list by name and by prefix.
+        for (harness, operator) in [
+            (Some(Harness::ClaudeCode), &[][..]),
+            (None, &[internal][..]),
+            (None, &["CLAUDE_*"][..]),
+        ] {
+            assert!(
+                !kept(&names, harness, operator, &nothing).contains(&internal.to_owned()),
+                "{harness:?} {operator:?}"
+            );
+        }
+        // A project's declared namespace, by prefix and by name.
+        assert_eq!(
+            of_namespace(&names, &["CLAUDE_*", internal]),
+            ["CLAUDE_CONFIG_DIR"]
+        );
+    }
+
+    #[test]
     fn what_is_never_passed_stays_out_whoever_lists_it() {
         let strip = |name: &OsStr| name == "OP_SERVICE_ACCOUNT_TOKEN" || name == "PROD_1P_TOKEN";
         assert_eq!(
