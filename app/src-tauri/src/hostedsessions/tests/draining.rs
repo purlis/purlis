@@ -670,6 +670,10 @@ struct SlowToStart<H> {
     inner: H,
     after: Duration,
     closed: Arc<Mutex<Vec<String>>>,
+    /// How long the next hold takes, which it says once: a runner coming back (#4415).
+    next_hold_takes: Arc<Mutex<Option<Duration>>>,
+    holds: Arc<AtomicU32>,
+    code_taken: Arc<AtomicU32>,
 }
 
 impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for SlowToStart<H> {
@@ -680,6 +684,16 @@ impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for SlowToS
     ) -> Result<Answer, session::Refusal> {
         match &command {
             session::Command::StartProgram(_) => tokio::time::sleep(self.after).await,
+            session::Command::HoldProject { .. } => {
+                self.holds.fetch_add(1, Ordering::SeqCst);
+                let takes = self.next_hold_takes.lock().unwrap().take();
+                if let Some(takes) = takes {
+                    tokio::time::sleep(takes).await;
+                }
+            }
+            session::Command::TakeCode { .. } => {
+                self.code_taken.fetch_add(1, Ordering::SeqCst);
+            }
             session::Command::Close { program } => {
                 self.closed.lock().unwrap().push(program.clone());
             }
@@ -728,7 +742,135 @@ fn a_host_slow_by(after: Duration, runtime: &tokio::runtime::Runtime) -> SlowToS
         }),
         after,
         closed: Arc::default(),
+        next_hold_takes: Arc::default(),
+        holds: Arc::default(),
+        code_taken: Arc::default(),
     }
+}
+
+/// A window's chats on a pool's runner, which keeps the project in its own place and is sent its
+/// code, and the host behind them, whose next hold takes `takes` (#4415).
+struct OnAnIdleRunner {
+    _dir: tempfile::TempDir,
+    _runtime: tokio::runtime::Runtime,
+    holds: Arc<AtomicU32>,
+    code_taken: Arc<AtomicU32>,
+    next_hold_takes: Arc<Mutex<Option<Duration>>>,
+    sessions: Arc<HostedSessions>,
+}
+
+fn on_an_idle_runner(takes: Duration) -> OnAnIdleRunner {
+    let runtime = a_runtime();
+    let dir = tempfile::tempdir().unwrap();
+    let top = std::fs::canonicalize(dir.path()).unwrap();
+    let root = top.join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join(purlis_core::plane::MANIFEST), "").unwrap();
+    for args in [
+        &["init", "-q", "-b", "main"][..],
+        &["add", "-A"][..],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "first",
+        ][..],
+    ] {
+        let mut command = std::process::Command::new("git");
+        command.args(args).current_dir(&root);
+        let git = purlis_core::forklock::status(&mut command).unwrap();
+        assert!(git.success(), "git {args:?}");
+    }
+    let projects = top.join("runner");
+    std::fs::create_dir_all(&projects).unwrap();
+    let mut host = a_host_slow_by(Duration::ZERO, &runtime);
+    host.inner = host
+        .inner
+        .keeping_projects_in(projects)
+        .moving_code_with(purlis_core::codelink::Moves);
+    *host.next_hold_takes.lock().unwrap() = Some(takes);
+    let holds = Arc::clone(&host.holds);
+    let code_taken = Arc::clone(&host.code_taken);
+    let next_hold_takes = Arc::clone(&host.next_hold_takes);
+    let connection = a_window_on(host, &runtime);
+    let sessions = Arc::new(HostedSessions::on_a_pools_runner(connection, &root));
+    OnAnIdleRunner {
+        _dir: dir,
+        _runtime: runtime,
+        holds,
+        code_taken,
+        next_hold_takes,
+        sessions,
+    }
+}
+
+/// **A dispatch's wait has a limit** (#4415): it has no Cancel, so a runner that keeps its link and
+/// never answers must not hold it for ever. No pool here, so the limit is a quick command's. Waits
+/// that long, for real.
+#[test]
+fn a_dispatchs_wait_for_a_runner_that_never_answers_ends() {
+    let idle = on_an_idle_runner(ANSWER_WITHIN + Duration::from_secs(5));
+
+    let said = a_dispatchs_start(|| started(idle.sessions.as_ref()))
+        .expect_err("a hold not answered in time starts nothing");
+    assert!(said.starts_with(NOT_HELD), "{said}");
+}
+
+/// **The window's commands do not wait on a dispatch's runner** (#4415).
+#[test]
+fn a_window_command_is_answered_while_a_dispatch_waits_for_its_runner() {
+    let takes = Duration::from_secs(4);
+    let idle = on_an_idle_runner(takes);
+    let dispatch = {
+        let sessions = Arc::clone(&idle.sessions);
+        std::thread::spawn(move || a_dispatchs_start(|| started(sessions.as_ref())))
+    };
+    until("the dispatch's hold reached the host", || {
+        idle.holds.load(Ordering::SeqCst) > 0
+    });
+
+    let asked = Instant::now();
+    assert!(!idle.sessions.left_running(1));
+    assert!(
+        asked.elapsed() < takes / 2,
+        "a window command waited {:?} on a runner coming back",
+        asked.elapsed()
+    );
+
+    dispatch
+        .join()
+        .unwrap()
+        .unwrap_or_else(|why| panic!("the dispatch still runs: {why}"));
+}
+
+/// **Only a start holds a project again on a link that is down** (#4403, #4415): a look at it
+/// neither waits nor wakes an idle runner.
+#[test]
+fn a_project_on_a_link_that_is_down_is_held_again_by_a_start_alone() {
+    let idle = on_an_idle_runner(Duration::ZERO);
+    started(idle.sessions.as_ref()).unwrap();
+    let (link, _) = idle.sessions.link().unwrap();
+    lock(&link.shared.runner_log).link(true);
+    let held = idle.holds.load(Ordering::SeqCst);
+
+    assert!(!idle.sessions.left_running(1));
+    assert_eq!(
+        idle.holds.load(Ordering::SeqCst),
+        held,
+        "a look holds nothing"
+    );
+
+    a_dispatchs_start(|| started(idle.sessions.as_ref())).unwrap();
+    assert!(
+        idle.holds.load(Ordering::SeqCst) > held,
+        "a start holds it again"
+    );
 }
 
 /// **A start the host answers after a quick command's limit runs** (#4264): the person's Start was
@@ -769,4 +911,32 @@ fn a_cancelled_start_stops_waiting_and_a_late_chat_is_closed() {
     until("the chat that came up late is closed", || {
         closed.lock().unwrap().len() == 1
     });
+}
+
+/// **A link that comes back during the wait still gets what a hold does after it** (#4403,
+/// #4415): the project's code as it is now, or the chat runs on what the runner held before.
+#[test]
+fn a_start_sends_the_code_though_its_link_came_back_during_the_wait() {
+    let idle = on_an_idle_runner(Duration::ZERO);
+    started(idle.sessions.as_ref()).unwrap();
+    let (link, _) = idle.sessions.link().unwrap();
+    lock(&link.shared.runner_log).link(true);
+    let sent = idle.code_taken.load(Ordering::SeqCst);
+    let held = idle.holds.load(Ordering::SeqCst);
+    *idle.next_hold_takes.lock().unwrap() = Some(Duration::from_secs(1));
+
+    let dispatch = {
+        let sessions = Arc::clone(&idle.sessions);
+        std::thread::spawn(move || a_dispatchs_start(|| started(sessions.as_ref())))
+    };
+    until("the dispatch's hold reached the host", || {
+        idle.holds.load(Ordering::SeqCst) > held
+    });
+    lock(&link.shared.runner_log).link(false);
+    dispatch.join().unwrap().unwrap();
+
+    assert!(
+        idle.code_taken.load(Ordering::SeqCst) > sent,
+        "the code is sent again"
+    );
 }

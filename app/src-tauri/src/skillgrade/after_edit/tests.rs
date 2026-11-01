@@ -16,6 +16,7 @@ fn on(why: Option<&str>) -> On {
         priced: grades::price::of_model(None),
         models: vec!["sonnet".into()],
         model: Some("sonnet".into()),
+        evals_refused: None,
     }
 }
 

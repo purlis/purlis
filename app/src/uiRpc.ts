@@ -1072,7 +1072,7 @@ export const commands = {
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillLevelsConfirm: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, grader: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model, grader })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[], grader: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model, evals, grader })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	/**  **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it. */
@@ -5660,6 +5660,28 @@ export type GradeEstimate = {
 	same_profile: boolean | null,
 	/**  Whether that grade was interrupted before it was scored (#3602): the plan says so. */
 	interrupted: boolean,
+};
+
+/**
+ *  **One outcome eval, as the plan shows it before anything runs** (SK-55): its id, its first
+ *  message as the chat will read it, each character no reader would see marked, its input files,
+ *  and how many expectations its judge checks.
+ */
+export type GradeEval = {
+	id: string,
+	prompt: string,
+	hides: boolean,
+	files: string[],
+	expectations: number,
+	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
+	on: boolean,
+	chats: number,
+};
+
+/**  **An outcome eval a grade leaves out** (`grades::LeftOutEval`): its id, and why. */
+export type GradeEvalLeftOut = {
+	id: string,
+	why: string,
 };
 
 /**
@@ -11112,8 +11134,15 @@ export type SkillGradePlan = {
 	tests_refused: string | null,
 	/**  The trigger tests left out, each with why: a query no chat can be started on. */
 	left_out: GradeLeftOut[],
-	/**  The outcome evals the skill has, shown and not run (#3235 grades them). */
+	/**
+	 *  **The outcome evals it runs** (SK-55), each in each arm and run, and the judge chats that
+	 *  grade them, counted in [`Self::chats`]; the ones it leaves out, each with why; and why the
+	 *  file could not be read, where it was not.
+	 */
+	evals: GradeEval[],
 	outcome_evals: number,
+	judge_chats: number,
+	outcomes_left_out: GradeEvalLeftOut[],
 	outcomes_refused: string | null,
 	estimate: GradeEstimate | null,
 	/**  What the grade record left out as it was read: rows skipped, files not read. */
@@ -11212,6 +11241,8 @@ export type SkillGrades = {
 	grades: GradeRow[],
 	said: string | null,
 	tests: number,
+	/**  The outcome evals a grade would run too (SK-55): a skill with these alone is graded. */
+	evals: number,
 	tests_refused: string | null,
 	running: SkillGradeStep | null,
 };

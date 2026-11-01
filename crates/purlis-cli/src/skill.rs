@@ -1490,8 +1490,34 @@ fn grade_said(
         };
         // The version it compared with, where it compared one (SK-57).
         let previous = one.compared_with().map(history::short);
+        // Its outcome evals, where it ran any (SK-55): each arm's share of expectations passed.
+        let outcome_rate = |arm: Arm| {
+            one.report
+                .arm(arm)
+                .and_then(|score| score.outcome_pass_rate)
+                .map_or_else(
+                    || "not judged".to_owned(),
+                    |stat| format!("{:.0}%", stat.mean * 100.0),
+                )
+        };
+        let outcomes = if one.report.outcomes.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "  outcome evals with {} without {}{}{}",
+                outcome_rate(Arm::With),
+                outcome_rate(Arm::Without),
+                previous
+                    .map(|_| format!(" previous {}", outcome_rate(Arm::Previous)))
+                    .unwrap_or_default(),
+                one.report
+                    .outcome_delta
+                    .map(|delta| format!(" difference {:+.0} points", delta * 100.0))
+                    .unwrap_or_default(),
+            )
+        };
         text.push_str(&format!(
-            "  {}  {}  {passed} of {} passed  with {}  without {}{}{}{asked}  ({}){}\n",
+            "  {}  {}  {passed} of {} passed  with {}  without {}{}{}{outcomes}{asked}  ({}){}\n",
             purlis_core::skills::review::escaped_line(&one.ts),
             one.commit.as_deref().map_or("uncommitted", history::short),
             counted(of, "test", "tests"),
@@ -1552,11 +1578,28 @@ fn grade_plan_said(
                 ),
                 None => String::new(),
             };
+            // Its trigger tests and its outcome evals (SK-55), each counted.
+            let fixtures = match (plan.trigger_tests, plan.outcome_evals) {
+                (tests, 0) => counted(tests, "trigger test", "trigger tests"),
+                (0, evals) => counted(evals, "outcome eval", "outcome evals"),
+                (tests, evals) => format!(
+                    "{} and {}",
+                    counted(tests, "trigger test", "trigger tests"),
+                    counted(evals, "outcome eval", "outcome evals")
+                ),
+            };
+            let judges = match plan.judge_chats {
+                0 => String::new(),
+                judges => format!(
+                    "; and a judge chat for each outcome eval's chat, {} in all, which reads what \
+                     that chat left and changes nothing",
+                    counted(judges, "judge chat", "judge chats")
+                ),
+            };
             text.push_str(&format!(
-                "Grading {name} runs {}, one turn each: each of {} {times} with the skill and \
-                 {times} without it{previous}.\n",
+                "Grading {name} runs {}, one turn each: each of {fixtures} {times} with the skill \
+                 and {times} without it{previous}{judges}.\n",
                 counted(plan.chats, "chat", "chats"),
-                counted(plan.trigger_tests, "trigger test", "trigger tests"),
             ));
             if let Some(why) = &planned.previous_refused {
                 text.push_str(&format!("Its previous version is not compared: {why}.\n"));
@@ -1601,19 +1644,32 @@ fn grade_plan_said(
             }
         }
         _ => text.push_str(&format!(
-            "{name} has no trigger tests to grade: the queries it should start on and the near \
-             misses it should leave alone, in its evals/triggers.json.\n"
+            "{name} has no trigger tests or ticked outcome evals to grade: the queries it should \
+             start on and the near misses it should leave alone, in its evals/triggers.json, and \
+             tasks with what a judge checks, in its evals/evals.json.\n"
         )),
     }
-    if let Some(evals) = planned
-        .fixtures
-        .outcomes
-        .read()
-        .filter(|evals| !evals.is_empty())
-    {
+    if let Read::Refused(why) = &planned.fixtures.outcomes {
         text.push_str(&format!(
-            "{} for a later purlis: grades run the trigger tests alone.\n",
-            counted(evals.len(), "outcome eval waits", "outcome evals wait"),
+            "Its outcome evals could not be read: {}\n",
+            why.terminal()
+        ));
+    }
+    // Off until the person ticks them in the Skill studio's plan (the ruling of 2026-10-31).
+    for eval in &planned.offered {
+        text.push_str(&format!(
+            "  Outcome eval {}. {}  (off: {} a judge checks, {} more if ticked in the Skill \
+             studio's plan)\n",
+            eval.id,
+            purlis_core::skills::review::escaped_line(&eval.prompt),
+            counted(eval.expectations.len(), "expectation", "expectations"),
+            counted(planned.eval_chats, "chat", "chats"),
+        ));
+    }
+    for left in &planned.outcomes_left_out {
+        text.push_str(&format!(
+            "Outcome eval {} is left out: {}.\n",
+            left.id, left.why
         ));
     }
     text
