@@ -56,6 +56,10 @@ impl HarnessAdapter for ClaudeCode {
             return StateHooks::None;
         };
         let skills = crate::skills::for_chat(kit, Harness::ClaudeCode);
+        let budget = kit.skills.map_or_else(
+            || self.skill_budget(),
+            |at| crate::skills::budget_in(at.plane, at.workspace, Harness::ClaudeCode),
+        );
         debug_assert!(
             skills
                 .built_in_dir()
@@ -134,6 +138,7 @@ impl HarnessAdapter for ClaudeCode {
                         cwd,
                         crate::footerclaim::status_line(cwd).free(),
                         &handed,
+                        listing_limit(budget),
                         sandbox,
                         &denied_tools(kit),
                         screened.as_ref(),
@@ -248,16 +253,28 @@ impl HarnessAdapter for ClaudeCode {
         slash_with_words(&head, skill.given)
     }
 
-    /// Claude Code lists skills within 1% of the context window (`skillListingBudgetFraction`),
-    /// about 8,000 characters on a 200k-token window for names, descriptions and their lines,
-    /// cutting each description at 1,536 characters and dropping descriptions past the budget
-    /// (2.1.304, `settings-reference.md`, `skills.md`). It leaves a manual-only skill out itself
+    /// **60 skills and 15,000 characters of whole lines** (ADR 0102 as amended 2026-11-02).
+    /// Claude Code's own limit is 1% of the window, which purlis does not know at a chat's start,
+    /// so it hands one instead ([`Self::skill_limit_handed`]). Past a limit Claude Code keeps
+    /// every name and drops descriptions. Each description, with its `when_to_use`, is cut at
+    /// 1,536 characters. It leaves a manual-only skill out itself
     /// ([`Self::skill_frontmatter`]).
     fn skill_budget(&self) -> crate::skills::Budget {
         crate::skills::Budget {
+            skills: 60,
+            chars: 15_000,
             per_description: Some(1_536),
-            ..super::SKILL_BUDGET
+            lists_paths: false,
+            per_line: Some(LISTING_LINE),
         }
+    }
+
+    /// **An absolute limit, so nothing depends on the window** (#4610): what `budget` spends,
+    /// Claude Code's own entries, and a tenth over them both. 2.1.316 counts its own entries
+    /// against the limit it is given, so on 200k, where 1% is 6,000, every plane skill's
+    /// description used to go.
+    fn skill_limit_handed(&self, budget: crate::skills::Budget) -> Option<usize> {
+        Some(listing_limit(budget))
     }
 
     /// **Claude Code 2.1.304** (`skills.md` "Frontmatter reference", research of 2026-10-20):
@@ -626,6 +643,7 @@ fn settings(
     cwd: Option<&std::path::Path>,
     may_fill_the_footer: bool,
     plugins: &crate::harness_plugin::Chosen,
+    listing_limit: usize,
     sandbox: Option<&crate::sandbox::claude::Settings>,
     denied_tools: &[String],
     screened: Option<&project::Screened>,
@@ -682,6 +700,13 @@ fn settings(
             serde_json::Value::Object(overrides),
         );
     }
+    // **The limit on its skill listing, for this session alone** (#4610). Measured on 2.1.316: in
+    // `env` here it set the limit (23,456), ignored the window, and beat
+    // `skillListingBudgetFraction`. Documented in `env-vars.md`; the variable has no settings key.
+    settings.insert(
+        "env".to_owned(),
+        serde_json::json!({ LISTING_LIMIT_ENV: listing_limit.to_string() }),
+    );
     // **Only where nothing else fills it.** The key is one value and the flag is the last
     // writer, so arming it where the operator has their own would stop theirs running
     // ([`crate::footerclaim`], measured on 2.1.280). Where charter does not arm it, the chat
@@ -869,6 +894,7 @@ pub(super) fn armed_settings_for_tests(sandbox: &crate::sandbox::claude::Setting
         None,
         false,
         &crate::harness_plugin::Chosen::new(),
+        TEST_LISTING_LIMIT,
         Some(sandbox),
         &[],
         None,
@@ -924,6 +950,26 @@ fn denied_tools(kit: Kit<'_>) -> Vec<String> {
 }
 
 /// **The only tools a judge's chat has** (SK-55): the two the read guard holds to its folder.
+/// The variable that sets Claude Code's limit on its skill listing, in characters.
+const LISTING_LIMIT_ENV: &str = "SLASH_COMMAND_TOOL_CHAR_BUDGET";
+
+/// What Claude Code's own 14 entries take of its listing's limit (measured on 2.1.316).
+const OWN_LISTING: usize = 6_848;
+
+/// What a listing line takes around a skill's name and description: about 16 measured on 2.1.316,
+/// and 7 for the `skills:` or `purlis:` it is known by.
+const LISTING_LINE: usize = 23;
+
+/// [`HarnessAdapter::skill_limit_handed`]'s sum, with a tenth for what `spent` cannot see.
+fn listing_limit(budget: crate::skills::Budget) -> usize {
+    let held = budget.chars.saturating_add(OWN_LISTING);
+    held.saturating_add(held / 10)
+}
+
+/// The limit a test's [`settings`] is called with.
+#[cfg(test)]
+pub(super) const TEST_LISTING_LIMIT: usize = 23_456;
+
 const JUDGE_TOOLS: &str = "Read,Grep";
 
 /// **The only built-in tools an outcome eval's chat has** (SK-55): what a task reads and writes

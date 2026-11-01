@@ -612,6 +612,7 @@ export function fileSetting(
     key: path,
     kind: control.kind,
     choices: control.choices,
+    ...(control.numeric ? { numeric: control.numeric } : {}),
     unset: control.unset,
     labels: control.labels,
     options: control.options,

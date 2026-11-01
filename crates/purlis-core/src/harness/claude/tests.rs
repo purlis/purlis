@@ -1440,6 +1440,7 @@ fn an_outcome_chat_has_no_shell() {
             None,
             false,
             &crate::harness_plugin::Chosen::new(),
+            TEST_LISTING_LIMIT,
             Some(&sandbox),
             &[],
             None,
@@ -1577,4 +1578,79 @@ fn an_outcome_chat_holds_no_tool_of_a_server() {
             .is_some_and(|rules| rules.contains(&serde_json::json!("mcp__purlis"))),
         "{settings}"
     );
+}
+
+#[test]
+fn a_chats_settings_hand_claude_code_its_listing_limit_as_a_string_in_env() {
+    let sandbox = crate::sandbox::claude::Settings {
+        sandbox: serde_json::json!({"enabled": true}),
+        deny: Vec::new(),
+        made_empty: Vec::new(),
+    };
+    let text = armed_settings_for_tests(&sandbox);
+    let settings: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+    assert_eq!(
+        settings["env"]["SLASH_COMMAND_TOOL_CHAR_BUDGET"],
+        TEST_LISTING_LIMIT.to_string()
+    );
+}
+
+/// What the chat armed with `skills` is handed as its limit on its skill listing.
+fn listing_limit_handed(skills: Option<crate::skills::PlaneSkills<'_>>) -> String {
+    let hooks = adapter().arm(
+        Kit {
+            skills,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/charter"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: None,
+            graded: false,
+            judging: false,
+            writes_its_piece: false,
+        },
+        None,
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    );
+    let StateHooks::ThisSessionOnly { args, .. } = hooks else {
+        panic!("armed");
+    };
+    let at = args.iter().position(|word| word == "--settings").unwrap();
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    settings["env"][LISTING_LIMIT_ENV]
+        .as_str()
+        .expect("a limit")
+        .to_owned()
+}
+
+#[test]
+fn a_chat_out_of_any_plane_is_handed_the_limit_of_the_default_budget() {
+    assert_eq!(listing_limit_handed(None), "24032");
+}
+
+#[test]
+fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path();
+    std::fs::write(
+        plane.join("charter.toml"),
+        "schema = 1\n[skills.budget]\nchars = 20000\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(plane.join("workspaces/alpha")).unwrap();
+    std::fs::write(
+        plane.join("workspaces/alpha/workspace.json"),
+        r#"{"name":"alpha","settings":{"skills":{"budget":{"chars":40000}}}}"#,
+    )
+    .unwrap();
+    let at = |workspace| {
+        listing_limit_handed(Some(crate::skills::PlaneSkills {
+            plane,
+            workspace,
+            repo: &[],
+            routed: None,
+        }))
+    };
+    assert_eq!(at(None), "29532");
+    assert_eq!(at(Some("alpha")), "51532");
 }

@@ -21,7 +21,7 @@ import { asked, fileSetting, useSettingsDriver, type Driven, type Wrote } from "
 import type { FileSetting, LiveSetting, SettingsGroup } from "./groups";
 import { THEME_GROUP, themeRows } from "./themeGallery";
 import { workspaceDispatchGroup } from "./dispatch";
-import { workspaceSkillsGroup } from "./skillsSummary";
+import { budgetControls, workspaceSkillsGroup } from "./skillsSummary";
 import { Button } from "../ui/button/Button";
 import { anyPoolKept, usePools } from "../pools";
 import { runsOnGroup } from "./runsOn";
@@ -210,7 +210,15 @@ export function workspaceGroups(
       ],
     },
     // Its chats' skills (#2767): a summary and the way into the Skill studio, behind its flag.
-    ...(skillStudio ? [workspaceSkillsGroup(read.plane, read.workspace)] : []),
+    ...(skillStudio
+      ? [
+          workspaceSkillsGroup(
+            read.plane,
+            read.workspace,
+            fromFile("workspace.skills", budgetControls()),
+          ),
+        ]
+      : []),
   ];
 }
 

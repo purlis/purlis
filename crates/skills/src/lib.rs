@@ -61,7 +61,7 @@ mod stamp;
 pub mod tree;
 pub mod uses;
 
-pub use budget::{Budget, Over, Spent};
+pub use budget::{Budget, Over, Set as BudgetSet, Spent};
 pub use compat::{
     Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, handed_text_as, widening_said,
 };

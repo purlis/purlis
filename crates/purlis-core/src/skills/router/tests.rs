@@ -15,7 +15,7 @@ use crate::hoststart::ChatSkills;
 use crate::skills::{PinnedBy, Running, for_use_skill};
 
 /// The most skills a chat lists on every harness (ADR 0102 as amended 2026-10-21).
-const MOST: usize = 30;
+const MOST: usize = 60;
 
 fn write(dir: &Path, text: &str) {
     std::fs::create_dir_all(dir).unwrap();
