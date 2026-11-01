@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793515344282,
+  "lastUpdate": 1793516645618,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34818,6 +34818,48 @@ window.BENCHMARK_DATA = {
             "value": 101.80201600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.593, 101.775, 101.802, 101.842, 102.858 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d4fa85f5d5dffb169e9e4a0132da118e5d3e5ec2",
+          "message": "Runners: a chat on an idle cluster runner waits; a pool's retention has a floor (#4411)\n\n* Runners: a chat started on an idle cluster runner waits for it (#4403)\n\nA start on a runner its Claim says is on its way back now waits for the link, for at most the pool's vouchWait. A runner merely down, a changed key and a runner gone are all refused at once, as before. The kind test goes from the window's start through the desktop's host to a suspended runner.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6T0BTVA1NJMGPDB0KFRH\nPurlis-Persona: steward\n\n* Runners: a cluster pool's retention, its rough edges (#4405)\n\nA Pool's retention holds at two hours at least, with an hour's notice at least, lowered only for the kind run. A stop spent while an upstream object is in the way no longer counts. The docs say how far a notice reaches, that a desktop makes only kept Claims today, and that a start waits.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6T0BTVA1NJMGPDB0KFRH\nPurlis-Persona: steward\n\n* Runners: a start waits for one wake, and a stopped desktop wakes nothing (#4403)\n\nA wake is now remembered per runner on the desktop's host, not read back from a word that stays on the Claim, so a runner restarted long after is refused at once as before. An Idle kept while Ready says something else is not waited for. A stopped host asks no runner to run again, and a start that waited looks again at whether its runner drains.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6T0BTVA1NJMGPDB0KFRH\nPurlis-Persona: steward\n\n* Runners: a window's link opens while its runner comes back (#4403)\n\nA window subscribes as its link opens, before it holds or starts, and that was refused while the runner came back, so the start never reached its wait. While a wake is under way the subscription is kept and carried over to the link that comes up. The routing and kind tests now open a link as a window does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6T0BTVA1NJMGPDB0KFRH\nPurlis-Persona: steward\n\n* Runners: a project on a link that is down is held again, and a wake keeps its own time (#4403)\n\nA window that slept past idleAfter keeps its link and sends no hold, and the hold is what wakes the runner. It now holds again while that link is down. An answer that a runner is suspended replaces an earlier wake's time, and a subscription kept during a wake is counted, so a carry-over waits for it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6T0BTVA1NJMGPDB0KFRH\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T06:15:44Z",
+          "tree_id": "68f827dfc2914e441e37f483e193b4cfcad0a17c",
+          "url": "https://github.com/purlis/purlis/commit/d4fa85f5d5dffb169e9e4a0132da118e5d3e5ec2"
+        },
+        "date": 1793516642453,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6649554999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.631, 0.647, 0.665, 0.668, 0.674 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.465797000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.237, 16.455, 16.466, 16.836, 16.952 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.379636,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.116, 101.944, 102.380, 102.571, 102.970 ms"
           }
         ]
       }
