@@ -849,8 +849,7 @@ pub fn set_project_chats_run_on_at(
 #[cfg(unix)]
 /// Sets where `workspace` of the plane at `plane` runs its chats on `config`: on `pool`, which
 /// this machine must keep with its runner, or on this machine for `None`, whatever its project
-/// says. A chat running now
-/// stays where it runs; the next starts where this says.
+/// says. A chat running now stays where it runs; the next starts where this says.
 pub fn set_chats_run_on_at(
     config: &std::path::Path,
     plane: &std::path::Path,
@@ -883,6 +882,32 @@ pub(crate) fn run_chats_on(
     place: &Option<String>,
 ) -> Result<(), String> {
     set_chats_run_on_at(config, plane, workspace, place.as_deref()).map(|_| ())
+}
+
+/// What `workspace` of the plane at `plane` itself says of where its chats run (#4536).
+pub(crate) fn workspace_place(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: &str,
+) -> purlis_core::machine::WorkspacePlace {
+    purlis_core::machine::read(config)
+        .store
+        .workspace_place(plane, workspace)
+}
+
+/// Puts `workspace` back to `place`, as a move that didn't happen leaves it (#4536).
+pub(crate) fn put_workspace_place_back(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: &str,
+    place: &purlis_core::machine::WorkspacePlace,
+) -> Result<(), String> {
+    let mut set = Ok(false);
+    purlis_core::machine::update(config, |store| {
+        set = store.set_workspace_place(plane, workspace, place);
+    })
+    .map_err(|why| format!("Where this workspace's chats run was not kept: {why}"))?;
+    set.map(|_| ())
 }
 
 /// No pool runs chats here.

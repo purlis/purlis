@@ -2725,11 +2725,46 @@ fn a_project_default_and_a_workspace_set_to_this_machine_are_kept_and_follow_a_r
 }
 
 #[test]
+fn a_refused_pool_leaves_a_workspace_on_this_machine() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    for number in 0..MOST_CHATS_RUN_ON {
+        store
+            .set_chats_run_on(plane, &format!("w{number}"), Some("team"))
+            .unwrap();
+    }
+    store.set_chats_run_here(plane, "ide").unwrap();
+    assert!(store.set_chats_run_on(plane, "ide", Some("team")).is_err());
+    assert_eq!(
+        store.workspace_place(plane, "ide"),
+        WorkspacePlace::ThisMachine
+    );
+}
+
+#[test]
+fn what_a_workspace_itself_says_is_put_back_whole() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    store.set_project_chats_run_on(plane, Some("team")).unwrap();
+    let before = store.workspace_place(plane, "ide");
+    assert_eq!(before, WorkspacePlace::Project);
+    store.set_chats_run_on(plane, "ide", Some("team")).unwrap();
+    store.set_workspace_place(plane, "ide", &before).unwrap();
+    assert_eq!(store.workspace_place(plane, "ide"), WorkspacePlace::Project);
+}
+
+#[test]
 fn a_project_default_purlis_would_not_write_is_dropped_with_a_reason() {
     let mut dropped = Vec::new();
     let bad = serde_json::json!("../team");
     assert_eq!(project_chats_run_on_of(Some(&bad), &mut dropped), None);
     assert_eq!(dropped.len(), 1);
+    assert!(dropped[0].is_a_place());
+    assert!(dropped[0].to_string().starts_with("where the project runs"));
+    let bad = serde_json::json!(["ok", "a/b", 3]);
+    let kept = chats_run_here_of(Some(&bad), &mut dropped);
+    assert_eq!(kept.len(), 1);
+    assert_eq!(dropped.len(), 3);
     assert!(
         Store::default()
             .set_project_chats_run_on(Path::new("/planes/none"), Some("../team"))
@@ -2746,7 +2781,15 @@ fn removing_a_pool_clears_it_from_the_project_and_every_workspace() {
     store.set_chats_run_on(plane, "web", Some("other")).unwrap();
     store.recents[0].forget_pool("team");
     assert_eq!(store.recents[0].project_chats_run_on, None);
+    // Set to this machine, so a pool the project names later doesn't take it.
+    store
+        .set_project_chats_run_on(plane, Some("other"))
+        .unwrap();
     assert_eq!(store.chat_place(plane, "ide", None).pool, None);
+    assert_eq!(
+        store.workspace_place(plane, "ide"),
+        WorkspacePlace::ThisMachine
+    );
     assert_eq!(
         store.chat_place(plane, "web", None).pool.as_deref(),
         Some("other")

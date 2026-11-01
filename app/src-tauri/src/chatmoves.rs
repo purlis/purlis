@@ -1028,6 +1028,18 @@ impl crate::planes::Held {
         let runs_on = |place: &Place| {
             crate::dockerpools::run_chats_on(&config, self.root(), movers.workspace(), place)
         };
+        // What the workspace itself says, so a move that doesn't happen leaves it following its
+        // project if it did (#4536).
+        let said_before =
+            crate::dockerpools::workspace_place(&config, self.root(), movers.workspace());
+        let put_back = || {
+            crate::dockerpools::put_workspace_place_back(
+                &config,
+                self.root(),
+                movers.workspace(),
+                &said_before,
+            )
+        };
         runs_on(&one.to)?;
         // Every chat starts where it moved before any run where it was ends, so one that does
         // not start leaves them all where they were (#3453).
@@ -1046,7 +1058,7 @@ impl crate::planes::Held {
                     };
                     return Err(did_not_start_said(
                         &why,
-                        runs_on(&one.from),
+                        put_back(),
                         &one.from,
                         &one.to,
                         movers.workspace(),
@@ -1063,7 +1075,7 @@ impl crate::planes::Held {
             }
             return Err(did_not_start_said(
                 &why,
-                runs_on(&one.from),
+                put_back(),
                 &one.from,
                 &one.to,
                 movers.workspace(),

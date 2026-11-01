@@ -94,8 +94,8 @@ function runsOnSetting(plane: PlaneId, workspace: string): LiveSetting {
           label: "Same as the project",
           says:
             now?.project == null
-              ? "Now this machine, the project's setting."
-              : `Now pool ${now.project}, the project's setting.`,
+              ? "The project runs on this machine now."
+              : `The project runs on pool ${now.project} now.`,
         },
         THIS_MACHINE,
         ...(now?.pools ?? []).map(poolOption),
@@ -138,7 +138,7 @@ function projectRunsOnSetting(plane: PlaneId): LiveSetting {
   return {
     id,
     label: "Chats run on",
-    help: "A chat running now stays where it runs. The next chat starts here.",
+    help: "A chat running now stays where it runs. The next chat follows this.",
     writes: "this machine",
     useControl: function useProjectRunsOn() {
       const [now, setNow] = useState<ProjectChatsRunOn>();

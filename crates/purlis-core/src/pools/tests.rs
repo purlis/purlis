@@ -3059,7 +3059,6 @@ fn a_project_pool_this_machine_does_not_keep_starts_nothing_and_never_runs_here(
     for workspace in ["ide", "web", "here"] {
         let folder = plane.join("workspaces").join(workspace);
         std::fs::create_dir_all(&folder).unwrap();
-        std::fs::write(folder.join("workspace.json"), "{}").unwrap();
     }
     crate::machine::update(config.path(), |store| {
         store.remember(plane, 1);
@@ -3094,4 +3093,30 @@ fn a_project_pool_this_machine_does_not_keep_starts_nothing_and_never_runs_here(
         refused.starts_with("This chat was to start on pool gone"),
         "{refused}"
     );
+}
+
+#[test]
+fn a_start_on_a_pool_at_the_projects_root_is_refused_and_never_runs_here() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    let chosen = crate::machine::StartChoice::Pool("team".to_owned());
+    let refused = chat_place(config.path(), plane, None, Some(&chosen)).unwrap_err();
+    assert!(refused.contains("Start it in a workspace"), "{refused}");
+}
+
+#[test]
+fn a_level_purlis_cannot_read_stops_a_start_that_would_fall_past_it() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    crate::machine::update(config.path(), |store| store.remember(plane, 1)).unwrap();
+    let file = crate::machine::dir(config.path()).join(crate::machine::FILE);
+    let mut held: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    held["recents"][0]["chatsRunHere"] = serde_json::json!(["a/b"]);
+    std::fs::write(&file, held.to_string()).unwrap();
+    let refused = runs_on(config.path(), plane, Some("ide")).unwrap_err();
+    assert!(refused.starts_with("purlis could not read"), "{refused}");
+    // A start that chose says where it runs for itself.
+    let here = crate::machine::StartChoice::ThisMachine;
+    assert!(chat_place(config.path(), plane, Some("ide"), Some(&here)).is_ok());
 }

@@ -82,7 +82,7 @@ describe("Runs on at a workspace (#4536)", () => {
     render(<Control setting={setting()} />);
     const same = await screen.findByRole("radio", { name: /Same as the project/ });
     await waitFor(() => expect(same).toBeChecked());
-    expect(same.closest("label") ?? document.body).toHaveTextContent(/Now pool builds/);
+    expect(same.closest("label") ?? document.body).toHaveTextContent(/The project runs on pool builds now/);
   });
 
   it("keeps This machine apart from following the project", async () => {

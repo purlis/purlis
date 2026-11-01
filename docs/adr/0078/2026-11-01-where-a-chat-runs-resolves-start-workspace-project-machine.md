@@ -19,5 +19,8 @@ workspace still names its pool per machine, and now a project and a start can to
    machine. *(D-4536-1)*
 5. **A chat at the project's root stays on this machine.** Code moves to a runner by a workspace's
    clones, so a project-root chat has nothing to carry. *(D-4536-2)*
-6. **Removing a pool clears it at every level.** A workspace that named it follows its project again.
-   *(D-4536-3)*
+6. **Removing a pool sends what named it to this machine.** A workspace that named it is set to This
+   machine and never moves on to a pool its project names, since nobody chose that pool for it. The
+   removal says so. *(D-4536-3)*
+7. **A level purlis can't read stops the start** where the order would fall past it, until the
+   setting is chosen again. *(D-4536-6)*

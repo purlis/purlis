@@ -1052,13 +1052,33 @@ pub struct Recent {
 }
 
 impl Recent {
-    /// Takes the removed pool `name` out of every level that names it.
+    /// Takes the removed pool `name` out of every level that names it. A workspace that named it
+    /// goes back to this machine, and never on to a pool the project names: nobody chose that
+    /// pool for it (#4536).
     pub fn forget_pool(&mut self, name: &str) {
-        self.chats_run_on.retain(|_, pool| pool != name);
+        let named: Vec<String> = self
+            .chats_run_on
+            .iter()
+            .filter(|(_, pool)| pool.as_str() == name)
+            .map(|(workspace, _)| workspace.clone())
+            .collect();
+        for workspace in named {
+            self.chats_run_on.remove(&workspace);
+            self.chats_run_here.insert(workspace);
+        }
         if self.project_chats_run_on.as_deref() == Some(name) {
             self.project_chats_run_on = None;
         }
     }
+}
+
+/// **What a workspace itself says of where its chats run** (#4536), so a move that doesn't happen
+/// puts back the setting and not only the place it resolved to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspacePlace {
+    Project,
+    ThisMachine,
+    Pool(String),
 }
 
 /// **What a start itself chose** (#4536): the first level of the order in [`Store::chat_place`].
@@ -1485,8 +1505,8 @@ impl Store {
     }
 
     /// **Sets where `workspace` of `plane` runs its chats on this machine** (#2679): on `pool`, or
-    /// where it is `None`, wherever the project says (#4536). Answers whether anything changed. A pool's name is
-    /// checked as a name only: whether this machine keeps it is asked as each chat starts, so a
+    /// where it is `None`, wherever the project says (#4536). Answers whether anything changed. A
+    /// pool's name is checked as a name only: whether this machine keeps it is asked as each chat starts, so a
     /// pool removed later starts no chat and says so ([`crate::runners::runner_for`]).
     pub fn set_chats_run_on(
         &mut self,
@@ -1506,19 +1526,20 @@ impl Store {
             let here = entry.chats_run_here.remove(workspace);
             return Ok(named || here);
         };
-        entry.chats_run_here.remove(workspace);
         if !entry.chats_run_on.contains_key(workspace)
             && entry.chats_run_on.len() >= MOST_CHATS_RUN_ON
         {
             return Err(format!(
-                "purlis runs at most {MOST_CHATS_RUN_ON} workspaces of one project on a pool."
+                "purlis names a pool for at most {MOST_CHATS_RUN_ON} workspaces of one project."
             ));
         }
-        Ok(entry
+        let here = entry.chats_run_here.remove(workspace);
+        let named = entry
             .chats_run_on
             .insert(workspace.to_owned(), pool.to_owned())
             .as_deref()
-            != Some(pool))
+            != Some(pool);
+        Ok(here || named)
     }
 
     /// **Sets `workspace` of `plane` to this machine, whatever the project says** (#4536).
@@ -1528,16 +1549,37 @@ impl Store {
         let Some(entry) = self.recents.iter_mut().find(|one| one.plane == plane) else {
             return Err("purlis does not remember that project, so nothing was set.".to_owned());
         };
-        if !entry.chats_run_here.contains(workspace)
-            && entry.chats_run_here.len() >= MOST_CHATS_RUN_ON
-        {
-            return Err(format!(
-                "purlis sets at most {MOST_CHATS_RUN_ON} workspaces of one project to this machine."
-            ));
-        }
         let named = entry.chats_run_on.remove(workspace).is_some();
         let here = entry.chats_run_here.insert(workspace.to_owned());
         Ok(named || here)
+    }
+
+    /// What `workspace` of `plane` itself says of where its chats run (#4536).
+    pub fn workspace_place(&self, plane: &Path, workspace: &str) -> WorkspacePlace {
+        let Some(entry) = self.recent(plane) else {
+            return WorkspacePlace::Project;
+        };
+        if let Some(pool) = entry.chats_run_on.get(workspace) {
+            return WorkspacePlace::Pool(pool.clone());
+        }
+        if entry.chats_run_here.contains(workspace) {
+            return WorkspacePlace::ThisMachine;
+        }
+        WorkspacePlace::Project
+    }
+
+    /// Puts `workspace` of `plane` back to what [`Self::workspace_place`] read (#4536).
+    pub fn set_workspace_place(
+        &mut self,
+        plane: &Path,
+        workspace: &str,
+        place: &WorkspacePlace,
+    ) -> Result<bool, String> {
+        match place {
+            WorkspacePlace::Project => self.set_chats_run_on(plane, workspace, None),
+            WorkspacePlace::ThisMachine => self.set_chats_run_here(plane, workspace),
+            WorkspacePlace::Pool(pool) => self.set_chats_run_on(plane, workspace, Some(pool)),
+        }
     }
 
     /// **Sets the pool `plane`'s workspaces run their chats on by default, on this machine**
@@ -1999,9 +2041,24 @@ pub enum Dropped {
     /// Where one workspace's chats run, inside a plane that was itself taken (#2679): the
     /// workspace runs its chats on this machine.
     RunsOn { workspace: String, why: String },
+    /// One entry of the workspaces set to this machine (#4536).
+    RunsHere { workspace: String, why: String },
+    /// The project's pool (#4536).
+    ProjectRunsOn { why: String },
     /// The update channel, because the word is not one charter writes. The machine stays on
     /// the default, which is stable.
     Channel { named: String },
+}
+
+impl Dropped {
+    /// Whether this was a say in where chats run, so that what's left can't be trusted to say it
+    /// (#4536): [`crate::pools::chat_place`] refuses to fall through it.
+    pub fn is_a_place(&self) -> bool {
+        matches!(
+            self,
+            Self::RunsOn { .. } | Self::RunsHere { .. } | Self::ProjectRunsOn { .. }
+        )
+    }
 }
 
 impl std::fmt::Display for Dropped {
@@ -2013,9 +2070,15 @@ impl std::fmt::Display for Dropped {
             Self::Pin { workspace, why } => write!(f, "the pinned workspace '{workspace}' {why}"),
             Self::RunsOn { workspace, why } => write!(
                 f,
-                "where the workspace '{workspace}' runs its chats {why}, so it runs them on this \
-                 machine"
+                "where the workspace '{workspace}' runs its chats {why}, so it was not kept"
             ),
+            Self::RunsHere { workspace, why } => write!(
+                f,
+                "the workspace '{workspace}' set to this machine {why}, so it was not kept"
+            ),
+            Self::ProjectRunsOn { why } => {
+                write!(f, "where the project runs its chats {why}, so it was not kept")
+            }
             Self::Channel { named } => write!(
                 f,
                 "'{named}' is not an update channel purlis knows, so this machine stays on \
@@ -2511,7 +2574,7 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false),
             chats_run_on: chats_run_on_of(raw.get("chatsRunOn"), dropped),
-            chats_run_here: chats_run_here_of(raw.get("chatsRunHere")),
+            chats_run_here: chats_run_here_of(raw.get("chatsRunHere"), dropped),
             project_chats_run_on: project_chats_run_on_of(raw.get("projectChatsRunOn"), dropped),
         });
     }
@@ -2601,20 +2664,36 @@ fn pinned_workspaces_of(
     kept
 }
 
-/// Where each workspace runs its chats, off one entry (#2679), with every refusal recorded. A
-/// workspace or pool name purlis would not write is dropped, and that workspace runs its chats
-/// on this machine.
-/// The workspaces set to this machine. A name purlis wouldn't write is left out: it would only
-/// have said this machine, and a workspace named by nothing else follows its project.
-fn chats_run_here_of(raw: Option<&serde_json::Value>) -> BTreeSet<String> {
-    raw.and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(serde_json::Value::as_str)
-        .filter(|workspace| usable_workspace(workspace).is_ok())
-        .take(MOST_CHATS_RUN_ON)
-        .map(str::to_owned)
-        .collect()
+/// The workspaces set to this machine, each one purlis can't read dropped with a reason: without
+/// it the workspace would follow its project, perhaps to a pool.
+fn chats_run_here_of(
+    raw: Option<&serde_json::Value>,
+    dropped: &mut Vec<Dropped>,
+) -> BTreeSet<String> {
+    let mut kept = BTreeSet::new();
+    let Some(raw) = raw else {
+        return kept;
+    };
+    let Some(list) = raw.as_array() else {
+        dropped.push(Dropped::RunsHere {
+            workspace: String::new(),
+            why: "is not a list purlis wrote".to_owned(),
+        });
+        return kept;
+    };
+    for workspace in list {
+        let name = workspace.as_str().unwrap_or_default();
+        match usable_workspace(name) {
+            Ok(()) => {
+                kept.insert(name.to_owned());
+            }
+            Err(why) => dropped.push(Dropped::RunsHere {
+                workspace: name.to_owned(),
+                why,
+            }),
+        }
+    }
+    kept
 }
 
 /// The project's pool, dropped with a reason where it's not a name purlis would write, as a
@@ -2631,15 +2710,15 @@ fn project_chats_run_on_of(
     match named {
         Ok(pool) => Some(pool),
         Err(why) => {
-            dropped.push(Dropped::RunsOn {
-                workspace: String::new(),
-                why: format!("as the project's default {why}"),
-            });
+            dropped.push(Dropped::ProjectRunsOn { why });
             None
         }
     }
 }
 
+/// Where each workspace runs its chats, off one entry (#2679), with every refusal recorded. A
+/// workspace or pool name purlis would not write is dropped, and a chat that would fall past it
+/// is refused ([`crate::pools::chat_place`]).
 fn chats_run_on_of(
     raw: Option<&serde_json::Value>,
     dropped: &mut Vec<Dropped>,
@@ -2947,12 +3026,7 @@ impl From<&Store> for OnDisk {
                             .take(MOST_CHATS_RUN_ON)
                             .map(|(workspace, pool)| (workspace.clone(), pool.clone()))
                             .collect(),
-                        chats_run_here: entry
-                            .chats_run_here
-                            .iter()
-                            .take(MOST_CHATS_RUN_ON)
-                            .cloned()
-                            .collect(),
+                        chats_run_here: entry.chats_run_here.iter().cloned().collect(),
                         project_chats_run_on: entry.project_chats_run_on.clone(),
                         trust: entry.trust.as_ref().map(|trust| TrustOnDisk {
                             approved: trust.approved,

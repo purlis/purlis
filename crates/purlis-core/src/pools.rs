@@ -204,23 +204,45 @@ pub fn runs_on(
 
 /// **Where a chat runs and why, with the pool it names checked** (#4536, ruled 2026-11-01): the
 /// order is [`crate::machine::Store::chat_place`]'s. A chat at the project's root runs on this
-/// machine, since code moves to a runner by a workspace's clones.
+/// machine, since code moves to a runner by a workspace's clones, and a start that chose a pool
+/// for one is refused and never run here in its place.
+///
+/// **A level the file held and purlis couldn't read stops the start** where the order would
+/// otherwise fall past it: it may have said this machine, or a pool. The next write of the store
+/// drops it for good, so choosing in settings clears this.
 pub fn chat_place(
     config_root: &Path,
     plane: &Path,
     workspace: Option<&str>,
     start: Option<&crate::machine::StartChoice>,
 ) -> Result<crate::machine::ChatPlace, String> {
-    use crate::machine::{ChatPlace, PlaceLevel};
+    use crate::machine::{ChatPlace, PlaceLevel, StartChoice};
     let Some(workspace) = workspace else {
-        return Ok(ChatPlace {
-            pool: None,
-            level: PlaceLevel::Default,
-        });
+        return match start {
+            Some(StartChoice::Pool(pool)) => Err(format!(
+                "A chat at the project's root runs on this machine, so it can't start on pool \
+                 {pool}. Start it in a workspace."
+            )),
+            Some(StartChoice::ThisMachine) => Ok(ChatPlace {
+                pool: None,
+                level: PlaceLevel::Start,
+            }),
+            None => Ok(ChatPlace {
+                pool: None,
+                level: PlaceLevel::Default,
+            }),
+        };
     };
-    let place = crate::machine::read(config_root)
-        .store
-        .chat_place(plane, workspace, start);
+    let loaded = crate::machine::read(config_root);
+    let place = loaded.store.chat_place(plane, workspace, start);
+    if matches!(place.level, PlaceLevel::Project | PlaceLevel::Default)
+        && let Some(unread) = loaded.dropped.iter().find(|one| one.is_a_place())
+    {
+        return Err(format!(
+            "purlis could not read where this chat runs: {unread}. Choose where its chats run in \
+             its settings."
+        ));
+    }
     let Some(pool) = &place.pool else {
         return Ok(place);
     };
@@ -263,7 +285,10 @@ pub fn workspaces_on_pools(
         .recent(plane)
         .is_some_and(|recent| recent.project_chats_run_on.is_some())
     {
-        for workspace in workspaces_in(plane) {
+        for workspace in crate::workspaces::Plane::open(plane)
+            .workspaces()
+            .unwrap_or_default()
+        {
             let place = loaded.store.chat_place(plane, &workspace, None);
             if place.level == crate::machine::PlaceLevel::Project
                 && let Some(pool) = place.pool
@@ -273,19 +298,6 @@ pub fn workspaces_on_pools(
         }
     }
     on
-}
-
-/// The names of the workspaces the plane at `plane` holds, in order.
-fn workspaces_in(plane: &Path) -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(plane.join("workspaces"))
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|entry| entry.path().join("workspace.json").is_file())
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect();
-    names.sort();
-    names
 }
 
 /// **Moves the pool `name` to `image`, the runner image of the desktop's version** (#2749): a
