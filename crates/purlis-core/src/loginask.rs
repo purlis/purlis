@@ -129,6 +129,9 @@ pub struct Proposal {
 /// wrote themselves: `https` alone, and never a bare name.
 pub fn site_of(site: &str) -> Result<(String, String), String> {
     let site = site.trim();
+    if site.is_empty() || site.len() > MOST_SITE {
+        return Err("give `site` the login page's https address".to_owned());
+    }
     // A `%` too: nothing is shown decoded, and nothing a browser reads as a separator is left to
     // its reading.
     if site
