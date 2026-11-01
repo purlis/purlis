@@ -120,7 +120,7 @@ pub(super) const TABS: Family = Family {
     around: &["strip", "layout"],
     corner_most: None,
     fills: &[],
-    under: &[("count", "surface.sunken")],
+    under: &[("count", &["surface.sunken"])],
 };
 
 pub(super) const EDITOR: Family = Family {

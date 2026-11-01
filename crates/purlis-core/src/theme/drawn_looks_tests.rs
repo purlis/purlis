@@ -9,7 +9,7 @@
 use serde_json::{Value, json};
 
 use super::super::{ResolvedTheme, load};
-use super::{State, alike_as, broken_on, fallen, family, rules};
+use super::{STANDS_ON, State, alike_as, broken_on, fallen, family, rules};
 
 /// A dark theme over Purlis Classic that sets `tokens` and `parts`, untinted, as read.
 fn shaped(tokens: Value, parts: Value) -> ResolvedTheme {
@@ -97,24 +97,24 @@ fn a_surface_keeps_a_fill_only_an_undrawn_look_breaks_on() {
 
 #[test]
 fn a_field_s_error_is_read_only_where_a_field_that_can_refuse_stands() {
-    let on_a_tab = json!({ "tab.active": "#a3a29a" });
-    let field_fell = |theme: &ResolvedTheme| -> Vec<String> {
-        fallen(theme)
+    let field_fell = |parts: Value| -> Vec<String> {
+        fallen(&shaped(json!({}), parts))
             .into_iter()
             .filter(|one| one.part.starts_with("field."))
             .map(|one| one.floor)
             .collect()
     };
-    // A chosen tab's ground is one a field stands on, but none that can refuse its value does.
-    let error = shaped(on_a_tab.clone(), json!({ "field.error.text": "text.primary" }));
-    assert_eq!(field_fell(&error), Vec::<String>::new());
+    // Danger's colour clears 4.5:1 on all three grounds a field that can refuse stands on, and
+    // misses it on a hairline's ground, which a field stands on but none that can refuse does.
+    assert_eq!(
+        field_fell(json!({ "field.error.text": "danger.base" })),
+        Vec::<String>::new()
+    );
     // Its label stands on all of them, and is read on all of them.
-    let label = shaped(on_a_tab, json!({ "field.label.text": "text.secondary" }));
-    let said = field_fell(&label);
+    let said = field_fell(json!({ "field.label.text": "danger.base" }));
     assert!(said.iter().any(|one| one.contains("label")), "{said:?}");
     // On a ground a refusing field stands on, its error is held.
-    let lost = shaped(json!({}), json!({ "field.error.text": "surface.raised" }));
-    let said = field_fell(&lost);
+    let said = field_fell(json!({ "field.error.text": "surface.raised" }));
     assert!(said.iter().any(|one| one.contains("error")), "{said:?}");
 }
 
@@ -127,4 +127,16 @@ fn two_sets_of_states_are_alike_only_if_the_same_looks_are_drawn_in_them() {
         alike_as(&[], menu, &[State::Hover, State::Open]),
         alike_as(&[], menu, &[State::Hover, State::Selected]),
     );
+}
+
+#[test]
+fn a_part_on_fewer_grounds_than_its_family_stands_on_no_surface_a_theme_fills() {
+    // Such a part is read on its own list, which takes the place of a surface's fill: a family on
+    // a filled surface would not be read on that fill.
+    for (surface, families) in STANDS_ON {
+        for one in families.iter().map(|name| family(name).expect("a family")) {
+            let many: Vec<_> = one.under.iter().filter(|(_, on)| on.len() > 1).collect();
+            assert!(many.is_empty(), "{} on a {surface}: {many:?}", one.name);
+        }
+    }
 }
