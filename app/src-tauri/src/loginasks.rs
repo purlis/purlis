@@ -403,10 +403,7 @@ fn finish(root: &Path, locks: &Locks, proposal: Proposal) -> Result<Judged, Stri
         .or_else(|| {
             let file =
                 std::fs::read_to_string(purlis_core::names::manifest(root)).unwrap_or_default();
-            if !file
-                .parse::<toml::Table>()
-                .is_ok_and(|top| top.contains_key("sandbox"))
-            {
+            if !loginask::has_a_sandbox(&file) {
                 return Some(
                     "Always allow isn't offered in a project whose settings have no [sandbox]"
                         .to_owned(),
