@@ -349,8 +349,7 @@ fn skills_used(root: &Path, name: &str) -> BTreeSet<String> {
                 continue;
             }
             let skill = crate::pyrepr::str_json(&row["skill"]);
-            let leaf = skill.split_once(':').map_or(skill.as_str(), |(_, l)| l);
-            out.insert(leaf.to_string());
+            out.insert(purlis_skills::run_name(&skill).into_owned());
         }
     }
     out
@@ -362,7 +361,7 @@ fn skills_used(root: &Path, name: &str) -> BTreeSet<String> {
 fn drift(root: &Path, name: &str) -> (Vec<String>, Vec<String>) {
     let declared: BTreeSet<String> = super::declared_skills(root, name)
         .iter()
-        .map(|s| s.split_once(':').map_or(s.as_str(), |(_, l)| l).to_string())
+        .map(|s| purlis_skills::run_name(s).into_owned())
         .chain(crate::skills::persona::own(root, name))
         .collect();
     let used = skills_used(root, name);

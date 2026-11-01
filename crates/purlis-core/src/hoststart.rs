@@ -192,19 +192,8 @@ fn laid_out_on(
     kit: &Kit,
     harness: Harness,
 ) -> Option<PathBuf> {
-    let own_names = harness.skills().names_built_ins_its_own();
-    if at.is_none() && !own_names {
-        return None;
-    }
-    let Some(sets) = kit.skill_sets.as_deref() else {
-        if own_names {
-            tracing::warn!(
-                "purlis: this chat's skills have no folder to be laid out in; {}",
-                crate::skills::without_the_folder(harness)
-            );
-        }
-        return None;
-    };
+    let at = at?;
+    let sets = kit.skill_sets.as_deref()?;
     let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
     crate::skills::lay_out_for_chat(at, persona, built_in.as_deref(), sets, harness)
 }

@@ -22,19 +22,18 @@ pub struct Opencode;
 /// The one opencode adapter.
 pub static ADAPTER: Opencode = Opencode;
 
-/// The directory an opencode chat's skills sit in: what the shim appends to `skills.paths`. It
-/// is the `skills/` of the set's folder the host laid out ([`crate::skills::linked`]), which
-/// holds the built-in skills as `purlis-<name>` beside the plane's
-/// ([`crate::skills::Route::names_built_ins_its_own`]): opencode reads every skill by its bare
-/// `name`, in this folder and the clone's and the person's own alike, and a skill of the clone's
-/// named as a built-in one would otherwise be a second skill of that name, of which opencode
-/// keeps whichever it read last (measured on 1.18.33). The bundle's own `skills/` is never
-/// handed. No folder, none of them.
+/// The directories an opencode chat's skills sit in: what the shim appends to `skills.paths`. The
+/// bundle's `skills/`, for the built-in skills, and the `skills/` of the set's folder the host
+/// laid out ([`crate::skills::linked`]), for the plane's.
 fn skill_dirs(kit: Kit<'_>) -> Vec<std::path::PathBuf> {
     let set = crate::skills::for_chat(kit, Harness::Opencode);
-    crate::skills::linked(&set, kit)
-        .map(|folder| folder.join(crate::skills::DIR_IN_BUNDLE))
+    kit.plugin
+        .and_then(crate::skills::in_bundle)
         .into_iter()
+        .chain(
+            crate::skills::linked(&set, kit)
+                .map(|folder| folder.join(crate::skills::DIR_IN_BUNDLE)),
+        )
         .collect()
 }
 
@@ -60,10 +59,10 @@ impl HarnessAdapter for Opencode {
     /// `OPENCODE_PERMISSION`, the same merge), and a call to it is refused. opencode merges
     /// objects key by key, so the operator's own rules stand beside it.
     ///
-    /// Its skills are its set's ([`crate::skills::for_chat`]): the `skills/` of the set's folder
-    /// the host laid out ([`crate::skills::linked`]), the built-in skills as `purlis-<name>`
-    /// beside the plane's, is handed to the shim as its option, which adds it to the skills
-    /// opencode discovers for this process ([`Harness::skills`], [`skill_dirs`]).
+    /// Its skills are its set's ([`crate::skills::for_chat`]): the bundle's `skills/` and the
+    /// `skills/` of the set's folder the host laid out ([`crate::skills::linked`]) are handed to
+    /// the shim as its option, which adds them to the skills opencode discovers for this process
+    /// ([`Harness::skills`], [`skill_dirs`]).
     ///
     /// **Each dispatch tool runs on purlis's own dispatch grant** (#3794), allowed by name in
     /// the same config, except where a rule of the operator's own opencode config, read from

@@ -682,9 +682,9 @@ fn each_skills_entry_its_chats_start_without_is_a_warning_with_its_fix() {
     let home = tempfile::tempdir().unwrap();
     skill_folder(&home.path().join(".claude/skills"), "own-thing");
     let bundle = tempfile::tempdir().unwrap();
-    skill_folder(&bundle.path().join("skills"), "handoff");
+    skill_folder(&bundle.path().join("skills"), "purlis-handoff");
     let p = naming(
-        "deploy, triage, mine, own-thing, purlis:handoff, charter:handoff, purlis:nope, ghost, \
+        "deploy, triage, mine, own-thing, purlis:purlis-handoff, charter:handoff, purlis:nope, ghost, \
          sp:gone, :x, ghost, plugin:",
     );
     let l = Linter::new(p.root(), p.root())
@@ -697,7 +697,7 @@ fn each_skills_entry_its_chats_start_without_is_a_warning_with_its_fix() {
             (
                 Level::Warn,
                 "`skills:` entry 'charter:handoff' has the old prefix: it names \
-                 `purlis:handoff`, and `purlis doctor --fix project-skills` rewrites it to that"
+                 `purlis:purlis-handoff`, and `purlis doctor --fix project-skills` rewrites it to that"
             ),
             (
                 Level::Warn,
@@ -713,7 +713,7 @@ fn each_skills_entry_its_chats_start_without_is_a_warning_with_its_fix() {
             ),
             (
                 Level::Warn,
-                "`skills:` names purlis:nope: purlis has no built-in skill of this name, so its \
+                "`skills:` names purlis:purlis-nope: purlis has no built-in skill of this name, so its \
                  chats start without it. Fix the name: `purlis skill list` lists the built-in \
                  skills"
             ),
@@ -738,7 +738,7 @@ fn with_nowhere_to_look_no_skills_entry_is_said_to_be_missing_from_the_machine()
     // No home: purlis cannot see a harness's skills, and calling each one missing would be
     // confidently wrong. A built-in skill is still checked against the bundle.
     let bundle = tempfile::tempdir().unwrap();
-    skill_folder(&bundle.path().join("skills"), "handoff");
+    skill_folder(&bundle.path().join("skills"), "purlis-handoff");
     let p = naming("ghost, sp:gone, purlis:nope");
     let l = linter(&p)
         .with_built_in(Some(bundle.path().join("skills")))
@@ -747,7 +747,7 @@ fn with_nowhere_to_look_no_skills_entry_is_said_to_be_missing_from_the_machine()
         messages(&l.definition("s")),
         vec![(
             Level::Warn,
-            "`skills:` names purlis:nope: purlis has no built-in skill of this name, so its \
+            "`skills:` names purlis:purlis-nope: purlis has no built-in skill of this name, so its \
              chats start without it. Fix the name: `purlis skill list` lists the built-in skills"
         )]
     );

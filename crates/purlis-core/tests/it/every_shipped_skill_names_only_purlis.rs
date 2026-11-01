@@ -33,7 +33,7 @@ const STILL_SPELLED: &[(&str, usize, &str)] = &[
     // purlis's own curation actions are still `charter/<id>` in code (`curation.rs`), so the
     // skill names the ids a person's action must not take as they are. #1284 decides that
     // namespace, and this entry goes with it.
-    ("add-curation-action/SKILL.md", 2, "the built-in curation actions' ids (#1284)"),
+    ("purlis-add-curation-action/SKILL.md", 2, "the built-in curation actions' ids (#1284)"),
 ];
 
 /// One line that spells an old name: its number, what it spells, and the line.

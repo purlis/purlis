@@ -144,18 +144,20 @@ fn skill_name(skill: &str) -> &str {
 }
 
 /// **The skill a run started as `skill` is of, by its own name**, where its start found it the
-/// copy at `level` ([`crate::skills::whose`], on the chat's route): without the namespace a
-/// harness started it by (`purlis:secrets`), and, for a built-in copy, without the prefix of the
-/// name opencode is handed it by (`purlis-secrets`, [`crate::skills::Route::built_in_name`]). A
-/// plane skill whose own name starts so keeps it. The one reading of a run's name, for the event
-/// log's runs and for the chip of the run open in a chat.
-pub fn own_name(skill: &str, level: Option<Level>) -> &str {
+/// copy at `level` ([`crate::skills::whose`]): without the namespace a harness started it by
+/// (`purlis:purlis-secrets`). A run of a built-in copy recorded before each took the prefix
+/// (`purlis:secrets`) reads as it now, so a skill's history is one history. The one reading of a
+/// run's name, for the event log's runs and for the chip of the run open in a chat.
+pub fn own_name(skill: &str, level: Option<Level>) -> std::borrow::Cow<'_, str> {
     let name = skill_name(skill);
     match level {
-        Some(level) if level.origin == crate::skills::Origin::BuiltIn => name
-            .strip_prefix(crate::skills::BUILT_IN_OWN_PREFIX)
-            .unwrap_or(name),
-        _ => name,
+        Some(level)
+            if level.origin == crate::skills::Origin::BuiltIn
+                && !name.starts_with(purlis_skills::RESERVED_PREFIX) =>
+        {
+            format!("{}{name}", purlis_skills::RESERVED_PREFIX).into()
+        }
+        _ => name.into(),
     }
 }
 
@@ -383,16 +385,14 @@ impl Run {
     }
 
     /// Whether this is a run of skill `name`: by its whole name, or by its name without the
-    /// plugin's namespace a harness started it by (`purlis:secrets` is a run of `secrets`), or,
-    /// for a run of a built-in skill, without the prefix opencode knows it by
-    /// (`purlis-secrets`).
+    /// plugin's namespace a harness started it by (`purlis:purlis-secrets` is a run of
+    /// `purlis-secrets`), as [`own_name`] reads it.
     pub fn is_of(&self, name: &str) -> bool {
         self.skill == name || self.skill_name() == name
     }
 
-    /// Its skill by name, without the namespace a harness started it by, nor the prefix of a
-    /// built-in skill's own name on opencode ([`crate::skills::Route::built_in_name`]).
-    pub fn skill_name(&self) -> &str {
+    /// Its skill by name, as [`own_name`] reads it.
+    pub fn skill_name(&self) -> std::borrow::Cow<'_, str> {
         own_name(&self.skill, self.copy.as_ref().map(|copy| copy.level))
     }
 

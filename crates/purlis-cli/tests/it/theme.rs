@@ -2248,15 +2248,15 @@ fn a_theme_that_rounds_the_button_is_drawn_and_a_size_inside_a_state_is_refused(
     );
 }
 
-// ---- the theme skill (#2333) ------------------------------------------------------------- //
+// ---- the purlis-theme skill (#2333) ------------------------------------------------------------- //
 
 /// The theme skill purlis's plugin ships: a chat runs what it says.
 fn theme_skill() -> String {
     std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../app/src-tauri/plugin/skills/theme/SKILL.md"),
+            .join("../../app/src-tauri/plugin/skills/purlis-theme/SKILL.md"),
     )
-    .expect("the theme skill")
+    .expect("the purlis-theme skill")
 }
 
 /// Each `purlis theme <command> …` the skill names, as `(command, its flags)`: in a code span,
@@ -2307,7 +2307,7 @@ fn every_theme_command_the_theme_skill_names_is_one_purlis_has_with_its_flags_an
     // The tests above this section: its own literals prove nothing.
     let whole = include_str!("theme.rs");
     let this = &whole[..whole
-        .find("// ---- the theme skill")
+        .find("// ---- the purlis-theme skill")
         .expect("the section's marker")];
     for (command, flags) in &named {
         let help = rig.run(&[command, "--help"]);

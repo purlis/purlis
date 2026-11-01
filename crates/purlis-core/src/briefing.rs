@@ -271,9 +271,9 @@ pub const BRANCH_FOLDER_COMMIT_NOTE: &str = "⬢ **Committing here.** This folde
      or push, and the repository's own hooks are not run.";
 
 /// **What a chat the app started is told about giving work to another chat** (#1515):
-/// [`crate::handoff::ONE_ROUTE`], the sentence the handoff skill, the persona skill, the
+/// [`crate::handoff::ONE_ROUTE`], the sentence the purlis-handoff skill, the purlis-persona skill, the
 /// handoff page and the command's help say. A skill is read only once a chat reaches for it,
-/// and a chat told "dispatch to devops" reached for the handoff skill; this line is there from
+/// and a chat told "dispatch to devops" reached for the purlis-handoff skill; this line is there from
 /// the first turn.
 ///
 /// **It is a route, not a reason to give work away.** The sentence is said under a condition

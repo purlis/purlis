@@ -25,9 +25,9 @@
 
 use crate::{Budget, Effective, Route, SkillSet};
 
-/// **The index skill's name** (ADR 0102 §2): a plane skill of this name never loads
-/// ([`crate::Reason::IndexName`]).
-pub const INDEX: &str = "skill-index";
+/// **The index skill's name** (ADR 0102 §2), which the prefix keeps it
+/// ([`crate::Reason::ReservedName`]).
+pub const INDEX: &str = "purlis-skill-index";
 
 /// The index skill's `description`: what its harness lists it by, and what it costs.
 pub const INDEX_DESCRIPTION: &str = "Lists this chat's other skills by name and one line. Use \
@@ -162,8 +162,7 @@ pub struct Routing {
 /// **The index skill of a chat** (ADR 0102 §2): the `SKILL.md` its route hands it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Index {
-    /// Its name: [`INDEX`], or on a route that names purlis's own skills theirs `purlis-skill-index`
-    /// ([`Route::built_in_name`]), so a clone's own `skill-index` is another skill beside it.
+    /// Its name: [`INDEX`].
     pub name: String,
     pub text: String,
 }
@@ -369,12 +368,7 @@ impl SkillSet {
                 .cmp(&b.deprecated.is_some())
                 .then(a.skill.name.cmp(&b.skill.name))
         });
-        // The route purlis hands this set's skills by: every skill it hands has the chat's.
-        let name = self
-            .effective
-            .iter()
-            .find(|e| e.route != Route::Own)
-            .map_or_else(|| INDEX.to_owned(), |e| e.route.built_in_name(INDEX));
+        let name = INDEX;
         // Why they are not in the list: the budget, or the router a chat chose (SK-15b).
         let why = match &routing.router {
             Router::BuiltIn => {
@@ -419,7 +413,10 @@ impl SkillSet {
                  listed here: `skill_find` finds them.\n"
             )),
         }
-        Some(Index { name, text })
+        Some(Index {
+            name: name.to_owned(),
+            text,
+        })
     }
 }
 

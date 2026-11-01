@@ -1,6 +1,6 @@
 ---
-name: handoff
-description: Move the operator's work out of this chat into a new chat they will read themselves — in this workspace or another — started on a brief you write. Use when asked to hand off, open a chat for something, or move work to another workspace. Not for work this chat needs an answer from, its own persona's or another's — that is `purlis dispatch` (the persona skill).
+name: purlis-handoff
+description: Move the operator's work out of this chat into a new chat they will read themselves — in this workspace or another — started on a brief you write. Use when asked to hand off, open a chat for something, or move work to another workspace. Not for work this chat needs an answer from, its own persona's or another's — that is `purlis dispatch` (the purlis-persona skill).
 ---
 
 # Handing work to a chat that is not this one
@@ -21,7 +21,7 @@ person's work moves to a chat they will read themselves.
 - Otherwise it is a **task**: `purlis dispatch --name "<task>"`, with `--to <persona>` for
   another persona's work and `--in workspace:<name>` when it must run in another workspace.
   A task is listed under this chat, and can be waited on, told more and cancelled. The
-  `persona` skill has the command.
+  `purlis-persona` skill has the command.
 
 **2. Will the operator read the new chat themselves?** Then it is a **handoff**: a bug to
 fix, a chore, a question for another workspace to own. It gets a tab of its own and this chat

@@ -234,7 +234,7 @@ enum Command {
 
     // Retired (#2575): the words are still taken and answered with what to use instead
     // (`purlis_core::personaverbs::retired::BROWSER_INSTALL`), before a plane is looked for.
-    /// A chat drives a browser with purlis's own browser tools, which the `browser` skill teaches.
+    /// A chat drives a browser with purlis's own browser tools, which the `purlis-browser` skill teaches.
     #[command(subcommand, hide = true)]
     Browser(BrowserCommand),
 
@@ -1365,7 +1365,7 @@ fn place() -> Result<purlis_core::plane::Place, String> {
 enum BrowserCommand {
     // Retired (#2575): every word after it, `--help` included, is taken and not read, so it
     // always answers with what to use instead.
-    /// A chat drives a browser with purlis's own browser tools, which the `browser` skill teaches.
+    /// A chat drives a browser with purlis's own browser tools, which the `purlis-browser` skill teaches.
     #[command(hide = true, disable_help_flag = true)]
     Install {
         /// What the retired command was given. Taken and not read.

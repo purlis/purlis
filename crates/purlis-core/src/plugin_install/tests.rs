@@ -73,7 +73,7 @@ fn claude_code_gets_a_copy_whose_hooks_run_this_charter_enabled_in_the_user_sett
         guard["hooks"][0]["command"],
         r"'/opt/charter'\''s app/charter' hook pretooluse"
     );
-    assert!(dir.join("skills/handoff/SKILL.md").is_file());
+    assert!(dir.join("skills/purlis-handoff/SKILL.md").is_file());
 }
 
 #[test]
@@ -657,7 +657,7 @@ fn a_replaced_guard_takes_its_trust_record_with_it() {
 /// Make every harness's installed copy stale: an older copy lacks a skill, an older Codex guard
 /// a timeout, an older opencode shim a line.
 fn age(m: &Machine) {
-    std::fs::remove_dir_all(plugin_dir(m).join("skills/handoff")).unwrap();
+    std::fs::remove_dir_all(plugin_dir(m).join("skills/purlis-handoff")).unwrap();
     let config = m.codex_home.join("config.toml");
     let text = std::fs::read_to_string(&config).unwrap();
     std::fs::write(&config, text.replace("timeout = 10", "timeout = 3")).unwrap();
@@ -676,7 +676,11 @@ fn a_stale_copy_that_runs_this_charter_is_brought_up_to_date() {
     let harnesses: Vec<&str> = out.iter().map(|o| o.harness).collect();
     assert_eq!(harnesses, ["claude", "codex", "opencode"]);
     assert!(!failed(&out), "{}", render(&out, false));
-    assert!(plugin_dir(&m).join("skills/handoff/SKILL.md").is_file());
+    assert!(
+        plugin_dir(&m)
+            .join("skills/purlis-handoff/SKILL.md")
+            .is_file()
+    );
     assert_eq!(needed(&run(&m, Verb::Install, &[], true)), 0);
     // And a copy already current is left alone, with nothing to say.
     assert!(refresh(&m).is_empty());
@@ -703,7 +707,7 @@ fn a_copy_that_runs_another_charter_still_there_is_that_charters_to_refresh() {
     age(&m);
     m.binary = app;
     assert!(refresh(&m).is_empty());
-    assert!(!plugin_dir(&m).join("skills/handoff").exists());
+    assert!(!plugin_dir(&m).join("skills/purlis-handoff").exists());
 
     // Once that charter is gone, its hooks cannot start, and the app's is the one to run.
     std::fs::remove_file(&other).unwrap();

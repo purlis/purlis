@@ -39,11 +39,11 @@
 //!
 //! **The smart-close pass** (#1332). A smart close under way IS the chat's pass: the app holds
 //! one per chat, and only a person's act issues it, the tab's Smart close ([`begin`]) or the
-//! person typing `/smart-close` into a waiting chat ([`typed`]). It is bound to that chat and
+//! person typing `/purlis-smart-close` into a waiting chat ([`typed`]). It is bound to that chat and
 //! that close, and it ends with the close: when the tab closes, when the operator cancels, when
 //! no record comes in time, or when the chat's program ends. A chat cannot issue one to itself:
 //! the typed command is read from the person's own keys in that chat's pane — the line they
-//! typed since their last Enter, exactly `/smart-close` or `/purlis:smart-close`, submitted
+//! typed since their last Enter, exactly `/purlis-smart-close` or `/purlis:smart-close`, submitted
 //! while the chat waited for them ([`line`], #1361). Nothing inside the chat can type into its
 //! pane. The `UserPromptSubmit` report that follows only confirms the harness heard that
 //! command: its bit can withhold a pass, never issue one, because anything inside the chat can
@@ -71,10 +71,10 @@ use crate::planes::{Held, PlaneId, Planes};
 
 mod line;
 
-/// What the chat is sent: one line naming charter's `smart-close` skill in words, never a
+/// What the chat is sent: one line naming charter's `purlis-smart-close` skill in words, never a
 /// `/slash` command, so every harness that reaches charter's skills can act on it (ADR 0063).
 pub const PROMPT: &str =
-    "Use purlis's smart-close skill to write this session's record and close the chat.";
+    "Use the purlis-smart-close skill to write this session's record and close the chat.";
 
 /// How long after the prompt is sent a record may take before the tab goes back to normal. The
 /// core's, because a chat's `Stop` passes on a saved-record line only while this has not
@@ -116,7 +116,7 @@ pub enum Phase {
     /// was left open.
     NotSent,
     /// The chat finished a Smart close and saved its record with no pass: its harness said
-    /// `/smart-close`, and no typed one of the person's was behind it. The tab stayed open, and
+    /// `/purlis-smart-close`, and no typed one of the person's was behind it. The tab stayed open, and
     /// the window offers Close tab, a plain close that grants nothing (D-1361-7).
     KeptOpen,
 }
@@ -235,13 +235,13 @@ fn only_the_mouse(bytes: &[u8]) -> bool {
 #[derive(Debug)]
 pub struct Closing {
     chats: Mutex<HashMap<u32, Entry>>,
-    /// The chats whose pane the person submitted `/smart-close` in while the chat waited for
+    /// The chats whose pane the person submitted `/purlis-smart-close` in while the chat waited for
     /// them, and when ([`Closing::person_typed`]).
     submitted: Mutex<HashMap<u32, std::time::Instant>>,
     /// The line the person has typed into each chat's pane since their last Enter.
     lines: Mutex<HashMap<u32, line::Line>>,
-    /// The chats whose last prompt their harness reported as `/smart-close` with no typed
-    /// `/smart-close` of the person's behind it, and when: a record such a chat writes leaves
+    /// The chats whose last prompt their harness reported as `/purlis-smart-close` with no typed
+    /// `/purlis-smart-close` of the person's behind it, and when: a record such a chat writes leaves
     /// its tab open, and the window offers Close tab ([`Phase::KeptOpen`], D-1361-7); no record
     /// in time, and the window says that instead ([`Closing::no_record_due`]).
     unbacked: Mutex<Unbacked>,
@@ -255,7 +255,7 @@ pub struct Closing {
     gives_up_after: Mutex<Duration>,
 }
 
-/// The `/smart-close`s with no pass behind them, by chat, and the chats a no-record watch is
+/// The `/purlis-smart-close`s with no pass behind them, by chat, and the chats a no-record watch is
 /// running for: at most one each, however often the chat reports.
 #[derive(Debug, Default)]
 struct Unbacked {
@@ -263,7 +263,7 @@ struct Unbacked {
     watched: HashSet<u32>,
 }
 
-/// Where a `/smart-close` with no pass behind it stands, when its watch wakes
+/// Where a `/purlis-smart-close` with no pass behind it stands, when its watch wakes
 /// ([`Closing::no_record_due`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Due {
@@ -291,10 +291,10 @@ struct Entry {
     recorded: Option<SavedRecord>,
 }
 
-/// How long after the person submits `/smart-close` in a chat's pane the `UserPromptSubmit`
+/// How long after the person submits `/purlis-smart-close` in a chat's pane the `UserPromptSubmit`
 /// it caused may arrive and still be taken as theirs ([`Closing::heard_prompt`]). A hook fires
 /// within milliseconds of the prompt; this is room for a loaded machine and nothing like the
-/// time it would take something to wait for the person's next `/smart-close`.
+/// time it would take something to wait for the person's next `/purlis-smart-close`.
 pub const A_TYPED_SMART_CLOSE_IS_HEARD_WITHIN: Duration = Duration::from_secs(5);
 
 impl Default for Closing {
@@ -402,13 +402,13 @@ impl Closing {
         self.notices.allow(session, now).is_ok()
     }
 
-    /// Whether a watch for chat `session`'s `/smart-close` with no pass must start: none is
+    /// Whether a watch for chat `session`'s `/purlis-smart-close` with no pass must start: none is
     /// running for it. Marked as running when it must.
     fn watch(&self, session: u32) -> bool {
         self.unbacked().watched.insert(session)
     }
 
-    /// Where chat `session`'s `/smart-close` with no pass stands at `now`, when a record may
+    /// Where chat `session`'s `/purlis-smart-close` with no pass stands at `now`, when a record may
     /// take `after`. [`Due::Now`] and [`Due::Gone`] each end its watch; [`Due::Now`] also takes
     /// it, so the window is told once.
     pub fn no_record_due(&self, session: u32, now: Instant, after: Duration) -> Due {
@@ -427,15 +427,15 @@ impl Closing {
     }
 
     /// Chat `session`'s harness reported a `UserPromptSubmit` at `now`, which it says was
-    /// `/smart-close` or not (`smart_close`). Answers what that comes to:
+    /// `/purlis-smart-close` or not (`smart_close`). Answers what that comes to:
     ///
-    /// - [`Heard::Pass`]: the person submitted `/smart-close` in its pane moments before, and
+    /// - [`Heard::Pass`]: the person submitted `/purlis-smart-close` in its pane moments before, and
     ///   the harness says that is what it ran. Both, always: the keys are the key, and the
     ///   report can only withhold.
-    /// - [`Heard::Unbacked`]: the report says `/smart-close` and no typed one is behind it —
+    /// - [`Heard::Unbacked`]: the report says `/purlis-smart-close` and no typed one is behind it —
     ///   a way in the keys cannot follow, or something in the chat. Remembered, so the record
     ///   it writes raises Close tab in the window and never closes anything itself.
-    /// - [`Heard::Nothing`]: any other prompt, which also takes the person's `/smart-close` if
+    /// - [`Heard::Nothing`]: any other prompt, which also takes the person's `/purlis-smart-close` if
     ///   there was one, so it stands behind one prompt and no more.
     pub fn heard_prompt(&self, session: u32, smart_close: bool, now: std::time::Instant) -> Heard {
         let person = self.took_submission(session, now);
@@ -452,14 +452,14 @@ impl Closing {
         heard
     }
 
-    /// Takes whether chat `session`'s last prompt was a `/smart-close` its harness reported
+    /// Takes whether chat `session`'s last prompt was a `/purlis-smart-close` its harness reported
     /// with no typed one behind it ([`Heard::Unbacked`]).
     fn took_unbacked(&self, session: u32) -> bool {
         self.unbacked().heard.remove(&session).is_some()
     }
 
     /// The person sent chat `session` `bytes` at `at`. Followed into the line they are typing
-    /// ([`line::Line`]); an Enter in them that submits exactly `/smart-close`, while the chat
+    /// ([`line::Line`]); an Enter in them that submits exactly `/purlis-smart-close`, while the chat
     /// waits for the person and asks nothing (`waiting`), is the person submitting it — what a
     /// smart-close pass is issued on (#1361). The terminal's own answers and the mouse are not
     /// the person typing, and are not followed.
@@ -473,7 +473,6 @@ impl Closing {
         session: u32,
         bytes: &[u8],
         at: std::time::Instant,
-        harness: Option<purlis_core::harness::Harness>,
         waiting: impl FnOnce() -> bool,
     ) -> Option<Option<usize>> {
         if !typed_by_the_operator(bytes) {
@@ -481,13 +480,13 @@ impl Closing {
         }
         let submitted = self.lines().entry(session).or_default().follow(bytes);
         let sent = submitted.as_ref().map(line::Line::len);
-        if submitted.is_some_and(|line| line.is_smart_close(harness)) && waiting() {
+        if submitted.is_some_and(|line| line.is_smart_close()) && waiting() {
             self.submitted().insert(session, at);
         }
         sent
     }
 
-    /// Takes the person's `/smart-close` in chat `session`, answering whether they submitted
+    /// Takes the person's `/purlis-smart-close` in chat `session`, answering whether they submitted
     /// one within [`A_TYPED_SMART_CLOSE_IS_HEARD_WITHIN`] of `now`. Taken whatever the answer, so
     /// one Enter stands behind one prompt and no more.
     fn took_submission(&self, session: u32, now: std::time::Instant) -> bool {
@@ -620,12 +619,12 @@ pub fn cancel(held: &Held, session: u32) {
 }
 
 /// The board took chat `session`'s `report`: a `UserPromptSubmit` beside the person's own
-/// `/smart-close`, typed and submitted in its pane ([`Closing::person_typed`]), issues
+/// `/purlis-smart-close`, typed and submitted in its pane ([`Closing::person_typed`]), issues
 /// the chat a pass, as the tab's Smart close does. Nothing is sent: the person's prompt is
 /// already the skill's.
 ///
 /// The report's own bit is a check, never a key (#1361): a report that says the prompt was
-/// something else withholds the pass, but one that says `/smart-close` issues nothing without
+/// something else withholds the pass, but one that says `/purlis-smart-close` issues nothing without
 /// the person's line behind it ([`Closing::heard_prompt`]). Such a smart close still writes its
 /// record, and the window then offers Close tab: never a silent miss (D-1361-7).
 pub fn heard(held: &Arc<Held>, report: &Report) {
@@ -641,7 +640,7 @@ pub fn heard(held: &Arc<Held>, report: &Report) {
         // Not a warning: a picker chosen with an arrow, Tab or a history key is a person too.
         Heard::Unbacked => {
             tracing::info!(
-                "purlis: chat {} began a /smart-close that purlis did not see typed in its pane, \
+                "purlis: chat {} began a /purlis-smart-close that purlis did not see typed in its pane, \
                  so it holds no smart-close pass and its tab stays open after its record",
                 report.chat
             );
@@ -661,7 +660,7 @@ pub enum Heard {
     Nothing,
 }
 
-/// Issues chat `session` a smart-close pass because the person typed `/smart-close` into it. A
+/// Issues chat `session` a smart-close pass because the person typed `/purlis-smart-close` into it. A
 /// chat already being smart-closed keeps the pass it has.
 fn typed(held: &Arc<Held>, session: u32) {
     let closing = held.closing();
@@ -836,7 +835,7 @@ pub fn record(held: &Held, ask: &purlis_core::hookwire::RecordAsk) -> Answer {
         };
         (closes, smart_closing)
     };
-    // A Smart close the harness ran with no typed `/smart-close` behind it: never a silent miss.
+    // A Smart close the harness ran with no typed `/purlis-smart-close` behind it: never a silent miss.
     // The window offers Close tab, the person's own plain close (D-1361-7), within the chat's
     // cap on such Notices. A chat already being smart-closed from its tab is that close's, and
     // is left to it; either way its record has come, so no watch says it did not.
@@ -881,7 +880,7 @@ fn tell_within_the_cap(held: &Held, session: u32, tell: impl FnOnce()) {
     }
 }
 
-/// Watches chat `session`'s `/smart-close` with no pass behind it: where no record has come
+/// Watches chat `session`'s `/purlis-smart-close` with no pass behind it: where no record has come
 /// [`GIVES_UP_AFTER`] after it, the window is told, as it is for a close it started
 /// ([`Phase::NoRecord`]). One watch a chat at a time ([`Closing::watch`]), which follows the
 /// latest such prompt; on a thread of its own, holding the plane only weakly.
@@ -1106,7 +1105,7 @@ mod tests {
     fn the_prompt_is_one_paste_then_enter() {
         assert_eq!(
             sent_as(),
-            "\x1b[200~Use purlis's smart-close skill to write this session's record and close \
+            "\x1b[200~Use the purlis-smart-close skill to write this session's record and close \
              the chat.\x1b[201~\r"
         );
     }
@@ -1143,20 +1142,20 @@ mod tests {
         );
     }
 
-    /// Whether chat 7's `keys`, each one write into a waiting chat, leave a `/smart-close`
+    /// Whether chat 7's `keys`, each one write into a waiting chat, leave a `/purlis-smart-close`
     /// the person submitted for the next `UserPromptSubmit` to take (#1361).
     fn the_person_submitted_smart_close(keys: &[&[u8]]) -> bool {
         let closing = Closing::default();
         let now = std::time::Instant::now();
         for key in keys {
-            closing.person_typed(7, key, now, None, || true);
+            closing.person_typed(7, key, now, || true);
         }
         closing.took_submission(7, now)
     }
 
     #[test]
     fn a_report_racing_ahead_of_the_person_s_own_prompt_finds_no_smart_close_behind_it() {
-        // The person's Enter on their own words: a forged `/smart-close` report that arrives
+        // The person's Enter on their own words: a forged `/purlis-smart-close` report that arrives
         // before the hook's own takes nothing.
         assert!(!the_person_submitted_smart_close(&[b"go on", b"\r"]));
         assert!(!the_person_submitted_smart_close(&[b"go on\r"]));
@@ -1176,13 +1175,15 @@ mod tests {
             .newline()
             .as_bytes();
         assert!(!the_person_submitted_smart_close(&[
-            b"/smart-close",
+            b"/purlis-smart-close",
             newline
         ]));
-        assert!(!the_person_submitted_smart_close(&[b"/smart-close\x1b\r"]));
+        assert!(!the_person_submitted_smart_close(&[
+            b"/purlis-smart-close\x1b\r"
+        ]));
         // Nor the Enter that follows it: the prompt is two lines.
         assert!(!the_person_submitted_smart_close(&[
-            b"/smart-close",
+            b"/purlis-smart-close",
             newline,
             b"\r"
         ]));
@@ -1190,7 +1191,9 @@ mod tests {
 
     #[test]
     fn the_person_typing_smart_close_and_enter_is_a_smart_close() {
-        assert!(the_person_submitted_smart_close(&[b"/smart-close\r"]));
+        assert!(the_person_submitted_smart_close(&[
+            b"/purlis-smart-close\r"
+        ]));
         let mut keys: Vec<&[u8]> = b"/purlis:smart-clsoe".chunks(1).collect();
         keys.extend([&b"\x7f"[..], b"\x7f", b"\x7f", b"o", b"s", b"e", b"\r"]);
         assert!(the_person_submitted_smart_close(&keys));
@@ -1200,17 +1203,17 @@ mod tests {
     fn a_smart_close_into_a_chat_not_waiting_for_the_person_is_none() {
         let closing = Closing::default();
         let now = std::time::Instant::now();
-        closing.person_typed(7, b"/smart-close\r", now, None, || false);
+        closing.person_typed(7, b"/purlis-smart-close\r", now, || false);
         assert!(!closing.took_submission(7, now));
     }
 
     /// What chat 7's prompt comes to when the person's `keys`, each one write into a waiting
-    /// chat, are followed by a `UserPromptSubmit` that says `/smart-close` or not.
+    /// chat, are followed by a `UserPromptSubmit` that says `/purlis-smart-close` or not.
     fn heard_after(keys: &[&[u8]], smart_close: bool) -> (Heard, bool) {
         let closing = Closing::default();
         let now = std::time::Instant::now();
         for key in keys {
-            closing.person_typed(7, key, now, None, || true);
+            closing.person_typed(7, key, now, || true);
         }
         let heard = closing.heard_prompt(7, smart_close, now);
         (heard, closing.took_unbacked(7))
@@ -1221,7 +1224,7 @@ mod tests {
         assert_eq!(heard_after(&[b"/sm", b"\r"], true), (Heard::Pass, false));
         assert_eq!(heard_after(&[b"/purlis:sm\r"], true), (Heard::Pass, false));
         assert_eq!(
-            heard_after(&[b"/smart-close now\r"], true),
+            heard_after(&[b"/purlis-smart-close now\r"], true),
             (Heard::Pass, false)
         );
     }

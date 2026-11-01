@@ -1075,7 +1075,7 @@ pub(crate) fn brief_source(cmd: &str, seg: &[Tok], piped: bool) -> Option<&'stat
 mod tests {
     use super::*;
 
-    /// The shape the handoff skill writes: two plain words and a quoted heredoc.
+    /// The shape the purlis-handoff skill writes: two plain words and a quoted heredoc.
     const CANONICAL: &str = "charter handoff beta <<'BRIEF'\nship it\nBRIEF";
 
     fn attended() -> Caller<'static> {

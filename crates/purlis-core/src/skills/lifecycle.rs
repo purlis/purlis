@@ -191,7 +191,7 @@ pub fn unused(plane: &Path, now: u64) -> Vec<Unused> {
             continue;
         };
         let key = (
-            run.skill_name().to_owned(),
+            run.skill_name().into_owned(),
             copy.level,
             copy.workspace.clone(),
         );

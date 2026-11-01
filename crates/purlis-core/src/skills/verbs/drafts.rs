@@ -1292,7 +1292,6 @@ pub fn alone_on(
     crate::harness_plugin::Chosen {
         plugins,
         skills_off,
-        own_index: crate::skills::has_own_index(harness, env),
     }
 }
 

@@ -43,7 +43,7 @@ fn here() -> Here {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().canonicalize().unwrap();
     let plugin = root.join("plugin");
-    skill(&plugin.join("skills"), "secrets");
+    skill(&plugin.join("skills"), "purlis-secrets");
     let shim = purlis_core::opencode::shim_in(&plugin);
     fs::create_dir_all(shim.parent().unwrap()).unwrap();
     fs::write(&shim, "// the shim, a stand-in\n").unwrap();
@@ -185,18 +185,14 @@ fn an_opencode_chat_as_the_persona_is_handed_its_skills_folder() {
 
     let config: serde_json::Value =
         serde_json::from_str(var(&env, purlis_core::opencode::CONFIG_ENV).unwrap()).unwrap();
-    // One folder: the built-in skills under their own names beside the persona's.
+    // The bundle's skills, then the folder of the persona's.
     let folder = PathBuf::from(
-        config["plugin"][0][1]["skills"]
+        config["plugin"][0][1]["skills"][1]
             .as_str()
-            .expect("one directory"),
+            .expect("the persona's folder"),
     );
     assert!(folder.starts_with(&here.sets), "{}", folder.display());
     let mut wanted = wanted(&here);
-    wanted.push((
-        "purlis-secrets".to_owned(),
-        here.plugin.join("skills/secrets"),
-    ));
     wanted.sort();
     assert_eq!(linked(&folder), wanted);
 }
@@ -218,7 +214,7 @@ fn a_codex_chat_as_the_persona_is_briefed_on_its_skills() {
     };
     let text =
         purlis_core::skills::briefed(&here.plane, Some(WORKSPACE), None, &lookup).expect("listed");
-    for name in ["`deploy`", "`triage`", "`secrets`"] {
+    for name in ["`deploy`", "`triage`", "`purlis-secrets`"] {
         assert!(text.contains(name), "{name} in {text}");
     }
     assert!(!text.contains("`review`"), "{text}");

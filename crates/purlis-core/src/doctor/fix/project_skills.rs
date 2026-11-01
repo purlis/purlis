@@ -31,7 +31,7 @@
 //! # Every chat keeps its skills, or nothing is written
 //!
 //! Before it writes, it refuses a folder that is not a whole skill (a chat would never get it), a
-//! skill named as a built-in skill (a built-in name is never taken), a name the project's skills
+//! skill with a name of purlis's own (`purlis-`, never taken), a name the project's skills
 //! already have, two folders that name one skill, a folder named as another's grant file, and a
 //! folder whose name `skills/` already holds, each compared in any case: a disk that ignores case
 //! holds two such folders as one. A folder or skill name that is not ASCII is refused, since
@@ -135,7 +135,7 @@ pub fn apply_in(
         Err(why) => return Fixed::Refused(why),
     };
     let project = Project::read(root);
-    let plan = match plan(root, built_in, &tracked) {
+    let plan = match plan(root, &tracked) {
         Ok(plan) => plan,
         Err(why) => return Fixed::Refused(why),
     };
@@ -264,7 +264,7 @@ struct Plan {
 }
 
 /// What the fix will move, or why it moves nothing.
-fn plan(root: &Path, built_in: Option<&Path>, tracked: &[String]) -> Result<Plan, String> {
+fn plan(root: &Path, tracked: &[String]) -> Result<Plan, String> {
     let ours: Vec<&String> = tracked.iter().filter(|path| under(&[FROM], path)).collect();
     if ours.is_empty() {
         return Ok(Plan {
@@ -335,7 +335,7 @@ fn plan(root: &Path, built_in: Option<&Path>, tracked: &[String]) -> Result<Plan
             ));
         }
     }
-    let folders = whole(root, built_in, &names)?;
+    let folders = whole(root, &names)?;
     Ok(Plan { folders, make_to })
 }
 
@@ -445,11 +445,10 @@ fn carried(root: &Path) -> Result<(), String> {
 }
 
 /// The skill each of `names`' folders holds, or why moving one would lose it: the folder is not a
-/// whole skill, or its name is not ASCII, or belongs to a built-in skill
-/// ([`crate::skills::Reserved`]), or is a project skill's or another moved folder's, each in any
+/// whole skill, or its name is not ASCII, or is purlis's own
+/// ([`crate::skills::name_reserved`]), or is a project skill's or another moved folder's, each in any
 /// case.
-fn whole(root: &Path, built_in: Option<&Path>, names: &[String]) -> Result<Vec<Folder>, String> {
-    let reserved = crate::skills::Reserved::of(built_in);
+fn whole(root: &Path, names: &[String]) -> Result<Vec<Folder>, String> {
     let project: Vec<String> = crate::skills::scan(root, Path::new(TO))
         .into_iter()
         .filter_map(Result::ok)
@@ -482,11 +481,8 @@ fn whole(root: &Path, built_in: Option<&Path>, names: &[String]) -> Result<Vec<F
                  it to letters, digits and hyphens"
                     .to_owned(),
             )
-        } else if reserved.holds(&name.to_ascii_lowercase()) {
-            Some(
-                "this name belongs to a built-in skill, and a built-in skill is never replaced"
-                    .to_owned(),
-            )
+        } else if crate::skills::name_reserved(&name) {
+            Some(crate::skills::Reason::ReservedName.to_string())
         } else if let Some(theirs) = project.iter().find(|theirs| same_name(theirs, &name)) {
             Some(format!(
                 "the project's skills already have the skill {theirs}, the same name in any case"

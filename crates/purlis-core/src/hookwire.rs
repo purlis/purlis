@@ -228,16 +228,10 @@ impl Report {
                 started: Started::of(source.as_deref()),
                 ending: Ending::of(reason.as_deref()),
                 // One bit of the prompt, and only on the event that carries one: whether the
-                // person typed `/smart-close` (#1332). The prompt never leaves the hook.
+                // person typed purlis's smart close (#1332). The prompt never leaves the hook.
                 smart_close: event == Event::UserPromptSubmit
-                    && field("prompt").is_some_and(|prompt| {
-                        crate::state::smart_close_typed(
-                            &prompt,
-                            chat_harness(env)
-                                .as_deref()
-                                .and_then(crate::harness::Harness::of_registry_or_kind),
-                        )
-                    }),
+                    && field("prompt")
+                        .is_some_and(|prompt| crate::state::smart_close_typed(&prompt)),
                 unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
                 // The mode as the chat's own harness names it (#3787): read by that harness's
                 // adapter alone, so a harness whose word is not read says nothing.
