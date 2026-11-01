@@ -1390,7 +1390,8 @@ fn findings_for(theme: &ResolvedTheme, token: &'static str) -> usize {
 }
 
 /// The tokens a walk may move that a consent floor names besides the state marks: the danger
-/// colour, Allow's edge and the needs-you mark under its count.
+/// colour, Allow's edge and the needs-you mark under its count. No table writes the hot count, which
+/// follows the walked mark when the theme is loaded (#3098).
 const FLOORED: &[&str] = &["danger.base", "accent.base", "needs-you.base"];
 
 // ------------------------------------------------------------------------------------------

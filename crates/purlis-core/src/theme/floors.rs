@@ -44,6 +44,12 @@
 //!   a Notice never reads as a chosen or primary mark. The tint holds it as it holds danger
 //!   apart: at a hue that would bring the accent near the waiting amber (a yellow or an orange
 //!   workspace), the accent is given less colour.
+//! - **the hot count is distinguishable from the plain count** ([`Floor::HotCountApart`], #3098):
+//!   `needs-you.count` is at least [`HOT_COUNT_APART`] apart as OKLab draws colour from
+//!   `surface.hover`, the plain count's pill, each laid on each ground a bar stands on as the
+//!   screen draws them, in the theme as written, under each of its own tints and at every whole
+//!   degree a workspace's own colour can take. A part rule that brings the plain count's fill near
+//!   the hot one draws its family default ([`super::parts`]).
 //!
 //! The contrast floors are pairs of the check's own [`PAIRS`], held to the floor the check holds
 //! each to, so a pair is measured in one place. Each holds as the theme is and tinted by every
@@ -55,12 +61,15 @@
 //! each pair that fails.
 //! When Classic's colour still fails on the ground the theme draws it on, the ground is drawn as
 //! Classic's too, and a token whose workspace tint still breaks the floor is drawn untinted
-//! ([`super::Tint`]). The rest of the theme draws as written, and [`Held`] says which floors and
-//! which tokens, for one Notice per theme.
+//! ([`super::Tint`]). A hot count that follows its needs-you mark falls with it, either way round
+//! ([`super::vocabulary::HOT_COUNT_KIN`]), so the two never disagree; a theme whose count is its own colour is held on
+//! its own. The rest of the theme draws as written, and [`Held`] says which floors and which
+//! tokens, for one Notice per theme.
 
 use std::collections::BTreeSet;
 
 use super::check::{self, PAIRS, Pair, ratio};
+use super::vocabulary::hot_count_following;
 use super::{Appearance, ResolvedTheme, built_in_for, tint};
 
 #[cfg(test)]
@@ -85,6 +94,8 @@ pub enum Floor {
     AllowNotPrimary,
     /// Waiting is distinguishable from the accent (#3130).
     WaitingApart,
+    /// The hot count is distinguishable from the plain count (#3098).
+    HotCountApart,
 }
 
 impl Floor {
@@ -98,6 +109,7 @@ impl Floor {
             Self::StateMarks => "the state marks meet the mark floor",
             Self::AllowNotPrimary => "Allow is distinguishable from the primary",
             Self::WaitingApart => "waiting is distinguishable from the accent",
+            Self::HotCountApart => "the hot count is distinguishable from the plain count",
         }
     }
 }
@@ -118,6 +130,20 @@ pub const ALLOW_APART: f64 = 0.1;
 /// signal told from a chosen or primary mark at a glance.
 pub const WAITING_APART: f64 = 0.1;
 
+/// **How far apart the hot count's fill and the plain count's are, at least**: the distance
+/// between `needs-you.count` and `surface.hover` in OKLab, held as [`DANGER_APART`] is (#3098):
+/// what waits on the person told from any other count at a glance.
+pub const HOT_COUNT_APART: f64 = 0.1;
+
+/// The hot count's fill, the role a theme restyles it through (#3098).
+pub(super) const HOT_COUNT: &str = "needs-you.count";
+
+/// The plain count's pill by default (`activity.css`, [`super::parts`]'s activity family).
+const PLAIN_COUNT: &str = "surface.hover";
+
+/// The grounds a bar stands on, each of which both counts are laid on.
+const BAR_GROUNDS: [&str; 3] = ["surface.deep", "surface.base", "surface.raised"];
+
 /// **How far apart Allow's look and the primary's are, at least**, as a theme's tokens alone
 /// draw them ([`Floor::AllowNotPrimary`]): measured as the component parts check measures two
 /// looks, on its own scale.
@@ -125,13 +151,14 @@ pub const ALLOW_FROM_PRIMARY: f64 = super::parts::SEEN;
 
 /// The ask's pairs, by `front` on `back`: its words on the dialog it is asked in, its answers'
 /// words on their buttons (Allow's and Keep blocked's alike) at rest and under the pointer, what
-/// it says on the danger wash, and the needs-you count on its chip.
-const ASK: [(&str, &str); 5] = [
+/// it says on the danger wash, and the needs-you count on its chip, the hot count's on its own.
+const ASK: [(&str, &str); 6] = [
     ("text.primary", "surface.overlay"),
     ("text.primary", "control.base"),
     ("text.primary", "control.hover"),
     ("text.primary", "danger.wash"),
     ("needs-you.text", "needs-you.base"),
+    ("needs-you.count-text", "needs-you.count"),
 ];
 
 /// The pairs that keep Allow apart from Keep blocked, by `front` on `back`: the Allow's edge on
@@ -172,7 +199,8 @@ fn floor_of(pair: &Pair) -> Option<Floor> {
         Some(Floor::AllowApart)
     } else if pair.front.starts_with("danger.") {
         Some(Floor::Danger)
-    } else if pair.front.starts_with("state.") || pair.front == "needs-you.base" {
+    } else if pair.front.starts_with("state.") || matches!(pair.front, "needs-you.base" | HOT_COUNT)
+    {
         Some(Floor::StateMarks)
     } else {
         None
@@ -363,6 +391,44 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
             }
         }
         found.extend(allow_near_primary(&drawn, tinted));
+        if BAR_GROUNDS.iter().any(|ground| {
+            counts_near(
+                drawn.value(HOT_COUNT),
+                drawn.value(PLAIN_COUNT),
+                drawn.value(ground),
+            )
+        }) {
+            found.push(hot_count_near(tinted));
+        }
+    }
+    // The plain count's pill at every whole degree a workspace's own colour can take: its own and
+    // its grounds' tokens turned, as `tint::turned_at` draws them, and the hot count, which a tint
+    // never turns. A ground only matters under a see-through colour.
+    let tabs = theme.tint.tabs();
+    let see_through =
+        !check::is_opaque(theme.value(PLAIN_COUNT)) || !check::is_opaque(theme.value(HOT_COUNT));
+    if tabs.contains(&PLAIN_COUNT)
+        || (see_through && BAR_GROUNDS.iter().any(|ground| tabs.contains(ground)))
+    {
+        let near = chromas.of(theme).iter().zip(0_u32..).any(|(most, degree)| {
+            let turned = |token: &'static str| {
+                tint::chroma_of(token, *most)
+                    .filter(|_| tabs.contains(&token))
+                    .map_or_else(
+                        || theme.value(token).to_owned(),
+                        |chroma| {
+                            tint::tint_hex_within(theme.value(token), f64::from(degree), chroma)
+                        },
+                    )
+            };
+            let plain = turned(PLAIN_COUNT);
+            BAR_GROUNDS
+                .iter()
+                .any(|ground| counts_near(theme.value(HOT_COUNT), &plain, &turned(ground)))
+        });
+        if near {
+            found.push(hot_count_near(true));
+        }
     }
     // Allow against the primary at every whole degree a workspace's own colour can take, as the
     // contrast floors below are: only the fills and the grounds they are measured on are turned.
@@ -414,6 +480,21 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
         }
     }
     found
+}
+
+/// Whether the two counts, laid on `ground` as the screen draws them, are nearer than the floor.
+fn counts_near(hot: &str, plain: &str, ground: &str) -> bool {
+    apart_of(&check::onto(hot, ground), &check::onto(plain, ground)) < HOT_COUNT_APART
+}
+
+/// The hot count drawn too near the plain count, the hot count's fill named first: purlis's own
+/// is drawn before the ground it is measured against is.
+fn hot_count_near(tinted: bool) -> Failure {
+    Failure {
+        floor: Floor::HotCountApart,
+        tinted,
+        tokens: vec![HOT_COUNT, PLAIN_COUNT],
+    }
 }
 
 /// Each state in which `drawn`'s tokens bring Allow nearer the primary than [`ALLOW_FROM_PRIMARY`]: the
@@ -510,6 +591,8 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
     let mut taken: BTreeSet<&'static str> = BTreeSet::new();
     let mut untinted: BTreeSet<&'static str> = BTreeSet::new();
     let mut chromas = Chromas::default();
+    // A count the theme draws as its mark falls with it, whichever of the two a floor names.
+    let following = hot_count_following(&theme.values);
     loop {
         let failing = failures(&drawn, &mut chromas);
         if failing.is_empty() {
@@ -586,6 +669,11 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
             drawn.tint.leave(&tinted);
             untinted.extend(tinted);
             continue;
+        }
+        for (count, mark) in &following {
+            if take.contains(count) || take.contains(mark) {
+                take.extend([*count, *mark]);
+            }
         }
         for token in take {
             drawn.values.insert(token, ours.value(token).to_owned());

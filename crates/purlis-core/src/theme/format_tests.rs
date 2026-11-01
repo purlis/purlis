@@ -68,6 +68,8 @@ fn added_later(token: &str) -> bool {
         "terminal.selection-foreground",
         "terminal.selection-inactive",
         "terminal.scrollbar",
+        // The hot count (#3098), the value of the token that drew it before.
+        "needs-you.count",
     ]
     .iter()
     .any(|prefix| token.starts_with(prefix))
