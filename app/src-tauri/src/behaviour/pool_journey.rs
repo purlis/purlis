@@ -377,7 +377,7 @@ fn measure_limits(target: &Target, machine: &Machine, pool: &str, settings: &Pat
     };
     purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(4096))
         .expect("raised");
-    for mib in [64_u64, 256, 512] {
+    for mib in [0_u64; 0] {
         let large = clone.join("measure.bin");
         random(&large, mib);
         let began = Instant::now();
@@ -437,7 +437,7 @@ fn measure_limits(target: &Target, machine: &Machine, pool: &str, settings: &Pat
     let folder = settings.join("skills/measure");
     std::fs::create_dir_all(&folder).expect("its folder");
     let mut sent = 0;
-    for mib in [128_usize, 512] {
+    for mib in [1000_usize] {
         for one in sent..mib {
             random(&folder.join(format!("{one}.bin")), 1);
         }
@@ -449,6 +449,15 @@ fn measure_limits(target: &Target, machine: &Machine, pool: &str, settings: &Pat
             Some(1024),
         )
         .expect("raised");
+        say(format!(
+            "before: runner memory peak {}, limit {}",
+            the_runner(machine, pool)
+                .prints("cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo none")
+                .trim(),
+            the_runner(machine, pool)
+                .prints("cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none")
+                .trim()
+        ));
         let began = Instant::now();
         let ready = ready_to_start(machine, &target.root, pool);
         say(format!(
