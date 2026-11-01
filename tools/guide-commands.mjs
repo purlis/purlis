@@ -21,8 +21,13 @@ const NOT_RUN = /^_Not yet run in CI: .+/;
 export function blocks(markdown) {
   const lines = markdown.split("\n");
   const found = [];
+  let inComment = false;
   for (let at = 0; at < lines.length; at += 1) {
+    if (lines[at].includes("<!--") && !lines[at].includes("-->")) inComment = true;
+    if (lines[at].includes("-->") && !lines[at].includes("<!--")) inComment = false;
     if (!lines[at].startsWith("```")) continue;
+    // A block the page doesn't show would run unseen.
+    if (inComment) throw new Error(`a block on line ${at + 1} is inside a comment`);
     const opening = lines[at];
     const end = lines.findIndex((line, index) => index > at && line.startsWith("```"));
     if (end < 0) throw new Error(`a block opened on line ${at + 1} never closes`);
@@ -48,10 +53,10 @@ export function commands(markdown, name, values = []) {
   let body = block.body;
   for (const [placeholder, text] of values) {
     if (!body.includes(placeholder)) throw new Error(`block ${name} has no ${placeholder}`);
-    body = body.replaceAll(placeholder, text);
+    body = body.replaceAll(placeholder, () => text);
   }
   // `<<` opens a here-document, and `<your registry>` is a placeholder.
-  const left = body.match(/<[a-z][a-z ]*>/);
+  const left = body.match(/<[^<>\s'"][^<>\n]*>/);
   if (left !== null) throw new Error(`block ${name} still holds ${left[0]}`);
   return body;
 }

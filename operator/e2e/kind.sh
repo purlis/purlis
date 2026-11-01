@@ -282,7 +282,12 @@ until [ -n "$(guide_run pool-key)" ]; do
   fi
   sleep 1
 done
-guide_run teammate --value "<their name>=guide-teammate@example.com"
+guide_run teammate --value "<their name>=guide-teammate@example.com" --value "<their namespace>=guide-teammate"
+# The teammate's rights stop at their own namespace.
+if kubectl --context "$context" auth can-i delete claims.runners.purlis.dev --namespace default --as guide-teammate@example.com >/dev/null; then
+  echo "the guide's teammate may delete Claims outside their own namespace" >&2
+  exit 1
+fi
 
 step "uninstalled, the chart leaves the definitions and the policy"
 helm uninstall purlis-cluster-operator --kube-context "$context" --namespace purlis-system --wait

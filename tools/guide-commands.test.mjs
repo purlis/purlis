@@ -39,6 +39,10 @@ test("what the guide says the doctor prints is what kind.sh holds it to", () => 
   assert.ok(guide.includes(held[1]));
 });
 
+test("a block inside a comment is refused, since the page would not show what CI runs", () => {
+  assert.throws(() => blocks("<!--\n```bash\nrun\n```\n-->\n"), /inside a comment/);
+});
+
 test("a command's placeholders are all put in, or it is refused", () => {
   const markdown = "<!-- kind: one -->\n\n```bash\nrun <your registry>/x <<'EOF'\nEOF\n```\n";
   assert.throws(() => commands(markdown, "one"), /still holds <your registry>/);
