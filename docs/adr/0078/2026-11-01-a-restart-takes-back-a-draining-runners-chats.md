@@ -28,10 +28,13 @@ rest are *decided in implementation, to be confirmed*.
 7. **A program's note stays the window's on its own host** (`note_program`, a start's `note`), and
    a link between hosts still does not count as coming back when its ports are withdrawn: its
    `take_back` gives them back.
-8. **A runner that does not say its programs counts as one that may have run outside the sandbox**
-   (D-2050-27), one of an earlier build too. No minor of the session protocol is taken.
+8. **Session protocol 1.66 gates it, as the person ruled on 2026-11-01.** A runner of 1.66 or later
+   that does not say its programs counts as one that may have run outside the sandbox (D-2050-27),
+   unless it was a draining runner removed while it was asked. A runner before 1.66 is not asked and
+   not marked, and nothing is taken back from it.
 9. **What a restarted window finds and no tab takes back is closed**, on a pool's runners as on this
-   machine's host (#2006).
+   machine's host (#2006), on a runner it asked. A runner it did not ask is #4433.
 
-This replaces item 4 of the amendment for #2407 and item 1 of the amendment for #2025 in ADR 0068,
-which kept `programs_of` to the window on its own host.
+This replaces the `programs_of` line of item 4 of the amendment for #2407 and of item 1 of the
+amendment for #2025 in ADR 0068, which kept that request to the window on its own host. The rest of
+those items stands.

@@ -435,9 +435,19 @@ use crate::view::{Limits, Views};
 /// 1.66 lets a runner keep a Claude Code profile's user-scope MCP servers (#3846): a keep may stage
 /// `mcp-servers.json` among its settings, which the runner puts into that profile's state file. No
 /// frame changes. A runner before 1.66 refuses a settings file it does not know, so it is sent none.
+///
+/// 1.67 has a runner answer `programs_of` on a link between hosts, with what was opened for the
+/// window that link named (#4271, ruled 2026-11-01). No frame changes. A relay does not ask a
+/// runner before 1.67, which would refuse it, and answers that no program is known of.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 66,
+    minor: 67,
+};
+
+/// The version that first answers `programs_of` on a link between hosts (#4271).
+pub const KNOWS_PROGRAMS_RELAYED: Version = Version {
+    major: 1,
+    minor: 67,
 };
 
 /// The version that first holds a send of code to what its desktop gives it (spec #4275).

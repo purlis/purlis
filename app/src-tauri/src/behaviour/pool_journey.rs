@@ -881,6 +881,15 @@ mod a_window_started_again {
             assert!(Instant::now() < deadline, "it never drained: {said:?}");
             std::thread::sleep(Duration::from_secs(1));
         }
+        let deadline = Instant::now() + LONG;
+        while !purlis_core::runners::draining(&machine.config)
+            .expect("read")
+            .is_empty()
+        {
+            let said = crate::poolfollow::follow_and_drain(&machine, None, &chats_on);
+            assert!(Instant::now() < deadline, "it was never removed: {said:?}");
+            std::thread::sleep(Duration::from_secs(1));
+        }
         back.close(on_the_new).expect("it closes");
     }
 }

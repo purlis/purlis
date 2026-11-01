@@ -175,11 +175,56 @@ impl Pool {
 }
 
 /// A window on `desktop_host`, keeping its runners and link names in `config`.
+struct RefusesItsPrograms<H> {
+    inner: H,
+    refused: bool,
+}
+
+impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for RefusesItsPrograms<H> {
+    async fn call(
+        &self,
+        command: session::Command,
+        peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        if self.refused && matches!(command, session::Command::ProgramsOf { .. }) {
+            return Err(session::Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this runner does not say".into(),
+            });
+        }
+        self.inner.call(command, peer).await
+    }
+
+    async fn link_ended(&self, peer: &session::Peer) {
+        self.inner.link_ended(peer).await;
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<tokio::sync::mpsc::Receiver<session::Pushed>, session::Refusal> {
+        self.inner.subscribe(since, peer).await
+    }
+}
+
 fn a_window(
     desktop_host: &Hosting,
     handle: &tokio::runtime::Handle,
     config: &Path,
     runtime: &tokio::runtime::Runtime,
+) -> Arc<Connection> {
+    a_window_told(desktop_host, handle, config, runtime, false)
+}
+
+/// [`a_window`], its relayed links refused `programs_of` where `refused`, as a runner that does
+/// not say its programs refuses it.
+fn a_window_told(
+    desktop_host: &Hosting,
+    handle: &tokio::runtime::Handle,
+    config: &Path,
+    runtime: &tokio::runtime::Runtime,
+    refused: bool,
 ) -> Arc<Connection> {
     let window = Arc::new(
         runtime
@@ -195,7 +240,11 @@ fn a_window(
         move |within, naming, pool: &str| {
             let (host, pool) = (host.clone(), pool.to_owned());
             open_within(&handle, within, async move {
-                let link = a_bare_link_to(purlis_host::Routed::new(host), || {}).await?;
+                let host = RefusesItsPrograms {
+                    inner: purlis_host::Routed::new(host),
+                    refused,
+                };
+                let link = a_bare_link_to(host, || {}).await?;
                 HostLink::over_relayed(
                     link,
                     tokio::runtime::Handle::current(),
@@ -409,6 +458,29 @@ fn a_draining_runners_link_marks_its_pool_untrusted() {
     to_it.ran_unsandboxed().unwrap();
 
     assert!(pool.connection.untrusts("builds"));
+    assert!(purlis_core::runnertaint::pool_ran_unsandboxed(
+        pool.config.path(),
+        "builds"
+    ));
+}
+
+/// **A runner of this protocol that does not say its programs marks its pool** (#4271): a refusal
+/// says nothing of what runs there. An older runner is not asked (the relay's own test).
+#[test]
+fn a_runner_that_does_not_say_its_programs_marks_its_pool() {
+    let runtime = a_runtime();
+    let pool = Pool::on(&runtime);
+    let window = a_window_told(
+        &pool.desktop_host,
+        &pool.handle,
+        pool.config.path(),
+        &runtime,
+        true,
+    );
+    let (_project, root) = a_project();
+
+    let _ = started(&routed_on(&window, &root));
+
     assert!(purlis_core::runnertaint::pool_ran_unsandboxed(
         pool.config.path(),
         "builds"

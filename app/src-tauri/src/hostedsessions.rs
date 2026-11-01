@@ -569,6 +569,14 @@ impl Connection {
         named.split_once('/').map(|(_, runner)| runner)
     }
 
+    /// Whether this connection names a draining runner that is kept no more (#4271).
+    fn asked_a_runner_kept_no_more(&self) -> bool {
+        let (Some(runner), Some(config)) = (self.draining_runner(), self.runners_config()) else {
+            return false;
+        };
+        matches!(purlis_core::runners::named(&config, runner), Ok(None))
+    }
+
     /// Whether a runner of this connection's pool drains now: neither runner's fetch removes what
     /// only the other has (#4248), after a window's restart too (#4271).
     fn pool_drains(&self) -> bool {
@@ -3140,10 +3148,15 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
                         });
                     }
                 }
-                *lock(left) = chats
-                    .into_iter()
-                    .map(|program| (program.number, program))
-                    .collect();
+                // On a pool's runner, what the first hold found alone: a hold again while a put
+                // back goes on must not ask to close a chat it already took back (#4271).
+                let first_hold = lock(browsers_left).is_none();
+                if first_hold || connection.pool().is_none() {
+                    *lock(left) = chats
+                        .into_iter()
+                        .map(|program| (program.number, program))
+                        .collect();
+                }
                 lock(browsers_left).get_or_insert(browsers);
             }
             // Whether a chat runs there without the sandbox is not known: on a pool's runner it
@@ -3157,7 +3170,10 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
                     "purlis: the session host did not say its programs: {}",
                     refused.why
                 );
-                let _ = untrust_taking_back(connection, &link, &mut Vec::new());
+                // A draining runner removed while it was asked took what it ran with it.
+                if !connection.asked_a_runner_kept_no_more() {
+                    let _ = untrust_taking_back(connection, &link, &mut Vec::new());
+                }
             }
         }
     }
