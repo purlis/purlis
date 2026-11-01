@@ -5749,6 +5749,8 @@ export type GradeRow = {
 	ended: string,
 	outcome: GradeOutcome,
 	arms: GradeArms,
+	/**  Each arm's outcome pass rate, where it ran an outcome eval (SK-55). */
+	outcome_arms: GradeArms | null,
 	spent: GradeSpent,
 	after_edit: boolean,
 };
@@ -5795,6 +5797,13 @@ export type GradeScorecard = {
 	outcome: GradeOutcome,
 	arms: GradeArms,
 	spent: GradeSpent,
+	/**
+	 *  **Its outcome evals** (SK-55, #3235), each in each arm, each arm's pass rate in points,
+	 *  and the difference the skill made there: none, and null, in a grade that ran none.
+	 */
+	evals: ScoredEval[],
+	outcome_arms: GradeArms | null,
+	outcome_delta: number | null,
 };
 
 /**
@@ -10409,6 +10418,48 @@ export type ScoredChat = {
 	/**  Which of its test's runs in its arm it was, from 1. */
 	run: number,
 	kept: boolean,
+};
+
+/**  **One expectation in one run of an outcome eval, as its judge found it** (SK-55). */
+export type ScoredCheck = {
+	passed: boolean,
+	/**  What the judge found, as the record keeps it: empty where a long row dropped it. */
+	evidence: string,
+};
+
+/**
+ *  **One outcome eval of a grade** (SK-55): its id and its expectations, each character no reader
+ *  would see marked, in each arm.
+ */
+export type ScoredEval = {
+	id: string,
+	expectations: string[],
+	arms: ScoredEvalArm[],
+};
+
+/**
+ *  **One outcome eval in one arm of a grade** (SK-55): its judged runs, its pass rate in points,
+ *  and each run asked for.
+ */
+export type ScoredEvalArm = {
+	arm: ScoredArm,
+	runs: number,
+	points: number | null,
+	results: ScoredEvalRun[],
+};
+
+/**
+ *  **One run of an outcome eval in one arm** (SK-55): its chat and its judge's, each one click away
+ *  where this machine kept it; how many expectations passed, where it was judged; each one's
+ *  verdict; and why the eval failed there, where it failed without a verdict.
+ */
+export type ScoredEvalRun = {
+	run: number,
+	chat: ScoredChat | null,
+	judge: ScoredChat | null,
+	passed: number | null,
+	checks: ScoredCheck[],
+	failed: string | null,
 };
 
 /**  **One trigger test in one arm of a grade**, as its scorecard shows it. */

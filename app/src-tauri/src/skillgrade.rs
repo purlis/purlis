@@ -1510,6 +1510,103 @@ pub struct ScoredTest {
     pub arms: Vec<ScoredRuns>,
 }
 
+/// **One expectation in one run of an outcome eval, as its judge found it** (SK-55).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ScoredCheck {
+    pub passed: bool,
+    /// What the judge found, as the record keeps it: empty where a long row dropped it.
+    pub evidence: String,
+}
+
+/// **One run of an outcome eval in one arm** (SK-55): its chat and its judge's, each one click away
+/// where this machine kept it; how many expectations passed, where it was judged; each one's
+/// verdict; and why the eval failed there, where it failed without a verdict.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ScoredEvalRun {
+    pub run: u32,
+    pub chat: Option<ScoredChat>,
+    pub judge: Option<ScoredChat>,
+    pub passed: Option<u32>,
+    pub checks: Vec<ScoredCheck>,
+    pub failed: Option<String>,
+}
+
+/// **One outcome eval in one arm of a grade** (SK-55): its judged runs, its pass rate in points,
+/// and each run asked for.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct ScoredEvalArm {
+    pub arm: ScoredArm,
+    pub runs: u32,
+    pub points: Option<f64>,
+    pub results: Vec<ScoredEvalRun>,
+}
+
+/// **One outcome eval of a grade** (SK-55): its id and its expectations, each character no reader
+/// would see marked, in each arm.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct ScoredEval {
+    pub id: String,
+    pub expectations: Vec<String>,
+    pub arms: Vec<ScoredEvalArm>,
+}
+
+/// **A grade's outcome evals as its scorecard shows them** (SK-55), one row per eval however many
+/// arms it ran in, each chat `kept` says whether this machine kept.
+fn scored_evals(
+    outcomes: &[grading::OutcomeScore],
+    kept: &impl Fn(&str) -> bool,
+) -> Vec<ScoredEval> {
+    let chat_of = |id: &Option<String>, run: u32| {
+        id.as_ref().map(|id| ScoredChat {
+            id: id.clone(),
+            run,
+            kept: kept(id),
+        })
+    };
+    let mut evals: Vec<ScoredEval> = Vec::new();
+    for score in outcomes {
+        let arm = ScoredEvalArm {
+            arm: score.arm.into(),
+            runs: score.runs,
+            points: score.pass_rate.map(|stat| (stat.mean * 100.0).round()),
+            results: score
+                .results
+                .iter()
+                .zip(1u32..)
+                .map(|(one, run)| ScoredEvalRun {
+                    run,
+                    chat: chat_of(&one.chat, run),
+                    judge: chat_of(&one.judge, run),
+                    passed: one.passed,
+                    checks: one
+                        .checks
+                        .iter()
+                        .map(|check| ScoredCheck {
+                            passed: check.passed,
+                            evidence: check.evidence.clone(),
+                        })
+                        .collect(),
+                    failed: one.failed.clone(),
+                })
+                .collect(),
+        };
+        let id = score.eval.to_string();
+        match evals.iter_mut().find(|eval| eval.id == id) {
+            Some(eval) => eval.arms.push(arm),
+            None => evals.push(ScoredEval {
+                id,
+                expectations: score
+                    .expectations
+                    .iter()
+                    .map(|text| purlis_unicode::marked(text, purlis_unicode::Breaks::Marked))
+                    .collect(),
+                arms: vec![arm],
+            }),
+        }
+    }
+    evals
+}
+
 /// **A grade's scorecard** (SK-59, #3239; spec #2762 decision 43): the grade as its row in the
 /// Grades panel says it, then each trigger test in each arm, with each of its chats one click
 /// away where this machine kept it.
@@ -1543,6 +1640,11 @@ pub struct GradeScorecard {
     pub outcome: GradeOutcome,
     pub arms: GradeArms,
     pub spent: GradeSpent,
+    /// **Its outcome evals** (SK-55, #3235), each in each arm, each arm's pass rate in points,
+    /// and the difference the skill made there: none, and null, in a grade that ran none.
+    pub evals: Vec<ScoredEval>,
+    pub outcome_arms: Option<GradeArms>,
+    pub outcome_delta: Option<f64>,
 }
 
 /// **How a grade ended, as its list marks it** (S6): graded whole, stopped by the person, stopped
@@ -1594,6 +1696,22 @@ pub struct GradeSpent {
 }
 
 impl GradeArms {
+    /// Each arm's outcome pass rate, in a grade that ran an outcome eval (SK-55).
+    fn of_outcomes(graded: &Graded) -> Option<GradeArms> {
+        let points = |arm: Arm| {
+            graded
+                .report
+                .arm(arm)
+                .and_then(|score| score.outcome_pass_rate)
+                .map(|stat| (stat.mean * 100.0).round())
+        };
+        (!graded.report.outcomes.is_empty()).then(|| GradeArms {
+            with: points(Arm::With),
+            without: points(Arm::Without),
+            previous: points(Arm::Previous),
+        })
+    }
+
     fn of(graded: &Graded) -> GradeArms {
         let points = |arm: Arm| {
             graded
@@ -1633,6 +1751,8 @@ pub struct GradeRow {
     pub ended: String,
     pub outcome: GradeOutcome,
     pub arms: GradeArms,
+    /// Each arm's outcome pass rate, where it ran an outcome eval (SK-55).
+    pub outcome_arms: Option<GradeArms>,
     pub spent: GradeSpent,
     pub after_edit: bool,
 }
@@ -1648,6 +1768,7 @@ impl GradeRow {
             ended: grades::ended_said(graded.report.ended).to_owned(),
             outcome: graded.report.ended.into(),
             arms: GradeArms::of(graded),
+            outcome_arms: GradeArms::of_outcomes(graded),
             spent: GradeSpent::of(graded),
             after_edit: graded.after_edit,
         }
@@ -1784,6 +1905,7 @@ impl GradeScorecard {
     /// `graded`'s scorecard, each chat `kept` says whether this machine kept.
     fn of(graded: &Graded, kept: impl Fn(&str) -> bool) -> GradeScorecard {
         use purlis_core::skills::studio;
+        let evals = scored_evals(&graded.report.outcomes, &kept);
         let tests = scored_tests(&graded.report.triggers, kept);
         GradeScorecard {
             grade: graded.grade.clone(),
@@ -1825,6 +1947,12 @@ impl GradeScorecard {
             outcome: graded.report.ended.into(),
             arms: GradeArms::of(graded),
             spent: GradeSpent::of(graded),
+            evals,
+            outcome_arms: GradeArms::of_outcomes(graded),
+            outcome_delta: graded
+                .report
+                .outcome_delta
+                .map(|delta| (delta * 100.0).round()),
         }
     }
 }
@@ -1980,7 +2108,7 @@ impl Chats for InChats<'_> {
             }
             (None, None) => {}
         }
-        if ran.end == ChatEnd::Asked {
+        if matches!(ran.end, ChatEnd::Asked | ChatEnd::AskedFor { .. }) {
             self.asked += 1;
         }
         if matches!(
@@ -1988,6 +2116,7 @@ impl Chats for InChats<'_> {
             ChatEnd::Turn
                 | ChatEnd::TimedOut
                 | ChatEnd::Asked
+                | ChatEnd::AskedFor { .. }
                 | ChatEnd::ClosedEarly { .. }
                 | ChatEnd::ReadPast
         ) {
@@ -2219,6 +2348,10 @@ impl InChats<'_> {
                     Ok(Watched::TurnEnded) => break ChatEnd::Turn,
                     // A grade's chat waits on nobody: ended at its first ask, with that end.
                     Ok(Watched::Asked) => break ChatEnd::Asked,
+                    Ok(Watched::AsksFor(what)) if whole_turn => {
+                        break ChatEnd::AskedFor { what };
+                    }
+                    Ok(Watched::AsksFor(_)) => {}
                     // A whole turn that closed before it ended left nothing to judge or be read:
                     // no run, never a score, so a crash is no verdict on the skill (SK-55).
                     Ok(Watched::Closed) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected)

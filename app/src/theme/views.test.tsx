@@ -1616,6 +1616,7 @@ const STATES: State[] = [
         after_edit: false,
         outcome: "graded",
         arms: { with: 100, without: 0, previous: null },
+        outcome_arms: null,
         spent: { chats: 5, tokens: 40000, cost_usd: 0.4, limit_usd: 3 },
         asked: 1,
         tests: [

@@ -985,3 +985,63 @@ fn ticked_evals_are_refused_on_a_profile_they_cannot_run_on() {
     assert_eq!(evals_can_run(&ticked, Some(&why)), Err(why));
     assert!(evals_can_run(&ticked, None).is_ok());
 }
+
+/// SK-55 (#3235): a grade's outcome evals reach its scorecard and its row: one row per eval, each
+/// arm's rate and runs, each run's chats and verdicts, and why a run failed.
+#[test]
+fn a_scorecard_shows_each_outcome_eval_in_each_arm_and_why_a_run_failed() {
+    use purlis_core::skills::grade::{Check, OutcomeRun, OutcomeScore, Stat};
+    let run = |chat: &str, passed: u32, failed: Option<&str>| OutcomeRun {
+        chat: Some(chat.to_owned()),
+        judge: Some(format!("{chat}J")),
+        passed: Some(passed),
+        checks: if failed.is_some() {
+            Vec::new()
+        } else {
+            vec![Check {
+                passed: true,
+                evidence: "it is filled".into(),
+            }]
+        },
+        failed: failed.map(str::to_owned),
+        asked: false,
+    };
+    let score = |arm: Arm, results: Vec<OutcomeRun>, mean: f64| OutcomeScore {
+        eval: 4,
+        arm,
+        expectations: vec!["It is\u{200b} filled".into()],
+        runs: u32::try_from(results.len()).unwrap(),
+        pass_rate: Some(Stat {
+            mean,
+            stddev: 0.0,
+            min: mean,
+            max: mean,
+        }),
+        results,
+    };
+    let outcomes = vec![
+        score(Arm::With, vec![run("01A", 1, None)], 1.0),
+        score(
+            Arm::Without,
+            vec![run("01B", 0, Some("The judge's answer is not whole."))],
+            0.0,
+        ),
+    ];
+    let evals = scored_evals(&outcomes, &|chat: &str| chat == "01A");
+    assert_eq!(evals.len(), 1, "one row, however many arms");
+    let eval = &evals[0];
+    assert_eq!(eval.id, "4");
+    assert_eq!(eval.expectations, ["It is⟦U+200B⟧ filled"]);
+    assert_eq!(eval.arms.len(), 2);
+    assert_eq!(eval.arms[0].points, Some(100.0));
+    let with = &eval.arms[0].results[0];
+    assert!(with.chat.as_ref().unwrap().kept);
+    assert!(!with.judge.as_ref().unwrap().kept);
+    assert_eq!(with.checks[0].evidence, "it is filled");
+    let without = &eval.arms[1].results[0];
+    assert_eq!(
+        without.failed.as_deref(),
+        Some("The judge's answer is not whole.")
+    );
+    assert!(without.checks.is_empty());
+}

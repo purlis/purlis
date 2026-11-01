@@ -5340,3 +5340,33 @@ fn a_last_message_of_escapes_stays_a_line_the_app_reads() {
     };
     assert_eq!(text.len(), most, "plain text is cut at the most alone");
 }
+
+/// SK-55: an ask names what it asks to use, in plain words alone, as it reaches a record.
+#[test]
+fn an_ask_says_what_it_asks_to_use_in_plain_words() {
+    let said = |payload: serde_json::Value| {
+        PermissionAsked {
+            chat: 1,
+            permission_request: crate::harness::hooked::Source::ClaudeCode,
+            payload,
+            ran_for_ms: None,
+        }
+        .asks_for()
+    };
+    assert_eq!(
+        said(serde_json::json!({"tool_name": "Bash", "tool_input": {"command": "ls"}})).as_deref(),
+        Some("the tool Bash")
+    );
+    assert_eq!(
+        said(serde_json::json!({"tool_name": "Skill", "tool_input": {"skill": "deploy"}}))
+            .as_deref(),
+        Some("the skill deploy")
+    );
+    assert_eq!(
+        said(serde_json::json!({"tool_name": "Skill", "tool_input": {"skill": "a\u{1b}[2J b"}}))
+            .as_deref(),
+        Some("the tool Skill")
+    );
+    assert_eq!(said(serde_json::json!({"tool_name": "a b"})), None);
+    assert_eq!(said(serde_json::json!({})), None);
+}

@@ -767,10 +767,13 @@ fn without_allowed_tools(text: &str) -> String {
                 .split(':')
                 .next()
                 .unwrap_or_default()
-                .trim_matches(['"', '\'']);
+                .trim()
+                .trim_matches(['"', '\''])
+                .trim();
+            let named = key.eq_ignore_ascii_case("allowed-tools");
             let continues = line.starts_with([' ', '\t']) || bare.starts_with("- ");
-            if !continues {
-                dropping = key.eq_ignore_ascii_case("allowed-tools");
+            if named || !continues {
+                dropping = named;
             }
             if dropping {
                 continue;

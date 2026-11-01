@@ -1116,7 +1116,11 @@ fn a_chats_answer_names_its_files_where_its_judge_finds_them() {
 fn an_outcome_chats_copy_of_a_skill_grants_no_tools() {
     for declared in [
         "allowed-tools: Bash\n",
+        "allowed-tools : Bash\n",
         "\"allowed-tools\": Bash\n",
+        "\"allowed-tools\" : Bash\n",
+        "'allowed-tools' : Bash\n",
+        "Allowed-Tools: Bash\n",
         "allowed-tools:\n  - Bash\n  - Read\n",
         "allowed-tools:\n- Bash\n",
     ] {

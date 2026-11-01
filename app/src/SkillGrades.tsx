@@ -101,8 +101,33 @@ function Latest({ name, row }: { name: string; row: GradeRow }) {
       <PanelSectionTitle id="skill-grades-latest">
         {`Latest · ${row.graded} · ${row.ran_on}${spent}`}
       </PanelSectionTitle>
+      {row.outcome_arms !== null && (
+        <MeterGroup aria-label={`Outcome evals of the latest grade of ${name}`}>
+          <Meter
+            label="Outcome evals with it"
+            value={row.outcome_arms.with ?? 0}
+            valueLabel={pointsSaid(row.outcome_arms.with)}
+          />
+          <Meter
+            label="Outcome evals without it"
+            variant="baseline"
+            value={row.outcome_arms.without ?? 0}
+            valueLabel={pointsSaid(row.outcome_arms.without)}
+          />
+          {row.outcome_arms.previous !== null && (
+            <Meter
+              label="Outcome evals, previous version"
+              variant="previous"
+              value={row.outcome_arms.previous}
+              valueLabel={pointsSaid(row.outcome_arms.previous)}
+            />
+          )}
+        </MeterGroup>
+      )}
       {row.arms.with === null && row.arms.without === null ? (
-        <p className="honest">{`${OUTCOME_SAID[row.outcome].said}: nothing of ${name} was compared.`}</p>
+        row.outcome_arms === null && (
+          <p className="honest">{`${OUTCOME_SAID[row.outcome].said}: nothing of ${name} was compared.`}</p>
+        )
       ) : (
         <MeterGroup aria-label={`The latest grade of ${name}`}>
           <Meter
@@ -332,6 +357,7 @@ export function GradesTab({
               <TableColumn align="end">With it</TableColumn>
               <TableColumn align="end">Without it</TableColumn>
               <TableColumn align="end">Previous</TableColumn>
+              <TableColumn align="end">Outcome evals</TableColumn>
               <TableColumn align="end">Spent</TableColumn>
               <TableColumn>Ended</TableColumn>
               <TableColumn hideName>Scorecard</TableColumn>
@@ -348,6 +374,9 @@ export function GradesTab({
                   <TableCell align="end">{pointsSaid(row.arms.without)}</TableCell>
                   <TableCell align="end">
                     {row.arms.previous === null ? "—" : pointsSaid(row.arms.previous)}
+                  </TableCell>
+                  <TableCell align="end">
+                    {row.outcome_arms === null ? "—" : pointsSaid(row.outcome_arms.with)}
                   </TableCell>
                   <TableCell align="end">{spentSaid(row)}</TableCell>
                   <TableCell textValue={row.ended}>
