@@ -727,6 +727,123 @@ fn lfs_is_held_whole_where_the_repository_names_a_program_lfs_would_run() {
     );
 }
 
+/// The credential helper values, last first, a call of git in `dir` reads.
+fn helpers_read(run: &Run) -> Vec<&str> {
+    let mut helpers: Vec<&str> = run
+        .out
+        .lines()
+        .filter_map(|line| line.strip_prefix("credential.helper="))
+        .collect();
+    helpers.reverse();
+    helpers
+}
+
+#[test]
+fn the_helper_purlis_wires_keeps_the_lfs_filter_and_offline() {
+    // #4380: the clean filter is what lets git read an LFS file as unchanged.
+    for wired in ["!gh auth git-credential", "!glab auth git-credential"] {
+        let named = listing(&[
+            ("global", "filter.lfs.process", "git-lfs filter-process"),
+            ("local", "credential.helper", wired),
+        ]);
+        assert_eq!(held_programs(false, &named), Some(Vec::new()), "{wired}");
+        assert!(
+            lfs_filter_offline(&String::from_utf8_lossy(&named)),
+            "{wired}"
+        );
+    }
+}
+
+#[test]
+fn only_the_exact_helper_purlis_wires_keeps_the_lfs_filter() {
+    let wired = ("local", "credential.helper", "!gh auth git-credential");
+    for extra in [
+        // Nearly the helper.
+        (
+            "local",
+            "credential.helper",
+            "!gh auth git-credential; ./evil",
+        ),
+        ("local", "credential.helper", "!gh auth git-credential "),
+        ("local", "credential.helper", "!/tmp/gh auth git-credential"),
+        ("local", "credential.helper", "!GH auth git-credential"),
+        ("local", "credential.helper", "gh"),
+        // Empty is a reset, which is a repository's own say over what is asked.
+        ("local", "credential.helper", ""),
+        // The exact value, but for one address, as purlis never writes it.
+        (
+            "local",
+            "credential.https://host.helper",
+            "!gh auth git-credential",
+        ),
+        // Another scope the repository holds.
+        ("worktree", "credential.helper", "./helper"),
+        // A second program LFS would run, beside the helper.
+        ("local", "core.sshcommand", "./ssh"),
+        ("local", "core.askpass", "./askpass"),
+        ("local", "lfs.customtransfer.x.path", "./agent"),
+        ("local", "lfs.extension.x.clean", "./clean"),
+        ("local", "lfs.standalonetransferagent", "x"),
+    ] {
+        // In either order: the planted one is not hidden by what git reads after it.
+        for named in [listing(&[wired, extra]), listing(&[extra, wired])] {
+            assert_eq!(
+                held_programs(false, &named),
+                Some(
+                    [
+                        "filter.lfs.clean=",
+                        "filter.lfs.smudge=",
+                        "filter.lfs.process=",
+                        "filter.lfs.required=false",
+                    ]
+                    .map(str::to_owned)
+                    .to_vec()
+                ),
+                "{extra:?}"
+            );
+            assert!(
+                !lfs_filter_offline(&String::from_utf8_lossy(&named)),
+                "{extra:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_filter_outside_the_wired_helpers_case_is_not_kept_offline() {
+    for named in [
+        // Nothing of the repository's: the person's own helper and filter, as before.
+        listing(&[("global", "credential.helper", "osxkeychain")]),
+        // The value in the person's own config is not the wiring of this repository.
+        listing(&[("global", "credential.helper", "!gh auth git-credential")]),
+        listing(&[("local", "commit.gpgsign", "false")]),
+    ] {
+        assert!(!lfs_filter_offline(&String::from_utf8_lossy(&named)));
+    }
+}
+
+#[test]
+fn a_wired_clones_filter_is_left_no_helper_off_the_network() {
+    // `git var -l` says what git, and so each git-lfs and git credential it starts, reads.
+    let repo = repo();
+    let config = |args: &[&str]| crate::testgit::run(repo.path(), args);
+    assert!(config(&["config", "credential.helper", "!gh auth git-credential"]).ok());
+
+    let off = run(repo.path(), &["var", "-l"], READ).expect("git runs");
+    assert_eq!(helpers_read(&off).first(), Some(&""), "{}", off.out);
+
+    // On the network, the helper the rule names is the one left, and git itself needs it.
+    let on = run_network(repo.path(), Some("!the-rules"), &["var", "-l"]).expect("git runs");
+    assert_eq!(helpers_read(&on).first(), Some(&"!the-rules"), "{}", on.out);
+}
+
+#[test]
+fn a_repository_with_no_wired_helper_is_given_no_reset_of_the_persons_helpers() {
+    let repo = repo();
+    let run = run(repo.path(), &["var", "-l"], READ).expect("git runs");
+    assert_ne!(helpers_read(&run).first(), Some(&""), "{}", run.out);
+}
+
 #[test]
 fn a_recent_objects_hook_the_repository_names_is_never_reached() {
     // #1853: `gc.recentObjectsHook` is a list of commands, so an empty `-c` adds one rather

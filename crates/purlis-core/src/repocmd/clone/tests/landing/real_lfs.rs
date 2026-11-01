@@ -602,12 +602,18 @@ fn real_git_lfs_a_helper_the_repository_wrote_still_holds_the_filter() {
         "the filter reached the server"
     );
 
-    // Control: the person's own git, with that config, does ask it.
+    // Control: the person's own git, with that config, does ask it. git-lfs 3.8.1 may panic as
+    // it ends here, so only what it asked is read.
     std::fs::remove_file(dest.join("file0.bin")).unwrap();
-    plain_git(&dest, &["checkout", "--", "file0.bin"]);
+    let mut control = std::process::Command::new("git");
+    control
+        .args(["checkout", "--", "file0.bin"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .current_dir(&dest);
+    let out = crate::forklock::output(&mut control).unwrap();
     assert!(
         marker.exists(),
-        "the helper was never one the filter would ask"
+        "the helper was never one the filter would ask: {out:?}"
     );
 }
 
@@ -618,28 +624,38 @@ fn real_git_lfs_asks_no_helper_where_the_command_line_empties_them() {
     if !real_git_lfs() {
         return;
     }
-    let (world, server, _, dest) = landed("widget");
+    let (world, _server, _, dest) = landed("widget");
     let marker = world.home.path().join("a-helper-ran");
     let helper = format!("!f() {{ touch '{}'; }}; f", marker.display());
     plain_git(&dest, &["config", "--local", "credential.helper", &helper]);
     std::fs::remove_dir_all(dest.join(".git/lfs/objects")).unwrap();
-    let before = server.batches();
+    let fetch = |before: &[&str]| {
+        let mut command = std::process::Command::new("git");
+        command
+            .args(before)
+            .args(["lfs", "fetch"])
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .current_dir(&dest);
+        crate::forklock::output(&mut command).unwrap()
+    };
 
-    let mut command = std::process::Command::new("git");
-    command
-        .args(["-c", "credential.helper=", "lfs", "fetch"])
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .current_dir(&dest);
-    let out = crate::forklock::output(&mut command).unwrap();
+    let emptied = fetch(&["-c", "credential.helper="]);
 
-    assert!(!out.status.success(), "{out:?}");
+    assert!(!emptied.status.success(), "{emptied:?}");
     assert!(
-        server.batches() > before,
-        "it never asked its server: {out:?}"
+        String::from_utf8_lossy(&emptied.stderr).contains("credentials"),
+        "{emptied:?}"
     );
     assert!(
         !marker.exists(),
         "git-lfs asked a helper the command line emptied"
+    );
+
+    // Control: left alone, it asks.
+    let _ = fetch(&[]);
+    assert!(
+        marker.exists(),
+        "the helper was never one git-lfs would ask"
     );
 }
 
