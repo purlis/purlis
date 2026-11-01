@@ -108,18 +108,56 @@ impl<'a> Written<'a> {
     }
 }
 
-/// **Installs what `accepted` says from `source` at `level`** (ADR 0100 §2): fetches the
-/// reviewed commit again, checks each skill's files are the reviewed ones, copies each into
-/// `level` under its own name, records it in the level's lockfile, and commits the copies and the
-/// lockfile as one change. A project skill lands granted to the root unless `grant` says
-/// otherwise. All or nothing. The source is confirmed on this machine. Answers each skill's
-/// folder.
+/// **The new names a clash was settled with**: each skill's name at the source, and the name it
+/// lands under (ADR 0100, amended 2026-11-01).
+pub type Renames = std::collections::BTreeMap<String, String>;
+
+/// **`files` of a skill, its `SKILL.md`'s `name:` line saying `name`**: all a new name changes of
+/// them, with the folder it lands in. Its text is left as the source wrote it.
+pub(super) fn under_new_name(
+    files: &[super::fetch::SourceFile],
+    name: &str,
+) -> Result<Vec<super::fetch::SourceFile>, String> {
+    files
+        .iter()
+        .map(|file| {
+            let mut file = file.clone();
+            if file.parts == [purlis_skills::FILE] {
+                let text = std::str::from_utf8(&file.bytes)
+                    .ok()
+                    .and_then(|text| purlis_skills::change::with_name(text, name))
+                    .ok_or_else(|| format!("{name}'s instructions have no name: line to change"))?;
+                file.bytes = text.into_bytes();
+            }
+            Ok(file)
+        })
+        .collect()
+}
+
+/// [`install_named`], each skill under its own name.
 pub fn install(
     cx: &mut Ctx<'_>,
     source: &Source,
     level: &Level,
     accepted: &Accepted,
     grant: Option<&Grant>,
+) -> Result<Vec<PathBuf>, String> {
+    install_named(cx, source, level, accepted, grant, &Renames::new())
+}
+
+/// **Installs what `accepted` says from `source` at `level`** (ADR 0100 §2): fetches the
+/// reviewed commit again, checks each skill's files are the reviewed ones, copies each into
+/// `level` under its own name or the one `renames` gives it, records it in the level's lockfile, and commits the copies and the
+/// lockfile as one change. A project skill lands granted to the root unless `grant` says
+/// otherwise. All or nothing. The source is confirmed on this machine. Answers each skill's
+/// folder.
+pub fn install_named(
+    cx: &mut Ctx<'_>,
+    source: &Source,
+    level: &Level,
+    accepted: &Accepted,
+    grant: Option<&Grant>,
+    renames: &Renames,
 ) -> Result<Vec<PathBuf>, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
@@ -155,36 +193,47 @@ pub fn install(
     let held = lock::read(plane, kept)?;
     let parts = level_parts(level)?;
     let mut copies = Vec::new();
+    let mut landing: Vec<&str> = Vec::new();
     for Reviewed {
         review: skill,
         files,
     } in &reviewed
     {
-        if cx.reserved(&skill.name) {
+        let renamed = renames.get(&skill.name);
+        let name = renamed.unwrap_or(&skill.name);
+        if let Some(why) = purlis_skills::change::name_problem(name) {
+            return Err(format!("{name:?} cannot be a skill's name: {why}"));
+        }
+        if cx.reserved(name) {
             return Err(format!(
-                "{} cannot be installed: its name belongs to a built-in skill",
-                skill.name
+                "{name} cannot be installed: its name belongs to a built-in skill"
             ));
         }
-        verbs::free_at(plane, level, &skill.name, &skill.name)?;
-        if held
-            .lock
-            .skills
-            .iter()
-            .any(|one| one.is(level, &skill.name))
-        {
+        if landing.contains(&name.as_str()) {
+            return Err(format!("two skills cannot both be named {name}"));
+        }
+        landing.push(name);
+        verbs::free_at(plane, level, name, name)?;
+        if held.lock.skills.iter().any(|one| one.is(level, name)) {
             return Err(format!(
-                "the {level} skills already have {} installed: update it instead",
-                skill.name
+                "the {level} skills already have {name} installed: update it instead"
             ));
         }
-        paths_fit(&parts, &skill.name, files)?;
-        copies.push((skill, files));
+        paths_fit(&parts, name, files)?;
+        let (files, recorded) = match renamed {
+            Some(_) => {
+                let files = under_new_name(files, name)?;
+                let recorded = review::wrote_renamed(&files);
+                (files, recorded)
+            }
+            None => (files.clone(), wrote(files)),
+        };
+        copies.push((skill, name.clone(), files, recorded, renamed.is_some()));
     }
     let mut written = Written::none(plane, parts.clone());
     let mut lock = held.lock.clone();
     let mut made: Vec<PathBuf> = Vec::new();
-    for (skill, files) in &copies {
+    for (skill, name, files, recorded, renamed) in &copies {
         let writes: Vec<write::File<'_>> = files
             .iter()
             .map(|file| write::File {
@@ -193,38 +242,38 @@ pub fn install(
                 bytes: &file.bytes,
             })
             .collect();
-        match write::new_skill(plane, &parts, level.depth(), &skill.name, &writes) {
-            Ok(record) => written.skills.push((skill.name.clone(), record)),
+        match write::new_skill(plane, &parts, level.depth(), name, &writes) {
+            Ok(record) => written.skills.push((name.clone(), record)),
             Err(why) => {
                 written.take_back();
                 return Err(format!(
-                    "{} could not be installed ({why}), so nothing was installed",
-                    skill.name
+                    "{name} could not be installed ({why}), so nothing was installed"
                 ));
             }
         }
-        let files_wrote = wrote(files);
         lock.skills.push(Locked {
-            name: skill.name.clone(),
+            name: name.clone(),
+            source_name: renamed.then(|| skill.name.clone()),
             level: lock::AtLevel(level.clone()),
             source: source.remote.clone(),
             folder: skill.folder.clone(),
             commit: fetched.commit.clone(),
-            digest: digest_of(&files_wrote),
-            files: files_wrote,
+            digest: digest_of(recorded),
+            files: recorded.clone(),
             brought_by: skill.brought_by.clone(),
         });
-        made.push(plane.join(parts.join("/")).join(&skill.name));
+        made.push(plane.join(parts.join("/")).join(name));
     }
+    let shown: Vec<&str> = copies.iter().map(|one| one.1.as_str()).collect();
     let mut paths: Vec<String> = made
         .iter()
         .map(|folder| verbs::rel(plane, folder))
         .collect();
     if let Some(grant) = widen::granted_beyond_the_root(level, grant) {
-        for Reviewed { review: skill, .. } in &reviewed {
-            match crate::skills::grant(plane, &skill.name, grant) {
+        for name in &shown {
+            match crate::skills::grant(plane, name, grant) {
                 Ok(folder) => {
-                    written.grants.push(skill.name.clone());
+                    written.grants.push((*name).to_owned());
                     paths.push(verbs::rel(plane, &crate::skills::beside(&folder)));
                 }
                 Err(why) => {
@@ -260,10 +309,9 @@ pub fn install(
     }
     // Each is a new skill: the grades of one that had its name before are none of its own
     // (#4104).
-    for Reviewed { review: skill, .. } in &reviewed {
-        verbs::earlier_dropped(cx, level, &skill.name);
+    for name in &shown {
+        verbs::earlier_dropped(cx, level, name);
     }
-    let shown: Vec<&str> = reviewed.iter().map(|s| s.review.name.as_str()).collect();
     cx.done(format!(
         "{} installed at {level}, pinned to {}",
         shown.join(", "),

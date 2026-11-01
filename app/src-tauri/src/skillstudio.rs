@@ -232,6 +232,8 @@ pub struct StudioSkill {
     /// Each harness whose chats a router hid it from the list of, and why (SK-15), each by its
     /// own budget: the chat still has it, through the index skill. Empty where every one lists it.
     pub hidden: Vec<SkillHiddenOn>,
+    /// The label of the source it was installed from (ADR 0100, amended 2026-11-01).
+    pub source_label: Option<String>,
     /// Whether that chat's workspace or persona pins it, so no router hides it.
     pub pinned: bool,
     /// Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
@@ -558,6 +560,7 @@ fn plane_shown(
         compat: row.compat.iter().map(Into::into).collect(),
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
+        source_label: row.source_label.clone(),
         pinned: row.pinned,
         pinned_by,
     }
@@ -1046,6 +1049,7 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         compat: row.compat.iter().map(Into::into).collect(),
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
+        source_label: row.source_label.clone(),
         pinned: row.pinned,
         pinned_by: Vec::new(),
     }

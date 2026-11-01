@@ -7991,6 +7991,17 @@ nav.piece-files-head {
 }
 
 /* A review's skill: what it adds, then its files, each under its mark. */
+.skill-clash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skill-source-label {
+  color: var(--text-secondary);
+  font-weight: normal;
+}
+
 .skill-review {
   display: flex;
   flex-direction: column;

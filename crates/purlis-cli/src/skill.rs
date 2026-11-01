@@ -229,6 +229,13 @@ pub enum SkillCommand {
         /// project skill they refer to reaches those workspaces too: its grant is widened.
         #[arg(long, num_args = 1..)]
         grant: Vec<String>,
+        /// Install a skill whose name is taken under a new one: `<name>=<new name>`. Repeat it for
+        /// another. Only its `name:` line and folder change.
+        #[arg(long = "rename", value_name = "NAME=NEW")]
+        renames: Vec<String>,
+        /// Leave out a skill whose name is taken. Repeat it for another.
+        #[arg(long = "skip", value_name = "NAME")]
+        skips: Vec<String>,
         /// Install without asking: for a script that printed and read the review itself.
         #[arg(long)]
         yes: bool,
@@ -923,6 +930,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             vault,
             key,
             grant,
+            renames,
+            skips,
             yes,
             at,
         } => {
@@ -940,7 +949,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             } else {
                 Named::These(&names)
             };
-            install(&mut cx, &source, names, &grant, yes, &at.level())
+            let settled = Settled { renames, skips };
+            install(&mut cx, &source, names, &grant, &settled, yes, &at.level())
         }
         SkillCommand::Update {
             confirm: Some(url),
@@ -1726,11 +1736,51 @@ enum Named<'a> {
 /// `purlis skill install`: what `source` offers where no skill is named; else the review of
 /// `names` (or of every skill not installed from it yet), asked about, then the install at
 /// `level`.
+/// How `purlis skill install` was told to settle a name clash (#4530).
+struct Settled {
+    renames: Vec<String>,
+    skips: Vec<String>,
+}
+
+impl Settled {
+    /// The new names, by each skill's name at the source, or what is wrong with one.
+    fn new_names(&self) -> Result<source::Renames, String> {
+        self.renames
+            .iter()
+            .map(|one| {
+                one.split_once('=')
+                    .map(|(old, new)| (old.to_owned(), new.to_owned()))
+                    .ok_or_else(|| format!("--rename takes <name>=<new name>, not {one:?}"))
+            })
+            .collect()
+    }
+}
+
+/// **What the review says of each name still taken**, or nothing where `new_names` and the skipped
+/// settle them all: each with its two ways on, so a script or a person can act on it.
+fn unsettled(review: &source::Review, new_names: &source::Renames) -> Vec<String> {
+    review
+        .skills
+        .iter()
+        .filter(|skill| !new_names.contains_key(&skill.name))
+        .filter_map(|skill| {
+            skill.clash.as_ref().map(|clash| {
+                format!(
+                    "{}'s name is taken: {}. Use --skip {} or --rename {}={}.",
+                    skill.name, clash.held_by, skill.name, skill.name, clash.offered
+                )
+            })
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn install(
     cx: &mut verbs::Ctx<'_>,
     source: &Source,
     named: Named<'_>,
     grant: &[String],
+    settled: &Settled,
     yes: bool,
     level: &Level,
 ) -> Result<Code, String> {
@@ -1771,8 +1821,22 @@ fn install(
             }
         }
     };
+    let new_names = match settled.new_names() {
+        Ok(new_names) => new_names,
+        Err(why) => {
+            voice::err(esc(&why).to_string());
+            return Ok(2);
+        }
+    };
+    let without_skipped = |names: &[String]| -> Vec<String> {
+        names
+            .iter()
+            .filter(|name| !settled.skips.contains(name))
+            .cloned()
+            .collect()
+    };
     let review = match named {
-        Named::These(names) => source::review(root, cx.built_in, source, names, level),
+        Named::These(names) => source::review(root, cx.built_in, source, &without_skipped(names), level),
         Named::All => match source::review_all(root, cx.built_in, source, level) {
             Ok(source::SetReview::Review { review, there }) => {
                 // Those the level has already, made there or from another source, or a
@@ -1795,7 +1859,18 @@ fn install(
                     ));
                     return Ok(0);
                 }
-                Ok(review)
+                if settled.skips.is_empty() {
+                    Ok(review)
+                } else {
+                    // Reviewed again without them, so what they alone bring along stays out.
+                    let named: Vec<String> = review
+                        .skills
+                        .iter()
+                        .filter(|skill| skill.brought_by.is_none())
+                        .map(|skill| skill.name.clone())
+                        .collect();
+                    source::review(root, cx.built_in, source, &without_skipped(&named), level)
+                }
             }
             Ok(source::SetReview::TooMuch(too_much)) => {
                 voice::err(esc(&too_much_text(&too_much)).to_string());
@@ -1811,6 +1886,10 @@ fn install(
             return Ok(1);
         }
     };
+    if review.skills.is_empty() {
+        voice::info("Nothing is left to install.");
+        return Ok(0);
+    }
     // A project skill it relies on reaches the workspaces the grant names too (#4172).
     let widenings = source::widenings(
         root,
@@ -1822,6 +1901,14 @@ fn install(
             .flat_map(|skill| skill.already.iter().map(String::as_str)),
     );
     print!("{}", review_text(&review, &widenings));
+    let stops = unsettled(&review, &new_names);
+    if !stops.is_empty() {
+        for line in &stops {
+            voice::err(esc(line).to_string());
+        }
+        voice::info("Nothing was installed.");
+        return Ok(1);
+    }
     let question = format!(
         "Install {} at {level}, pinned to {}?",
         counted(review.skills.len(), "skill", "skills"),
@@ -1848,12 +1935,13 @@ fn install(
             .to_string(),
         );
     }
-    done(source::install(
+    done(source::install_named(
         cx,
         source,
         level,
         &review.accepted(),
         grant.as_ref(),
+        &new_names,
     ))
 }
 
@@ -2118,6 +2206,9 @@ fn review_text(review: &source::Review, widenings: &[source::Widening]) -> Strin
         ));
         out.push_str(&summary_text(&skill.summary, "  "));
         out.push_str(&already_text(skill, widenings, "install"));
+        for line in &skill.notes {
+            out.push_str(&format!("  {}\n", esc(line)));
+        }
         for line in &skill.lint {
             out.push_str(&format!("  lint: {}\n", esc(line)));
         }
@@ -2497,7 +2588,18 @@ fn table(rows: &[StudioRow], also: &dyn Fn(&StudioRow) -> Vec<String>) -> String
             esc(&said)
         })
         .collect();
-    let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+    // A person sees where each came from. A chat that runs this never does (ADR 0100, amended
+    // 2026-11-01).
+    let in_a_chat = purlis_core::envvar::var(purlis_core::active::SESSION_ID_ENV)
+        .is_some_and(|id| !id.is_empty());
+    let shown: Vec<String> = rows
+        .iter()
+        .map(|row| match &row.source_label {
+            Some(label) if !in_a_chat => format!("{} · {label}", row.name),
+            _ => row.name.clone(),
+        })
+        .collect();
+    let names: Vec<&str> = shown.iter().map(String::as_str).collect();
     let name_w = voice::column(names.iter().copied().chain(["SKILL"]));
     let levels: Vec<String> = rows.iter().map(level).collect();
     let level_w = voice::column(levels.iter().map(String::as_str).chain(["LEVEL"]));

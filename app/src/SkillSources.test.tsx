@@ -80,6 +80,8 @@ const NOTIFY = {
   folder: "skills/notify",
   brought_by: "deploy",
   already: [],
+  clash: null,
+  notes: [],
   summary: EMPTY,
   files: [{ path: "SKILL.md", size: 5, executable: false, text: "hi", risky: false }],
   left_out: [],
@@ -96,6 +98,8 @@ const REVIEW = {
       folder: "skills/deploy",
       brought_by: null,
       already: [],
+      clash: null,
+      notes: [],
       summary: SUMMARY,
       files: [
         { path: "SKILL.md", size: 10, executable: false, text: "---\nname: deploy\n", risky: true },
@@ -684,6 +688,56 @@ describe("the install review", () => {
     const install = asked.find((one) => one.cmd === "skill_install");
     expect(install?.args.level).toEqual(OPS);
     expect(install?.args.reviewed).toEqual(ACCEPTED);
+  });
+
+  it("stops on a taken name until it is skipped or named, and hands the new name over (#4530)", async () => {
+    const clash = {
+      held_by: "the project skills have a deploy from mattpocock",
+      offered: "example-deploy",
+      taken: ["deploy", "notify"],
+    };
+    const asked = core({
+      answers: {
+        skill_install_review: () => ({
+          ...REVIEW,
+          skills: [{ ...REVIEW.skills[0], clash, notes: ["The ops skills have a deploy too."] }],
+          accepted: { ...ACCEPTED, skills: [ACCEPTED.skills[0]] },
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    expect(await within(review).findByTestId("clash-deploy")).toHaveTextContent(
+      "the project skills have a deploy from mattpocock",
+    );
+    expect(within(review).getByTestId("note-deploy")).toHaveTextContent(
+      "The ops skills have a deploy too.",
+    );
+    const install = within(review).getByRole("button", { name: "Install" });
+    expect(install).toBeDisabled();
+
+    await user.click(within(review).getByRole("radio", { name: "Skip it" }));
+    expect(install).toBeDisabled();
+
+    await user.click(within(review).getByRole("radio", { name: "Install it under a new name" }));
+    const named = within(review).getByRole("textbox", { name: "New name for deploy" });
+    expect(named).toHaveValue("example-deploy");
+    expect(install).toBeEnabled();
+
+    await user.clear(named);
+    await user.type(named, "notify");
+    expect(install).toBeDisabled();
+
+    await user.clear(named);
+    await user.type(named, "acme-deploy");
+    await user.click(install);
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    expect(asked.find((one) => one.cmd === "skill_install")?.args.renames).toEqual([
+      { from: "deploy", to: "acme-deploy" },
+    ]);
   });
 
   it("offers the grant at the project level and says what it widens before Install (#4185)", async () => {

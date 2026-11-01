@@ -17,6 +17,7 @@ import {
   type SkillSource,
   type SourceChecked,
   type SkillUpdateOffer,
+  type SkillRename,
   type SkillUpdates,
   type SkillWidening,
   type StudioLevel,
@@ -27,7 +28,9 @@ import { counted } from "./dispatches";
 import { Notice, type NoticeAction } from "./Notice";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
+import { nameProblem } from "./SkillChangeDialogs";
 import { GrantPicker } from "./SkillLevelPickers";
+import { TextField } from "./ui/field/Field";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -389,10 +392,10 @@ export function SkillSourcesPage({
         onCancel={() =>
           onGo({ at: "choose", source: at.source, label: at.label, ticked: at.skills })
         }
-        onInstall={(review, level, grant) =>
+        onInstall={(review, level, grant, renames) =>
           changeThen(
             "The skills were not installed",
-            () => commands.skillInstall(plane, sourceAt, level, review.accepted, grant),
+            () => commands.skillInstall(plane, sourceAt, level, review.accepted, grant, renames),
             toSource(at),
           )
         }
@@ -409,10 +412,10 @@ export function SkillSourcesPage({
         start={start}
         busy={busy}
         onCancel={() => onGo(toSource(at))}
-        onInstall={(review, level, grant) =>
+        onInstall={(review, level, grant, renames) =>
           changeThen(
             "The skill was not installed",
-            () => commands.skillInstall(plane, sourceAt, level, review.accepted, grant),
+            () => commands.skillInstall(plane, sourceAt, level, review.accepted, grant, renames),
             toSource(at),
           )
         }
@@ -1133,6 +1136,116 @@ function Relies({
   );
 }
 
+/** How the person settled a skill's name clash: unsettled until they choose. */
+type Settling = { how?: "skip" | "rename"; name?: string };
+
+/** The new name offered, or what the person typed over it. */
+function newName(skill: ReviewSkill, settling: Settling | undefined): string {
+  return settling?.name ?? skill.clash?.offered ?? "";
+}
+
+/** Why `skill`'s new name cannot be used, as it is typed. The core checks again at Install. */
+function newNameProblem(skill: ReviewSkill, settling: Settling | undefined): string | undefined {
+  const wanted = newName(skill, settling).trim();
+  if (wanted === "") return "Give it a name.";
+  return nameProblem(wanted, skill.name, [skill.name, ...(skill.clash?.taken ?? [])], []);
+}
+
+/**
+ * **The choices a review's name clashes wait for** (ADR 0100, amended 2026-11-01): each clash
+ * unsettled until the person skips it or names it, and the renames Install hands the core.
+ */
+function useClashes(skills: readonly ReviewSkill[], onSkip?: (name: string) => void) {
+  const [settled, setSettled] = useState<Readonly<Record<string, Settling>>>({});
+  const clashing = skills.filter((skill) => skill.clash !== null);
+  const skipped = clashing.filter((skill) => settled[skill.name]?.how === "skip");
+  const renaming = clashing.filter((skill) => settled[skill.name]?.how === "rename");
+  const open = clashing.filter((skill) => settled[skill.name]?.how === undefined);
+  const bad = renaming.some((skill) => newNameProblem(skill, settled[skill.name]) !== undefined);
+  const wanted = renaming.map((skill) => newName(skill, settled[skill.name]).trim());
+  const twice = wanted.some((name, at) => wanted.indexOf(name) !== at);
+  const settle = (name: string, change: Settling) =>
+    setSettled((was) => ({ ...was, [name]: { ...was[name], ...change } }));
+  return {
+    renames: renaming.map((skill) => ({
+      from: skill.name,
+      to: newName(skill, settled[skill.name]).trim(),
+    })),
+    why:
+      open.length > 0
+        ? open.length === 1
+          ? `Choose what to do with ${open[0]?.name}: its name is taken.`
+          : `Choose what to do with the ${open.length} skills whose names are taken.`
+        : bad
+          ? "Fix the new name."
+          : twice
+            ? "Two skills cannot have the same name."
+            : skipped.length === skills.length && skills.length > 0
+              ? "Every skill is skipped, so there is nothing to install."
+              : undefined,
+    choice: (skill: ReviewSkill, busy: boolean) =>
+      skill.clash === null ? undefined : (
+        <ClashChoice
+          skill={skill}
+          settling={settled[skill.name]}
+          busy={busy}
+          onSettle={(change) => {
+            settle(skill.name, change);
+            if (change.how === "skip") onSkip?.(skill.name);
+          }}
+        />
+      ),
+  };
+}
+
+/** **A name that is taken**: what holds it, and the two ways on, in the skill's own review. */
+function ClashChoice({
+  skill,
+  settling,
+  busy,
+  onSettle,
+}: {
+  skill: ReviewSkill;
+  settling: Settling | undefined;
+  busy: boolean;
+  onSettle: (change: Settling) => void;
+}) {
+  const problem =
+    settling?.how === "rename" ? newNameProblem(skill, settling) : undefined;
+  return (
+    <div className="skill-clash" data-testid={`clash-${skill.name}`}>
+      <SettingRow
+        label="This name is taken"
+        grouped
+        help={`${skill.clash?.held_by ?? ""}. A new name changes only its name line and folder: its text stays as the source wrote it.`}
+        control={(ids) => (
+          <Choice
+            kind="radio"
+            ids={ids}
+            options={[
+              { value: "skip", label: "Skip it" },
+              { value: "rename", label: "Install it under a new name" },
+            ]}
+            value={settling?.how ?? ""}
+            disabled={busy}
+            onValueChange={(to) => onSettle({ how: to === "skip" ? "skip" : "rename" })}
+          />
+        )}
+      />
+      {settling?.how === "rename" && (
+        <TextField
+          label={`New name for ${skill.name}`}
+          value={newName(skill, settling)}
+          isDisabled={busy}
+          onChange={(name) => onSettle({ name })}
+          error={problem}
+          data-testid={`new-name-${skill.name}`}
+        />
+      )}
+    </div>
+  );
+}
+
 /** The grant an install starts with: chats at the project's root alone (ADR 0100 §2). */
 const ROOT: SkillGrant = { to: "root" };
 
@@ -1233,8 +1346,11 @@ function SkillReviewed({
   widenings = [],
   by = "install",
   relies = true,
+  clash,
 }: {
   skill: ReviewSkill;
+  /** The choice its name's clash waits for, where it has one (ADR 0100, amended 2026-11-01). */
+  clash?: ReactNode;
   /** Its box in a review of many: ticked, to untick and leave it out. */
   pick?: ReactNode;
   /** Its files under one line, drawn only once it is unfolded. */
@@ -1278,6 +1394,12 @@ function SkillReviewed({
       {skill.brought_by !== null && (
         <p className="honest">Comes along: {skill.brought_by} refers to it.</p>
       )}
+      {clash}
+      {skill.notes.map((line) => (
+        <p key={line} className="honest" data-testid={`note-${skill.name}`}>
+          {line}
+        </p>
+      ))}
       {relies && <Relies skill={skill} widenings={widenings} by={by} />}
       <h4 className="ui-text-small ui-text-strong">What it adds</h4>
       <Summary summary={skill.summary} testid={`summary-${skill.name}`} />
@@ -1337,7 +1459,12 @@ function InstallReviewPage({
   start: SkillLevel;
   busy: boolean;
   onCancel: () => void;
-  onInstall: (review: InstallReview, level: SkillLevel, grant: SkillGrant | null) => void;
+  onInstall: (
+    review: InstallReview,
+    level: SkillLevel,
+    grant: SkillGrant | null,
+    renames: SkillRename[],
+  ) => void;
 }) {
   const [level, setLevel] = useState<SkillLevel>(start);
   // Read again where it lands changes: a skill it refers to that the level holds already is
@@ -1354,6 +1481,7 @@ function InstallReviewPage({
   );
   const review = read?.data;
   const reach = useInstallGrant(plane, level, review);
+  const clashes = useClashes(review?.skills ?? []);
   const risky = review?.skills.reduce((n, skill) => n + skill.summary.marked, 0) ?? 0;
   const why =
     read === undefined
@@ -1362,7 +1490,7 @@ function InstallReviewPage({
         ? "The review could not be read."
         : busy
           ? BUSY
-          : reach.why;
+          : (clashes.why ?? reach.why);
   return (
     <ReviewPage
       label={`Install ${name} from ${source.label}`}
@@ -1375,7 +1503,7 @@ function InstallReviewPage({
         isDisabled: why !== undefined,
         tooltip: why,
         onPress: () => {
-          if (review !== undefined) onInstall(review, level, reach.grant);
+          if (review !== undefined) onInstall(review, level, reach.grant, clashes.renames);
         },
       }}
     >
@@ -1418,7 +1546,12 @@ function InstallReviewPage({
               runs, and the chat&apos;s sandbox bounds that. Installing copies all of them or none.
             </p>
             {data.skills.map((skill) => (
-              <SkillReviewed key={skill.name} skill={skill} widenings={reach.widenings} />
+              <SkillReviewed
+                key={skill.name}
+                skill={skill}
+                widenings={reach.widenings}
+                clash={clashes.choice(skill, busy)}
+              />
             ))}
           </>
         )}
@@ -1630,7 +1763,12 @@ function InstallSetReviewPage({
   start: SkillLevel;
   busy: boolean;
   onCancel: () => void;
-  onInstall: (review: InstallReview, level: SkillLevel, grant: SkillGrant | null) => void;
+  onInstall: (
+    review: InstallReview,
+    level: SkillLevel,
+    grant: SkillGrant | null,
+    renames: SkillRename[],
+  ) => void;
 }) {
   // Those still in this install: unticking one here leaves it out and reads the review again.
   const [names, setNames] = useState<readonly string[]>(named);
@@ -1652,6 +1790,9 @@ function InstallSetReviewPage({
   const answer: InstallSetReview | undefined = read?.data;
   const review = answer?.kind === "review" ? answer.review : undefined;
   const reach = useInstallGrant(plane, level, review);
+  const clashes = useClashes(review?.skills ?? [], (name) =>
+    setNames(names.filter((one) => one !== name)),
+  );
   // A skill left out that another brings along is in the review, and is not listed as left out.
   const leftOut = named.filter(
     (name) => !names.includes(name) && !review?.skills.some((one) => one.name === name),
@@ -1670,7 +1811,7 @@ function InstallSetReviewPage({
               ? `Every skill ticked is in the ${labelOf(levels, level)} skills already.`
               : busy
                 ? BUSY
-                : reach.why;
+                : (clashes.why ?? reach.why);
   const risky = review === undefined ? 0 : riskyIn(review);
   return (
     <ReviewPage
@@ -1684,7 +1825,7 @@ function InstallSetReviewPage({
         isDisabled: why !== undefined,
         tooltip: why,
         onPress: () => {
-          if (review !== undefined) onInstall(review, level, reach.grant);
+          if (review !== undefined) onInstall(review, level, reach.grant, clashes.renames);
         },
       }}
     >
@@ -1771,6 +1912,7 @@ function InstallSetReviewPage({
                     skill={skill}
                     folded
                     widenings={reach.widenings}
+                    clash={clashes.choice(skill, busy)}
                     pick={
                       <Checkbox
                         isSelected

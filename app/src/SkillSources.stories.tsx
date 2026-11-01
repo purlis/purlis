@@ -73,6 +73,8 @@ const DEBUGGING = {
   folder: "skills/systematic-debugging",
   brought_by: null,
   already: [],
+  clash: null,
+  notes: [],
   summary: SCRIPTED,
   files: [
     {
@@ -199,6 +201,22 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
           ],
         };
       case "skill_install_review":
+        if ((args?.names as string[] | undefined)?.[0] === "taken-by-another")
+          return {
+            commit: commit("3"),
+            skills: [
+              {
+                ...DEBUGGING,
+                clash: {
+                  held_by: "the project skills have a systematic-debugging from mattpocock",
+                  offered: "superpowers-systematic-debugging",
+                  taken: ["systematic-debugging"],
+                },
+                notes: ["The ops skills have a systematic-debugging too: where a chat gets both, the narrowest copy wins."],
+              },
+            ],
+            accepted: { commit: "3".repeat(40), skills: [] },
+          };
         return {
           commit: commit("3"),
           // It refers to a skill the level holds already, left as it is (#4032).
@@ -392,6 +410,26 @@ export const InstallReviewGranted: Story = {
     // The picture shows the line, with the list of grants closed.
     await waitFor(() => expect(within(document.body).queryByRole("listbox")).toBeNull());
     widened.scrollIntoView({ block: "center" });
+  },
+};
+
+/** **A taken name stops the review** (ADR 0100, amended 2026-11-01): skip it, or a new name filled
+ *  in to edit, and one line for a copy at another level. */
+export const InstallReviewClash: Story = {
+  args: {
+    at: { at: "install", source: SOURCE, label: SUPERPOWERS.label, skill: "taken-by-another" },
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("install-review");
+    const rename = await within(review).findByRole("radio", {
+      name: "Install it under a new name",
+    });
+    await expect(within(review).getByRole("button", { name: "Install" })).toBeDisabled();
+    await userEvent.click(rename);
+    await expect(
+      within(review).getByRole("textbox", { name: "New name for systematic-debugging" }),
+    ).toHaveValue("superpowers-systematic-debugging");
+    await expect(within(review).getByRole("button", { name: "Install" })).toBeEnabled();
   },
 };
 
