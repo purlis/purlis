@@ -57,7 +57,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -188,10 +188,37 @@ pub(crate) const START_CANCELLED: &str = "the person cancelled this start";
 /// The code of a start that was cancelled, which is the window's own, never a host's.
 const CANCELLED: &str = "cancelled";
 
+/// What anything but a start waiting for it says while a start waits for its runner (#4415): it
+/// waits on nothing, so the window's commands never wait on a runner coming back.
+const THE_RUNNER_COMES_BACK: &str =
+    "this project's runner is on its way back, so it is not held yet";
+
 std::thread_local! {
     /// The person's Cancel of the start this thread runs, while one can be cancelled (#4264).
     static CANCEL: std::cell::RefCell<Option<Arc<std::sync::atomic::AtomicBool>>> =
         const { std::cell::RefCell::new(None) };
+    /// Whether this thread runs a dispatch's start, which holds no lock around it (#4415).
+    static A_DISPATCHS_START: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `start` as a dispatch's start: it waits for a runner on its way back as a person's does,
+/// with no Cancel, for at most [`a_dispatchs_hold_within`] (#4415).
+pub(crate) fn a_dispatchs_start<T>(start: impl FnOnce() -> T) -> T {
+    struct Forgets;
+    impl Drop for Forgets {
+        fn drop(&mut self) {
+            A_DISPATCHS_START.set(false);
+        }
+    }
+    A_DISPATCHS_START.set(true);
+    let _forgets = Forgets;
+    start()
+}
+
+/// Whether this thread's start may wait for a runner on its way back: the person's, and a
+/// dispatch's. Any other may run under a lock window commands wait on.
+fn waits_for_its_runner() -> bool {
+    can_be_cancelled() || A_DISPATCHS_START.get()
 }
 
 /// Runs `start` with `cancel` able to cancel it: a start from the person's dialog.
@@ -1157,6 +1184,8 @@ struct Shared {
         Mutex<HashMap<u64, tokio::sync::oneshot::Sender<purlis_session_protocol::link::Stream>>>,
     /// What this link holds of the event log of the runner its host relays it to (#3393).
     runner_log: Mutex<crate::runnerlog::RunnerLog>,
+    /// How many starts are waiting, off the hold's lock, for the runner to come back (#4415).
+    holds_waiting: AtomicUsize,
     /// Who logs each skill run that runner's log says started or ended, by the project's id: each
     /// project held on it in the runner's own checkout (SK-20b, #3084).
     skill_runs: Mutex<HashMap<String, crate::host::SkillRunsHeard>>,
@@ -1485,6 +1514,11 @@ impl HostLink {
             // It may run under a lock window commands wait on: never a pool's raised wait.
             return self.call_within(command, ANSWER_WITHIN);
         }
+        self.call_until_answered(command)
+    }
+
+    /// Waits until the host answers, its link ends or the person cancels, where one can.
+    fn call_until_answered(&self, command: Command) -> Result<Answer, String> {
         let (answered, answer) = std::sync::mpsc::channel();
         let client = Arc::clone(&self.client);
         self.runtime.spawn(async move {
@@ -1816,10 +1850,11 @@ impl HostLink {
         let SendHeld {
             most, within, late, ..
         } = held;
-        let started = std::time::Instant::now();
         let asked = ask(Arc::clone(&self.client), transfer);
         let file = file.map(Path::to_path_buf);
-        let sent = self.transfer(transfer, within, async move {
+        let graced = tokio::time::Instant::now() + within + ANSWER_WITHIN;
+        // Past `graced`, so this send's own clock says it ran out, not this bound.
+        let sent = self.transfer(transfer, within + ANSWER_WITHIN, async move {
             let writing = async move {
                 let mut stream = stream.await.map_err(|_| no_code_stream())?;
                 if let Some(file) = file {
@@ -1837,21 +1872,57 @@ impl HostLink {
             // The host's answer comes as soon as it refuses, stream or none: a refusal is
             // said at once, never after the bound on a transfer.
             tokio::pin!(asked, writing);
+            // This machine's own clock, started before the host's: `Ok(Err(_))` is this send's
+            // wait ending it, and nothing a runner says is. An answer before its time says
+            // itself (#4398). A send the host finishes within the same grace as any answer
+            // still counts.
+            let time_up = tokio::time::sleep(within);
+            tokio::pin!(time_up);
             tokio::select! {
+                biased;
                 answered = &mut asked => {
                     let answer = answered.map_err(code_refused)?;
                     writing.await?;
-                    Ok(answer)
+                    Ok(Ok(answer))
                 }
                 written = &mut writing => {
                     written?;
-                    asked.await.map_err(code_refused)
+                    match tokio::time::timeout_at(graced, &mut asked).await {
+                        Ok(answered) => answered.map(Ok).map_err(code_refused),
+                        Err(_) => Ok(Err(None)),
+                    }
+                }
+                () = &mut time_up => {
+                    // Its time is up, and only that is decided here. The stream stays open and
+                    // keeps writing until the grace ends: dropped now, the host could read the
+                    // reset as the end of what was sent. The host's own bound ends it first. A
+                    // refusal by then may be that bound, so it is said beside the limit.
+                    let last = async {
+                        tokio::select! {
+                            biased;
+                            answered = &mut asked => answered,
+                            _ = &mut writing => (&mut asked).await,
+                        }
+                    };
+                    match tokio::time::timeout_at(graced, last).await {
+                        Ok(Ok(answer)) => Ok(Ok(answer)),
+                        Ok(Err(why)) => Ok(Err(Some(code_refused(why)))),
+                        Err(_) => Ok(Err(None)),
+                    }
                 }
             }
         });
-        sent.map_err(|why| match late {
-            Some(hit) if started.elapsed() >= within => self.limit_said(hit),
-            _ => why,
+        let also = match sent? {
+            Ok(answer) => return Ok(answer),
+            Err(also) => also,
+        };
+        let said = late.map_or_else(
+            || "the host did not finish moving the code in time".to_owned(),
+            |hit| self.limit_said(hit),
+        );
+        Err(match also {
+            Some(also) => format!("{said}. The host also said: {also}"),
+            None => said,
         })
     }
 
@@ -2695,6 +2766,9 @@ pub struct HostedSessions {
     /// the window's link over (#2446): it composes each harness chat, and its proxies listen on
     /// the runner's ports.
     on_a_runner: bool,
+    /// Whether a chat was asked after while a start waited for the runner, so that what the host
+    /// has left running was not known then, and none of it is closed as not reattached (#4415).
+    left_unread: std::sync::atomic::AtomicBool,
     /// Whether the runner holds the project where it keeps its projects, sent the project's code
     /// by the window (#2046): a pool's runner. A runner a test runs on this machine's disk holds
     /// it at the window's own path, and is sent nothing.
@@ -2746,6 +2820,7 @@ impl HostedSessions {
             untaken: Arc::default(),
             reconnecting,
             on_a_runner: false,
+            left_unread: std::sync::atomic::AtomicBool::new(false),
             kept_on_the_runner: false,
             sent: Arc::default(),
             skill_runs: Arc::default(),
@@ -2802,7 +2877,13 @@ impl HostedSessions {
 
     /// The link, with this project held on it.
     fn link(&self) -> Result<(Arc<HostLink>, String), String> {
-        held_on(&self.holding())
+        held_on(&self.holding(), false)
+    }
+
+    /// [`Self::link`] for a chat's start, the one thing that wakes an idle runner: a project held
+    /// on a link that is down is held again, and that hold waits for the runner (#4403, #4415).
+    fn link_of_a_start(&self) -> Result<(Arc<HostLink>, String), String> {
+        held_on(&self.holding(), true)
     }
 
     /// [`Self::moving_link`], for the tests of what moves over it.
@@ -2998,7 +3079,11 @@ fn reconnects_of(
 /// and after it the host is told the numbers `opened` has dealt (#2000); the window takes the
 /// board the host kept, or keeps why it could not in `untaken` (#2194, #2006), and what the
 /// host still runs of the project from before this window in `left` (#2006).
-fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
+///
+/// `for_a_start` is whether a chat is starting. Only then is a project on a link that is down held
+/// again. A person's or dispatch's start waits for a runner on its way back before it takes the
+/// hold's lock, so the window's commands, which take that lock, do not wait on the runner (#4415).
+fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, String), String> {
     let Holding {
         connection,
         stays_on,
@@ -3020,23 +3105,36 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         None if can_be_cancelled() => connection.of_project(root, UNTIL_THE_HOST_SAYS)?,
         None => connection.of_project(root, LINK_WITHIN)?,
     };
+    // A runner this was held on is kept no more (Make the runner again, a drain's end): the
+    // relay holds the project on the one after it, which answers yes and holds none of its
+    // code, so no word comes back that it does not hold it. While its link is down a start holds
+    // it again too: a hold is the step that wakes an idle runner and waits for it, and what
+    // comes next on the link would only be refused (#4403).
+    let stays_held = |on: &Held| {
+        on.on == link.id
+            && !(*kept_on_the_runner
+                && ((for_a_start && lock(&link.shared.runner_log).link_is_down())
+                    || a_runner_is_gone(connection, &on.runners)))
+    };
+    let waits = for_a_start && *kept_on_the_runner && waits_for_its_runner();
+    // Decided once: a link that came back during the wait still needs what a hold does after it,
+    // its code sent above all.
+    let waited = waits && !lock(held).as_ref().is_some_and(stays_held);
+    if waited {
+        waits_off_the_lock(holding, &link)?;
+    }
     let mut held = lock(held);
-    if let Some(Held {
-        project,
-        on,
-        runners,
-    }) = &*held
-        && *on == link.id
+    if !waited
+        && let Some(on) = &*held
+        && stays_held(on)
     {
-        // A runner this was held on is kept no more (Make the runner again, a drain's end): the
-        // relay holds the project on the one after it, which answers yes and holds none of its
-        // code, so no word comes back that it does not hold it. While its link is down it is held
-        // again too: a hold is the step that wakes an idle runner and waits for it, and what
-        // comes next on the link would only be refused (#4403).
-        let link_is_down = lock(&link.shared.runner_log).link_is_down();
-        if !(*kept_on_the_runner && (link_is_down || a_runner_is_gone(connection, runners))) {
-            return Ok((link, project.clone()));
-        }
+        return Ok((link, on.project.clone()));
+    }
+    // Another start waits for the runner: this would hold the lock until a quick command's limit.
+    if !waits && link.shared.holds_waiting.load(Ordering::SeqCst) > 0 {
+        return Err(THE_RUNNER_COMES_BACK.to_owned());
+    }
+    if held.as_ref().is_some_and(|on| on.on == link.id) {
         crate::runnercode::forget(sent);
     }
     // Read before the hold and the send, so a runner removed during them is seen as gone next.
@@ -3317,7 +3415,7 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
             sent: Arc::clone(&sent),
             skill_runs: Arc::clone(&skill_runs),
         };
-        if let Err(again) = held_on(&holding) {
+        if let Err(again) = held_on(&holding, false) {
             tracing::warn!("purlis: project {project} is not held where its chats run: {again}");
             // Marked in the Pools group until a hold is taken (#2846), in the runner's words:
             // only a refusal of the hold, never what purlis itself could not do.
@@ -3326,6 +3424,54 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
             }
         }
     })
+}
+
+/// **How long a dispatch's first hold is waited for** (#4415): a cluster pool's `vouchWait`, which
+/// is what the host waits, and a quick command's limit after it. A dispatch has no Cancel, and
+/// nothing else would end this wait where a runner keeps its link and never answers.
+fn a_dispatchs_hold_within(connection: &Connection) -> Duration {
+    let vouching = connection.runners_config().and_then(|config| {
+        let pool = connection.pool()?;
+        purlis_core::runners::cluster_pools(&config)
+            .ok()?
+            .into_iter()
+            .find(|one| one.name() == pool)
+            .map(|one| one.vouch_wait())
+    });
+    vouching.unwrap_or_default() + ANSWER_WITHIN
+}
+
+/// **A start's first hold, off the hold's lock** (#4415): the host's answer waits while the runner
+/// comes back, and nothing else waits on it. The person's Cancel ends a person's wait, and
+/// [`a_dispatchs_hold_within`] a dispatch's. Holding again is harmless, so [`held_on`] goes on as
+/// it does for any hold, and is answered at once.
+fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> {
+    struct Waited<'a>(&'a AtomicUsize);
+    impl Drop for Waited<'_> {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&holding.root)
+        .map_err(|why| format!("this project has no id the session host can name it by: {why}"))?;
+    // Before the hold, as in `held_on`, so the host's first line for the project is heard.
+    if let Some(relayed) = lock(&holding.relayed).clone() {
+        link.hear_project(&project, relayed);
+    }
+    link.when_reconnecting(Arc::clone(&holding.reconnects));
+    link.shared.holds_waiting.fetch_add(1, Ordering::SeqCst);
+    let _waited = Waited(&link.shared.holds_waiting);
+    let hold = Command::HoldProject {
+        project,
+        project_path: String::new(),
+    };
+    if can_be_cancelled() {
+        link.call_until_answered(hold)
+    } else {
+        link.call_within(hold, a_dispatchs_hold_within(&holding.connection))
+    }
+    .map(|_| ())
+    .map_err(|why| format!("{NOT_HELD} {why}"))
 }
 
 /// How long a window waits to send its `relay_to` once more, where the host refused it because
@@ -3506,7 +3652,7 @@ fn ask_to_save(
     board: &Arc<Mutex<Option<crate::autosave::MidTurn>>>,
 ) -> bool {
     let root = &holding.root;
-    let (link, project) = match held_on(holding) {
+    let (link, project) = match held_on(holding, false) {
         Ok(held) => held,
         Err(why) => {
             tracing::warn!(
@@ -3810,7 +3956,7 @@ impl SessionHost for HostedSessions {
         if self.on_a_runner && opening.harness.is_some() {
             return Err(COMPOSED_ON_THE_RUNNER.to_owned());
         }
-        let (link, project) = self.link()?;
+        let (link, project) = self.link_of_a_start()?;
         let program = opening
             .program
             .clone()
@@ -3848,7 +3994,7 @@ impl SessionHost for HostedSessions {
         if self.on_a_runner && named.without_sandbox {
             return Err(SANDBOXED_ON_A_RUNNER.to_owned());
         }
-        let (link, project) = self.link()?;
+        let (link, project) = self.link_of_a_start()?;
         // The workspace's clones as they are here, uncommitted work and all, before the chat
         // starts on them there (#2046).
         if let (true, Some(workspace)) = (self.kept_on_the_runner, &named.workspace) {
@@ -4358,7 +4504,16 @@ impl SessionHost for HostedSessions {
 
     /// Held in the host from before this window, which holds the project now to say.
     fn left_running(&self, number: u32) -> bool {
-        self.link().is_ok() && lock(&self.left).contains_key(&number)
+        match self.link() {
+            Ok(_) => lock(&self.left).contains_key(&number),
+            Err(why) => {
+                // Not known yet, rather than not running: nothing is closed for it (#4415).
+                if why == THE_RUNNER_COMES_BACK {
+                    self.left_unread.store(true, Ordering::SeqCst);
+                }
+                false
+            }
+        }
     }
 
     fn reattach(&self, number: u32, announce: &dyn Fn(u32)) -> Result<u32, String> {
@@ -4445,7 +4600,7 @@ impl SessionHost for HostedSessions {
     }
 
     fn close_what_was_not_reattached(&self) {
-        if self.link().is_err() {
+        if self.link().is_err() || self.left_unread.load(Ordering::SeqCst) {
             return;
         }
         let left: Vec<HeldProgram> = lock(&self.left).drain().map(|(_, left)| left).collect();

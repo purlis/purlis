@@ -287,7 +287,9 @@ pub fn not_checked(why: purlis_core::clusterpool::Refused) -> NotChecked {
         Refused::KeyChanged { .. } | Refused::OperatorKeyChanged { .. } => {
             NotChecked::KeyChanged(why.to_string())
         }
-        Refused::NotVouched(_) | Refused::Other(_) => NotChecked::Refused(why.to_string()),
+        Refused::NotVouched(_) | Refused::WaitRanOut(_) | Refused::Other(_) => {
+            NotChecked::Refused(why.to_string())
+        }
     }
 }
 

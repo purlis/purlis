@@ -16,6 +16,8 @@ fn accepted() -> Accepted {
         token_cap: 200_000,
         limit_usd: 3.0,
         tests: TESTS.into(),
+        outcomes: None,
+        evals: Vec::new(),
         previous: None,
         runs_on: Some("sonnet".into()),
         at: "2026-10-28T10:00:00+00:00".into(),
@@ -35,6 +37,7 @@ fn now(chats: u32, token_cap: u64, limit_usd: f64) -> Now {
         token_cap,
         limit_usd,
         tests: TESTS.into(),
+        outcomes: None,
         consent: CONSENT.into(),
         previous: false,
     }
@@ -276,13 +279,30 @@ fn a_change_of_a_skill_never_graded_after_each_edit_keeps_no_state() {
     assert_eq!(of(root, &Level::project(), "ship"), None);
 }
 
+/// SK-55: an eval a chat or a pull changed or added runs nothing the person did not see, even
+/// where the chats it would run are within what was accepted.
+#[test]
+fn other_outcome_evals_wait_for_the_person() {
+    let added = Now {
+        outcomes: Some(CONSENT.into()),
+        ..now(12, 200_000, 3.0)
+    };
+    assert!(matches!(next(&accepted(), &added), Next::Waits(why) if why.contains("outcome evals")));
+    let pinned = Accepted {
+        outcomes: Some(TESTS.into()),
+        ..accepted()
+    };
+    assert!(matches!(next(&pinned, &added), Next::Waits(why) if why.contains("outcome evals")));
+}
+
 #[test]
 fn the_previous_versions_arm_is_counted_only_where_edits_are_committed_4035() {
     let plan = purlis_skills::grade::Plan {
         chats: 12,
         per_arm: 6,
         trigger_tests: 2,
-        outcome_evals_waiting: 0,
+        outcome_evals: 0,
+        judge_chats: 0,
     };
     assert_eq!(
         chats_to_accept(&plan, true),

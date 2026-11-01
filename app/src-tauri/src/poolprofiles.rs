@@ -777,15 +777,18 @@ fn keep_on_as(
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
         .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
-        .map_err(|why| {
-            if why == crate::runnerlinks::ANSWER_LATE {
-                let secs = kept.limits.in_force(LimitId::AnswerWait);
-                let hit = LimitId::AnswerWait.limit().waited(secs, None);
-                format!("{why}: {}", purlis_core::poollimits::hit_on(pool, hit))
-            } else {
-                why
-            }
-        })
+        .map_err(|why| late_said(pool, kept.limits.in_force(LimitId::AnswerWait), why))
+}
+
+/// `why` a runner kept no profile: where the pool's wait of `secs` ran out, in words the window can
+/// ask of for what to raise it to (spec #4275). By purlis's own constant, never a runner's words.
+fn late_said(pool: &str, secs: u64, why: String) -> String {
+    if why == crate::runnerlinks::ANSWER_LATE {
+        let hit = LimitId::AnswerWait.limit().waited(secs, None);
+        format!("{why}: {}", purlis_core::poollimits::hit_on(pool, hit))
+    } else {
+        why
+    }
 }
 
 /// **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275).
@@ -918,12 +921,18 @@ pub struct PoolLimitGroup {
 pub struct PoolLimitsPage {
     pub groups: Vec<PoolLimitGroup>,
     pub advanced: Vec<PoolLimitRow>,
+    /// The limits changed since its runner was made, in plain words (#4286): what waits for it
+    /// to be replaced. Empty where nothing waits, the only time Replace is offered.
+    pub waiting: Vec<String>,
 }
 
-/// What the page draws of the values `chosen`.
+/// What the page draws of the values `chosen`: a limit shaping a runner only on a pool whose runner
+/// this machine makes (`docker`), and the limits in `waiting`.
 fn limits_shown(
     chosen: &purlis_core::poollimits::Chosen,
     refused: &[purlis_core::poollimits::RefusedValue],
+    docker: bool,
+    waiting: &[purlis_core::poollimits::LimitId],
 ) -> PoolLimitsPage {
     use purlis_core::poollimits::{Group, Limit, all};
     let number = |value: u64| u32::try_from(value).unwrap_or(u32::MAX);
@@ -948,6 +957,7 @@ fn limits_shown(
                 // The vouch wait is the add's alone: no later attempt waits on it, so a value
                 // here would change nothing.
                 .filter(|limit| limit.group == group && !limit.advanced && !limit.clusters_only)
+                .filter(|limit| docker || !limit.shapes_runner())
                 .collect();
             let first = held.first()?;
             let same = held
@@ -968,6 +978,10 @@ fn limits_shown(
             .filter(|limit| limit.advanced)
             .map(|limit| row(limit, true))
             .collect(),
+        waiting: waiting
+            .iter()
+            .map(|id| id.limit().plain.to_owned())
+            .collect(),
     }
 }
 
@@ -986,9 +1000,16 @@ fn limit_named(key: &str) -> Result<&'static purlis_core::poollimits::Limit, Str
 #[specta::specta]
 pub async fn pool_limits(pool: String) -> Result<PoolLimitsPage, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let held = purlis_core::runners::limits_held_of(&config_root()?, &pool)
-            .map_err(|why| why.to_string())?;
-        Ok(limits_shown(&held.chosen, &held.refused))
+        let config = config_root()?;
+        let said = |why: purlis_core::runners::Refused| why.to_string();
+        let held = purlis_core::runners::limits_held_of(&config, &pool).map_err(said)?;
+        let waiting = purlis_core::runners::changes_waiting(&config, &pool).map_err(said)?;
+        Ok(limits_shown(
+            &held.chosen,
+            &held.refused,
+            held.docker,
+            &waiting,
+        ))
     })
     .await
     .map_err(|why| format!("the limits were not read: {why}"))?
@@ -1164,9 +1185,17 @@ pub async fn pool_profiles(
             && purlis_core::pools::claim_keeps_its_home(&config, &pool) == Ok(false);
         let (on_pool, addable) = chosen(&records, &names);
         // Each that goes to a runner, kept there over one link.
+        // Held to the pool's limits, so a value raised applies to the next ask (#4397).
+        let limits = purlis_core::runners::chosen_limits_of(&config, &pool)
+            .map_err(|why| why.to_string())?;
         let kept: Vec<_> = on_pool
             .iter()
-            .map(|record| record.clone().and_then(onrunner::Kept::of))
+            .map(|record| {
+                record
+                    .clone()
+                    .and_then(onrunner::Kept::of)
+                    .map(|kept| kept.held_to(limits))
+            })
             .collect();
         let sent: Vec<_> = kept
             .iter()
@@ -1184,7 +1213,8 @@ pub async fn pool_profiles(
                     Some(said) => said
                         .next()
                         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
-                        .map(|kept| onrunner::standing_on_the_wire(kept.standing)),
+                        .map(|kept| onrunner::standing_on_the_wire(kept.standing))
+                        .map_err(|why| late_said(&pool, limits.in_force(LimitId::AnswerWait), why)),
                 });
                 match record {
                     Ok(record) => row(record, standing),

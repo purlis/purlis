@@ -934,6 +934,9 @@ mod see_through_tints_tests;
 #[cfg(test)]
 #[path = "surface_grounds_tests.rs"]
 mod surface_grounds_tests;
+#[cfg(test)]
+#[path = "surface_tints_tests.rs"]
+mod surface_tints_tests;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
@@ -2634,6 +2637,7 @@ fn edge(rules: &[Rule], family: &Family, variant: &str, look: &Drawn) -> Option<
 /// while `states` hold [`State::Invalid`], the edge that says a value is refused (#3110), on any
 /// fill; with more contrast asked for, each raised as [`super::Least::floor`] raises it (#2925).
 /// [`unreadable_by`], at the floors themselves.
+#[cfg(test)]
 fn unreadable(
     theme: &ResolvedTheme,
     on: &[String],
@@ -3067,7 +3071,16 @@ fn held_from(
     }
     // A surface's fill the theme sets is a ground of every family drawn on it (#3099, from
     // #3083): held until no surface falls back, since each that does draws its own fill again.
-    while held_on_surfaces(theme, &mut drawn_in, &mut rules, &mut fell) {}
+    // A fallback only ever takes a fill away, so what is built for the first round covers the rest.
+    let coarse: &[ResolvedTheme] = if surfaces_set(&rules)
+        .iter()
+        .any(|(_, _, _, set)| shows_a_tint(theme, set))
+    {
+        coarse_tints()
+    } else {
+        &[]
+    };
+    while held_on_surfaces(theme, coarse, &mut drawn_in, &mut rules, &mut fell) {}
     #[cfg(test)]
     DRAWN_IN.with(|it| it.set(drawn_in.len()));
     (rules, fell)
@@ -3371,11 +3384,21 @@ fn surface_ground(theme: &ResolvedTheme, surface: &Family, set: &str) -> Vec<Str
         .collect()
 }
 
+/// Whether a surface's fill `set` lets what is under it through, so a tint moves what stands on it
+/// (#4310).
+fn shows_a_tint(theme: &ResolvedTheme, set: &str) -> bool {
+    hex(theme, set).is_some_and(|one| !is_opaque(one))
+}
+
 /// **The floor a family breaks on a surface's fill a theme sets**, if any: each of its looks
-/// at rest and in each state but disabled, held to the reading floors as written, and its
-/// consent variants to the consent floors in every drawn theme, on that fill alone.
+/// at rest and in each state but disabled, held to the reading floors as written and, on a
+/// see-through fill, in the tints (#4310): each of `coarse`, and every drawn theme where one of
+/// those comes near a floor. Its consent variants are held to the consent floors in every drawn
+/// theme, on that fill alone.
+#[allow(clippy::too_many_arguments)]
 fn broken_on(
     theme: &ResolvedTheme,
+    coarse: &[ResolvedTheme],
     drawn_in: &[ResolvedTheme],
     rules: &[Rule],
     family: &Family,
@@ -3385,12 +3408,49 @@ fn broken_on(
     let singles: Vec<Vec<State>> = std::iter::once(Vec::new())
         .chain(states_of(family).into_iter().map(|one| vec![one]))
         .collect();
-    let on = surface_ground(theme, surface, set);
+    // Two states that draw a variant alike read alike, but for a refused box's edge.
+    let mut looks: Vec<(&str, &[State], Drawn)> = Vec::new();
     for states in &singles {
         for variant in family.looks() {
             let look = drawn(rules, family, variant, states);
-            if let Some(broken) = unreadable(theme, &on, rules, family, variant, states, &look) {
-                return Some(broken);
+            let refused = states.contains(&State::Invalid);
+            if !looks.iter().any(|(name, others, one)| {
+                *name == variant && *one == look && others.contains(&State::Invalid) == refused
+            }) {
+                looks.push((variant, states, look));
+            }
+        }
+    }
+    let on = surface_ground(theme, surface, set);
+    for (variant, states, look) in &looks {
+        if let Some(broken) = unreadable_by(0.0, theme, &on, rules, family, variant, states, look) {
+            return Some(broken);
+        }
+    }
+    if shows_a_tint(theme, set) {
+        // Only a look a coarse reading finds near a floor is read at every degree.
+        let reads =
+            |margin: f64, one: &ResolvedTheme, on: &[String], look: &(&str, &[State], Drawn)| {
+                unreadable_by(margin, one, on, rules, family, look.0, look.1, &look.2)
+            };
+        let coarse_on: Vec<_> = coarse
+            .iter()
+            .map(|one| (one, surface_ground(one, surface, set)))
+            .collect();
+        let near: Vec<_> = looks
+            .iter()
+            .filter(|look| {
+                coarse_on
+                    .iter()
+                    .any(|(one, on)| reads(NEAR_A_FLOOR, one, on, look).is_some())
+            })
+            .collect();
+        if !near.is_empty() {
+            for one in &drawn_in[1..] {
+                let on = surface_ground(one, surface, set);
+                if let Some(broken) = near.iter().find_map(|look| reads(0.0, one, &on, look)) {
+                    return Some(broken);
+                }
             }
         }
     }
@@ -3415,6 +3475,7 @@ fn broken_on(
 /// a [`Fell`] that names the family. Whether one fell, so the hold is asked again.
 fn held_on_surfaces(
     theme: &ResolvedTheme,
+    coarse: &[ResolvedTheme],
     drawn_in: &mut Vec<ResolvedTheme>,
     rules: &mut Vec<Rule>,
     fell: &mut Vec<Fell>,
@@ -3426,16 +3487,11 @@ fn held_on_surfaces(
             // included (ADR 0097 §6), as they do where a theme's parts reach the family itself.
             let consent = family.variants.iter().any(|one| one.consent.is_some());
             if consent && drawn_in.len() == 1 && !theme.tint.tabs().is_empty() {
-                drawn_in.extend(
-                    theme
-                        .tint
-                        .hues
-                        .iter()
-                        .map(|one| tint::tinted(theme, one.name)),
-                );
-                drawn_in.extend((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))));
+                drawn_in.extend(every_tinted(theme));
             }
-            if let Some((floor, ratio)) = broken_on(theme, drawn_in, rules, family, surface, set) {
+            if let Some((floor, ratio)) =
+                broken_on(theme, coarse, drawn_in, rules, family, surface, set)
+            {
                 Held {
                     family: surface,
                     rules: &mut *rules,
@@ -3459,7 +3515,21 @@ fn held_on_surfaces(
         {
             continue;
         }
-        if let Some((family, floor, ratio)) = apart_broken_on(theme, rules, surface, variant, set) {
+        let mut broken = apart_broken_on(theme, rules, surface, variant, set, 0.0);
+        if broken.is_none()
+            && shows_a_tint(theme, set)
+            && coarse.iter().any(|one| {
+                apart_broken_on(one, rules, surface, variant, set, NEAR_A_FLOOR).is_some()
+            })
+        {
+            if drawn_in.len() == 1 {
+                drawn_in.extend(every_tinted(theme));
+            }
+            broken = drawn_in[1..]
+                .iter()
+                .find_map(|one| apart_broken_on(one, rules, surface, variant, set, 0.0));
+        }
+        if let Some((family, floor, ratio)) = broken {
             Held {
                 family: surface,
                 rules: &mut *rules,
@@ -3493,20 +3563,21 @@ pub(super) fn apart_breaks_on(
     set: &'static str,
 ) -> Option<(&'static str, String, f64)> {
     let surface = family(surface)?;
-    apart_broken_on(theme, &[], surface, variant, set)
+    apart_broken_on(theme, &[], surface, variant, set, 0.0)
         .map(|(family, floor, ratio)| (family.name, floor, ratio))
 }
 
 /// **What a part drawn apart from its root breaks on `set`**, the fill a theme gives `surface`
 /// in `variant`, where it stands there ([`APART_STANDS_ON`], #4000): its words and fill as drawn,
 /// at rest and in each of its own states, held to their floor on that fill as it is laid over the
-/// surface's own grounds.
+/// surface's own grounds, or within `margin` of it.
 fn apart_broken_on(
     theme: &ResolvedTheme,
     rules: &[Rule],
     surface: &Family,
     variant: &str,
     set: &'static str,
+    margin: f64,
 ) -> Option<(&'static Family, String, f64)> {
     let default = (surface.defaults)(variant, &[]).fill;
     let on = surface_ground(theme, surface, set);
@@ -3526,7 +3597,7 @@ fn apart_broken_on(
                 let words = set_colour(rules, family, at, &states, Prop::Text).unwrap_or(own.words);
                 let floor = theme.least.floor(floor_of(family, &family.parts[at]));
                 if let Some(ratio) = lowest(theme, &on, fill, words)
-                    && ratio < floor
+                    && ratio < floor + margin
                 {
                     return Some((
                         family,

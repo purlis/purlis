@@ -69,6 +69,14 @@ spec:
         'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev): only the purlis
         cluster operator puts a warm pool on the template of a purlis pool, or takes one off it.'
       reason: Forbidden
+    # Neither upstream nor the operator writes this label on a claim of a purlis pool.
+    - expression: >-
+        request.resource.resource != 'sandboxclaims' ||
+        !object.spec.warmPoolRef.name.startsWith('purlis-pool-') ||
+        !has(object.metadata.labels) ||
+        !('agents.x-k8s.io/created-by' in object.metadata.labels)
+      message: An upstream claim on the warm pool of a purlis pool does not carry a created-by label.
+      reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

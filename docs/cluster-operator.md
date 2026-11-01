@@ -277,8 +277,12 @@ spec:
     you can do by hand too. **That start waits for the runner** (#4403), with the window at its
     usual *Starting…* and its Cancel, until the operator vouches for it, for at most the pool's
     longest wait for that (`vouchWait`, 5 minutes unless raised); past it, it is refused as any
-    start on a runner that is down, and the runner still comes back. A dispatch's first hold of
-    its project waits at most 30 seconds, then is refused while the runner comes back. A runner
+    start on a runner that is down, and the runner still comes back. **A dispatched task waits the
+    same way** (#4415), with no second try and no Cancel. The `purlis dispatch` command stops
+    listening sooner, so it can say it cannot tell yet whether the chat started; the chat is still
+    on its way, so don't dispatch it again. The window's commands wait on neither: one that needs
+    the project held while its runner comes back says so at once.
+    A look at a project already held wakes nothing. A runner
     with anything else on its Claim, an upstream object in the way among it, is not waited for.
     **A fresh Claim's runner keeps nothing**, so it comes back with a new key, which its desktop
     refuses as it does after `stopped`: make its Claim again. This reaches no one through purlis
@@ -799,7 +803,10 @@ operator's own namespace and any other an admin has. A template's pod must use t
 account with no token mounted, hold only the volumes `purlis-link` and `purlis-kept` as folders of
 its own, and keep the confinement [above](#what-it-makes) on each container, which reads a variable
 from no Secret; of the pinned upstream's other pod and container fields it may set none. A claim
-adds nothing to its pod, and a kept volume is a new one written to by one node. It does not hold
+adds nothing to its pod, and a kept volume is a new one written to by one node. Of a claim's labels
+and annotations the operator adds only its own mark, and changes nothing else there. A claim on a
+purlis pool's warm pool carries no `agents.x-k8s.io/created-by` label, whoever writes it, so a claim
+that holds one is refused its next write until the label is removed. It does not hold
 which image a template names or which storage class a claim's volume is in: the Pool says those. An
 admin editing a policy in place, with its binding left alone, does not move its time in force.
 

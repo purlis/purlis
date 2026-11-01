@@ -351,6 +351,8 @@ fn grading_after_each_edit_follows_a_rename_and_a_move_and_goes_with_a_delete() 
         token_cap: cap::LEAST,
         limit_usd: 1.0,
         tests: "0".repeat(64),
+        outcomes: None,
+        evals: Vec::new(),
         previous: None,
         runs_on: None,
         at: "2026-10-30T10:00:00+00:00".into(),
