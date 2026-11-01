@@ -417,6 +417,8 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
         characters: 0,
       });
       await $(`[data-testid="skill-${crowd(0)}"]`).waitForExist({ timeout: 30_000 });
+      // The Library draws its first screen, then the rest in the frames after it (#4351).
+      await $(`[data-testid="skill-${rowOf(UNSUPPORTED)}"]`).waitForExist({ timeout: 10_000 });
       const problems: string[] = [];
       for (const state of STATES) {
         const row = await $(`[data-testid="skill-${rowOf(state)}"]`);
