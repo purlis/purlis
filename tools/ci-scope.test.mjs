@@ -914,7 +914,14 @@ test("web parts: the part that runs the tools' tests alone when the web checks a
 test("a job that only asks whether it is needed is not started on a pull request", () => {
   assert.deepEqual(
     gatesOf({ event: "pull_request", paths: ["docs/a.md"] }),
-    { "listen-shim": false, "browser-engine": false, confinement: false, parity: false, bench: false },
+    {
+      "listen-shim": false,
+      "browser-engine": false,
+      confinement: false,
+      parity: false,
+      bench: false,
+      "outcome-bars": false,
+    },
   );
   const yes = (path, gate) =>
     assert.equal(gatesOf({ event: "pull_request", paths: [path] })[gate], true, `${path}: ${gate}`);
@@ -933,6 +940,51 @@ test("a job that only asks whether it is needed is not started on a pull request
   for (const on of Object.values(gatesOf({ event: "pull_request", paths: [] }))) {
     assert.equal(on, true, "a change of no paths starts every job");
   }
+});
+
+// By the operator's choice of 2026-11-01: what the bars measure and the suite itself. A regression
+// from anywhere else shows on main's push, which always runs it.
+test("the outcome bars run on a pull request that touches what they measure, and on main", () => {
+  const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["outcome-bars"];
+  for (const path of [
+    "app/src/SkillStudioTab.tsx",
+    "app/src/UseSkill.tsx",
+    "app/src/skillsListing.ts",
+    "app/src/chatSkillsAsk.ts",
+    "app/src/personaSkills.tsx",
+    "app/src/SkillsChangedNotice.tsx",
+    "app/src/ui/list/Fold.tsx",
+    "app/src-tauri/src/skillstudio.rs",
+    "app/src-tauri/src/skillstudio/needs.rs",
+    "app/src-tauri/src/useskill.rs",
+    "app/src-tauri/src/personaskills.rs",
+    "crates/skills/src/lib.rs",
+    "crates/purlis-core/src/skills.rs",
+    "crates/purlis-core/src/skills/verbs.rs",
+    "crates/purlis-core/src/skilluse.rs",
+    "crates/fake-harness/src/main.rs",
+    "app/e2e/outcomeBars.ts",
+    "app/e2e/harness.ts",
+    "app/e2e/wdio.outcome.conf.ts",
+    "app/e2e/specs/skill-outcome-bars.outcome.e2e.ts",
+    ".github/workflows/ci.yml",
+  ])
+    assert.equal(on(path), true, path);
+  for (const path of ["app/src/App.tsx", "crates/host/src/lib.rs", "app/e2e/specs/tabs.e2e.ts"])
+    assert.equal(on(path), false, path);
+
+  const ci = read(".github/workflows/ci.yml");
+  const job = ci.slice(ci.indexOf("\n  outcome-bars:\n"), ci.indexOf("\n  scenario-linux-checks:\n"));
+  assert.ok(
+    job.includes(
+      "github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')",
+    ),
+    "main's push and a pull request its gate lets in, and not the merge group",
+  );
+  assert.match(
+    ci.slice(ci.indexOf("\n  changes:\n"), ci.indexOf("\n  rust:\n")),
+    /\boutcome-bars: \$\{\{ steps\.scope\.outputs\.outcome-bars \}\}/,
+  );
 });
 
 // A gate says what the job's own step decides: the step stays, for the merge group and the push,

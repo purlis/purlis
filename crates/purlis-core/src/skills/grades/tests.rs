@@ -1290,6 +1290,7 @@ fn a_plans_consent_covers_the_profile_model_and_limits_it_shows() {
         model: Some("sonnet"),
         token_cap: 200_000,
         limit_usd: 3.0,
+        grader: None,
     };
     let shown = consent_on("abc", &terms);
     assert_eq!(
@@ -1322,10 +1323,46 @@ fn a_plans_consent_covers_the_profile_model_and_limits_it_shows() {
             limit_usd: 3.01,
             ..terms
         },
+        Terms {
+            grader: Some(("acme.grader", "Acme", &[])),
+            ..terms
+        },
     ] {
         assert_ne!(consent_on("abc", &other), shown, "{other:?}");
     }
     assert_ne!(consent_on("abd", &terms), shown, "and what it grades");
+}
+
+#[test]
+fn a_plans_consent_covers_the_grader_it_names_by_its_id_and_its_title() {
+    let by = |grader| Terms {
+        profile: Some("work"),
+        model: None,
+        token_cap: 1,
+        limit_usd: 1.0,
+        grader,
+    };
+    let hosts = ["acme.example".to_owned()];
+    let shown = consent_on("abc", &by(Some(("acme.grader", "Acme", &hosts))));
+    assert_ne!(
+        consent_on("abc", &by(Some(("evil.grader", "Acme", &hosts)))),
+        shown
+    );
+    assert_ne!(
+        consent_on("abc", &by(Some(("acme.grader", "purlis", &hosts)))),
+        shown
+    );
+    assert_ne!(
+        consent_on("abc", &by(Some(("acme.grader", "Acme", &[])))),
+        shown,
+        "and where it can send what it is handed"
+    );
+    assert_ne!(consent_on("abc", &by(None)), shown);
+    // Bytes that move between the two words are another Grader.
+    assert_ne!(
+        consent_on("abc", &by(Some(("a", "bc", &[])))),
+        consent_on("abc", &by(Some(("ab", "c", &[])))),
+    );
 }
 
 mod follows;

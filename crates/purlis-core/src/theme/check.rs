@@ -224,6 +224,12 @@ pub const PAIRS: &[Pair] = &[
     p("text.secondary", "control.base", 4.5),
     p("text.secondary", "surface.raised", 4.5),
     p("needs-you.text", "needs-you.base", 4.5),
+    // The hot count's words on its own fill (#3098).
+    p("needs-you.count-text", "needs-you.count", 4.5),
+    // The hot count on each ground its bar stands on: the ring around it is that ground.
+    p("needs-you.count", "surface.deep", 3.0),
+    p("needs-you.count", "surface.base", 3.0),
+    p("needs-you.count", "surface.raised", 3.0),
     p("danger.text", "danger.surface", 4.5),
     // What needs a decision (#3678): an attention Notice's words and mark on its own ground, and
     // a card's title and sentence on it.

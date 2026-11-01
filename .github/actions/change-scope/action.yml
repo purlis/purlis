@@ -49,6 +49,9 @@ outputs:
   bench:
     description: Whether a pull request needs the latency bench.
     value: ${{ steps.scope.outputs.bench }}
+  outcome-bars:
+    description: Whether a pull request needs the Skill studio's outcome bars.
+    value: ${{ steps.scope.outputs.outcome-bars }}
 runs:
   using: composite
   steps:

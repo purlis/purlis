@@ -31,17 +31,10 @@ describe("the story matrix (#2945)", () => {
     ]);
   });
 
-  it("pictures both themes' dark and light, and Purlis's high contrast", () => {
-    const pictured = cellsOf(THEMES as BuiltInThemes, PICTURED)
-      .filter((cell) => cell.pictured)
-      .map((cell) => cell.name);
-    expect(pictured).toEqual([
-      "purlis_dark",
-      "purlis_dark-high-contrast",
-      "purlis_light",
-      "purlis-classic_dark",
-      "purlis-classic_light",
-    ]);
+  it("pictures every cell of the matrix", () => {
+    const cells = cellsOf(THEMES as BuiltInThemes, PICTURED);
+    expect(cells).toHaveLength(10);
+    expect(cells.filter((cell) => !cell.pictured)).toEqual([]);
   });
 
   it("refuses a pictured cell the matrix does not have", () => {

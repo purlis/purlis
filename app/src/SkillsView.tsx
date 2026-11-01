@@ -28,6 +28,7 @@ import {
 } from "./skillStudio";
 import { SkillMenu, SkillsList } from "./SkillsList";
 import {
+  branchFolderRowsOf,
   explorerPlaceOf,
   filePlaceOf,
   fixOf,
@@ -121,11 +122,13 @@ async function readSkills(
   }
   // And what its set says as a whole (S8): its "started without" notice's, and what changed
   // since it started, read with the rest so the view is drawn once.
-  const [base, personas, set, updated] = await Promise.all([
+  const [base, personas, set, updated, branchFolder] = await Promise.all([
     answered(commands.skillStudio(plane, chat.workspace ?? null, chat.persona)),
     answered(commands.skillPersonaSkills(plane, chat.workspace ?? null)),
     answered(commands.chatSkills(plane, chat.session)),
     updatedSinceStart(),
+    // Its branch's repo skills (#4326), which the studio's rows of its clone do not speak for.
+    answered(commands.chatBranchFolderSkills(plane, chat.session)),
   ]);
   if ("refused" in base) return base;
   const rows = viewRowsOf(base.ok, "ok" in personas ? personas.ok : undefined);
@@ -141,11 +144,14 @@ async function readSkills(
     own: base.ok.harnesses.find((one) => one.harness === chat.harness)?.own ?? null,
   };
   return {
-    rows: narrowedTo(rows, given.skills, {
-      persona: chat.persona,
-      harness: chat.harness,
-      repos: given.repos,
-    }),
+    rows: [
+      ...narrowedTo(rows, given.skills, {
+        persona: chat.persona,
+        harness: chat.harness,
+        repos: given.repos,
+      }),
+      ...branchFolderRowsOf("ok" in branchFolder ? branchFolder.ok : []),
+    ],
     first: base.ok.first,
     levels: base.ok.levels,
     pinsRefused: base.ok.pins_refused,
@@ -340,7 +346,9 @@ export function SkillsView({
       const at = filePlaceOf(row.skill);
       if ("reason" in at) return;
       const of =
-        at.repo === "" ? PLANE_ROOT : { workspace: at.workspace, repo: at.repo, piece: null };
+        at.repo === ""
+          ? PLANE_ROOT
+          : { workspace: at.workspace, repo: at.repo, piece: at.piece ?? null };
       onOpenView(pieceFileView(of, at.path), `SKILL.md · ${row.skill.name}`);
     } else change(row, what);
   };

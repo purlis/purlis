@@ -55,10 +55,10 @@ export const BASELINE =
 /** How much `take` takes at most: bytes in one baseline, baselines in one run, and bytes in
  *  all of them together, which bounds what one commit pushes. A story's picture is tens of
  *  kilobytes; a dialog's on the page, a few hundred. Each story has a picture in each pictured
- *  cell and each browser, eight today. */
+ *  cell and each browser, twenty today (#3040). */
 export const LIMITS = {
   bytes: 2 * 1024 * 1024,
-  files: 5000,
+  files: 12000,
   total: 256 * 1024 * 1024,
 };
 

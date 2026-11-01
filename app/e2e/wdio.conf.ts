@@ -123,6 +123,8 @@ export const config: WebdriverIO.Config = {
   exclude: [
     "./specs/**/*.state.e2e.ts",
     "./specs/**/*.finder.e2e.ts",
+    // The Skill studio's outcome bars are one run per harness (`wdio.outcome.conf.ts`).
+    "./specs/**/*.outcome.e2e.ts",
     // The layout-file spec needs its file on disk before the app starts (`wdio.layout.conf.ts`).
     "./specs/**/*.layout.e2e.ts",
     // A project's theme pick needs its file on disk before the app starts (`wdio.picked.conf.ts`).

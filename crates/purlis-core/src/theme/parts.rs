@@ -2682,6 +2682,21 @@ fn unreadable_by(
             ));
         }
     }
+    // The plain activity count stays told from the hot one (#3098): the floors hold its default
+    // pill apart, and a rule that brings it near draws that default.
+    if let Some(count) = plain_count_at(family)
+        && alike(
+            theme,
+            look.grounds[count],
+            super::floors::HOT_COUNT,
+            super::floors::HOT_COUNT_APART,
+        )
+    {
+        return Some((
+            "the plain count is told apart from the hot count".to_owned(),
+            None,
+        ));
+    }
     // A border is the part's edge where its fill is not told from what it is drawn on, and a
     // refused box's edge is what says so at a glance, whatever its fill.
     if let Some(border) = edge(rules, family, variant, look) {
@@ -2705,6 +2720,13 @@ fn unreadable_by(
         }
     }
     None
+}
+
+/// Where the activity family holds its plain count, in the family that has one.
+fn plain_count_at(family: &Family) -> Option<usize> {
+    (family.name == "activity")
+        .then(|| family.parts.iter().position(|part| part.name == "count"))
+        .flatten()
 }
 
 /// The consent floor `variant` of `family` breaks in `state`, as `theme` draws it (as written,
@@ -4908,7 +4930,7 @@ fn selector(rule: &Rule, sized: bool) -> String {
     } else {
         let name = rule.family.parts[rule.part].name;
         // A toned part keeps its tone's colours whatever a theme sets (#2917): the needs-you
-        // count stays hot (R120).
+        // count stays hot (R120), drawn from its own role (#3098).
         let untoned = if TONED.contains(&(rule.family.name, name)) {
             ":not([data-tone])"
         } else {

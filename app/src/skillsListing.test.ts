@@ -576,3 +576,36 @@ describe("a row's menu", () => {
     });
   });
 });
+
+describe("a repo skill in a branch folder (#4326)", () => {
+  const onTheBranch = skill("fmt", {
+    level: "repo",
+    folder: "workspaces/ops/.worktrees/web/fix/.claude/skills/fmt",
+    owner: { kind: "repo", name: "web" },
+  });
+
+  it("opens the branch folder's copy of the file", () => {
+    expect(filePlaceOf(onTheBranch)).toEqual({
+      workspace: "ops",
+      repo: "web",
+      piece: "fix",
+      path: ".claude/skills/fmt/SKILL.md",
+    });
+  });
+
+  it("shows its folder in the branch folder, in that workspace only", () => {
+    expect(explorerPlaceOf(onTheBranch, "ops")).toEqual({
+      repo: "web",
+      piece: "fix",
+      folder: ".claude/skills/fmt",
+    });
+    expect(explorerPlaceOf(onTheBranch, "other")).toHaveProperty("reason");
+    expect(explorerPlaceOf(onTheBranch, undefined)).toHaveProperty("reason");
+  });
+
+  it("offers no place for a branch folder's path that stops short of a skill", () => {
+    const short = skill("fmt", { level: "repo", folder: "workspaces/ops/.worktrees/web/fix" });
+    expect(filePlaceOf(short)).toHaveProperty("reason");
+    expect(explorerPlaceOf(short, "ops")).toHaveProperty("reason");
+  });
+});

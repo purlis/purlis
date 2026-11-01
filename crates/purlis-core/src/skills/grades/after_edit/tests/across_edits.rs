@@ -29,6 +29,7 @@ fn shown_of(root: &Path) -> (Now, Option<String>, u32) {
         model: None,
         token_cap: planned.cap.tokens,
         limit_usd: 1.0,
+        grader: None,
     };
     let previous = planned.previous.as_ref().map(|one| one.commit.clone());
     let accepts = planned.after_edit_chats.unwrap();

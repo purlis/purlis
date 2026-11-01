@@ -105,6 +105,7 @@ fn the_two_built_ins_differ_everywhere_a_theme_is_allowed_to() {
         same,
         [
             "needs-you.text",
+            "needs-you.count-text",
             "terminal.selection-foreground",
             "selection.background",
             "selection.text",
