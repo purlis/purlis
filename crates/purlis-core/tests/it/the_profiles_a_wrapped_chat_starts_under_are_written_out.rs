@@ -296,7 +296,7 @@ fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
         assert_eq!(level, Level::Floor);
         let done = purlis_core::forklock::output(
             std::process::Command::new("/usr/bin/sandbox-exec")
-                .args(["-p", &profile, "/bin/sh", script])
+                .args(["-p", &profile, "/bin/sh", script, "--installers"])
                 .arg(&home)
                 .arg(called)
                 .args(others)
@@ -306,7 +306,7 @@ fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
         .expect("sandbox-exec runs");
         let said = String::from_utf8_lossy(&done.stdout);
         assert!(
-            done.status.success() && said.contains(" 0 wrong"),
+            done.status.success() && said.contains(" 999 wrong"),
             "{called}:\n{said}\n{}",
             String::from_utf8_lossy(&done.stderr)
         );

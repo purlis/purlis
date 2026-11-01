@@ -6557,7 +6557,11 @@ fn usual_home_folders(level: Level, machine: &Machine) -> Vec<PathBuf> {
     let homes = Homes::of(machine);
     let mut out: Vec<PathBuf> = Vec::new();
     let usual = [home.join(".local/share"), home.join(".config")];
-    for folder in usual.iter().chain(homes.data.iter()).chain(homes.config.iter()) {
+    for folder in usual
+        .iter()
+        .chain(homes.data.iter())
+        .chain(homes.config.iter())
+    {
         if folder.starts_with(home) && folder != home {
             for made in ancestors_within(folder, home)
                 .into_iter()
