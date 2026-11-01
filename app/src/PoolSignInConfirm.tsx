@@ -20,7 +20,12 @@ function useArmed(asked: PoolSignInAsk | null): boolean {
     if (id === undefined) return undefined;
     const arm = () => setTimeout(() => setArmedFor(id), SIGN_IN_ARMS_AFTER_MS);
     let timer = arm();
-    const typed = () => {
+    const typed = (event: KeyboardEvent) => {
+      // Moving through the dialog is no typing, and pressing its yes by key must still press it.
+      if (event.key === "Tab" || event.key === "Shift") return;
+      const pressing = event.key === "Enter" || event.key === " ";
+      if (pressing && (event.target as Element | null)?.closest('[data-dialog-action="main"]'))
+        return;
       setArmedFor(null);
       clearTimeout(timer);
       timer = arm();

@@ -103,7 +103,7 @@ fn asking(
             ask: PoolSignInAsk {
                 id,
                 profile: profile.to_owned(),
-                pool: pool.to_owned(),
+                pool: purlis_core::shown::short(pool),
                 code: code.to_owned(),
             },
             answer,
@@ -178,7 +178,7 @@ pub fn ask_the_person(
     };
     asking(
         profile,
-        &purlis_core::shown::short(pool),
+        pool,
         code,
         &Waits {
             within: purlis_core::windowline::THE_PERSON_HAS,

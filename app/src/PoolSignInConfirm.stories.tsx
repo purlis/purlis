@@ -33,11 +33,8 @@ export const Asked: StoryObj<typeof PoolSignInConfirm> = {
     const signIn = page.getByRole("button", { name: "Sign in" });
     await waitFor(() => expect(signIn).toBeEnabled(), { timeout: 4000 });
     await userEvent.tab();
-    await waitFor(() => expect(signIn).toBeEnabled(), { timeout: 4000 });
     await untilFocused(() => signIn, "Tab reaches Sign in");
     await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
     await untilFocused(() => cancel, "Shift+Tab goes back to Cancel");
-    // The picture is of Sign in ready, whatever time the run takes.
-    await waitFor(() => expect(signIn).toBeEnabled(), { timeout: 4000 });
   },
 };

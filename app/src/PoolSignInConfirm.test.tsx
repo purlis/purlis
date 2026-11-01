@@ -62,6 +62,17 @@ describe("a pool sign-in confirmed in the window", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
+  it("takes a yes from the keyboard once it can be pressed", async () => {
+    const state = core(ASK);
+    render(<PoolSignInConfirm />);
+    const signIn = await screen.findByRole("button", { name: "Sign in" });
+    await waitFor(() => expect(signIn).toBeEnabled(), { timeout: 4000 });
+    await userEvent.tab();
+    await waitFor(() => expect(signIn).toHaveFocus());
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(state.answers).toEqual([{ id: 4, yes: true }]));
+  });
+
   it("takes no yes from typing meant for somewhere else", async () => {
     const state = core(ASK);
     render(<PoolSignInConfirm />);
