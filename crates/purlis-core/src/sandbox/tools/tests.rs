@@ -1374,6 +1374,8 @@ fn a_tool_with_a_program_or_not_listed_is_not_absent_from_the_image() {
 /// (#4373), and no shim is ready; on the person's own machine it stays as it was.
 #[test]
 fn an_unallowed_tool_absent_from_the_image_refuses_in_a_sentence() {
+    use super::super::persona::Grants;
+
     let root = outside_temp("unallowed-root");
     let system = outside_temp("unallowed-system");
     std::fs::create_dir_all(&root).unwrap();
