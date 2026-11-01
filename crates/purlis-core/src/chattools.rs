@@ -101,6 +101,8 @@ pub const DISPATCH_TELL: &str = "dispatch_tell";
 /// The tool that answers the question a task this chat dispatched asked it (#3786): `purlis
 /// dispatch answer`.
 pub const DISPATCH_ANSWER: &str = "dispatch_answer";
+/// The tool a chat passes a task's question on to the person with (#4554, ADR 0107).
+pub const DISPATCH_PASS_ON: &str = "dispatch_pass_on";
 
 /// The tool that cancels a task this chat dispatched (#3786): `purlis dispatch cancel`.
 pub const DISPATCH_CANCEL: &str = "dispatch_cancel";
@@ -537,11 +539,12 @@ pub(crate) fn one_string(key: &str, description: &str) -> Value {
 /// of a task it dispatched, and a task's note, question and report to the chat that asked,
 /// each reaching only what the app's record lets its caller reach. Named apart from
 /// [`PRE_ALLOWED`], which is the tools that only read.
-pub const DISPATCH_TOOLS: [&str; 8] = [
+pub const DISPATCH_TOOLS: [&str; 9] = [
     DISPATCH,
     DISPATCH_REPORT,
     DISPATCH_TELL,
     DISPATCH_ANSWER,
+    DISPATCH_PASS_ON,
     DISPATCH_CANCEL,
     DISPATCH_CLOSE,
     DISPATCH_NOTE,
@@ -1001,6 +1004,29 @@ pub static TOOLS: [Tool; 27] = [
         read_only: false,
     },
     Tool {
+        name: DISPATCH_PASS_ON,
+        description: "Pass the question a task this chat dispatched asked it on to the person, \
+                      when only they should answer it: anything about security, cost, \
+                      something public, or amending a ruling always is. It reaches them in the \
+                      task's own words, so this takes no question text, only your one-line note.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "chat": a_task(),
+                    "note": {
+                        "type": "string",
+                        "description": "Your context for the person, on one line. It is shown \
+                                        as your note, apart from the task's words.",
+                    },
+                },
+                "required": ["chat"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
         name: DISPATCH_CANCEL,
         description: "Cancel a task this chat dispatched: its turn is ended and it is asked for \
                       one short report of what it did, which arrives with the outcome \
@@ -1176,6 +1202,7 @@ pub fn call(
         DISPATCH_WAIT,
         DISPATCH_TELL,
         DISPATCH_ANSWER,
+        DISPATCH_PASS_ON,
         DISPATCH_CANCEL,
         DISPATCH_CLOSE,
         DISPATCH_REPORT,

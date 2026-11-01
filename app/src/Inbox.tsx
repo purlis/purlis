@@ -15,7 +15,14 @@ import {
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { useTabStop } from "./roving";
 import { RestartEndsLine } from "./RestartEnds";
-import { commands, type InboxUpdate, type Offered, type PlaneId, type Shown } from "./bindings";
+import {
+  commands,
+  type InboxUpdate,
+  type Offered,
+  type PlaneId,
+  type ReachedWhy,
+  type Shown,
+} from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
 import { counted as countedSaid } from "./dispatches";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
@@ -42,6 +49,7 @@ import {
   type InboxScope,
   type ScopeCounts,
 } from "./inboxScope";
+import { useOpenAnswer } from "./AnswerPanel";
 import { quietSaid } from "./NeedsYou";
 import { NoticeList } from "./Notice";
 import { PersonaMark } from "./PersonaMark";
@@ -573,6 +581,8 @@ type Shape = {
   /** What its chat said, or that there is no message, where its line is the reason it waits
    *  instead. */
   said: string | undefined;
+  /** It is a task's question, which the Answer form takes. */
+  answerable: boolean;
   /** It gets a box for why it is kept blocked, which its chat is told with the answer
    *  (#1987). */
   reason: boolean;
@@ -619,6 +629,7 @@ function shapeOf(
     reply,
     message,
     said: reply && !message ? capMarks(ask.last_message ?? NO_MESSAGE).text : undefined,
+    answerable: ask.source === "task-question",
     reason:
       (ask.answer.via === "sandbox-block" ||
         ask.answer.via === "browser" ||
@@ -703,6 +714,7 @@ function stopIds(key: string, shape: Shape, options: readonly Offered[] = []): s
     ...(shape.reason ? [`${key}:reason`] : []),
     ...options.map((option) => `${key}:${option.id}`),
     ...(shape.reply ? [`${key}:reply`, `${key}:send`] : []),
+    ...(shape.answerable ? [`${key}:answer`] : []),
     // A profile's Ask is about no chat (#2035): there is no chat to go to.
     ...(shape.go ? [`${key}:go`] : []),
     ...(shape.ignore ? [`${key}:ignore`] : []),
@@ -785,6 +797,14 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
   terminal: "In its terminal",
   question: "Waiting on your reply",
+  "task-question": "Asks you, through its asking chat",
+};
+
+/** Why a task's question reached the person, as its row says it. */
+const REACHED_SAID: Record<ReachedWhy, (from: string) => string> = {
+  "passed-on": (from) => `${from} passed this on`,
+  "no-reply": (from) => `${from} didn't reply`,
+  "asker-gone": (from) => `${from} has closed`,
 };
 
 function Ask({
@@ -824,6 +844,7 @@ function Ask({
   const [reason, setReason] = useState("");
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
+  const openAnswer = useOpenAnswer();
   /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
   const whole =
     ask.source === "dispatch" || (shape.answers && shape.offers.some((one) => one.allows));
@@ -1049,14 +1070,32 @@ function Ask({
             {said}
           </p>
         )}
+        {ask.answer.via === "task-question" && (
+          <p className="inbox-secondary ui-text-secondary">
+            {REACHED_SAID[ask.answer.why](ask.answer.from)}
+            {ask.answer.note === null ? "" : `. Its note: ${ask.answer.note}`}
+          </p>
+        )}
         {/* Its ways on, side by side at its foot: one line, never one each. */}
         <ButtonRow size="sm" className="inbox-acts">
+          {shape.answerable && openAnswer !== undefined && (
+            <Stop id={`${key}:answer`}>
+              <Button
+                size="sm"
+                variant="primary"
+                aria-label={`Answer ${who}`}
+                onPress={() => openAnswer({ chat: ask.session, name: who })}
+              >
+                Answer
+              </Button>
+            </Stop>
+          )}
           {shape.go && (
             <Stop id={`${key}:go`}>
               <Button
                 size="sm"
                 // R132: the way on is the card's primary press; no answer is drawn this way.
-                variant={shape.answers ? "ghost" : "primary"}
+                variant={shape.answers || shape.answerable ? "ghost" : "primary"}
                 aria-label={`Go to chat ${who}`}
                 onPress={onGo}
                 className="inbox-go"

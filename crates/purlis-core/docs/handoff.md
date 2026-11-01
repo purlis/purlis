@@ -802,6 +802,7 @@ purlis dispatch tell <chat> "<text>"        # the asking chat, to a task still w
 purlis dispatch note "<text>"               # a task, to the chat that asked
 purlis dispatch ask "<question>"            # a task, to the chat that asked; it waits
 purlis dispatch answer <chat> "<text>"      # the asking chat, to that question
+purlis dispatch pass-on <chat> --note "..." # the asking chat, on to you, in the task's words
 ```
 
 - **A follow-up** reaches the task's next turn, as context quoted as data under a sentence
@@ -833,11 +834,15 @@ purlis dispatch answer <chat> "<text>"      # the asking chat, to that question
   it is), and it is not counted against the pair's messages a minute. If the task ends
   before it has read your answer, the Activity tab says so on the answer. Only the purlis window can send an answer as yours: no command, hook or file of a
   chat's can.
-- **A question for you is not asked this way.** A task that needs you asks in its own tab:
-  its harness's prompt, or purlis's `ask_operator` tool. `purlis dispatch answer` answers only
-  a question the task asked the asking chat. Where there is none, it is refused, whatever the
-  task's tab is showing, and nothing an answer says is ever typed into a chat. So no chat can
-  answer for you.
+- **The asking chat answers a question or passes it on.** `pass-on` sends it to you in the
+  task's own words, with at most a one-line note marked as the asking chat's. It takes no
+  question text, so the wording cannot change on the way, and only the task's asking chat can
+  send it. Security, cost, anything public and anything that amends a ruling are always passed
+  on: that rule is in the asking chat's briefing and is not enforced, because code cannot
+  classify a question's meaning. The asking chat's answer is never your word, and the task is
+  told who answered. `purlis dispatch answer` answers only a question the app holds. Where
+  there is none, it is refused, whatever the task's tab is showing, and nothing an answer says
+  is ever typed into a chat.
 
 **Messages travel only along the lineage.** `tell` and `answer` go to a task the sender
 dispatched itself, by purlis's record of that task. `note` and `ask` name nobody: they go to the

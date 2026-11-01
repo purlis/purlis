@@ -466,6 +466,7 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
         }
         What::Question { text } => send_up(held, asker, Kind::Question, text).unwrap_or_else(no),
         What::Answer { to, text } => answer_it(held, asker, *to, text).unwrap_or_else(no),
+        What::PassOn { to, note } => pass_on(held, asker, *to, note.as_deref()).unwrap_or_else(no),
         What::GotAnswer => {
             let file = held.tasks().ledger().got_answer(asker);
             if let Some(file) = file {
@@ -1610,6 +1611,29 @@ fn answer_it(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, Str
     }))
 }
 
+/// **Chat `asker` passes the question task `to` asked it on to the person** (#4554, ADR 0107).
+/// Refused unless `asker` dispatched `to`, by the app's record, as [`answer_it`] is. Nothing it
+/// sends carries the question: it reaches them in the task's own words, and from here it is one
+/// of their asks.
+fn pass_on(held: &Held, asker: u32, to: u32, note: Option<&str>) -> Result<Answer, String> {
+    let (from, name) = owned(held, asker, to)
+        .map_err(|why| or_finished(held, asker, to, why, "no question left to pass on"))?;
+    let note = dispatchtalk::pass_on_note(note)?;
+    {
+        let mut ledger = ledger(held);
+        if !talks(held, to, &from) {
+            return Err(ledger.talk.nothing_to_answer(&name, to));
+        }
+        ledger
+            .talk
+            .pass_on(to, asker, &name, note, now_secs(SystemTime::now()))?;
+    }
+    held.rows_changed();
+    held.tasks().changed();
+    held.chats().asks_may_have_moved();
+    Ok(task(Answered::PassedOn { to: name }))
+}
+
 /// Waits for the answer to the question task `asked.chat` asked its asking chat, for as long
 /// as the ask says and no longer than a wait may be. Held and bounded as [`wait`] is.
 pub fn await_answer(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
@@ -1712,6 +1736,17 @@ pub fn question_of(held: &Held, task: u32) -> Option<TaskQuestion> {
         number,
         question,
     })
+}
+
+/// **Every task question waiting on the person**, oldest first (ADR 0107): each one the task
+/// may still be answered in ([`question_of`]), read from the one state behind the row, the ✋
+/// and the Inbox. The asks registry derives its items from this and stores none.
+pub fn reached_the_person(held: &Held) -> Vec<dispatchtalk::ReachedYou> {
+    let reached = held.tasks().ledger().talk.reached();
+    reached
+        .into_iter()
+        .filter(|one| question_of(held, one.task).is_some())
+        .collect()
 }
 
 /// **The person answers question `number`, which task `task` put to its asking chat** (#1496,
