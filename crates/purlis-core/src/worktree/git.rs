@@ -951,7 +951,8 @@ fn git_takes(git: &Path) -> bool {
 }
 
 /// Whether `head` is a plain file that says what a `HEAD` says: a ref under `refs/`, or an id. It
-/// is read following no link and never waiting on a pipe, no further than git reads one.
+/// is read following no link and never waiting on a pipe, and as git reads one: its first 255
+/// bytes, and past `ref:` only git's own white space, which is narrower than Unicode's.
 fn reads_as_a_head(head: &Path) -> bool {
     use rustix::fs::{Mode, OFlags, open};
     let how = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
@@ -963,7 +964,7 @@ fn reads_as_a_head(head: &Path) -> bool {
         return false;
     }
     let mut read = Vec::new();
-    if file.take(256).read_to_end(&mut read).is_err() {
+    if file.take(255).read_to_end(&mut read).is_err() {
         return false;
     }
     let Ok(text) = std::str::from_utf8(&read) else {
@@ -971,7 +972,9 @@ fn reads_as_a_head(head: &Path) -> bool {
     };
     let text = text.trim_end();
     match text.strip_prefix("ref:") {
-        Some(named) => named.trim_start().starts_with("refs/"),
+        Some(named) => named
+            .trim_start_matches([' ', '\t', '\r', '\n'])
+            .starts_with("refs/"),
         None => matches!(text.len(), 40 | 64) && text.bytes().all(|b| b.is_ascii_hexdigit()),
     }
 }
@@ -2297,15 +2300,25 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
 ///
 /// The deadline is [`NETWORK`]. A clone is not run this way: every clone lands whole, with no
 /// total deadline ([`spawn_network`], #4079, #4080).
+///
+/// **A `clone` here is told to leave its files as pointers** ([`LFS_SKIP_SMUDGE`]): it reads no
+/// repository's config, so [`programs_held`] never tells its filter, and a repository it brings
+/// can name where that filter goes in its own `.lfsconfig` (#4400).
 pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     if let Some(helper) = helper {
         config.push(format!("credential.helper={helper}"));
     }
+    let pass = if verb(args) == Some("clone") {
+        vec![(LFS_SKIP_SMUDGE.to_owned(), "1".into())]
+    } else {
+        Vec::new()
+    };
     let extra = Extra {
         config,
         credentials: true,
         network: true,
+        pass,
         ..Extra::default()
     };
     let extra = match held(dir, args, extra)? {
@@ -2322,6 +2335,43 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
         crate::netlog::git_call(operation, &remote, run.ok(), started.elapsed());
     }
     Ok(run)
+}
+
+/// The commit `name` is at in `dir`, or `None` where it names none: not there, holding garbage,
+/// or an id with no commit behind it, all zeros included. **What a push hands git** (#4515): git
+/// takes a local ref holding garbage or zeros for one that is not there, and a push of that name
+/// for a push of nothing, which deletes the remote's branch and exits 0. And zeros given as an id
+/// mean the same, so an id is only safe from here, where a commit stands behind it.
+pub(crate) fn commit_at(dir: &Path, name: &str) -> Option<String> {
+    let commit = format!("{name}^{{commit}}");
+    run(dir, &["rev-parse", "--verify", "--quiet", &commit], READ)
+        .ok()
+        .filter(Run::ok)
+        .map(|run| run.line().trim().to_owned())
+        .filter(|id| !id.is_empty())
+}
+
+/// What a push of a `HEAD` that names no commit answers.
+const HEAD_NAMES_NO_COMMIT: &str = "HEAD names no commit here, so nothing was pushed";
+
+/// `git push <options> <url> <commit>:<to>` ([`run_network`]), of the commit `HEAD` is at by its
+/// id ([`commit_at`]), so that a `HEAD` gone bad as git starts cannot read as a push of nothing.
+/// `to` is a full ref: git cannot tell what an id would make a short name on a remote without it.
+pub(crate) fn push_head_by_id(
+    dir: &Path,
+    helper: Option<&str>,
+    options: &[&str],
+    url: &str,
+    to: &str,
+) -> Result<Run, GitUnavailable> {
+    let Some(commit) = commit_at(dir, "HEAD") else {
+        return Ok(refused(HEAD_NAMES_NO_COMMIT));
+    };
+    let refspec = format!("{commit}:{to}");
+    let mut args = vec!["push"];
+    args.extend_from_slice(options);
+    args.extend([url, refspec.as_str()]);
+    run_network(dir, helper, &args)
 }
 
 /// [`run_network`] for a skill source (SK-10, #2773; ADR 0100 §5): `config` after the

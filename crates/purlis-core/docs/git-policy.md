@@ -159,7 +159,9 @@ call site.
   credential is asked for and no `~/.netrc` read, and a call off the network also empties
   `credential.helper`, so none of your helpers is asked. A file purlis's git checks out, an updated
   or a new branch folder's included, is its pointer until `git lfs pull`, even where its object is
-  here. Your own git, in your own terminal, is untouched.
+  here. A clone through `run_network` is told the same. A clone that lands whole fetches its files
+  as a stage of its own, under the rule, and the person's own clone is theirs (see below). Your own
+  git, in your own terminal, is untouched.
 
   A symbolic link in the repo's LFS store, or an `lfs.storage` in any config, turns the filter off,
   as a planted program does, and git then reads the repo's LFS files as changed. So does a `.git`
@@ -238,6 +240,18 @@ call site.
 | `run_as_session` | the project-root guards, which ask what the session's own git would do |
 | `run_in_hook` | a read from inside a git hook, of the index the hook's command is using |
 | `spawn_persons_clone` | the person's own clone from the welcome's Get a project (see below) |
+
+### A push names its commit by id
+
+A local ref holding garbage or all zeros reads to git as a ref that is not there, and a push of
+that name, `HEAD` included, as a push of nothing: it deletes the remote's branch and exits 0
+(#4515, measured on git 2.50.1). All zeros given as an id mean the same. So a push of a repo save,
+`purlis worktree push`, `purlis change push`, a skill's publish and a plane's own save hands git
+`<commit>:refs/heads/<branch>`, with the commit resolved through `^{commit}`, which refuses both.
+`purlis change push` also refuses a member's branch that `git check-ref-format` refuses, since a
+`:` in a committed name would end the refspec at another branch. A project's first publish and
+`createproject`'s first push still name the branch, with `--set-upstream`: their remote was made
+for them a moment before, so there is nothing on it to delete.
 
 ### A push sends its Git LFS objects first
 

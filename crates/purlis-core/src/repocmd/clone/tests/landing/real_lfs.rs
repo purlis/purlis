@@ -752,6 +752,27 @@ fn real_git_lfs_a_filter_outside_a_wired_clone_asks_none_of_the_persons_helpers(
 
 #[test]
 #[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_a_clone_through_the_network_entry_leaves_its_files_as_pointers() {
+    // A `clone` reads no repository's config, so nothing else tells its filter.
+    if !real_git_lfs() {
+        return;
+    }
+    let object = Object::of(1, 44);
+    let server = LfsServer::serving(vec![object.clone()], Sending::AtOnce);
+    let dir = tempfile::tempdir().unwrap();
+    let top = std::fs::canonicalize(dir.path()).unwrap();
+    let repo = not_wired(&top, &server, &object);
+    let from = repo.to_str().unwrap();
+
+    let cloned = git::run_network(&top, None, &["clone", "-q", "--", from, "copy"]).unwrap();
+
+    assert!(cloned.ok(), "{cloned:?}");
+    assert!(std::fs::read(top.join("copy/large.bin")).unwrap() == object.pointer().into_bytes());
+    assert_eq!(server.batches(), 0, "the filter reached the server");
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
 fn real_git_lfs_writes_nothing_through_a_link_in_a_store_outside_a_wired_clone() {
     if !real_git_lfs() {
         return;

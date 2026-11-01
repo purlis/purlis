@@ -2454,6 +2454,30 @@ fn a_refusal_is_journalled_in_its_own_words() {
     );
 }
 
+#[test]
+fn a_planes_push_names_its_commit_by_id() {
+    // #4515: over a ref gone bad, `HEAD` can read as a push of nothing, which deletes the branch.
+    let fixture = Fixture::plane();
+    fixture.with_a_remote();
+    std::fs::write(fixture.root.join("work.md"), "work").unwrap();
+
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    let asked = crate::worktree::git::tally::asked(&fixture.root);
+    let pushes: Vec<&Vec<String>> = asked
+        .iter()
+        .filter(|argv| argv.iter().any(|word| word == "push"))
+        .collect();
+    assert!(!pushes.is_empty(), "{asked:?}");
+    for push in pushes {
+        assert!(
+            !push.iter().any(|word| word.starts_with("HEAD:")),
+            "{push:?}"
+        );
+    }
+}
+
 const REFUSED_SIGN_CHILD: &str = "CHARTER_TEST_REFUSED_SIGN_MARK";
 
 #[test]

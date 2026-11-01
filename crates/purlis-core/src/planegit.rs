@@ -1478,8 +1478,8 @@ pub(crate) fn tail(run: &git::Run) -> String {
 /// Push the commit that is already on HEAD to a remote branch, and hand back a URL.
 ///
 /// The sanctioned path for a control plane whose own repo requires pull requests. **The plane
-/// root's HEAD never moves**: `git push HEAD:refs/heads/<new>` needs no checkout, no branch
-/// creation and no worktree — only a different REMOTE ref for a commit that already exists.
+/// root's HEAD never moves**: a push of HEAD's commit to `refs/heads/<new>` needs no checkout, no
+/// branch creation and no worktree — only a different REMOTE ref for a commit that already exists.
 fn land_via_branch(
     root: &Path,
     https: &str,
@@ -1503,10 +1503,12 @@ fn land_via_branch(
     // that went wrong would send the reader after a problem they do not have.
     let mut attempt: Option<(String, git::Run)> = None;
     for candidate in reuse.into_iter().chain(std::iter::once(fresh.clone())) {
-        let pushed = git::run_network(
+        let pushed = git::push_head_by_id(
             root,
             helper,
-            &["push", https, &format!("HEAD:refs/heads/{candidate}")],
+            &[],
+            https,
+            &crate::worktree::name::as_ref(&candidate),
         );
         if let Ok(run) = pushed {
             let landed = run.ok();
@@ -1882,13 +1884,13 @@ fn push_head_within(
         }
     };
     let cli = forge.kind.cli();
-    let push = |root: &Path| {
-        git::run_network(
-            root,
-            Some(helper.as_str()),
-            &["push", &https, &format!("HEAD:{branch}")],
-        )
+    // A detached HEAD has no branch to say: left to fail, and never a remote branch called HEAD.
+    let to = if branch == "HEAD" {
+        branch.clone()
+    } else {
+        crate::worktree::name::as_ref(&branch)
     };
+    let push = |root: &Path| git::push_head_by_id(root, Some(helper.as_str()), &[], &https, &to);
 
     let mut run = match push(root) {
         Ok(run) => run,

@@ -20,7 +20,8 @@
 //! ref that is not there, and a push of that name for a push of nothing, which deletes the remote
 //! branch and exits 0 (git 2.50.1). So what git is handed is the commit [`plan`] resolved, the
 //! one the window showed and the upload and the scan read, and a branch that is no longer at it
-//! is not pushed.
+//! is not pushed. A member's branch comes out of a committed record, so a name git's own grammar
+//! refuses is not pushed either: a `:` in one would end the refspec somewhere else.
 //!
 //! **The destination printed is the one git pushes to.** A repo whose git config would send
 //! the push elsewhere is refused, naming the setting, and the push sets on its own command
@@ -271,6 +272,17 @@ fn plan(
             "its origin is not a GitHub or GitLab URL purlis can push to over HTTPS".into(),
         );
     };
+    if !is_a_branch_name(&clone.path, branch) {
+        return fail(
+            say,
+            format!(
+                "git does not take {} for a branch name, so it is not pushed. Set the member's \
+                 branch in workspaces/{ws}/changes/{}.json",
+                named(branch),
+                named(slug)
+            ),
+        );
+    }
     let head = commit_at(&clone.path, branch).unwrap_or_default();
     if head.is_empty() {
         return fail(
@@ -332,19 +344,16 @@ fn plan(
     })
 }
 
-/// The commit `branch` is at in `clone`, or `None` where it names none: not there, holding
-/// garbage, or at an id with no commit behind it.
+/// Whether git's own grammar takes `branch`. The value comes out of a committed file, and a
+/// `rev-parse` or a refspec reads a `:` or a `^` in it as syntax rather than as a name.
+fn is_a_branch_name(clone: &Path, branch: &str) -> bool {
+    let name = crate::worktree::name::as_ref(branch);
+    git::run(clone, &["check-ref-format", &name], git::READ).is_ok_and(|run| run.ok())
+}
+
+/// The commit `branch` is at in `clone` ([`git::commit_at`]).
 fn commit_at(clone: &Path, branch: &str) -> Option<String> {
-    let commit = format!("refs/heads/{branch}^{{commit}}");
-    git::run(
-        clone,
-        &["rev-parse", "--verify", "--quiet", &commit],
-        git::READ,
-    )
-    .ok()
-    .filter(git::Run::ok)
-    .map(|run| run.out.trim().to_string())
-    .filter(|head| !head.is_empty())
+    git::commit_at(clone, &crate::worktree::name::as_ref(branch))
 }
 
 /// `Ok` when git, in `clone`, pushes to `to` itself; else why not, naming the setting.

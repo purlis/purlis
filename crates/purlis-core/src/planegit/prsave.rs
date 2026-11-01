@@ -681,15 +681,12 @@ fn push_save_branch(
         })
     };
     let push = |expected: &str| {
-        git::run_network(
+        git::push_head_by_id(
             root,
             Some(helper),
-            &[
-                "push",
-                &format!("--force-with-lease=refs/heads/{save}:{expected}"),
-                https,
-                &format!("HEAD:refs/heads/{save}"),
-            ],
+            &[&format!("--force-with-lease=refs/heads/{save}:{expected}")],
+            https,
+            &format!("refs/heads/{save}"),
         )
     };
     let expected = kept.pushed.clone().unwrap_or_default();

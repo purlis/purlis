@@ -970,7 +970,9 @@ fn a_repository_with_no_wired_helper_is_left_none_of_the_persons_helpers_off_the
 fn a_git_folder_counts_for_the_lfs_store_only_where_git_itself_takes_it() {
     let branch = "ref: refs/heads/main\n";
     let detached = format!("{}\n", "a".repeat(40));
-    let cases: [(&str, Option<&str>, &[&str], bool); 9] = [
+    // Unicode's white space is not git's, and git reads no further than 255 bytes.
+    let past_the_read = format!("ref:{}refs/heads/main\n", " ".repeat(247));
+    let cases: [(&str, Option<&str>, &[&str], bool); 13] = [
         ("empty", None, &[], false),
         ("a HEAD alone", Some(branch), &[], false),
         ("no refs", Some(branch), &["objects"], false),
@@ -985,6 +987,30 @@ fn a_git_folder_counts_for_the_lfs_store_only_where_git_itself_takes_it() {
         (
             "a HEAD of garbage",
             Some("garbage\n"),
+            &["objects", "refs"],
+            false,
+        ),
+        (
+            "a vertical tab",
+            Some("ref:\u{b}refs/heads/main\n"),
+            &["objects", "refs"],
+            false,
+        ),
+        (
+            "a form feed",
+            Some("ref:\u{c}refs/heads/main\n"),
+            &["objects", "refs"],
+            false,
+        ),
+        (
+            "a no-break space",
+            Some("ref:\u{a0}refs/heads/main\n"),
+            &["objects", "refs"],
+            false,
+        ),
+        (
+            "past git's read",
+            Some(past_the_read.as_str()),
             &["objects", "refs"],
             false,
         ),
@@ -1118,6 +1144,61 @@ fn plain_worktree_add(repo: &Path, branch: &str, folder: &Path) {
     )
     .unwrap();
     assert!(out.status.success(), "{out:?}");
+}
+
+#[test]
+fn a_head_that_names_no_commit_is_not_pushed_and_its_remote_branch_stays() {
+    // #4515: zeros in a ref are git's word for nothing, and `HEAD:` over them deleted the branch.
+    let dir = tempfile::tempdir().unwrap();
+    let top = std::fs::canonicalize(dir.path()).unwrap();
+    let bare = top.join("forge.git");
+    let repo = top.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let ran = |at: &Path, args: &[&str]| {
+        let done = crate::testgit::run(at, args);
+        assert!(done.ok(), "{args:?}: {done:?}");
+        done.out
+    };
+    ran(
+        &top,
+        &["init", "-q", "--bare", "-b", "main", bare.to_str().unwrap()],
+    );
+    ran(&repo, &["init", "-q", "-b", "main", "."]);
+    ran(
+        &repo,
+        &[
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "one",
+        ],
+    );
+    let url = format!("file://{}", bare.display());
+    let pushed = push_head_by_id(&repo, None, &[], &url, "refs/heads/main").unwrap();
+    assert!(pushed.ok(), "{pushed:?}");
+    let there = ran(&bare, &["rev-parse", "refs/heads/main"]);
+    let id = ran(&repo, &["rev-parse", "HEAD"]);
+    let refspec = format!("{}:refs/heads/main", id.trim());
+    assert!(
+        tally::asked(&repo)
+            .iter()
+            .any(|argv| argv.contains(&refspec)),
+        "not pushed by its id"
+    );
+
+    for spoiled in ["0".repeat(40), "garbage".to_owned()] {
+        std::fs::write(repo.join(".git/refs/heads/main"), format!("{spoiled}\n")).unwrap();
+
+        let pushed = push_head_by_id(&repo, None, &[], &url, "refs/heads/main").unwrap();
+
+        assert!(!pushed.ok(), "{spoiled}: {pushed:?}");
+        assert_eq!(ran(&bare, &["rev-parse", "refs/heads/main"]), there);
+    }
 }
 
 #[test]

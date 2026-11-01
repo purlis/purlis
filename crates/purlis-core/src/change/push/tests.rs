@@ -959,15 +959,43 @@ fn a_branch_gone_bad_at_the_last_moment_cannot_delete_the_remote_branch() {
 
 #[test]
 fn a_branch_that_names_no_commit_is_no_branch_to_push() {
+    // All zeros is the one git reads as nothing at all, and deletes with.
+    for id in ["1", "0"] {
+        let world = World::new("schema = 1\n");
+        let (widget, there) = with_the_branch_on_its_remote(&world);
+        std::fs::write(loose_ref(&widget), format!("{}\n", id.repeat(40))).unwrap();
+
+        let (code, said, _) = world.push(json!([]));
+
+        assert_eq!(code, 1, "{said}");
+        assert!(said.contains("no branch"), "{said}");
+        assert_eq!(world.remote_has("widget", BRANCH), Some(there), "{said}");
+    }
+}
+
+#[test]
+fn a_member_branch_that_git_would_read_as_syntax_is_not_pushed() {
+    // The branch comes out of a committed record. With a `:` in it the refspec would end at
+    // another branch, and a `rev-parse` of it would read a tree's path.
     let world = World::new("schema = 1\n");
-    let (widget, there) = with_the_branch_on_its_remote(&world);
-    std::fs::write(loose_ref(&widget), format!("{}\n", "1".repeat(40))).unwrap();
-
-    let (code, said, _) = world.push(json!([]));
-
-    assert_eq!(code, 1, "{said}");
-    assert!(said.contains("no branch"), "{said}");
-    assert_eq!(world.remote_has("widget", BRANCH), Some(there), "{said}");
+    let (_widget, there) = with_the_branch_on_its_remote(&world);
+    let main_there = world.remote_has("widget", "main");
+    for branch in ["a:refs/heads/main", "a^{commit}", "a..b", "a b"] {
+        let mut said = String::new();
+        let planned = plan(
+            &world.plane,
+            "alpha",
+            SLUG,
+            "widget",
+            branch,
+            &|https| world.route(https),
+            &mut |line| said.push_str(&line.to_string()),
+        );
+        assert!(planned.is_err(), "{branch}");
+        assert!(said.contains("git does not take"), "{branch}: {said}");
+    }
+    assert_eq!(world.remote_has("widget", BRANCH), Some(there));
+    assert_eq!(world.remote_has("widget", "main"), main_there);
 }
 
 /// What `destinations` names for `repo` of `world`: its branch at the commit its clone holds.
