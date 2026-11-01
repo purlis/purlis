@@ -883,6 +883,10 @@ pub fn forget_pool_locked(config_root: &Path, name: &str, _locked: &Locked) -> R
     if held.pools.len() + held.clusters.len() != before {
         write(config_root, &held)?;
     }
+    // A choice left behind must never stop a removal, which has already changed the record.
+    if let Err(why) = crate::poolsetup::forget_pool_locked(config_root, name) {
+        tracing::warn!("purlis: pool {name}'s Pool setup choices are kept: {why}");
+    }
     Ok(())
 }
 

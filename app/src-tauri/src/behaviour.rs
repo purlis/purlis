@@ -393,6 +393,7 @@ const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
 const PARITY: &str = "PURLIS_PARITY";
 
 mod pool_journey;
+mod pool_setup;
 
 /// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
 /// the window adds one ([`a_pool_on`]). The window speaks to its own host, which relays to the

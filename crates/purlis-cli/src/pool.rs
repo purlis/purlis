@@ -23,6 +23,14 @@ pub enum PoolCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Pool setup: each step's state and what to do next, for a pool or a new one. It only reads.
+    Setup {
+        /// The pool. Without it, a new Docker pool.
+        name: Option<String>,
+        /// One JSON object for a script.
+        #[arg(long)]
+        json: bool,
+    },
     /// Set one of a pool's limits, or return it to purlis's default with `--reset`.
     ///
     /// In a chat the app started, this writes nothing: the person is asked in the window, and
@@ -59,6 +67,16 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
     };
     let in_a_chat = crate::gradelink::in_a_chat(&purlis_core::envvar::var);
     match command {
+        // A chat doesn't reach this machine's Docker or a runner, so it asks nothing of them.
+        PoolCommand::Setup { .. } if in_a_chat => Err(
+            "Pool setup reads this machine's Docker and pools, which a chat doesn't reach. Run \
+             purlis pool setup in your own terminal."
+                .to_owned(),
+        ),
+        PoolCommand::Setup { name, json } => {
+            crate::poolsetup::answered(name.as_deref(), *json)?;
+            Ok(0)
+        }
         // A chat can't read the pool's file, so it is told what can be asked for, and no value.
         PoolCommand::Limits { json, .. } if in_a_chat => {
             let held = runners::PoolLimitsHeld {
