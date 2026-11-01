@@ -134,6 +134,7 @@ mod planewatch;
 mod poolfollow;
 mod poolprofiles;
 mod poolsignin_confirm;
+mod poolsetuptab;
 mod pooltools;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;

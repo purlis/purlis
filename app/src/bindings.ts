@@ -3084,6 +3084,10 @@ export const commands = {
 	useThisMachinesChrome: () => typedError<null, string>(__TAURI_INVOKE("use_this_machines_chrome")),
 	/**  **The Docker pools on this machine**, and a new pool's default limits. */
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
+	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
+	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
+	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
+	poolSetupOpenDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_open_docker")),
 	/**
 	 *  **Adds a Docker pool on this machine**: its runner is made from the image, confined and held
 	 *  to the pool's limits, paired with this desktop and kept. What fails is taken back.
@@ -12260,6 +12264,21 @@ export type RunnerDispatchWhole = {
 	/**  The brief whole, drawn inertly: escapes written out for what would draw otherwise. */
 	brief: string,
 };
+
+/**
+ *  One step's next action.
+ */
+export type PoolSetupAction = { id: string; label: string; does: string; command: string | null; url: string | null };
+
+/**
+ *  One step as it stands.
+ */
+export type PoolSetupStep = { id: string; name: string; state: string; line: string | null; findings: string[]; next: PoolSetupAction | null; skippable: boolean };
+
+/**
+ *  What the tab draws.
+ */
+export type PoolSetupShown = { pool: string | null; name: string | null; at: string | null; steps: PoolSetupStep[] };
 
 /**
  *  **The runner image a new pool is offered** (the person's ruling of 2026-10-30), by the
