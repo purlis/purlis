@@ -388,7 +388,7 @@
               "layer.divider"
             ]
           },
-          "maxItems": 132
+          "maxItems": 134
         },
         "hues": {
           "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
@@ -10303,6 +10303,12 @@
         "needs-you.text": {
           "$ref": "#/$defs/colour"
         },
+        "needs-you.count": {
+          "$ref": "#/$defs/colour"
+        },
+        "needs-you.count-text": {
+          "$ref": "#/$defs/colour"
+        },
         "danger.base": {
           "$ref": "#/$defs/colour"
         },
@@ -11385,6 +11391,8 @@
         "layer.divider",
         "needs-you.base",
         "needs-you.text",
+        "needs-you.count",
+        "needs-you.count-text",
         "danger.base",
         "danger.surface",
         "danger.text",
@@ -11523,6 +11531,8 @@
         "layer.divider",
         "needs-you.base",
         "needs-you.text",
+        "needs-you.count",
+        "needs-you.count-text",
         "danger.base",
         "danger.surface",
         "danger.text",
@@ -11660,6 +11670,8 @@
         "layer.divider",
         "needs-you.base",
         "needs-you.text",
+        "needs-you.count",
+        "needs-you.count-text",
         "danger.base",
         "danger.surface",
         "danger.text",

@@ -84,6 +84,8 @@
 
         "needs-you.base": "#bd5654",
         "needs-you.text": "#ffffff",
+        "needs-you.count": "#bd5654",
+        "needs-you.count-text": "#ffffff",
 
         "danger.base": "#c97474",
         "danger.surface": "#2a1a1a",
@@ -291,6 +293,8 @@
 
         "needs-you.base": "#a83232",
         "needs-you.text": "#ffffff",
+        "needs-you.count": "#a83232",
+        "needs-you.count-text": "#ffffff",
 
         "danger.base": "#a83232",
         "danger.surface": "#fbeaea",

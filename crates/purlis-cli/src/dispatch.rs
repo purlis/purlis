@@ -426,10 +426,17 @@ pub fn send(
         }
         // Held, not refused: the dispatch is accepted and waits on the person, so this is not
         // a failure and is not said as one.
+        // Held because this chat runs on a pool, whatever the persona (#4148).
+        Ok(Answer::NeedsGrant {
+            waiting: None,
+            held_by: Some(pool),
+            ..
+        }) => Ok(held_on_a_pool(&pool, &ask_name(&ask))),
         Ok(Answer::NeedsGrant {
             from,
             to,
             waiting: None,
+            held_by: None,
         }) => Ok(held_for_the_person(from.as_deref(), &to, &ask_name(&ask))),
         // Not held: the person is already being asked about this pair for another task, and
         // this one was dropped. Nothing of it will start, so it is a refusal.
@@ -437,6 +444,7 @@ pub fn send(
             from,
             to,
             waiting: Some(first),
+            ..
         }) => Err(not_held(from.as_deref(), &to, &ask_name(&ask), &first)),
         // Held, not refused: every check let it through, and it waits on this machine's memory
         // (#1467). Not a failure either.
@@ -457,6 +465,7 @@ pub fn send(
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
             | Answer::Working(_)
+            | Answer::Pointed { .. }
             | Answer::Task(_),
         )
         | Err(_) => Err(no_answer(&ask_name(&ask), cuts_a_worktree)),
@@ -519,6 +528,20 @@ fn held_for_the_person(from: Option<&str>, to: &str, task: &str) -> String {
          with other work, and do not dispatch it again.",
         who_asks(from),
         one(to),
+        one(task)
+    )
+}
+
+/// What a chat on pool `pool` is told where its task waits for the person's Approve (#4148).
+fn held_on_a_pool(pool: &str, task: &str) -> String {
+    let one = purlis_core::personas::one_line;
+    format!(
+        "{SAYS} held for the person. This chat runs on pool '{}', so the person approves what it \
+         dispatches in the window, with this brief in front of them. Nothing has started. If \
+         they approve it, '{}' is decided then, and this chat is told what became of it; if \
+         they refuse it, this chat is told on its next turn. Carry on with other work, and do \
+         not dispatch it again.",
+        one(pool),
         one(task)
     )
 }
@@ -688,6 +711,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
             | Answer::Working(_)
+            | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }
             | Answer::WaitingOnMemory { .. }
@@ -1271,6 +1295,27 @@ pub fn messages(root: &std::path::Path, chat: u32) -> Vec<dispatchtalk::Message>
         .map(|(_, message)| message)
         .collect()
 }
+
+/// **What this chat's router points `prompt` at** (SK-15c): asked of the app that started the
+/// chat, which asks the router within its 100 ms. `None` where there is no app, it answers
+/// nothing in time, or the router points at nothing.
+pub fn pointed(prompt: &str) -> Option<String> {
+    use purlis_core::hookwire::PromptAsk;
+    let (mut asking, chat) = the_app()?;
+    // Cut here, so no more of it crosses to the app than the router is handed.
+    let asked = Ask::Prompt(Box::new(PromptAsk {
+        chat,
+        prompt: purlis_core::extension::studio::prompt_handed(prompt).to_owned(),
+    }));
+    match asking.ask(&asked, A_ROUTER_IS_ANSWERED_WITHIN) {
+        Ok(Answer::Pointed { pointer }) => pointer,
+        _ => None,
+    }
+}
+
+/// How long a prompt hook waits for the app's answer about its router: the router's own 100 ms
+/// and the way to the app and back. Past it the prompt goes on with no pointer.
+const A_ROUTER_IS_ANSWERED_WITHIN: std::time::Duration = std::time::Duration::from_millis(400);
 
 /// How much longer than the wait itself the app has to answer one: it answers when the wait
 /// ends, and the answer is one line.

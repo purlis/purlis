@@ -314,9 +314,18 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
         // not a failure and is not said as one. Nothing was opened, so nothing is recorded:
         // the app opens the chat when the person allows the pair.
         Host::Held {
+            waiting: None,
+            held_by: Some(pool),
+            ..
+        } => {
+            println!("{}", held_on_a_pool(&pool, ws, create_vision.is_some()));
+            return ExitCode::SUCCESS;
+        }
+        Host::Held {
             from,
             to,
             waiting: None,
+            held_by: None,
         } => {
             println!(
                 "{}",
@@ -330,6 +339,7 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
             from,
             to,
             waiting: Some(first),
+            ..
         } => {
             voice::err(not_held(from.as_deref(), &to, &first).to_string());
             return ExitCode::FAILURE;
@@ -450,6 +460,23 @@ fn held_for_the_person(from: Option<&str>, to: &str, ws: &str, creates: bool) ->
          with other work, and do not hand it off again.",
         who_asks(from),
         purlis_core::personas::one_line(to)
+    )
+}
+
+/// What a chat on pool `pool` is told where its handoff waits for the person's Approve (#4148).
+fn held_on_a_pool(pool: &str, ws: &str, creates: bool) -> String {
+    let created = if creates {
+        format!(" '{ws}' is created only if it opens.")
+    } else {
+        String::new()
+    };
+    format!(
+        "{HANDOFF_SAYS} held for the person. This chat runs on pool '{}', so the person approves \
+         what it hands off in the window, with this brief in front of them. Nothing has been \
+         opened. If they approve it, the handoff into workspace '{ws}' is decided then, and this \
+         chat is told what became of it;{created} if they refuse it, this chat is told on its \
+         next turn. Carry on with other work, and do not hand it off again.",
+        purlis_core::personas::one_line(pool)
     )
 }
 
@@ -576,6 +603,8 @@ enum Host {
         from: Option<String>,
         to: String,
         waiting: Option<String>,
+        /// The pool this chat runs on, where that is why it is held (#4148).
+        held_by: Option<String>,
     },
     /// The app holds the handoff while this machine is short on memory (#1467): every check
     /// let it through, and nothing has opened yet.
@@ -634,7 +663,17 @@ fn in_the_app(
     };
     match asking.ask(&Ask::Open(Box::new(open)), AN_OPEN_TAKES_AT_MOST) {
         Ok(Answer::Opened { chat, note }) => Host::Opened(chat, note),
-        Ok(Answer::NeedsGrant { from, to, waiting }) => Host::Held { from, to, waiting },
+        Ok(Answer::NeedsGrant {
+            from,
+            to,
+            waiting,
+            held_by,
+        }) => Host::Held {
+            from,
+            to,
+            waiting,
+            held_by,
+        },
         Ok(Answer::WaitingOnMemory { to }) => Host::WaitingOnMemory { to },
         Ok(Answer::No { why }) => Host::Refused(why),
         Ok(
@@ -651,6 +690,7 @@ fn in_the_app(
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
             | Answer::Working(_)
+            | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::Task(_),
         )
@@ -699,6 +739,7 @@ pub(crate) fn ticketed() -> Ticketed {
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
             | Answer::Working(_)
+            | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }
             | Answer::WaitingOnMemory { .. }

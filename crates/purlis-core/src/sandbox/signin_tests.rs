@@ -65,6 +65,7 @@ fn a_claude_code_chats_commands_cannot_read_or_write_its_profiles_sign_in_file()
         data: None,
         sandbox_only: None,
         state: None,
+        default_config: None,
     });
 
     let file = profile.join(".credentials.json").display().to_string();
@@ -201,4 +202,50 @@ fn the_profile_page_says_plainly_where_commands_can_read_a_profiles_sign_in() {
              that its harness keeps it from them."
         )
     );
+}
+
+/// **A chat of one harness is denied every other harness's default sign-in folder**, reading and
+/// writing, and not its own.
+#[test]
+fn a_chat_is_denied_every_other_harnesses_default_sign_in_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let machine = machine(&home);
+    let folder = |harness: Harness| match harness {
+        Harness::ClaudeCode => home.join(".claude"),
+        Harness::Codex => home.join(".codex"),
+        Harness::Opencode => home.join(".local/share/opencode"),
+    };
+    for harness in Harness::ALL {
+        let denied: Vec<PathBuf> = signin::other_harnesses_defaults(harness, &machine)
+            .into_iter()
+            .map(|(folder, _)| folder)
+            .collect();
+        assert_eq!(denied.len(), 2, "{harness:?}");
+        for other in Harness::ALL {
+            assert_eq!(
+                denied.contains(&folder(other)),
+                other != harness,
+                "{harness:?} of {other:?}"
+            );
+        }
+    }
+}
+
+/// **A chat that works inside another harness's default folder still starts**, kept from that
+/// harness's sign-in file alone.
+#[test]
+fn a_chat_inside_another_harnesses_folder_is_denied_its_sign_in_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap().join("home");
+    let root = home.join(".codex/worktrees/project");
+    std::fs::create_dir_all(&root).unwrap();
+    let machine = machine(&home);
+
+    let applied = applied(Harness::ClaudeCode, &root, &machine);
+
+    let denied = |path: PathBuf| applied.denied.iter().any(|denial| denial.path == path);
+    assert!(denied(home.join(".codex/auth.json")));
+    assert!(!denied(home.join(".codex")));
+    assert!(denied(home.join(".local/share/opencode")));
 }

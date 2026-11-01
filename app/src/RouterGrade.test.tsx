@@ -71,6 +71,7 @@ function plan(over: Partial<RouterGradePlan> = {}): RouterGradePlan {
     model: null,
     estimate: null,
     estimate_same_library: null,
+    pointer: null,
     running: null,
     consent: "c0ffee",
     ...over,
@@ -128,6 +129,14 @@ const step = (over: Partial<RouterGradeStep> = {}): RouterGradeStep => ({
 });
 
 describe("Grade the router: its plan, a review page on Routing (SK-15e, #4222)", () => {
+  it("says whether the router is graded with its pointer", async () => {
+    mockIPC((cmd) => (cmd === "router_grade_plan" ? plan({ pointer: true }) : null));
+    renderPlan();
+    expect(await screen.findByTestId("router-grade-pointer")).toHaveTextContent(
+      "each trigger test's prompt is handed to it",
+    );
+  });
+
   it("shows its totals and what it runs before anything runs, then starts it on Start", async () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
     mockIPC(
@@ -547,6 +556,68 @@ describe("A router's grade running, a page on Routing (#4222)", () => {
     );
     expect(told.ended).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Open its scorecard" })).toBeNull();
+  });
+
+  it("draws another grade's own step when the page is moved to it, never the last one's", async () => {
+    mockIPC(
+      (cmd, args) => {
+        if (cmd !== "router_grade_running") return null;
+        const { grade } = args as { grade: string };
+        return grade === "01GRADE" ? step({ ran: 4 }) : step({ grade, ran: 9 });
+      },
+      { shouldMockEvents: true },
+    );
+    const page = (grade: string) => (
+      <RouterGradeRunningPage
+        plane="p"
+        router="relevance"
+        grade={grade}
+        onEnded={() => undefined}
+        onBack={() => undefined}
+      />
+    );
+    const name = "How far the grade of the router relevance is";
+    const drawn = render(page("01GRADE"));
+    expect(await screen.findByRole("group", { name })).toHaveTextContent("Chats4 of 18");
+    drawn.rerender(page("01NEXT"));
+    await waitFor(() =>
+      expect(screen.getByRole("group", { name })).toHaveTextContent("Chats9 of 18"),
+    );
+  });
+
+  it("says in place why it could not read the grade, with Try again", async () => {
+    let reads = 0;
+    mockIPC(
+      (cmd) => {
+        if (cmd !== "router_grade_running") return null;
+        reads += 1;
+        if (reads === 1) throw "The Skill studio is not turned on on this machine.";
+        return step({ ran: 2 });
+      },
+      { shouldMockEvents: true },
+    );
+    renderRunning();
+    await screen.findByText("The Skill studio is not turned on on this machine.");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    const totals = await screen.findByRole("group", {
+      name: "How far the grade of the router relevance is",
+    });
+    expect(totals).toHaveTextContent("Chats2 of 18");
+  });
+
+  it("says a stop the core refused, and Stop can be pressed again", async () => {
+    mockIPC(
+      (cmd) => {
+        if (cmd === "router_grade_running") return step();
+        if (cmd === "skill_grade_stop") throw "That grade is not running here.";
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    renderRunning();
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    await screen.findByText("That grade is not running here.");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled());
   });
 
   it("says a grade that ended while the page was away, and opens its scorecard", async () => {

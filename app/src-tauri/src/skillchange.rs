@@ -856,6 +856,10 @@ pub struct SkillRouterOffer {
     pub id: String,
     /// Its name, as its manifest gives it.
     pub name: String,
+    /// Whether its approval said it reads prompts, which only offers the person the switch.
+    pub reads_prompts: bool,
+    /// Whether the person turned that on for it on this machine (ADR 0102 as amended 2026-10-31).
+    pub prompts_on: bool,
 }
 
 /// **Every router extension the project at `root` can choose** (#3692), in id order: what
@@ -867,10 +871,17 @@ fn routers_in(
     purlis_core::skills::studio::with_studio(executor, root, |studio| {
         studio
             .map(|studio| {
+                let on = studio.reading_prompts();
                 studio
                     .declaring(purlis_core::extension::capability::Capability::SkillRouter)
                     .into_iter()
                     .map(|asked| SkillRouterOffer {
+                        prompts_on: on.contains(&asked.id),
+                        reads_prompts: asked
+                            .declared
+                            .router
+                            .as_ref()
+                            .is_some_and(|router| router.reads_prompts),
                         id: asked.id,
                         name: asked.name,
                     })
@@ -949,6 +960,52 @@ pub(crate) async fn skill_router_choose(
         route(held.root(), &by, router.as_deref(), || {
             routers_in(&executor, held.root())
         })
+    })
+    .await
+}
+
+/// **Turns `router`'s reading of prompts on or off** in the record at `config` (ADR 0102 as amended
+/// 2026-10-31). On only for a router `offered` here that says it reads them; off for any.
+pub(crate) fn reading_prompts(
+    config: &std::path::Path,
+    router: &str,
+    on: bool,
+    offered: impl FnOnce() -> Vec<SkillRouterOffer>,
+) -> Result<(), String> {
+    if on
+        && !offered()
+            .iter()
+            .any(|one| one.id == router && one.reads_prompts)
+    {
+        return Err(format!(
+            "No router extension '{}' that reads prompts is approved on this machine and on in \
+             this project, so nothing was changed.",
+            purlis_core::shown::readable(router, 64)
+        ));
+    }
+    purlis_core::extension::set_reads_prompts(config, router, on).map_err(|why| why.to_string())
+}
+
+/// **Lets a router read every prompt of the chats it routes, or stops it**, from the Routing page
+/// (ADR 0102 as amended 2026-10-31): this machine's record, and the person's own press in their
+/// window. Nothing else turns it on.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_router_reads_prompts(
+    views: tauri::State<'_, crate::views::Views>,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    router: String,
+    on: bool,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    let executor = views.executor();
+    crate::off_the_window("changing what the router reads", move || {
+        flag_on()?;
+        let config = purlis_core::machine::config_root()
+            .ok_or("This machine has no config home to keep the choice in.")?;
+        reading_prompts(&config, &router, on, || routers_in(&executor, held.root()))?;
+        Ok(SkillChanged { notes: Vec::new() })
     })
     .await
 }

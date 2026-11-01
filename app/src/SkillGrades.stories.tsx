@@ -72,6 +72,9 @@ const PLAN: SkillGradePlan = {
   consent: "c0ffee",
   previous: { commit: "fedcba987654", subject: "First version" },
   previous_refused: null,
+  graders: [],
+  grader: null,
+  grader_refused: null,
 };
 
 const row = (grade: string, over: Partial<GradeRow> = {}): GradeRow => ({
@@ -326,6 +329,23 @@ export const PlanChanged: Story = {
       "it now runs 36 chats on work, opus, and may spend at most $9.60",
     );
     await expect(start).toHaveAttribute("aria-disabled", "true");
+  },
+};
+
+/** **A plan a Grader extension scores** (#3236): named plainly, beside purlis's own. */
+export const PlanByAGrader: Story = {
+  args: {
+    grading: { at: "plan" },
+    plan: {
+      ...PLAN,
+      graders: [{ id: "acme.grader", title: "Acme evals", hosts: ["evals.acme.example"] }],
+      grader: { id: "acme.grader", title: "Acme evals", hosts: ["evals.acme.example"] },
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("skill-grade-grader")).toHaveTextContent(
+      "Acme evals (acme.grader) is an extension you installed, not part of purlis.",
+    );
   },
 };
 

@@ -801,6 +801,7 @@ fn a_handoff_to_another_persona_needs_the_grant_and_starts_nothing_until_it_is_a
             from: Some("steward".to_owned()),
             to: "devops".to_owned(),
             waiting: None,
+            held_by: None,
         }
     );
     assert_eq!(told, None, "nothing was started, so nothing is told");
@@ -836,6 +837,7 @@ fn a_handoff_to_another_persona_needs_the_grant_and_starts_nothing_until_it_is_a
             from: Some("steward".to_owned()),
             to: "devops".to_owned(),
             waiting: Some("handoff to beta".to_owned()),
+            held_by: None,
         }
     );
 
@@ -2310,6 +2312,7 @@ fn a_task_whose_program_ends_with_its_session_host_is_not_failed_and_its_pane_sa
         Some(crate::hostlost::LostRun {
             left_in: crate::hostlost::LeftIn::Failed,
             resumable: true,
+            with_the_runner: false,
         }),
         "failed: it never said its turn ended; it has its conversation to resume"
     );
@@ -2318,6 +2321,46 @@ fn a_task_whose_program_ends_with_its_session_host_is_not_failed_and_its_pane_sa
         held.lost_with_the_host().of(task),
         None,
         "gone with its tab"
+    );
+}
+
+/// **A task on a gone runner reports**, where one lost with its host waits to be resumed
+/// (#4350): nothing can resume it, so the chat that asked would wait for ever.
+#[test]
+fn a_task_that_ended_with_a_gone_runner_reports_to_the_chat_that_asked() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+
+    host.program_ends_with_its_runner(task);
+
+    let record = record_of(&held, task);
+    assert!(!record.running(), "{record:?}");
+    assert!(record.report.is_some(), "{record:?}");
+}
+
+/// **A chat whose idle program ended with a gone runner offers no Resume** (#4350): its
+/// conversation went with that runner's home, whatever it was doing.
+#[test]
+fn a_chat_that_ended_with_a_gone_runner_is_not_resumable() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    the_board_hears(&held, steward, Event::UserPromptSubmit);
+    the_board_hears(&held, steward, Event::Stop);
+
+    host.program_ends_with_its_runner(steward);
+
+    assert_eq!(
+        held.lost_with_the_host().of(steward),
+        Some(crate::hostlost::LostRun {
+            left_in: crate::hostlost::LeftIn::Hibernated,
+            resumable: false,
+            with_the_runner: true,
+        })
     );
 }
 
@@ -2344,6 +2387,7 @@ fn a_chat_idle_when_its_session_host_ends_is_hibernated_and_resume_starts_it_on_
         Some(crate::hostlost::LostRun {
             left_in: crate::hostlost::LeftIn::Hibernated,
             resumable: true,
+            with_the_runner: false,
         })
     );
     held.chats().ask_restart(steward).expect("Resume asks");
@@ -3011,6 +3055,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Browse(_) => 14,
             Ask::ThemePreview(_) => 15,
             Ask::ThemeDraft(_) => 16,
+            Ask::Prompt(_) => 17,
         }
     }
     let asks = vec![
@@ -3106,10 +3151,15 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             folder: "dusk".to_owned(),
             files: None,
         })),
+        // A prompt for the chat's router (SK-15c): it names the asking chat alone.
+        Ask::Prompt(Box::new(purlis_core::hookwire::PromptAsk {
+            chat,
+            prompt: "stop everything".to_owned(),
+        })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=16).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=17).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -3917,6 +3967,7 @@ fn a_dispatch_to_another_persona_needs_a_grant_and_starts_nothing() {
             from: Some("steward".to_owned()),
             to: "devops".to_owned(),
             waiting: None,
+            held_by: None,
         }
     );
     assert_eq!(told, None, "nothing was started, so nothing is told");
@@ -5882,6 +5933,7 @@ fn an_allow_starts_the_dispatch_that_was_held_on_the_brief_the_person_read() {
             from: Some("steward".to_owned()),
             to: "devops".to_owned(),
             waiting: None,
+            held_by: None,
         }
     );
     // A second ask across the pair is not queued beside it: the person saw one brief.
@@ -5900,6 +5952,7 @@ fn an_allow_starts_the_dispatch_that_was_held_on_the_brief_the_person_read() {
             from: Some("steward".to_owned()),
             to: "devops".to_owned(),
             waiting: Some("check the cluster".to_owned()),
+            held_by: None,
         }
     );
     assert_eq!(held.chats().open_now().len(), before, "nothing has started");
@@ -12023,6 +12076,33 @@ fn a_chat_open_in_a_workspace_with_no_id_is_drawn_specimens_from_the_plane_root_
             id: None,
         })
     );
+}
+
+#[test]
+fn a_prompt_of_a_chat_whose_start_chose_no_router_is_pointed_at_nothing() {
+    // SK-15c: the app asks no router for a chat its start did not arm for one, whatever the
+    // line says, and answers no pointer.
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+
+    let said = answer(
+        &held,
+        &id,
+        &tickets,
+        1,
+        Ask::Prompt(Box::new(purlis_core::hookwire::PromptAsk {
+            chat: asking,
+            prompt: "deploy it".to_owned(),
+        })),
+        &|_| {},
+    );
+
+    assert_eq!(said, Answer::Pointed { pointer: None });
 }
 
 #[test]

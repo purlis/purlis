@@ -6,6 +6,7 @@ import type { ClusterPoolRow, PoolLink, PoolRow, PoolVersion, ProjectNotHeld } f
 import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
 import {
+  anotherEngineSaid,
   askLink,
   askVersion,
   markPoolOwned,
@@ -21,6 +22,7 @@ import { Tooltip } from "../ui/tooltip/Tooltip";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Badge } from "../ui/badge/Badge";
 import { Switch } from "../ui/choice/Switch";
+import { PoolLimits } from "./PoolLimits";
 import { PoolProfiles } from "./PoolProfiles";
 
 /**
@@ -56,6 +58,8 @@ import { PoolProfiles } from "./PoolProfiles";
  * context and namespace, the cluster operator key pinned as it was added, and Remove, which
  * deletes its claim. A changed runner key and a changed cluster operator key get the same Notice
  * with Remove ({@link KeyChangedNotice}): either refuses every link to its runner.
+ *
+ * **Each pool's limits fold under its row** ({@link PoolLimits}, #4285).
  *
  * **A runner removed outside purlis says so** ({@link RemovedNotice}, #4149): Docker has no
  * container of its id, so purlis no longer links to it, and its row offers Make the runner
@@ -97,6 +101,7 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link.state === "key_changed" || link.state === "operator_key_changed") return "key changed";
   if (link.state === "suspended") return "suspended";
   if (link.state === "removed") return "removed outside purlis";
+  if (link.state === "on_another_engine") return "on another Docker engine";
   return "not linked";
 }
 
@@ -153,6 +158,11 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
   return lines.length === 0 ? undefined : lines.join(" ");
 }
 
+/** Whether a pool's link says its runner is on a Docker engine that Docker no longer reaches. */
+function linkOnAnotherEngine(link: PoolLink | "asking" | undefined): boolean {
+  return typeof link === "object" && link.state === "on_another_engine";
+}
+
 /**
  * **Remove pool {name}?**, asked before any pool is removed: what goes, and that there is no
  * undo. Cancel changes nothing.
@@ -160,12 +170,15 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
 export function RemovePool({
   name,
   cluster = false,
+  elsewhere = false,
   onRemove,
   onCancel,
 }: {
   name: string;
   /** A cluster pool's (#3292): its claim is deleted, and its runner with it. */
   cluster?: boolean;
+  /** Its runner is on a Docker engine that Docker no longer reaches (#4325): nothing there goes. */
+  elsewhere?: boolean;
   onRemove: () => void;
   onCancel: () => void;
 }) {
@@ -175,9 +188,11 @@ export function RemovePool({
       title={`Remove pool ${name}?`}
       description={
         <p className="came-back">
-          {cluster
-            ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
-            : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
+          {elsewhere
+            ? "Its runner is on another Docker engine, which Docker doesn't reach now, so its container and home stay there, with everything chats left in them. purlis forgets the pool, and says what to remove once Docker points back. There is no undo."
+            : cluster
+              ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
+              : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
         </p>
       }
       main={{ children: "Remove pool", variant: "danger", onPress: onRemove }}
@@ -240,6 +255,9 @@ function PoolEntry({
           onMakeAgain={onMakeAgain}
         />
       )}
+      {typeof link === "object" && link.state === "on_another_engine" && (
+        <p className="ui-setting-help">{anotherEngineSaid(pool.name)}</p>
+      )}
       {remade !== undefined && <p className="ui-setting-help">{remade}</p>}
       {typeof link === "object" && link.state === "down" && (
         <p className="ui-setting-help">{link.why}</p>
@@ -249,6 +267,7 @@ function PoolEntry({
       )}
       {notHeld}
       {profiles}
+      <PoolLimits pool={pool.name} />
     </li>
   );
 }
@@ -380,6 +399,7 @@ function ClusterPoolEntry({
       )}
       {pool.owned ? profiles : <p className="ui-setting-help">{notMarkedSaid(pool.name)}</p>}
       {notHeld}
+      <PoolLimits pool={pool.name} />
     </li>
   );
 }
@@ -514,10 +534,11 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
             <RemovePool
               name={asking}
               cluster={clusters.some((one) => one.name === asking)}
+              elsewhere={linkOnAnotherEngine(now.links[asking])}
               onCancel={() => setAsking(undefined)}
               onRemove={() => {
                 setAsking(undefined);
-                void removePool(asking);
+                void removePool(asking, linkOnAnotherEngine(now.links[asking]));
               }}
             />
           )}

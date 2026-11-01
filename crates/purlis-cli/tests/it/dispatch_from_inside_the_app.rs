@@ -377,6 +377,7 @@ fn a_dispatch_the_person_is_asked_about_is_held_and_says_what_happens_next() {
             from: Some("steward".to_owned()),
             to: "qa".to_owned(),
             waiting: None,
+            held_by: None,
         })
     });
 
@@ -397,6 +398,32 @@ fn a_dispatch_the_person_is_asked_about_is_held_and_says_what_happens_next() {
          its next turn. Carry on with other work, and do not dispatch it again.\n"
     );
     assert_eq!(the_dispatch(&asked).to.as_deref(), Some("qa"));
+}
+
+#[test]
+fn a_dispatch_held_because_the_chat_runs_on_a_pool_says_so() {
+    let tmp = daily();
+    let (app, _reading, _asked) = an_app(&tmp, |tickets, connection, ask| {
+        on_a_ticket(tickets, connection, ask, |_| Answer::NeedsGrant {
+            from: Some("devops".to_owned()),
+            to: "devops".to_owned(),
+            waiting: None,
+            held_by: Some("builds".to_owned()),
+        })
+    });
+
+    let out = dispatch(&root(&tmp), Some(&app), &["--name", "check the queue"]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stderr), "");
+    assert_eq!(
+        text(&out.stdout),
+        "purlis dispatch: held for the person. This chat runs on pool 'builds', so the person \
+         approves what it dispatches in the window, with this brief in front of them. Nothing \
+         has started. If they approve it, 'check the queue' is decided then, and this chat is told \
+         what became of it; if they refuse it, this chat is told on its next turn. Carry on with \
+         other work, and do not dispatch it again.\n"
+    );
 }
 
 #[test]
@@ -438,6 +465,7 @@ fn a_second_dispatch_across_a_pair_the_person_is_being_asked_about_is_not_held()
             from: None,
             to: "qa".to_owned(),
             waiting: Some("check the queue".to_owned()),
+            held_by: None,
         })
     });
 
@@ -1150,6 +1178,7 @@ impl StandIn {
                     from,
                     to,
                     waiting: None,
+                    held_by: None,
                 };
             }
             Decision::Start => {}

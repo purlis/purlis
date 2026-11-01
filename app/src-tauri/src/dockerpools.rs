@@ -9,6 +9,8 @@
 //! alone (`ui::WINDOW_ONLY`): only the person adds or removes a pool, which runs a container on
 //! their machine.
 
+#[cfg(unix)]
+use purlis_core::dockerpool::Missing;
 use purlis_core::dockerpool::{Image, Limits};
 #[cfg(unix)]
 use purlis_core::runners::{Pool, Set};
@@ -124,6 +126,9 @@ pub enum PoolLink {
     /// it comes back, and the window offers Make the runner again. Whether its home volume, with
     /// its sign-ins, is still there for the runner made again to take them from.
     Removed { home_kept: bool },
+    /// Docker points at another engine than the one that made it (#4166): its container may be
+    /// there still, so it is not said to be removed and Make the runner again is not offered.
+    OnAnotherEngine,
 }
 
 /// **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
@@ -300,6 +305,7 @@ pub fn pool_of(adding: &PoolAdding) -> Result<Pool, String> {
                 })
             })
             .transpose()?,
+        chosen: Default::default(),
     };
     Pool::new(adding.name.trim(), image, set).map_err(|why| why.to_string())
 }
@@ -381,12 +387,15 @@ pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
 /// its own while the runner answers, then its container and home volume are removed, and the
 /// pool with them. What could not be removed is answered, with how to remove it; nothing when
 /// all of it is gone. Once it is gone from this machine, the window's links to its runner end, and
-/// the chats on them with them ([`links_end_once_gone`]).
+/// the chats on them with them ([`links_end_once_gone`]). `elsewhere` is what the person was told
+/// before they agreed: that its runner is on an engine Docker no longer reaches, so nothing there
+/// goes. Where that is no longer so, or the other way round, nothing is done (#4325).
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_docker_pool(
     app: tauri::AppHandle,
     name: String,
+    elsewhere: bool,
 ) -> Result<Option<String>, String> {
     #[cfg(unix)]
     {
@@ -396,7 +405,9 @@ pub async fn remove_docker_pool(
             let removed = if is_a_cluster_pool(&config, &name)? {
                 crate::clusterpools::remove_on(&config, &name)
             } else {
-                remove_on(&Machine::here(&config)?, &name)
+                let machine = Machine::here(&config)?;
+                as_the_person_was_told(&machine, &name, elsewhere)?;
+                remove_on(&machine, &name)
             };
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
                 links_end_once_gone(&host.connection(), &config, &name);
@@ -407,9 +418,22 @@ pub async fn remove_docker_pool(
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, name);
+        let _ = (app, name, elsewhere);
         Err(NOT_HERE.to_owned())
     }
+}
+
+/// Refused, with nothing done, where what Remove would do to pool `name` is no longer what the
+/// person agreed to: Docker moved since they were asked, or the row had not said yet (#4325).
+#[cfg(unix)]
+fn as_the_person_was_told(machine: &Machine, name: &str, elsewhere: bool) -> Result<(), String> {
+    if purlis_core::pools::on_another_engine(&machine.config, &machine.docker, name) == elsewhere {
+        return Ok(());
+    }
+    Err(format!(
+        "Docker's engine is not what pool {name}'s row said when you were asked, so nothing was \
+         removed. Look at its row, and remove it again."
+    ))
 }
 
 /// **The pool `name`, as a removal left it**: gone from `config`, the window's links to its runner
@@ -473,13 +497,17 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
                 Ok(false) => return Ok(PoolLink::Suspended),
                 Ok(true) => {}
                 // Docker has no container of its id: removed outside purlis (#4149).
-                Err(_) => {
-                    if let Ok(Some(gone)) = machine.docker.gone(&kept.made) {
+                Err(_) => match machine.docker.missing(&kept.made, kept.engine.as_deref()) {
+                    Ok(Some(Missing::Removed(gone))) => {
                         return Ok(PoolLink::Removed {
                             home_kept: gone.home_kept,
                         });
                     }
-                }
+                    Ok(Some(Missing::OnAnotherEngine)) => {
+                        return Ok(PoolLink::OnAnotherEngine);
+                    }
+                    Ok(None) | Err(_) => {}
+                },
             }
             crate::runnerlinks::link_state(&ToARunner::of_kept(&machine, &kept)?)
         })
@@ -518,11 +546,17 @@ pub fn removed_on(machine: &Machine) -> Result<Vec<PoolRemoved>, String> {
         .iter()
         .filter_map(|pool| {
             let kept = purlis_core::runners::runner_for(&machine.config, pool.name()).ok()?;
-            let gone = machine.docker.gone(&kept.made).ok()??;
-            Some(PoolRemoved {
-                name: pool.name().to_owned(),
-                home_kept: gone.home_kept,
-            })
+            match machine
+                .docker
+                .missing(&kept.made, kept.engine.as_deref())
+                .ok()??
+            {
+                Missing::Removed(gone) => Some(PoolRemoved {
+                    name: pool.name().to_owned(),
+                    home_kept: gone.home_kept,
+                }),
+                Missing::OnAnotherEngine => None,
+            }
         })
         .collect())
 }
@@ -530,19 +564,29 @@ pub fn removed_on(machine: &Machine) -> Result<Vec<PoolRemoved>, String> {
 /// **Make the runner again** (#4149): the pool `name`'s runner, removed outside purlis, made
 /// again from the pool's own image and limits, with the sign-ins of its home where that is still
 /// there, and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
-/// a runner Docker still has, which resumes as it is.
+/// a runner Docker still has, which resumes as it is. The chats of the runner it replaces do not
+/// exist on the new one, so the window's links to it end and each says it ended (#4168).
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_pool_make_again(name: String) -> Result<MadeAgain, String> {
+pub async fn docker_pool_make_again(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<MadeAgain, String> {
     #[cfg(unix)]
     {
         crate::off_the_window("making a pool's runner again", move || {
-            make_again_on(&Machine::here(&config_root()?)?, &name)
+            let config = config_root()?;
+            let made = make_again_on(&Machine::here(&config)?, &name)?;
+            if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
+                host.connection().links_to_gone_runners_end(&config);
+            }
+            Ok(made)
         })
         .await
     }
     #[cfg(not(unix))]
     {
+        let _ = (app, name);
         Err(NOT_HERE.to_owned())
     }
 }

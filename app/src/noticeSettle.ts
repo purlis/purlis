@@ -116,7 +116,8 @@ export function carryPaneBand(from: string, to: string) {
  * where something else may have been aimed at is a move: a granting way out drawn into a Notice
  * already standing, or a granting Notice drawn while the band holds another (however long that
  * one stood) or went empty within the settle time. `band` names the pane ({@link paneBand}), so
- * this holds across the band being drawn again: on the redrawing's own first read, a grant whose
+ * this holds across the band being drawn again: on the redrawing's first drawn read (#3302: its
+ * first read once the band is drawn, not its first render), a grant whose
  * place is remembered under the same name (its Notice's cause and words, its label and order) is
  * read against that place, and any other grant arriving in a pane whose band held a Notice is a
  * move. A grant that arrives in any later read is new, however it is named. A band with no name
@@ -156,6 +157,8 @@ export function useNoticeSettle<T extends HTMLElement>(
   // the one the pane's band drew before; one that arrives in any later read is new, whatever
   // it is named. In the Inbox ("moves") a first drawing is always a move, so none is recalled.
   const firstRead = useRef(true);
+  /** This drawing's last read found a Notice in the band (#3399). */
+  const sawAny = useRef(false);
   const recalling = useRef(false);
   const ways = useCallback(
     function* (root: T) {
@@ -170,6 +173,7 @@ export function useNoticeSettle<T extends HTMLElement>(
       const held = kept.hadAny || now - kept.emptiedAt < SETTLE_MS;
       if (all.length === 0 && kept.hadAny) kept.emptiedAt = now;
       kept.hadAny = all.length > 0;
+      sawAny.current = all.length > 0;
       for (const line of all) {
         const known = lines.current.has(line);
         lines.current.add(line);
@@ -200,6 +204,25 @@ export function useNoticeSettle<T extends HTMLElement>(
     (way: Element) => firstDrawn === "moves" || later.current.get(way) !== false,
     [firstDrawn],
   );
+  // **A band whose row hides once its last Notice left by itself** (#3399): the row hides as the
+  // Notice goes, before any read sees the band empty, so its going is recorded here, where the
+  // read finds the row not drawn. Only after this drawing's own read saw a Notice in it: a band
+  // drawn anew starts hidden until it has counted what it holds, and that is no going empty.
+  const drawnNow = useCallback(
+    (root: T) => {
+      const now = drawn === undefined ? true : drawn(root);
+      if (!now && sawAny.current) {
+        sawAny.current = false;
+        const kept = memory();
+        if (kept.hadAny) {
+          kept.hadAny = false;
+          kept.emptiedAt = performance.now();
+        }
+      }
+      return now;
+    },
+    [drawn, memory],
+  );
   const { movedAt } = useWayPlaces(
     at,
     ways,
@@ -209,7 +232,7 @@ export function useNoticeSettle<T extends HTMLElement>(
       remembered,
       recalls,
     },
-    drawn,
+    drawnNow,
   );
   const allows = (way: Element): boolean => {
     const notice = way.closest("[data-cause]");

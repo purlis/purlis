@@ -91,7 +91,12 @@ fn the_runner_images_sbom_is_read_from_the_pushed_bytes_with_the_releases_own_sy
             "{arch} is read from the image as pushed: {run}"
         );
     }
-    for want in ["pkg:cargo/purlis-cli@", "pkg:deb/"] {
+    for want in [
+        "pkg:cargo/purlis-cli@",
+        "pkg:deb/",
+        "pkg:deb/ubuntu/gh@",
+        "pkg:deb/ubuntu/glab@",
+    ] {
         assert!(sbom.body.iter().any(|l| l.contains(want)), "{want}");
     }
     let upload = sbom

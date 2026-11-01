@@ -31,6 +31,18 @@ use crate::hosting::Hosting;
 /// day, the spec's default (#2041).
 pub const UNLINKED_FOR: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// How long a link that has just opened holds off an idle host: it may be about to start a chat.
+/// A link that stays open and starts nothing does not hold it longer, and a link that keeps
+/// coming back, as a check does, moves no clock (#3980).
+const LINK_MAY_START_WITHIN: Duration = Duration::from_secs(60);
+
+/// **What a cluster runner's host does once it has been idle** (#3980): how long it waits, and
+/// what it does before it stops serving, which is how the cluster operator hears of it.
+pub struct Idles {
+    pub after: Duration,
+    pub said: Box<dyn FnOnce() + Send>,
+}
+
 /// The desktop's links to this host, and since when it has had none.
 pub(crate) struct Links {
     held: Mutex<Held>,
@@ -41,6 +53,8 @@ struct Held {
     open: HashSet<u64>,
     /// Since when no link has been open: from the host's start, until the first.
     none_since: Option<Instant>,
+    /// When a link last opened: what an idle host waits a moment for (#3980).
+    opened: Option<Instant>,
 }
 
 impl Default for Links {
@@ -49,6 +63,7 @@ impl Default for Links {
             held: Mutex::new(Held {
                 open: HashSet::new(),
                 none_since: Some(Instant::now()),
+                opened: None,
             }),
             changed: Notify::new(),
         }
@@ -70,6 +85,7 @@ impl Links {
         let mut held = self.held();
         if held.open.insert(peer.link()) {
             held.none_since = None;
+            held.opened = Some(Instant::now());
             drop(held);
             self.changed.notify_one();
         }
@@ -83,6 +99,14 @@ impl Links {
             drop(held);
             self.changed.notify_one();
         }
+    }
+
+    /// Whether a link opened less than `within` before `now`: what it came for may not have
+    /// started yet.
+    fn opened_within(&self, within: Duration, now: Instant) -> bool {
+        self.held()
+            .opened
+            .is_some_and(|opened| now.saturating_duration_since(opened) < within)
     }
 
     /// When this host will have gone `after` without a link, while it has none.
@@ -133,6 +157,55 @@ impl Hosting {
                     }
                 }
                 None => waiting.await,
+            }
+        }
+    }
+
+    /// **Resolves once nothing has run on this host for `after`**, while `paired` says a desktop
+    /// is paired with it (#3980, [`Hosting::nothing_running`]). A host no desktop is paired with
+    /// waits on, so a runner kept warm is never idle. What it is looked at by is a clock of its
+    /// own, not the link clock above: a link that comes and goes starts nothing.
+    pub async fn until_idle_for(
+        &self,
+        after: Duration,
+        paired: impl Fn() -> bool + Send + Sync + 'static,
+    ) {
+        let paired = std::sync::Arc::new(paired);
+        let every = (after / 8).clamp(Duration::from_millis(10), Duration::from_secs(15));
+        let mut since = Instant::now();
+        loop {
+            tokio::time::sleep(every).await;
+            let now = Instant::now();
+            if !self.nothing_running() {
+                since = now;
+                continue;
+            }
+            // Its clock starts as a desktop pairs with it: a runner kept warm for hours has not
+            // been idle for its desktop.
+            let asking = std::sync::Arc::clone(&paired);
+            let paired_now = tokio::task::spawn_blocking(move || asking())
+                .await
+                .unwrap_or(false);
+            if !paired_now {
+                since = now;
+                continue;
+            }
+            if now.saturating_duration_since(since) < after
+                || self
+                    .unattended_links()
+                    .opened_within(LINK_MAY_START_WITHIN.min(after), now)
+            {
+                continue;
+            }
+            // Looked at again with nothing awaited after it: a chat started while pairing was
+            // read keeps its runner.
+            if self.nothing_running() {
+                crate::say(&format!(
+                    "nothing has run on this runner for {}, so it says it is idle and stops: its \
+                     home is kept, and its desktop starts it again as it next starts a chat there",
+                    spelled(after)
+                ));
+                return;
             }
         }
     }

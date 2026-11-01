@@ -122,6 +122,10 @@ pub struct SettingsEntry {
     pub keys: Vec<SettingsStep>,
     /// The Add form's values that would write it again, by the entry's key.
     pub values: Vec<EntryValue>,
+    /// Why a profile's icon fell back to its monogram (#3137), a sentence purlis wrote, never
+    /// anything from the file. Optional in the window's type, as only a profile has one.
+    #[specta(optional)]
+    pub icon_fell_back: Option<String>,
 }
 
 /// One field of a collection entry, as the Add form holds it: a list is one entry per line.
@@ -910,14 +914,34 @@ fn entries_of(
         settings::hosts::collection(core),
         settings::hosts::listed_at(root, core, text),
     );
+    // The icons the Local file's profiles name, and the config home only once one does.
+    let icons = match which {
+        SettingsWhich::Shared => Default::default(),
+        SettingsWhich::Local => settings::harness_profiles::icons(text),
+    };
+    let config_root = if icons.is_empty() {
+        None
+    } else {
+        purlis_core::machine::config_root_if_there()
+    };
+    let fell_back = |collection: &str, values: &[(&'static str, String)]| {
+        if collection != "profiles" {
+            return None;
+        }
+        let (_, name) = values.iter().find(|(field, _)| *field == "name")?;
+        let icon = icons.get(name)?;
+        purlis_core::harness_icon::fell_back(Some(icon), config_root.as_deref()).map(str::to_owned)
+    };
     let entries: Vec<SettingsEntry> = [own, hosts]
         .into_iter()
         .flat_map(|(collection, listed)| {
+            let fell_back = &fell_back;
             listed.into_iter().map(move |one| SettingsEntry {
                 collection: collection.to_owned(),
                 id: one.id,
                 label: one.label,
                 keys: one.keys.into_iter().map(step_of).collect(),
+                icon_fell_back: fell_back(collection, &one.values),
                 values: values_on_the_wire(one.values),
             })
         })

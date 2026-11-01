@@ -2819,11 +2819,15 @@ fn kept_routing() -> crate::skills::router::Kept {
                 skill: "skill-02".to_owned(),
                 why: "not relevant here".to_owned(),
             }],
+            prompt: false,
+            pointed: Vec::new(),
         },
         answer: Some(vec![(
             "skill-02".to_owned(),
             purlis_skills::Line::new("not relevant here").unwrap(),
         )]),
+        left_out: Vec::new(),
+        reads_prompts: false,
     })
 }
 

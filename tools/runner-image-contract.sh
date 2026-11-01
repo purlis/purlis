@@ -54,6 +54,14 @@ if [ ! -d "$root/tmp" ] || [ ! -w "$root/tmp" ]; then
   problem "/tmp is not writable; the session host's socket is made there"
 fi
 
+# What a build of this image promises beyond the contract, named by its caller (`--carries`):
+# purlis's own image carries `gh` and `glab` (#4354), and a team's need not.
+for tool in ${CONTRACT_CARRIES:-}; do
+  if ! "$tool" --version >/dev/null 2>&1; then
+    problem "this image is to carry $tool, and $tool --version did not answer"
+  fi
+done
+
 for harness in claude codex opencode; do
   if command -v "$harness" >/dev/null 2>&1; then
     problem "the image carries a harness ($harness); a runner gets the harness its profile pins"

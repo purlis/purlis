@@ -212,3 +212,19 @@ fn only_the_window_or_its_hosts_relay_reads_a_hosts_own_event_log() {
         assert_eq!(scope.may(Power::EventLog), windows, "{scope}");
     }
 }
+
+#[test]
+fn only_a_terminal_asks_for_a_grade_and_only_the_window_runs_one() {
+    for scope in Scope::ALL {
+        assert_eq!(
+            scope.may(Power::AskGrade),
+            scope == Scope::Terminal,
+            "{scope}"
+        );
+        assert_eq!(
+            scope.may(Power::RunGrade),
+            scope == Scope::LocalUi,
+            "{scope}"
+        );
+    }
+}

@@ -93,6 +93,8 @@ impl Machine {
                 sandbox_only: false,
                 pinned: None,
                 settings_in: None,
+                limits: Default::default(),
+                highest: Default::default(),
             },
             "01JA0DESKT0P00000000000000",
             7,
@@ -245,7 +247,8 @@ fn a_runner_is_read_by_the_words_check_writes() {
 
     let machine = Machine::new(0);
     machine.said(&["profile", "create", "oc", "--harness", "opencode"]);
-    let said = machine.said(&["profile", "sign-in", "oc", "--check"]);
+    let out = machine.purlis(&["profile", "sign-in", "oc", "--check"]);
+    let said = String::from_utf8_lossy(&out.stderr);
     assert_eq!(
         standing_said("oc", &said),
         Ok(Standing::CannotTell),
@@ -255,6 +258,41 @@ fn a_runner_is_read_by_the_words_check_writes() {
     let out = machine.purlis(&["profile", "sign-in", "nobody", "--check"]);
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(standing_said("nobody", &said).is_err(), "{said}");
+}
+
+/// **`--check` answers in a status a desktop reads without its words** (#4113): the runner's own
+/// command, as `standing_answered` reads it.
+#[test]
+fn check_exits_with_a_status_for_each_answer() {
+    use purlis_core::dockerpool::standing_answered;
+    use purlis_core::profilestore::sign_in::Standing;
+    let mut answers = Vec::new();
+    for (status, harness, name) in [
+        (0, "claude", "work"),
+        (1, "claude", "work"),
+        (0, "opencode", "oc"),
+    ] {
+        let machine = Machine::new(status);
+        machine.said(&["profile", "create", name, "--harness", harness]);
+        let out = machine.purlis(&["profile", "sign-in", name, "--check"]);
+        // Read with the words taken away: only the status answers.
+        answers.push(standing_answered(name, out.status.code(), "-").unwrap());
+    }
+    assert_eq!(
+        answers,
+        [
+            Some(Standing::SignedIn),
+            Some(Standing::SignedOut),
+            Some(Standing::CannotTell)
+        ]
+    );
+    let machine = Machine::new(0);
+    let out = machine.purlis(&["profile", "sign-in", "nobody", "--check"]);
+    assert_eq!(
+        standing_answered("nobody", out.status.code(), "-"),
+        Ok(None)
+    );
+    assert!(String::from_utf8_lossy(&out.stderr).contains("purlis profile list"));
 }
 
 /// **`--pool` is in the help**, and asks nothing of whether a profile is signed in here.
@@ -346,6 +384,27 @@ fn a_missing_profile_or_plan_says_what_to_do() {
     assert!(!codex.status.success());
     let said = String::from_utf8_lossy(&codex.stderr);
     assert!(said.contains("follows only"), "{said}");
+    // Said for a terminal: on the runner, the harness's device flow, never the window's words.
+    assert!(
+        said.contains("purlis profile sign-in fast --way device"),
+        "{said}"
+    );
+    assert!(!said.contains("Open in terminal"), "{said}");
+    let chatgpt = machine.purlis(&[
+        "profile",
+        "sign-in",
+        "oc",
+        "--pool",
+        "builds",
+        "--provider",
+        "openai",
+    ]);
+    assert!(!chatgpt.status.success());
+    let said = String::from_utf8_lossy(&chatgpt.stderr);
+    assert!(
+        said.contains("purlis profile sign-in oc --provider openai --way device"),
+        "{said}"
+    );
     assert_eq!(machine.ran(), None);
 }
 
@@ -438,4 +497,80 @@ fn a_held_login_that_waits_for_the_browser_is_noted_while_it_runs() {
     drop(input);
     held.wait().expect("it ended");
     assert_eq!(machine.waiting(), 0);
+}
+
+/// A `runners.json` holding the cluster pool `team` and its runner, under `config`, unmarked.
+#[cfg(unix)]
+fn a_cluster_pool_kept(config: &std::path::Path) {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let folder = purlis_core::machine::dir(config);
+    fs::create_dir_all(&folder).unwrap();
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).unwrap();
+    let file = serde_json::json!({
+        "version": 1,
+        "pools": [{
+            "name": "team", "kind": "cluster", "kubeconfig": "/nowhere/.kube/config",
+            "context": "team", "pool": "default", "namespace": "ada",
+            "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+            "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+            "holds": ["/opt/homebrew/bin/kubectl"],
+        }],
+        "runners": [{
+            "name": "team", "pool": "cluster", "namespace": "ada", "claim": "team-1",
+            "claimUid": "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60", "requester": "ada@example.com",
+            "pod": "team-1", "device": "01JB0RUNNER0000000000000000", "key": "4d".repeat(32),
+            "paired": 1_800_000_000_u64,
+        }],
+    });
+    let mut written = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(folder.join(purlis_core::machine::RUNNERS_FILE))
+        .unwrap();
+    std::io::Write::write_all(&mut written, file.to_string().as_bytes()).unwrap();
+}
+
+/// **A cluster pool is signed in on only marked and vouched for now** (#4164): unmarked, it says
+/// how to mark it; marked, with a cluster that does not vouch, it says it could not confirm the
+/// runner, and tells none of the cluster's words. Neither runs anything. A `kubectl` installed on
+/// this machine is found before the stand-in on `PATH`, and fails on this pool's kubeconfig as
+/// the stand-in does; the kind run has the cluster that really answers.
+#[cfg(unix)]
+#[test]
+fn a_cluster_pool_is_signed_in_on_only_marked_and_vouched_for_now() {
+    let machine = Machine::new(1);
+    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+    let config = machine.path("config-home");
+    a_cluster_pool_kept(&config);
+    let calls = machine.path("kubectl-calls");
+    stand_in::program(
+        &machine.path("bin"),
+        "kubectl",
+        &format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\necho 'secret words of the cluster' >&2\nexit 1\n",
+            calls.display()
+        ),
+    );
+
+    let args = ["profile", "sign-in", "work", "--pool", "team"];
+    let unmarked = machine.purlis(&args);
+    assert!(!unmarked.status.success());
+    let said = String::from_utf8_lossy(&unmarked.stderr);
+    assert!(said.contains("not marked as your own"), "{said}");
+    assert!(said.contains("This is my own"), "{said}");
+    assert!(!calls.exists(), "an unmarked pool's cluster is not asked");
+
+    purlis_core::runners::set_cluster_owned(&config, "team", true).unwrap();
+    let not_vouched = machine.purlis(&args);
+    assert!(!not_vouched.status.success());
+    let said = String::from_utf8_lossy(&not_vouched.stderr);
+    assert!(
+        said.contains("could not confirm pool team's runner"),
+        "{said}"
+    );
+    assert!(!said.contains("secret words"), "{said}");
+    let ran = fs::read_to_string(&calls).unwrap_or_default();
+    assert!(!ran.contains(" exec "), "nothing ran in a pod: {ran}");
+    assert_eq!(machine.ran(), None);
 }

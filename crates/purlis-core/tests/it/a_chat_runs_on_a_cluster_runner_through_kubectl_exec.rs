@@ -11,13 +11,16 @@
 //! home as it was left (#2057). A profile kept there is asked its standing over the link and by
 //! the sign-in's own `kubectl exec`, and what a sign-in leaves in its folder outlives the pod
 //! (#3819); and a killed `kubectl exec -i` closes the input of what it ran in the pod, which
-//! is how Cancel ends a sign-in there. Everything it made is removed, whatever the outcome.
+//! is how Cancel ends a sign-in there. `purlis profile sign-in --pool` is refused an unmarked pool
+//! and a stopped claim, and on a marked, vouched one reaches the runner's own sign-in over kubectl
+//! (#4164), and the runner names and forgets a profile over the link (#4183). Everything it made
+//! is removed, whatever the outcome.
 //!
 //! It needs a cluster with purlis's cluster operator installed and the runner image of this
 //! build named by digest in `CLUSTER_POOL_TEST_IMAGE`, with the kubeconfig context in
 //! `CLUSTER_POOL_TEST_CONTEXT` (and `kubectl` on `PATH`): `operator/e2e/kind.sh` sets both on
-//! a kind cluster and runs it with `--ignored`. It is ignored anywhere else, and fails when
-//! either is missing.
+//! a kind cluster and runs it with `--ignored`, with this build's binary in
+//! `CLUSTER_POOL_TEST_PURLIS`. It is ignored anywhere else, and fails when any is missing.
 
 #![cfg(unix)]
 
@@ -137,6 +140,116 @@ async fn linked(
         Ok(None) => panic!("the kept link ended"),
         Err(_) => panic!("no link within the test's patience"),
     }
+}
+
+/// Nothing runs on the desktop's own host in these tests: it only relays.
+struct NothingHere;
+
+impl purlis_host::Compose for NothingHere {
+    fn compose(
+        &self,
+        starting: &purlis_host::ToCompose<'_>,
+    ) -> Result<purlis_terminal::session::Spec, String> {
+        Ok(purlis_terminal::session::Spec::new(
+            "/bin/echo",
+            starting.size,
+        ))
+    }
+}
+
+/// **The desktop's host as the window starts it** (#4403), relaying to the one runner `paired`
+/// and asking for it to run again as the desktop does: what its start waits, it waits as the app's
+/// `runnerlinks::runs_again` has it.
+fn desktops_host(
+    kubectl: &Kubectl,
+    operator: &PoolPin,
+    paired: &Paired,
+    ours: &Identity,
+    namespace: &str,
+) -> purlis_host::Hosting {
+    let relays: purlis_host::RelaysTo = {
+        let (kubectl, operator, paired, ours) = (
+            kubectl.clone(),
+            operator.clone(),
+            paired.clone(),
+            Identity {
+                device: ours.device.clone(),
+                key: ours.key.clone(),
+            },
+        );
+        Arc::new(move |name: &str| {
+            let (kubectl, operator, paired, device, key) = (
+                kubectl.clone(),
+                operator.clone(),
+                paired.clone(),
+                ours.device.clone(),
+                ours.key.clone(),
+            );
+            Ok((
+                Arc::new(move || {
+                    let checking = (kubectl.clone(), operator.clone(), paired.clone());
+                    hostlink::keep_linked(
+                        CommandConnector::new(
+                            kubectl.program(),
+                            kubectl.connect_args(
+                                &paired.vouched.runner_namespace,
+                                &paired.vouched.pod,
+                            ),
+                            Arc::new(move || {
+                                clusterpool::still_vouched(&checking.0, &checking.1, &checking.2)
+                                    .map_err(|why| why.to_string())
+                            }),
+                        ),
+                        Handshake::THIS_BUILD,
+                        Identity {
+                            device: device.clone(),
+                            key: key.clone(),
+                        },
+                        paired.pinned.clone(),
+                        Liveness::default(),
+                    )
+                }) as purlis_host::Keep,
+                format!("{name}/{name}"),
+            ))
+        })
+    };
+    let (asks, namespace) = (kubectl.clone(), namespace.to_owned());
+    purlis_host::Hosting::new(NothingHere)
+        .relaying_with(relays)
+        .running_again_with(Arc::new(move |name: &str| {
+            let claim = name.split('/').next().unwrap_or(name);
+            asks.run_again_if_idle(&namespace, claim)
+                .expect("the word is written")
+                .then_some(Duration::from_secs(240))
+        }))
+}
+
+/// A window's link to `host`, routed as the desktop's host routes one.
+async fn a_window_on(host: purlis_host::Hosting) -> (Client, Acceptor) {
+    use purlis_session_protocol::auth::{Credentials, Scope};
+    use purlis_session_protocol::{link, session};
+    let held = Credentials::mint().unwrap();
+    let (a, b) = tokio::io::duplex(256 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            held.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &held)
+    );
+    tokio::spawn(session::serve(
+        served.unwrap(),
+        purlis_host::Routed::new(host),
+        None,
+    ));
+    let (client, views, events) = Client::new(client.unwrap());
+    tokio::spawn(async move {
+        let _kept = events;
+        std::future::pending::<()>().await;
+    });
+    (client, views)
 }
 
 #[test]
@@ -463,6 +576,179 @@ fn field(
         .filter(|printed| !printed.is_empty())
 }
 
+/// `check`, until it answers or `patience` passes.
+fn within<T>(patience: Duration, what: &str, mut check: impl FnMut() -> Option<T>) -> T {
+    let until = std::time::Instant::now() + patience;
+    loop {
+        if let Some(answer) = check() {
+            return answer;
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "{what}, within {patience:?}"
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+/// **A kept runner idle for its pool's `idleAfter` is suspended, never while a chat runs on it,
+/// and a word from its desktop runs it again, paired as it was** (#3980).
+#[test]
+#[ignore = "needs a cluster with purlis's cluster operator: operator/e2e/kind.sh"]
+fn an_idle_kept_runner_is_suspended_and_its_desktop_runs_it_again() {
+    purlis_core::unsteered!();
+    let image = std::env::var("CLUSTER_POOL_TEST_IMAGE")
+        .expect("CLUSTER_POOL_TEST_IMAGE names the runner image by digest");
+    let context = std::env::var("CLUSTER_POOL_TEST_CONTEXT")
+        .expect("CLUSTER_POOL_TEST_CONTEXT names the cluster's kubeconfig context");
+    let kubectl = Kubectl::at("kubectl").with_context(&context);
+    let suffix = ulid::Ulid::generate().to_string().to_lowercase();
+    let namespace = format!("e2e-idle-{}", &suffix[..10]);
+    let pool = format!("e2e-idle-{}", &suffix[..10]);
+    let _removes = Removes {
+        kubectl: kubectl.clone(),
+        namespace: namespace.clone(),
+        pool: pool.clone(),
+    };
+    kubectl
+        .run(
+            &kubectl.args(&["create", "namespace", &namespace]),
+            None,
+            64 * 1024,
+        )
+        .expect("a namespace of the test's own");
+    let definition = serde_json::json!({
+        "apiVersion": "runners.purlis.dev/v1alpha1",
+        "kind": "Pool",
+        "metadata": { "name": pool },
+        "spec": { "image": image, "keptVolume": { "size": "1Gi" }, "idleAfter": "1m" },
+    });
+    kubectl
+        .run(
+            &kubectl.args(&["apply", "--filename", "-"]),
+            Some(&definition.to_string()),
+            64 * 1024,
+        )
+        .expect("the pool");
+    let operator = eventually("the pool names the operator's key", || {
+        kubectl.pool_pin(&pool).ok()
+    });
+    let kept = claimed(&kubectl, &namespace, "ada-idle", &pool, Keeping::Kept);
+    let first = vouched(&kubectl, &operator, &kept);
+    let runner = clusterpool::runner_namespace(&kept.requester);
+    let ours = Identity {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::generate().unwrap(),
+    };
+    let desktop = Pinned {
+        device: ours.device.clone(),
+        key: ours.key.public(),
+    };
+    let paired =
+        clusterpool::pair(&kubectl, &kept, &first, &desktop).expect("the vouched runner is paired");
+    let idle = || {
+        field(
+            &kubectl,
+            &namespace,
+            "claims.runners.purlis.dev",
+            "ada-idle",
+            "{.status.conditions[?(@.type=='Idle')].status}",
+        )
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    // A chat running past the pool's time keeps its runner.
+    runtime.block_on(async {
+        let identity = Identity {
+            device: ours.device.clone(),
+            key: ours.key.clone(),
+        };
+        let (client, mut views) = linked(&kubectl, &operator, &paired, identity).await;
+        client
+            .hold_project(PROJECT, "")
+            .await
+            .expect("the runner holds the project");
+        ran(
+            &client,
+            &mut views,
+            "echo 'kept' > \"$HOME/idle-kept\" && echo written; exec sleep 130",
+            "written",
+        )
+        .await;
+        tokio::time::sleep(Duration::from_secs(120)).await;
+        assert_eq!(idle(), None, "a chat runs on it, so it is not idle");
+    });
+    runtime.shutdown_timeout(Duration::from_secs(5));
+    // Its chat ends by itself and its link went with the runtime: nothing runs on it now.
+    within(
+        Duration::from_secs(420),
+        "the claim says its runner is idle",
+        || (idle().as_deref() == Some("True")).then_some(()),
+    );
+    within(
+        Duration::from_secs(180),
+        "the idle runner's pod ends",
+        || {
+            field(&kubectl, &runner, "pod", "ada-idle", "{.metadata.uid}")
+                .is_none()
+                .then_some(())
+        },
+    );
+    field(
+        &kubectl,
+        &runner,
+        "persistentvolumeclaim",
+        "purlis-kept-ada-idle",
+        "{.metadata.uid}",
+    )
+    .expect("its volume is kept");
+    // The window's own start, through the desktop's host, runs it again, on its volume, with the
+    // key it was paired with, and waits for it: nothing here writes a word or tries twice (#4403).
+    let window_side = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    window_side.block_on(async {
+        let host = desktops_host(&kubectl, &operator, &paired, &ours, &namespace);
+        let (window, mut views) = a_window_on(host).await;
+        window.relay_to("ada-idle").await.expect("relayed");
+        // As a window's link opens, before anything it holds or starts.
+        let _ = window.log_end().await;
+        window
+            .subscribe(Default::default())
+            .await
+            .expect("a link opens while its runner comes back");
+        tokio::time::timeout(Duration::from_secs(300), window.hold_project(PROJECT, ""))
+            .await
+            .expect("the hold waited, and no longer than its time")
+            .expect("the runner came back and holds the project");
+        let said = ran(
+            &window,
+            &mut views,
+            "cat \"$HOME/idle-kept\"; echo finished",
+            "finished",
+        )
+        .await;
+        assert!(said.contains("kept"), "{said}");
+    });
+    window_side.shutdown_timeout(Duration::from_secs(5));
+    let resumed = clusterpool::vouched_for(&kubectl, &operator, &kept)
+        .expect("the statement checks")
+        .expect("vouched for");
+    clusterpool::held_to(&paired, &resumed).expect("the runner it was paired with");
+    assert_eq!(resumed.key, paired.pinned.key);
+    assert_eq!(idle(), None, "no longer idle");
+    assert_eq!(
+        in_the_pod(&kubectl, &runner, "ada-idle", "cat \"$HOME/idle-kept\"").trim(),
+        "kept"
+    );
+    let _ = kubectl.delete_claim(&namespace, "ada-idle");
+}
+
 #[test]
 #[ignore = "needs a cluster with purlis's cluster operator: operator/e2e/kind.sh"]
 fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_again() {
@@ -694,4 +980,224 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
     });
     runtime.shutdown_timeout(Duration::from_secs(5));
     let _ = kubectl.delete_claim(&namespace, "ada-kept");
+}
+
+/// `purlis` with `args`, on the machine at `machine`: what it printed to its error stream, and
+/// whether it succeeded. Its input is closed, and it is held to [`PATIENCE`] twice over.
+fn the_command(purlis: &str, machine: &std::path::Path, args: &[&str]) -> (bool, String) {
+    use std::process::Stdio;
+    let mut command = std::process::Command::new(purlis);
+    command
+        .args(args)
+        .current_dir(machine.join("project"))
+        .env("CHARTER_ROOT", machine.join("project"))
+        .env("PURLIS_CONFIG_HOME", machine.join("config-home"))
+        .env("PURLIS_DATA_HOME", machine.join("data"))
+        .env_remove("PURLIS_CHAT")
+        .env_remove("CHARTER_CHAT")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let mut running = purlis_core::forklock::spawn(&mut command).expect("the binary runs");
+    let until = Instant::now() + PATIENCE * 2;
+    while running.try_wait().expect("it is waited on").is_none() {
+        if Instant::now() > until {
+            let _ = running.kill();
+            let out = running.wait_with_output().expect("it ended");
+            panic!(
+                "purlis {args:?} did not end: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let out = running.wait_with_output().expect("it ended");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+#[ignore = "needs a cluster with purlis's cluster operator: operator/e2e/kind.sh"]
+fn the_command_signs_in_on_a_cluster_pool_only_marked_and_vouched_and_a_runner_forgets() {
+    purlis_core::unsteered!();
+    let image = std::env::var("CLUSTER_POOL_TEST_IMAGE")
+        .expect("CLUSTER_POOL_TEST_IMAGE names the runner image by digest");
+    let context = std::env::var("CLUSTER_POOL_TEST_CONTEXT")
+        .expect("CLUSTER_POOL_TEST_CONTEXT names the cluster's kubeconfig context");
+    let purlis = std::env::var("CLUSTER_POOL_TEST_PURLIS")
+        .expect("CLUSTER_POOL_TEST_PURLIS names this build's binary");
+    let machine = tempfile::tempdir().unwrap();
+    for folder in ["config-home", "data", "project"] {
+        std::fs::create_dir_all(machine.path().join(folder)).unwrap();
+    }
+    std::fs::write(machine.path().join("project/charter.toml"), "").unwrap();
+    let config = machine.path().join("config-home");
+
+    let kubectl = Kubectl::at("kubectl").with_context(&context);
+    let suffix = ulid::Ulid::generate().to_string().to_lowercase();
+    let namespace = format!("e2e-cli-{}", &suffix[..10]);
+    let pool = format!("e2e-cli-{}", &suffix[..10]);
+    let _removes = Removes {
+        kubectl: kubectl.clone(),
+        namespace: namespace.clone(),
+        pool: pool.clone(),
+    };
+    kubectl
+        .run(
+            &kubectl.args(&["create", "namespace", &namespace]),
+            None,
+            64 * 1024,
+        )
+        .expect("a namespace of the test's own");
+    let definition = serde_json::json!({
+        "apiVersion": "runners.purlis.dev/v1alpha1",
+        "kind": "Pool",
+        "metadata": { "name": pool },
+        "spec": { "image": image, "keptVolume": { "size": "1Gi" } },
+    });
+    kubectl
+        .run(
+            &kubectl.args(&["apply", "--filename", "-"]),
+            Some(&definition.to_string()),
+            64 * 1024,
+        )
+        .expect("the pool");
+    let operator = eventually("the pool names the operator's key", || {
+        kubectl.pool_pin(&pool).ok()
+    });
+
+    // Added as the window adds one: claimed, vouched for, paired and kept, and not marked.
+    let ours = Identity {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::generate().unwrap(),
+    };
+    let desktop = Pinned {
+        device: ours.device.clone(),
+        key: ours.key.public(),
+    };
+    let kubeconfig = std::env::var_os("KUBECONFIG").map_or_else(
+        || std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join(".kube/config"),
+        std::path::PathBuf::from,
+    );
+    let team = purlis_core::runners::ClusterPool::new(
+        "team",
+        &kubeconfig,
+        &context,
+        &pool,
+        &namespace,
+        operator.clone(),
+    )
+    .expect("a cluster pool");
+    let added = purlis_core::pools::add_cluster(
+        &config,
+        &purlis_core::pools::kubectl_here(&config).expect("kubectl on this machine"),
+        &team,
+        &desktop,
+        PATIENCE * 2,
+    )
+    .expect("the pool is added");
+    let paired = Paired {
+        claimed: added.claimed.clone(),
+        vouched: vouched(&kubectl, &operator, &added.claimed),
+        pinned: added.pinned.clone(),
+    };
+
+    // Its runner keeps two profiles, named and forgotten over the link (#4183).
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (client, _views) = linked(&kubectl, &operator, &paired, ours).await;
+        for name in ["work", "chosen-no-longer"] {
+            let mut profile = work();
+            profile.name = name.into();
+            client.keep_profile(profile).await.expect("it keeps it");
+        }
+        let kept = client
+            .kept_profiles()
+            .await
+            .expect("it names what it keeps");
+        assert!(kept.iter().any(|one| one == "chosen-no-longer"), "{kept:?}");
+        client
+            .forget_profile("chosen-no-longer")
+            .await
+            .expect("it forgets it");
+        let kept = client
+            .kept_profiles()
+            .await
+            .expect("it names what it keeps");
+        assert_eq!(kept, ["work"], "only what is chosen stays");
+    });
+    runtime.shutdown_timeout(Duration::from_secs(5));
+    let gone = in_the_pod(
+        &kubectl,
+        &paired.vouched.runner_namespace,
+        &paired.vouched.pod,
+        "find \"$HOME\" -type d -path '*/profiles/chosen-no-longer' | wc -l",
+    );
+    assert_eq!(gone.trim(), "0", "its folder went with it");
+
+    let (made, said) = the_command(
+        &purlis,
+        machine.path(),
+        &["profile", "create", "work", "--harness", "claude"],
+    );
+    assert!(made, "{said}");
+    let sign_in = ["profile", "sign-in", "work", "--pool", "team"];
+
+    // Unmarked: refused, in words.
+    let (signed_in, said) = the_command(&purlis, machine.path(), &sign_in);
+    assert!(!signed_in);
+    assert!(said.contains("not marked as your own"), "{said}");
+
+    // Marked and vouched for: the gate passes, the runner's version is this one's, its standing
+    // is asked over kubectl exec, and its own sign-in runs. The runner has no harness to log in
+    // with, so no vendor is reached and it ends there.
+    purlis_core::runners::set_cluster_owned(&config, "team", true).unwrap();
+    let (signed_in, said) = the_command(&purlis, machine.path(), &sign_in);
+    assert!(
+        said.contains("asking pool team's runner whether it keeps 'work'"),
+        "{said}"
+    );
+    assert!(!said.contains("could not confirm"), "{said}");
+    assert!(!said.contains("could not say whether"), "{said}");
+    assert!(!said.contains("so purlis signs nothing in"), "{said}");
+    assert!(!signed_in, "nothing signed it in: {said}");
+
+    // The mark taken back: refused again.
+    purlis_core::runners::set_cluster_owned(&config, "team", false).unwrap();
+    let (_, said) = the_command(&purlis, machine.path(), &sign_in);
+    assert!(said.contains("not marked as your own"), "{said}");
+
+    // Marked, with its claim stopped: not vouched for now, so refused, and nothing asked of it.
+    purlis_core::runners::set_cluster_owned(&config, "team", true).unwrap();
+    kubectl
+        .run(
+            &kubectl.args(&[
+                "patch",
+                "claims.runners.purlis.dev",
+                &paired.claimed.name,
+                "--namespace",
+                &namespace,
+                "--type",
+                "merge",
+                "-p",
+                "{\"spec\":{\"stopped\":true}}",
+            ]),
+            None,
+            64 * 1024,
+        )
+        .expect("the claim patched");
+    let (signed_in, said) = the_command(&purlis, machine.path(), &sign_in);
+    assert!(!signed_in);
+    assert!(
+        said.contains("could not confirm pool team's runner"),
+        "{said}"
+    );
+    assert!(!said.contains("asking pool team's runner"), "{said}");
+    let _ = kubectl.delete_claim(&namespace, &paired.claimed.name);
 }

@@ -123,6 +123,19 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 *tint,
                 Some(*ratio),
             ),
+            Finding::ContrastBetweenTints {
+                degree,
+                pair,
+                ratio,
+            } => (
+                format!(
+                    "{}, in a workspace's own colour at {degree}°",
+                    laid(pair.front, pair.back, [pair.under, pair.beneath])
+                ),
+                Some(pair.floor),
+                None,
+                Some(*ratio),
+            ),
             Finding::Ansi {
                 tint,
                 token,
@@ -167,6 +180,12 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 Some(*floor),
                 *tint,
                 Some(*distance),
+            ),
+            Finding::ScrimTooThin { tint, ratio, floor } => (
+                "overlay.scrim on the window it lies over".to_owned(),
+                Some(*floor),
+                *tint,
+                Some(*ratio),
             ),
             Finding::SelectionTextAlone => (
                 "selection.text is a colour while selection.background is \"platform\", so it \

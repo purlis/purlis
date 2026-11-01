@@ -203,6 +203,27 @@ describe("a skill's Grades tab (S6)", () => {
     }
   });
 
+  it("offers a chat to write outcome evals where the skill has none, kept as a draft", async () => {
+    core({ skill_grades: grades([], 0) });
+    renderTab({ open: vi.fn() });
+    const offer = await screen.findByRole("button", { name: "Ask a chat to write outcome evals" });
+    const asks: SkillChatAsk[] = [];
+    const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
+    window.addEventListener(SKILL_CHAT, heard);
+    fireEvent.click(offer);
+    window.removeEventListener(SKILL_CHAT, heard);
+    expect(asks).toEqual([{ plane: "p", kind: "evals", level: LEVEL, name: "deploy" }]);
+  });
+
+  it("holds the outcome evals offer where the skill's files can't be opened", async () => {
+    core({ skill_grades: grades([], 0) });
+    renderTab({ reason: "Its file is outside the project." });
+    const offer = await screen.findByRole("button", { name: "Ask a chat to write outcome evals" });
+    expect(offer.getAttribute("aria-disabled") === "true" || offer.hasAttribute("disabled")).toBe(
+      true,
+    );
+  });
+
   it("says why the trigger tests were not started, and opens nothing", async () => {
     core({
       skill_grades: grades([], 0),

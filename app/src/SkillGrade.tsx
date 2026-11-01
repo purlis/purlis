@@ -12,14 +12,18 @@
  *   until Start is pressed. **A plan that changed under the person** (Start refused on it, or
  *   the skill changed on disk) is never started: the page says so in the attention tone and Start
  *   waits until they read the new one.
+ * - **A Grader extension** (#3236) is listed beside purlis's own runner where one is installed. The
+ *   pick is in what Start consents to, and the plan names it plainly. Grading after each edit runs
+ *   purlis's own alone.
  * - **A grade running** shows its chats done, what it has spent against its dollar limit and its
  *   tokens against its cap, with Stop fixed at the bottom. A grade's chats are drawn nowhere.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   commands,
   SKILL_GRADE,
+  type GradeGrader,
   type ProfileRow,
   type SkillGradeAfterEdit,
   type SkillGradePlan,
@@ -28,7 +32,7 @@ import {
 } from "./bindings";
 import { counted } from "./dispatches";
 import { NotRead, ReadingRows } from "./SkillPanels";
-import { Notice } from "./Notice";
+import { Notice, type NoticeAction } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Tile, Totals } from "./ui/card/Totals";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -167,10 +171,29 @@ function armsOf(plan: SkillGradePlan): number {
 
 /** **What changed in a plan**, in a clause: what the new one runs and may spend. */
 export function planChangedSaid(
-  now: Pick<SkillGradePlan, "chats" | "profile" | "model" | "cost_cap_usd">,
+  now: Pick<SkillGradePlan, "chats" | "profile" | "model" | "cost_cap_usd"> & {
+    /** The Grader it names (#3236), or why the one picked is gone: a skill's plan's. */
+    grader?: GradeGrader | null;
+    grader_refused?: string | null;
+  },
 ): string {
   const on = [now.profile, now.model].filter((one) => one !== null).join(", ");
-  return `it now runs ${counted(now.chats, "chat", "chats")}${on === "" ? "" : ` on ${on}`}, and may spend at most ${dollarsSaid(now.cost_cap_usd ?? 0)}`;
+  const by = now.grader ? `, scored by ${graderSaid(now.grader)}` : "";
+  const gone = now.grader_refused ? `. ${now.grader_refused}` : "";
+  return `it now runs ${counted(now.chats, "chat", "chats")}${on === "" ? "" : ` on ${on}`}${by}, and may spend at most ${dollarsSaid(now.cost_cap_usd ?? 0)}${gone}`;
+}
+
+/** **Where a Grader can send what it is handed**, in a sentence: each host its manifest names. */
+export function graderHostsSaid(hosts: readonly string[]): string {
+  return hosts.length === 0
+    ? "It reaches no host on the network."
+    : `It can send what it is handed to ${hosts.join(", ")}, and to no other host.`;
+}
+
+/** **A Grader extension, as a plan names it**: its title, which it gives itself, and its id, which
+ *  says whose program it is. */
+export function graderSaid(grader: GradeGrader): string {
+  return `${grader.title} (${grader.id})`;
 }
 
 /** Why the plan's main action can't be pressed now, or nothing where it can. */
@@ -184,6 +207,7 @@ function startRefused(
   if (plan.tests.length === 0) return `${name} has no trigger tests to run yet.`;
   if (plan.refused !== null) return `No grade can run on ${plan.profile ?? "this profile"}.`;
   if (!afterEdit && plan.running !== null) return `A grade of ${name} is running already.`;
+  if (plan.grader_refused !== null) return plan.grader_refused;
   if (plan.consent === null) return "purlis could not say what this grade would run.";
   return undefined;
 }
@@ -241,21 +265,37 @@ export function GradePlanPage({
   const [profile, setProfile] = useState(DEFAULT);
   // The model the chats run on (SK-60): the profile's own where none is picked.
   const [model, setModel] = useState(DEFAULT);
+  // The Grader that scores it (#3236): purlis's own where none is picked.
+  const [grader, setGrader] = useState(DEFAULT);
   const [again, setAgain] = useState(0);
   const picked = profile === DEFAULT ? null : profile;
   const pickedModel = model === DEFAULT ? null : model;
+  const pickedGrader = grader === DEFAULT ? null : grader;
   // The level as a value: a page drawn again with an equal level reads nothing anew.
   const levelKey = JSON.stringify(level);
   const drawn = useRef<SkillGradePlan>(undefined);
+  // The latest read: an older one's answer, for a pick since changed, is dropped.
+  const latest = useRef(0);
+  // Whether a read for a new pick is on its way: Start waits on what the pick consents to.
+  const [reading, setReading] = useState(false);
   useEffect(() => {
     drawn.current = plan;
   });
 
   /** Reads the plan: drawn, or (`check`) held as newer where it consents to something else. */
-  const read = (on: string | null, onModel: string | null, check = false) =>
-    void commands
-      .skillGradePlan(plane, level, name, on, onModel)
+  const read = (
+    on: string | null,
+    onModel: string | null,
+    check = false,
+    by: string | null = pickedGrader,
+  ) => {
+    latest.current += 1;
+    const asked = latest.current;
+    return void commands
+      .skillGradePlan(plane, level, name, on, onModel, by)
       .then((answer) => {
+        if (asked !== latest.current) return;
+        setReading(false);
         if (answer.status !== "ok") {
           if (!check) setRefused(answer.error);
           return;
@@ -270,8 +310,11 @@ export function GradePlanPage({
         }
       })
       .catch((err: unknown) => {
+        if (asked !== latest.current) return;
+        setReading(false);
         if (!check) setRefused(String(err));
       });
+  };
 
   useEffect(() => {
     read(picked, pickedModel);
@@ -311,7 +354,7 @@ export function GradePlanPage({
   const consent = plan.consent ?? "";
   const start = () =>
     void commands
-      .skillGradeStart(plane, level, name, picked, pickedModel, consent)
+      .skillGradeStart(plane, level, name, picked, pickedModel, pickedGrader, consent)
       .then((answer) => {
         if (answer.status === "ok") onStarted(answer.data);
         else {
@@ -331,7 +374,9 @@ export function GradePlanPage({
           read(picked, pickedModel, true);
         }
       });
-  const why = startRefused(name, plan, newer !== undefined, afterEdit);
+  const why = reading
+    ? "Reading the plan of the Grader you picked."
+    : startRefused(name, plan, newer !== undefined, afterEdit);
   const limit = dollarsSaid(plan.cost_cap_usd ?? 0);
   const whose = plan.profile ?? "the profile";
   const nothing = plan.tests.length === 0;
@@ -347,7 +392,7 @@ export function GradePlanPage({
       summary={
         afterEdit
           ? `Nothing runs now. Each edit you save then runs up to ${counted(plan.after_edit_chats, "chat", "chats")}, at most ${limit} each time, of ${whose}'s account.`
-          : `Nothing runs until you press Start. It spends at most ${limit} of ${whose}'s account.`
+          : `Nothing runs until you press Start. It spends at most ${limit} of ${whose}'s account.${plan.grader === null ? "" : ` Scored by ${graderSaid(plan.grader)}, an extension you installed.`}`
       }
       onCancel={onCancel}
       main={{
@@ -506,6 +551,53 @@ export function GradePlanPage({
               }}
             />
           </section>
+          {afterEdit
+            ? plan.graders.length > 0 && (
+                <p className="honest" data-testid="skill-grade-after-edit-grader">
+                  Each edit is graded by purlis&apos;s own runner. An extension&apos;s Grader is
+                  picked for one grade at a time, on its plan.
+                </p>
+              )
+            : (plan.graders.length > 0 || plan.grader_refused !== null) && (
+                <section aria-labelledby="skill-grade-by">
+                  <PanelSectionTitle id="skill-grade-by">Who scores it</PanelSectionTitle>
+                  <Select
+                    size="sm"
+                    aria-label={`Who scores ${name}'s grade`}
+                    value={grader}
+                    options={[
+                      { value: DEFAULT, label: "purlis's own runner" },
+                      ...plan.graders.map((one) => ({ value: one.id, label: graderSaid(one) })),
+                      // A pick no longer on offer stays what the picker says, until it is changed.
+                      ...(plan.grader_refused !== null && pickedGrader !== null
+                        ? [{ value: pickedGrader, label: pickedGrader }]
+                        : []),
+                    ]}
+                    onValueChange={(to) => {
+                      setGrader(to);
+                      setReading(true);
+                      read(picked, pickedModel, false, to === DEFAULT ? null : to);
+                    }}
+                  />
+                  {plan.grader_refused !== null && (
+                    <p className="honest" data-testid="skill-grade-grader-refused">
+                      {plan.grader_refused}
+                    </p>
+                  )}
+                  {plan.grader !== null && (
+                    <p data-testid="skill-grade-grader">
+                      {graderSaid(plan.grader)} is an extension you installed, not part of purlis.
+                      It is handed the trigger tests above, asks purlis for the chats it wants, and
+                      writes the scores this grade records. It is told each chat&apos;s id, which
+                      skills it started, what it spent, how long it took and how it ended, not what
+                      it said. {graderHostsSaid(plan.grader.hosts)} purlis keeps it from the model
+                      services it knows, and holds it to this plan: up to{" "}
+                      {counted(plan.chats, "chat", "chats")}, and the limits below. Asking past them
+                      ends the grade.
+                    </p>
+                  )}
+                </section>
+              )}
           <section aria-labelledby="skill-grade-spend">
             <PanelSectionTitle id="skill-grade-spend">What it may spend</PanelSectionTitle>
             {afterEdit && (
@@ -522,7 +614,7 @@ export function GradePlanPage({
               cap={plan.token_cap ?? 0}
               onCap={(tokens) =>
                 void commands
-                  .skillGradeSetCap(plane, level, name, picked, pickedModel, tokens)
+                  .skillGradeSetCap(plane, level, name, picked, pickedModel, pickedGrader, tokens)
                   .then((answer) => {
                     if (answer.status === "ok") {
                       setPlan(answer.data);
@@ -589,7 +681,7 @@ export function PlanChanged({
   onShow,
 }: {
   cause: string;
-  newer: Pick<SkillGradePlan, "chats" | "profile" | "model" | "cost_cap_usd">;
+  newer: Parameters<typeof planChangedSaid>[0];
   testid: string;
   onShow: () => void;
 }) {
@@ -657,8 +749,8 @@ export function GradeOn({
 }
 
 /** **How far a grade running is** (S6): its chats done, what it has spent against its dollar
- *  limit and its tokens against its cap, live. A skill's grade's and a router's (#4222). */
-export function GradeProgress({
+ *  limit and its tokens against its cap, live. */
+function GradeProgress({
   label,
   ran,
   of,
@@ -733,52 +825,82 @@ export function TokenCap({ cap, onCap }: { cap: number; onCap: (tokens: number) 
   );
 }
 
+/** What every grade's step says, a skill's or a router's: what the running page draws. */
+type RunningStepShown = Pick<
+  SkillGradeStep,
+  "plane" | "grade" | "ran" | "of" | "tokens" | "cost_usd" | "limit_usd" | "cap" | "ended" | "said"
+>;
+
 /**
- * **A grade running** (S6): see the module. `onEnded` is told once it ends with nothing more to
- * say, so the studio opens its scorecard; an end with words to say stays here and says them.
+ * **The page of a grade running** (S6; #4240): a skill's and a router's, given what differs: the
+ * event its steps come on, how it is read, whether an end opens its scorecard, and the words.
+ * Everything else is the one page: listening before reading, not read, gone, Stop, the end's
+ * notice and how far it is.
  */
-export function GradeRunningPage({
+export function RunningGradePage<Step extends RunningStepShown>({
+  whose,
   plane,
-  name,
-  level,
   grade,
+  event,
+  isOurs = () => true,
+  read,
+  of,
+  opensItsScorecard,
+  endWords,
   onEnded,
   onBack,
 }: {
+  /** Whose grade it is, in its page's test ids and its notices' causes. */
+  whose: "skill" | "router";
   plane: string;
-  name: string;
-  level: SkillLevel;
   grade: string;
+  /** The event its steps are told on. */
+  event: string;
+  /** Whether a step of this plane and grade is this page's, where its id does not say all. */
+  isOurs?: (step: Step) => boolean;
+  /** The app's word on it: its latest step, or `null` where it runs no more. */
+  read: () => Promise<{ status: "ok"; data: Step | null } | { status: "error"; error: string }>;
+  /** What is graded, as "the grade of …" says it, from its step where one is told. */
+  of: (step: Step | undefined) => string;
+  /** Whether its end says all it has to on its scorecard, which then opens. */
+  opensItsScorecard: (step: Step) => boolean;
+  /** How the page says an end that stays on it. */
+  endWords: (step: Step) => {
+    tone: "news" | "trouble";
+    fixes: readonly [NoticeAction, ...NoticeAction[]];
+    said: ReactNode;
+  };
   onEnded: () => void;
-  /** Back to the Grades tab: the grade keeps going. */
+  /** Back to where it was started from: the grade keeps going. */
   onBack: () => void;
 }) {
-  const [step, setStep] = useState<SkillGradeStep>();
+  const [step, setStep] = useState<Step>();
   // Whether the app said this grade runs, where it has: its latest step says the rest (#3928).
   const [runs, setRuns] = useState<boolean>();
   // Why the app's word on it could not be read, where it could not, and a press to read again.
   const [unread, setUnread] = useState<string>();
   const [again, setAgain] = useState(0);
   const [stopping, setStopping] = useState(false);
-  const levelKey = JSON.stringify(level);
-  const ended = useRef(onEnded);
+  const [stopRefused, setStopRefused] = useState<string>();
+  // The latest of each, used as an event lands: the listener is not attached anew with them, so
+  // no step is lost while it would be.
+  const latest = useRef({ isOurs, read, opensItsScorecard, onEnded });
   useEffect(() => {
-    ended.current = onEnded;
+    latest.current = { isOurs, read, opensItsScorecard, onEnded };
   });
 
-  const [stopRefused, setStopRefused] = useState<string>();
   // Listened to first, then the app's word on whether it runs and its latest step: an end told
   // before the listener was attached is never missed, as the read after it says it runs no more.
   useEffect(() => {
     let live = true;
-    const listening = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
-      const now = event.payload;
-      if (now.plane !== plane || now.skill !== name || now.grade !== grade) return;
+    const listening = listen<Step>(event, (told) => {
+      const now = told.payload;
+      if (now.plane !== plane || now.grade !== grade || !latest.current.isOurs(now)) return;
       setStep(now);
-      if (now.ended !== null && now.said === null) ended.current();
+      if (latest.current.opensItsScorecard(now)) latest.current.onEnded();
     }).catch(() => undefined);
     void listening
-      .then(() => commands.skillGrades(plane, level, name))
+      .then(() => latest.current.read())
       .then((answer) => {
         if (!live) return;
         if (answer.status !== "ok") {
@@ -786,11 +908,12 @@ export function GradeRunningPage({
           return;
         }
         setUnread(undefined);
-        const now = answer.data.running;
-        const ours = now !== null && now.grade === grade ? now : undefined;
-        setRuns(ours !== undefined);
+        const now = answer.data;
+        setRuns(now !== null);
         // A step told since is newer than the one the read says.
-        if (ours !== undefined) setStep((told) => told ?? ours);
+        if (now !== null) setStep((told) => told ?? now);
+        // Ended before this page listened: the event is gone, and its end is read here.
+        if (now !== null && latest.current.opensItsScorecard(now)) latest.current.onEnded();
       })
       .catch((err: unknown) => {
         if (live) setUnread(String(err));
@@ -799,44 +922,40 @@ export function GradeRunningPage({
       live = false;
       void listening.then((stop) => stop?.()).catch(() => undefined);
     };
-    // The level as a value: an equal level reads nothing anew.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, levelKey, name, grade, again]);
+  }, [event, plane, grade, again]);
 
+  const graded = of(step);
   // A read that failed with no step told says so in place, never "Reading…" for good.
   if (step === undefined && unread !== undefined)
     return (
       <NotRead
-        what={`the grade of ${name}`}
+        what={`the grade of ${graded}`}
         why={unread}
         onAgain={() => {
           setUnread(undefined);
           setAgain((n) => n + 1);
         }}
-        testid="skill-grading-not-read"
+        testid={`${whose}-grading-not-read`}
       />
     );
   if (step === undefined && runs === undefined)
-    return <ReadingRows what={`the grade of ${name}`} testid="skill-grading-reading" />;
+    return <ReadingRows what={`the grade of ${graded}`} testid={`${whose}-grading-reading`} />;
   if (step === undefined && runs === false)
     return (
       <EmptyState
         variant="panel"
-        headline={`This grade of ${name} is not running any more`}
+        headline={`This grade of ${graded} is not running any more`}
         body="It ended while this page was away. Its scorecard says how."
-        testid="skill-grade-gone"
+        testid={`${whose}-grade-gone`}
         action={<Button onPress={onEnded}>Open its scorecard</Button>}
       />
     );
-  const ran = step?.ran ?? 0;
-  const of = step?.of ?? 0;
-  const cap = step?.cap ?? 0;
-  const limit = step?.limit_usd ?? null;
   const over = step !== undefined && step.ended !== null;
+  const end = over && !opensItsScorecard(step) ? endWords(step) : undefined;
   return (
     <ReviewPage
-      label={`Grading ${name}`}
-      data-testid="skill-grade-running"
+      label={`Grading ${graded}`}
+      data-testid={`${whose}-grade-running`}
       summary={over ? "It has ended." : "Stopping keeps what ran so far."}
       summaryReserve={["It has ended.", "Stopping keeps what ran so far."]}
       onCancel={onBack}
@@ -863,10 +982,10 @@ export function GradeRunningPage({
         },
       }}
     >
-      <GradingHeading name={`Grading ${name}`} />
+      <GradingHeading name={`Grading ${graded}`} />
       {stopRefused !== undefined && (
         <Notice
-          cause={`skill-grade-stop:${grade}`}
+          cause={`${whose}-grade-stop:${grade}`}
           tone="trouble"
           label="Not stopped"
           onDismiss={() => setStopRefused(undefined)}
@@ -874,30 +993,80 @@ export function GradeRunningPage({
           {stopRefused}
         </Notice>
       )}
-      {over && step.said !== null && (
-        // An end with words to say: something went wrong on the way (not recorded, chats that
-        // did not start), so its scorecard may not be there to open.
+      {end !== undefined && (
         <Notice
-          cause={`skill-grade-ended:${grade}`}
-          tone="trouble"
+          cause={`${whose}-grade-ended:${grade}`}
+          tone={end.tone}
           label="The grade ended"
-          fixes={[
-            { label: "Open its scorecard", onPress: onEnded },
-            { label: "Back to its grades", onPress: onBack },
-          ]}
+          fixes={end.fixes}
         >
-          {endedSaid(step)}
+          {end.said}
         </Notice>
       )}
       <GradeProgress
-        label={`How far the grade of ${name} is`}
-        ran={ran}
-        of={of}
+        label={`How far the grade of ${graded} is`}
+        ran={step?.ran ?? 0}
+        of={step?.of ?? 0}
         tokens={step?.tokens ?? null}
-        cap={cap}
+        cap={step?.cap ?? 0}
         costUsd={step?.cost_usd ?? null}
-        limitUsd={limit}
+        limitUsd={step?.limit_usd ?? null}
       />
     </ReviewPage>
+  );
+}
+
+/**
+ * **A skill's grade running** (S6): see the module. `onEnded` is told once it ends with nothing
+ * more to say, so the studio opens its scorecard; an end with words to say stays here and says
+ * them.
+ */
+export function GradeRunningPage({
+  plane,
+  name,
+  level,
+  grade,
+  onEnded,
+  onBack,
+}: {
+  plane: string;
+  name: string;
+  level: SkillLevel;
+  grade: string;
+  onEnded: () => void;
+  /** Back to the Grades tab: the grade keeps going. */
+  onBack: () => void;
+}) {
+  return (
+    <RunningGradePage
+      // Another grade is another page: nothing of this one's is drawn under its name. The level
+      // as a value: an equal level reads nothing anew.
+      key={JSON.stringify([plane, level, name, grade])}
+      whose="skill"
+      plane={plane}
+      grade={grade}
+      event={SKILL_GRADE}
+      isOurs={(step) => step.skill === name}
+      read={async () => {
+        const answer = await commands.skillGrades(plane, level, name);
+        if (answer.status !== "ok") return answer;
+        const now = answer.data.running;
+        return { status: "ok", data: now !== null && now.grade === grade ? now : null };
+      }}
+      of={() => name}
+      opensItsScorecard={(step) => step.ended !== null && step.said === null}
+      // An end with words to say: something went wrong on the way (not recorded, chats that did
+      // not start), so its scorecard may not be there to open.
+      endWords={(step) => ({
+        tone: "trouble",
+        fixes: [
+          { label: "Open its scorecard", onPress: onEnded },
+          { label: "Back to its grades", onPress: onBack },
+        ],
+        said: endedSaid(step),
+      })}
+      onEnded={onEnded}
+      onBack={onBack}
+    />
   );
 }

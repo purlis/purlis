@@ -173,6 +173,7 @@ fn graded(id: &str, ts: &str) -> RouterGraded {
         harness: Some("claude-code".to_owned()),
         profile: Some("claude".to_owned()),
         ts: ts.to_owned(),
+        pointer: false,
         runs: 3,
         report: RouterGradeReport {
             grader: grade::BUILT_IN.to_owned(),
@@ -417,4 +418,17 @@ fn a_router_s_estimate_is_its_last_grade_s_spend_per_chat_3618() {
     // Its only grade interrupted: none to go by, never one that ran no chat.
     written(root, &[serde_json::to_value(&stopped).unwrap()]);
     assert!(estimate(root, &planned, Some("claude")).is_none());
+}
+
+#[test]
+fn a_grade_with_its_pointer_says_so_and_one_before_it_reads_without_it_3619() {
+    let mut row = graded("g", "2026-10-31T00:00:00Z");
+    assert!(!row.said().contains("pointer"));
+    let text = serde_json::to_string(&row).unwrap();
+    assert!(!text.contains("pointer"), "{text}");
+    let back: RouterGraded = serde_json::from_str(&text).unwrap();
+    assert!(!back.pointer);
+
+    row.pointer = true;
+    assert!(row.said().contains("and its pointer"), "{}", row.said());
 }

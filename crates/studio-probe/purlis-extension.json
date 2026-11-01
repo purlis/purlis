@@ -21,7 +21,7 @@
     "studio-panel": [
       { "id": "probe", "title": "Probe" }
     ],
-    "skill-router": { "title": "Probe router" },
+    "skill-router": { "title": "Probe router", "reads-prompts": true },
     "cli": [
       { "name": "try", "title": "Try one thing from inside the sandbox, and say what happened", "writes": false }
     ]

@@ -75,6 +75,7 @@ function core(
     personas?: PersonaSkills[];
     chat?: ChatSkill[];
     repos?: string[];
+    branch?: StudioSkill[];
     budget?: SkillBudget | null;
     routing?: SkillRouting | null;
     missing?: SkillsMissing | null;
@@ -98,6 +99,7 @@ function core(
         repos: more.repos ?? [],
         missing: more.missing ?? null,
       };
+    if (cmd === "chat_branch_folder_skills") return more.branch ?? [];
     if (cmd === "chats_plane_updated") return more.updated ?? [];
     if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];
     if (cmd === "skill_sources_offered") return [];
@@ -714,6 +716,90 @@ describe("a row's menu", () => {
       repo: "svc",
       folder: ".claude/skills/lint-rs",
     });
+  });
+});
+
+describe("a chat in a branch folder (#4326)", () => {
+  const chat: FrontChat = {
+    session: 9,
+    name: "fix",
+    workspace: "ops",
+    persona: null,
+    harness: "claude",
+  };
+  const repoSkill = (name: string, folder: string) =>
+    skill(name, {
+      level: "repo",
+      folder: `${folder}/.claude/skills/${name}`,
+      owner: { kind: "repo", name: "svc" },
+    });
+  /** The studio holds what the clone's own branch has; the chat's own read, what its branch has. */
+  const branchCore = () =>
+    core(
+      () =>
+        studio([skill("deploy")], {
+          harnesses: [
+            {
+              harness: "claude",
+              title: "Claude Code",
+              skills: [repoSkill("on-main", "workspaces/ops/svc")],
+              repo_left_out: [],
+              own: null,
+            },
+          ],
+        }),
+      {
+        chat: [given("deploy")],
+        repos: [],
+        branch: [repoSkill("on-the-branch", "workspaces/ops/.worktrees/svc/fix")],
+      },
+    );
+
+  it("lists what its branch holds, and not what only the clone's own branch holds", async () => {
+    const asked = branchCore();
+    view({ chat });
+    await list();
+    await waitFor(() => expect(rowOf("on-the-branch")).toBeInTheDocument());
+    expect(screen.queryByText("on-main")).not.toBeInTheDocument();
+    expect(asked.filter((one) => one.cmd === "chat_branch_folder_skills")).toEqual([
+      { cmd: "chat_branch_folder_skills", args: { plane: expect.anything(), session: 9 } },
+    ]);
+  });
+
+  it("points a row's file actions into the branch folder", async () => {
+    branchCore();
+    const hands = view({ chat });
+    await list();
+    await waitFor(() => expect(rowOf("on-the-branch")).toBeInTheDocument());
+
+    fireEvent.contextMenu(rowOf("on-the-branch"));
+    let menu = await screen.findByRole("menu", { name: "on-the-branch" });
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Open the file" }));
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      pieceFileView(
+        { workspace: "ops", repo: "svc", piece: "fix" },
+        ".claude/skills/on-the-branch/SKILL.md",
+      ),
+      "SKILL.md · on-the-branch",
+    );
+
+    fireEvent.contextMenu(rowOf("on-the-branch"));
+    menu = await screen.findByRole("menu", { name: "on-the-branch" });
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: "Show in the Explorer view" }),
+    );
+    expect(hands.onShowInExplorer).toHaveBeenCalledWith({
+      repo: "svc",
+      piece: "fix",
+      folder: ".claude/skills/on-the-branch",
+    });
+  });
+
+  it("asks nothing of a branch folder with no chat in front", async () => {
+    const asked = branchCore();
+    view();
+    await list();
+    expect(asked.some((one) => one.cmd === "chat_branch_folder_skills")).toBe(false);
   });
 });
 

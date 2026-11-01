@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use purlis_core::clusterpool::Kubectl;
-use purlis_core::dockerpool::Docker;
+use purlis_core::dockerpool::{Docker, Missing};
 use purlis_core::profilestore::sign_in::callback::CARRIED_WITHIN;
 use purlis_core::runners::{ClusterKept, ClusterPool, Kept};
 use purlis_host::{CommandConnector, NotChecked};
@@ -153,8 +153,13 @@ impl ToARunner {
                 };
                 // A refusal of a container Docker no longer lists is a runner removed outside
                 // purlis, never linked to again on its own (#4149).
-                checked.map_err(|why| match checking.gone(&made) {
-                    Ok(Some(gone)) => NotChecked::Gone(gone_said(&of, gone)),
+                // On another engine it may be there still: the link keeps trying, so it comes
+                // back once Docker points back (#4166).
+                checked.map_err(|why| match checking.missing(&made, of.engine.as_deref()) {
+                    Ok(Some(Missing::Removed(gone))) => NotChecked::Gone(gone_said(&of, gone)),
+                    Ok(Some(Missing::OnAnotherEngine)) => {
+                        NotChecked::Refused(on_another_engine_said(&of))
+                    }
                     _ => NotChecked::Refused(why.0),
                 })
             }),
@@ -258,6 +263,16 @@ pub fn gone_said(kept: &Kept, gone: purlis_core::dockerpool::Gone) -> String {
     )
 }
 
+/// **A runner made on another engine than Docker reaches now, in words a person reads** (#4166).
+pub fn on_another_engine_said(kept: &Kept) -> String {
+    format!(
+        "Docker points at another engine than the one pool {}'s runner {} was made on; point \
+         Docker back at that engine",
+        kept.pool(),
+        kept.name()
+    )
+}
+
 /// **A cluster runner's check, said to the link** (#3292): a changed runner key or a changed
 /// cluster operator key is a changed key, which the window asks the person about.
 pub fn not_checked(why: purlis_core::clusterpool::Refused) -> NotChecked {
@@ -351,6 +366,19 @@ pub fn relaying(
             }) as purlis_host::Keep,
             resolved,
         ))
+    })
+}
+
+/// **Asks for a cluster pool's idle runner to run again** (#3980), as a chat starts on it, and
+/// answers how long that start waits for it (#4403). A Docker pool's runner is started by its link,
+/// and asks nothing here: its link's own check waits for its start.
+pub fn runs_again(config_root: PathBuf) -> purlis_host::RunsAgain {
+    Arc::new(move |pool: &str| {
+        let Ok(Some((cluster, _))) = cluster_reached(&config_root, pool) else {
+            return None;
+        };
+        let kubectl = crate::clusterpools::kubectl(&config_root).ok()?;
+        purlis_core::pools::run_cluster_runner_again(&config_root, &kubectl, cluster.name())
     })
 }
 
@@ -528,6 +556,9 @@ pub fn count_of(
         ),
         Err(PoolLink::Suspended) => Err("the runner is suspended".to_owned()),
         Err(PoolLink::Removed { .. }) => Err("the runner was removed outside purlis".to_owned()),
+        Err(PoolLink::OnAnotherEngine) => {
+            Err("Docker points at another engine than the one the runner was made on".to_owned())
+        }
         Err(PoolLink::Linked) => Err("the runner did not list".to_owned()),
     }
 }
@@ -586,12 +617,10 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
     .map_err(|why| crate::devices::shown_safely(&why))
 }
 
-/// **A profile a runner kept**: whether it is signed in there, and what of its settings stayed
-/// behind, over the limits (#4081).
+/// **A profile a runner kept**: whether it is signed in there.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileKept {
     pub standing: purlis_session_protocol::session::ProfileStanding,
-    pub left_behind: Vec<purlis_core::profilestore::onrunner::LeftBehind>,
 }
 
 /// What a runner answered each profile it was asked to keep: [`ProfileKept`], or why it was not
@@ -608,33 +637,31 @@ fn refused_by_the_runner(why: &purlis_session_protocol::session::CallError) -> S
 
 /// **`sending`, kept over `client`'s link** (#4081): its batches first, each answered before the
 /// next and each given [`ANSWER_WITHIN`], so a large profile is held to a runner that keeps
-/// answering, within [`ALL_KEPT_WITHIN`]. The first refused stops them, and no keep is sent: what the link
+/// answering, within [`all_kept_within`]. The first refused stops them, and no keep is sent: what the link
 /// staged is dropped there, so nothing of it is kept.
 async fn keep_one(
     client: &purlis_session_protocol::session::Client,
     sending: purlis_core::profilestore::onrunner::ToKeep,
+    answer: std::time::Duration,
 ) -> Result<ProfileKept, String> {
-    let late = |_| LATE.to_owned();
+    let late = |_| ANSWER_LATE.to_owned();
     for batch in sending.batches {
-        tokio::time::timeout(ANSWER_WITHIN, client.stage_profile_settings(batch))
+        tokio::time::timeout(answer, client.stage_profile_settings(batch))
             .await
             .map_err(late)?
             .map_err(|why| refused_by_the_runner(&why))?;
     }
     // Keeping them writes every file, and asks the harness whether it is signed in.
-    let within = if sending.profile.settings_staged.is_some() {
-        KEPT_WITHIN
+    let (within, late) = if sending.profile.settings_staged.is_some() {
+        (KEPT_WITHIN, LATE)
     } else {
-        ANSWER_WITHIN
+        (answer, ANSWER_LATE)
     };
     let standing = tokio::time::timeout(within, client.keep_profile(sending.profile))
         .await
-        .map_err(late)?
+        .map_err(|_| late.to_owned())?
         .map_err(|why| refused_by_the_runner(&why))?;
-    Ok(ProfileKept {
-        standing,
-        left_behind: sending.left_behind,
-    })
+    Ok(ProfileKept { standing })
 }
 
 /// The most pages of what it holds a runner is asked for: more than the most files it holds take
@@ -657,9 +684,9 @@ async fn held_by(
     let mut after: Option<String> = None;
     for _ in 0..MOST_HELD_PAGES {
         let asked = client.settings_held(&kept.name, after.clone());
-        let Ok((page, more)) = tokio::time::timeout(ANSWER_WITHIN, asked)
+        let Ok((page, more)) = tokio::time::timeout(answer_wait(kept), asked)
             .await
-            .map_err(|_| LATE.to_owned())?
+            .map_err(|_| ANSWER_LATE.to_owned())?
         else {
             return Ok(Vec::new());
         };
@@ -693,17 +720,31 @@ async fn sent_what_differs(
     kept: &purlis_core::profilestore::onrunner::Kept,
 ) -> Result<ProfileKept, String> {
     let held = held_by(client, version, kept).await?;
-    let sending = if held.is_empty() {
-        for_a_runner_of(version, kept)?
-    } else {
-        purlis_core::profilestore::onrunner::in_batches_beside(kept, &held)?
+    let sending = {
+        let kept = kept.clone();
+        read_off_the_link(move || {
+            if held.is_empty() {
+                for_a_runner_of(version, &kept)
+            } else {
+                purlis_core::profilestore::onrunner::in_batches_beside(
+                    &as_its_runner_holds(version, &kept),
+                    &held,
+                )
+            }
+        })
+        .await?
     };
     let only_changed = sending.profile.settings_changed.is_some();
-    let answer = keep_one(client, sending).await;
+    let wait = answer_wait(kept);
+    let answer = keep_one(client, sending, wait).await;
     match answer {
-        Err(why) if only_changed && why != LATE => {
+        Err(why) if only_changed && !stopped_answering(&why) => {
             tracing::info!("purlis: a runner's keep of what changed was refused: {why}");
-            keep_one(client, for_a_runner_of(version, kept)?).await
+            let sending = {
+                let kept = kept.clone();
+                read_off_the_link(move || for_a_runner_of(version, &kept)).await?
+            };
+            keep_one(client, sending, wait).await
         }
         answer => answer,
     }
@@ -713,19 +754,20 @@ async fn sent_what_differs(
 /// (`keep_profile`, 1.43, #2049), in order: whether each is signed in there, or why the runner
 /// did not keep it, its own words marked as its and cut short. `None` for a runner of a purlis
 /// before 1.43, which is sent nothing and runs chats on profiles of its own. Each call is held to
-/// its own time ([`keep_one`]), and all of them together to [`ALL_KEPT_WITHIN`].
+/// its own time ([`keep_one`]), and all of them together to [`all_kept_within`].
 pub fn keep_profiles(
     to: &ToARunner,
     profiles: Vec<purlis_core::profilestore::onrunner::Kept>,
 ) -> Result<Option<ProfilesKept>, String> {
-    on_one_link_within(to, ALL_KEPT_WITHIN, async |linked| match linked {
+    let within = all_kept_within(&profiles);
+    on_one_link_within(to, within, async |linked| match linked {
         Ok(client) if !keeps_profiles(client.version()) => Ok(None),
         Ok(client) => {
             let version = client.version();
             let mut said = Vec::with_capacity(profiles.len());
             for kept in &profiles {
                 let answer = sent_what_differs(&client, version, kept).await;
-                let gone = matches!(&answer, Err(why) if why == LATE);
+                let gone = matches!(&answer, Err(why) if stopped_answering(why));
                 said.push(answer);
                 // A runner that stopped answering is asked nothing more.
                 if gone {
@@ -773,7 +815,7 @@ pub fn for_a_runner_of(
     use purlis_core::profilestore::onrunner::{ToKeep, in_batches, to_send};
     use purlis_session_protocol::session::{KNOWS_PROFILE_SETTINGS, KNOWS_SETTINGS_IN_BATCHES};
     if version >= KNOWS_SETTINGS_IN_BATCHES {
-        return in_batches(kept);
+        return in_batches(&as_its_runner_holds(version, kept));
     }
     let profile = if version >= KNOWS_PROFILE_SETTINGS {
         to_send(kept)?
@@ -783,8 +825,20 @@ pub fn for_a_runner_of(
     Ok(ToKeep {
         profile,
         batches: Vec::new(),
-        left_behind: Vec::new(),
     })
+}
+
+/// `kept`, held to what a runner speaking `version` stages: one before 1.64 stages no more than
+/// it did, whatever its pool's limit says (spec #4275).
+fn as_its_runner_holds(
+    version: purlis_session_protocol::version::Version,
+    kept: &purlis_core::profilestore::onrunner::Kept,
+) -> purlis_core::profilestore::onrunner::Kept {
+    if version >= purlis_session_protocol::session::KNOWS_LARGER_PROFILE_SETTINGS {
+        kept.clone()
+    } else {
+        kept.clone().on_an_older_runner()
+    }
 }
 
 /// Whether a runner speaking `version` keeps a desktop's profiles (`keep_profile`, 1.43).
@@ -939,14 +993,60 @@ pub fn listed(
 /// How long one link to a runner waits for it to answer.
 const ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 
-/// What a call a runner did not answer in time says.
+/// **`read`, off the thread the link's liveness runs on** (#4314): reading a profile near the top
+/// of its limit takes longer than the far end waits on a silent link, which it then closes.
+async fn read_off_the_link<T: Send + 'static>(
+    read: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(read)
+        .await
+        .map_err(|why| format!("the profile's settings could not be read: {why}"))?
+}
+
+/// What a call a runner did not answer in time says, where the wait is purlis's own.
 const LATE: &str = "the runner did not answer in time";
+
+/// What it says where the wait is the pool's limit: only this one offers to raise it. A runner's
+/// own words are always marked as its ([`said_by_the_runner`]), so none of them is this.
+pub(crate) const ANSWER_LATE: &str = "the runner did not answer within this pool's limit";
+
+/// Whether `why` is a runner that stopped answering, which is asked nothing more.
+fn stopped_answering(why: &str) -> bool {
+    why == LATE || why == ANSWER_LATE
+}
+
+/// The pool's limit on one answer, as this attempt read it (spec #4275): only the wait changes.
+fn answer_wait(kept: &purlis_core::profilestore::onrunner::Kept) -> std::time::Duration {
+    kept.limits
+        .wait(purlis_core::poollimits::LimitId::AnswerWait)
+        .unwrap_or(ANSWER_WITHIN)
+}
 
 /// How long a runner has to keep a profile's staged settings: it writes each of them.
 const KEPT_WITHIN: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// How long one link waits for every profile it keeps, batches and all.
 const ALL_KEPT_WITHIN: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// **How much time each MiB a profile may send gives its keep, in seconds** (#4314): twice what
+/// was measured on debug builds of both ends through `docker exec` on a CI runner: 137 seconds for
+/// 128 MiB, 1000 seconds for 999 MiB.
+const SECONDS_KEPT_PER_MIB: u64 = 2;
+
+/// **How long keeping `profiles` may take all told** (#4314, sorted by the spec's rule): not a
+/// limit of its own, since a person should never have to reckon it: it follows what those
+/// profiles may send, so any value of `profileSize` has the time to go, and a runner that stops
+/// answering is still held to the wait on each batch and to this.
+fn all_kept_within(profiles: &[purlis_core::profilestore::onrunner::Kept]) -> std::time::Duration {
+    use purlis_core::poollimits::LimitId::ProfileSize;
+    let mib: u64 = profiles
+        .iter()
+        .map(|kept| kept.limits.in_force(ProfileSize))
+        .sum();
+    ALL_KEPT_WITHIN.max(std::time::Duration::from_secs(
+        mib.saturating_mul(SECONDS_KEPT_PER_MIB),
+    ))
+}
 
 #[cfg(test)]
 mod tests;

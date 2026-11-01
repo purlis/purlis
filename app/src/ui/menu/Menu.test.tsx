@@ -432,6 +432,22 @@ describe("a menu's groups, toggles and submenus", () => {
     expect(document.activeElement).toBe(within(menu).getByRole("menuitem", { name: "Open" }));
   });
 
+  // #4304: the list's own padding is not a row. A press on it moves nothing; and should the list
+  // ever take the keyboard with a row chosen, the keyboard goes on to that row.
+  it("keeps the keyboard on the chosen row through a press on the list's padding", async () => {
+    render(<Grouped />);
+    screen.getByRole("button", { name: "Tab" }).focus();
+    await userEvent.keyboard("{ArrowDown}");
+    const first = screen.getByRole("menuitemcheckbox", { name: "Pinned" });
+    await waitFor(() => expect(document.activeElement).toBe(first));
+    const list = screen.getByRole("menu", { name: "Tab steward 4" });
+    await userEvent.click(list);
+    expect(screen.getByRole("menu", { name: "Tab steward 4" })).toBe(list);
+    expect(document.activeElement).toBe(first);
+    act(() => list.focus());
+    expect(document.activeElement).toBe(first);
+  });
+
   it("leaves a keyboard's open on the row it asked for", async () => {
     render(<Grouped />);
     screen.getByRole("button", { name: "Tab" }).focus();

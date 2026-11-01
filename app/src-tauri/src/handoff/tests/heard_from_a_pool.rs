@@ -35,8 +35,12 @@ fn a_dispatch_heard_from_a_pool_to_the_chats_own_persona_is_held_and_starts_noth
     let (said, told) = dispatch_from_the_pool(&held, &id, asking, Some("devops"), "check prod");
 
     assert!(
-        matches!(&said, Answer::NeedsGrant { to, waiting: None, .. } if to == "devops"),
-        "held for the person, not {said:?}"
+        matches!(
+            &said,
+            Answer::NeedsGrant { to, waiting: None, held_by: Some(pool), .. }
+                if to == "devops" && pool == POOL
+        ),
+        "held for the person, on the pool's account, not {said:?}"
     );
     assert!(told.is_none(), "nothing arrived");
     assert_eq!(held.chats().open_now().len(), before, "nothing started");
@@ -66,7 +70,7 @@ fn a_handoff_heard_from_a_pool_is_held_too() {
     });
 
     assert!(
-        matches!(said, Answer::NeedsGrant { waiting: None, .. }),
+        matches!(&said, Answer::NeedsGrant { waiting: None, held_by: Some(pool), .. } if pool == POOL),
         "{said:?}"
     );
     assert!(told.is_none());

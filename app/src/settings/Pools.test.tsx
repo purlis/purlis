@@ -691,6 +691,33 @@ describe("You › This machine › Pools", () => {
     await within(group).findByText(/sign-ins kept there/);
   });
 
+  it("says a runner on another engine is not removed, and offers nothing to make again (#4166)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "on_another_engine" };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText("on another Docker engine");
+    expect(group).toHaveTextContent(/Point Docker back at that engine/);
+    expect(group).not.toHaveTextContent(/removed outside purlis/);
+    expect(within(group).queryByRole("button", { name: "Make the runner again" })).toBeNull();
+  });
+
+  it("asks Remove in words that say a runner on another engine stays there (#4325)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "on_another_engine" };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText("on another Docker engine");
+    await userEvent.click(within(group).getByRole("button", { name: "Remove pool builds" }));
+    const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    expect(asked).toHaveTextContent(/stay there/);
+    expect(asked).not.toHaveTextContent(/removed from your Docker/);
+  });
+
   it("says a suspended runner is suspended, not that it would not link (#2051)", async () => {
     pools = [a_pool("builds")];
     link = { state: "suspended" };
@@ -856,7 +883,14 @@ describe("A cluster pool (#3292)", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
     await waitFor(() =>
       expect(clustersAdded).toEqual([
-        { name: "team", kubeconfig: null, context: "team", pool: "default", key: OPERATOR_KEY },
+        {
+          name: "team",
+          kubeconfig: null,
+          context: "team",
+          pool: "default",
+          key: OPERATOR_KEY,
+          vouch_wait: null,
+        },
       ]),
     );
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());

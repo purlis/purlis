@@ -7313,6 +7313,89 @@ nav.piece-files-head {
   margin-inline-start: auto;
 }
 
+/* **A pool's limits, folded under its row** (#4285, `PoolLimits.tsx`): the groups of what they
+   affect, each limit a row with its box, its unit and a line under it. */
+.pool-limits {
+  flex: 1 0 100%;
+  min-inline-size: 0;
+}
+
+/* Its own ground, which a text box's fill shows on. */
+.pool-limits-body {
+  padding: var(--space-4);
+  border-radius: var(--radius-control);
+  background-color: var(--surface-raised);
+}
+
+.pool-limits-group {
+  margin-block-start: var(--space-5);
+}
+
+.pool-limits-head {
+  padding-block-end: var(--space-3);
+  border-block-end: 1px solid var(--border-strong);
+}
+
+.pool-limits-head h4 {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-strong);
+}
+
+.pool-limit {
+  padding-block: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.pool-limit .ui-setting-row {
+  border: 0;
+  padding: 0;
+}
+
+/* The boxes of a group line up, whatever each limit is called. */
+.pool-limit .ui-setting-name {
+  flex: 0 0 40%;
+}
+
+.pool-limit-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.pool-limit-says {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.pool-limits-advanced {
+  margin-block-start: var(--space-5);
+}
+
+/* **Raising a limit where it was hit** (`RaiseLimit.tsx`): in Start a chat and under a move's
+   line. Each limit's box, then the one press. */
+.raise-limit {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-4);
+  margin-block: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  /* Its own ground: under a trouble Notice it would stand on the danger wash, and a text box's
+     fill shows on this one. */
+  background-color: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.raise-limit-refused {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--danger-text);
+}
+
 /* **A profile's sign-in on a pool's runner, in place** (#4042, `PoolSignIn.tsx`): the strip its
    line on the pool's row opens into, the whole row wide. A head that says the step, the step's
    body, and a foot with Cancel and Open in terminal. */

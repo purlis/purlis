@@ -67,18 +67,26 @@ pub const PURLIS: &str = "/usr/local/bin/purlis";
 /// to one folder at a time, never through a link, and held by its real path, and the files go
 /// into a batch folder of its own that no one knew the name of before it was made, each written
 /// only where nothing is (`set -C`) and put in place whole, by a link. Only a plain file inside
-/// the old home is carried, never a link or what a folder linked out of it holds. What it makes is
-/// the runner's user's alone. A file that cannot be carried is said and passed over: the profile
-/// is then signed in again, as before any was carried, and the drain goes on. A profile named in
-/// the colon-separated list after the two folders is not carried at all (#4145).
+/// the old home is carried, never a link or what a folder linked out of it holds. An image that
+/// names its data home or Codex's by a variable carries nothing, since the runner reads it
+/// elsewhere. A harness's default folder is carried only from a runner that left
+/// [`crate::profilestore::DEFAULTS_HELD`]. What
+/// it makes is the runner's user's alone. A file that cannot be carried is said and passed over:
+/// the profile is then signed in again, as before any was carried, and the drain goes on. A
+/// profile named in the colon-separated list after the two folders is not carried at all (#4145).
 pub const COPY_PROFILES: &str = r#"set -u
 umask 077
+[ -z "${PURLIS_DATA_HOME:-}${XDG_DATA_HOME:-}${CODEX_HOME:-}" ] || exit 1
 from=$1 to=$2 stage=$3 old_stage=$4 skip=$5
 shift 5
 from=$(cd -P "$from" && pwd -P) || exit 1
+held=
+for mark in "$from"/.local/share/*/profiles/.default-folders-held; do
+  [ -f "$mark" ] && [ ! -L "$mark" ] && held=1
+done
 cd -P "$to" || exit 1
 here=$(pwd -P)
-data=${stage%/*}
+data=${stage%/*/*}
 if [ -L "$data" ] || { [ -e "$data" ] && [ ! -d "$data" ]; }; then exit 1; fi
 [ -d "$data" ] || stage=$old_stage
 set -f
@@ -100,10 +108,11 @@ cd -P "$batch" || exit 1
 set -C
 for pair in "$@"; do
   src=${pair%%=*} dst=${pair#*=}
+  case $src in *'*'*) ;; *) [ -n "$held" ] || continue ;; esac
   for found in "$from"/$src; do
     rel=${found#"$from/"}
     [ -f "$found" ] && [ ! -L "$found" ] && [ -r "$found" ] || continue
-    case $(realpath -- "$found") in "$from"/*) ;; *) continue ;; esac
+    [ "$(realpath -- "$found")" = "$from/$rel" ] || continue
     out=$dst
     case $src in
       *'*'*)
@@ -531,6 +540,15 @@ impl Runner {
         if let Some(desktop) = desktop {
             pair("--label", format!("{DESKTOP_LABEL}={desktop}"));
         }
+        // Said back to the person if a declared tool's program is not in the image (#4354).
+        pair(
+            "--env",
+            format!(
+                "{}={}",
+                crate::sandbox::tools::POOL_IMAGE_VAR,
+                self.image.as_str()
+            ),
+        );
         pair("--user", self.user.spelled());
         pair("--cap-drop", "ALL".into());
         pair("--security-opt", "no-new-privileges".into());
@@ -861,9 +879,43 @@ const STANDING_MOST: u64 = 64 * 1024;
 /// How long a runner's sign-in check is waited for.
 const STANDING_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
 
-/// **What `purlis profile sign-in <name> --check` said of `name`, in `printed`**: signed in, not
-/// signed in, or that its harness cannot tell, each by the words that command writes. `Err`, in
-/// the runner's own words cut short, for anything else, such as a profile it does not keep.
+/// **What a runner's `purlis profile sign-in <name> --check` answered** (#4113), by how it exited
+/// ([`check_exit`]): `None` where it keeps no profile of that name. The words are read only where
+/// the status alone does not settle it: a purlis before these statuses exits 0 for an answer it
+/// cannot be sure of, and 1 for signed out and for a refusal alike ([`standing_said`]). Exiting 0
+/// having said nothing at all is no answer. `Err`, in the runner's own words cut short, for
+/// anything else.
+///
+/// [`check_exit`]: crate::profilestore::sign_in::check_exit
+pub fn standing_answered(
+    name: &str,
+    status: Option<i32>,
+    printed: &str,
+) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
+    use crate::profilestore::sign_in::{Standing, check_exit};
+    let is = |code: u8| status == Some(i32::from(code));
+    if is(check_exit::NOT_KEPT) {
+        return Ok(None);
+    }
+    if is(check_exit::SIGNED_OUT) {
+        return Ok(Some(Standing::SignedOut));
+    }
+    if is(check_exit::CANNOT_TELL) {
+        return Ok(Some(Standing::CannotTell));
+    }
+    if is(check_exit::FETCHING) {
+        return Ok(Some(Standing::Fetching));
+    }
+    match standing_said(name, printed) {
+        Err(_) if status == Some(0) && !printed.trim().is_empty() => Ok(Some(Standing::SignedIn)),
+        said => said.map(Some),
+    }
+}
+
+/// **What a purlis before the statuses [`standing_answered`] reads said of `name`, in `printed`**:
+/// signed in, not signed in, fetching, or that its harness cannot tell, each by the words that
+/// command writes. `Err`, in the runner's own words cut short, for anything else, such as a
+/// profile it does not keep.
 pub fn standing_said(
     name: &str,
     printed: &str,
@@ -883,6 +935,9 @@ pub fn standing_said(
         if line.contains(&format!("cannot tell whether '{name}'")) {
             return Ok(Standing::CannotTell);
         }
+        if line.contains(&format!("cannot yet say whether '{name}'")) {
+            return Ok(Standing::Fetching);
+        }
     }
     let last = printed.lines().rfind(|line| !line.trim().is_empty());
     Err(format!(
@@ -896,6 +951,15 @@ pub fn standing_said(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Gone {
     pub home_kept: bool,
+}
+
+/// **Why Docker lists no container of a runner's id** ([`Docker::missing`], #4166): it was
+/// removed, or Docker now reaches another engine than the one that made the runner, whose
+/// container may well be there still.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Missing {
+    Removed(Gone),
+    OnAnotherEngine,
 }
 
 /// What [`Docker::resumed`] did: what it read of the container first, and whether it started it.
@@ -1840,6 +1904,42 @@ const DOCKER_IN_HOME: &[&str] = &[
     ".rd/bin/docker",
 ];
 
+/// **Whether the runner `login` reaches says `name` is signed in** (#4046, #4164): that login's
+/// own words, with `--check`. Bounded, in time and in what is kept of it: the runner's answer is
+/// its own. A runner that fetches the harness first (#4007) is given the time a fetch takes.
+/// `None` where it keeps no such profile, `Err` where it could not say. A check is no login, so it
+/// is not held to its input: the runner refuses the two together.
+pub fn standing_by_login(
+    login: &crate::profilestore::sign_in::Login,
+    name: &str,
+) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
+    let mut command = std::process::Command::new(&login.program);
+    command
+        .args(login.args.iter().filter(|arg| *arg != "--until-input-ends"))
+        .arg("--check")
+        .envs(login.env.iter().map(|(n, v)| (n, v)));
+    for name in &login.cleared {
+        command.env_remove(name);
+    }
+    let ran = crate::boundedrun::run_within(
+        &mut command,
+        None,
+        STANDING_MOST,
+        STANDING_MOST,
+        Some(STANDING_WITHIN),
+    )
+    .map_err(|why| match why {
+        crate::boundedrun::Unanswered::NotStarted(e) => {
+            format!("{} could not be run: {e}", login.program)
+        }
+        crate::boundedrun::Unanswered::PrintedTooMuch => {
+            "it printed more than a status check does".to_owned()
+        }
+        crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
+    })?;
+    standing_answered(name, ran.status.code(), &String::from_utf8_lossy(&ran.said))
+}
+
 impl Docker {
     /// The `docker` command at `program`.
     pub fn at(program: impl Into<std::path::PathBuf>) -> Docker {
@@ -2417,43 +2517,17 @@ impl Docker {
     }
 
     /// **Whether the runner says `name` is signed in**, by its own `purlis profile sign-in
-    /// --check` ([`standing_said`]), through the same `docker` as [`Docker::driven_sign_in`]:
-    /// for a sign-in with no link to the runner to ask over (#4046). `Err` where it says neither,
-    /// as for a profile it does not keep.
+    /// --check` ([`standing_answered`]), through the same `docker` as [`Docker::driven_sign_in`]:
+    /// for a sign-in with no link to the runner to ask over (#4046). `None` where it keeps no
+    /// profile of that name; `Err` where it could not say.
     pub fn standing_on_runner(
         &self,
         made: &Made,
         engine: &std::path::Path,
         name: &str,
-    ) -> Result<crate::profilestore::sign_in::Standing, String> {
+    ) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
         let login = self.driven_sign_in(made, engine, name, None)?;
-        let mut command = std::process::Command::new(&login.program);
-        command
-            .args(&login.args)
-            .arg("--check")
-            .envs(login.env.iter().map(|(n, v)| (n, v)));
-        for name in &login.cleared {
-            command.env_remove(name);
-        }
-        // Bounded, in time and in what is kept of it: the runner's answer is its own. A runner
-        // that fetches the harness first (#4007) is given the time a fetch takes.
-        let ran = crate::boundedrun::run_within(
-            &mut command,
-            None,
-            STANDING_MOST,
-            STANDING_MOST,
-            Some(STANDING_WITHIN),
-        )
-        .map_err(|why| match why {
-            crate::boundedrun::Unanswered::NotStarted(e) => {
-                format!("{} could not be run: {e}", login.program)
-            }
-            crate::boundedrun::Unanswered::PrintedTooMuch => {
-                "it printed more than a status check does".to_owned()
-            }
-            crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
-        })?;
-        standing_said(name, &String::from_utf8_lossy(&ran.said))
+        standing_by_login(&login, name)
     }
 
     /// **The runner's own sign-in of the profile `name`, in a terminal of `size` carried over
@@ -2702,6 +2776,53 @@ impl Docker {
         Ok(Some(Gone {
             home_kept: volumes.lines().any(|line| line.trim() == volume),
         }))
+    }
+
+    /// **[`Docker::gone`], held to the engine that made the runner** (#4166): `made_on` is what
+    /// [`Docker::engine_id`] answered as it was made, `None` for a runner made before that was
+    /// kept, which is taken at Docker's word as it was. Where another engine answers, the runner
+    /// is not said to be removed. An engine that does not say which it is says nothing of the
+    /// runner, like a Docker that does not answer.
+    pub fn missing(&self, made: &Made, made_on: Option<&str>) -> Result<Option<Missing>, Refused> {
+        let Some(gone) = self.gone(made)? else {
+            return Ok(None);
+        };
+        let Some(made_on) = made_on else {
+            return Ok(Some(Missing::Removed(gone)));
+        };
+        match self.engine_id()? {
+            Some(now) if now == made_on => Ok(Some(Missing::Removed(gone))),
+            Some(_) => Ok(Some(Missing::OnAnotherEngine)),
+            None => Err(refused(
+                "this Docker does not say which engine it is, so purlis cannot tell whether the \
+                 runner was removed",
+            )),
+        }
+    }
+
+    /// **Which engine this `docker` reaches** (#4166), by the id `docker info` prints for it.
+    /// `None` where it prints none that reads as an id. A Podman has no such field and is
+    /// refused.
+    pub fn engine_id(&self) -> Result<Option<String>, Refused> {
+        let printed = self.read(
+            &["info".into(), "--format".into(), "{{.ID}}".into()],
+            MOST_INSPECTED,
+        )?;
+        Ok(Some(printed.trim().to_owned()).filter(|id| crate::runners::usable_noted(id)))
+    }
+
+    /// **`made`'s home volume's `CreatedAt`, exactly as Docker printed it** (#4167): the same
+    /// volume prints the same words whatever any clock says. `None` where it prints none.
+    pub fn home_created(&self, made: &Made) -> Result<Option<String>, Refused> {
+        let inspected = self.json(
+            &["volume", "inspect", &made.runner.volume()],
+            "docker volume inspect",
+        )?;
+        Ok(inspected
+            .pointer("/0/CreatedAt")
+            .and_then(serde_json::Value::as_str)
+            .filter(|text| crate::runners::usable_noted(text))
+            .map(str::to_owned))
     }
 
     /// **When `made`'s home volume was made**, in seconds since the epoch, as Docker says it

@@ -158,6 +158,7 @@ pub fn hold(held: &Held, pool: &str, wanted: Wanted) -> Answer {
                 from,
                 to,
                 waiting: None,
+                held_by: Some(pool.to_owned()),
             }
         }
         None => Answer::No {

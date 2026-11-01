@@ -16,8 +16,10 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
  * (its place on screen with every scroll above it added back), against where it last settled
  * (so a drift too small to see between two reads still adds up). **The person's own scroll is
  * no move**: one that follows, within {@link OWN_SCROLL_MS}, their wheel or trackpad, a key that
- * scrolls, a touch, or a press on a scrollbar (#3217): it moves nothing under them they did not
- * choose to move. **Any other scroll is one, read on screen**: a scroll the window made (a box
+ * scrolls, a touch, or a primary press on a scrollbar held at most {@link OWN_SCROLL_HOLD_MS}
+ * (#3217): it moves nothing under them they did not choose to move. Only a box around what their
+ * input landed on scrolls by it (#3399), and a Tab the focused field took for itself scrolls
+ * nothing. **Any other scroll is one, read on screen**: a scroll the window made (a box
  * brought into view, a focus that scrolled, a scroll put back), and one the page was made to
  * take: a box that scrolls cannot stay where it was scrolled to once what it holds got shorter
  * than that (the browser clamps it). Everything in it slides on screen though nothing in it
@@ -40,11 +42,29 @@ const STILL = 0.5;
  *  it goes. */
 export const OWN_SCROLL_MS = 500;
 
-/** When the person last asked for a scroll, and whether they are holding a scrollbar now. */
-let ownScroll = { at: -Infinity, holding: false };
+/** **How long a scrollbar press counts as held without its release** (#3399), in ms: a release
+ *  that never comes (the pointer let go outside the window) holds no scroll as theirs past it. */
+export const OWN_SCROLL_HOLD_MS = 10_000;
 
-/** **Whether a scroll now is the person's own**: it follows their scroll input closely. */
-const scrollIsOwn = () => ownScroll.holding || performance.now() - ownScroll.at < OWN_SCROLL_MS;
+/** **The person's last scroll input**: when, since when they hold a scrollbar (`-Infinity` when
+ *  they hold none), and what it landed on, which only the boxes around it scroll (#3399). */
+let ownScroll: { at: number; heldSince: number; on: EventTarget | null } = {
+  at: -Infinity,
+  heldSince: -Infinity,
+  on: null,
+};
+const NO_SCROLL = ownScroll;
+
+/** **Whether `box` scrolling now is the person's own**: it follows their scroll input closely,
+ *  or they hold its scrollbar, and their input landed in it (#3399): a wheel over one box is no
+ *  reason for another one to scroll. */
+const scrollIsOwn = (box: Element) => {
+  const now = performance.now();
+  const holding = now - ownScroll.heldSince < OWN_SCROLL_HOLD_MS;
+  const following = now - ownScroll.at < OWN_SCROLL_MS;
+  const on = ownScroll.on;
+  return (holding || following) && on instanceof Node && box.contains(on);
+};
 
 /** The keys that scroll what has the keyboard, or bring the next stop into view. */
 const SCROLL_KEYS = new Set([
@@ -77,22 +97,38 @@ function heard(event: Event) {
     case "wheel":
     case "touchstart":
     case "touchmove":
-      ownScroll = { ...ownScroll, at: now };
+      ownScroll = { ...ownScroll, at: now, on: event.target };
       return;
     case "keydown": {
       const key = (event as KeyboardEvent).key;
-      if (SCROLL_KEYS.has(key) && (key === "Tab" || !writesIn(event.target))) {
-        ownScroll = { ...ownScroll, at: now };
+      // Tab is decided once the field it is in has had it (`tabbed`): one that takes Tab itself
+      // (the terminal's completion) moves nothing.
+      if (key !== "Tab" && SCROLL_KEYS.has(key) && !writesIn(event.target)) {
+        ownScroll = { ...ownScroll, at: now, on: event.target };
       }
       return;
     }
     case "pointerdown":
-      if (scrolls(event.target)) ownScroll = { at: now, holding: true };
+      // **Only a primary press on a box that scrolls holds its scrollbar** (#3399); any other
+      // press ends a hold whose release never came.
+      if ((event as PointerEvent).button === 0 && scrolls(event.target))
+        ownScroll = { at: now, heldSince: now, on: event.target };
+      else ownScroll = { ...ownScroll, heldSince: -Infinity };
       return;
     default:
       // A scrollbar let go, or a touch ended: its glide is still theirs for a moment.
-      if (ownScroll.holding || event.type === "touchend") ownScroll = { at: now, holding: false };
+      if (ownScroll.heldSince !== -Infinity || event.type === "touchend")
+        ownScroll = { ...ownScroll, at: now, heldSince: -Infinity };
   }
+}
+
+/** **A Tab the field it was pressed in did not take for itself** (#3399), heard once it has had
+ *  it: it brings the next stop into view. One the field took (cancelled it, or kept it to
+ *  itself) scrolls nothing, so no scroll after it is the person's. */
+function tabbed(event: Event) {
+  const key = (event as KeyboardEvent).key;
+  if (key !== "Tab" || event.defaultPrevented) return;
+  ownScroll = { ...ownScroll, at: performance.now(), on: event.target };
 }
 
 const HEARD = [
@@ -180,7 +216,7 @@ function madeToScroll(watch: Watch, box: Element): boolean {
     (now.top < was.top - STILL && was.top > now.maxTop + STILL) ||
     (now.left < was.left - STILL && was.left > now.maxLeft + STILL);
   const scrolled = differ(now.top, was.top) || differ(now.left, was.left);
-  return clamped || (scrolled && !scrollIsOwn());
+  return clamped || (scrolled && !scrollIsOwn(box));
 }
 
 /** Watches `el`'s size, once. */
@@ -214,7 +250,8 @@ function place(watch: Watch, way: Element, pass: Pass, at: number) {
   const y = box.top + around.y;
   const made = around.made;
   // An answer drawn again where its place is remembered (its band drawn anew) is read against
-  // where it was, not as a first drawing: on the redrawing's own read only, so a new answer
+  // where it was, not as a first drawing: on the redrawing's first drawn read only (its first
+  // read once its root is drawn, #3302, #3399), so a new answer
   // arriving later is never taken for one that stood (D-3167-10). Every read remembers.
   const name = watch.nameOf?.(way);
   const kept = name === undefined ? undefined : watch.remembered?.();
@@ -303,7 +340,9 @@ function listen(on: boolean) {
     if (on) document.addEventListener(kind, heard, how);
     else document.removeEventListener(kind, heard, how);
   }
-  if (!on) ownScroll = { at: -Infinity, holding: false };
+  if (on) window.addEventListener("keydown", tabbed, { passive: true });
+  else window.removeEventListener("keydown", tabbed);
+  if (!on) ownScroll = NO_SCROLL;
   if (on) window.addEventListener("resize", inAFrame);
   else window.removeEventListener("resize", inAFrame);
   // A font that loads late lays the words out again.

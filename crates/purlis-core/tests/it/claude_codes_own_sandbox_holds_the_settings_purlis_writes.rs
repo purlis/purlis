@@ -54,15 +54,22 @@ const SUPPORTED: &str = include_str!("../../../../tests/fixtures/harness-version
 /// The probes run as the stand-in's one Bash call.
 const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/seatbelt-case.sh");
 
-/// The probes `--here` asserts, each one answer: the sample project's eight, and its
-/// repositories' thirteen.
-const PROBES: usize = 21;
+/// The probes `--here` asserts, each one answer: the sample project's eight, its
+/// repositories' thirteen, and four of the other harnesses' default sign-ins.
+const PROBES: usize = 25;
 
-/// The probes `--repositories-here` asserts, as it is run on Linux: the repositories' thirteen.
-const REPOSITORY_PROBES: usize = 13;
+/// The probes `--repositories-here` asserts, as it is run on Linux: the repositories' thirteen,
+/// and four of the other harnesses' default sign-ins.
+const REPOSITORY_PROBES: usize = 17;
 
 /// The id of the stand-in's one Bash call.
 const CALL: &str = "toolu_seatbelt_case";
+
+/// What a chat tries to make in its home.
+const HOME_PATHS: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tools/standard-home-paths.sh"
+);
 
 /// Each level, its folder's name and the manifest of a project that starts its chats there.
 const LEVELS: [(Level, &str, &str); 2] = [
@@ -313,12 +320,6 @@ fn probed(
     sources: &[String],
     what: &str,
 ) -> String {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("a runtime");
-    let server = rt.block_on(MockServer::start());
-    let results = Arc::new(Mutex::new(Vec::new()));
     let mode = if cfg!(target_os = "macos") {
         "--here"
     } else {
@@ -332,6 +333,29 @@ fn probed(
             .display(),
         root.display()
     );
+    ran(program, home, tmp, root, settings, sources, what, command)
+}
+
+/// Claude Code at `program`, started in `root` with the settings at `settings` against a
+/// stand-in model whose one Bash call runs `command`: what that call's result said, the last
+/// time it was asked.
+#[allow(clippy::too_many_arguments)]
+fn ran(
+    program: &Path,
+    home: &Path,
+    tmp: &Path,
+    root: &Path,
+    settings: &Path,
+    sources: &[String],
+    what: &str,
+    command: String,
+) -> String {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let server = rt.block_on(MockServer::start());
+    let results = Arc::new(Mutex::new(Vec::new()));
     rt.block_on(async {
         Mock::given(method("POST"))
             .and(path("/v1/messages/count_tokens"))
@@ -401,6 +425,13 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
     let home = out.join("home");
     let bin = out.join("bin");
     fs::create_dir_all(home.join(".claude")).expect("a home");
+    const OTHERS: [&str; 2] = [".codex/auth.json", ".local/share/opencode/auth.json"];
+    const SIGN_IN: &str = "a harness's default sign-in";
+    for file in OTHERS {
+        let at = home.join(file);
+        fs::create_dir_all(at.parent().expect("its folder")).expect("its folder");
+        fs::write(at, SIGN_IN).expect("its sign-in");
+    }
     fs::create_dir_all(&bin).expect("a folder on the PATH");
     let machine = Machine {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
@@ -457,9 +488,85 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
             result.lines().any(|line| line.trim() == verdict),
             "{what}: not every probe answered as it should:\n{result}"
         );
+        for file in OTHERS {
+            assert_eq!(
+                fs::read_to_string(home.join(file)).expect("still there"),
+                SIGN_IN,
+                "{what}: {file} was written"
+            );
+        }
         probed_levels += 1;
     }
     if program.is_some() {
         assert_eq!(probed_levels, 2, "Claude Code probed at each level");
+    }
+}
+
+/// **What a chat at the floor can make in a home with no `~/.local` or `~/.config`** (#4357),
+/// tried through Claude Code's own sandbox, once its start has made what it makes: the shared
+/// folders are there for tools to use, and no other harness's folder is made or planted. Nothing
+/// a sandbox put there to hold a path stays once the chat ends.
+#[test]
+fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
+    purlis_core::unsteered!();
+    let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
+        return;
+    };
+    let scratch = tempfile::tempdir().expect("a folder");
+    let at = scratch.path().canonicalize().expect("a real folder");
+    let home = at.join("home");
+    let bin = at.join("bin");
+    let root = at.join("project");
+    let tmp = at.join("tmp");
+    for folder in [&home.join(".claude"), &bin, &tmp] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    lay_out(&root, "schema = 1\n");
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::this(),
+    };
+    let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+        .expect("decided")
+        .expect("a sandbox in force");
+    let Decided::Sandboxed(applied) = decided else {
+        panic!("not sandboxed: {decided:?}");
+    };
+    let (level, settings) = settings_for(&root, &machine);
+    applied.make_usual_folders();
+    assert_eq!(level, Level::Floor);
+    let file = at.join("claude.json");
+    fs::write(&file, settings.to_string()).expect("the settings");
+    let screened = purlis_core::harness::claude::project::screen_with(Some(&root), None);
+    let what = "claude-code";
+    let command = format!(
+        "/bin/sh '{}' '{}' '{what}' .codex .local/share/opencode",
+        Path::new(HOME_PATHS)
+            .canonicalize()
+            .expect("the script")
+            .display(),
+        home.display()
+    );
+    let said = ran(
+        &program,
+        &home,
+        &tmp,
+        &root,
+        &file,
+        &screened.setting_sources(),
+        what,
+        command,
+    );
+    assert!(
+        said.lines()
+            .any(|line| line.trim() == "standard-paths: claude-code: 16 checks, 0 wrong"),
+        "not every answer was as it should be:\n{said}"
+    );
+    for gone in [".codex", ".local/share/opencode"] {
+        assert!(
+            fs::symlink_metadata(home.join(gone)).is_err(),
+            "{gone} stayed once the chat ended"
+        );
     }
 }

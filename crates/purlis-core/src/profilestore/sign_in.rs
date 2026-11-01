@@ -60,7 +60,31 @@ pub enum Standing {
     Fetching,
 }
 
+/// **What `purlis profile sign-in <name> --check` exits with where it answers otherwise than
+/// signed in** (#4113): a desktop reads these, never the words beside them. It exits 0 for signed
+/// in, and 1 where it could not answer at all. `docker exec` and `kubectl exec` pass them on.
+pub mod check_exit {
+    /// Its harness says it is not signed in.
+    pub const SIGNED_OUT: u8 = 3;
+    /// Its harness cannot tell.
+    pub const CANNOT_TELL: u8 = 4;
+    /// Its harness is still being fetched, so it cannot say yet.
+    pub const FETCHING: u8 = 5;
+    /// This device keeps no profile of that name.
+    pub const NOT_KEPT: u8 = 6;
+}
+
 impl Standing {
+    /// What `--check` exits with for this answer ([`check_exit`]).
+    pub fn check_exit(self) -> u8 {
+        match self {
+            Standing::SignedIn => 0,
+            Standing::SignedOut => check_exit::SIGNED_OUT,
+            Standing::CannotTell => check_exit::CANNOT_TELL,
+            Standing::Fetching => check_exit::FETCHING,
+        }
+    }
+
     /// The word the window and the command line say it by.
     pub fn word(self) -> &'static str {
         match self {
@@ -380,6 +404,13 @@ pub fn refusal(profile: &Profile, passed: &[String], look: &dyn Look) -> Option<
             title = declared.title,
         )
     })
+}
+
+/// **Whether `said` is [`refusal`]'s**, as a runner's host answered a start with it (#4233): the
+/// runner found the profile signed out only once the chat reached it, and it words that as a
+/// machine of its own, which is not what the person on the desktop is to do.
+pub fn is_refusal(said: &str) -> bool {
+    said.contains("is not signed in on ") && said.contains("Nothing was started.")
 }
 
 /// **A profile a start was refused on**, waiting to be signed in: one per project and profile.

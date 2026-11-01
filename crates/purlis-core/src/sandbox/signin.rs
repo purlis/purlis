@@ -42,6 +42,9 @@ pub struct ProfileFolders {
     /// folder where the chat's environment names one, and in the home where it names none, as
     /// Claude Code reads it (#4083). None for every other harness.
     pub state: Option<PathBuf>,
+    /// The harness's own default config folder on this machine, whatever the chat's environment
+    /// names: what a wrapped Claude Code on another profile is kept from ([`super::Applied`]).
+    pub default_config: Option<PathBuf>,
 }
 
 impl ProfileFolders {
@@ -62,6 +65,7 @@ impl ProfileFolders {
             Harness::Codex => (homes.codex.clone(), None),
             Harness::Opencode => (homes.config.clone(), homes.data.clone()),
         };
+        let default_config = config.clone();
         let named = set(&folders.config_env);
         let state = (harness == Harness::ClaudeCode)
             .then(|| match &named {
@@ -77,8 +81,36 @@ impl ProfileFolders {
             data: set(&folders.data_env).or(data),
             sandbox_only: None,
             state,
+            default_config,
         }
     }
+}
+
+/// **The folder `harness`'s default sign-in is in on `machine`**, whatever a chat's environment
+/// names: Claude Code's and Codex's config folders, and opencode's own folder of its data.
+fn default_sign_in_folder(harness: Harness, machine: &Machine) -> Option<PathBuf> {
+    let folders = ProfileFolders::of(harness, &[], machine);
+    match harness {
+        Harness::ClaudeCode | Harness::Codex => folders.config,
+        Harness::Opencode => folders.data.map(|data| data.join("opencode")),
+    }
+}
+
+/// **Every other harness's default sign-in on `machine`**, each its folder and the files in it:
+/// no chat of `harness` reads or writes the folder, so none moves it aside either, or the files
+/// alone where a chat works inside that folder.
+pub fn other_harnesses_defaults(
+    harness: Harness,
+    machine: &Machine,
+) -> Vec<(PathBuf, Vec<PathBuf>)> {
+    Harness::ALL
+        .into_iter()
+        .filter(|other| *other != harness)
+        .filter_map(|other| {
+            let files = credential_files(other, &ProfileFolders::of(other, &[], machine));
+            Some((default_sign_in_folder(other, machine)?, files))
+        })
+        .collect()
 }
 
 /// The files `harness` keeps a profile's sign-in in, under `folders`: the class each sandbox

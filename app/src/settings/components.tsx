@@ -284,7 +284,13 @@ export type RowIds = {
 };
 
 /** A row's way back to the value beneath it. */
-export type Reset = { label: string; disabled: boolean; onReset: () => void };
+export type Reset = {
+  label: string;
+  disabled: boolean;
+  onReset: () => void;
+  /** Its name where a page has many alike: it starts with `label`, which stays what is heard. */
+  name?: string;
+};
 
 /** **Where a row's value comes from**, when that is not where its group keeps its values: the
  *  level or the file in a word or two (`label`: Team, This machine, Workspace), and the whole
@@ -411,6 +417,7 @@ export function SettingRow({
           {reset && (
             <Button
               isDisabled={reset.disabled}
+              aria-label={reset.name}
               onPress={() => {
                 reset.onReset();
                 // The button goes once the value is gone; the focus goes back to the control.

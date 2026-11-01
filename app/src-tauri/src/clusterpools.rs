@@ -79,6 +79,9 @@ pub struct ClusterPoolAdding {
     pub pool: String,
     /// The cluster operator key Check its key showed, spelled as it showed it.
     pub key: String,
+    /// The longest wait for its runner to be vouched for, in minutes, where the person raised it
+    /// after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
+    pub vouch_wait: Option<u32>,
 }
 
 /// **This machine's `kubectl`, by its absolute path** (#3292,
@@ -209,15 +212,29 @@ pub async fn add_cluster_pool(adding: ClusterPoolAdding) -> Result<ClusterPoolRo
     crate::off_the_window("adding a cluster pool", move || {
         usable(&adding.context, &adding.pool)?;
         let config = config_root()?;
+        let within = vouch_wait_of(&adding)?;
         add_on(
             &config,
             &kubectl(&config)?,
             &adding,
             home().as_deref(),
-            purlis_core::pools::VOUCHED_WITHIN,
+            within,
         )
     })
     .await
+}
+
+/// How long adding this pool waits for the operator: the value it was raised to, checked as any
+/// other, or purlis's default. Only the wait changes: the operator's vouching is asked for all
+/// the same.
+fn vouch_wait_of(adding: &ClusterPoolAdding) -> Result<std::time::Duration, String> {
+    let limit = purlis_core::poollimits::LimitId::VouchWait.limit();
+    let minutes = adding.vouch_wait.map_or(limit.default, u64::from);
+    limit.check(minutes, None)?;
+    limit
+        .unit
+        .as_time(minutes)
+        .ok_or_else(|| format!("{} is a length of time", limit.plain))
 }
 
 /// [`add_cluster_pool`], on `config` with `kubectl`, waiting at most `within` for the operator.
@@ -253,12 +270,36 @@ pub fn add_on(
         pin,
     )
     .map_err(|why| why.to_string())?;
+    let pool = match adding.vouch_wait {
+        Some(minutes) => pool.with_limit(
+            purlis_core::poollimits::LimitId::VouchWait,
+            u64::from(minutes),
+        ),
+        None => pool,
+    };
     let desktop =
         purlis_core::linkkey::desktop(config, &*purlis_core::linkkey::this_builds_keyring(config))?
             .pinned();
-    purlis_core::pools::add_cluster(config, kubectl, &pool, &desktop, within)
-        .map_err(|why| crate::dockerpools::refused_said(&why.to_string()))?;
+    let started = std::time::Instant::now();
+    purlis_core::pools::add_cluster(config, kubectl, &pool, &desktop, within).map_err(|why| {
+        let said = crate::dockerpools::refused_said(&why.to_string());
+        // By this machine's own clock, never the cluster's words.
+        if started.elapsed() >= within {
+            ran_out_vouching(adding.name.trim(), within, &said)
+        } else {
+            said
+        }
+    })?;
     Ok(row(&pool))
+}
+
+/// An add that ran out of the wait `within`, in words the window can ask of for what to raise it
+/// to (spec #4275).
+fn ran_out_vouching(name: &str, within: std::time::Duration, said: &str) -> String {
+    let limit = purlis_core::poollimits::LimitId::VouchWait.limit();
+    let minutes = within.as_secs().div_ceil(60);
+    let hit = limit.waited(minutes, None);
+    format!("{said} {}", purlis_core::poollimits::hit_on(name, hit))
 }
 
 /// **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071, the

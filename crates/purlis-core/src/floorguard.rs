@@ -93,6 +93,11 @@ pub const PUBLISH_FORGE: [(&str, &str, &str); 5] = [
     ("charter", "change", "land"),
 ];
 
+/// **The same floor, for verbs newer than the frozen recording** of [`PUBLISH_FORGE`], which the
+/// corpus replays row by row. `charter skill publish` sends a person's skill to a forge (#2781),
+/// and the command itself refuses without a terminal or inside a chat. This denies it earlier.
+const PUBLISH_SINCE: [(&str, &str, &str); 1] = [("charter", "skill", "publish")];
+
 /// A forge CLI's `(noun, verb)`.
 type ForgeAct = (&'static str, &'static str);
 
@@ -343,7 +348,9 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             if let [noun, verb, ..] = words[..] {
                 // A CLI's own alias of a verb is that verb (#866).
                 let held = merge::canonical_verb(&name, noun, verb);
-                if PUBLISH_FORGE.contains(&(name.as_str(), noun, held)) {
+                if PUBLISH_FORGE.contains(&(name.as_str(), noun, held))
+                    || PUBLISH_SINCE.contains(&(name.as_str(), noun, held))
+                {
                     return Some(format!(
                         "{fix}`{name} {noun} {verb}` publishes or lands code."
                     ));
@@ -445,6 +452,17 @@ mod tests {
 
     fn deny(cmd: &str) -> Option<String> {
         release_floor_reason(cmd, true)
+    }
+
+    #[test]
+    fn an_unattended_run_may_not_publish_a_skill() {
+        for cmd in [
+            "purlis skill publish deploy --to https://x.invalid/a/b",
+            "charter skill publish d",
+        ] {
+            assert!(release_floor_reason(cmd, true).is_some(), "{cmd}");
+        }
+        assert_eq!(release_floor_reason("purlis skill list", true), None);
     }
 
     /// Attended is untouched, whatever the command is.

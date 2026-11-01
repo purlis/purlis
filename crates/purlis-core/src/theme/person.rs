@@ -26,7 +26,8 @@
 //! **The person's colours are drawn over any theme, held to the floors** ([`Layer::over`]): a
 //! colour that would put a pair of the check under its floor, and lower than the theme has it,
 //! is left out with a sentence, and the consent floors are held after them, as after a theme's
-//! own values.
+//! own values. A token the person leaves out follows the colour they set, as it does in a theme
+//! ([`follow_kin`]), and is left out with it.
 //!
 //! **The person's layer is drawn over the theme's** ([`Layer`]): a theme gives a comfortable and
 //! a compact geometry, and the person's density says which is drawn; a font the person names is
@@ -42,11 +43,14 @@ use serde_json::Value;
 use super::check::{self, PAIRS, Pair};
 use super::fonts::{FAMILY_RULE, SLOTS, core_stack, is_family};
 use super::least::{self, Least};
-use super::vocabulary::{TOKENS, is_colour, is_platform};
+use super::vocabulary::{KIN, TOKENS, follow_kin, is_colour, is_platform};
 use super::{Complaint, ResolvedTheme, stringify};
 
 /// The settings `appearance` holds.
 const KEYS: [&str; 5] = ["density", "fonts", "motion", "contrast", "colours"];
+
+/// The modal scrim's token, which [`Layer::over`] holds to [`check::SCRIM_DIM`].
+const SCRIM: &str = "overlay.scrim";
 
 /// How tightly the window is laid out.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
@@ -122,14 +126,28 @@ impl Layer {
     /// **`theme` with the person's colours drawn over it, and its contrast raised**, and what was
     /// left out. Each colour is drawn unless it puts a pair of the check (the theme's [`PAIRS`],
     /// and each ANSI colour on the terminal's background) under its floor and lower than the
-    /// theme has it: such a colour is left out, with a sentence, and the theme's is drawn. Then,
+    /// theme has it: such a colour is left out, with a sentence, and the theme's is drawn, for what
+    /// follows it ([`follow_kin`]) as well. Then,
     /// with more contrast, every pair is raised to its raised floor ([`least::raise`]). The
     /// consent floors are held after this, by [`super::Drawn::under`].
     pub fn over(&self, theme: &ResolvedTheme) -> (ResolvedTheme, Vec<Complaint>) {
         let mut drawn = theme.clone();
         let mut said = Vec::new();
-        for (token, colour) in &self.colours {
-            drawn.values.insert(token, colour.clone());
+        let mut given = self.colours.clone();
+        follow_kin(&mut given, &theme.values);
+        // What is drawn only because it follows a colour of the person's, and that colour.
+        let following: Vec<(&'static str, &'static str)> = KIN
+            .into_iter()
+            .filter(|(token, _)| given.contains_key(token) && !self.colours.contains_key(token))
+            .collect();
+        let source = |token: &'static str| {
+            following
+                .iter()
+                .find(|(kin, _)| *kin == token)
+                .map(|(_, drew)| *drew)
+        };
+        for (token, colour) in given {
+            drawn.values.insert(token, colour);
         }
         let measured = measured_pairs();
         // A colour left out can bring another pair back over its floor, so each round measures
@@ -162,9 +180,11 @@ impl Layer {
                 .copied()
                 .find(|token| puts_right(token))
                 .unwrap_or(mine[0]);
+            // The person set what it follows, so that is the colour left out and named.
+            let out = source(out).unwrap_or(out);
             let with: String = mine
                 .iter()
-                .filter(|token| **token != out)
+                .filter(|token| **token != out && source(token) != Some(out))
                 .map(|token| format!(" with your colour for {token}, {},", drawn.value(token)))
                 .collect();
             said.push(Complaint::about(
@@ -181,6 +201,28 @@ impl Layer {
             ));
             let theirs = theme.value(out).to_owned();
             drawn.values.insert(out, theirs);
+            for (kin, _) in following.iter().filter(|(_, drew)| *drew == out) {
+                drawn.values.insert(*kin, theme.value(kin).to_owned());
+            }
+        }
+        // The scrim is held as a measure of its own, not a pair (#2987). A window's ground or
+        // words of the person's that would thin the theme's scrim break a pair of words above.
+        let dim = check::scrim_dim(&drawn);
+        if drawn.value(SCRIM) != theme.value(SCRIM)
+            && dim < check::SCRIM_DIM
+            && dim < check::scrim_dim(theme)
+        {
+            said.push(Complaint::about(
+                SCRIM,
+                format!(
+                    "your colour for {SCRIM}, {}, is left out in {}: it would move the window \
+                     only {dim}:1, under its floor of {}:1, so the theme's is drawn",
+                    drawn.value(SCRIM),
+                    theme.name,
+                    check::SCRIM_DIM
+                ),
+            ));
+            drawn.values.insert(SCRIM, theme.value(SCRIM).to_owned());
         }
         if self.contrast == Least::More {
             drawn = least::raise(&drawn);

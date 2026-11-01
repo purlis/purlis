@@ -214,7 +214,12 @@ fn the_operator_may_do_exactly_what_it_needs() {
                 "purlis-runner-owner",
                 "get,patch"
             ),
-            ("runners.purlis.dev", "claims", "", "get,list,patch,watch"),
+            (
+                "runners.purlis.dev",
+                "claims",
+                "",
+                "delete,get,list,patch,watch"
+            ),
             ("runners.purlis.dev", "claims/status", "", "patch"),
             ("runners.purlis.dev", "pools", "", "get,list,watch"),
             ("runners.purlis.dev", "pools/status", "", "patch"),
@@ -480,7 +485,11 @@ fn the_operators_right_on_sandboxes_is_narrowed_to_the_mode_of_a_claims_sandbox(
             validations[1]
         );
     }
-    assert!(!validations[1].contains("operatingMode"));
+    // Its mode may change; its template only while it is suspended, in a runner namespace.
+    assert!(!validations[1].contains("object.spec.operatingMode"));
+    assert!(validations[1].contains(
+        "request.namespace.startsWith('purlis-runners-')&&has(oldObject.spec.operatingMode)&&oldObject.spec.operatingMode=='Suspended'"
+    ));
     for field in ["labels", "annotations", "ownerReferences", "finalizers"] {
         assert!(
             validations[2].contains(&format!(

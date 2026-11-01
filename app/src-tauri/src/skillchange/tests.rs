@@ -191,6 +191,8 @@ fn a_router_is_chosen_only_where_it_is_offered_and_taken_out_with_none_3692() {
     let offered = [SkillRouterOffer {
         id: "relevance".to_owned(),
         name: "Relevance".to_owned(),
+        reads_prompts: false,
+        prompts_on: false,
     }];
     let manifest = root.join("workspaces/ops/workspace.json");
 
@@ -222,4 +224,33 @@ fn a_router_is_chosen_only_where_it_is_offered_and_taken_out_with_none_3692() {
         purlis_core::skills::router::written(root, &(&ops).into()),
         None
     );
+}
+
+#[test]
+fn a_router_is_let_read_prompts_only_where_it_says_it_does_and_stopped_anywhere() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = tmp.path();
+    let offer = |reads_prompts| {
+        vec![SkillRouterOffer {
+            id: "relevance".to_owned(),
+            name: "Relevance".to_owned(),
+            reads_prompts,
+            prompts_on: false,
+        }]
+    };
+    let reading = || {
+        purlis_core::extension::read(config, &purlis_core::extension::BuiltIn::none())
+            .registry
+            .reads_prompts
+            .contains("relevance")
+    };
+
+    assert!(reading_prompts(config, "relevance", true, || offer(false)).is_err());
+    assert!(reading_prompts(config, "unknown", true, || offer(true)).is_err());
+    assert!(!reading(), "a refusal writes nothing");
+
+    reading_prompts(config, "relevance", true, || offer(true)).unwrap();
+    assert!(reading());
+    reading_prompts(config, "relevance", false, Vec::new).unwrap();
+    assert!(!reading());
 }

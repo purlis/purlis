@@ -813,6 +813,67 @@ fn a_runners_sign_in_check_is_read_by_its_own_words() {
     assert!(standing_said("work", "'workshop' is signed in on r\n").is_err());
 }
 
+/// **A runner's check is read by how it exited, whatever its words say** (#4113).
+#[test]
+fn a_runners_sign_in_check_is_read_by_its_status_not_its_words() {
+    use crate::profilestore::sign_in::{Standing, check_exit};
+    let reworded = "reworded in some later purlis\n";
+    for (status, standing) in [
+        (check_exit::SIGNED_OUT, Some(Standing::SignedOut)),
+        (check_exit::CANNOT_TELL, Some(Standing::CannotTell)),
+        (check_exit::FETCHING, Some(Standing::Fetching)),
+        (check_exit::NOT_KEPT, None),
+    ] {
+        assert_eq!(
+            standing_answered("work", Some(i32::from(status)), reworded),
+            Ok(standing),
+            "{status}"
+        );
+    }
+    assert_eq!(
+        standing_answered("work", Some(0), reworded),
+        Ok(Some(Standing::SignedIn))
+    );
+    // A status that is no answer, and nothing said, stay refusals.
+    assert!(standing_answered("work", Some(1), reworded).is_err());
+    assert!(standing_answered("work", Some(125), reworded).is_err());
+    assert!(standing_answered("work", None, reworded).is_err());
+    assert!(standing_answered("work", Some(0), " \n").is_err());
+}
+
+/// **A purlis before those statuses is still read by its words** (#4113): it exits 0 for an
+/// answer that is not signed in, and 1 for signed out and for a refusal alike.
+#[test]
+fn a_runner_too_old_for_the_statuses_is_read_by_its_words() {
+    use crate::profilestore::sign_in::Standing;
+    for (status, printed, standing) in [
+        (0, "'work' is signed in on r\n", Standing::SignedIn),
+        (
+            0,
+            "its harness cannot tell whether 'work' is signed in on r; a chat on it starts\n",
+            Standing::CannotTell,
+        ),
+        (
+            0,
+            "its harness is still being fetched on r, so it cannot yet say whether 'work' is \
+             signed in; purlis profile sign-in work signs it in\n",
+            Standing::Fetching,
+        ),
+        (
+            1,
+            "'work' is not signed in on r: purlis profile sign-in work signs it in\n",
+            Standing::SignedOut,
+        ),
+    ] {
+        assert_eq!(
+            standing_answered("work", Some(status), printed),
+            Ok(Some(standing)),
+            "{printed}"
+        );
+    }
+    assert!(standing_answered("work", Some(1), "purlis: no profile named 'work'.\n").is_err());
+}
+
 /// **A plan's driven sign-in names its browser flow**, which has no list to answer, and the
 /// fallback where the browser's answer cannot reach the runner names its device-code flow in a
 /// terminal the person drives, as does the terminal a login restarts in (#4044).
@@ -986,7 +1047,8 @@ impl FakeDocker {
              'container inspect') cat '{inspect}' ;;\n  \
              'volume inspect') cat '{volume}' ;;\n  \
              'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \
-             'info '*) cat '{info}' ;;\n  \
+             'info '*) case \"$*\" in *.ID*) cat '{engine}' 2>/dev/null || true ;; \
+             *) cat '{info}' ;; esac ;;\n  \
              'system df') cat '{df}' ;;\n  \
              'image inspect') cat '{image}' ;;\n  \
              'exec '*) cat > '{input}'; cat '{paired}' ;;\n  \
@@ -1001,6 +1063,7 @@ impl FakeDocker {
             volume = at("volume"),
             volumes = at("volumes"),
             info = at("info"),
+            engine = at("engine"),
             df = at("df"),
             image = at("image"),
             input = at("input"),
@@ -2425,6 +2488,62 @@ fn a_runner_whose_container_docker_no_longer_lists_is_gone_with_or_without_its_h
     );
 }
 
+/// **Only the engine that made a runner says it was removed** (#4166). Another engine lists no
+/// container of its id either, and that says nothing of the runner.
+#[test]
+fn a_runner_is_removed_only_by_the_word_of_the_engine_that_made_it() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("containers", "");
+    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("engine", "engine-a\n");
+    assert_eq!(
+        fake.docker().missing(&made(), Some("engine-a")),
+        Ok(Some(Missing::Removed(Gone { home_kept: true })))
+    );
+    assert_eq!(
+        fake.docker().missing(&made(), Some("engine-b")),
+        Ok(Some(Missing::OnAnotherEngine))
+    );
+}
+
+/// A runner made before the engine was kept is taken at Docker's word, as it was (#4166).
+#[test]
+fn a_runner_with_no_engine_kept_is_taken_at_dockers_word() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("containers", "");
+    fake.set("engine", "engine-a\n");
+    assert_eq!(
+        fake.docker().missing(&made(), None),
+        Ok(Some(Missing::Removed(Gone { home_kept: false })))
+    );
+}
+
+/// An engine that does not say which it is cannot say a runner made on a known engine was
+/// removed (#4166), and a runner it still lists is simply there.
+#[test]
+fn an_engine_that_names_itself_not_says_nothing_of_a_runner_kept_with_one() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("containers", "");
+    assert!(fake.docker().missing(&made(), Some("engine-a")).is_err());
+    fake.set("containers", &format!("{ID}\n"));
+    assert_eq!(fake.docker().missing(&made(), Some("engine-a")), Ok(None));
+}
+
+/// A home's `CreatedAt` is read as Docker printed it, not as a time (#4167).
+#[test]
+fn a_homes_created_at_is_read_as_docker_printed_it() {
+    let fake = FakeDocker::new(&inspected());
+    assert_eq!(fake.docker().home_created(&made()), Ok(None));
+    fake.set(
+        "volume",
+        r#"[{"CreatedAt":"2026-10-31 20:41:07 +0000 UTC"}]"#,
+    );
+    assert_eq!(
+        fake.docker().home_created(&made()),
+        Ok(Some("2026-10-31 20:41:07 +0000 UTC".to_owned()))
+    );
+}
+
 /// A runner stopped or suspended is still listed by Docker, so it is not gone: it resumes as
 /// before (#4149).
 #[test]
@@ -2778,8 +2897,23 @@ fn carried_leaving(
     to: &std::path::Path,
     skip: &str,
 ) -> std::process::Output {
+    carried_under(from, to, skip, &[])
+}
+
+/// [`carried_leaving`], in an image whose environment sets `env`.
+#[cfg(unix)]
+fn carried_under(
+    from: &std::path::Path,
+    to: &std::path::Path,
+    skip: &str,
+    env: &[(&str, &str)],
+) -> std::process::Output {
     let mut command = std::process::Command::new("/bin/sh");
+    for name in ["PURLIS_DATA_HOME", "XDG_DATA_HOME", "CODEX_HOME"] {
+        command.env_remove(name);
+    }
     command
+        .envs(env.iter().copied())
         .arg("-c")
         .arg(COPY_PROFILES)
         .arg("sh")
@@ -2829,9 +2963,7 @@ fn a_carry_leaves_a_profile_signed_out_of_the_pool() {
 /// (`crate::datahome`).
 #[cfg(unix)]
 fn the_stage(to: &std::path::Path) -> std::path::PathBuf {
-    crate::names::DATA_HOME
-        .folder_at(&to.join(".local/share"))
-        .join(crate::profilestore::CARRIED)
+    crate::profilestore::carried_in(&crate::names::DATA_HOME.folder_at(&to.join(".local/share")))
 }
 
 /// **A carry never moves a running runner's data home** (only a migration makes the purlis
@@ -2842,7 +2974,9 @@ fn the_stage(to: &std::path::Path) -> std::path::PathBuf {
 fn a_carry_goes_under_the_data_home_the_runner_has() {
     for (spelling, makes) in [("charter", true), ("purlis", true), ("charter", false)] {
         let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        let signed_in = from.path().join(".claude/.credentials.json");
+        let signed_in = from
+            .path()
+            .join(".local/share/purlis/profiles/work/config/.credentials.json");
         std::fs::create_dir_all(signed_in.parent().unwrap()).unwrap();
         std::fs::write(&signed_in, "{}").unwrap();
         let data = to.path().join(".local/share").join(spelling);
@@ -2851,12 +2985,32 @@ fn a_carry_goes_under_the_data_home_the_runner_has() {
         }
         let out = carried(from.path(), to.path());
         assert!(out.status.success(), "{out:?}");
-        assert!(the_batch(to.path()).join("claude").is_dir());
+        assert!(the_batch(to.path()).join("work").is_dir());
         assert_eq!(
             to.path().join(".local/share/purlis").exists(),
             makes && spelling == "purlis",
             "the purlis spelling is made by a migration alone"
         );
+    }
+}
+
+/// **An image that names its data home by a variable carries nothing**: its runner reads that
+/// folder, so what is carried would wait where no keep takes it in.
+#[cfg(unix)]
+#[test]
+fn an_image_naming_its_data_home_carries_nothing() {
+    for name in ["PURLIS_DATA_HOME", "XDG_DATA_HOME", "CODEX_HOME"] {
+        let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let signed_in = from
+            .path()
+            .join(".local/share/purlis/profiles/work/config/.credentials.json");
+        std::fs::create_dir_all(signed_in.parent().unwrap()).unwrap();
+        std::fs::write(&signed_in, "{}").unwrap();
+
+        let out = carried_under(from.path(), to.path(), "", &[(name, "/elsewhere")]);
+
+        assert!(!out.status.success(), "{name}: {out:?}");
+        assert!(!to.path().join(".local").exists(), "{name}");
     }
 }
 
@@ -2871,7 +3025,9 @@ fn a_link_for_the_data_home_carries_nothing() {
         |at| std::fs::write(at, "a file").unwrap(),
     ] {
         let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        let signed_in = from.path().join(".claude/.credentials.json");
+        let signed_in = from
+            .path()
+            .join(".local/share/purlis/profiles/work/config/.credentials.json");
         std::fs::create_dir_all(signed_in.parent().unwrap()).unwrap();
         std::fs::write(&signed_in, "{}").unwrap();
         let share = to.path().join(".local/share");
@@ -2949,6 +3105,14 @@ fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
         old.join(".local/share/opencode/auth.json"),
     )
     .unwrap();
+    put(
+        old,
+        &format!(
+            ".local/share/purlis/profiles/{}",
+            crate::profilestore::DEFAULTS_HELD
+        ),
+        "",
+    );
     put(to.path(), ".codex/auth.json", "the new runner's own");
 
     let ran = carried(old, to.path());
@@ -2995,7 +3159,7 @@ fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
     );
     for not in [
         ".claude",
-        ".local/share/purlis/profiles",
+        ".local/share/purlis/profiles/work",
         ".config",
         ".claude.json",
         ".local/share/opencode",
@@ -3027,7 +3191,9 @@ fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
 fn a_carry_writes_nothing_through_a_link_on_its_way() {
     let from = tempfile::tempdir().unwrap();
     let to = tempfile::tempdir().unwrap();
-    let signed = from.path().join(".claude/.credentials.json");
+    let signed = from
+        .path()
+        .join(".local/share/purlis/profiles/work/config/.credentials.json");
     std::fs::create_dir_all(signed.parent().unwrap()).unwrap();
     std::fs::write(&signed, "claude's sign-in").unwrap();
     let project = to.path().join("project");
@@ -3036,11 +3202,52 @@ fn a_carry_writes_nothing_through_a_link_on_its_way() {
         .path()
         .join(crate::profilestore::carried_under_a_runner_home());
     std::fs::create_dir_all(stage.parent().unwrap()).unwrap();
-    std::os::unix::fs::symlink("../../../project", &stage).unwrap();
+    std::os::unix::fs::symlink("../../../../project", &stage).unwrap();
 
     carried(from.path(), to.path());
 
     assert_eq!(std::fs::read_dir(&project).unwrap().count(), 0);
+}
+
+/// **A runner that left no mark carries no default-folder sign-in**: its profiles' it does.
+#[cfg(unix)]
+#[test]
+fn a_runner_with_no_mark_carries_no_default_folder() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    for file in [
+        ".claude/.credentials.json",
+        ".local/share/purlis/profiles/work/config/.credentials.json",
+    ] {
+        let at = from.path().join(file);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, "a sign-in").unwrap();
+    }
+
+    let ran = carried(from.path(), to.path());
+
+    assert!(ran.status.success(), "{ran:?}");
+    let batch = the_batch(to.path());
+    assert!(batch.join("work").is_dir());
+    assert!(!batch.join("claude").exists());
+}
+
+/// **A carry takes nothing through a link inside the old home either**: a profile's folder that
+/// is a link to a harness's default folder there is passed over.
+#[cfg(unix)]
+#[test]
+fn a_carry_takes_nothing_through_a_link_inside_the_old_home() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let own = from.path().join(".claude");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join(".credentials.json"), "the default folder's").unwrap();
+    let profile = from.path().join(".local/share/purlis/profiles/work");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::os::unix::fs::symlink(&own, profile.join("config")).unwrap();
+
+    let ran = carried(from.path(), to.path());
+
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(std::fs::read_dir(the_stage(to.path())).unwrap().count(), 0);
 }
 
 /// A home with no sign-in carries nothing, and a sign-in that cannot be read is passed over: the
@@ -3060,7 +3267,9 @@ fn a_home_with_no_sign_in_or_one_unread_carries_nothing_and_ends_well() {
     let stage = the_stage(to.path());
     assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
 
-    let locked = from.path().join(".codex/auth.json");
+    let locked = from
+        .path()
+        .join(".local/share/purlis/profiles/work/config/.credentials.json");
     std::fs::create_dir_all(locked.parent().unwrap()).unwrap();
     std::fs::write(&locked, "codex's sign-in").unwrap();
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
@@ -3103,4 +3312,39 @@ fn a_sign_out_in_a_terminal_is_typed_with_a_terminal() {
     let args = made().sign_out_in_a_terminal_args("work");
     assert_eq!(args[..2], ["exec", "-it"]);
     assert_eq!(args[args.len() - 3..], ["profile", "sign-out", "work"]);
+}
+
+/// **A standing is asked with `--check` alone** (#4164): a login's `--until-input-ends` is left
+/// out, since the runner's `purlis` refuses the two together.
+#[cfg(unix)]
+#[test]
+fn a_standing_is_not_held_to_its_input() {
+    let login = crate::profilestore::sign_in::Login {
+        program: "/bin/sh".to_owned(),
+        args: vec![
+            "-c".to_owned(),
+            "case \"$*\" in *--until-input-ends*) echo refused;; *--check*) echo \"'work' is not \
+             signed in\" >&2; exit 3;; esac"
+                .to_owned(),
+            "sh".to_owned(),
+            "--until-input-ends".to_owned(),
+        ],
+        env: Vec::new(),
+        cleared: Vec::new(),
+    };
+    assert_eq!(
+        standing_by_login(&login, "work"),
+        Ok(Some(crate::profilestore::sign_in::Standing::SignedOut))
+    );
+}
+
+#[test]
+fn a_runner_is_told_the_image_it_runs() {
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
+    let told = format!(
+        "{}={}",
+        crate::sandbox::tools::POOL_IMAGE_VAR,
+        image().as_str()
+    );
+    assert!(has_pair(&args, "--env", &told), "{args:?}");
 }

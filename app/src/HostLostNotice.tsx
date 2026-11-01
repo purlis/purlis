@@ -15,7 +15,8 @@ export const LOST = "chat-lost-with-the-host";
  * The session host the chat ran in ended unexpectedly, and the chat's program ended with it.
  * The core keeps how that left the chat's run (`chat-lost-with-the-host`), and this says it:
  * **failed**, in the middle of a turn that is lost, or **hibernated**, idle at a turn's end
- * with nothing lost. It offers
+ * with nothing lost. A chat whose host was a pool's runner, gone for good, says that instead:
+ * its conversation went with the runner's home, so nothing can be resumed (#4350). It offers
  *
  * - **Resume**: the chat's restart on its conversation (`onRestart`), one click, where it has a
  *   conversation to resume;
@@ -43,20 +44,23 @@ export function HostLostNotice({
       .finally(read);
   };
 
-  const said =
-    lost.left_in === "hibernated"
+  const said = lost.with_the_runner
+    ? `${offScreen ? "That chat" : "This chat"} ended with its pool's runner, which this machine no longer keeps, and its conversation was on that runner.`
+    : lost.left_in === "hibernated"
       ? `purlis's session host stopped unexpectedly while ${chat} was waiting for you, so nothing was lost.`
       : `purlis's session host stopped unexpectedly in the middle of ${chat}'s turn, so that turn was lost.`;
   const next = lost.resumable
     ? " Resume starts it again on its conversation."
-    : " It named no conversation to resume, so start a new chat to go on.";
+    : lost.with_the_runner
+      ? " Start a new chat to go on."
+      : " It named no conversation to resume, so start a new chat to go on.";
 
   return (
     <Notice
       cause={`chat-lost-with-the-host:${session}`}
       at="pane"
       tone="trouble"
-      label="Session host stopped"
+      label={lost.with_the_runner ? "Ended with its runner" : "Session host stopped"}
       fixes={
         lost.resumable
           ? [

@@ -411,7 +411,11 @@ export const ASKS_A_LONG_PERMISSION = join(THE_RUNS_TREE, "asks-a-long-permissio
  */
 export const LONG_ASKED_COMMAND = `echo a long ask the Inbox reads whole and wraps ${"/a-folder-name-that-runs-on".repeat(5)}xx`;
 
-export function writeReportingShell(fakeHarness: string, charter: string): string {
+export function writeReportingShell(
+  fakeHarness: string,
+  charter: string,
+  namesItsConversation = false,
+): string {
   const where = join(THE_RUNS_TREE, "shells");
   mkdirSync(where, { recursive: true });
   const shell = join(where, "reporting-harness-as-a-shell");
@@ -429,6 +433,13 @@ export function writeReportingShell(fakeHarness: string, charter: string): strin
       "# Codex's rule is the narrow one this stand-in actually meets: the first report of a",
       "# chat is adopted. Declaring it as the kind it BEHAVES like is honest; teaching it to",
       "# impersonate a Claude Code would be a fixture testing itself.",
+      // Codex and opencode name their conversation in their first report, and a chat with none
+      // has nothing to restart on (`wdio.outcome.conf.ts`).
+      ...(namesItsConversation
+        ? [
+            `printf '{"session_id":"scenario","hook_event_name":"SessionStart","source":"startup"}' | ${JSON.stringify(charter)} hook sessionstart >/dev/null`,
+          ]
+        : []),
       "# The turn's rising edge, before a byte of output exists.",
       `${JSON.stringify(charter)} hook userpromptsubmit </dev/null`,
       `exec ${JSON.stringify(fakeHarness)} \\`,

@@ -205,10 +205,11 @@
   content: attr(data-count) / "";
 }
 
-/* **What waits on the person is hot** (R120): the needs-you count's own colours. */
+/* **What waits on the person is hot** (R120): the hot count's own role (#3098), which a theme
+   restyles through its tokens; a count rule of `parts` never reaches it. */
 [data-scope="activity"][data-part="count"][data-tone="needs-you"] {
-  background-color: var(--needs-you-base);
-  color: var(--needs-you-text);
+  background-color: var(--needs-you-count);
+  color: var(--needs-you-count-text);
 }
 
 /* What the count says, for the item's description: read out, not drawn. */

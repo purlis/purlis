@@ -547,6 +547,22 @@ describe("while you were away (#1514)", () => {
     );
   });
 
+  // #4304: a screen reader's press is a click and nothing before it. It lands on the first row,
+  // as a key's does; a pointer's lands on the list.
+  it("lands a screen reader's open of a part's list on its first row", async () => {
+    const held = await drawn();
+    await leave();
+    await whileAway(held);
+    await comeBack(LEFT + 30 * MINUTE);
+    const notice = await theSummary();
+
+    fireEvent.click(within(notice).getByRole("button", { name: "2 waiting on you" }));
+    const waiting = await screen.findByRole("menu", { name: "2 waiting on you" });
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(waiting).getAllByRole("menuitem")[0]),
+    );
+  });
+
   it("puts itself away on Dismiss, and nothing that waits for an answer", async () => {
     const held = await drawn();
     await leave();

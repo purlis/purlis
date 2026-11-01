@@ -3,7 +3,8 @@
 # The operator's `patch` on upstream's sandboxes, narrowed by the cluster (#2058): RBAC cannot
 # name a field or an owner, so this policy refuses any change the operator's service account
 # makes to a Sandbox but its spec.operatingMode, and any change at all to a Sandbox no
-# SandboxClaim controls. The operator may not change policies or their bindings, so it cannot
+# SandboxClaim controls. Its spec.podTemplate may change only on a Sandbox already Suspended in a
+# runner namespace (#3982, ruled 2026-11-01): a kept runner next starts on its pool's image. The operator may not change policies or their bindings, so it cannot
 # lift this. Kept when the release is uninstalled, as the policy on Claims is.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
@@ -37,7 +38,9 @@ spec:
     # (operator/tests/the_install_manifests.rs holds the list to the vendored definitions).
     - expression: >-
         has(object.spec.podTemplate) == has(oldObject.spec.podTemplate) &&
-        (!has(object.spec.podTemplate) || object.spec.podTemplate == oldObject.spec.podTemplate) &&
+        (!has(object.spec.podTemplate) || object.spec.podTemplate == oldObject.spec.podTemplate ||
+        (request.namespace.startsWith('purlis-runners-') && has(oldObject.spec.operatingMode) &&
+        oldObject.spec.operatingMode == 'Suspended')) &&
         has(object.spec.service) == has(oldObject.spec.service) &&
         (!has(object.spec.service) || object.spec.service == oldObject.spec.service) &&
         has(object.spec.shutdownPolicy) == has(oldObject.spec.shutdownPolicy) &&
@@ -46,7 +49,9 @@ spec:
         (!has(object.spec.shutdownTime) || object.spec.shutdownTime == oldObject.spec.shutdownTime) &&
         has(object.spec.volumeClaimTemplates) == has(oldObject.spec.volumeClaimTemplates) &&
         (!has(object.spec.volumeClaimTemplates) || object.spec.volumeClaimTemplates == oldObject.spec.volumeClaimTemplates)
-      message: purlis's cluster operator changes only a Sandbox's spec.operatingMode.
+      message: >-
+        purlis's cluster operator changes only a Sandbox's spec.operatingMode, and its
+        spec.podTemplate only while it is Suspended in a runner namespace.
       reason: Forbidden
     - expression: >-
         has(object.metadata.labels) == has(oldObject.metadata.labels) &&

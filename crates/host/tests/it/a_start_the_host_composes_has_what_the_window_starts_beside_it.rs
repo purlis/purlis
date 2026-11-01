@@ -122,6 +122,7 @@ impl Record for Log {
 }
 
 struct Linked {
+    hosting: Hosting,
     client: Client,
     runs: StandIns,
     confines: StandInConfines,
@@ -142,6 +143,7 @@ async fn linked_as(scope: Scope) -> Linked {
     );
     let hosting = Hosting::with(ComposesItself, runs.clone(), Hears, confines.clone())
         .recording_with(log.clone());
+    let kept = hosting.clone();
     let (a, b) = duplex(256 * 1024);
     let (client, served) = tokio::join!(
         link::connect(
@@ -175,6 +177,7 @@ async fn linked_as(scope: Scope) -> Linked {
         Client::new(client.unwrap()).0
     };
     Linked {
+        hosting: kept,
         client,
         runs,
         confines,
@@ -278,6 +281,61 @@ async fn a_start_with_no_launch_runs_with_its_token_in_a_confinement_of_its_own(
         linked.confines.ended(&started.confinement)
     })
     .await;
+}
+
+/// **A profile is held to forget only with nothing on it** (#4142): a chat on it keeps it, and
+/// where forgetting it deletes a harness's own folders, so does a chat on no profile there, or
+/// one that named no harness. While it is held, no start on what goes begins.
+#[tokio::test]
+async fn a_profile_is_held_to_forget_only_with_no_chat_on_it() {
+    let linked = linked().await;
+    let named = |profile: Option<&str>, harness: Option<&str>| StartProgram {
+        profile: profile.map(str::to_owned),
+        harness: harness.map(str::to_owned),
+        ..composed(None)
+    };
+    let adopted = |name: &str, harness: &str| linked.hosting.hold_to_forget(name, Some(harness));
+
+    let held = adopted("claude", "claude").expect("held");
+    for refused in [
+        named(None, Some("claude")),
+        named(None, None),
+        named(Some("claude"), None),
+    ] {
+        linked.client.start_program(refused).await.unwrap_err();
+    }
+    linked
+        .client
+        .start_program(named(Some("work"), Some("claude")))
+        .await
+        .expect("on another profile, it does not use them");
+    linked
+        .client
+        .start_program(named(None, Some("codex")))
+        .await
+        .expect("another harness");
+    drop(held);
+
+    assert!(
+        linked.hosting.hold_to_forget("work", None).is_err(),
+        "a chat on it"
+    );
+    assert!(adopted("codex", "codex").is_err(), "a chat on no profile");
+    assert!(adopted("claude", "claude").is_ok());
+
+    linked
+        .client
+        .start_program(named(None, None))
+        .await
+        .expect("started");
+    assert!(
+        adopted("claude", "claude").is_err(),
+        "the project's default may be it"
+    );
+    assert!(
+        linked.hosting.hold_to_forget("other", None).is_ok(),
+        "a made profile's folder is its own"
+    );
 }
 
 #[tokio::test]

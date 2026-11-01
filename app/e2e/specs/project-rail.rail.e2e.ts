@@ -3,6 +3,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { $, browser, expect } from "@wdio/globals";
+import { hearAnimations } from "../animations.js";
 import { DEFAULT_WINDOW, theWindowHoldsTheRail, windowAt } from "../rail.js";
 
 /**
@@ -256,15 +257,20 @@ describe("the project rail", () => {
       timeoutMsg: "the rail's column never closed",
     });
 
+    const peek = '[data-scope="rail"][data-part="column"][data-peek]';
+    const coming = await hearAnimations(peek);
     await pointerAt(2);
     await browser.waitUntil(async () => (await seen()).peek, {
       timeout: 5_000,
       timeoutMsg: "the pointer at the edge never peeked the rail",
     });
+    await coming.until(peek, "rail-peek-in");
     // Over the content: the column stays closed.
     expect(Math.round((await seen()).width)).toBe(0);
 
+    const going = await hearAnimations(peek);
     await pointerAt(200);
+    await going.until(peek, "rail-peek-out");
     await browser.waitUntil(async () => !(await seen()).peek, {
       timeout: 5_000,
       timeoutMsg: "the peek never left once the pointer was away from the edge",
