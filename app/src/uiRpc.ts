@@ -1580,6 +1580,9 @@ export const commands = {
 	approveRunnerDispatch: __WINDOW_ONLY_RESULT,
 	refuseRunnerDispatch: __WINDOW_ONLY_RESULT,
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
+	followProjectChatsRunOn: __WINDOW_ONLY_RESULT,
+	projectChatsRunOn: __WINDOW_ONLY_RESULT,
+	setProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
 	setSendLeavesOut: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */

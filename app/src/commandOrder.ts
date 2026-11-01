@@ -117,7 +117,7 @@ export const LANES = {
   workLink: { reads: ["chatWorkItem"], changes: ["chatWorkLink", "chatWorkUnlink"] },
   /** This machine's store: the person's pins in a project, by its path. */
   pins: {
-    reads: ["planePins", "chatsRunOn"],
+    reads: ["planePins", "chatsRunOn", "projectChatsRunOn"],
     changes: [
       "pinProject",
       "pinWorkspace",
@@ -125,6 +125,8 @@ export const LANES = {
       "pinOnThisMachine",
       // Where a workspace's chats run (#2046): kept beside the pins, in the same store.
       "setChatsRunOn",
+      "followProjectChatsRunOn",
+      "setProjectChatsRunOn",
     ],
   },
 } as const satisfies Record<

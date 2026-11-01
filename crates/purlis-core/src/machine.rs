@@ -150,7 +150,7 @@
 //! Whether a remembered path is still *there*, and still a plane, is a different question and
 //! is deliberately **not** asked on the read path — see [`still_a_plane`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
@@ -1042,6 +1042,49 @@ pub struct Recent {
     /// this machine. A pool is named here, never defined: what it is, and its runner, are in
     /// `runners.json` ([`crate::runners`]), and a name not kept there starts no chat.
     pub chats_run_on: BTreeMap<String, String>,
+    /// The workspaces the person set to this machine (#4536), which a project's pool doesn't
+    /// reach. A workspace in neither this nor [`Self::chats_run_on`] follows the project.
+    pub chats_run_here: BTreeSet<String>,
+    /// The pool this plane's workspaces run their chats on where a workspace says nothing, on
+    /// this machine (#4536, ruled 2026-11-01). Named here and defined in `runners.json`, as
+    /// [`Self::chats_run_on`] is.
+    pub project_chats_run_on: Option<String>,
+}
+
+impl Recent {
+    /// Takes the removed pool `name` out of every level that names it.
+    pub fn forget_pool(&mut self, name: &str) {
+        self.chats_run_on.retain(|_, pool| pool != name);
+        if self.project_chats_run_on.as_deref() == Some(name) {
+            self.project_chats_run_on = None;
+        }
+    }
+}
+
+/// **What a start itself chose** (#4536): the first level of the order in [`Store::chat_place`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartChoice {
+    ThisMachine,
+    Pool(String),
+}
+
+/// Which level decided where a chat runs, so the window can say why (#4536).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaceLevel {
+    Start,
+    Workspace,
+    Project,
+    /// No level said anything: purlis's own default.
+    Default,
+}
+
+/// Where a chat would run, and the level that decided it (#4536). `pool` is `None` for this
+/// machine.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ChatPlace {
+    pub pool: Option<String>,
+    pub level: PlaceLevel,
 }
 
 /// One window, and the planes it had open as tabs.
@@ -1278,6 +1321,8 @@ impl Store {
                 pinned_workspaces: Vec::new(),
                 most_active_pinned: false,
                 chats_run_on: BTreeMap::new(),
+                chats_run_here: BTreeSet::new(),
+                project_chats_run_on: None,
             },
         };
         self.recents.insert(0, entry);
@@ -1441,7 +1486,7 @@ impl Store {
     }
 
     /// **Sets where `workspace` of `plane` runs its chats on this machine** (#2679): on `pool`, or
-    /// on this machine where it is `None`. Answers whether anything changed. A pool's name is
+    /// where it is `None`, wherever the project says (#4536). Answers whether anything changed. A pool's name is
     /// checked as a name only: whether this machine keeps it is asked as each chat starts, so a
     /// pool removed later starts no chat and says so ([`crate::runners::runner_for`]).
     pub fn set_chats_run_on(
@@ -1458,8 +1503,11 @@ impl Store {
             return Err("purlis does not remember that project, so nothing was set.".to_owned());
         };
         let Some(pool) = pool else {
-            return Ok(entry.chats_run_on.remove(workspace).is_some());
+            let named = entry.chats_run_on.remove(workspace).is_some();
+            let here = entry.chats_run_here.remove(workspace);
+            return Ok(named || here);
         };
+        entry.chats_run_here.remove(workspace);
         if !entry.chats_run_on.contains_key(workspace)
             && entry.chats_run_on.len() >= MOST_CHATS_RUN_ON
         {
@@ -1474,8 +1522,79 @@ impl Store {
             != Some(pool))
     }
 
-    /// Which pool `workspace` of `plane` runs its chats on, on this machine: `None` is this
-    /// machine (#2679).
+    /// **Sets `workspace` of `plane` to this machine, whatever the project says** (#4536).
+    /// Answers whether anything changed.
+    pub fn set_chats_run_here(&mut self, plane: &Path, workspace: &str) -> Result<bool, String> {
+        usable_workspace(workspace).map_err(|why| format!("The workspace's name {why}."))?;
+        let Some(entry) = self.recents.iter_mut().find(|one| one.plane == plane) else {
+            return Err("purlis does not remember that project, so nothing was set.".to_owned());
+        };
+        if !entry.chats_run_here.contains(workspace)
+            && entry.chats_run_here.len() >= MOST_CHATS_RUN_ON
+        {
+            return Err(format!(
+                "purlis sets at most {MOST_CHATS_RUN_ON} workspaces of one project to this machine."
+            ));
+        }
+        let named = entry.chats_run_on.remove(workspace).is_some();
+        let here = entry.chats_run_here.insert(workspace.to_owned());
+        Ok(named || here)
+    }
+
+    /// **Sets the pool `plane`'s workspaces run their chats on by default, on this machine**
+    /// (#4536): `None` is this machine. Answers whether anything changed.
+    pub fn set_project_chats_run_on(
+        &mut self,
+        plane: &Path,
+        pool: Option<&str>,
+    ) -> Result<bool, String> {
+        if let Some(pool) = pool {
+            crate::runners::usable_pool_name(pool)?;
+        }
+        let Some(entry) = self.recents.iter_mut().find(|one| one.plane == plane) else {
+            return Err("purlis does not remember that project, so nothing was set.".to_owned());
+        };
+        let changed = entry.project_chats_run_on.as_deref() != pool;
+        entry.project_chats_run_on = pool.map(str::to_owned);
+        Ok(changed)
+    }
+
+    /// **Where a chat of `workspace` in `plane` runs, and which level says so** (#4536, ruled
+    /// 2026-11-01): the start's own choice, then the workspace's, then the project's, then this
+    /// machine. This is the one place that order is written. Whether a pool it names is kept is
+    /// asked by [`crate::pools::chat_place`], which refuses one that isn't.
+    pub fn chat_place(
+        &self,
+        plane: &Path,
+        workspace: &str,
+        start: Option<&StartChoice>,
+    ) -> ChatPlace {
+        let place = |pool: Option<&str>, level| ChatPlace {
+            pool: pool.map(str::to_owned),
+            level,
+        };
+        match start {
+            Some(StartChoice::Pool(pool)) => return place(Some(pool), PlaceLevel::Start),
+            Some(StartChoice::ThisMachine) => return place(None, PlaceLevel::Start),
+            None => {}
+        }
+        let Some(entry) = self.recent(plane) else {
+            return place(None, PlaceLevel::Default);
+        };
+        if let Some(pool) = entry.chats_run_on.get(workspace) {
+            return place(Some(pool), PlaceLevel::Workspace);
+        }
+        if entry.chats_run_here.contains(workspace) {
+            return place(None, PlaceLevel::Workspace);
+        }
+        match &entry.project_chats_run_on {
+            Some(pool) => place(Some(pool), PlaceLevel::Project),
+            None => place(None, PlaceLevel::Default),
+        }
+    }
+
+    /// Which pool `workspace` of `plane` names for its chats, at its own level alone: `None` is
+    /// no pool (#2679). [`Self::chat_place`] says where its chats run.
     pub fn chats_run_on(&self, plane: &Path, workspace: &str) -> Option<&str> {
         self.recent(plane)?
             .chats_run_on
@@ -1526,6 +1645,12 @@ impl Store {
         // Where its chats run goes with it, unless the new name already has its own (#2679).
         if let Some(pool) = entry.chats_run_on.remove(old) {
             entry.chats_run_on.entry(new.to_owned()).or_insert(pool);
+            changed = true;
+        }
+        if entry.chats_run_here.remove(old) {
+            if !entry.chats_run_on.contains_key(new) {
+                entry.chats_run_here.insert(new.to_owned());
+            }
             changed = true;
         }
         changed
@@ -2387,6 +2512,8 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false),
             chats_run_on: chats_run_on_of(raw.get("chatsRunOn"), dropped),
+            chats_run_here: chats_run_here_of(raw.get("chatsRunHere")),
+            project_chats_run_on: project_chats_run_on_of(raw.get("projectChatsRunOn"), dropped),
         });
     }
 
@@ -2478,6 +2605,42 @@ fn pinned_workspaces_of(
 /// Where each workspace runs its chats, off one entry (#2679), with every refusal recorded. A
 /// workspace or pool name purlis would not write is dropped, and that workspace runs its chats
 /// on this machine.
+/// The workspaces set to this machine. A name purlis wouldn't write is left out: it would only
+/// have said this machine, and a workspace named by nothing else follows its project.
+fn chats_run_here_of(raw: Option<&serde_json::Value>) -> BTreeSet<String> {
+    raw.and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|workspace| usable_workspace(workspace).is_ok())
+        .take(MOST_CHATS_RUN_ON)
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The project's pool, dropped with a reason where it's not a name purlis would write, as a
+/// workspace's is.
+fn project_chats_run_on_of(
+    raw: Option<&serde_json::Value>,
+    dropped: &mut Vec<Dropped>,
+) -> Option<String> {
+    let raw = raw?;
+    let named = raw
+        .as_str()
+        .ok_or_else(|| "names no pool".to_owned())
+        .and_then(|pool| crate::runners::usable_pool_name(pool).map(|()| pool.to_owned()));
+    match named {
+        Ok(pool) => Some(pool),
+        Err(why) => {
+            dropped.push(Dropped::RunsOn {
+                workspace: String::new(),
+                why: format!("as the project's default {why}"),
+            });
+            None
+        }
+    }
+}
+
 fn chats_run_on_of(
     raw: Option<&serde_json::Value>,
     dropped: &mut Vec<Dropped>,
@@ -2692,6 +2855,12 @@ struct RecentOnDisk {
     /// Left out while every workspace runs its chats on this machine (#2679).
     #[serde(rename = "chatsRunOn", skip_serializing_if = "BTreeMap::is_empty")]
     chats_run_on: BTreeMap<String, String>,
+    /// Left out while no workspace is set to this machine (#4536).
+    #[serde(rename = "chatsRunHere", skip_serializing_if = "Vec::is_empty")]
+    chats_run_here: Vec<String>,
+    /// Left out while the project names no pool (#4536).
+    #[serde(rename = "projectChatsRunOn", skip_serializing_if = "Option::is_none")]
+    project_chats_run_on: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -2779,6 +2948,13 @@ impl From<&Store> for OnDisk {
                             .take(MOST_CHATS_RUN_ON)
                             .map(|(workspace, pool)| (workspace.clone(), pool.clone()))
                             .collect(),
+                        chats_run_here: entry
+                            .chats_run_here
+                            .iter()
+                            .take(MOST_CHATS_RUN_ON)
+                            .cloned()
+                            .collect(),
+                        project_chats_run_on: entry.project_chats_run_on.clone(),
                         trust: entry.trust.as_ref().map(|trust| TrustOnDisk {
                             approved: trust.approved,
                             plugins: trust.contributed.plugins.clone(),

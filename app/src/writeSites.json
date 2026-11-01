@@ -193,6 +193,16 @@
       "by": ["setChatsRunOn"]
     },
     {
+      "at": "dockerpools.rs follow_project_chats_run_on_at",
+      "writes": "this machine's store: the pins",
+      "by": ["followProjectChatsRunOn"]
+    },
+    {
+      "at": "dockerpools.rs set_project_chats_run_on_at",
+      "writes": "this machine's store: the pins",
+      "by": ["setProjectChatsRunOn"]
+    },
+    {
       "at": "planes.rs forget",
       "writes": "this machine's store: the pins",
       "by": ["forgetProject"]

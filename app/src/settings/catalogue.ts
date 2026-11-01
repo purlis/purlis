@@ -48,6 +48,7 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "project.sandbox.personas", label: "Persona hosts" },
     { id: "project.sandbox.network", label: "Network" },
     { id: "project.dispatch", label: "Dispatch" },
+    { id: "project.runs", label: "Runs on" },
     { id: "project.forges", label: "Forges" },
     { id: "project.extensions", label: "Extensions" },
     { id: "project.theme", label: "Theme" },

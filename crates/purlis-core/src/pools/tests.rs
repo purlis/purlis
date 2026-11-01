@@ -3050,4 +3050,38 @@ fn a_shape_change_is_refused_as_a_new_pool_would_be_and_a_reset_is_a_change_back
             .unwrap()
             .is_empty()
     );
+
+#[test]
+fn a_project_pool_this_machine_does_not_keep_starts_nothing_and_never_runs_here() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let plane = plane.path();
+    for workspace in ["ide", "web", "here"] {
+        let folder = plane.join("workspaces").join(workspace);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("workspace.json"), "{}").unwrap();
+    }
+    crate::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store.set_project_chats_run_on(plane, Some("first")).unwrap();
+        store.set_chats_run_on(plane, "web", Some("second")).unwrap();
+        store.set_chats_run_here(plane, "here").unwrap();
+    })
+    .unwrap();
+    let refused = runs_on(config.path(), plane, Some("ide")).unwrap_err();
+    assert!(refused.starts_with("This project runs its chats on pool first"), "{refused}");
+    assert_eq!(runs_on(config.path(), plane, Some("here")), Ok(None));
+    // A chat at the project's root moves no clone, so it stays here.
+    assert_eq!(runs_on(config.path(), plane, None), Ok(None));
+    assert_eq!(
+        workspaces_on_pools(config.path(), plane),
+        [
+            ("first".to_owned(), vec!["ide".to_owned()]),
+            ("second".to_owned(), vec!["web".to_owned()]),
+        ]
+        .into()
+    );
+    let chosen = crate::machine::StartChoice::Pool("gone".to_owned());
+    let refused = chat_place(config.path(), plane, Some("here"), Some(&chosen)).unwrap_err();
+    assert!(refused.starts_with("This chat was to start on pool gone"), "{refused}");
 }
