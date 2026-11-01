@@ -455,7 +455,9 @@ export const SkillsChip = memo(function SkillsChip({
   const said = useContext(ChatSkillSetsHere)[session];
   if (!on || said === undefined) return null;
   // The scope only aims each need's fix, which the view offers and the chip does not.
-  const needs = chatNeedsOf(said, AT_THE_ROOT);
+  // Not a prompt's routing (#4297): this set is not read as prompts go by, so it would stand stale.
+  const start = said.routing === null ? null : { ...said.routing, last_prompt: null };
+  const needs = chatNeedsOf({ ...said, routing: start }, AT_THE_ROOT);
   const warning = needs.length === 0 ? undefined : needs.map((one) => one.title).join(" · ");
   const tip =
     warning === undefined ? `${SHOW_THIS_CHATS_SKILLS}.` : `${warning}. ${SHOW_THIS_CHATS_SKILLS}.`;

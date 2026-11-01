@@ -1065,6 +1065,8 @@ const MOST_MEASURED: usize = 1024 * 1024;
 pub struct SettingsRead {
     pub files: Vec<(String, Vec<u8>)>,
     pub left_behind: Vec<(String, u64)>,
+    /// What an import would not copy, each with why (a link, a file named like a credential).
+    pub skipped: Vec<String>,
 }
 
 /// **The settings files `kind`'s settings folder `config` holds, as an import reads them**
@@ -1083,7 +1085,7 @@ pub fn settings_read(
 ) -> Result<SettingsRead, String> {
     let mut files = Vec::new();
     let mut left_behind = Vec::new();
-    settings_walked(
+    let skipped = settings_walked(
         kind,
         config,
         Sink::Memory {
@@ -1095,7 +1097,11 @@ pub fn settings_read(
             wanted,
         },
     )?;
-    Ok(SettingsRead { files, left_behind })
+    Ok(SettingsRead {
+        files,
+        left_behind,
+        skipped,
+    })
 }
 
 /// **What [`settings_read`] would find, by whole, with no file read** (#4081), so what stays
@@ -1114,9 +1120,10 @@ pub fn settings_measured(kind: &str, config: &Path) -> Result<Measured, String> 
     Ok(wholes)
 }
 
-/// Walks `kind`'s settings folder `config` as an import does, into `into`.
+/// Walks `kind`'s settings folder `config` as an import does, into `into`. What it left out, each
+/// with why.
 #[cfg(unix)]
-fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<(), String> {
+fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<Vec<String>, String> {
     use rustix::fs::{Mode, OFlags};
     let (_, allowed) = harness_of(kind)?;
     let from = settings_dest(allowed, config);
@@ -1170,7 +1177,8 @@ fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<(), Stri
             from.display(),
             crate::rewrite::os_words(&e)
         )
-    })
+    })?;
+    Ok(copied.skipped)
 }
 
 /// No settings are read where there is no descriptor-relative open to read them with safely.

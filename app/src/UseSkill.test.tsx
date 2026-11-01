@@ -398,6 +398,18 @@ describe("the Skills chip on a chat's pane", () => {
     const quiet = await chipOf(held({ routing: { ...fellBack, fell_back: false } }));
     expect(quiet.hasAttribute("data-over")).toBe(false);
     cleanup();
+    // A prompt's routing is not read as prompts go by, so the chip does not say it (#4297).
+    const prompted = await chipOf(
+      held({
+        routing: {
+          ...fellBack,
+          fell_back: false,
+          last_prompt: { fell_back: true, said: "Its last prompt went on." },
+        },
+      }),
+    );
+    expect(prompted.hasAttribute("data-over")).toBe(false);
+    cleanup();
     // Several, each named, in the view's order.
     const many = await chipOf(
       held({ budget: { ...BUDGET, warns: "both" }, routing: fellBack, changed }),

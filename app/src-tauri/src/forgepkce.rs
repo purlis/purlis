@@ -94,6 +94,42 @@ fn tries<T>(with: impl FnOnce(&mut Tries) -> T) -> T {
     with(held.get_or_insert_with(Tries::default))
 }
 
+/// The flow itself: the page opened, its one redirect taken, the code exchanged, the token kept.
+fn through_the_browser(
+    scope: &purlis_core::forge::route::HostScope,
+    root: &std::path::Path,
+    kind: purlis_core::forge::Kind,
+    registration: &'static registration::Registration,
+    endpoints: &oauth::Endpoints,
+    cancelled: &AtomicBool,
+    open: &dyn Fn(&str) -> Result<(), String>,
+) -> Result<ForgeAccountRow, String> {
+    let endpoint = oauth::Https::shared();
+    let granted = pkce::sign_in(
+        scope,
+        registration,
+        cancelled,
+        &pkce::Ways {
+            bind: &loopback::bind,
+            open,
+            exchange: &pkce::exchange_at(endpoint.as_ref(), endpoints),
+            clock: loopback::Clock::system(),
+        },
+    )?;
+    let keyring = accounts::keyring_at(root);
+    accounts::sign_in_with_grant(
+        scope,
+        root,
+        keyring.as_ref(),
+        &token_check,
+        kind,
+        registration.host,
+        granted,
+        Method::Pkce,
+    )
+    .map(ForgeAccountRow::from)
+}
+
 /// Sign in to `kind` on `host` in the person's browser, as the try `attempt`: the forge's
 /// authorization page is opened there, its one redirect is taken on a loopback port, and the
 /// code is exchanged for a token kept in the account's own keyring item. The account as Settings
@@ -113,6 +149,22 @@ pub async fn forge_pkce_sign_in(
     let cancelled = tries(|all| all.begin(&attempt))?;
     let done = blocking(move || {
         let scope = host_scope()?;
+        // A scenario run's fake forge plays the browser and the OAuth side (#4090's proof): the
+        // shipped flow, listener and exchange, against the host the run names.
+        #[cfg(feature = "e2e")]
+        if let Some(forge) = crate::e2eforge::browser_forge() {
+            let (registration, endpoints) = forge.registration();
+            let open = |page: &str| forge.open(page);
+            return through_the_browser(
+                &scope,
+                &config_root()?,
+                kind,
+                registration,
+                &endpoints,
+                &cancelled,
+                &open,
+            );
+        }
         let registration = registration::on(kind, host.trim())
             .filter(|found| found.flow == Flow::Pkce)
             .ok_or_else(|| {
@@ -129,8 +181,6 @@ pub async fn forge_pkce_sign_in(
             );
         }
         let root = config_root()?;
-        let endpoint = oauth::Https::shared();
-        let endpoints = oauth::Endpoints::of(registration);
         let open = |page: &str| {
             use tauri_plugin_opener::OpenerExt as _;
             // The opener's own words could repeat the address, which holds the `state`.
@@ -138,29 +188,15 @@ pub async fn forge_pkce_sign_in(
                 .open_url(page, None::<&str>)
                 .map_err(|_| "the browser did not open".to_string())
         };
-        let granted = pkce::sign_in(
-            &scope,
-            registration,
-            &cancelled,
-            &pkce::Ways {
-                bind: &loopback::bind,
-                open: &open,
-                exchange: &pkce::exchange_at(endpoint.as_ref(), &endpoints),
-                clock: loopback::Clock::system(),
-            },
-        )?;
-        let keyring = accounts::keyring_at(&root);
-        accounts::sign_in_with_grant(
+        through_the_browser(
             &scope,
             &root,
-            keyring.as_ref(),
-            &token_check,
             kind,
-            registration.host,
-            granted,
-            Method::Pkce,
+            registration,
+            &oauth::Endpoints::of(registration),
+            &cancelled,
+            &open,
         )
-        .map(ForgeAccountRow::from)
     })
     .await;
     tries(|all| all.end(&attempt));
