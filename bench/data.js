@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793552398294,
+  "lastUpdate": 1793555106642,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35196,6 +35196,48 @@ window.BENCHMARK_DATA = {
             "value": 102.315147,
             "unit": "ms",
             "extra": "median of 5 runs: 101.281, 101.369, 102.315, 102.962, 103.780 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a24f654f7ee4bbd259e547145a6e5c44323e7406",
+          "message": "Stories: Long List and the chip card, the WebKit flakes left from #4026 (#4468)\n\n* Stories: Long List scrolls after the row's own scroll; chip stories wait for the card to settle (#4026)\n\nLong List set the scroll before the frame on which React Aria brings the row the keyboard moved to\ninto sight, which took the scroll back and changed the picture. The chip stories gave the card's\nentrance waitFor's default second; untilSettled is the kit's own wait for a surface arriving.\n\nA red test goes with this commit: the card hands itself the keyboard only on a frame.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6BJ6V01TY7R9AWJNS40XD19\nPurlis-Persona: steward\n\n* Chip card: takes the keyboard at once where it can, with no frame to wait for (#4026)\n\nThe hand-off ran only in animation frames. On a loaded WebKit the window drew no frame for over\n3 seconds after the dot was pressed, so the keyboard stayed on the page. It now tries at once and\nkeeps its frames for a card React Aria has not placed yet.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6BJ6V01TY7R9AWJNS40XD19\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T15:59:37Z",
+          "tree_id": "142650542950042de4c5c4d0af7d7a9fe954297b",
+          "url": "https://github.com/purlis/purlis/commit/a24f654f7ee4bbd259e547145a6e5c44323e7406"
+        },
+        "date": 1793555100366,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.553739,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.546, 0.550, 0.554, 0.559, 0.578 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.76704,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.569, 16.616, 16.767, 16.793, 16.842 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.56511750000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.904, 103.063, 103.565, 104.155, 105.286 ms"
           }
         ]
       }
