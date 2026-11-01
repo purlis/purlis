@@ -24,6 +24,9 @@
 //! the harness's own skill tool, whose start opens the run. Anywhere else the skill is loaded and
 //! the answer says "Narrowing not applied", never silently.
 //!
+//! **A manual-only skill is not loaded** (#4529): a harness never starts one by itself, so neither
+//! does this tool. The load opens no run, and its answer says to ask the person to run it.
+//!
 //! **`skill_runs` shows the runs of the chat's own copies**: of a skill of its set, of the same
 //! copy (its level), and run in the chat's own place. A run whose row does not say which copy it
 //! is of (written before this) is no copy's, and is not shown.
@@ -265,6 +268,11 @@ fn load(
     })?;
     let loaded = purlis_skills::load(effective, &chat.honours())?;
     let skill = &effective.skill.name;
+    if loaded.manual {
+        return Ok(format!(
+            "`{skill}` is manual-only, so it was not loaded. Ask the person to run it."
+        ));
+    }
     if loaded.narrowing.any()
         && let Some(words) = chat.narrowed_start(effective)
     {

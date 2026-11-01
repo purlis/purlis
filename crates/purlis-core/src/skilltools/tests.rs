@@ -173,6 +173,51 @@ fn list_and_find_answer_the_chat_s_own_set_and_never_a_skill_it_leaves_out() {
 }
 
 #[test]
+fn a_manual_only_skill_is_not_loaded_opens_no_run_and_says_to_ask_the_person_to_run_it() {
+    let p = a_plane();
+    let skills = p.path().join("skills");
+    skill(
+        &skills,
+        "deploy",
+        "Ship the service.",
+        "disable-model-invocation: true\n",
+    );
+
+    for harness in ["goose", "claude-code", "codex", "opencode"] {
+        let (said, started) = called(
+            &chat(p.path(), Some(harness)),
+            SKILL_LOAD,
+            &[("name", "deploy")],
+        );
+        assert_eq!(
+            said.unwrap(),
+            "`deploy` is manual-only, so it was not loaded. Ask the person to run it.",
+            "{harness}"
+        );
+        assert!(started.is_empty(), "{harness}");
+    }
+}
+
+#[test]
+fn a_skill_that_says_disable_model_invocation_false_still_loads() {
+    let p = a_plane();
+    skill(
+        &p.path().join("skills"),
+        "deploy",
+        "Ship the service.",
+        "disable-model-invocation: false\n",
+    );
+
+    let (said, started) = called(
+        &chat(p.path(), Some("goose")),
+        SKILL_LOAD,
+        &[("name", "deploy")],
+    );
+    assert!(said.unwrap().starts_with("Loaded the skill `deploy`"));
+    assert_eq!(started, ["deploy"]);
+}
+
+#[test]
 fn a_load_answers_the_skill_and_its_files_and_opens_its_run() {
     let p = a_plane();
     let skills = p.path().join("skills");
