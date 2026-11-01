@@ -154,7 +154,7 @@ fn filtered_saying(
         }
         _ => Ok(match std::str::from_utf8(bytes) {
             Ok(text) if is_markdown(path) => {
-                let text = frontmatter_without(text, said);
+                let text = frontmatter_without(text, path.contains('/'), said);
                 no_url_users(&text, said).into_owned().into_bytes()
             }
             Ok(text) => no_url_users(text, said).into_owned().into_bytes(),
@@ -162,7 +162,7 @@ fn filtered_saying(
             // it is filtered all the same, as the text it reads.
             Err(_) if is_markdown(path) => {
                 let text = String::from_utf8_lossy(bytes);
-                let text = frontmatter_without(&text, said);
+                let text = frontmatter_without(&text, path.contains('/'), said);
                 said.push("a character that is not UTF-8".to_owned());
                 no_url_users(&text, said).into_owned().into_bytes()
             }
@@ -219,14 +219,17 @@ fn dropped_from_frontmatter() -> Vec<&'static str> {
 /// byte for byte. Any other is written again, one plain `key: value` a line, so no comment travels:
 /// a commented-out key is a key copied all the same. One purlis cannot read keeps only the plain
 /// values of its `name` and `description`, so what it may declare goes and the skill or agent still
-/// loads. Either is read the same way the next time, so filtering it again changes nothing.
-fn frontmatter_without(text: &str, said: &mut Said) -> String {
+/// loads; so does one that would not read back as it was written, so filtering it again changes
+/// nothing. Rules around text that holds no keys are no frontmatter, and neither is what a harness's
+/// own instructions file (`in_folder` false) holds that purlis cannot read: both stay.
+fn frontmatter_without(text: &str, in_folder: bool, said: &mut Said) -> String {
     let Some((span, read)) = purlis_skills::handed::frontmatter_value(text) else {
         return text.to_owned();
     };
     let block = &text[span.clone()];
     let names = dropped_from_frontmatter();
-    let written = match read {
+    let filtered_written = match read {
+        Ok(value) if !value.is_object() => return text.to_owned(),
         Ok(mut value) => {
             let before = value.clone();
             if json_runs_a_credential(&value)
@@ -240,16 +243,28 @@ fn frontmatter_without(text: &str, said: &mut Said) -> String {
             if value == before && !block.contains('#') {
                 return text.to_owned();
             }
-            frontmatter_written(&value)
+            let written = frontmatter_written(&value);
+            reads_back(&written, &value).then_some(written)
         }
-        Err(_) => {
-            let mut value = serde_json::Value::Object(plain_name_and_description(block));
-            clean_json(&mut value, &names, "frontmatter", said);
-            said.push("frontmatter, but for its name and description: not readable".to_owned());
-            frontmatter_written(&value)
-        }
+        Err(_) if !in_folder => return text.to_owned(),
+        Err(_) => None,
     };
+    let written = filtered_written.unwrap_or_else(|| {
+        let mut value = serde_json::Value::Object(plain_name_and_description(block));
+        clean_json(&mut value, &names, "frontmatter", said);
+        said.push("frontmatter, but for its name and description: not readable".to_owned());
+        frontmatter_written(&value)
+    });
     format!("{}{written}{}", &text[..span.start], &text[span.end..])
+}
+
+/// Whether `written`, a frontmatter as [`frontmatter_written`] wrote it, reads as `value` again.
+fn reads_back(written: &str, value: &serde_json::Value) -> bool {
+    let whole = format!("---\n{written}---\n");
+    matches!(
+        purlis_skills::handed::frontmatter_value(&whole),
+        Some((_, Ok(read))) if read == *value
+    )
 }
 
 /// The `name` and `description` of a frontmatter that is not YAML, each read off its own line as
@@ -269,6 +284,11 @@ fn plain_name_and_description(block: &str) -> serde_json::Map<String, serde_json
             .or_else(|| value.find("\t#"))
             .map_or(value, |comment| &value[..comment])
             .trim();
+        let value = value
+            .strip_prefix('"')
+            .and_then(|v| v.strip_suffix('"'))
+            .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+            .unwrap_or(value);
         let plain =
             !value.is_empty() && !value.starts_with(['{', '[', '|', '>', '&', '*', '!', '#']);
         if plain {
@@ -318,7 +338,7 @@ fn without_url_users(text: &str) -> (std::borrow::Cow<'_, str>, bool) {
             continue;
         }
         let end = text[authority..]
-            .find(|c: char| c.is_whitespace() || "/?#\"'<>\\`,;".contains(c))
+            .find(|c: char| c.is_whitespace() || "/?#\"'<>\\`,;)]|".contains(c))
             .map_or(text.len(), |n| authority + n);
         if let Some(user_end) = text[authority..end].rfind('@') {
             out.push_str(&text[copied..authority]);
@@ -358,35 +378,66 @@ fn clean_string(text: &mut String, at: &str, said: &mut Said) {
     }
 }
 
-/// A word of a name that holds a credential, as it is folded to lower case.
-const CREDENTIAL_WORDS: [&str; 8] = [
-    "token", "password", "passwd", "secret", "api-key", "api_key", "apikey", "bearer",
-];
-
+/// Whether `name`, an option's or a variable's, ends in a word that holds a credential:
+/// `GH_TOKEN`, `--api-key`, and not `--max-tokens`, `--token-file`, `--secret-id` or `--no-password`.
 fn names_a_credential(name: &str) -> bool {
-    !name.contains("tokens")
-        && !name.ends_with("-file")
-        && !name.ends_with("-env")
-        && !name.ends_with("-stdin")
-        && CREDENTIAL_WORDS.iter().any(|word| name.contains(word))
+    let words: Vec<&str> = name
+        .split(['-', '_'])
+        .filter(|word| !word.is_empty())
+        .collect();
+    let [.., before, last] = words.as_slice() else {
+        return words
+            .last()
+            .is_some_and(|last| CREDENTIAL_WORDS.contains(last));
+    };
+    words[0] != "no"
+        && (CREDENTIAL_WORDS.contains(last)
+            || (*last == "key" && matches!(*before, "api" | "secret" | "access")))
 }
 
-/// Whether `value` is written out, and not read from a variable or another command.
+/// The last word of a name that holds a credential.
+const CREDENTIAL_WORDS: [&str; 7] = [
+    "token", "password", "passwd", "pwd", "secret", "apikey", "bearer",
+];
+
+/// Whether `value` is written out, and not read from a variable, another command or a harness's
+/// own reference (opencode's `{env:KEY}`).
 fn written_out(value: &str) -> bool {
     let value = value.trim_start_matches(['"', '\'']);
-    !value.is_empty() && !value.starts_with(['$', '`'])
+    !value.is_empty()
+        && !value.starts_with(['$', '`'])
+        && !value.starts_with("{env:")
+        && !value.starts_with("{file:")
 }
 
 /// How deep a command is read through commands quoted inside it (`sh -c '…'`).
 const MOST_QUOTED: usize = 3;
 
-/// Whether `word`, the word after it `next`, shows a credential.
-fn word_shows_a_credential(word: &str, next: Option<&str>) -> bool {
+/// Whether a header's name at `found` in `lower` is one a request is sent with: after `-H` or
+/// `--header`, in this word or as the word `before` it. A word that only mentions one
+/// (`echo "Cookie: none"`) is not.
+fn is_a_sent_header(lower: &str, found: usize, before: Option<&str>) -> bool {
+    let ahead = lower[..found].trim_end_matches([' ', '"', '\'', '=']);
+    if ahead.is_empty() {
+        return before.is_some_and(|word| matches!(word, "-H" | "--header"));
+    }
+    ahead.ends_with("-h") || ahead.ends_with("--header")
+}
+
+/// Whether `word`, between the words `before` and `next`, shows a credential. `takes_a_user` is
+/// whether the command is one whose `-u` is a user and password (`curl`, and not Docker's `-u
+/// 1000:1000`).
+fn word_shows_a_credential(
+    word: &str,
+    before: Option<&str>,
+    next: Option<&str>,
+    takes_a_user: bool,
+) -> bool {
     let lower = word.to_ascii_lowercase();
-    // A header that signs a request, wherever in the word it is: `--header=…`, `-H…`, or in a
-    // command quoted whole.
     for header in ["authorization:", "x-api-key:", "cookie:"] {
-        if let Some(found) = lower.find(header) {
+        if let Some(found) = lower.find(header)
+            && is_a_sent_header(&lower, found, before)
+        {
             let mut value = lower[found + header.len()..].split_whitespace();
             let first = value.next().unwrap_or_default();
             let given = if matches!(first, "bearer" | "basic" | "token") {
@@ -409,35 +460,58 @@ fn word_shows_a_credential(word: &str, next: Option<&str>) -> bool {
             !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
         return assignment && names_a_credential(name) && given.is_some_and(written_out);
     }
-    // A user and password: `-u me:pw`, `-ume:pw`, `--user me:pw`.
+    // The word after an option is its value only where it is no option itself.
+    let next = next.filter(|word| !word.starts_with('-'));
+    // A user and password: `-u me:pw`, `-ume:pw`, `--user me:pw`, `--proxy-user me:pw`.
     let user = |value: &str| {
         value
             .split_once(':')
             .is_some_and(|(_, password)| written_out(password))
     };
-    if matches!(name, "-u" | "--user" | "--proxy-user") {
-        if given.or(next).is_some_and(user) {
-            return true;
+    let says_a_user = match name {
+        "--proxy-user" => given.or(next).is_some_and(user),
+        "-u" | "--user" => takes_a_user && given.or(next).is_some_and(user),
+        _ => {
+            takes_a_user
+                && word
+                    .strip_prefix("-u")
+                    .is_some_and(|glued| !glued.starts_with('-') && user(glued))
         }
-    } else if let Some(glued) = word.strip_prefix("-u")
-        && !glued.starts_with('-')
-        && user(glued)
-    {
+    };
+    if says_a_user {
         return true;
     }
-    // An option that takes a secret: `--token x`, `--api-key=x`.
-    names_a_credential(name) && given.or(next).is_some_and(written_out)
+    // An option that takes a secret: `--token x`, `--api-key=x`. `--secret id=…,src=…` names a
+    // file, as Docker's does.
+    names_a_credential(name)
+        && given
+            .or(next)
+            .is_some_and(|value| written_out(value) && !value.starts_with("id="))
 }
 
 /// Whether a command, as `words`, shows a credential where it is written: a token by its shape, an
 /// assignment, a header or an option holding one, each with a value and not a variable's name. A
-/// word holding a command quoted whole is read too.
+/// word holding a command quoted whole is read too, and each part of one a separator is glued
+/// into (`cd a&&GH_TOKEN=x y`).
 fn shows_a_credential(words: &[String], depth: usize) -> bool {
     if crate::secretshape::token_kind(&words.join(" ")).is_some() {
         return true;
     }
+    let takes_a_user = words.iter().any(|word| {
+        let program = word.rsplit('/').next().unwrap_or(word);
+        matches!(program, "curl" | "wget")
+    });
     words.iter().enumerate().any(|(at, word)| {
-        word_shows_a_credential(word, words.get(at + 1).map(String::as_str))
+        let before = at
+            .checked_sub(1)
+            .and_then(|n| words.get(n))
+            .map(String::as_str);
+        let next = words.get(at + 1).map(String::as_str);
+        word_shows_a_credential(word, before, next, takes_a_user)
+            || (word.contains([';', '&', '|'])
+                && word
+                    .split([';', '&', '|'])
+                    .any(|part| word_shows_a_credential(part, None, None, false)))
             || (depth < MOST_QUOTED
                 && word.contains(char::is_whitespace)
                 && shows_a_credential(&words_of([(false, word.as_str())].into_iter()), depth + 1))
@@ -497,7 +571,7 @@ fn clean_json(value: &mut serde_json::Value, names: &[&str], at: &str, said: &mu
                 }
             }
             map.retain(|key, inner| {
-                if names.contains(&key.as_str()) {
+                if names.contains(&key.as_str()) || crate::secretshape::token_kind(key).is_some() {
                     said.push(further(at, key));
                     return false;
                 }
@@ -513,15 +587,27 @@ fn clean_json(value: &mut serde_json::Value, names: &[&str], at: &str, said: &mu
             for (key, inner) in map.iter_mut() {
                 clean_json(inner, names, &further(at, key), said);
             }
+            // Read again as it will be sent, so filtering it again finds nothing more.
+            map.retain(|key, inner| {
+                let keep = !json_runs_a_credential(inner);
+                if !keep {
+                    said.push(format!(
+                        "{}: a command with a credential in it",
+                        further(at, key)
+                    ));
+                }
+                keep
+            });
         }
         Value::Array(items) => {
             let before = items.len();
             items.retain(|inner| !json_runs_a_credential(inner));
+            for inner in items.iter_mut() {
+                clean_json(inner, names, at, said);
+            }
+            items.retain(|inner| !json_runs_a_credential(inner));
             if items.len() != before {
                 said.push(format!("{at}: a command with a credential in it"));
-            }
-            for inner in items {
-                clean_json(inner, names, at, said);
             }
         }
         Value::String(text) => clean_string(text, at, said),
@@ -550,7 +636,6 @@ fn toml_runs_a_credential(value: &toml::Value) -> bool {
 /// [`clean_json`]'s command and string walk, for the plain values of a Codex `config.toml`. Its
 /// `notify` is a command too, as a bare list.
 fn clean_toml(table: &mut toml::Table, at: &str, said: &mut Said) {
-    use toml::Value;
     let odd: Vec<String> = table
         .keys()
         .filter(|k| k.contains("://"))
@@ -565,6 +650,16 @@ fn clean_toml(table: &mut toml::Table, at: &str, said: &mut Said) {
             }
         }
     }
+    retain_toml_commands(table, at, said);
+    for (key, inner) in table.iter_mut() {
+        clean_toml_value(inner, &further(at, key), said);
+    }
+    // Read again as it will be sent, so filtering it again finds nothing more.
+    retain_toml_commands(table, at, said);
+}
+
+fn retain_toml_commands(table: &mut toml::Table, at: &str, said: &mut Said) {
+    use toml::Value;
     table.retain(|key, inner| {
         let list_command = key == "notify"
             && inner.as_array().is_some_and(|items| {
@@ -573,6 +668,10 @@ fn clean_toml(table: &mut toml::Table, at: &str, said: &mut Said) {
                     0,
                 )
             });
+        if crate::secretshape::token_kind(key).is_some() {
+            said.push(further(at, key));
+            return false;
+        }
         if list_command || toml_runs_a_credential(inner) {
             said.push(format!(
                 "{}: a command with a credential in it",
@@ -582,9 +681,6 @@ fn clean_toml(table: &mut toml::Table, at: &str, said: &mut Said) {
         }
         true
     });
-    for (key, inner) in table.iter_mut() {
-        clean_toml_value(inner, &further(at, key), said);
-    }
 }
 
 fn clean_toml_value(value: &mut toml::Value, at: &str, said: &mut Said) {
@@ -593,11 +689,12 @@ fn clean_toml_value(value: &mut toml::Value, at: &str, said: &mut Said) {
         toml::Value::Array(items) => {
             let before = items.len();
             items.retain(|inner| !toml_runs_a_credential(inner));
+            for inner in items.iter_mut() {
+                clean_toml_value(inner, at, said);
+            }
+            items.retain(|inner| !toml_runs_a_credential(inner));
             if items.len() != before {
                 said.push(format!("{at}: a command with a credential in it"));
-            }
-            for inner in items {
-                clean_toml_value(inner, at, said);
             }
         }
         toml::Value::String(text) => clean_string(text, at, said),

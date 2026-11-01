@@ -415,6 +415,7 @@ fn filtering_what_was_filtered_changes_nothing() {
         ("claude", "skills/x/SKILL.md", b"---\nname: x # why\nbad: {\n---\nb\n"),
         ("claude", "skills/x/SKILL.md", b"---\ndescription: see #12\nbad: [\n---\nb\n"),
         ("claude", "agents/a.md", b"---\nname: x\nenv: {A: b}\n---\ncaf\xE9\n"),
+        ("claude", "settings.json", br#"{"statusLine":{"command":"--x://a=b@token=c"}}"#),
         ("claude", "settings.json", br#"{"statusLine":{"command":"x https://u:p@h"}}"#),
         ("codex", "config.toml", b"a = \"https://u:p@h\"\n"),
     ] {
@@ -518,6 +519,8 @@ fn a_commands_credential_is_read_however_it_is_written() {
         "sh -c 'curl --password of-the-desktop x'",
         "curl -u me:of-the-desktop x",
         "curl -ume:of-the-desktop x",
+        "AWS_SECRET_ACCESS_KEY=of-the-desktop ./deploy",
+        "cd a&&GH_TOKEN=of-the-desktop y",
     ] {
         let written = serde_json::json!({ "statusLine": { "command": command } }).to_string();
         let sent = without_credentials("claude", "settings.json", written.as_bytes()).unwrap();
@@ -535,6 +538,17 @@ fn a_commands_credential_is_read_however_it_is_written() {
         "tool --max-tokens 4096",
         "tool --token-file ./t",
         "docker login --password-stdin me",
+        "docker run -i --user 1000:1000 img",
+        "tool -url=http://localhost:3000",
+        "psql --no-password -h db",
+        "aws secretsmanager get-secret-value --secret-id prod/db",
+        "docker build --secret id=n,src=f .",
+        "tool --tokenizer gpt2",
+        "TOKENIZERS_PARALLELISM=false python hook.py",
+        "PASSWORD_STORE_DIR=/p pass show x",
+        "VAULT_TOKEN_FILE=/run/x tool",
+        "tool --api-key {env:KEY}",
+        "echo \"Cookie: none\"",
     ] {
         let written = serde_json::json!({ "statusLine": { "command": command } }).to_string();
         let sent = filtered("claude", "settings.json", written.as_bytes()).unwrap();
@@ -589,4 +603,79 @@ fn what_is_said_stays_small_however_often_a_thing_is_removed() {
     let written = serde_json::json!({ long: items }).to_string();
     let sent = filtered("claude", "settings.json", written.as_bytes()).unwrap();
     assert_eq!(sent.removed, ["settings.(a name).env"]);
+}
+
+/// **A rewrite keeps each value's type** (#3866): a number stays a number for the harness that
+/// reads it.
+#[test]
+fn a_rewritten_frontmatter_keeps_its_numbers_and_booleans() {
+    let sent = without_credentials(
+        "opencode",
+        "agents/a.md",
+        b"---\ncolor: \"#38A3EE\"\ntemperature: 0.1\nsteps: 3\non: True\n---\nb\n",
+    )
+    .unwrap();
+    let text = String::from_utf8(sent).unwrap();
+    assert!(text.contains("temperature: 0.1\n"), "{text}");
+    assert!(text.contains("steps: 3\n"), "{text}");
+    assert!(text.contains("on: true\n"), "{text}");
+}
+
+/// **Rules around text are no frontmatter**, and a harness's own instructions file that purlis
+/// cannot read is left as it is.
+#[test]
+fn text_between_rules_stays() {
+    for (path, written) in [
+        (
+            "skills/x/note.md",
+            &b"---\nThis is a note.\n---\n# Doc\n"[..],
+        ),
+        ("CLAUDE.md", b"---\n# Slide\n- a\n---\nb\n"),
+        ("CLAUDE.md", b"---\nNote: a: b\n---\nb\n"),
+    ] {
+        assert_eq!(
+            without_credentials("claude", path, written).unwrap(),
+            written
+        );
+    }
+}
+
+/// A quoted name stays the same name where the rest cannot be read.
+#[test]
+fn a_quoted_name_keeps_its_value_where_the_rest_cannot_be_read() {
+    let sent = without_credentials(
+        "claude",
+        "skills/x/SKILL.md",
+        b"---\nname: \"my\"\nbad: {\n---\nb\n",
+    )
+    .unwrap();
+    assert_eq!(sent, b"---\nname: \"my\"\n---\nb\n");
+}
+
+/// One that would not read back as written keeps its name, and stays as it is the next time.
+#[test]
+fn a_frontmatter_that_would_not_read_back_is_cut_to_its_name() {
+    let key = "k".repeat(1100);
+    let written = format!("---\nname: a\n? {key}\n: v\nenv: x\n---\nb\n");
+    let once = without_credentials("claude", "agents/a.md", written.as_bytes()).unwrap();
+    assert_eq!(once, b"---\nname: \"a\"\n---\nb\n");
+    assert_eq!(
+        without_credentials("claude", "agents/a.md", &once).unwrap(),
+        once
+    );
+}
+
+/// A name shaped like a token goes, and a link beside an address stays a link.
+#[test]
+fn a_token_shaped_name_goes_and_a_link_beside_an_address_stays() {
+    let token = format!("ghp_{}", "a".repeat(36));
+    let written = format!("{{\"{token}\":1,\"a\":2}}");
+    let sent = without_credentials("claude", "settings.json", written.as_bytes()).unwrap();
+    assert!(!String::from_utf8(sent).unwrap().contains(&token));
+
+    let link = b"[a](https://a.example)[b](mailto:a@b)";
+    assert_eq!(
+        without_credentials("claude", "CLAUDE.md", link).unwrap(),
+        link
+    );
 }
