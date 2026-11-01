@@ -583,7 +583,9 @@ fn commit_push(
         tip: &head_sha,
         remote: "origin",
     }) {
-        say(Say::Warn(format!("Committed, but not pushed. {why}.").into()));
+        say(Say::Warn(
+            format!("Committed, but not pushed. {why}.").into(),
+        ));
         attempt.detail = why;
         attempt.outcome = "failed";
         return 1;
