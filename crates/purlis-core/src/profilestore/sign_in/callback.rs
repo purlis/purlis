@@ -37,6 +37,8 @@ use std::time::{Duration, Instant};
 
 use super::waiting;
 
+mod owner;
+
 /// The port Codex's and opencode's ChatGPT logins listen on, by their own code.
 pub const PORT: u16 = 1455;
 
@@ -348,7 +350,7 @@ fn deliver_on(kept_in: &Path, port: u16, target: &str) -> Result<(), String> {
     let Some(waiting) = state_in(target).and_then(|state| waiting::take(kept_in, state)) else {
         return Err(NO_LOGIN_WAITING.to_owned());
     };
-    let at = addresses(waiting.at);
+    let at = answered_at(waiting, port);
     match asked(&at, port, target)? {
         Answered::Took => Ok(()),
         Answered::Next => match asked(&at, port, NEXT_PATH)? {
@@ -382,6 +384,16 @@ pub(super) fn listening_on(port: u16) -> Option<IpAddr> {
     LOOPBACK
         .into_iter()
         .find(|at| TcpStream::connect_timeout(&SocketAddr::new(*at, port), REACHED_WITHIN).is_ok())
+}
+
+/// Where the answer to the login `waiting` goes: the addresses its own process group listens on,
+/// none where it holds neither; where the system does not say, or its group wasn't recorded, as
+/// [`addresses`] says.
+fn answered_at(waiting: waiting::Taken, port: u16) -> Vec<IpAddr> {
+    waiting
+        .group
+        .and_then(|group| owner::own_addresses(port, group))
+        .unwrap_or_else(|| addresses(waiting.at))
 }
 
 /// Where a login's answer goes: the one address it was found listening on, else either.

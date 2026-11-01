@@ -7940,8 +7940,9 @@ refuses a `<data>` under a project or inside any git work tree.
 | keyring item for a telemetry export destination's auth header | Keyring | **decided, not yet written** (ADR 0083). The header value an export destination sends, such as a backend's API key. Denied to chats | OB-9 |
 
 ### `<data>/sign-ins-waiting/<digest>`
-- **Format:** an empty file on a runner, named by the lowercase hex SHA-256 of the `state` a login's
-  page printed (#4044), in a folder made `0700`. Its holder, the runner's `purlis profile sign-in`,
+- **Format:** a file on a runner of two lines, either of them empty: the loopback address the login
+  was found listening on, then its process group. One with a single line says no group. Named by
+  the lowercase hex SHA-256 of the `state` a login's page printed (#4044), in a folder made `0700`. Its holder, the runner's `purlis profile sign-in`,
   keeps it locked for as long as the login runs and removes it as the login ends. The runner's host
   removes it as it hands that sign-in's redirect on. One no one holds locked counts for nothing. No
   chat's sandbox reads or writes the folder.
