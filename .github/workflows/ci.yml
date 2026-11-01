@@ -1878,10 +1878,19 @@ jobs:
   # On main's push, and on a pull request that touches what the bars measure (`GATES`), by the
   # operator's choice of 2026-11-01: it takes a macOS and a Linux runner for 11 to 17 minutes. A
   # regression from anywhere else shows on main, not on its pull request.
+  #
+  # `continue-on-error`, as `macos-tests` has, since 2026-11-01: not being required kept a miss off
+  # the merge queue but not off the run, so from #4345's merge every `ci` on main concluded
+  # `failure` on the known misses (#4351, #4352) and `release.yml`, which publishes only on a
+  # `success`, skipped every dev release after the one of 05:35 UTC. A miss still reds this job and
+  # still writes its annotations. It only stops deciding the run. It comes off with the flag's flip
+  # (#2786). A cancelled or timed-out job still turns the run `cancelled`, as `macos-tests` does
+  # most nights.
   outcome-bars:
     name: outcome bars (${{ matrix.os }})
     needs: changes
     if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
