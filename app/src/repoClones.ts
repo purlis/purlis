@@ -52,6 +52,8 @@ const STOPPED = (repo: string) => `${repo} was stopped.`;
 /** **The repos the person stopped** (#4079), by workspace: one still waiting is never started. */
 const stopping = new Map<string, Set<string>>();
 const listeners = new Set<() => void>();
+/** Who hears each repo that lands (`followLandings`). */
+const landings = new Set<(plane: PlaneId, workspace: string, repo: string) => void>();
 
 function keyOf(plane: PlaneId, workspace: string): string {
   return `${plane}\u0000${workspace}`;
@@ -72,14 +74,17 @@ function set(plane: PlaneId, workspace: string, repo: string, state: CloneState)
  * thrown again once they have all heard, in a microtask of its own, so it is still reported.
  */
 function tell() {
-  for (const listener of listeners) {
-    try {
-      listener();
-    } catch (err: unknown) {
-      queueMicrotask(() => {
-        throw err;
-      });
-    }
+  for (const listener of listeners) heard(listener);
+}
+
+/** Calls one listener, its throw said on its own. */
+function heard(listener: () => void) {
+  try {
+    listener();
+  } catch (err: unknown) {
+    queueMicrotask(() => {
+      throw err;
+    });
   }
 }
 
@@ -214,6 +219,8 @@ async function cloneInTurn(
     done.add(repo);
     settle.get(repo)?.(state);
     set(plane, workspace, repo, state);
+    if (state.state === "cloned")
+      for (const listener of landings) heard(() => listener(plane, workspace, repo));
   };
   try {
     if (repos.length === 0) return [];
@@ -313,6 +320,19 @@ export function subscribeRepoClones(listener: () => void) {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+  };
+}
+
+/**
+ * **Hears each repo that lands, whoever asked for it** (#4394): a row, a chip's Retry or Settings,
+ * since every clone ends here. Until the function it answers is called.
+ */
+export function followLandings(
+  listener: (plane: PlaneId, workspace: string, repo: string) => void,
+) {
+  landings.add(listener);
+  return () => {
+    landings.delete(listener);
   };
 }
 

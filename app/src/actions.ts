@@ -41,6 +41,7 @@ import type {
   RowAction,
   SubjectCurations,
 } from "./bindings";
+import type { Failed } from "./repoClones";
 import { activityTitle, activityView } from "./activity";
 import { chatNetworkTitle, chatNetworkView } from "./chatNetwork";
 import { DISPATCHES_TITLE, DISPATCHES_VIEW } from "./dispatches";
@@ -159,7 +160,20 @@ export type Ran =
       settings?: SettingsWay;
       /** Where to go on from the refusal, as its notice offers it: Approve and start… (#3968). */
       ways?: readonly SaidWay[];
+      /** The clones it reports as failed (#4394), carried onto what the window says of it. */
+      notCloned?: NotCloned;
     };
+
+/**
+ * **The clones a line says failed** (#4394): a repo that lands later takes itself out of the line.
+ * `told` is how the line reads with only `rest` of them left, never with none, since a line with
+ * none is gone.
+ */
+export type NotCloned = {
+  workspace: string;
+  failed: Failed;
+  told: (rest: Failed) => Partial<Said>;
+};
 
 /** A way on from what an action answered (#3344): "Open git-ci-cd", the filled primary where
  *  `primary`, or "Add a vision". */
@@ -199,6 +213,8 @@ export type Said = {
   /** **The one workspace it is about**, where it is about a whole workspace (a workspace made):
    *  its notice hangs from that workspace's chip in the title bar (`noticePlace.ts`, #3648). */
   workspace?: string;
+  /** The clones it says failed, where it does (#4394). */
+  notCloned?: NotCloned;
 };
 
 /** What the window says of a row's answer: nothing for a quiet success. */
@@ -210,6 +226,7 @@ export function saidOf(from: string, answer: Ran): Said | undefined {
     words: answer.refused,
     ...(answer.settings === undefined ? {} : { settings: answer.settings }),
     ...(answer.ways === undefined ? {} : { ways: answer.ways }),
+    ...(answer.notCloned === undefined ? {} : { notCloned: answer.notCloned }),
   };
 }
 

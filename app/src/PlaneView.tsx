@@ -201,6 +201,7 @@ import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
+  clonesRefused,
   reposCloned,
   reposCloning,
   reposNotCloned,
@@ -4842,17 +4843,19 @@ export const PlaneView = memo(function PlaneView({
           },
           (_, moved) => setReport(reposCloning(name, repos, done, track, { moved, onCancel })),
         );
-        // Only the ones that did not land, on the same notice.
-        const retry = () => void run(failed.map((one) => one.repo));
+        // Only the ones that did not land, on the same notice. Those the person stopped go again
+        // with the refused ones that are left (#4394).
         const refused = failed.filter((one) => one.stopped !== true);
+        const stopped = failed.filter((one) => one.stopped === true).map((one) => one.repo);
+        const retry = (still: string[]) => void run([...still, ...stopped]);
         setReport(
           failed.length === 0
             ? reposCloned(name, repos, track)
             : refused.length === 0
               ? reposStopped(
                   name,
-                  failed.map((one) => one.repo),
-                  retry,
+                  stopped,
+                  () => retry([]),
                   track,
                 )
               : reposNotCloned(name, refused, retry, track),
@@ -6853,13 +6856,7 @@ export const PlaneView = memo(function PlaneView({
       const ended = await cloneRepos(plane, workspace, repos, rereadPanels);
       // A clone the person stopped is what they asked for: no failure to report.
       const failed = ended.filter((one) => one.stopped !== true);
-      if (failed.length > 0)
-        return {
-          ok: false,
-          refused:
-            `Could not clone ${failed.map((f) => f.repo).join(", ")} into ${workspace} — ` +
-            failed.map((f) => f.said).join(" "),
-        };
+      if (failed.length > 0) return clonesRefused(workspace, failed);
       return ended.length === 0
         ? { ok: true, said: `Cloned ${repos.join(", ")} into ${workspace}.` }
         : { ok: true };
