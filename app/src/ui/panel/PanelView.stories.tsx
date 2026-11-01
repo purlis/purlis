@@ -11,7 +11,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { Archive, Plus, Search } from "lucide-react";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocusWithin } from "../../stories.testkit";
 import { IconButton } from "../button/Button";
 import { TextField } from "../field/Field";
 import { List, ListRow, ListRowSection } from "../list/List";
@@ -143,13 +143,20 @@ export const LongList: Story = {
     await userEvent.tab();
     await expect(canvas.getByRole("searchbox", { name: "Search memory" })).toHaveFocus();
     await userEvent.tab();
-    await expect(document.activeElement?.closest('[role="grid"]')).not.toBeNull();
+    // On a row, and the frame after it (#4026): React Aria scrolls the row the keyboard moved to
+    // into sight on that frame, which would take back a scroll made before it, and the picture.
+    await untilFocusWithin(() => first, "the first row, by Tab");
     // One scroll: the list itself does not scroll, the region does, and the top stays put.
     const list = canvas.getByRole("grid");
     await expect(list.scrollHeight).toBeLessThanOrEqual(list.clientHeight + 1);
     const at = top.getBoundingClientRect().top;
     scroll.scrollTop = 200;
-    await waitFor(() => expect(scroll.scrollTop).toBeGreaterThan(0));
+    const scrolled = scroll.scrollTop;
+    await expect(scrolled).toBeGreaterThan(0);
+    // It stays there: nothing is left to move it before the picture.
+    await new Promise((frame) => requestAnimationFrame(frame));
+    await new Promise((frame) => requestAnimationFrame(frame));
+    await expect(scroll.scrollTop).toBe(scrolled);
     await expect(Math.round(top.getBoundingClientRect().top)).toBe(Math.round(at));
     // The group in sight has its name held right under the top.
     const held = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="header"]')].find(
