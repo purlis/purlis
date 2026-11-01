@@ -11,6 +11,7 @@ import {
   signProfileOutOfPool,
   usePools,
 } from "../pools";
+import { OfferToRaise } from "../RaiseLimit";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
 import { askProfileSignIn, askProfileSignOut } from "./links";
@@ -229,6 +230,16 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                     ? STANDING_SAID.failed
                     : standingOnPool(pool, row)}
             </span>
+            {/* Where a limit kept it off the runner, the form is here, and asks again (#4397). */}
+            {row.not_kept !== null && (
+              <OfferToRaise
+                key={row.not_kept}
+                pool={pool}
+                refused={row.not_kept}
+                action="Save to the pool and ask again"
+                onRaised={() => void askProfiles(pool, plane)}
+              />
+            )}
             {signing === row.name ? (
               <PoolSignIn
                 pool={pool}

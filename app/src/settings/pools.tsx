@@ -211,6 +211,7 @@ function PoolEntry({
   onMakeAgain,
   notHeld,
   profiles,
+  plane,
 }: {
   pool: PoolRow;
   link: PoolLink | "asking" | undefined;
@@ -228,6 +229,7 @@ function PoolEntry({
   notHeld: ReactNode;
   /** This machine's profiles on its runner (#2049). */
   profiles: ReactNode;
+  plane: string | undefined;
 }) {
   const remove = onAsk;
   return (
@@ -267,7 +269,7 @@ function PoolEntry({
       )}
       {notHeld}
       {profiles}
-      <PoolLimits pool={pool.name} />
+      <PoolLimits pool={pool.name} plane={plane} />
     </li>
   );
 }
@@ -510,6 +512,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
                     onMakeAgain={() => void makeRunnerAgain(pool.name, plane).then(setRemakeSaid)}
                     notHeld={marks(shown.filter((one) => rowOf(one) === pool.name))}
                     profiles={<PoolProfiles pool={pool.name} plane={plane} />}
+                    plane={plane}
                   />
                 ))}
                 {clusters.map((pool) => (

@@ -880,6 +880,8 @@ pub struct Driving {
     stopped: Arc<Mutex<Option<String>>>,
     /// When its next step was last asked for.
     asked: Arc<Mutex<Instant>>,
+    /// The longest it runs before it is ended ([`TOOK_TOO_LONG`]).
+    longest: Duration,
 }
 
 /// **The forward of a login that waits for the browser**: opened once its page is shown, closed
@@ -1080,6 +1082,7 @@ fn run(
         cancelled,
         stopped,
         asked,
+        longest,
     })
 }
 
@@ -1289,6 +1292,12 @@ fn end(child: &mut Child) {
 }
 
 impl Driving {
+    /// The longest it runs before it is ended.
+    #[must_use]
+    pub fn longest(&self) -> Duration {
+        self.longest
+    }
+
     /// **The next step**, waiting at most `within` for it, which must be under
     /// [`UNDRIVEN_AFTER`]; `None` while there is none yet. After the last step, a driver that
     /// stopped telling says it failed.

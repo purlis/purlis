@@ -468,7 +468,7 @@ describe("a move refused by a pool's limit (#4313)", () => {
     expect(asked.some((one) => one.cmd === "move_chat")).toBe(false);
   });
 
-  it("offers nothing on any other refusal, and on a move here", async () => {
+  it("offers nothing on any other refusal, and asks of the pool a move back here leaves", async () => {
     mockIPC((cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       return null;
@@ -480,8 +480,11 @@ describe("a move refused by a pool's limit (#4313)", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
     cleanup();
     asked.length = 0;
+    // A move back here is asked of the pool it is leaving (#4397).
     act(() => heardMove(PLANE, { ...refusedMove, to: null, from: "builds" }));
     render(<MoveNotice plane={PLANE} session={3} />);
-    expect(asked.some((one) => one.cmd === "pool_limit_offer_for_move")).toBe(false);
+    await waitFor(() =>
+      expect(asked.some((one) => one.cmd === "pool_limit_offer_for_move")).toBe(true),
+    );
   });
 });
