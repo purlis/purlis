@@ -1881,6 +1881,10 @@ jobs:
   outcome-bars:
     name: outcome bars (${{ matrix.os }})
     needs: changes
+    # A missed bar keeps this job red and the `ci` run green, so it does not stop `tools/land.mjs`,
+    # which refuses to land while main's newest finished `ci` run failed. This line goes once #4351
+    # and #4352 are fixed, and the job is made required before the flag's flip (#2786).
+    continue-on-error: true
     if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
     strategy:
       fail-fast: false
