@@ -2028,3 +2028,79 @@ fn nothing_is_made_through_a_link_at_a_shared_folders_name() {
     assert!(!elsewhere.join("share").exists(), "made through the link");
     assert!(home.join(".config").is_dir(), "the others are still made");
 }
+
+/// A link above a held path is held by its own name: replaced by one pointing elsewhere, the path
+/// would no longer lead to what is denied.
+#[cfg(unix)]
+#[test]
+fn a_link_on_the_way_to_a_held_path_is_held_by_its_own_name() {
+    let dir = tempfile::tempdir().expect("a home");
+    let home = dir.path().canonicalize().expect("a real folder");
+    std::fs::create_dir_all(home.join("real/inner")).expect("a folder");
+    std::fs::create_dir(home.join("second")).expect("a folder");
+    std::os::unix::fs::symlink(home.join("real"), home.join("second/hop")).expect("a link");
+    std::os::unix::fs::symlink(home.join("second/hop"), home.join(".local")).expect("a link");
+    let held = home.join(".local/inner/auth.json");
+    let denied = [crate::sandbox::Denial {
+        class: Class::Integrity,
+        path: held.clone(),
+        access: Access::Write,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case: false,
+    }];
+    let profile = seatbelt::floor_profile(&denied, &[], &seatbelt::Own::default(), &[], None)
+        .expect("a profile");
+    // The folder holding a link too: moved whole, another of that name could take its place.
+    for link in [
+        home.join(".local"),
+        home.join("second/hop"),
+        home.join("second"),
+    ] {
+        assert!(
+            profile.contains(&format!("(literal \"{}\")", link.display())),
+            "{} is not held: {profile}",
+            link.display()
+        );
+    }
+    // What goes through the link is still the chat's to write.
+    assert!(!profile.contains(&format!("(subpath \"{}\")", home.join(".local").display())));
+}
+
+/// The same, applied for real.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_link_on_the_way_to_a_held_path_cannot_be_moved_away_at_the_floor() {
+    let dir = tempfile::tempdir().expect("a home");
+    let home = dir.path().canonicalize().expect("a real folder");
+    std::fs::create_dir_all(home.join("real/inner")).expect("a folder");
+    std::fs::create_dir(home.join("second")).expect("a folder");
+    std::os::unix::fs::symlink(home.join("real"), home.join("second/hop")).expect("a link");
+    let denied = [crate::sandbox::Denial {
+        class: Class::Integrity,
+        path: home.join("second/hop/inner/auth.json"),
+        access: Access::Write,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case: false,
+    }];
+    let profile = seatbelt::floor_profile(&denied, &[], &seatbelt::Own::default(), &[], None)
+        .expect("a profile");
+    let script = format!(
+        "/bin/mv '{from}/hop' '{from}/x'; a=$?; /bin/mv '{from}' '{to}'; b=$?; \
+         echo through > '{from}/hop/through'; c=$?; [ $a -ne 0 ] && [ $b -ne 0 ] && [ $c -eq 0 ]",
+        from = home.join("second").display(),
+        to = home.join("moved").display(),
+    );
+    let ran = crate::forklock::output(
+        std::process::Command::new("/usr/bin/sandbox-exec")
+            .args(["-p", &profile, "/bin/sh", "-c", &script]),
+    )
+    .expect("sandbox-exec runs");
+    assert!(
+        ran.status.success(),
+        "the link and its folder stay, and what goes through it is written: {}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    assert!(home.join("real/through").exists());
+}

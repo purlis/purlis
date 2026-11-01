@@ -407,6 +407,7 @@ pub async fn remove_docker_pool(
             } else {
                 let machine = Machine::here(&config)?;
                 as_the_person_was_told(&machine, &name, elsewhere)?;
+                elsewhere_only_from_your_own(&name, elsewhere, crate::poolprofiles::owned)?;
                 remove_on(&machine, &name)
             };
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
@@ -434,6 +435,26 @@ fn as_the_person_was_told(machine: &Machine, name: &str, elsewhere: bool) -> Res
         "Docker's engine is not what pool {name}'s row said when you were asked, so nothing was \
          removed. Look at its row, and remove it again."
     ))
+}
+
+/// Refused, with nothing done, where pool `name` is being forgotten from an engine other than the
+/// one that made it, and the engine Docker talks to now is not shown to be the person's own:
+/// another engine's answer is what says the pool's runner is elsewhere, so it must be one to trust.
+#[cfg(unix)]
+fn elsewhere_only_from_your_own(
+    name: &str,
+    elsewhere: bool,
+    owned: impl FnOnce() -> Result<std::path::PathBuf, String>,
+) -> Result<(), String> {
+    if !elsewhere {
+        return Ok(());
+    }
+    owned().map(|_| ()).map_err(|why| {
+        format!(
+            "Pool {name} was not removed: Docker is not using an engine shown to be yours ({why}). \
+             Point Docker back at the engine on this machine, and remove it again."
+        )
+    })
 }
 
 /// **The pool `name`, as a removal left it**: gone from `config`, the window's links to its runner

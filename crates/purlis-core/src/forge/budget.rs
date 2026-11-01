@@ -369,10 +369,10 @@ impl Meter {
         let file = self.file.as_ref()?;
         // `<config>/<store folder>/forge-budget/<account>.json`.
         let config_root = file.parent()?.parent()?.parent()?;
-        let mut name = std::ffi::OsString::from("forge-budget-");
-        name.push(file.file_name()?);
-        name.push(".lock");
-        Some(crate::machine::Lock::named(config_root, name.to_str()?))
+        Some(crate::machine::Lock::named(
+            config_root,
+            &lock_name(file.file_name()?.to_str()?),
+        ))
     }
 
     /// Apply `f` to the hour as of `now`, and keep the result when `write`.
@@ -440,8 +440,33 @@ impl Transport for Metered {
     }
 }
 
+/// The name of the lock of the meter kept in the file `kept`. One too long for a file name goes by
+/// its digest, since a lock that cannot be made is a count not kept.
+fn lock_name(kept: &str) -> String {
+    use sha2::Digest as _;
+    /// The longest file name a disk commonly takes, in bytes.
+    const MOST: usize = 255;
+    let name = format!("forge-budget-{kept}.lock");
+    if name.len() <= MOST {
+        return name;
+    }
+    let digest: String = sha2::Sha256::digest(kept.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("forge-budget-{digest}.lock")
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_lock_name_always_fits_a_file_name_and_long_ones_stay_apart() {
+        assert_eq!(super::lock_name("me.json"), "forge-budget-me.json.lock");
+        let (one, other) = ("a".repeat(300), "b".repeat(300));
+        assert!(super::lock_name(&one).len() <= 255);
+        assert_ne!(super::lock_name(&one), super::lock_name(&other));
+    }
+
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
 
