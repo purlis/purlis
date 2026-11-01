@@ -191,6 +191,8 @@ function core({
     async (cmd, args) => {
       const given = (args ?? {}) as Record<string, unknown>;
       switch (cmd) {
+        case "project_chats_run_on":
+          return { pool: null, pools: [] };
         case "project_settings":
           reads += 1;
           return { shared: files.shared, local: files.local };
@@ -330,6 +332,7 @@ describe("the Project level", () => {
         "Persona hosts",
         "Network",
         "Dispatch",
+        "Runs on",
         "Forges",
         "Extensions",
         "Theme",
@@ -408,6 +411,7 @@ describe("every project setting there is, at the Project level", () => {
       ["Internet access", "Certificate checks", "What chats can change", "Always protected"],
     ],
     ["Dispatch", ["Limits", "Dispatch grants", "Policy locks"]],
+    ["Runs on", ["Chats run on"]],
     ["Forges", ["Forge 1: kind", "Forge 1: owner", "Forge 1: host", "Forge 1: repos never listed"]],
     ["Extensions", ["Linter: enabled"]],
     ["Appearance", ["Theme", "Icons"]],
