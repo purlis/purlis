@@ -1672,18 +1672,15 @@ pub(crate) fn judged(
                 format!("purlis did not allow anything for chat {session}: it is not open.")
             })?;
             let ground = grant::Ground::of(root, folder, machine);
-            What::Write(
-                grant::write(target, &ground.place())
-                    .or_else(|refused| {
-                        // A held folder, for this chat alone. Anything else keeps why it was
-                        // refused.
-                        (level == Level::Chat)
-                            .then(|| grant::lift(target, &ground).ok())
-                            .flatten()
-                            .ok_or(refused)
-                    })
-                    .map_err(|why| why.to_string())?,
-            )
+            let written = grant::write(target, &ground.place());
+            // A held folder, for this chat alone. Anything else keeps why it was refused.
+            let lifted = (level == Level::Chat && written.is_err())
+                .then(|| grant::lift(target, &ground).ok())
+                .flatten();
+            match lifted {
+                Some(folder) => What::Write(folder),
+                None => What::Write(written.map_err(|why| why.to_string())?),
+            }
         }
         // Only the socket the Notice drew (#1927): one whose path leads elsewhere by now is
         // never kept, whichever Notice or list the answer came from.
