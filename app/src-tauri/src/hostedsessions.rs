@@ -202,7 +202,7 @@ std::thread_local! {
 }
 
 /// Runs `start` as a dispatch's start: it waits for a runner on its way back as a person's does,
-/// with no Cancel. The host's own limit on that wait, the pool's `vouchWait`, ends it (#4415).
+/// with no Cancel, for at most [`a_dispatchs_hold_within`] (#4415).
 pub(crate) fn a_dispatchs_start<T>(start: impl FnOnce() -> T) -> T {
     struct Forgets;
     impl Drop for Forgets {
@@ -2702,6 +2702,9 @@ pub struct HostedSessions {
     /// the window's link over (#2446): it composes each harness chat, and its proxies listen on
     /// the runner's ports.
     on_a_runner: bool,
+    /// Whether a chat was asked after while a start waited for the runner, so that what the host
+    /// has left running was not known then, and none of it is closed as not reattached (#4415).
+    left_unread: std::sync::atomic::AtomicBool,
     /// Whether the runner holds the project where it keeps its projects, sent the project's code
     /// by the window (#2046): a pool's runner. A runner a test runs on this machine's disk holds
     /// it at the window's own path, and is sent nothing.
@@ -2753,6 +2756,7 @@ impl HostedSessions {
             untaken: Arc::default(),
             reconnecting,
             on_a_runner: false,
+            left_unread: std::sync::atomic::AtomicBool::new(false),
             kept_on_the_runner: false,
             sent: Arc::default(),
             skill_runs: Arc::default(),
@@ -3049,11 +3053,15 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
                     || a_runner_is_gone(connection, &on.runners)))
     };
     let waits = for_a_start && *kept_on_the_runner && waits_for_its_runner();
-    if waits && !lock(held).as_ref().is_some_and(&stays_held) {
+    // Decided once: a link that came back during the wait still needs what a hold does after it,
+    // its code sent above all.
+    let waited = waits && !lock(held).as_ref().is_some_and(&stays_held);
+    if waited {
         waits_off_the_lock(holding, &link)?;
     }
     let mut held = lock(held);
-    if let Some(on) = &*held
+    if !waited
+        && let Some(on) = &*held
         && stays_held(on)
     {
         return Ok((link, on.project.clone()));
@@ -3350,9 +3358,25 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
     })
 }
 
+/// **How long a dispatch's first hold is waited for** (#4415): a cluster pool's `vouchWait`, which
+/// is what the host waits, and a quick command's limit after it. A dispatch has no Cancel, and
+/// nothing else would end this wait where a runner keeps its link and never answers.
+fn a_dispatchs_hold_within(connection: &Connection) -> Duration {
+    let vouching = connection.runners_config().and_then(|config| {
+        let pool = connection.pool()?;
+        purlis_core::runners::cluster_pools(&config)
+            .ok()?
+            .into_iter()
+            .find(|one| one.name() == pool)
+            .map(|one| one.vouch_wait())
+    });
+    vouching.unwrap_or_default() + ANSWER_WITHIN
+}
+
 /// **A start's first hold, off the hold's lock** (#4415): the host's answer waits while the runner
-/// comes back, for at most the pool's `vouchWait`, and nothing else waits on it. Holding again is
-/// harmless, so [`held_on`] goes on as it does for any hold, and is answered at once.
+/// comes back, and nothing else waits on it. The person's Cancel ends a person's wait, and
+/// [`a_dispatchs_hold_within`] a dispatch's. Holding again is harmless, so [`held_on`] goes on as
+/// it does for any hold, and is answered at once.
 fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> {
     struct Waited<'a>(&'a AtomicUsize);
     impl Drop for Waited<'_> {
@@ -3369,10 +3393,15 @@ fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> 
     link.when_reconnecting(Arc::clone(&holding.reconnects));
     link.shared.holds_waiting.fetch_add(1, Ordering::SeqCst);
     let _waited = Waited(&link.shared.holds_waiting);
-    link.call_until_answered(Command::HoldProject {
+    let hold = Command::HoldProject {
         project,
         project_path: String::new(),
-    })
+    };
+    if can_be_cancelled() {
+        link.call_until_answered(hold)
+    } else {
+        link.call_within(hold, a_dispatchs_hold_within(&holding.connection))
+    }
     .map(|_| ())
     .map_err(|why| format!("{NOT_HELD} {why}"))
 }
@@ -4401,7 +4430,16 @@ impl SessionHost for HostedSessions {
 
     /// Held in the host from before this window, which holds the project now to say.
     fn left_running(&self, number: u32) -> bool {
-        self.link().is_ok() && lock(&self.left).contains_key(&number)
+        match self.link() {
+            Ok(_) => lock(&self.left).contains_key(&number),
+            Err(why) => {
+                // Not known yet, rather than not running: nothing is closed for it (#4415).
+                if why == THE_RUNNER_COMES_BACK {
+                    self.left_unread.store(true, Ordering::SeqCst);
+                }
+                false
+            }
+        }
     }
 
     fn reattach(&self, number: u32, announce: &dyn Fn(u32)) -> Result<u32, String> {
@@ -4488,7 +4526,7 @@ impl SessionHost for HostedSessions {
     }
 
     fn close_what_was_not_reattached(&self) {
-        if self.link().is_err() {
+        if self.link().is_err() || self.left_unread.load(Ordering::SeqCst) {
             return;
         }
         let left: Vec<HeldProgram> = lock(&self.left).drain().map(|(_, left)| left).collect();

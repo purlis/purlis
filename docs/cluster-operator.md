@@ -282,7 +282,7 @@ spec:
     listening sooner, so it can say it cannot tell yet whether the chat started; the chat is still
     on its way, so don't dispatch it again. The window's commands wait on neither: one that needs
     the project held while its runner comes back says so at once.
-    Only a start wakes a runner. A runner
+    A look at a project already held wakes nothing. A runner
     with anything else on its Claim, an upstream object in the way among it, is not waited for.
     **A fresh Claim's runner keeps nothing**, so it comes back with a new key, which its desktop
     refuses as it does after `stopped`: make its Claim again. This reaches no one through purlis
