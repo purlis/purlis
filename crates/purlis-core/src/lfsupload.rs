@@ -131,6 +131,20 @@ fn carried(count: usize) -> String {
 fn going_out(dir: &Path, tip: &str, remote: &str) -> Result<Vec<Pointer>, String> {
     let failed = |why: String| format!("purlis could not read what this push sends: {why}");
     crate::hookwire::alive::beat();
+    // `--ignore-missing` below is for the tracking refs: a tip that resolves to nothing refuses.
+    let commit = format!("{tip}^{{commit}}");
+    let resolved = git::run(
+        dir,
+        &["rev-parse", "--verify", "--quiet", commit.as_str()],
+        git::READ,
+    )
+    .map_err(|e| failed(e.to_string()))?;
+    if !resolved.ok() {
+        return Err(failed(format!(
+            "{} names no commit",
+            crate::shown::line(tip)
+        )));
+    }
     // Read one at a time, rather than `--not --remotes`: one broken ref must not refuse a push.
     // A ref that says nothing only makes the walk longer.
     let tracking = format!("refs/remotes/{remote}/");
@@ -803,6 +817,14 @@ mod tests {
         assert_eq!(going_out(&repo, "HEAD", "origin").unwrap().len(), 1);
         assert!(testgit::run(&repo, &["update-ref", "refs/remotes/origin/main", "HEAD"]).ok());
         assert_eq!(going_out(&repo, "HEAD", "origin").unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn a_tip_that_names_no_commit_refuses() {
+        let (_dir, repo) = repo_with("plain.txt", "text\n");
+        assert!(going_out(&repo, "refs/heads/nothing", "origin").is_err());
+        std::fs::write(repo.join(".git/refs/heads/broken"), "garbage\n").unwrap();
+        assert!(going_out(&repo, "refs/heads/broken", "origin").is_err());
     }
 
     #[test]
