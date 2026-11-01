@@ -676,3 +676,65 @@ fn a_current_hovered_focused_chip_falls_only_where_all_three_hold() {
     assert_eq!(fill_of(&all), Some("var(--accent-wash-hover)"), "{sheet}");
     assert_eq!(words_of(&all), Some("var(--text-primary)"), "{sheet}");
 }
+
+// A see-through part fill is laid over its root's own fill, then its grounds (#3303).
+
+/// The rail's button filled light on the dark bar, its words dark, with its badge as `badge`.
+fn on_a_light_button(badge: Value) -> ResolvedTheme {
+    let mut parts = json!({
+        "rail.button.fill": "text.primary",
+        "rail.button.text": "surface.deep",
+    });
+    parts
+        .as_object_mut()
+        .unwrap()
+        .extend(badge.as_object().unwrap().clone());
+    purlis_dark(parts)
+}
+
+fn badge_fell(theme: &ResolvedTheme) -> bool {
+    parts::fallen(theme)
+        .iter()
+        .any(|one| one.floor.starts_with("the badge's words"))
+}
+
+#[test]
+fn a_see_through_part_fill_is_measured_over_the_root_s_own_fill() {
+    // The light words read on the wash over the dark bar, and not on it over the light button
+    // the badge is drawn in.
+    let theme = on_a_light_button(json!({
+        "rail.badge.fill": "accent.wash",
+        "rail.badge.text": "text.primary",
+    }));
+    assert!(badge_fell(&theme), "{:?}", parts::fallen(&theme));
+}
+
+#[test]
+fn words_that_only_read_over_the_root_s_own_fill_hold() {
+    // The opposite way round: dark words on the wash over the light button read where they are
+    // drawn, though they would not over the bar.
+    let theme = on_a_light_button(json!({
+        "rail.badge.fill": "accent.wash",
+        "rail.badge.text": "surface.deep",
+    }));
+    assert!(!badge_fell(&theme), "{:?}", parts::fallen(&theme));
+}
+
+#[test]
+fn a_chip_s_count_stands_on_the_bar_s_ground_whatever_the_chip_s_fill() {
+    // `titlebar.css` holds the wash on an opaque ground of the bar's own, so a chip's fill is not
+    // under it (D-3345-3), and light digits on the wash read on a light chip.
+    let theme = purlis_dark(json!({
+        "titlebar.workspace.fill": "text.primary",
+        "titlebar.workspace.text": "surface.deep",
+        "titlebar.count.fill": "accent.wash",
+        "titlebar.count.text": "text.primary",
+    }));
+    assert!(
+        !parts::fallen(&theme)
+            .iter()
+            .any(|one| one.floor.starts_with("the count's words")),
+        "{:?}",
+        parts::fallen(&theme)
+    );
+}
