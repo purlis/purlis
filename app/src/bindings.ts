@@ -1918,6 +1918,13 @@ export const commands = {
 	 */
 	personaSkill: (plane: PlaneId, persona: string, written: string, change: PersonaSkillChange) => typedError<boolean, string>(__TAURI_INVOKE("persona_skill", { plane, persona, written, change })),
 	/**
+	 *  **The repo skills of the branch folder chat `session` works in** (#4326): what the Skills view
+	 *  lists for it, whose rows from the studio say only what the clone's own branch holds. None for
+	 *  any other chat, and none while the Skill studio is off. Only the view asks, never a chat's open;
+	 *  on a blocking thread, as it reads the folder.
+	 */
+	chatBranchFolderSkills: (plane: PlaneId, session: number) => typedError<StudioSkill[], string>(__TAURI_INVOKE("chat_branch_folder_skills", { plane, session })),
+	/**
 	 *  **The skills a chat's persona names that it started without** (SK-5, #2768): what its tab's
 	 *  Notice says, until it is put away. `None` for a chat that has every one.
 	 */

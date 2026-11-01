@@ -1037,6 +1037,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_skill_runs",
     // The skills Use skill… offers a chat, and its skill budget (#2775): a read.
     "chat_skills",
+    // The repo skills of a chat's branch folder, for the Skills view alone (#4326): a read.
+    "chat_branch_folder_skills",
     "chat_states",
     "chat_usage",
     "chat_work_item",

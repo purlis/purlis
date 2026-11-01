@@ -2284,6 +2284,48 @@ pub fn checkouts_of_chat(plane: &Path, workspace: &str, cwd: &Path) -> Vec<crate
         .collect()
 }
 
+/// **The Skills view's repo rows of a chat on `harness` started in `cwd`, where that is a branch
+/// folder** (#4326): the skills its harness finds in that checkout, as [`outside_rows`] says them
+/// and each under its clone's name. None for any other chat: the rows of one in a clone's own
+/// folder are the studio's ([`studio_list`]), which reads that folder. Read only when the view
+/// asks, never on a chat's open.
+pub fn branch_folder_rows(
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: &str,
+    persona: Option<&str>,
+    harness: Harness,
+    cwd: &Path,
+    env: &crate::harness_plugin::Env<'_>,
+) -> Vec<StudioRow> {
+    if !clones_of_chat(plane, workspace, cwd).is_empty() {
+        return Vec::new();
+    }
+    let outside = repo_skills_of_chat(harness, plane, workspace, cwd);
+    if outside.is_empty() {
+        return Vec::new();
+    }
+    let route = harness.skills();
+    let set = studio_set(built_in, plane, Some(workspace), persona, route, Some(env))
+        .with_outside(route, outside.iter().cloned());
+    let one = HarnessInTheStudio {
+        harness,
+        set,
+        at_the_root: SkillSet::default(),
+        outside,
+        rows: Vec::new(),
+        repo_left_out: Vec::new(),
+        own: None,
+    };
+    // A checkout's path has its links resolved, so its folder is said from the resolved plane.
+    outside_rows(
+        &one,
+        &resolved(plane),
+        &Known::of(plane, built_in),
+        Reading::Whole,
+    )
+}
+
 /// `path` with its links resolved, or as it is where it cannot be.
 fn resolved(path: &Path) -> std::path::PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
