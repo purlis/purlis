@@ -3836,6 +3836,8 @@ pub struct Applied {
     /// What [`Self::answered`] found to say once about an older Claude Code, and the version it
     /// names, marked said once a tab shows it ([`older_shown`]).
     older: Option<(String, ClaudeCodeVersion)>,
+    /// The shared folders of the home a chat at the floor finds made ([`usual_home_folders`]).
+    usual_folders: Vec<PathBuf>,
     /// The persona's tools for this chat (#1407), written as its line is decided.
     tools: Option<Box<tools::Resolved>>,
     /// purlis's own program the wrap starts the chat under on Linux, as it was checked and held
@@ -4211,6 +4213,12 @@ impl Applied {
         out
     }
 
+    /// Makes the shared folders of the home a chat at the floor finds there
+    /// ([`usual_home_folders`]): done as a chat starts, outside its sandbox.
+    pub fn make_usual_folders(&self) {
+        make_folders(&self.usual_folders);
+    }
+
     /// The form as compiled for the project, before the manifests of a chat's own folders are
     /// added: what a chat is handed is [`Self::form_in`] its folder.
     pub fn form(&self) -> &Form {
@@ -4272,6 +4280,8 @@ impl Applied {
                  so nothing was started."
             )));
         }
+        // Made once the checks above have let this start go ahead.
+        self.make_usual_folders();
         let mut line = self
             .harness
             .adapter()
@@ -6527,9 +6537,76 @@ pub(crate) fn applied_of(
         // Claude Code on its own sandbox waits for its program's answer ([`Applied::answered`]).
         through_proxy: harness != Harness::ClaudeCode || wrapped,
         older: None,
+        usual_folders: usual_home_folders(compiled.level, machine),
         tools: None,
         wrap: None,
     })
+}
+
+/// **The shared folders of the home a chat at the floor finds there** (#4357): `~/.local`,
+/// `~/.local/share` and `~/.config`, with the folders above `$XDG_DATA_HOME` and
+/// `$XDG_CONFIG_HOME` where those are in the home, each folder before what is in it.
+///
+/// Every folder above a denied path stays where it is, so a chat cannot make one that is missing:
+/// a rule cannot tell a new folder from one moved into place with files in it. Each of these holds
+/// many tools' folders, so purlis makes it before the chat starts, and the chat makes its own
+/// inside. None at the full sandbox, which keeps a chat out of the home anyway.
+fn usual_home_folders(level: Level, machine: &Machine) -> Vec<PathBuf> {
+    let Some(home) = machine.home.as_deref().filter(|_| level == Level::Floor) else {
+        return Vec::new();
+    };
+    let homes = Homes::of(machine);
+    let mut out: Vec<PathBuf> = Vec::new();
+    let usual = [home.join(".local/share"), home.join(".config")];
+    for folder in usual
+        .iter()
+        .chain(homes.data.iter())
+        .chain(homes.config.iter())
+    {
+        let plain = folder
+            .components()
+            .all(|part| part != std::path::Component::ParentDir);
+        if plain && folder.starts_with(home) && folder != home {
+            for made in ancestors_within(folder, home)
+                .into_iter()
+                .chain([folder.clone()])
+            {
+                if !out.contains(&made) {
+                    out.push(made);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `folders`, each before what is in it, made where it is missing and its parent is there, private
+/// to the person as the XDG base directory rules ask. A name already taken is left as it is, and
+/// nothing is made through it where it is a link or a file. One not made is left to the chat, which
+/// is refused as it would have been.
+fn make_folders(folders: &[PathBuf]) {
+    let mut not_folders: Vec<&PathBuf> = Vec::new();
+    for folder in folders {
+        if not_folders.iter().any(|name| folder.starts_with(name)) {
+            continue;
+        }
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        match builder.create(folder) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(err) => {
+                tracing::warn!(
+                    "purlis: {} was not made for the chat ({err})",
+                    folder.display()
+                );
+            }
+        }
+        if !std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()) {
+            not_folders.push(folder);
+        }
+    }
 }
 
 /// What a command purlis runs on a sandboxed chat's behalf is held to (#1407): exactly what the

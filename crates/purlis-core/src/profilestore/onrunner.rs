@@ -191,7 +191,7 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
             let mut sent = Vec::with_capacity(read.len());
             let mut size = 0;
             for (path, bytes) in read {
-                let bytes = super::sent::without_credentials(&kept.harness, &path, &bytes)?;
+                let bytes = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
                 size += bytes.len() + path.len() + FRAMING_BYTES;
                 sent.push(purlis_session_protocol::session::SettingsFile { path, bytes });
             }
@@ -382,7 +382,7 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
         if let Some(why) = too_large(&path, bytes.len()) {
             return Err(why);
         }
-        let bytes = super::sent::without_credentials(&kept.harness, &path, &bytes)?;
+        let bytes = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
         sent.push(wire::SettingsFile { path, bytes });
     }
     let sent = match only_what_changed(&kept.harness, sent, held) {

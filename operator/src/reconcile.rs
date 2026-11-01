@@ -299,6 +299,8 @@ struct Context {
     metrics: Arc<Metrics>,
     /// How long a runner goes on not being ready before its Claim says it is stuck (#3739).
     stuck_after: Duration,
+    /// The least a Pool's retention can say (#4405).
+    retention_floor: lifecycle::RetentionFloor,
 }
 
 /// How long a Claim waits for its requester's quota to count before it says so.
@@ -631,7 +633,12 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
             claim = %name, %namespace, runner_namespace = %runner_name, %kind, %object,
             "left as it is: an upstream object the operator did not make has the name it would use"
         );
-        let status = status_of_an_object_in_the_way(&kind, &object, &runner_name);
+        let mut status = status_of_an_object_in_the_way(&kind, &object, &runner_name);
+        // A stop while something is in the way is still a stop: its time does not count toward
+        // the Claim's retention (#4405).
+        if stopped {
+            lifecycle::pausing_idle(&mut status, claim.status.as_ref());
+        }
         write_status(client, &claim, namespace, status).await?;
         return Ok(Action::await_change());
     }
@@ -787,11 +794,12 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
                 if let Err(error) = renew_image(client, sandbox, &pool).await {
                     tracing::warn!(claim = %name, %namespace, %error, "a suspended runner could not take its pool's image");
                 }
-                let retention = lifecycle::retention(
+                let retention = lifecycle::retention_above(
                     &claim,
                     &pool,
                     Some(sandbox),
                     k8s_openapi::jiff::Timestamp::now(),
+                    context.retention_floor,
                 );
                 lifecycle::saying_retention(&mut status, retention);
                 // Deleted only on a word already on the Claim, which the cluster's policy reads.
@@ -1747,6 +1755,13 @@ async fn run_claims(
                     "PURLIS_OPERATOR_STUCK_AFTER",
                     lifecycle::STUCK_AFTER,
                 ),
+                retention_floor: std::env::var("PURLIS_OPERATOR_RETENTION_FLOOR")
+                    .ok()
+                    .and_then(|seconds| seconds.parse().ok())
+                    .map_or_else(
+                        lifecycle::RetentionFloor::default,
+                        lifecycle::RetentionFloor::of,
+                    ),
             }),
         )
         .for_each(|result| async move {

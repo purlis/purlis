@@ -124,6 +124,18 @@ fn forgotten(config_root: &Path, pool: &Pool, why: Refused, locked: &runners::Lo
     }
 }
 
+/// **Whether the pool `name`'s runner is on another engine than `docker` reaches** (#4325), by the
+/// engine that made it. Not where no engine was noted of it, or none says which it is now.
+pub fn on_another_engine(config_root: &Path, docker: &Docker, name: &str) -> bool {
+    let Ok(kept) = runners::runner_for(config_root, name) else {
+        return false;
+    };
+    let Some(made_on) = kept.engine.as_deref() else {
+        return false;
+    };
+    matches!(docker.engine_id(), Ok(Some(now)) if now != made_on)
+}
+
 /// **Removes the pool `name`**: its runner whole ([`runners::remove`]), with `unpair` taking
 /// this desktop out of its peers when its link is up, then the pool's record once its runner is
 /// gone. A pool whose runner was never kept is forgotten at once. What [`runners::remove`] did,
@@ -152,8 +164,9 @@ pub fn remove(
     let mut removed = None;
     let mut all_gone = true;
     for kept in of_it {
-        let one = runners::remove_locked(config_root, docker, kept.name(), unpair, &locked)?;
+        let mut one = runners::remove_locked(config_root, docker, kept.name(), unpair, &locked)?;
         all_gone &= one.forgotten;
+        one.earlier = removed.as_ref().and_then(runners::Removed::left);
         removed = Some(one);
     }
     if all_gone {
@@ -1113,19 +1126,27 @@ pub fn cluster_deletion_notices(config_root: &Path) -> Vec<(String, String)> {
 /// check, view, redial or kill switch asks this: they never wake a runner (ADR 0089, amended
 /// 2026-10-27, item 5). A word that cannot be written refuses nothing: the check every
 /// link makes says why the runner is not there.
+///
+/// **Answers how long the start waits for it** (#4403), where its Claim says it is on its way back:
+/// the pool's own wait for a runner to be vouched for, which the person can raise.
 pub fn run_cluster_runner_again(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     name: &str,
-) {
-    let Ok(Some((pool, kept))) = runners::cluster_runner_for(config_root, name) else {
-        return;
-    };
-    if let Err(why) = pool
+) -> Option<std::time::Duration> {
+    let (pool, kept) = runners::cluster_runner_for(config_root, name).ok()??;
+    match pool
         .kubectl(kubectl)
         .run_again_if_idle(&kept.claimed.namespace, &kept.claimed.name)
     {
-        tracing::warn!("purlis: pool {name}'s idle runner could not be asked to run again: {why}");
+        Ok(true) => Some(pool.vouch_wait()),
+        Ok(false) => None,
+        Err(why) => {
+            tracing::warn!(
+                "purlis: pool {name}'s idle runner could not be asked to run again: {why}"
+            );
+            None
+        }
     }
 }
 
@@ -1394,15 +1415,15 @@ pub fn cluster_runner_still_yours(
 
 /// **Whether the cluster pool `name`'s runner says `profile` is signed in** (#4164), by its own
 /// `purlis profile sign-in --check` in the vouched pod ([`cluster_sign_in`]), for a sign-in with
-/// no link to the runner to ask over. Refused where the check every link makes fails, or the
-/// runner says neither, as for a profile it does not keep.
+/// no link to the runner to ask over. `None` where it keeps no profile of that name; refused
+/// where the check every link makes fails, or the runner could not say.
 pub fn cluster_standing(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     name: &str,
     judged: &runners::ClusterKept,
     profile: &str,
-) -> Result<crate::profilestore::sign_in::Standing, String> {
+) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
     let login = cluster_sign_in(
         config_root,
         kubectl,

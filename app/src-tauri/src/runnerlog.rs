@@ -192,6 +192,11 @@ impl RunnerLog {
         self.down = down;
     }
 
+    /// Whether the link to the runner is down, as far as it was told.
+    pub fn link_is_down(&self) -> bool {
+        self.down
+    }
+
     pub fn now(&self) -> RunnerLogNow {
         RunnerLogNow {
             device: self.device.clone(),

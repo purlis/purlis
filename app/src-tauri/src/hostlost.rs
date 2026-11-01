@@ -47,6 +47,9 @@ pub struct LostChat {
     pub left_in: LeftIn,
     /// It has a conversation to resume, so Resume puts it back.
     pub resumable: bool,
+    /// Its host was a pool's runner, gone for good, and its conversation went with that runner's
+    /// home (#4350).
+    pub with_the_runner: bool,
 }
 
 /// Told each chat whose program ended with its host. The event carries its project.
@@ -85,6 +88,7 @@ pub fn after_the_host(
 pub struct LostRun {
     pub left_in: LeftIn,
     pub resumable: bool,
+    pub with_the_runner: bool,
 }
 
 /// The chats of a project whose program ended with their session host, by session, until the
@@ -128,6 +132,7 @@ pub fn chat_lost_with_the_host(
         session,
         left_in: lost.left_in,
         resumable: lost.resumable,
+        with_the_runner: lost.with_the_runner,
     }))
 }
 
@@ -198,10 +203,12 @@ mod tests {
         let hibernated = LostRun {
             left_in: LeftIn::Hibernated,
             resumable: true,
+            with_the_runner: false,
         };
         let failed = LostRun {
             left_in: LeftIn::Failed,
             resumable: false,
+            with_the_runner: false,
         };
         lost.note(3, hibernated);
         lost.note(4, failed);

@@ -1418,20 +1418,18 @@ impl Kubectl {
     /// **Asks the operator to run the Claim `namespace`/`name`'s idle runner again** (#3980), where
     /// its `Idle` condition says it is suspended: the condition's own time is the word, so this
     /// says nothing of any later suspension. Nothing is written otherwise.
-    pub fn run_again_if_idle(&self, namespace: &str, name: &str) -> Result<(), Refused> {
+    ///
+    /// Answers whether this word brings its runner back (#4403, [`suspended_for_being_idle`]).
+    pub fn run_again_if_idle(&self, namespace: &str, name: &str) -> Result<bool, Refused> {
         let Some(held) = self.claim_json(namespace, name)? else {
-            return Ok(());
+            return Ok(false);
         };
         let Some(since) = idle_since(&held) else {
-            return Ok(());
+            return Ok(false);
         };
-        if held
-            .pointer("/metadata/annotations")
-            .and_then(|marks| marks.get(RUN_AGAIN_ANNOTATION))
-            .and_then(serde_json::Value::as_str)
-            == Some(since)
-        {
-            return Ok(());
+        let comes_back = suspended_for_being_idle(&held);
+        if run_again_word(&held) == Some(since) {
+            return Ok(comes_back);
         }
         let patch = serde_json::json!({
             "metadata": { "annotations": { RUN_AGAIN_ANNOTATION: since } },
@@ -1451,7 +1449,7 @@ impl Kubectl {
             None,
             MOST_PRINTED,
         )
-        .map(|_| ())
+        .map(|_| comes_back)
     }
 
     /// **What the Claim `namespace`/`name` says of its deletion** (#3981), where its operator gave
@@ -2061,6 +2059,30 @@ pub fn idle_since(held: &serde_json::Value) -> Option<&str> {
         })?
         .get("lastTransitionTime")?
         .as_str()
+}
+
+/// The word its desktop wrote on the Claim `held` to run its idle runner again, where it did.
+fn run_again_word(held: &serde_json::Value) -> Option<&str> {
+    held.pointer("/metadata/annotations")?
+        .get(RUN_AGAIN_ANNOTATION)?
+        .as_str()
+}
+
+/// **Whether the Claim `held`'s runner is suspended for being idle and nothing else** (#4403), so
+/// the word to run it again brings it back and a start waits for it. An `Idle` kept while `Ready`
+/// says something else, an object in the way or its pool deleted, is not acted on, however long a
+/// start waited. The word itself says nothing later: it stays on the Claim after the runner runs.
+pub fn suspended_for_being_idle(held: &serde_json::Value) -> bool {
+    idle_since(held).is_some()
+        && held
+            .pointer("/status/conditions")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|conditions| {
+                conditions.iter().any(|one| {
+                    one.get("type").and_then(serde_json::Value::as_str) == Some("Ready")
+                        && one.get("reason").and_then(serde_json::Value::as_str) == Some("Idle")
+                })
+            })
 }
 
 /// What the Claim `held`'s `DeletionNotice` condition says, where it is `True` (#3981).

@@ -272,6 +272,83 @@ impl Relay {
 }
 
 impl Relay {
+    /// **Waits, for at most `patience`, for the link `peer`'s commands go over to come up** (#4403):
+    /// for a runner on its way back, which refuses each link until it is vouched for. It ends at
+    /// once on what waiting cannot mend, a changed key or a runner gone for good, and whatever it
+    /// ends on, the command that waited goes on to say so as it would have. Answers whether the
+    /// link came up.
+    pub(crate) async fn waits_for_its_runner(
+        &self,
+        peer: &Peer,
+        patience: std::time::Duration,
+    ) -> bool {
+        // Only the watch is held: a link that ends lets its relayed link go, and that ends this.
+        let Ok(mut standing) = self.relayed(peer).map(|relayed| relayed.standing.clone()) else {
+            return false;
+        };
+        tokio::time::timeout(patience, async {
+            loop {
+                let (waits, up) = match &*standing.borrow_and_update() {
+                    Standing::Linking => (true, false),
+                    Standing::Down(down) => (!down.key_changed && !down.gone, false),
+                    Standing::Up(_) => (false, true),
+                    Standing::Over(_) => (false, false),
+                };
+                if !waits {
+                    return up;
+                }
+                if standing.changed().await.is_err() {
+                    return false;
+                }
+            }
+        })
+        .await
+        .unwrap_or(false)
+    }
+
+    /// **`peer` subscribes while its runner comes back** (#4403): a window subscribes as its link
+    /// opens, before it holds or starts anything, and a refusal there would end the start before
+    /// its wait. Where no link is up, what it subscribes from is kept, the link up next carries it
+    /// over from there, and the window hears `link_back`. Anything else goes as a subscribe does.
+    pub(crate) async fn subscribes_as_its_runner_comes_back(
+        &self,
+        since: Since,
+        peer: &Peer,
+    ) -> Result<mpsc::Receiver<Pushed>, Refusal> {
+        let relayed = self.relayed(peer)?;
+        let mut standing = relayed.standing.clone();
+        while matches!(&*standing.borrow_and_update(), Standing::Linking) {
+            if standing.changed().await.is_err() {
+                return Err(ended());
+            }
+        }
+        let (told, pushed) = mpsc::channel(MOST_PUSHED_QUEUED);
+        let comes_up = {
+            // Counted, so a carry-over that began meanwhile waits for what is kept here.
+            let _changing = Counted::start(&relayed.client.changing);
+            let comes_up = matches!(
+                &*standing.borrow(),
+                Standing::Down(down) if !down.key_changed && !down.gone
+            );
+            if comes_up {
+                let mut kept = relayed.client.kept();
+                kept.subscriber = Some(told);
+                kept.subscriptions += 1;
+                kept.cursor = since.clone();
+            }
+            comes_up
+        };
+        if !comes_up {
+            return session::Host::subscribe(self, since, peer).await;
+        }
+        // A link that came up just before that was kept was not carried it: it is told here.
+        if matches!(&*standing.borrow(), Standing::Up(_)) {
+            let upstream = relayed.up(peer).await?;
+            upstream.call(Command::Subscribe { since }).await?;
+        }
+        Ok(pushed)
+    }
+
     /// **`peer`'s link is the window that keeps `name` for it** (#2623): every link to the other
     /// host made for it names the window there by [`taken_back_as`] `name`. Refused on a link
     /// that sent anything before, and while another client link holds the name.

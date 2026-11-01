@@ -223,6 +223,9 @@ minisign = "0.10"
 # dev-dependency on itself is how a crate turns a feature on for its tests and only its
 # tests; without it the fence would be a rule every crate but this one had to keep.
 purlis-core = { path = ".", features = ["fenced", "test-support"] }
+# An in-memory link to the desktop's host, for the kind test that goes from a window's start to a
+# suspended cluster runner (#4403). No crate is added.
+purlis-session-protocol = { workspace = true, features = ["any-stream"] }
 # The fork lock held as a fork holds it, for the executor's test of what waits for one.
 purlis-terminal = { workspace = true, features = ["test-support"] }
 # A move of a skill caught at the instant a swap would land, for delete's and restore's tests.

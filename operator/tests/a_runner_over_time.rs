@@ -9,8 +9,9 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, Time};
 use k8s_openapi::jiff::{SignedDuration, Timestamp};
 use kube::api::ObjectMeta;
 use purlis_cluster_operator::lifecycle::{
-    DELETION_NOTICE, Retention, STUCK, idle_condition, pausing_idle, pool_object_is_orphaned,
-    retention, saying_stuck, status_of_an_idle_runner, upstream_claim_is_orphaned, with_image,
+    DELETION_NOTICE, Retention, RetentionFloor, STUCK, idle_condition, pausing_idle,
+    pool_object_is_orphaned, retention, retention_above, saying_stuck, status_of_an_idle_runner,
+    upstream_claim_is_orphaned, with_image,
 };
 use purlis_cluster_operator::person::CLAIM_UID_ANNOTATION;
 use purlis_cluster_operator::upstream::{
@@ -18,6 +19,7 @@ use purlis_cluster_operator::upstream::{
 };
 use purlis_cluster_operator::{
     Claim, ClaimSpec, ClaimStatus, Pool, PoolSpec, status_of_a_stopped_claim,
+    status_of_an_object_in_the_way,
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -120,6 +122,63 @@ fn a_kept_claim_is_noticed_then_deleted_and_never_sooner() {
         retention(&noticed, &hurried, Some(&sandbox), start + hours(99)),
         Retention::Notice { .. }
     ));
+}
+
+/// **A typed `30s` does not lose a volume** (#4405): a Pool's retention holds above its floor, two
+/// hours with an hour's notice, and a run that needs it shorter says so to the operator.
+#[test]
+fn a_pools_retention_has_a_floor() {
+    let start = Timestamp::now();
+    let sandbox = suspended_at(start);
+    let mut hasty = pool();
+    hasty.spec.delete_suspended_after = "30s".into();
+    hasty.spec.notice_before_delete = "10s".into();
+    let held = idle_from(start);
+    assert_eq!(
+        retention(
+            &held,
+            &hasty,
+            Some(&sandbox),
+            start + SignedDuration::from_secs(59 * 60)
+        ),
+        Retention::Keep,
+        "before an hour has passed, nothing is said"
+    );
+    assert!(
+        matches!(
+            retention(&held, &hasty, Some(&sandbox), start + hours(1)),
+            Retention::Notice { at } if at == start + hours(2)
+        ),
+        "the notice is an hour, before two hours"
+    );
+    assert!(
+        matches!(
+            retention_above(
+                &held,
+                &hasty,
+                Some(&sandbox),
+                start + SignedDuration::from_secs(25),
+                RetentionFloor::of(1)
+            ),
+            Retention::Notice { .. }
+        ),
+        "a floor lowered for a kind run lets the Pool's own times hold"
+    );
+}
+
+/// **A stop while an upstream object is in the way is still a stop** (#4405): the Claim's `Idle`
+/// says so as any stop's does, so when it is `True` again the count starts over.
+#[test]
+fn a_stop_with_something_in_the_way_does_not_count_either() {
+    let held = idle_from(Timestamp::now());
+    let mut status = status_of_an_object_in_the_way("SandboxTemplate", "x", "purlis-runners-ada");
+    pausing_idle(&mut status, held.status.as_ref());
+    let paused = status
+        .conditions
+        .iter()
+        .find(|one| one.type_ == "Idle")
+        .expect("Idle is said");
+    assert_eq!(paused.status, "Unknown");
 }
 
 #[test]
