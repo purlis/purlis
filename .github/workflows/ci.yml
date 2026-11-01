@@ -242,7 +242,17 @@ jobs:
             *) echo "::error::no Claude Code build for $RUNNER_ARCH"; exit 1 ;;
           esac
           package="@anthropic-ai/claude-code-linux-$arch"
-          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
+          # From the committed lockfile, so npm checks the tarball against its integrity; npm
+          # installs only the build for this runner's os and cpu. The lockfile names the version
+          # claude.txt does, or the step stops here.
+          mkdir -p "$RUNNER_TEMP/claude-code"
+          cp tests/fixtures/harness-versions/claude-code/package.json tests/fixtures/harness-versions/claude-code/package-lock.json "$RUNNER_TEMP/claude-code/"
+          locked=$(jq -r --arg p "node_modules/$package" '.packages[$p].version' "$RUNNER_TEMP/claude-code/package-lock.json")
+          if [ "$locked" != "$version" ]; then
+            echo "::error file=tests/fixtures/harness-versions/claude-code/package-lock.json::the lockfile holds $package $locked and claude.txt says $version: set the version in its package.json and run npm install --package-lock-only there"
+            exit 1
+          fi
+          (cd "$RUNNER_TEMP/claude-code" && npm ci --ignore-scripts --no-audit --no-fund)
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
             cargo nextest run --workspace --locked --profile ci --no-capture \
@@ -503,7 +513,17 @@ jobs:
           # called, and no credential is used.
           version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
           package="@anthropic-ai/claude-code-linux-x64"
-          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
+          # From the committed lockfile, so npm checks the tarball against its integrity; npm
+          # installs only the build for this runner's os and cpu. The lockfile names the version
+          # claude.txt does, or the step stops here.
+          mkdir -p "$RUNNER_TEMP/claude-code"
+          cp tests/fixtures/harness-versions/claude-code/package.json tests/fixtures/harness-versions/claude-code/package-lock.json "$RUNNER_TEMP/claude-code/"
+          locked=$(jq -r --arg p "node_modules/$package" '.packages[$p].version' "$RUNNER_TEMP/claude-code/package-lock.json")
+          if [ "$locked" != "$version" ]; then
+            echo "::error file=tests/fixtures/harness-versions/claude-code/package-lock.json::the lockfile holds $package $locked and claude.txt says $version: set the version in its package.json and run npm install --package-lock-only there"
+            exit 1
+          fi
+          (cd "$RUNNER_TEMP/claude-code" && npm ci --ignore-scripts --no-audit --no-fund)
           cp "$RUNNER_TEMP/claude-code/node_modules/$package/claude" "$parity/claude-code"
           docker build --file tests/parity/runner.Dockerfile \
             --build-arg RUNNER=purlis-runner:parity --build-arg "AT=$PWD/target/debug" \
@@ -1601,7 +1621,17 @@ jobs:
             *) echo "::error::no Claude Code build for $RUNNER_ARCH"; exit 1 ;;
           esac
           package="@anthropic-ai/claude-code-darwin-$arch"
-          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
+          # From the committed lockfile, so npm checks the tarball against its integrity; npm
+          # installs only the build for this runner's os and cpu. The lockfile names the version
+          # claude.txt does, or the step stops here.
+          mkdir -p "$RUNNER_TEMP/claude-code"
+          cp tests/fixtures/harness-versions/claude-code/package.json tests/fixtures/harness-versions/claude-code/package-lock.json "$RUNNER_TEMP/claude-code/"
+          locked=$(jq -r --arg p "node_modules/$package" '.packages[$p].version' "$RUNNER_TEMP/claude-code/package-lock.json")
+          if [ "$locked" != "$version" ]; then
+            echo "::error file=tests/fixtures/harness-versions/claude-code/package-lock.json::the lockfile holds $package $locked and claude.txt says $version: set the version in its package.json and run npm install --package-lock-only there"
+            exit 1
+          fi
+          (cd "$RUNNER_TEMP/claude-code" && npm ci --ignore-scripts --no-audit --no-fund)
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
             tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- claude_codes_own_sandbox_holds_the_settings_purlis_writes:: --nocapture
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app, which is
