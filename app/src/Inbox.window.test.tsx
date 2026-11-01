@@ -819,6 +819,17 @@ describe("answering in place", () => {
     expect(screen.getByText("Which branch?")).toBeTruthy();
   });
 
+  it("reaches a reply box from its card with one Tab and ↓, past the message", async () => {
+    core();
+    draw([{ ...QUESTION, last_message: "Which branch?" }]);
+    await userEvent.tab();
+    expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Reply to steward 6" }),
+    );
+  });
+
   it("says once under the reason it also waits for that it has no message to show", () => {
     core();
     draw([QUESTION], {

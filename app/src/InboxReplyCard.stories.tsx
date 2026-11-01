@@ -43,14 +43,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The Tab key reaches the reply box, whatever the card says above it. */
+/** The list is one Tab stop: Tab lands on the card, and ↓ goes on to its reply box. */
 async function theReplyBoxIsReached(canvasElement: HTMLElement) {
-  const box = () => within(canvasElement).getByRole("textbox", { name: "Reply to steward 6" });
   await userEvent.tab();
-  while (document.activeElement !== box() && canvasElement.contains(document.activeElement)) {
-    await userEvent.tab();
-  }
-  await untilFocused(box, "Tab reaches the reply box");
+  await untilFocused(() => canvasElement.querySelector("li.inbox-ask"), "Tab lands on the card");
+  await userEvent.keyboard("{ArrowDown}");
+  await untilFocused(
+    () => within(canvasElement).getByRole("textbox", { name: "Reply to steward 6" }),
+    "↓ reaches the reply box",
+  );
 }
 
 /** What the chat said, over its lines, the status line above it once. */
