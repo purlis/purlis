@@ -409,13 +409,17 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
                 "-c",
                 "echo memory.peak $(cat /sys/fs/cgroup/memory.peak); \
                  grep -E 'usage_usec|nr_throttled' /sys/fs/cgroup/cpu.stat; \
-                 du -sk \"$HOME\" /tmp",
+                 du -sk \"$HOME\" /tmp || true",
             ]),
             None,
             64 * 1024,
         )
         .expect("what the runner used");
-    eprintln!("measured #3844: {}", measured);
+    std::io::Write::write_all(
+        &mut std::io::stderr(),
+        format!("measured #3844: {measured}\n").as_bytes(),
+    )
+    .expect("said");
 
     // A killed `kubectl exec -i` closes the input of what it ran in the pod (#3819): what Cancel
     // ends a sign-in on a cluster runner by, since nothing else reaches into the pod.
