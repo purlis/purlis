@@ -306,6 +306,44 @@ impl Relay {
         .unwrap_or(false)
     }
 
+    /// **`peer` subscribes while its runner comes back** (#4403): a window subscribes as its link
+    /// opens, before it holds or starts anything, and a refusal there would end the start before
+    /// its wait. Where no link is up, what it subscribes from is kept, the link up next carries it
+    /// over from there, and the window hears `link_back`. Anything else goes as a subscribe does.
+    pub(crate) async fn subscribes_as_its_runner_comes_back(
+        &self,
+        since: Since,
+        peer: &Peer,
+    ) -> Result<mpsc::Receiver<Pushed>, Refusal> {
+        let relayed = self.relayed(peer)?;
+        let mut standing = relayed.standing.clone();
+        while matches!(&*standing.borrow_and_update(), Standing::Linking) {
+            if standing.changed().await.is_err() {
+                return Err(ended());
+            }
+        }
+        let comes_up = matches!(
+            &*standing.borrow(),
+            Standing::Down(down) if !down.key_changed && !down.gone
+        );
+        if !comes_up {
+            return session::Host::subscribe(self, since, peer).await;
+        }
+        let (told, pushed) = mpsc::channel(MOST_PUSHED_QUEUED);
+        {
+            let mut kept = relayed.client.kept();
+            kept.subscriber = Some(told);
+            kept.subscriptions += 1;
+            kept.cursor = since.clone();
+        }
+        // A link that came up just before that was kept was not carried it: it is told here.
+        if matches!(&*standing.borrow(), Standing::Up(_)) {
+            let upstream = relayed.up(peer).await?;
+            upstream.call(Command::Subscribe { since }).await?;
+        }
+        Ok(pushed)
+    }
+
     /// **`peer`'s link is the window that keeps `name` for it** (#2623): every link to the other
     /// host made for it names the window there by [`taken_back_as`] `name`. Refused on a link
     /// that sent anything before, and while another client link holds the name.

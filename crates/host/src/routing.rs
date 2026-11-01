@@ -222,6 +222,14 @@ impl Routed {
         self.hosting.waits_for(&runner, asked)
     }
 
+    /// Whether the runner this link is relayed to was asked to run again, and is not back yet.
+    fn its_runner_comes_back(&self) -> bool {
+        !self.hosting.is_stopped()
+            && lock(&self.runner)
+                .as_deref()
+                .is_some_and(|runner| self.hosting.waits_for(runner, None).is_some())
+    }
+
     /// `peer`'s hold or start waits for its runner where that is on its way back (#4403).
     async fn waits_for_the_runner(&self, relay: &Relay, peer: &Peer) -> bool {
         let Some(patience) = self.run_again().await else {
@@ -331,6 +339,9 @@ impl session::Host for Routed {
             Goes::Here => {
                 self.named_here(peer).await;
                 session::Host::subscribe(&self.hosting, since, peer).await
+            }
+            Goes::There(relay) if self.its_runner_comes_back() => {
+                relay.subscribes_as_its_runner_comes_back(since, peer).await
             }
             Goes::There(relay) => session::Host::subscribe(&relay, since, peer).await,
             Goes::Refused(refusal) => Err(refusal),

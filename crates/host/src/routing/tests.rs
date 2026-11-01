@@ -533,13 +533,20 @@ fn its_key_changed() -> std::io::Error {
     std::io::Error::other(hostlink::KeyNoLongerHeld("another key".to_owned()))
 }
 
-/// What a hold on a link relayed to `host`'s runner was refused with, and the same for a start.
+/// What a link opened as a window opens one, relayed to `host`'s runner, was refused with first:
+/// its subscription or its hold; and what its start was refused with.
 async fn refused_a_hold_and_a_start(host: Hosting) -> (Option<String>, Option<String>) {
     let window = routed(Scope::LocalUi, host).await;
     tokio::time::timeout(PATIENCE, window.relay_to("builds"))
         .await
         .unwrap()
         .expect("relayed");
+    // As a window's link opens: its log's end, which may be refused, then its subscription.
+    let _ = window.log_end().await;
+    let subscribed = window.subscribe(session::Since::default()).await;
+    if let Err(refused) = subscribed {
+        return (code(&refused).map(str::to_owned), None);
+    }
     let held = tokio::time::timeout(
         PATIENCE,
         window.hold_project("01J9PRJCT00000000000000000", ""),

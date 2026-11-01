@@ -716,6 +716,12 @@ fn an_idle_kept_runner_is_suspended_and_its_desktop_runs_it_again() {
         let host = desktops_host(&kubectl, &operator, &paired, &ours, &namespace);
         let (window, mut views) = a_window_on(host).await;
         window.relay_to("ada-idle").await.expect("relayed");
+        // As a window's link opens, before anything it holds or starts.
+        let _ = window.log_end().await;
+        window
+            .subscribe(Default::default())
+            .await
+            .expect("a link opens while its runner comes back");
         tokio::time::timeout(Duration::from_secs(300), window.hold_project(PROJECT, ""))
             .await
             .expect("the hold waited, and no longer than its time")
