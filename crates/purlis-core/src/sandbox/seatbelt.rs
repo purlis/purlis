@@ -300,20 +300,10 @@ pub fn planted_rules(root: &Path) -> Result<Vec<String>, &'static str> {
                 }
             }
             let regex = format!("^{root}/(.*/)?{body}{tail}");
-            let lifted = lifted
-                .iter()
-                .find(|folder| folder.ends_with(planted.path) && !planted.path.contains("**"));
-            Ok(match lifted {
-                Some(folder) => format!(
-                    "(deny file-write* file-link (require-all (regex {}) (require-not (subpath {}))))",
-                    string(&regex)?,
-                    quote(folder)?
-                ),
-                None => format!(
-                    "(deny file-write* file-link (regex {}))",
-                    string(&regex)?
-                ),
-            })
+            Ok(format!(
+                "(deny file-write* file-link (regex {}))",
+                string(&regex)?
+            ))
         })
         .collect()
 }
@@ -890,10 +880,20 @@ pub fn floor_planted_rules_but(lifted: &[PathBuf]) -> Result<Vec<String>, &'stat
             // Each letter either case: the disk compares names case-folded, so a name spelled
             // another way is the same file.
             let regex = format!("^/(.*/)?{}{tail}", either_case(&body));
-            Ok(format!(
-                "(deny file-write* file-link (regex {}))",
-                string(&regex)?
-            ))
+            let lifted = lifted
+                .iter()
+                .find(|folder| folder.ends_with(planted.path) && !planted.path.contains("**"));
+            Ok(match lifted {
+                Some(folder) => format!(
+                    "(deny file-write* file-link (require-all (regex {}) (require-not (subpath {}))))",
+                    string(&regex)?,
+                    string(&folder.to_string_lossy())?
+                ),
+                None => format!(
+                    "(deny file-write* file-link (regex {}))",
+                    string(&regex)?
+                ),
+            })
         })
         .collect()
 }

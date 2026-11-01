@@ -266,3 +266,15 @@ fn a_lifted_folder_is_written_past_its_own_names_rule_alone() {
         changed[0].1
     );
 }
+
+/// What a person lifted reaches the floor's profile.
+#[test]
+fn a_lifted_folder_reaches_the_floors_profile() {
+    let own = crate::sandbox::seatbelt::Own {
+        lifted: vec![std::path::PathBuf::from("/Users/a/.config/gh")],
+        ..Default::default()
+    };
+    let profile =
+        crate::sandbox::seatbelt::floor_profile(&[], &[], &own, &[], None).expect("a profile");
+    assert!(profile.contains("(require-not (subpath \"/Users/a/.config/gh\"))"));
+}

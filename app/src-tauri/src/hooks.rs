@@ -1660,13 +1660,6 @@ fn kept_in_place(
     })
 }
 
-/// What a chat is told of Allow on a held folder: what it means, and how far a Claude Code chat's
-/// goes.
-const LIFT_SAID: &str = "A later program loads code or settings from it, outside any sandbox, so \
-     allow it only for a change you asked for. It lasts for this chat alone.";
-const LIFT_CLAUDE_SAID: &str = " Claude Code can't hold a name past one path, so this chat may \
-     write that name in any folder.";
-
 /// **A refused write of a held folder a person may lift** ([`purlis_core::sandbox::grant::lift`]):
 /// Allow, naming the folder whole, for this chat alone, where purlis can write that into the
 /// chat's sandbox. `None` for any other block, and where a wrap on Linux holds the chat.
@@ -1676,7 +1669,6 @@ fn lifted_here(
     block: &purlis_core::sandboxblock::Block,
     target: Option<&str>,
 ) -> Option<(BlockOffer, Option<String>, Option<String>)> {
-    use purlis_core::harness::Harness;
     use purlis_core::sandbox::{Machine, grant};
     use purlis_core::sandboxblock::{Kind, Operation};
     let harness = harness?;
@@ -1691,15 +1683,10 @@ fn lifted_here(
     let ground = grant::Ground::of(root, root, &machine);
     let folder = grant::liftable(Path::new(target?), &ground.place())?;
     let folder = grant::lift(&folder.display().to_string(), &ground).ok()?;
-    let said = if harness == Harness::ClaudeCode {
-        format!("{LIFT_SAID}{LIFT_CLAUDE_SAID}")
-    } else {
-        LIFT_SAID.to_owned()
-    };
     Some((
         BlockOffer::Write,
         Some(folder.display().to_string()),
-        Some(said),
+        Some(grant::LIFT_SAID.to_owned()),
     ))
 }
 

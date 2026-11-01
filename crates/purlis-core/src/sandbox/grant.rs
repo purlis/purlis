@@ -789,6 +789,12 @@ fn judged(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
     Ok(resolved)
 }
 
+/// What a Notice or a question says of Allow on a held folder.
+pub const LIFT_SAID: &str = "A later program loads code or settings from it, outside any \
+     sandbox, so allow it only for a change you asked for. It lasts for this chat alone. Claude \
+     Code can't hold a name past one path, so a Claude Code chat may write that name in any \
+     folder.";
+
 /// **The held folder of [`super::MAY_LIFT`] that `path` is, or is in**, below the home alone.
 pub fn liftable(path: &Path, place: &Place<'_>) -> Option<PathBuf> {
     let home = place.home?;

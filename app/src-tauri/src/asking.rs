@@ -633,11 +633,22 @@ pub fn sandbox_write(
         return None;
     }
     let folder = What::Write(std::path::PathBuf::from(&block.target));
+    // A held folder is this chat's alone, and asked about with what allowing it means.
+    let held = purlis_core::sandbox::names_what_may_be_lifted(std::path::Path::new(&block.target));
     let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
         .into_iter()
+        .filter(|level| !held || *level == GrantLevel::Chat)
         .filter(|level| locks.refuses_grant(&folder, (*level).into()).is_none())
         .collect();
-    let says = format!("The sandbox refused a write in {}", block.target);
+    let says = if held {
+        format!(
+            "The sandbox refused a write in {}. {}",
+            block.target,
+            purlis_core::sandbox::grant::LIFT_SAID
+        )
+    } else {
+        format!("The sandbox refused a write in {}", block.target)
+    };
     Some(Shown {
         session,
         ask: block_key(session, block),

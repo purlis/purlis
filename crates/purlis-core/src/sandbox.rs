@@ -952,9 +952,10 @@ pub const PLANTED: [Planted; 89] = [
 
 /// **The later-code names a person may lift for one chat at the floor** (ADR 0067, amended
 /// 2026-11-02): each below the home alone, by [`grant::lift`]. Other tools' settings, whose owners
-/// write them in ordinary use. Git's config, shell startup files, what the system starts at login
-/// and every harness's and editor's own are not here, and no Allow reaches them.
-pub const MAY_LIFT: [&str; 12] = [
+/// write them in ordinary use, and which matter only at the home. Git's config, shell startup
+/// files, what the system starts at login and every harness's and editor's own are not here, and
+/// no Allow reaches them.
+pub const MAY_LIFT: [&str; 11] = [
     ".config/gh",
     ".config/glab-cli",
     ".local/share/gh",
@@ -966,7 +967,6 @@ pub const MAY_LIFT: [&str; 12] = [
     ".local/share/nvim/site/pack",
     ".local/share/bash-completion/completions",
     ".local/share/dbus-1/services",
-    ".claude/rules",
 ];
 
 /// Whether `path` holds a name of [`MAY_LIFT`].
