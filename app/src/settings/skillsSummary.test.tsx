@@ -168,8 +168,8 @@ describe("the skill budget's rows (#4610)", () => {
         };
       return null;
     });
-    const group = projectSkillsGroup("p", []);
-    render(<Line setting={group.after![0]} />);
+    const [inForce] = projectSkillsGroup("p", []).after ?? [];
+    render(<Line setting={inForce} />);
     await waitFor(() =>
       expect(screen.getByTestId("skill-budget-past-limit")).toHaveTextContent(line),
     );

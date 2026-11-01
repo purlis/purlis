@@ -11931,10 +11931,11 @@ export type Studio = {
 };
 
 /**
- *  **A chat's skill budget**, as the Routing page says it: the most skills its list holds, and
- *  the most characters of their descriptions together.
+ *  **A chat's skill budget on one harness**, as the Routing page says it: the most skills its
+ *  list holds, and the most characters of what is listed of them.
  */
 export type StudioBudget = {
+	program: string,
 	skills: number,
 	chars: number,
 };
@@ -12073,10 +12074,16 @@ export type StudioRouter = {
 	 */
 	written: string | null,
 	/**
-	 *  **A chat's skill budget** (SK-12, ADR 0102 §1): past it the router decides what a chat's
-	 *  list shows. The same on every harness.
+	 *  **A chat's skill budget on each harness** (SK-12, ADR 0102 as amended 2026-11-02): past
+	 *  it the router decides what a chat's list shows. Each adapter's numbers, with what this
+	 *  scope's `settings.skills.budget` writes over them.
 	 */
-	budget: StudioBudget,
+	budget: StudioBudget[],
+	/**
+	 *  **What a harness would drop at what the scope writes** (#4610), a sentence each: a
+	 *  warning, since a value past a harness's limit is never refused.
+	 */
+	past_limits: string[],
 	/**
 	 *  **What the rows' "hidden by the router" marks preview** (#4215), in a sentence: a chat at
 	 *  the workspace's root (or the project's), in no clone, routed by the built-in router. Where
