@@ -552,7 +552,7 @@ export function StartChat({
         stage !== undefined ? (
           <span className="start-chat-summary" role="status" data-testid="start-chat-stage">
             <strong>{stage.said}</strong> {stage.more}
-            {stage.cluster_said !== null && <code> {stage.cluster_said}</code>}
+            {stage.cluster_said !== null && ` The cluster says: ${stage.cluster_said}`}
           </span>
         ) : hostSlow ? (
           <span className="start-chat-summary" role="status" data-testid="start-chat-host">

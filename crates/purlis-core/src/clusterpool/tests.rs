@@ -1490,24 +1490,52 @@ fn a_cold_claims_stages_are_said_in_plain_words() {
 }
 
 #[test]
-fn the_clusters_words_for_a_wait_are_kept_and_nothing_names_a_pod() {
+fn the_operators_ordinary_words_are_no_reason_to_worry() {
+    for (reason, message) in [
+        ("Scheduling", "The runner's pod waits for a node."),
+        (
+            "Scheduling",
+            "The runner's pod is being made, and waits for a node.",
+        ),
+        ("Pulling", "The runner's node is pulling its image."),
+        (
+            "Starting",
+            "The runner's node is attaching its volume and making its sandbox.",
+        ),
+        ("Idle", "The runner said it was idle."),
+    ] {
+        let stage = stage_of(&a_claim_saying("False", reason, message)).unwrap();
+        assert_eq!(stage.cluster_said, None, "{message}");
+        let words = format!("{} {}", stage.said, stage.more).to_lowercase();
+        for jargon in ["pod", "claim", "node", "scheduling", "kept", "while"] {
+            assert!(!words.contains(jargon), "{words}");
+        }
+    }
+}
+
+#[test]
+fn what_is_wrong_is_said_in_the_clusters_own_words() {
     let stage = stage_of(&a_claim_saying(
         "False",
         "Scheduling",
-        "0/4 nodes are available: 4 Insufficient memory.",
+        "The runner's pod waits for a node. The scheduler: 0/4 nodes are available: 4 Insufficient memory.",
     ))
     .unwrap();
     assert_eq!(
         stage.cluster_said.as_deref(),
         Some("0/4 nodes are available: 4 Insufficient memory.")
     );
-    for reason in ["Scheduling", "Pulling", "Starting", "Idle"] {
-        let stage = stage_of(&a_claim_saying("False", reason, "")).unwrap();
-        let words = format!("{} {}", stage.said, stage.more).to_lowercase();
-        for jargon in ["pod", "claim", "node", "scheduling", "kept"] {
-            assert!(!words.contains(jargon), "{words}");
-        }
-    }
+    assert!(stage.more.contains("taking a while"));
+    let stage = stage_of(&a_claim_saying(
+        "False",
+        "Pulling",
+        "The runner's image is not pulled yet: ImagePullBackOff back-off pulling image",
+    ))
+    .unwrap();
+    assert_eq!(
+        stage.cluster_said.as_deref(),
+        Some("ImagePullBackOff back-off pulling image")
+    );
 }
 
 #[test]

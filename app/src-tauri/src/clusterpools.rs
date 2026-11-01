@@ -189,7 +189,9 @@ pub fn stage_of(root: &Path, workspace: Option<&str>) -> Result<Option<RunnerSta
     let Ok(Some((cluster, kept))) = purlis_core::runners::cluster_runner_for(&config, &pool) else {
         return Ok(None);
     };
-    let kubectl = cluster.kubectl(&kubectl(&config)?);
+    // Held to a time: the window asks again after each answer.
+    let kubectl =
+        cluster.kubectl(&kubectl(&config)?.within(purlis_core::pools::VOUCHED_NOW_WITHIN));
     let stage = kubectl.claim_stage(&kept.claimed.namespace, &kept.claimed.name);
     Ok(stage.map(|stage| RunnerStage {
         said: stage.said.to_owned(),

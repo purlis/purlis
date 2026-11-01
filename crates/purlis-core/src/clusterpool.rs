@@ -2144,6 +2144,9 @@ pub struct RunnerStage {
     pub cluster_said: Option<String>,
 }
 
+/// What a stage says where the cluster gave a reason for the wait.
+const STUCK: &str = "This is taking a while. The cluster says why below. Your admin can act on it.";
+
 /// **The stage the Claim `held` says its runner is at**: `Ready` is `False` with the reason the
 /// operator gives while a cold claim starts, or `Idle` for one that was resting. Any other reason
 /// is not a stage, and the window says what it says of any start.
@@ -2157,35 +2160,27 @@ pub fn stage_of(held: &serde_json::Value) -> Option<RunnerStage> {
     if field("status") != Some("False") {
         return None;
     }
-    let cluster_said = field("message")
-        .filter(|said| !said.is_empty())
-        .map(crate::shown::short);
+    // Only what the cluster said is wrong: the operator words every stage for kubectl, and those
+    // words are no reason to worry. Whole here: what shows it masks and cuts it.
+    let message = field("message").unwrap_or_default();
+    let why = |after: &str| {
+        message
+            .split_once(after)
+            .map(|(_, why)| why.trim().to_owned())
+            .filter(|why| !why.is_empty())
+    };
     let (said, more, cluster_said) = match field("reason")? {
-        "Scheduling" => match cluster_said {
-            Some(said) => (
-                "Waiting for room in the cluster",
-                "This is taking a while. The cluster says why below. Your admin can act on it.",
-                Some(said),
-            ),
-            None => (
-                "Waiting for room in the cluster",
-                "The cluster has no machine free for your runner yet. You can keep working; this \
-                 chat starts by itself.",
-                None,
-            ),
-        },
-        "Pulling" => match cluster_said {
-            Some(said) => (
-                "Downloading the runner image",
-                "This is taking a while. The cluster says why below. Your admin can act on it.",
-                Some(said),
-            ),
-            None => (
-                "Downloading the runner image",
-                "Only the first runner on a machine needs this. It can take a few minutes.",
-                None,
-            ),
-        },
+        "Scheduling" => (
+            "Waiting for room in the cluster",
+            "The cluster has no machine free for your runner yet. You can keep working; this \
+             chat starts by itself.",
+            why(" The scheduler: "),
+        ),
+        "Pulling" => (
+            "Downloading the runner image",
+            "Only the first runner on a machine needs this. It can take a few minutes.",
+            why("is not pulled yet: "),
+        ),
         "Starting" => ("Starting your runner", "Almost there.", None),
         "Idle" => (
             "Your runner was resting, and is coming back",
@@ -2193,6 +2188,10 @@ pub fn stage_of(held: &serde_json::Value) -> Option<RunnerStage> {
             None,
         ),
         _ => return None,
+    };
+    let more = match cluster_said {
+        Some(_) => STUCK,
+        None => more,
     };
     Some(RunnerStage {
         said,
