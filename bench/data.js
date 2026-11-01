@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793512929350,
+  "lastUpdate": 1793515344282,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34776,6 +34776,48 @@ window.BENCHMARK_DATA = {
             "value": 101.90812600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.753, 101.898, 101.908, 102.604, 102.698 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c73ae8a118dd3e7285a06b867a07f2147845688f",
+          "message": "Theme check: measure the scrim, the terminal cursor and the diff words (#2987) (#4408)\n\nThe modal scrim, the terminal's cursor and the editor's words on the diff's\nwashes had no floor. A cursor is held at 3:1 on the terminal and the word\nunder a block cursor at 4.5:1; words at 4.5:1 on a changed line's wash and a\nchanged word's laid on it. A scrim has its own measure, how far it moves the\nwindow's ground or words, at 2:1: black over a dark window is about 1.1:1 at\nany alpha, so no pair can hold it. A person's colour that breaks one is left\nout with a sentence.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ9V10AYD0064R0TWNAC87\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T06:00:43Z",
+          "tree_id": "76ada6f21e0f9ac8942a0b49300c24cb5ef898dd",
+          "url": "https://github.com/purlis/purlis/commit/c73ae8a118dd3e7285a06b867a07f2147845688f"
+        },
+        "date": 1793515341280,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5363964999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.524, 0.533, 0.536, 0.542, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.321446,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.225, 16.228, 16.321, 16.333, 16.422 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.80201600000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.593, 101.775, 101.802, 101.842, 102.858 ms"
           }
         ]
       }
