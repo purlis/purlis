@@ -716,6 +716,9 @@ const DIALOGS: Opened[] = [
           skills={{
             on: true,
             known: true,
+            program: [],
+            plugins_off: [],
+            own: null,
             skills: [
               {
                 name: "review",

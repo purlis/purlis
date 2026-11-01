@@ -3185,4 +3185,65 @@ fn a_studio_read_asks_git_once_about_a_local_file_with_its_tables() {
         crate::profiles::GIT_ASKS.with(std::cell::Cell::get),
         asks + 1
     );
+
+/// A machine whose Claude Code has the plugins `superpowers` and `pdf` installed, each with one
+/// skill.
+fn machine_with_two_plugins(home: &Path) -> Vec<(String, String)> {
+    let config = home.join("cfg");
+    std::fs::create_dir_all(config.join("plugins")).unwrap();
+    let mut plugins = serde_json::Map::new();
+    for (plugin, skill) in [("superpowers", "brainstorming"), ("pdf", "merge")] {
+        let dir = home.join(plugin);
+        std::fs::create_dir_all(dir.join("skills").join(skill)).unwrap();
+        std::fs::write(
+            dir.join("skills").join(skill).join("SKILL.md"),
+            format!("---\nname: {skill}\ndescription: It does {skill}.\n---\nBody.\n"),
+        )
+        .unwrap();
+        plugins.insert(
+            format!("{plugin}@market"),
+            serde_json::json!([{"scope": "user", "installPath": dir}]),
+        );
+    }
+    std::fs::write(
+        config.join("plugins/installed_plugins.json"),
+        serde_json::json!({"version": 2, "plugins": plugins}).to_string(),
+    )
+    .unwrap();
+    vec![("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())]
+}
+
+#[test]
+fn a_running_chat_has_the_plugins_its_start_held_and_lacks_one_installed_since() {
+    let tmp = tempfile::tempdir().unwrap();
+    let chat_env = machine_with_two_plugins(tmp.path());
+    let env = crate::harness_plugin::Env {
+        chat: &chat_env,
+        home: None,
+        process: false,
+    };
+    let start = crate::hoststart::ChatSkills {
+        plugins: Some(crate::harness_plugin::Plugins {
+            on: vec!["pdf".to_owned()],
+            off: Vec::new(),
+        }),
+        ..crate::hoststart::ChatSkills::default()
+    };
+    let running = Running {
+        plane: tmp.path(),
+        workspace: None,
+        persona: None,
+        harness: Harness::ClaudeCode,
+        built_in: None,
+        plane_skills: false,
+        start: Some(&start),
+    };
+
+    let (found, off) = running.programs_own(&env);
+
+    let ids: Vec<&str> = found.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, ["pdf:merge"]);
+    assert_eq!(off.len(), 1);
+    assert_eq!(off[0].name, "superpowers");
+    assert_eq!(off[0].why, crate::harness_plugin::OffWhy::AfterStart);
 }

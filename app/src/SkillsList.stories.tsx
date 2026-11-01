@@ -414,3 +414,53 @@ export const TheChatsOwnNeeds: Story = {
     await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull(), { timeout: 3_000 });
   },
 };
+
+/** The skills of a plugin this chat does not have (#4477): one line under Left out, which ↓ and
+ *  Enter unfold in place, with why and Copy command closing the run, and no Use on a card. */
+export const APluginThisChatLacks: Story = {
+  render: () => (
+    <Skills
+      rows={[
+        {
+          key: "pdf:merge",
+          program: "Claude Code",
+          inChat: true,
+          skill: skill("pdf:merge", {
+            level: "installed",
+            folder: "",
+            owner: { kind: "plugin", name: "pdf" },
+          }),
+        },
+        ...["brainstorming", "writing-plans"].map((name): ListedSkill => ({
+          key: name,
+          program: "Claude Code",
+          inChat: false,
+          pluginOff: {
+            name: "superpowers",
+            said: "Claude Code has the superpowers plugin turned off. Turn it on, then restart this chat.",
+            line: "Off in Claude Code",
+            command: "claude plugin enable superpowers@market",
+          },
+          skill: skill(`superpowers:${name}`, {
+            level: "installed",
+            folder: "",
+            on: false,
+            owner: { kind: "plugin", name: "superpowers" },
+          }),
+        })),
+      ]}
+    />
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Skills" });
+    const leftOut = within(list).getByRole("row", { name: /Left out/ });
+    await userEvent.click(leftOut);
+    const line = await within(list).findByRole("row", { name: /superpowers: 2 skills/ });
+    await userEvent.click(line);
+    await expect(await canvas.findByText(/turned off\. Turn it on/)).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: /Use superpowers/ })).toBeNull();
+    await expect(canvas.getByRole("button", { name: "Copy command" })).toBeVisible();
+    await untilSettled(list);
+    await pictureNow();
+  },
+};

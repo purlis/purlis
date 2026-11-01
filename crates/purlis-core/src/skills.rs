@@ -1070,6 +1070,35 @@ pub struct Running<'a> {
 }
 
 impl Running<'_> {
+    /// **What its harness finds itself that it has, and the plugins it does not** (#4477): by
+    /// what its start held, so a plugin installed since it started is said to be one it lacks. A
+    /// chat whose start read no plugins has them as the record says.
+    fn programs_own(
+        &self,
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> (Vec<OutsideSkill>, Vec<crate::harness_plugin::PluginOff>) {
+        use crate::harness_plugin::{OffWhy, PluginOff, harness_skills_but};
+        let adapter = self.harness.adapter().plugins();
+        let choices = crate::harness_plugin::Choices::read_in(self.plane, self.workspace);
+        let Some(held) = self.start.and_then(|start| start.plugins.as_ref()) else {
+            return (harness_skills_but(adapter, env, &choices, &[]), Vec::new());
+        };
+        let mut off = held.off.clone();
+        for plugin in adapter.installed(env).unwrap_or_default() {
+            let known =
+                held.on.contains(&plugin.name) || off.iter().any(|one| one.name == plugin.name);
+            if !known && !crate::harness_plugin::purlis_s_own_named(adapter, &plugin.name) {
+                off.push(PluginOff {
+                    id: plugin.id,
+                    name: plugin.name,
+                    why: OffWhy::AfterStart,
+                });
+            }
+        }
+        let found = harness_skills_but(adapter, env, &choices, &off);
+        (found, off)
+    }
+
     /// Its set, routed as its start routed it ([`lay_out_for_chat`]): from the same built-in
     /// skills, harness, scope, workspace, persona and repo skills (#3245).
     fn set(&self) -> SkillSet {
@@ -1128,6 +1157,13 @@ pub struct ChatSkills {
     /// Where the chat reads none of its pins because its workspace's and its persona's together
     /// pass the most it reads (#3391): both pinners, and how many each holds.
     pub pins_together: Option<PinsTogether>,
+    /// **The skills its harness finds itself and it has** (#4477): Use types them, and purlis's
+    /// budget does not count them.
+    pub program: Vec<Offered>,
+    /// **The plugins on this machine it does not have**, with why.
+    pub plugins_off: Vec<crate::harness_plugin::PluginOff>,
+    /// What the [`Self::program`] skills hold, for the header.
+    pub own: OwnCatalogue,
 }
 
 /// **The skills of chat `chat`, as Use skill… offers them** (SK-12): exactly its set, worked out
@@ -1162,7 +1198,48 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
             .map(|one| (&one.effective.skill, &one.declared)),
         chat.harness.skill_budget(),
     );
+    let held_env = chat
+        .start
+        .map(|start| start.plugins_env.as_slice())
+        .unwrap_or_default();
+    let (found, plugins_off) = chat.programs_own(&crate::harness_plugin::Env::of(held_env));
+    let program = found
+        .iter()
+        .filter(|one| !one.off && one.unread.is_none())
+        .filter(|one| !offered.iter().any(|had| had.effective.skill.name == one.id))
+        // purlis's own plugin's skills are its built-in ones, which the set already offers.
+        .filter(|one| match &one.owner {
+            Owner::Plugin(name) => {
+                !crate::harness_plugin::purlis_s_own_named(chat.harness.adapter().plugins(), name)
+            }
+            Owner::You | Owner::Repo(_) => true,
+        })
+        .map(|one| {
+            let declared = declared(&one.skill);
+            Offered {
+                hidden: None,
+                takes_arguments: !declared.arguments.is_empty() || declared.hint.is_some(),
+                known_as: chat.harness.skill_name(&one.id, one.origin),
+                declared,
+                effective: Effective {
+                    root: one.root.clone(),
+                    skill: Skill {
+                        name: one.id.clone(),
+                        ..one.skill.clone()
+                    },
+                    route: Route::Own,
+                    origin: one.origin,
+                    local: false,
+                    deprecated: None,
+                },
+            }
+        })
+        .collect();
+    let own = own_catalogue(chat.harness, &found);
     ChatSkills {
+        program,
+        plugins_off,
+        own,
         harness: chat.harness,
         workspace: chat.workspace.map(str::to_owned),
         offered,
@@ -1215,6 +1292,7 @@ impl ChatSkills {
         let offered = self
             .offered
             .iter()
+            .chain(&self.program)
             .find(|one| one.effective.skill.name == name)
             .ok_or_else(|| {
                 format!("{name} is not one of this chat's skills, so nothing was typed")
@@ -2023,6 +2101,10 @@ pub struct HarnessInTheStudio {
     pub at_the_root: SkillSet,
     /// The skills from outside the plane, with whose each is and how it switches.
     pub outside: Vec<OutsideSkill>,
+    /// The skills of its plugins a new chat here would lack, each with its plugin (#4477).
+    pub off_rows: Vec<(OutsideSkill, crate::harness_plugin::PluginOff)>,
+    /// Those plugins.
+    pub plugins_off: Vec<crate::harness_plugin::PluginOff>,
     /// Their studio rows (`outside_rows`): what the window and the command line list under
     /// the harness (SK-34).
     pub rows: Vec<StudioRow>,
@@ -2173,7 +2255,17 @@ fn harnesses_in_the_studio(
             // Every adapter is a harness's ([`crate::harness_plugin::adapters`]).
             let harness = Harness::of_kind(adapter.harness())?;
             // What it finds itself, and what every clone holds for it.
-            let own = crate::harness_plugin::harness_skills(adapter, env, &choices);
+            // What a new chat in this folder would have (#4477): a chat in front says its own.
+            let folder = crate::harness_plugin::ChatFolder {
+                cwd: Some(workspace.map_or_else(
+                    || plane.to_path_buf(),
+                    |ws| plane.join("workspaces").join(ws),
+                )),
+                reads_project: true,
+            };
+            let plugins_off = adapter.plugins_here(env, &folder).unwrap_or_default().off;
+            let (own, off_rows) =
+                crate::harness_plugin::harness_skills_split(adapter, env, &choices, &plugins_off);
             let repo = crate::harness_plugin::repo_skills(adapter, &choices, &clones);
             // Each built-in skill by the name this harness knows it by (`purlis-<name>` on
             // opencode's route), so a copy of that name is the clash, and a bare one is not.
@@ -2215,6 +2307,8 @@ fn harnesses_in_the_studio(
                 at_the_root,
                 own: (reading == Reading::Whole).then(|| own_catalogue(harness, &outside)),
                 outside,
+                off_rows,
+                plugins_off,
                 rows: Vec::new(),
             };
             one.rows = outside_rows(&one, plane, known, reading);
@@ -2313,6 +2407,8 @@ pub fn branch_folder_rows(
         set,
         at_the_root: SkillSet::default(),
         outside,
+        off_rows: Vec::new(),
+        plugins_off: Vec::new(),
         rows: Vec::new(),
         repo_left_out: Vec::new(),
         own: None,
@@ -2425,17 +2521,27 @@ fn outside_rows(
     known: &Known,
     reading: Reading,
 ) -> Vec<StudioRow> {
+    let title = harness.harness.adapter().plugins().title();
     harness
         .outside
         .iter()
-        .map(|found| {
-            let folder = found.skill.path.parent().unwrap_or(&found.skill.path);
-            let left_out = harness
-                .set
-                .left_out
+        .map(|found| (found, None))
+        .chain(
+            harness
+                .off_rows
                 .iter()
-                .find(|l| l.name == found.id && l.origin == found.origin && l.folder == folder)
-                .map(|l| l.reason.to_string());
+                .map(|(found, plugin)| (found, Some(plugin.said(title, false)))),
+        )
+        .map(|(found, plugin_off)| {
+            let folder = found.skill.path.parent().unwrap_or(&found.skill.path);
+            let left_out = plugin_off.or_else(|| {
+                harness
+                    .set
+                    .left_out
+                    .iter()
+                    .find(|l| l.name == found.id && l.origin == found.origin && l.folder == folder)
+                    .map(|l| l.reason.to_string())
+            });
             // One purlis did not read is never linted or badged (SK-44): its description says why.
             let (compat, lint) = if left_out.is_none() && found.unread.is_none() {
                 (

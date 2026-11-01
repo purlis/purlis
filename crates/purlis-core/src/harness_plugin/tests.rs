@@ -773,7 +773,12 @@ fn a_plugin_claude_code_has_installed_but_turned_off_brings_no_skills_to_its_cha
         process: false,
     };
 
-    let listed = harness_skills(&CLAUDE_CODE, &env, &Choices::from_text(None, None));
+    let listed = harness_skills(
+        &CLAUDE_CODE,
+        &env,
+        &Choices::from_text(None, None),
+        &ChatFolder::default(),
+    );
 
     let ids: Vec<&str> = listed.iter().map(|one| one.id.as_str()).collect();
     assert_eq!(ids, Vec::<&str>::new());

@@ -73,6 +73,9 @@ function skills(listed: ChatSkill[], budget: SkillBudget | null = BUDGET): ChatS
   return {
     on: true,
     known: true,
+    program: [],
+    plugins_off: [],
+    own: null,
     skills: listed,
     budget,
     repos: [],
@@ -263,6 +266,9 @@ describe("Use skill…", () => {
     opened({
       on: true,
       known: false,
+      program: [],
+      plugins_off: [],
+      own: null,
       skills: [],
       budget: null,
       repos: [],
@@ -278,6 +284,9 @@ describe("Use skill…", () => {
     opened({
       on: true,
       known: false,
+      program: [],
+      plugins_off: [],
+      own: null,
       skills: [],
       budget: null,
       repos: [],
@@ -581,12 +590,31 @@ describe("Use on a skill of the chat's own program (#4477)", () => {
       <UseSkill
         chat="main"
         picks="superpowers:brainstorming"
-        skills={skills([skill("deploy")])}
+        skills={{
+          ...skills([skill("deploy")]),
+          program: [skill("superpowers:brainstorming", { level: "installed" })],
+        }}
         busy={false}
         onUse={onUse}
         onCancel={() => undefined}
       />,
     );
     expect(onUse).toHaveBeenCalledWith("superpowers:brainstorming", []);
+  });
+
+  it("does not list a program's own skill among the ones to pick", () => {
+    render(
+      <UseSkill
+        chat="main"
+        skills={{
+          ...skills([skill("deploy")]),
+          program: [skill("superpowers:brainstorming", { level: "installed" })],
+        }}
+        busy={false}
+        onUse={vi.fn()}
+        onCancel={() => undefined}
+      />,
+    );
+    expect(screen.queryByText("superpowers:brainstorming")).toBeNull();
   });
 });
