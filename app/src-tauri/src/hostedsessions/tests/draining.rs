@@ -940,3 +940,48 @@ fn a_start_sends_the_code_though_its_link_came_back_during_the_wait() {
         "the code is sent again"
     );
 }
+
+/// **A chat that ended with its host earlier is told once its runner then goes, once** (#4421),
+/// and a chat on another of the pool's runners is not.
+#[test]
+fn a_gone_runner_tells_only_the_chats_lost_on_it_and_only_once() {
+    let root = tempfile::tempdir().unwrap();
+    let window = Arc::new(Connection::default());
+    let pool = window.to_a_pool("builds");
+    let chats = HostedSessions::on_a_runner(Arc::clone(&pool), root.path());
+    let told: Arc<Mutex<Vec<u32>>> = Arc::default();
+    {
+        let told = Arc::clone(&told);
+        chats.when_one_ends(Arc::new(move |id, exit| {
+            assert_eq!(
+                exit,
+                purlis_core::session::Exit::Signal(ITS_RUNNER_WENT.to_owned())
+            );
+            lock(&told).push(id);
+        }));
+    }
+    for (id, on) in [(1, "builds/old"), (2, "builds/new")] {
+        lock(&chats.lost).insert(
+            id,
+            LostChat {
+                with_the_runner: false,
+                on: Some(on.to_owned()),
+            },
+        );
+    }
+
+    pool.runner_went(&|on| on == Some("builds/old"));
+    pool.runner_went(&|on| on == Some("builds/old"));
+
+    assert_eq!(*lock(&told), vec![1]);
+    assert!(chats.lost_with_its_runner(1));
+    assert!(!chats.lost_with_its_runner(2));
+
+    window.pool_removed("builds");
+
+    assert_eq!(
+        *lock(&told),
+        vec![1, 2],
+        "a removed pool's runners all went"
+    );
+}

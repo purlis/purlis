@@ -2379,6 +2379,46 @@ fn a_task_that_ended_with_a_gone_runner_names_it_and_refuses_reopen() {
     assert!(!ended.ended_with_its_runner());
 }
 
+/// **A task lost with its host waits to be resumed until its runner goes too** (#4421): nothing
+/// can resume it then, so it reports, and its chat no longer offers Resume.
+#[test]
+fn a_chat_lost_earlier_is_told_when_its_runner_then_goes() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+    host.program_ends_with_its_host(steward);
+    host.program_ends_with_its_host(task);
+    assert!(record_of(&held, task).running());
+    assert!(held.lost_with_the_host().of(steward).is_some());
+
+    host.its_runner_goes_since(steward);
+    host.its_runner_goes_since(task);
+
+    let record = record_of(&held, task);
+    assert!(!record.running(), "{record:?}");
+    assert!(record.ended_with_its_runner(), "{record:?}");
+    let lost = held.lost_with_the_host().of(steward).expect("still said");
+    assert!(lost.with_the_runner && !lost.resumable, "{lost:?}");
+}
+
+/// **Every agent stopped keeps a task to report when it starts again, unless nothing can start
+/// it** (#4421): one on a gone runner reports all the same.
+#[test]
+fn a_task_on_a_gone_runner_reports_though_every_agent_was_stopped() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+    let _ = planes.kill_switch().stop(purlis_core::halt::Actor::Window);
+
+    host.program_ends_with_its_runner(task);
+
+    assert!(record_of(&held, task).ended_with_its_runner());
+}
+
 /// **A chat whose idle program ended with a gone runner offers no Resume** (#4350): its
 /// conversation went with that runner's home, whatever it was doing.
 #[test]

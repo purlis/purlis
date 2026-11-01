@@ -1033,6 +1033,16 @@ pub(crate) mod pretend {
             self.program_ends_with_its_host(id);
         }
 
+        /// The runner of session `id`, whose program already ended with its host, goes for good
+        /// (#4421).
+        pub fn its_runner_goes_since(&self, id: u32) {
+            lock(&self.seen.lost_with_runner).push(id);
+            self.program_ends(
+                id,
+                Exit::Signal(crate::hostedsessions::ITS_RUNNER_WENT.to_owned()),
+            );
+        }
+
         fn here(&self, id: u32) -> Result<(), String> {
             if lock(&self.seen.running).contains(&id) {
                 Ok(())
