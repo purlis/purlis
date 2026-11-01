@@ -743,6 +743,9 @@ pub struct Chats {
     /// 2026-10-16): their program's end is no end of the chat, and is taken as none.
     replacing: Mutex<std::collections::HashSet<u32>>,
     late_notes: Mutex<HashMap<u32, Vec<String>>>,
+    /// The chats told what their settings left out on the way to a runner, by session, so a chat
+    /// started again says it once (#3867).
+    left_out_told: Mutex<std::collections::HashSet<u32>>,
     /// The skills each chat's persona names that it started without (SK-5, #2768), by session:
     /// what its tab's Notice says until it is put away ([`Self::skills_missing`]).
     skills_missing: Mutex<HashMap<u32, SkillsMissing>>,
@@ -1269,6 +1272,7 @@ impl Chats {
             settled: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
+            left_out_told: Mutex::new(std::collections::HashSet::new()),
             skills_missing: Mutex::new(HashMap::new()),
             project_settings: crate::projectsettings::Watch::new(),
             sizes: Mutex::new(HashMap::new()),
@@ -3678,12 +3682,21 @@ impl Chats {
         // (#2049): signed in, it starts with nobody asked, a moved chat's too; signed out, it
         // starts nothing and waits as one Ask to sign it in on that pool. Settings over the pool's
         // limits start nothing either, and say what to raise (spec #4275).
+        if let Some(profile) = chat.profile.as_deref().filter(|_| on_the_runner) {
+            purlis_core::profilestore::onrunner::forget_left_out(profile);
+        }
         if on_the_runner
             && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
             && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
         {
             on_pools.ready(&self.project, &pool, profile)?;
         }
+        // What its settings left out on their way there, said once on its tab (#3848, #3867).
+        let left_out = chat
+            .profile
+            .as_deref()
+            .filter(|_| on_the_runner)
+            .and_then(purlis_core::profilestore::onrunner::left_out_said);
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
         // Never a port given for a grant to serve on alone: a runner opens no door (#2019).
@@ -4477,6 +4490,9 @@ impl Chats {
             Some(why) => lock(&self.untaken).insert(session, why),
             None => lock(&self.untaken).remove(&session),
         };
+        if let Some(said) = left_out.filter(|_| lock(&self.left_out_told).insert(session)) {
+            late.push(said);
+        }
         if !late.is_empty() && !reattaching {
             lock(&self.late_notes).insert(session, late);
         }
