@@ -1453,7 +1453,7 @@ describe("the one list of actions", () => {
     it("draws Clone on the row's menu, and taking it out of the workspace below the line", () => {
       expect(menuOn({ on: "absent", repo: "web" })).toEqual({
         above: ["absent.clone:web"],
-        below: ["absent.drop:web"],
+        below: ["absent.drop:web", "absent.forget:web"],
       });
     });
 

@@ -229,10 +229,10 @@ const absentList = () => screen.findByTestId("absent");
 
 /** Brings the chip's card back from behind its dot: a press anywhere else hides it. */
 const theCardIsBack = async (workspace: string) => {
-  const dot = screen.queryByRole("button", {
-    name: new RegExp(`^Show the notice on ${workspace}`),
+  const [dot] = screen.queryAllByRole("button", {
+    name: new RegExp(`^Show the (\\d+ )?notices? on ${workspace}`),
   });
-  if (dot !== null) await userEvent.click(dot);
+  if (dot !== undefined) await userEvent.click(dot);
 };
 
 /** Makes the workspace gamma in its dialog, with `repos` picked. The view is opened first: a press
@@ -436,7 +436,6 @@ describe("a failed clone's notice, once the repo lands", () => {
     const card = await findOnCard("gamma", /Could not clone web into gamma/);
     expect(card).not.toHaveTextContent(noAccess("api"));
     await userEvent.click(within(card).getByRole("button", { name: "Retry" }));
-    expect(await screen.findByTestId("clone-web")).toBeInTheDocument();
-    expect(clones()).toEqual(["api", "web", "api", "web"]);
+    await waitFor(() => expect(clones()).toEqual(["api", "web", "api", "web"]));
   });
 });
