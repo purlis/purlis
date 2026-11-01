@@ -280,6 +280,23 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
 }
 
+/**
+ * **Replaces pool `name`'s runner** (#4286): new chats start on the new one, and chats running now
+ * carry on on the old one until they end. Why not, in the core's words.
+ */
+export async function replaceRunner(name: string, plane?: string): Promise<string | undefined> {
+  const said = await caught(commands.dockerPoolReplaceRunner(name));
+  if (said.status === "error") return said.error;
+  await Promise.all([
+    askLimits(name),
+    askLink(name),
+    askVersion(name),
+    askProfiles(name, plane),
+    rereadPools(),
+  ]);
+  return undefined;
+}
+
 /** The newest read of each pool's limits out: an answer to an older one is dropped. */
 const readingLimits = new Map<string, number>();
 

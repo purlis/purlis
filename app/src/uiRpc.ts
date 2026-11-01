@@ -1545,6 +1545,7 @@ export const commands = {
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	dockerPoolsRemoved: __WINDOW_ONLY_RESULT,
 	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
+	dockerPoolReplaceRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,

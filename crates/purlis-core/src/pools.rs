@@ -303,6 +303,71 @@ pub fn follow(
     }
 }
 
+/// **Replaces pool `name`'s runner with one held to the pool's limits as they stand** (#4286,
+/// Q13), the person's press alone: made beside it of the same image, checked and paired as
+/// [`follow`] does, and every runner of the pool before it kept draining, so its chats carry on
+/// there until they end, and new chats start on the new one. Its sign-ins follow as it drains
+/// ([`drain`]). `None`, with nothing made, where no change waits. What fails takes back the runner
+/// this made, and the pool and its runner stay as they were.
+pub fn replace(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    desktop: &Pinned,
+) -> Result<Option<Kept>, Refused> {
+    let next = crate::dockerpool::remade_name(name).map_err(|why| Refused::Other(why.0))?;
+    replace_as(config_root, docker, name, &next, desktop)
+}
+
+/// [`replace`], the new runner called `next`.
+fn replace_as(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    next: &str,
+    desktop: &Pinned,
+) -> Result<Option<Kept>, Refused> {
+    let locked = runners::lock(config_root);
+    if runners::changes_waiting(config_root, name)?.is_empty() {
+        return Ok(None);
+    }
+    let pool = runners::pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
+    on_its_engine(docker, &runners::runner_for(config_root, name)?)?;
+    clear_leftovers_locked(config_root, docker, next, &locked)?;
+    let made = docker
+        .declared(pool.image())
+        .and_then(|(user, home)| Runner::new(next, pool.image().clone(), user, &home))
+        .map(|runner| {
+            runner
+                .limited(pool.limits())
+                .suspending_after(pool.suspend_after())
+        })
+        .and_then(|runner| docker.make_for(&runner, Some(&runners::desktop_label(config_root))))
+        .map_err(|why| Refused::Other(own_time_said(&pool, why.0)))?;
+    let kept = docker
+        .pair(&made, desktop)
+        .map_err(|why| Refused::Other(why.0))
+        .and_then(|answered| {
+            runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
+        })
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
+    match kept {
+        Ok(kept) => Ok(Some(kept)),
+        Err(why) => Err(match docker.remove(&made) {
+            Ok(()) => why,
+            Err(left) => Refused::Other(format!(
+                "{why}; and the runner made for it could not all be removed ({left}): remove \
+                 the container {} and the volume {} with docker",
+                made.container.as_str(),
+                made.runner.volume()
+            )),
+        }),
+    }
+}
+
 /// **Refuses unless Docker reaches the engine that made `kept`** (#4166): nothing is made in its
 /// place or removed on another's word. A runner kept before its engine was kept passes.
 fn on_its_engine(docker: &Docker, kept: &Kept) -> Result<(), Refused> {
