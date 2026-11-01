@@ -512,12 +512,49 @@ pub fn listen_for_the_command_line() {
         };
         let socket = purlis_core::windowline::socket();
         let listening = purlis_core::windowline::serve_on(&socket, move |asked| {
-            purlis_core::windowline::answer(&config, asked, asking_the_runners_to_forget)
+            purlis_core::windowline::answer(
+                &config,
+                asked,
+                asking_the_runners_to_forget,
+                |name, pool| {
+                    keep_for_the_command(
+                        yours(&config, pool),
+                        &config,
+                        pool,
+                        name,
+                        &|yours, kept| keep_on_as(Ok(yours), &config, pool, kept, Waking::No),
+                    )
+                },
+            )
         });
         if let Err(why) = listening {
             tracing::warn!("purlis: `purlis profile remove` will not reach this window: {why}");
         }
     });
+}
+
+/// **`purlis profile sign-in --pool` keeps `name` on pool `pool`'s runner through this window**
+/// (#4112), as Sign in on its line does, behind the same gate, `yours` being what it said of the
+/// pool: nothing is written or sent where it said no. The pool names it first, so no tidy has the
+/// runner forget what the person just signed in. A pool that names none is refused, as Add a
+/// profile… is with no project open: naming it would drop the open project's default.
+#[cfg(unix)]
+fn keep_for_the_command(
+    yours: Result<Yours, String>,
+    config: &Path,
+    pool: &str,
+    name: &str,
+    keep: &dyn Fn(Yours, &onrunner::Kept) -> Result<Option<Standing>, String>,
+) -> Result<Option<String>, String> {
+    let yours = yours?;
+    let kept = onrunner::Kept::of(&record_named(config, name)?)?;
+    changeable(config, pool, None)?;
+    purlis_core::runners::add_pool_profile(config, pool, name, None)
+        .map_err(|why| why.to_string())?;
+    match keep(yours, &kept)? {
+        Some(_) => Ok(None),
+        None => Err(format!("Pool {pool}: {OLDER_RUNNER}")),
+    }
 }
 
 /// What the person is told of the pools in `older`, whose runner keeps the removed profile

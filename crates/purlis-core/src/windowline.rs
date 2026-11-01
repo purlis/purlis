@@ -3,16 +3,19 @@
 
 //! **A line from `purlis` in the person's own terminal to their running window** (#4141).
 //!
-//! `purlis profile remove` should reach the pools' runners as Remove in the window does, but
-//! only the window holds what a runner's link needs, and the command reads none of it. The hook
-//! socket is no road for this: every line on it carries a chat's token, and this command is
-//! the person's, in no chat.
+//! `purlis profile remove` should reach the pools' runners as Remove in the window does, and
+//! `purlis profile sign-in --pool` should keep a profile on a runner first as the strip does
+//! (#4112), but only the window holds what a runner's link needs, and the command reads none of
+//! it. The hook socket is no road for this: every line on it carries a chat's token, and this
+//! command is the person's, in no chat.
 //!
 //! **What keeps this safe.** The socket sits beside the session host's, in the folder only this
 //! user may enter and every chat's sandbox is denied ([`crate::hostsocket`]), and each side
-//! closes a peer of another user unread. It serves one thing: [`answer`] refuses a name still
-//! among this machine's profiles as it is asked, so a line asks what the next tidy would do
-//! anyway. It is private to one build and promises nothing across versions: where the words do
+//! closes a peer of another user unread. It serves two things. [`answer`] refuses a forget of a
+//! name still among this machine's profiles as it is asked, so such a line asks what the next
+//! tidy would do anyway. It refuses a keep of anything but one of this machine's profiles, and the
+//! window holds it to the gate its own strip passes, so such a line asks what Sign in on the
+//! profile's line would do. It is private to one build and promises nothing across versions: where the words do
 //! not read, the command says what it says with no window. What the window says is marked before
 //! a terminal shows it.
 
@@ -23,6 +26,8 @@ use std::time::{Duration, Instant};
 
 /// How long the command waits on the window, which asks each runner in turn over its link.
 const THE_WINDOW_ANSWERS_WITHIN: Duration = Duration::from_secs(60);
+/// How long the command waits on the window keeping a profile: a runner may fetch its harness.
+const THE_WINDOW_KEEPS_WITHIN: Duration = Duration::from_secs(180);
 /// The most of one line either side reads: a name, or a note that names pools.
 const LONGEST_LINE: usize = 64 * 1024;
 /// How long the window waits for a peer's whole line, and to write its answer.
@@ -34,6 +39,9 @@ const A_PEER_HAS: Duration = Duration::from_secs(2);
 pub enum Asked {
     /// The profile `name` was just removed on this machine: each pool's runner forgets it.
     ForgetOffThePools { name: String },
+    /// This machine's profile `name` is about to be signed in on pool `pool`: its runner keeps it
+    /// first, and the pool names it (#4112).
+    KeepOnAPool { name: String, pool: String },
 }
 
 /// What the window says.
@@ -58,30 +66,85 @@ pub enum Answered {
 
 /// **The window's answer to `asked`**: `forget` runs only for a name this machine, with its
 /// config home at `config`, no longer has among its profiles, so no line takes a live profile's
-/// sign-in off a runner.
+/// sign-in off a runner; `keep` only for one it has, so no line puts anything else on one.
 pub fn answer(
     config: &Path,
     asked: Asked,
     forget: impl FnOnce(&str) -> Result<Option<String>, String>,
+    keep: impl FnOnce(&str, &str) -> Result<Option<String>, String>,
 ) -> Said {
-    let Asked::ForgetOffThePools { name } = asked;
-    if !crate::profiles::name_ok(&name) {
+    let name = match &asked {
+        Asked::ForgetOffThePools { name } | Asked::KeepOnAPool { name, .. } => name,
+    };
+    if !crate::profiles::name_ok(name) {
         return Said::Refused {
             why: "that is not a profile's name".to_owned(),
         };
     }
-    match crate::profilestore::list(config) {
+    let has_it = match crate::profilestore::list(config) {
+        Ok(records) => records.iter().any(|record| &record.name == name),
+        Err(why) => return Said::Refused { why },
+    };
+    let said = match &asked {
+        Asked::ForgetOffThePools { .. } if has_it => {
+            return Said::Refused {
+                why: format!(
+                    "'{}' is still a profile on this machine",
+                    crate::shown::short(name)
+                ),
+            };
+        }
+        Asked::ForgetOffThePools { name } => forget(name),
+        Asked::KeepOnAPool { .. } if !has_it => {
+            return Said::Refused {
+                why: format!(
+                    "this machine has no profile named '{}'",
+                    crate::shown::short(name)
+                ),
+            };
+        }
+        Asked::KeepOnAPool { name, pool } => keep(name, pool),
+    };
+    match said {
+        Ok(note) => Said::Asked { note },
         Err(why) => Said::Refused { why },
-        Ok(records) if records.iter().any(|record| record.name == name) => Said::Refused {
-            why: format!(
-                "'{}' is still a profile on this machine",
-                crate::shown::short(&name)
-            ),
-        },
-        Ok(_) => match forget(&name) {
-            Ok(note) => Said::Asked { note },
-            Err(why) => Said::Refused { why },
-        },
+    }
+}
+
+/// **How a runner stands with `name`, kept there first where it was not** (#4112): `standing` asks
+/// the runner, `None` where it keeps no such profile; then `ask` has the window keep it on pool
+/// `pool`, as the strip does before a sign-in, and the runner is asked again. Only the window
+/// can keep it, so with none running this says so and nothing was sent.
+pub fn kept_first<S>(
+    pool: &str,
+    name: &str,
+    standing: impl Fn() -> Result<Option<S>, String>,
+    ask: impl FnOnce(&Asked) -> Answered,
+) -> Result<S, String> {
+    if let Some(stands) = standing()? {
+        return Ok(stands);
+    }
+    let not_kept = format!("pool {pool}'s runner does not keep '{name}'");
+    let asked = Asked::KeepOnAPool {
+        name: name.to_owned(),
+        pool: pool.to_owned(),
+    };
+    match ask(&asked) {
+        Answered::NoWindow => Err(format!(
+            "{not_kept}, and only the purlis window can put it there: none is running. Open \
+             purlis and run this again, or sign it in from its row in Settings › Pools."
+        )),
+        Answered::NoAnswer => Err(format!(
+            "{not_kept}, and the purlis window did not say in time whether it put it there, so \
+             nothing was started. Run this again."
+        )),
+        Answered::Said(Said::Refused { why }) => Err(format!(
+            "{not_kept}, and the purlis window did not put it there: {}. Nothing was started.",
+            shown(&why)
+        )),
+        Answered::Said(Said::Asked { .. }) => standing()?.ok_or_else(|| {
+            format!("{not_kept}, even after the purlis window asked it to, so nothing was started.")
+        }),
     }
 }
 
@@ -164,7 +227,11 @@ fn beside(host: &Path) -> PathBuf {
 
 /// Asks the running window.
 pub fn ask(asked: &Asked) -> Answered {
-    ask_on(&socket(), asked, THE_WINDOW_ANSWERS_WITHIN)
+    let within = match asked {
+        Asked::ForgetOffThePools { .. } => THE_WINDOW_ANSWERS_WITHIN,
+        Asked::KeepOnAPool { .. } => THE_WINDOW_KEEPS_WITHIN,
+    };
+    ask_on(&socket(), asked, within)
 }
 
 /// One line read within `within` all told, at most [`LONGEST_LINE`] of it.

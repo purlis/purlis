@@ -1491,7 +1491,8 @@ enum ProfileCommand {
         #[arg(long)]
         provider: Option<String>,
         /// Sign it in on this pool's runner: it opens the sign-in page in your browser, reads
-        /// the code it shows, and exits non-zero if it did not sign in.
+        /// the code it shows, and exits non-zero if it did not sign in. A profile the runner does
+        /// not keep yet is put there by the running purlis window.
         #[arg(long, value_name = "POOL", conflicts_with = "check")]
         pool: Option<String>,
         /// Ends the sign-in when this command's input closes: how a desktop drives it on a
@@ -4397,8 +4398,9 @@ fn profile_sign_in(
 
 /// `purlis profile sign-in <name> --pool <pool>` (#4046, spec #4023): the sign-in the window's
 /// strip drives ([`sign_in::driven`]), run on pool `pool`'s runner through this machine's `docker`,
-/// or its `kubectl` on a cluster pool (#4164), and followed here ([`sign_in::terminal`]), for a
-/// profile the runner already keeps. Only a pool shown to be the person's own is signed in on, as
+/// or its `kubectl` on a cluster pool (#4164), and followed here ([`sign_in::terminal`]). A profile
+/// the runner does not keep yet is kept there first by the running window, which alone holds a
+/// link's key (#4112). Only a pool shown to be the person's own is signed in on, as
 /// the window's is. Nothing of this machine's sign-in goes to the runner (ADR 0095).
 ///
 /// [`sign_in::driven`]: purlis_core::profilestore::sign_in::driven
@@ -4486,10 +4488,11 @@ fn pool_sign_in(
         docker.version_of(&runner.made).map_err(|why| why.0),
     )?;
     eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
-    docker
-        .standing_on_runner(&runner.made, &engine, name)
-        .map_err(|why| not_asked(pool, name, &why))?
-        .ok_or_else(|| not_kept(pool, name))?;
+    kept_first(pool, name, || {
+        docker
+            .standing_on_runner(&runner.made, &engine, name)
+            .map_err(|why| not_asked(pool, name, &why))
+    })?;
     let login = docker.driven_sign_in(&runner.made, &engine, name, provider)?;
     let check = {
         let (docker, made, engine, name) = (
@@ -4559,12 +4562,33 @@ fn not_asked(pool: &str, name: &str, why: &str) -> String {
     )
 }
 
-/// What the person is told where pool `pool`'s runner keeps no profile `name`.
-fn not_kept(pool: &str, name: &str) -> String {
-    format!(
-        "pool {pool}'s runner does not keep '{name}', so nothing was started. A profile goes on \
-         a pool from its row in Settings › Pools."
-    )
+/// How pool `pool`'s runner stands with `name`, kept there first through the running window where
+/// `standing` says it keeps none (#4112), as the strip keeps it.
+#[cfg(unix)]
+fn kept_first(
+    pool: &str,
+    name: &str,
+    standing: impl Fn() -> Result<Option<purlis_core::profilestore::sign_in::Standing>, String>,
+) -> Result<purlis_core::profilestore::sign_in::Standing, String> {
+    purlis_core::windowline::kept_first(pool, name, standing, |asked| {
+        eprintln!("it does not keep '{name}' yet: asking the purlis window to keep it there…");
+        purlis_core::windowline::ask(asked)
+    })
+}
+
+/// A runner is never Windows, and no window line reaches one from there.
+#[cfg(not(unix))]
+fn kept_first(
+    pool: &str,
+    name: &str,
+    standing: impl Fn() -> Result<Option<purlis_core::profilestore::sign_in::Standing>, String>,
+) -> Result<purlis_core::profilestore::sign_in::Standing, String> {
+    standing()?.ok_or_else(|| {
+        format!(
+            "pool {pool}'s runner does not keep '{name}', so nothing was started. A profile goes \
+             on a pool from its row in Settings › Pools."
+        )
+    })
 }
 
 /// [`pool_sign_in`] on the cluster pool `pool`, kept as `cluster` with its runner `kept` (#4164):
@@ -4592,9 +4616,10 @@ fn cluster_pool_sign_in(
         pools::cluster_runner_version(config, &kubectl, pool, &judged),
     )?;
     eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
-    pools::cluster_standing(config, &kubectl, pool, &judged, name)
-        .map_err(|why| not_asked(pool, name, &why))?
-        .ok_or_else(|| not_kept(pool, name))?;
+    kept_first(pool, name, || {
+        pools::cluster_standing(config, &kubectl, pool, &judged, name)
+            .map_err(|why| not_asked(pool, name, &why))
+    })?;
     // The standing may have taken a while, as long as the runner chose: the whole gate again.
     let (cluster, kept) = pools::cluster_runner_still_yours(config, pool, &judged)?;
     pools::cluster_runner_yours(config, pool, &cluster, &kept, &pools::vouched_now)?;

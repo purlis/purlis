@@ -835,3 +835,51 @@ fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait()
     assert!(!keys.contains(&"vouchWait"), "{keys:?}");
     assert_eq!(page.advanced.len(), 1);
 }
+
+/// **A keep the command asks passes the strip's gate first** (#4112): a pool not shown to be the
+/// person's own, and one that names no profiles, change nothing and send nothing. One that names
+/// its own names this one too before its runner is asked, so no tidy forgets it.
+#[cfg(unix)]
+#[test]
+fn a_keep_the_command_asks_is_held_to_the_strips_gate_and_named_on_the_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    let store = profilestore::Homes::at(&config, &dir.path().join("data"));
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let env = |_: &str| -> Option<String> { None };
+    profilestore::create(
+        &store,
+        "work",
+        "claude",
+        &profilestore::MachineSettings {
+            home: &home,
+            env: &env,
+        },
+        1,
+    )
+    .expect("made");
+    a_cluster_pool(&config);
+    let an_owned = || Ok(Yours::Docker(PathBuf::from("/var/run/docker.sock")));
+    let never = |_: Yours, _: &onrunner::Kept| -> Result<Option<Standing>, String> {
+        panic!("no runner is asked")
+    };
+    let chosen = || purlis_core::runners::profiles_of(&config, "team").unwrap();
+
+    let not_yours = keep_for_the_command(Err("not yours".into()), &config, "team", "work", &never);
+    assert_eq!(not_yours, Err("not yours".to_owned()));
+    let names_none = keep_for_the_command(an_owned(), &config, "team", "work", &never);
+    assert!(names_none.unwrap_err().contains("open one"));
+    assert_eq!(chosen(), None, "nothing was named");
+
+    purlis_core::runners::add_pool_profile(&config, "team", "home", None).unwrap();
+    let kept = keep_for_the_command(an_owned(), &config, "team", "work", &|_, kept| {
+        assert_eq!(kept.name, "work");
+        assert_eq!(chosen(), Some(names(&["home", "work"])), "named first");
+        Ok(Some(Standing::SignedOut))
+    });
+    assert_eq!(kept, Ok(None));
+
+    let older = keep_for_the_command(an_owned(), &config, "team", "work", &|_, _| Ok(None));
+    assert!(older.unwrap_err().contains("before 1.43"));
+}
