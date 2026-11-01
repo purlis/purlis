@@ -157,7 +157,8 @@ function core(
           defaults: { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 },
           suspend_after: "24h",
         };
-      if (cmd === "chats_run_on") return { pool: runsOn, here: runsOn === null, project: null, pools };
+      if (cmd === "chats_run_on")
+        return { pool: runsOn, here: runsOn === null, project: null, pools };
       if (cmd === "send_leaves_out") return leaveOut;
       if (cmd === "set_send_leaves_out") {
         leaveOut = given.entries as string[];

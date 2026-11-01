@@ -123,17 +123,7 @@ function runsOnSetting(plane: PlaneId, workspace: string): LiveSetting {
  * workspace that says nothing follows this, on this machine alone, so it never changes where a
  * teammate's chats run. Shown before the first pool, with the way to add one.
  */
-export function projectRunsOnGroup(plane: PlaneId): SettingsGroup {
-  return {
-    id: "project.runs",
-    label: "Runs on",
-    help: "Where this project's chats run, unless a workspace or a start chooses otherwise. A chat at the project's root runs on this machine.",
-    kept: "Kept on this machine only, never in a committed file.",
-    settings: [projectRunsOnSetting(plane)],
-  };
-}
-
-function projectRunsOnSetting(plane: PlaneId): LiveSetting {
+export function projectRunsOnSetting(plane: PlaneId): LiveSetting {
   const id = "project.runs.on";
   return {
     id,

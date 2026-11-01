@@ -1,12 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { LiveSetting } from "./groups";
-import { projectRunsOnGroup, runsOnGroup } from "./runsOn";
+import { projectRunsOnSetting, runsOnGroup } from "./runsOn";
 
 /** Where each level's setting is, as the store answers (#4536). */
 const PLANE = "plane-1" as never;
@@ -45,13 +45,17 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  cleanup();
+});
+
 function Control({ setting }: { setting: LiveSetting }) {
   const shown = setting.useControl();
   return shown.control({ id: "control", labelledBy: "control-label" });
 }
 
 describe("Runs on at the project (#4536)", () => {
-  const setting = () => projectRunsOnGroup(PLANE).settings[0] as LiveSetting;
+  const setting = () => projectRunsOnSetting(PLANE);
 
   it("sets the project's pool on this machine, and back", async () => {
     render(<Control setting={setting()} />);
@@ -82,7 +86,9 @@ describe("Runs on at a workspace (#4536)", () => {
     render(<Control setting={setting()} />);
     const same = await screen.findByRole("radio", { name: /Same as the project/ });
     await waitFor(() => expect(same).toBeChecked());
-    expect(same.closest("label") ?? document.body).toHaveTextContent(/The project runs on pool builds now/);
+    expect(same.closest("label") ?? document.body).toHaveTextContent(
+      /The project runs on pool builds now/,
+    );
   });
 
   it("keeps This machine apart from following the project", async () => {
