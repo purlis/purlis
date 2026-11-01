@@ -13,8 +13,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kind: [plain, real]
-        shard: [1, 2, 3, 4, 5, 6]
+        kind: [real]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
@@ -32,7 +32,7 @@ jobs:
           "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
       - name: Rounds under load
         env:
-          ARMS: ${{ matrix.kind == 'plain' && 'wait,nowait' || 'purlis,purlis-nowait' }}
+          ARMS: purlis
           BIN: ${{ steps.build.outputs.bin }}
           OUT: ${{ github.workspace }}/probe-out
         run: |
