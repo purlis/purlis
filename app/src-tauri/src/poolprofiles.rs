@@ -1367,7 +1367,9 @@ pub fn sign_out_line(pool: &str, name: &str) -> Result<String, String> {
     onrunner::Kept::of(&record)?;
     let runner = this_desktops_runner(&config, pool)?;
     let line = crate::runnerlinks::docker()?.sign_out_line(&runner.made, &engine, name)?;
-    purlis_core::runners::hold_from_carrying(&config, pool, name).map_err(|why| why.to_string())?;
+    // The running runner too: a follow while the line waits makes it one that drains.
+    purlis_core::runners::hold_every_runner_from_carrying(&config, pool, name)
+        .map_err(|why| why.to_string())?;
     Ok(line)
 }
 
@@ -1529,6 +1531,8 @@ pub async fn pool_sign_in_start(
         may_sign_in_on(&config, &pool)?;
         let record = record_named(&config, &name)?;
         profilestore::sign_in::plan_named(&record.harness, provider.as_deref())?;
+        purlis_core::runners::carries_again(&config, &pool, &name)
+            .map_err(|why| why.to_string())?;
         let kept = onrunner::Kept::of(&record)?;
         if keep_on_as(Ok(yours.clone()), &config, &pool, &kept, Waking::No)?.is_none() {
             return Err(format!(

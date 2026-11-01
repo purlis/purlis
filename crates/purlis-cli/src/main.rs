@@ -4418,6 +4418,7 @@ fn pool_sign_in(
     if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
         return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
     }
+    runners::carries_again(config, pool, name).map_err(|why| why.to_string())?;
     let record = profilestore::list(config)?
         .into_iter()
         .find(|p| p.name == name)

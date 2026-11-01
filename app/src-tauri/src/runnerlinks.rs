@@ -347,22 +347,19 @@ pub fn relaying(
             tracing::warn!("purlis: pool {pool}: {behind}");
         }
         let resolved = format!("{}/{}", kept.pool(), kept.name());
-        let to = ToARunner::of_kept_waking(&machine, &kept)?;
+        let waking = ToARunner::of_kept_waking(&machine, &kept)?;
+        let as_it_is = ToARunner::of_kept(&machine, &kept)?;
         Ok((
+            // Only ever this runner: a pool moved after an update, or a runner made again, leaves
+            // this link where it was until it ends (#4168), and what comes next is relayed anew
+            // to the runner kept then. One whose sign-ins were carried off is not started again.
             Arc::new(move || {
-                // A runner removed outside purlis and made again (#4149) is kept no more: the
-                // pool's runner made in its place is linked to. A runner still kept, a draining
-                // one too, is kept to, so a pool moved after an update leaves its chats where
-                // they run.
-                let forgotten = matches!(
-                    purlis_core::runners::named(&machine.config, kept.name()),
-                    Ok(None)
-                );
-                let again = (forgotten && !kept.draining)
-                    .then(|| purlis_core::runners::runner_for(&machine.config, kept.pool()).ok())
+                let carried = purlis_core::runners::named(&machine.config, kept.name())
+                    .ok()
                     .flatten()
-                    .and_then(|now| ToARunner::of_kept_waking(&machine, &now).ok());
-                again.as_ref().unwrap_or(&to).keep()
+                    .is_some_and(|now| now.carried);
+                let to = if carried { &as_it_is } else { &waking };
+                to.keep()
             }) as purlis_host::Keep,
             resolved,
         ))

@@ -1370,3 +1370,26 @@ fn a_docker_pools_row_holding_the_vouch_wait_is_not_read() {
     std::fs::set_permissions(&file, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
     assert!(chosen_limits_of(dir.path(), "builds").is_err());
 }
+
+/// **A sign-out waiting in a terminal holds the running runner from a later drain's carry**, and
+/// signing in there again lets it carry.
+#[test]
+fn a_sign_out_in_progress_holds_the_running_runner_until_a_sign_in_there() {
+    let config = tempfile::tempdir().unwrap();
+    let kept = keep(
+        config.path(),
+        &made(),
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+    )
+    .unwrap();
+
+    hold_every_runner_from_carrying(config.path(), kept.pool(), "work").unwrap();
+    assert_eq!(read(config.path()).unwrap()[0].signed_out, ["work"]);
+
+    carries_again(config.path(), kept.pool(), "other").unwrap();
+    assert_eq!(read(config.path()).unwrap()[0].signed_out, ["work"]);
+
+    carries_again(config.path(), kept.pool(), "work").unwrap();
+    assert!(read(config.path()).unwrap()[0].signed_out.is_empty());
+}

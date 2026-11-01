@@ -1123,6 +1123,50 @@ pub fn note_locked(
     Ok(())
 }
 
+/// **Notes on every runner of `pool` that `profile` is being signed out of the pool**, so no drain
+/// carries its sign-in while the person's own sign-out waits in a terminal: taken back by
+/// [`carries_again`] when it is signed in there again.
+pub fn hold_every_runner_from_carrying(
+    config_root: &Path,
+    pool: &str,
+    profile: &str,
+) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let mut changed = false;
+    for kept in held.runners.iter_mut().filter(|kept| kept.pool() == pool) {
+        if !kept.signed_out.iter().any(|name| name == profile) {
+            kept.signed_out.push(profile.to_owned());
+            changed = true;
+        }
+    }
+    if changed {
+        write(config_root, &held)?;
+    }
+    Ok(())
+}
+
+/// **`profile` was signed in on pool `pool`'s runner**: a drain of that runner carries it again.
+/// A runner already draining keeps its note.
+pub fn carries_again(config_root: &Path, pool: &str, profile: &str) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let mut changed = false;
+    for kept in held
+        .runners
+        .iter_mut()
+        .filter(|kept| !kept.draining && kept.pool() == pool)
+    {
+        let before = kept.signed_out.len();
+        kept.signed_out.retain(|name| name != profile);
+        changed |= kept.signed_out.len() != before;
+    }
+    if changed {
+        write(config_root, &held)?;
+    }
+    Ok(())
+}
+
 /// **Notes on each draining runner of `pool` that `profile` was signed out of the pool** (#4145),
 /// so no drain carries its sign-in: taken under the runners' lock, so it waits for a carry
 /// under way and holds for every carry after it. The draining runners, as they are now.
