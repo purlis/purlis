@@ -22,7 +22,7 @@ publish = false
 # uses: no `ws` feature, so this binary cannot even ask for `exec` or `attach`.
 kube = { version = "4.2", default-features = false, features = ["client", "derive", "runtime", "rustls-tls", "ring"] }
 # The Kubernetes API types, for the oldest Kubernetes purlis supports (1.36, spec #2041).
-k8s-openapi = { version = "0.28", features = ["v1_36", "schemars"] }
+k8s-openapi = { version = "0.29", features = ["v1_36", "schemars"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
