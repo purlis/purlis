@@ -186,6 +186,9 @@ pub struct Allowed {
     /// The settings folders, by name: their files are copied, but for a hidden entry or one
     /// named like a credential.
     pub folders: &'static [&'static str],
+    /// What else it loads from its settings folder, by name, which is never sent: a runner keeps
+    /// none ([`loaded_unsent_cleared`]).
+    pub loaded_unsent: &'static [&'static str],
 }
 
 /// The settings purlis imports, per harness it ships. Anything not named here is not copied:
@@ -196,11 +199,13 @@ pub const ALLOWED: [Allowed; 3] = [
         kind: "claude",
         files: &["settings.json", "CLAUDE.md"],
         folders: &["agents", "commands", "output-styles", "skills"],
+        loaded_unsent: &["rules"],
     },
     Allowed {
         kind: "codex",
         files: &["config.toml", "AGENTS.md"],
         folders: &["prompts"],
+        loaded_unsent: &["AGENTS.override.md", "hooks.json", "rules", "skills"],
     },
     Allowed {
         kind: "opencode",
@@ -208,6 +213,7 @@ pub const ALLOWED: [Allowed; 3] = [
         folders: &[
             "agent", "agents", "command", "commands", "mode", "modes", "themes",
         ],
+        loaded_unsent: &["plugin", "plugins", "skill", "skills", "tool", "tools"],
     },
 ];
 
@@ -1497,6 +1503,35 @@ pub fn settings_kept(
             crate::rewrite::os_words(&e)
         )
     })
+}
+
+/// **What `record`, a profile this runner keeps for a desktop, would load but no desktop sent goes**
+/// ([`Allowed::loaded_unsent`]): what its next chat loads there is what its desktop sent.
+pub fn loaded_unsent_cleared(record: &MachineProfile) -> Result<(), String> {
+    // A harness purlis does not ship has no such list.
+    let Ok((_, allowed)) = harness_of(&record.harness) else {
+        return Ok(());
+    };
+    let dest = settings_dest(allowed, &record.folders.config);
+    allowed
+        .loaded_unsent
+        .iter()
+        .try_for_each(|name| {
+            let through_a_link =
+                std::fs::symlink_metadata(&dest).is_ok_and(|found| found.file_type().is_symlink());
+            if through_a_link {
+                return Err(io::Error::other("the settings folder is a link"));
+            }
+            remove_within(&dest, &dest.join(name))
+        })
+        .map_err(|e| {
+            format!(
+                "this runner could not clear the profile '{}''s folder {} ({})",
+                crate::shown::short(&record.name),
+                dest.display(),
+                crate::rewrite::os_words(&e)
+            )
+        })
 }
 
 /// A file name that may hold a sign-in, which an import never copies from a settings folder.

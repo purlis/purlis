@@ -834,7 +834,7 @@ impl Planted {
 /// have code run outside its sandbox the next time a person, an editor or another chat opens
 /// the directory. The project's manifests are held only where they could change a chat's
 /// sandbox ([`MANIFESTS`]).
-pub const PLANTED: [Planted; 77] = [
+pub const PLANTED: [Planted; 81] = [
     // A `.git` moved into place brings its own config and hooks.
     Planted::itself(".git"),
     Planted::and_below(".git/config"),
@@ -898,6 +898,12 @@ pub const PLANTED: [Planted; 77] = [
     // editor's user settings and tasks.
     Planted::and_below(".gitconfig"),
     Planted::and_below(".config/git"),
+    // Each forge program's settings and extensions, which its next run loads.
+    Planted::and_below(".config/gh"),
+    Planted::and_below(".config/glab-cli"),
+    Planted::and_below(".local/share/gh"),
+    // kubectl's preferences, which each later run applies.
+    Planted::and_below(".kube/kuberc"),
     // ssh's own: what it runs, and who it lets in. Its `known_hosts` stays the chat's to add to,
     // as ssh does on a first connection; the folder itself is never moved aside.
     Planted::itself(".ssh"),

@@ -185,6 +185,40 @@ fn claude_code_answering_one_is_signed_out() {
     assert_eq!(standing(&profile("claude"), &look), Standing::SignedOut);
 }
 
+/// **A status that fails with a sign-in still in the folder is no confirmed sign-out.**
+#[test]
+fn a_status_answering_one_beside_a_sign_in_file_cannot_tell() {
+    for (kind, file) in [
+        ("claude", "/profiles/work/config/.credentials.json"),
+        ("codex", "/profiles/work/config/auth.json"),
+    ] {
+        let mut look = Recorded::answering(Some(1));
+        look.there = vec![PathBuf::from(file)];
+
+        assert_eq!(
+            standing(&profile(kind), &look),
+            Standing::CannotTell,
+            "{kind}"
+        );
+    }
+}
+
+/// A built-in profile names no folder: its harness's default folder is looked in.
+#[test]
+fn a_built_in_profile_answering_one_is_looked_for_in_its_default_folder() {
+    let Some(home) = crate::profiles::home() else {
+        return;
+    };
+    let builtin = crate::profiles::builtins()
+        .into_iter()
+        .find(|one| one.kind == "claude")
+        .expect("a built-in");
+    let mut look = Recorded::answering(Some(1));
+    look.there = vec![home.join(".claude/.credentials.json")];
+
+    assert_eq!(standing(&builtin, &look), Standing::CannotTell);
+}
+
 #[test]
 fn codex_is_asked_its_own_login_status_in_the_profiles_folder() {
     let signed_out = Recorded::answering(Some(1));
@@ -197,10 +231,13 @@ fn codex_is_asked_its_own_login_status_in_the_profiles_folder() {
     assert_eq!(standing(&profile("codex"), &signed_in), Standing::SignedIn);
     assert_eq!(
         signed_out.asked(),
-        [ran(
-            &["login", "status"],
-            &[("CODEX_HOME", "/profiles/work/config")]
-        )]
+        [
+            ran(
+                &["login", "status"],
+                &[("CODEX_HOME", "/profiles/work/config")]
+            ),
+            Asked::LookedFor(PathBuf::from("/profiles/work/config/auth.json")),
+        ]
     );
 }
 
