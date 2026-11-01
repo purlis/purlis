@@ -202,23 +202,11 @@ fn a_send_out_of_its_time_says_the_limit_and_double_it() {
         }),
         late: Some(CodeSendTime.limit().waited(10, None)),
     };
-    let given = held.given;
 
     let refused = link
-        .write_on_a_stream(None, held, move |client, transfer| {
-            Box::pin(async move {
-                // Not answered by the time this machine's clock says its time is up.
-                client
-                    .take_code_held(
-                        "01J9PRJCT00000000000000001",
-                        REPO,
-                        transfer,
-                        Vec::new(),
-                        None,
-                        given,
-                    )
-                    .await
-            })
+        .write_on_a_stream(None, held, move |_client, _transfer| {
+            // The host never answers, and no stream opens: the send stalls past its time.
+            Box::pin(std::future::pending::<Result<(), session::CallError>>())
         })
         .unwrap_err();
 
