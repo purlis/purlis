@@ -1412,7 +1412,7 @@ function ReposSection({
   const { panels, pieces, piecesRefused } = state;
   const clones = panels?.repos ?? [];
   const absent = notClonedRows(panels?.absent ?? [], clones, cloning);
-  /** A repo is cloning that the workspace does not name yet: it has one, on its way. */
+  /** A repo is cloning that the workspace does not name: it has one, on its way. */
   const coming = absent.length > (panels?.absent ?? []).length;
   const open = (repo: string) => !folded.has(foldKey(workspace, repo));
   return (

@@ -23,7 +23,7 @@ const NOTHING_CLONING: Cloning = new Map();
 
 /**
  * **The repos to draw as not cloned here**: what the workspace names, and any repo this window is
- * cloning into it that it does not name yet. A workspace names a repo once it lands, so a new
+ * cloning into it that it does not name. A workspace names a repo once it lands, so a new
  * workspace's repos would otherwise have no row, and its Repos view would say it has none, for
  * as long as their clones run.
  */

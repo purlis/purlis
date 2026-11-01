@@ -90,7 +90,10 @@ const DOORS = 'ul[aria-label="Ways to start"]';
 const WELCOME = "section.welcome";
 const PALETTE = '[role="dialog"][aria-label="Command palette"]';
 const SIGN_IN_DOOR = "Sign in to GitHub or GitLab";
-const CARD_METER = ".action-result-meter";
+
+/** The card on `workspace`'s chip, and nothing the status bar's Notices or the Inbox draw. */
+const cardOf = (workspace: string) => `.chip-card:has([data-chip="${workspace}"])`;
+const cardMeterOf = (workspace: string) => `${cardOf(workspace)} .action-result-meter`;
 
 type Account = { id: string; host: string; method: string };
 
@@ -208,10 +211,21 @@ async function aWorkspaceNaming(plane: string, name: string, repos: string[]): P
     });
 }
 
+/** One card stands at a time, and the status bar's Notices would stand over the chip's. */
+async function theStatusBarsCardIsPutAway(): Promise<void> {
+  await browser.execute(() => {
+    for (const close of document.querySelectorAll<HTMLElement>(
+      '[data-chip="status/bar/notices"] button[aria-label="Dismiss"]',
+    ))
+      close.click();
+  });
+}
+
 /** The workspace `name` made in its dialog with `repos` picked: its clones run on its chip. */
 async function aNewWorkspaceCloning(name: string, repos: string[]): Promise<void> {
   // Before the card comes: a press anywhere else hides it.
   await showView("Repos");
+  await theStatusBarsCardIsPutAway();
   await browser.keys(["F2"]);
   await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
   const box = await $("#palette-query");
@@ -461,14 +475,20 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     let pictured = false;
     await browser.waitUntil(
       async () => {
-        const [card, row] = [await percentOf(CARD_METER), await percentOf(meterOf("long-repo"))];
+        const [card, row] = [
+          await percentOf(cardMeterOf("long-clone")),
+          await percentOf(meterOf("long-repo")),
+        ];
         if (card !== null) onCard.push(card);
         if (row !== null) onRow.push(row);
         // Part way, with both on screen, for a person to look at.
         if (!pictured && card !== null && row !== null && card >= 25 && row >= 25) {
           pictured = true;
+          await browser.execute((css: string) => {
+            document.querySelector(css)?.scrollIntoView({ block: "nearest" });
+          }, meterOf("long-repo"));
           await pictures("mid-clone", {
-            "chip-notice": ".chip-card",
+            "chip-notice": cardOf("long-clone"),
             "repos-row": rowOf("long-repo"),
           });
         }
@@ -536,12 +556,15 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     const repo = "stopped-on-its-card";
     await aNewWorkspaceCloning("stopped-card", [repo]);
     const { hidden } = foldersOf(plane, "stopped-card", repo);
-    await browser.waitUntil(async () => ((await percentOf(CARD_METER)) ?? 0) >= 10, {
-      timeout: 60_000,
-      timeoutMsg: "the card's meter never got part way",
-    });
+    await browser.waitUntil(
+      async () => ((await percentOf(cardMeterOf("stopped-card"))) ?? 0) >= 10,
+      {
+        timeout: 60_000,
+        timeoutMsg: "the card's meter never got part way",
+      },
+    );
     expect(existsSync(hidden)).toBe(true);
-    await press(".chip-card", "Cancel");
+    await press(cardOf("stopped-card"), "Cancel");
     await browser.waitUntil(() => !existsSync(hidden), {
       timeout: 30_000,
       timeoutMsg: "the hidden folder outlived the Cancel",
