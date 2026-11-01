@@ -28,4 +28,5 @@ them is a question for the Figma round.
 
 ## Verdict
 
-Waiting for the person.
+The person accepted the prototype on 2026-11-01. The layout, steps and states stand as drawn. Next
+under #4469's delivery order: Figma designs on the M66 UI system.
