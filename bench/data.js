@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793491887286,
+  "lastUpdate": 1793493123489,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34398,6 +34398,48 @@ window.BENCHMARK_DATA = {
             "value": 102.92285749999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.962, 102.061, 102.923, 103.380, 103.501 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "404245a09324debbf0a5bb656e534a3ed40e8534",
+          "message": "Runners: a stopped sign-in refuses input and leaves the login's input open until it ends (#4277) (#4387)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X69TKXH7PSXT4SVQA5DQG\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T00:10:33Z",
+          "tree_id": "fd7ba055817b59bebea068ece4327f934d3cb436",
+          "url": "https://github.com/purlis/purlis/commit/404245a09324debbf0a5bb656e534a3ed40e8534"
+        },
+        "date": 1793493117849,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.334998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.328, 0.335, 0.335, 0.338, 0.339 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6673415,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.999, 16.509, 16.667, 16.684, 16.699 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1493515,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.890, 101.047, 101.149, 101.663, 101.858 ms"
           }
         ]
       }
