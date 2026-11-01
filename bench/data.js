@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793550830434,
+  "lastUpdate": 1793552398294,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35154,6 +35154,48 @@ window.BENCHMARK_DATA = {
             "value": 101.522487,
             "unit": "ms",
             "extra": "median of 5 runs: 99.922, 101.462, 101.522, 102.070, 102.132 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "73043927d0d3502a746b9960ffff5ecc0e18c2ad",
+          "message": "Theme check: card step, notice way and selected row between tints; a tab count over its button (#4423)\n\n* Theme check: card step, notice way and selected row between tints; a tab count over its button (#4406)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ9BJJQBFPJGFF05PCGWTZ\nPurlis-Persona: steward\n\n* Theme check: read a notice way's between-tints cases through the card's own mix (#4406)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ9BJJQBFPJGFF05PCGWTZ\nPurlis-Persona: steward\n\n* Theme check: hold the between-tints margins on readings at their floors (#4406)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ9BJJQBFPJGFF05PCGWTZ\nPurlis-Persona: steward\n\n* Theme check: a card step's coarse reading can find its lowest exactly (#4406)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ9BJJQBFPJGFF05PCGWTZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T15:00:57Z",
+          "tree_id": "7beabe0d61fac6bb1efe7246ab1ef5222830cf8a",
+          "url": "https://github.com/purlis/purlis/commit/73043927d0d3502a746b9960ffff5ecc0e18c2ad"
+        },
+        "date": 1793552392094,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4908015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.482, 0.483, 0.491, 0.494, 0.505 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.415589,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.238, 16.342, 16.416, 16.474, 16.716 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.315147,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.281, 101.369, 102.315, 102.962, 103.780 ms"
           }
         ]
       }
