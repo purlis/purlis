@@ -29,6 +29,8 @@ pub struct Declared {
     pub arguments: Vec<String>,
     /// What to pass it, in one line, where it says.
     pub hint: Option<String>,
+    /// Its `when_to_use`, which Claude Code joins to its description in its listing.
+    pub when_to_use: Option<String>,
 }
 
 /// **What a person gave a skill's arguments** in Use skill… (decision 61), each value on one
@@ -117,6 +119,8 @@ const MANUAL: &str = "disable-model-invocation";
 const ARGUMENTS: &str = "arguments";
 /// The key that says what to pass a skill.
 const HINT: &str = "argument-hint";
+/// The key that adds to when a skill applies.
+const WHEN_TO_USE: &str = "when_to_use";
 
 /// What `skill` declares, read from its `SKILL.md`: nothing for one that cannot be read.
 pub fn declared(skill: &Skill) -> Declared {
@@ -150,10 +154,15 @@ pub(crate) fn declared_in(text: &str) -> Declared {
         .map(unquoted)
         .filter(|hint| !hint.is_empty())
         .map(str::to_owned);
+    let when_to_use = value(WHEN_TO_USE)
+        .map(unquoted)
+        .filter(|when| !when.is_empty())
+        .map(str::to_owned);
     Declared {
         manual,
         arguments,
         hint,
+        when_to_use,
     }
 }
 

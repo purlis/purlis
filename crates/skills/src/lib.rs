@@ -61,8 +61,10 @@ mod stamp;
 pub mod tree;
 pub mod uses;
 
-pub use budget::{Budget, Over, Spent};
-pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, widening_said};
+pub use budget::{Budget, Over, Set as BudgetSet, Spent};
+pub use compat::{
+    Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, handed_text_as, widening_said,
+};
 pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md, read_skill_md_of};

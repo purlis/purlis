@@ -871,7 +871,7 @@ fn a_workspaces_skill_turn_off_list_is_read_and_any_other_shape_is_refused() {
         [
             "settings.skills in workspaces/alpha/workspace.json is not an object — a workspace's \
           skills are {\"off\": [\"<skill>\", …], \"pinned\": [\"<skill>\", …], \"router\": \
-          \"<router>\"}"
+          \"<router>\", \"budget\": {…}}"
         ]
     );
     // Its router is one name (SK-15b), never a list.

@@ -51,6 +51,7 @@ fn skills(skills: usize) -> Budget {
         chars: 100_000,
         per_description: None,
         lists_paths: false,
+        per_line: None,
     }
 }
 
@@ -196,6 +197,7 @@ fn over_the_budget_by_characters_alone_hides_too() {
         chars: 20,
         per_description: None,
         lists_paths: false,
+        per_line: None,
     };
 
     let set = set_at_the_root(&plane, &built_in).routed(budget, &[]);

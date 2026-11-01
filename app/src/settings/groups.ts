@@ -180,6 +180,8 @@ export type FileSetting = Named & {
    *  at most one button (#1340). */
   kind: "text" | "choice" | "lines" | "colour" | "checks" | "status";
   choices?: readonly string[];
+  /** A `text` that takes a count, so a touch keyboard offers digits. */
+  numeric?: true;
   /** A `checks`' boxes, in the order they are drawn and written. */
   options?: readonly Option[];
   /** What a `status` says while the value is `value` (empty: no file sets it). */
