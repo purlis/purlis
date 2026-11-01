@@ -1626,7 +1626,7 @@ jobs:
       # workspace's crates change with every pull request that runs this job).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
-        env: # DEBUG-4351 thin LTO: fat took the Linux runner down twice
+        env: # DEBUG-4351
           CARGO_PROFILE_RELEASE_LTO: thin
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
         run: npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings # DEBUG-4351
@@ -1691,56 +1691,47 @@ jobs:
       # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). `outcome-bars`
       # alone runs these. Each runs whatever the one before it did, so a red run names every miss.
       - name: The Skill studio's outcome bars on claude's stand-in
-        run: npm run e2e:outcome -- --mochaOpts.grep "under 300 ms" # DEBUG-4351
+        run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: claude
           CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
-          PURLIS_4351_LOG: ${{ runner.temp }}/probe-claude.log
       - name: The Skill studio's outcome bars on claude's stand-in
-        run: xvfb-run -a npm run e2e:outcome -- --mochaOpts.grep "under 300 ms" # DEBUG-4351
+        run: xvfb-run -a npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: claude
           CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
-          PURLIS_4351_LOG: ${{ runner.temp }}/probe-claude.log
       - name: The Skill studio's outcome bars on codex's stand-in
         run: npm run e2e:outcome
-        if: ${{ false }} # DEBUG-4351
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
           CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
-          PURLIS_4351_LOG: ${{ runner.temp }}/probe-codex.log
       - name: The Skill studio's outcome bars on codex's stand-in
         run: xvfb-run -a npm run e2e:outcome
-        if: ${{ false }} # DEBUG-4351
+        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
           CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
-          PURLIS_4351_LOG: ${{ runner.temp }}/probe-codex.log
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: npm run e2e:outcome
-        if: ${{ false }} # DEBUG-4351
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
           CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
-          PURLIS_4351_LOG: ${{ runner.temp }}/probe-opencode.log
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: xvfb-run -a npm run e2e:outcome
-        if: ${{ false }} # DEBUG-4351
+        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
           CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
-          PURLIS_4351_LOG: ${{ runner.temp }}/probe-opencode.log
-      - name: DEBUG-4351 what the core spent
-        if: ${{ !cancelled() && matrix.outcome }}
-        run: tail -n 400 "$RUNNER_TEMP"/probe-*.log || true
       # The app started the way an operator starts it — from Finder, with the `PATH` Finder
       # gives — on purlis's own built-in profile. Its own run, because it is the app's
       # ENVIRONMENT that is under test and one run is one environment (charter-app#134).

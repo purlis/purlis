@@ -118,7 +118,6 @@ import { RunnerWriteTab } from "./RunnerWriteTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import { SKILL_STUDIO_VIEW, isSkillStudio } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
-import { Profiler4351 } from "./profiler4351";
 import {
   SAVING_VIEW,
   LICENCES_VIEW,
@@ -688,7 +687,6 @@ export function ViewPane({
         ) : isSkillStudio(view) ? (
           /* The Skill studio (#2765): read from the project's skill folders, again when the
              plane changes on disk. One tab per project (#3681), its scope and pages its own. */
-          <Profiler4351 id="StudioTab">
           <SkillStudioTab
             key={`${plane}\u0000${view.key}`}
             plane={plane}
@@ -698,7 +696,6 @@ export function ViewPane({
             onPress={onPress}
             onOpenView={onOpenView}
           />
-          </Profiler4351>
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its
              chat through the catalogue's verb, or its session record as any record opens. It

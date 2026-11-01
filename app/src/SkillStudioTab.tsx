@@ -106,12 +106,6 @@ import type { Offer } from "./actions";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 import { useSkillEditInPlace } from "./SkillEditInPlace";
 
-// DEBUG-4351
-function mark4351(what: string) {
-  const g = globalThis as unknown as { __calls?: string[]; __t0?: number };
-  g.__calls?.push(`${what} +${Math.round(performance.now() - (g.__t0 ?? 0))}`);
-}
-
 /** A change in progress: New skill… (#3684), Rename, Move or Delete, each a dialog (S4, #3685),
  *  with what the core refused the last time it was asked. */
 type Doing =
@@ -289,7 +283,6 @@ export function SkillStudioTab({
   /** Narrow or wide whatever the width: for a story or a test. Measured when left out. */
   narrow?: boolean;
 }) {
-  mark4351("render");
   const view = { ...SKILL_STUDIO_VIEW, key: tab };
   const historyId = studioHistoryOf(plane, view);
   const walked = useViewHistory<StudioPlace>(historyId, STUDIO_START);
@@ -354,9 +347,6 @@ export function SkillStudioTab({
   const refused = read?.key === key ? read.refused : undefined;
   const on = studio?.on === true;
   const wholeLibrary = useWholeLibrary(studio !== undefined);
-  useLayoutEffect(() => {
-    if (studio !== undefined) mark4351("committed with studio");
-  }, [studio]);
   // Read once the studio has said it is on: a scope picked later reads its skills, not these.
   const [opened, setOpened] = useState(false);
   if (on && !opened) setOpened(true);
@@ -374,9 +364,7 @@ export function SkillStudioTab({
   // and that paint took a sixth of a second on a runner with the read not yet begun (#4351).
   useLayoutEffect(() => {
     let live = true;
-    mark4351("ask skillStudio");
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
-      mark4351("answer skillStudio");
       if (!live) return;
       if (answer.status === "ok") setRead({ key, studio: answer.data });
       else setRead({ key, refused: answer.error });

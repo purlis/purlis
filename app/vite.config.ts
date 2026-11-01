@@ -117,7 +117,6 @@ function familyStylesheets(): Plugin {
 
 // https://v2.tauri.app/start/frontend/vite/
 export default defineConfig(async () => ({
-  resolve: { alias: [{ find: /^react-dom\/client$/, replacement: "react-dom/profiling" }] }, // DEBUG-4351
   plugins: [react(), familyStylesheets(), tailwind(), ownLicence(), thirdPartyNotices()],
   // Keep Rust errors visible, and give Tauri the fixed port it expects.
   clearScreen: false,
