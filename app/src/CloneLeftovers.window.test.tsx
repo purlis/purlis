@@ -446,10 +446,9 @@ describe("a failed clone's notice, once the repo lands", () => {
     await userEvent.click(await within(row).findByRole("button", { name: "Retry api" }));
 
     expect(await screen.findByTestId("clone-api")).toBeInTheDocument();
-    // The card still has the workspace's ready line: it is read, not just found gone.
-    await theCardIsBack("gamma");
-    const card = await screen.findByRole("region", { name: "Notices for gamma" });
-    await waitFor(() => expect(card).not.toHaveTextContent("Could not clone api"));
+    // The press hid the card, so a failure still kept would stand behind a warning dot.
+    const warning = /on gamma, most urgent: warning/;
+    await waitFor(() => expect(screen.queryAllByRole("button", { name: warning })).toEqual([]));
   });
 
   it("names on the chip's card, and retries, only the repo still not cloned", async () => {
