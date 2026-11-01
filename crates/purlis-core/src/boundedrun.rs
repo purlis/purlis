@@ -120,6 +120,8 @@ pub fn run_within(
                 }
             }
             if reading.is_none() {
+                #[cfg(unix)]
+                ended_its_group_if_it_ended(&child);
                 match child.try_wait() {
                     Ok(Some(_)) => break,
                     Ok(None) => {}
@@ -175,6 +177,18 @@ pub fn run_within(
         printed,
         said,
     })
+}
+
+/// What `child`, a run given a time that has ended by itself, left running in the group it led
+/// ([`run_within`]) is ended: looked at unreaped, so its id is still its own.
+#[cfg(unix)]
+fn ended_its_group_if_it_ended(child: &std::process::Child) {
+    use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process_group, waitid};
+    let pid = Pid::from_child(child);
+    let looked = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+    if matches!(waitid(WaitId::Pid(pid), looked), Ok(Some(_))) {
+        let _ = kill_process_group(pid, Signal::KILL);
+    }
 }
 
 /// `child`, a run given a time, ended and reaped, with the group it leads ([`run_within`]).

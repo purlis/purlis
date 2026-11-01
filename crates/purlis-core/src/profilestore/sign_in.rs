@@ -168,8 +168,12 @@ impl Look for ThisMachine {
 
 /// How a harness's status is told.
 enum Status {
-    /// Its own command, run in the profile's folder: exit 0 signed in, 1 signed out.
-    Command(&'static [&'static str]),
+    /// Its own command, run in the profile's folder: exit 0 signed in; 1 signed out, with no
+    /// file of the name `sign_in` in its config folder, which is never opened.
+    Command {
+        words: &'static [&'static str],
+        sign_in: &'static str,
+    },
     /// A file of this name under its own folder in the profile's data folder: there, it is
     /// signed in; not there, it may still run on a model that needs no sign-in.
     Named {
@@ -237,7 +241,10 @@ const FLOWS: [Flow; 3] = [
         browser: &[],
         device: &[],
         ways_of: None,
-        status: Status::Command(&["auth", "status"]),
+        status: Status::Command {
+            words: &["auth", "status"],
+            sign_in: ".credentials.json",
+        },
     },
     Flow {
         kind: "codex",
@@ -249,7 +256,10 @@ const FLOWS: [Flow; 3] = [
         // Codex's own answer for a remote machine; beta, and its account may have it off.
         device: &["--device-auth"],
         ways_of: None,
-        status: Status::Command(&["login", "status"]),
+        status: Status::Command {
+            words: &["login", "status"],
+            sign_in: "auth.json",
+        },
     },
     Flow {
         kind: "opencode",
@@ -314,13 +324,27 @@ pub fn standing(profile: &Profile, look: &dyn Look) -> Standing {
         return Standing::CannotTell;
     };
     match flow.status {
-        Status::Command(words) => {
+        Status::Command { words, sign_in } => {
             let Some(program) = program_of(profile) else {
                 return Standing::CannotTell;
             };
             match look.status(&program, words, &profile.env) {
                 Some(0) => Standing::SignedIn,
-                Some(1) => Standing::SignedOut,
+                // A program that failed for its own reasons answers one too: signed out only
+                // with no sign-in of its in its folder.
+                Some(1) => {
+                    let config = crate::harness_declaration::builtin(&profile.kind)
+                        .and_then(|d| folder(profile, d.folders.config_env.as_deref()))
+                        .or_else(|| {
+                            let home = crate::profiles::home()?;
+                            super::defaults(&profile.kind, &home).map(|(config, ..)| config)
+                        });
+                    if config.is_some_and(|config| look.is_there(&config.join(sign_in))) {
+                        Standing::CannotTell
+                    } else {
+                        Standing::SignedOut
+                    }
+                }
                 _ => Standing::CannotTell,
             }
         }

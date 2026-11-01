@@ -45,6 +45,15 @@ pub fn sent_nothing_on(pool: &str) -> String {
     )
 }
 
+/// **Why purlis signs nothing in on pool `pool`'s runner**, by [`pool_ran_unsandboxed`], and what
+/// to do.
+pub fn signs_nothing_in_on(pool: &str) -> String {
+    format!(
+        "purlis signs nothing in on pool {pool}'s runner: a chat ran there without the sandbox, \
+         or may have. Remove the pool and add it again to make a new runner."
+    )
+}
+
 /// Whether a program of `kind` that its host says runs `sandboxed` makes its runner one a chat
 /// ran on without the sandbox: any program but a person's shell or a browser, unless it runs in
 /// a sandbox that holds its files (`landlock`, `bubblewrap`, `seatbelt`). A host that does not

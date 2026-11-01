@@ -293,12 +293,13 @@ impl Reading {
     /// `text`, read as the desktop reads it: the page of a login that waits is recorded.
     fn read(&mut self, stream: Stream, text: &str) -> Result<(), String> {
         for event in self.driven.read_from(stream, text) {
-            if let Event::Approve { state, .. } = event
+            if let Event::Approve { state, port, .. } = event
                 && !self.over
             {
-                self.waiting = Some(Waiting::record(&self.kept_in, &state).map_err(|why| {
-                    format!("purlis could not note this sign-in on this runner: {why}")
-                })?);
+                let at = super::callback::listening_on(port);
+                self.waiting = Some(Waiting::record_at(&self.kept_in, &state, at).map_err(
+                    |why| format!("purlis could not note this sign-in on this runner: {why}"),
+                )?);
             }
         }
         Ok(())

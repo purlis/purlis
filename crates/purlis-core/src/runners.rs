@@ -323,8 +323,9 @@ pub struct Kept {
     /// It answered that this desktop is out of its peers (#4146): it cannot be linked to, so it
     /// is not asked how many chats it has, nor unpaired again.
     pub unpaired: bool,
-    /// The profiles signed out of its pool while it drains (#4145): their sign-ins here are
-    /// never carried, even where the sign-out could not reach it.
+    /// The profiles signed out of its pool while it drains (#4145), or being signed out in a
+    /// terminal: their sign-ins here are never carried, even where the sign-out could not reach
+    /// it.
     pub signed_out: Vec<String>,
     /// The engine that made it, as `docker info` prints its id (#4166): only that engine's word
     /// says it was removed. `None` for a runner kept before this, or an engine that prints none.
@@ -1118,6 +1119,56 @@ pub fn note_locked(
     let mut held = load(config_root)?;
     if let Some(kept) = held.runners.iter_mut().find(|kept| kept.name() == name) {
         note(kept);
+        write(config_root, &held)?;
+    }
+    Ok(())
+}
+
+/// **Notes on every runner of `pool` that `profile` is being signed out of the pool**, so no drain
+/// carries its sign-in while the person's own sign-out waits in a terminal: taken back by
+/// [`carries_again`] when it is signed in there again.
+pub fn hold_every_runner_from_carrying(
+    config_root: &Path,
+    pool: &str,
+    profile: &str,
+) -> Result<(), Refused> {
+    if !crate::profiles::name_ok(profile) {
+        return Err(Refused::Other(format!(
+            "'{}' is not a profile's name",
+            crate::shown::short(profile)
+        )));
+    }
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let mut changed = false;
+    for kept in held.runners.iter_mut().filter(|kept| kept.pool() == pool) {
+        if !kept.signed_out.iter().any(|name| name == profile) {
+            kept.signed_out.push(profile.to_owned());
+            changed = true;
+        }
+    }
+    if changed {
+        write(config_root, &held)?;
+    }
+    Ok(())
+}
+
+/// **`profile` was signed in on pool `pool`'s runner**: a drain of that runner carries it again.
+/// A runner already draining keeps its note.
+pub fn carries_again(config_root: &Path, pool: &str, profile: &str) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let mut changed = false;
+    for kept in held
+        .runners
+        .iter_mut()
+        .filter(|kept| !kept.draining && kept.pool() == pool)
+    {
+        let before = kept.signed_out.len();
+        kept.signed_out.retain(|name| name != profile);
+        changed |= kept.signed_out.len() != before;
+    }
+    if changed {
         write(config_root, &held)?;
     }
     Ok(())

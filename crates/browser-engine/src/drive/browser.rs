@@ -251,7 +251,8 @@ fn pastes(event: &Value) -> bool {
     commanded || insert
 }
 
-/// The first [`MOST_TITLE_CHARS`] of `title`.
+/// The first [`MOST_TITLE_CHARS`] of `title`: of a title already scrubbed, as a text cut first
+/// could leave a part of what the scrub takes out.
 fn kept_title(title: &str) -> String {
     title.chars().take(MOST_TITLE_CHARS).collect()
 }
@@ -335,6 +336,11 @@ impl Page {
     /// `text` with what this page's blanked elements held taken out.
     fn shown(&self, text: &str) -> String {
         Scrub::of(&self.scrubbed).text(text)
+    }
+
+    /// This page's title as it is listed: [`Page::shown`], then cut.
+    fn shown_title(&self) -> String {
+        kept_title(&self.shown(&self.title))
     }
 
     /// [`Page::shown`] for an address, read as its reader would read it (decoded).
@@ -762,7 +768,7 @@ impl State {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
             address: p.shown_address(&p.url),
-            title: p.shown(&p.title),
+            title: p.shown_title(),
             current: self.current.as_deref() == Some(target),
         })
     }
@@ -1771,7 +1777,8 @@ impl Browser {
     /// made for one included, the current page's first (#4353): a background page's first world
     /// can take most of that. A page not read by then, or whose answer is past
     /// [`MOST_TITLE_BYTES`], keeps the title it has. A read is kept only while the page still
-    /// shows the document it was read from, and only its first [`MOST_TITLE_CHARS`].
+    /// shows the document it was read from, whole: it is cut as it is listed
+    /// ([`Page::shown_title`]), once it has been scrubbed.
     fn read_titles(&self) {
         let deadline = Instant::now() + TITLES_WITHIN;
         let pages: Vec<(String, String, u64)> = {
@@ -1808,7 +1815,7 @@ impl Browser {
             });
             if let Some(title) = read
                 .ok()
-                .and_then(|r| r.pointer("/result/value")?.as_str().map(kept_title))
+                .and_then(|r| r.pointer("/result/value")?.as_str().map(str::to_owned))
                 && let Some(page) = lock(&self.inner.state).page_mut(&target)
                 && page.shows == shows
             {
@@ -2157,7 +2164,7 @@ impl Browser {
             }
             let page = &*page;
             let title = if snapshot.title().is_empty() {
-                page.shown(&page.title)
+                page.shown_title()
             } else {
                 snapshot.title().to_owned()
             };

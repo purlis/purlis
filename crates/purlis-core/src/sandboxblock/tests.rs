@@ -298,12 +298,12 @@ fn a_programs_operation_not_permitted_names_its_path_and_is_sorted() {
         (
             "open /Users/dev/.config/gh/hosts.yml: operation not permitted",
             Operation::File,
-            Kind::Home,
+            Kind::ProtectedFile,
         ),
         (
             "failed to write config: mkdir /Users/dev/.config/gh: operation not permitted",
             Operation::Write,
-            Kind::Home,
+            Kind::ProtectedFile,
         ),
         // git's relative work tree, read from where the command ran.
         (
