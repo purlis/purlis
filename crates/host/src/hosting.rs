@@ -1358,7 +1358,7 @@ impl Hosting {
                 "This machine is re-armed, and the re-arm did not reach {}: chats there stay \
                  stopped, and the next re-arm tries it again.{}",
                 named.join(", "),
-                crate::reach::fixed_wait_said(missed.iter().map(|(_, why)| why.as_str()))
+                crate::reach::fixed_wait_said(missed.values().map(String::as_str))
             );
             crate::say(&said);
             switch.why = Some(said);

@@ -35,7 +35,7 @@ pub const STOP_WAIT: FixedLimit = FixedLimit {
     key: "stopWait",
     plain: "Longest wait for a stop to reach a runner",
     why: "one runner that doesn't answer must not hold up the others",
-    instead: "check that runner is up and its link works: purlis keeps trying",
+    instead: "check that runner is up and its link works; it is tried again on its own",
 };
 
 /// The most purlis reads of what a runner, or the tool reaching it, prints.
