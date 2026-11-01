@@ -514,7 +514,11 @@ operator refuses to vouch for them, since they are no longer its template.
 reads the policy's binding before it acts on any Claim. While no binding puts the policy in
 force, it acts on no Claim, and each says `PolicyNotInForce`. The policy is taken to be in force
 30 seconds after its binding was made, the time every API server takes to enforce it. A Claim
-made before then is never acted on: it says `MadeBeforePolicy`; delete it and make it again.
+made before then is never acted on: it says `MadeBeforePolicy`; delete it and make it again. The
+time is the later of the policy's and its binding's (#3854), so a policy made again under a binding
+that stayed counts as made again. A binding changed since it was made (its `generation` is not 1)
+counts as no binding, since a cluster keeps no time for the change: Claims say `PolicyNotInForce`
+until a cluster admin makes it again, as the same rules hold for runner namespaces.
 So wait 30 seconds after installing before making the first Claims.
 
 Making the binding again, by reinstalling the policy or recreating the binding by hand, refuses
@@ -744,17 +748,29 @@ that sandbox's uid as a precondition. Another admission policy in `policy.yaml`,
 `purlis-operator-changes-only-a-sandboxs-mode`, makes that the cluster's rule: an update by the
 operator's service account to a Sandbox is refused unless a SandboxClaim controls it (any
 SandboxClaim's, purlis's or not), and unless every field of its spec but `operatingMode`, and
-its labels, annotations, owners and finalizers, are as they were; its `spec.podTemplate` alone
-may also change, only on a Sandbox already `Suspended` in a `purlis-runners-*` namespace, so a
-kept runner takes its pool's image (#3982). **Its `delete` on Claims is narrowed the same way**
+its labels, annotations, owners and finalizers, are as they were; its containers' images and plain
+resources alone may also change, only on a Sandbox already `Suspended` in a `purlis-runners-*`
+namespace, so a kept runner takes its pool's image (#3982). **Its `delete` on Claims is narrowed the same way**
 (#3981): `purlis-operator-deletes-only-a-retained-claim` refuses it any Claim but a kept one, not
 stopped, with its own `RetentionEnded` condition. **Only the operator writes a Claim's status**
 (`purlis-only-the-operator-writes-a-claims-status`), since what it does rests on it. The operator holds no right
-on admission policies or their bindings but reading the bindings of the policies on Claims and
-on runner namespaces, so it cannot lift it. The spec fields it holds as they were are the
+on admission policies or their bindings but reading, by name, the policies on Claims, on runner
+namespaces and on App keys and their bindings, so it cannot lift it. The spec fields it holds as they were are the
 pinned upstream's (v1.0.6, and a test holds the list to the vendored definitions): a cluster
 that serves another agent-sandbox version may have fields the policy does not hold, one more
 reason to run the version `doctor` checks for.
+
+**What it writes of upstream's is held to a runner's shape** (#3754).
+`purlis-operator-writes-only-a-runners-shape`, kept on uninstall and failing closed, refuses the
+operator's service account a `SandboxTemplate`, `SandboxClaim` or `SandboxWarmPool` anywhere but
+in a `purlis-runners-*` namespace, which keeps out `kube-system`, `agent-sandbox-system`, the
+operator's own namespace and any other an admin has. A template's pod must use the default service
+account with no token mounted, hold only the volumes `purlis-link` and `purlis-kept` as folders of
+its own, and keep the confinement [above](#what-it-makes) on each container, which reads a variable
+from no Secret; of the pinned upstream's other pod and container fields it may set none. A claim
+adds nothing to its pod, and a kept volume is a new one written to by one node. It does not hold
+which image a template names or which storage class a claim's volume is in: the Pool says those. An
+admin editing a policy in place, with its binding left alone, does not move its time in force.
 
 Upstream's controller holds its own ClusterRoles, in the vendored manifest: it makes and
 removes the runners' pods, services, volume claims and network policies. It holds no Secret

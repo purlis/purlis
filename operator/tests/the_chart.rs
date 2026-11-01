@@ -197,6 +197,10 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 #
 # The sixth policy, purlis-only-the-operator-writes-a-claims-status (#3981): what the operator acts
 # on is what a Claim's status says, so no one else writes it.
+#
+# The seventh policy, purlis-operator-writes-only-a-runners-shape (#3754): the operator writes
+# upstream's templates, claims and warm pools in a runner namespace alone, a template's pod only in
+# purlis's runner shape.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.

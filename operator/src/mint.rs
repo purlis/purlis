@@ -30,7 +30,7 @@
 //! key every Pool's status names, so a runner holds it to the key its desktop pinned, not to an
 //! authority. Before a runner has proved anything, every refusal is the same words.
 
-use crate::admission::{Admission, FORGE_POLICY, POLICY, admission, forge_in_force_since};
+use crate::admission::{Admission, FORGE_POLICY, POLICY, admission, in_force_since};
 use crate::forge::{self, Covered};
 use crate::github::GitHub;
 use crate::resources::{Claim, ClaimMint, Pool};
@@ -370,9 +370,9 @@ pub struct Grant {
 pub struct Held<'a> {
     pub claim: &'a Claim,
     pub pool: &'a Pool,
-    /// The binding of the policy on Claims.
-    pub claims_binding: Option<&'a ValidatingAdmissionPolicyBinding>,
-    /// When the policy on App keys is in force from ([`forge_in_force_since`]).
+    /// When the policy on Claims is in force from ([`in_force_since`]).
+    pub claims_since: Option<k8s_openapi::jiff::Timestamp>,
+    /// When the policy on App keys is in force from ([`in_force_since`]).
     pub forge_since: Option<Timestamp>,
 }
 
@@ -384,7 +384,7 @@ pub fn may_mint(held: &Held<'_>) -> Result<Grant, String> {
     if claim.metadata.deletion_timestamp.is_some() || pool.metadata.deletion_timestamp.is_some() {
         return Err("the claim or its pool is being deleted".to_owned());
     }
-    if admission(claim, held.claims_binding) != Admission::UnderPolicy {
+    if admission(claim, held.claims_since) != Admission::UnderPolicy {
         return Err(format!(
             "the claim was not admitted under the policy {POLICY}"
         ));
@@ -810,15 +810,24 @@ impl Serving {
             .get_opt(FORGE_POLICY)
             .await
             .map_err(|_| read_failed("policy's binding"))?;
-        let forge_policy = Api::<ValidatingAdmissionPolicy>::all(client.clone())
+        let policies = Api::<ValidatingAdmissionPolicy>::all(client.clone());
+        let claims_policy = policies
+            .get_opt(POLICY)
+            .await
+            .map_err(|_| read_failed("policy"))?;
+        let forge_policy = policies
             .get_opt(FORGE_POLICY)
             .await
             .map_err(|_| read_failed("policy"))?;
         let grant = may_mint(&Held {
             claim,
             pool: &pool,
-            claims_binding: claims_binding.as_ref(),
-            forge_since: forge_in_force_since(forge_policy.as_ref(), forge_binding.as_ref()),
+            claims_since: in_force_since(claims_policy.as_ref(), claims_binding.as_ref(), POLICY),
+            forge_since: in_force_since(
+                forge_policy.as_ref(),
+                forge_binding.as_ref(),
+                FORGE_POLICY,
+            ),
         })?;
         // Before each mint (ruled on #4206), so a revoked right stops new tokens at once.
         let review = Api::<SubjectAccessReview>::all(client.clone())
