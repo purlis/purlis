@@ -2676,10 +2676,7 @@ fn a_chat_runs_where_its_start_then_workspace_then_project_says_and_else_on_this
     assert_eq!(at(&store, None), (None, Workspace));
     store.set_chats_run_on(plane, "ide", Some("mine")).unwrap();
     assert_eq!(at(&store, None), (pool("mine"), Workspace));
-    assert_eq!(
-        at(&store, Some(StartChoice::ThisMachine)),
-        (None, Start)
-    );
+    assert_eq!(at(&store, Some(StartChoice::ThisMachine)), (None, Start));
     assert_eq!(
         at(&store, Some(StartChoice::Pool("other".to_owned()))),
         (pool("other"), Start)
@@ -2697,8 +2694,14 @@ fn a_project_default_and_a_workspace_set_to_this_machine_are_kept_and_follow_a_r
     let machine = machine();
     let plane = Path::new("/planes/a");
     let mut store = remembering(&["/planes/a"]);
-    assert_eq!(store.set_project_chats_run_on(plane, Some("team")), Ok(true));
-    assert_eq!(store.set_project_chats_run_on(plane, Some("team")), Ok(false));
+    assert_eq!(
+        store.set_project_chats_run_on(plane, Some("team")),
+        Ok(true)
+    );
+    assert_eq!(
+        store.set_project_chats_run_on(plane, Some("team")),
+        Ok(false)
+    );
     assert_eq!(store.set_chats_run_here(plane, "ide"), Ok(true));
     assert_eq!(store.set_chats_run_here(plane, "ide"), Ok(false));
     write(machine.path(), &store).unwrap();
@@ -2708,7 +2711,10 @@ fn a_project_default_and_a_workspace_set_to_this_machine_are_kept_and_follow_a_r
     let text = std::fs::read_to_string(dir(machine.path()).join(FILE)).unwrap();
     let file: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(file["recents"][0]["projectChatsRunOn"], "team");
-    assert_eq!(file["recents"][0]["chatsRunHere"], serde_json::json!(["ide"]));
+    assert_eq!(
+        file["recents"][0]["chatsRunHere"],
+        serde_json::json!(["ide"])
+    );
 
     assert!(store.rename_workspace(plane, "ide", "editor"));
     assert_eq!(store.chat_place(plane, "editor", None).pool, None);

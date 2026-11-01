@@ -3063,13 +3063,20 @@ fn a_project_pool_this_machine_does_not_keep_starts_nothing_and_never_runs_here(
     }
     crate::machine::update(config.path(), |store| {
         store.remember(plane, 1);
-        store.set_project_chats_run_on(plane, Some("first")).unwrap();
-        store.set_chats_run_on(plane, "web", Some("second")).unwrap();
+        store
+            .set_project_chats_run_on(plane, Some("first"))
+            .unwrap();
+        store
+            .set_chats_run_on(plane, "web", Some("second"))
+            .unwrap();
         store.set_chats_run_here(plane, "here").unwrap();
     })
     .unwrap();
     let refused = runs_on(config.path(), plane, Some("ide")).unwrap_err();
-    assert!(refused.starts_with("This project runs its chats on pool first"), "{refused}");
+    assert!(
+        refused.starts_with("This project runs its chats on pool first"),
+        "{refused}"
+    );
     assert_eq!(runs_on(config.path(), plane, Some("here")), Ok(None));
     // A chat at the project's root moves no clone, so it stays here.
     assert_eq!(runs_on(config.path(), plane, None), Ok(None));
@@ -3083,5 +3090,8 @@ fn a_project_pool_this_machine_does_not_keep_starts_nothing_and_never_runs_here(
     );
     let chosen = crate::machine::StartChoice::Pool("gone".to_owned());
     let refused = chat_place(config.path(), plane, Some("here"), Some(&chosen)).unwrap_err();
-    assert!(refused.starts_with("This chat was to start on pool gone"), "{refused}");
+    assert!(
+        refused.starts_with("This chat was to start on pool gone"),
+        "{refused}"
+    );
 }

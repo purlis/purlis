@@ -1069,8 +1069,7 @@ pub enum StartChoice {
 }
 
 /// Which level decided where a chat runs, so the window can say why (#4536).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaceLevel {
     Start,
     Workspace,
@@ -1081,7 +1080,7 @@ pub enum PlaceLevel {
 
 /// Where a chat would run, and the level that decided it (#4536). `pool` is `None` for this
 /// machine.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatPlace {
     pub pool: Option<String>,
     pub level: PlaceLevel,
