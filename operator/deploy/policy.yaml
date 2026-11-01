@@ -634,8 +634,11 @@ spec:
     - expression: request.namespace.startsWith('purlis-runners-')
       message: purlis's cluster operator writes upstream's objects in a runner namespace alone.
       reason: Forbidden
+    # What it changes of a claim: upstream adds to one as it adopts a warm runner, and the operator's
+    # apply leaves that as it is.
     - expression: >-
         request.resource.resource != 'sandboxclaims' ||
+        (request.operation == 'UPDATE' && object.spec == oldObject.spec) ||
         (object.spec.warmPoolRef.name.startsWith('purlis-pool-') &&
         !has(object.spec.env) && !has(object.spec.additionalPodMetadata) &&
         !has(object.spec.lifecycle) &&
