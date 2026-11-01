@@ -493,6 +493,7 @@ fn measure_limits(target: &Target, machine: &Machine, pool: &str, settings: &Pat
         purlis_core::runners::set_pool_limit(&machine.config, pool, id, None).expect("back");
     }
     let _ = ready_to_start(machine, &target.root, pool);
+    panic!("MEASURED all: a failure so nextest prints what was measured");
 }
 
 fn in_the_journey(

@@ -207,8 +207,16 @@ fn a_send_out_of_its_time_says_the_limit_and_double_it() {
     let refused = link
         .write_on_a_stream(None, held, move |client, transfer| {
             Box::pin(async move {
+                // Not held there: a failed send, past its time by this machine's clock.
                 client
-                    .take_code_held(PROJECT, REPO, transfer, Vec::new(), None, given)
+                    .take_code_held(
+                        "01J9PRJCT00000000000000001",
+                        REPO,
+                        transfer,
+                        Vec::new(),
+                        None,
+                        given,
+                    )
                     .await
             })
         })

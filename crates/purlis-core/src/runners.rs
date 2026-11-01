@@ -729,6 +729,15 @@ pub fn chosen_limits_of(
         .unwrap_or_default())
 }
 
+/// **How long a sign-in on pool `name` may wait**: its limit as it stands (spec #4275), or
+/// purlis's default. Only the wait: every check around a sign-in stands.
+#[must_use]
+pub fn longest_login_of(config_root: &Path, name: &str) -> std::time::Duration {
+    let chosen = chosen_limits_of(config_root, name).unwrap_or_default();
+    let minutes = chosen.in_force(crate::poollimits::LimitId::SignInWait);
+    std::time::Duration::from_secs(minutes.saturating_mul(60))
+}
+
 /// **Sets pool `name`'s limit `id` to `value`**, or, `None`, back to purlis's default (spec
 /// #4275), of either kind, under the file's lock. It applies as the limit says
 /// ([`crate::poollimits::TakesEffect`]). A value [`crate::poollimits::Limit::check`] refuses, or no such pool, is

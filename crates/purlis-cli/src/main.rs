@@ -4502,7 +4502,7 @@ fn pool_sign_in(
         &record.harness,
         provider,
         None,
-        sign_in_wait_of(config, pool),
+        purlis_core::runners::longest_login_of(config, pool),
         check,
     )?;
     let (typed, lines) = std::sync::mpsc::channel();
@@ -4548,14 +4548,6 @@ fn not_asked(pool: &str, name: &str, why: &str) -> String {
          started: {}. A profile goes on a pool from its row in Settings › Pools.",
         shown::short(why)
     )
-}
-
-/// **How long a sign-in on `pool` may wait**: the pool's limit as it stands (spec #4275), or
-/// purlis's default.
-fn sign_in_wait_of(config: &std::path::Path, pool: &str) -> std::time::Duration {
-    use purlis_core::poollimits::LimitId::SignInWait;
-    let chosen = purlis_core::runners::chosen_limits_of(config, pool).unwrap_or_default();
-    std::time::Duration::from_secs(chosen.in_force(SignInWait).saturating_mul(60))
 }
 
 /// [`pool_sign_in`] on the cluster pool `pool`, kept as `cluster` with its runner `kept` (#4164):
@@ -4619,7 +4611,7 @@ fn cluster_pool_sign_in(
         &record.harness,
         provider,
         None,
-        sign_in_wait_of(config, pool),
+        purlis_core::runners::longest_login_of(config, pool),
         check,
     )?;
     let (typed, lines) = std::sync::mpsc::channel();
