@@ -2458,6 +2458,8 @@ fn what_an_older_runners_copy_left_out_is_said() {
 
     let said = left_out_said("older-runner-left-out").expect("said");
     assert!(said.contains("ANTHROPIC_BASE_URL"), "{said}");
+}
+
 /// **A profile's user-scope MCP servers reach the runner that keeps it** (#3846), with no sign-in
 /// or credential, and what else either state file holds stays where it is.
 #[test]
