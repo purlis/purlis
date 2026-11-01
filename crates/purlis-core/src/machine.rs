@@ -2077,7 +2077,10 @@ impl std::fmt::Display for Dropped {
                 "the workspace '{workspace}' set to this machine {why}, so it was not kept"
             ),
             Self::ProjectRunsOn { why } => {
-                write!(f, "where the project runs its chats {why}, so it was not kept")
+                write!(
+                    f,
+                    "where the project runs its chats {why}, so it was not kept"
+                )
             }
             Self::Channel { named } => write!(
                 f,
