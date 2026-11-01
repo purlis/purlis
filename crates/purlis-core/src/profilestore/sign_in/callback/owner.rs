@@ -39,19 +39,44 @@ fn reached_by(at: IpAddr, v4: &[(&str, u64)], v6: &[(&str, u64)]) -> Option<u64>
     const ANY_V6: &str = "00000000000000000000000000000000";
     const V4_HERE: &str = "0100007F";
     const V6_HERE: &str = "00000000000000000000000001000000";
+    const V4_MAPPED_HERE: &str = "0000000000000000FFFF00000100007F";
+    // Two at one address share what connects, so neither is known to be reached.
     let bound = |table: &[(&str, u64)], address: &str| {
-        table
-            .iter()
-            .find(|(bound, _)| *bound == address)
-            .map(|(_, inode)| *inode)
+        let mut found = table.iter().filter(|(bound, _)| *bound == address);
+        match (found.next(), found.next()) {
+            (Some((_, inode)), None) => Reached::One(*inode),
+            (None, _) => Reached::Nothing,
+            _ => Reached::Shared,
+        }
+    };
+    let first = |tried: &[Reached]| match tried.iter().find(|one| **one != Reached::Nothing) {
+        Some(Reached::One(inode)) => Some(*inode),
+        _ => None,
     };
     if at.is_ipv4() {
-        bound(v4, V4_HERE)
-            .or_else(|| bound(v4, ANY_V4))
-            .or_else(|| bound(v6, ANY_V6))
+        first(&[
+            bound(v4, V4_HERE),
+            bound(v6, V4_MAPPED_HERE),
+            bound(v4, ANY_V4),
+            bound(v6, ANY_V6),
+        ])
+        // A socket on the mapped address beside one on every address may take what connects, and
+        // the table doesn't say which.
+        .filter(|inode| {
+            bound(v6, V4_MAPPED_HERE) == Reached::Nothing
+                || bound(v6, V4_MAPPED_HERE) == Reached::One(*inode)
+        })
     } else {
-        bound(v6, V6_HERE).or_else(|| bound(v6, ANY_V6))
+        first(&[bound(v6, V6_HERE), bound(v6, ANY_V6)])
     }
+}
+
+/// What a table says of an address.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reached {
+    Nothing,
+    One(u64),
+    Shared,
 }
 
 /// The process group a `/proc/<pid>/stat` line says, which is read after the program's name, the
@@ -71,9 +96,10 @@ fn sockets_of_group(group: u32) -> Option<std::collections::HashSet<u64>> {
     let mut sockets = std::collections::HashSet::new();
     for process in std::fs::read_dir("/proc").ok()?.flatten() {
         let path = process.path();
-        let in_group = std::fs::read_to_string(path.join("stat"))
+        // As bytes: a program may name itself anything.
+        let in_group = std::fs::read(path.join("stat"))
             .ok()
-            .and_then(|stat| group_in_stat(&stat))
+            .and_then(|stat| group_in_stat(&String::from_utf8_lossy(&stat)))
             == Some(group);
         if !in_group {
             continue;
@@ -160,6 +186,25 @@ mod tests {
         assert_eq!(reached_by(here, &v4[..1], &v6), Some(1));
         assert_eq!(reached_by(here, &[], &v6), Some(3));
         assert_eq!(reached_by(here6, &v4, &[]), None);
+    }
+
+    #[test]
+    fn two_on_one_address_are_neither_reached() {
+        let here: IpAddr = Ipv4Addr::LOCALHOST.into();
+        assert_eq!(
+            reached_by(here, &[("0100007F", 1), ("0100007F", 2)], &[]),
+            None
+        );
+    }
+
+    #[test]
+    fn a_socket_on_the_mapped_address_is_not_passed_over() {
+        let here: IpAddr = Ipv4Addr::LOCALHOST.into();
+        let v6 = [
+            ("00000000000000000000000000000000", 3),
+            ("0000000000000000FFFF00000100007F", 9),
+        ];
+        assert_eq!(reached_by(here, &[], &v6), Some(9));
     }
 
     #[test]
