@@ -216,3 +216,73 @@ export const TheRunnerWasRemoved: Story = {
     ],
   }),
 };
+
+export const DockerIsElsewhere: Story = {
+  beforeEach: faked(
+    WHERE(
+      {
+        findings: [
+          "Docker here points at an engine purlis can't tell is on this machine, so purlis makes no runner there and asks it nothing.",
+        ],
+        next: {
+          id: "use-local-docker",
+          label: "Use this machine's Docker",
+          does: "Switch your Docker context or DOCKER_HOST to this machine. purlis checks again by itself.",
+          command: null,
+          url: null,
+        },
+      },
+      "attention",
+    ),
+  ),
+};
+
+export const GoingBackToWhere: Story = {
+  beforeEach: faked(POOL_FORM),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const back = await canvas.findByRole("button", { name: /^Where chats run/ });
+    back.focus();
+    await userEvent.keyboard("{Enter}");
+    await canvas.findByRole("heading", { name: "Where should your chats run?" });
+    await expect(back).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+export const ReadingFailed: Story = {
+  beforeEach: () => {
+    mockIPC((cmd) => {
+      if (cmd === "pool_setup") throw "your Pool setup choices could not be read safely";
+      return null;
+    });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const again = await canvas.findByRole("button", { name: "Check again" });
+    again.focus();
+    await expectFocusInSight();
+  },
+};
+
+export const ARunnerBeingMade: Story = {
+  beforeEach: faked({
+    pool: "dev-box",
+    name: "dev-box",
+    at: "pool",
+    steps: [
+      DONE_WHERE,
+      step("pool", "Pool", "attention", {
+        findings: ["Pool dev-box has no runner yet. If it is being made, this clears by itself."],
+        next: {
+          id: "check-again",
+          label: "Check again",
+          does: "Asks Docker again. It changes nothing.",
+          command: null,
+          url: null,
+        },
+      }),
+      ...LATER,
+    ],
+  }),
+};

@@ -8469,6 +8469,37 @@ export type PoolRow = {
 	suspend_after: string,
 };
 
+/**  One step's next action. */
+export type PoolSetupAction = {
+	id: string,
+	label: string,
+	does: string,
+	command: string | null,
+	url: string | null,
+};
+
+/**  What the tab draws. */
+export type PoolSetupShown = {
+	/**  The pool being set up, once it is made. */
+	pool: string | null,
+	/**  The name given on the Pool step, for the box to hold. */
+	name: string | null,
+	/**  The step the person has reached. */
+	at: string | null,
+	steps: PoolSetupStep[],
+};
+
+/**  One step as it stands. */
+export type PoolSetupStep = {
+	id: string,
+	name: string,
+	state: string,
+	line: string | null,
+	findings: string[],
+	next: PoolSetupAction | null,
+	skippable: boolean,
+};
+
 /**  What the person is asked. */
 export type PoolSignInAsk = {
 	id: number,

@@ -401,8 +401,7 @@ fn pool_reading(facts: &Facts) -> Reading {
             action(
                 ActionId::CreatePool,
                 "Create the pool",
-                "Makes one container, its runner, in Docker on this machine. Settings › Pools \
-                 has the form.",
+                "Makes one container, its runner, in Docker on this machine.",
             ),
         );
     };
@@ -418,7 +417,15 @@ fn pool_reading(facts: &Facts) -> Reading {
         )
     };
     match &pool.runner {
-        Runner::None => make_again(format!("Pool {name} has no runner.")),
+        // Adding a pool records it first, so this is usually a runner being made.
+        Runner::None => Reading::attention(
+            format!("Pool {name} has no runner yet. If it is being made, this clears by itself."),
+            action(
+                ActionId::CheckAgain,
+                "Check again",
+                "Asks Docker again. It changes nothing.",
+            ),
+        ),
         Runner::Gone => make_again(format!(
             "The runner of pool {name} was removed outside purlis."
         )),

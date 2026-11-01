@@ -8252,14 +8252,6 @@ nav.piece-files-head {
   display: grid;
   grid-template-columns: 272px minmax(0, 1fr);
 }
-.pool-setup-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 .pool-setup-rail {
   overflow-y: auto;
   padding: var(--space-6) var(--space-4);
@@ -8337,13 +8329,6 @@ nav.piece-files-head {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-body);
-}
-.pool-setup-say {
-  margin-top: var(--space-1);
-  line-height: var(--line-height-body);
-}
-.pool-setup-say-actions {
-  margin-top: var(--space-3);
 }
 .pool-setup-recheck,
 .pool-setup-busy {

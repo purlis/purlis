@@ -3084,9 +3084,16 @@ export const commands = {
 	useThisMachinesChrome: () => typedError<null, string>(__TAURI_INVOKE("use_this_machines_chrome")),
 	/**  **The Docker pools on this machine**, and a new pool's default limits. */
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
+	/**  **Each step's state, read now**: the pool the person named once it is made, else a new one's. */
 	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
+	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
 	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
+	/**  **Keeps the name given on the Pool step**, or none, so coming back finds it. */
 	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
+	/**
+	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
+	 *  elsewhere, with what to do instead.
+	 */
 	poolSetupOpenDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_open_docker")),
 	/**
 	 *  **Adds a Docker pool on this machine**: its runner is made from the image, confined and held
@@ -10751,6 +10758,37 @@ export type PoolRow = {
 	suspend_after: string,
 };
 
+/**  One step's next action. */
+export type PoolSetupAction = {
+	id: string,
+	label: string,
+	does: string,
+	command: string | null,
+	url: string | null,
+};
+
+/**  What the tab draws. */
+export type PoolSetupShown = {
+	/**  The pool being set up, once it is made. */
+	pool: string | null,
+	/**  The name given on the Pool step, for the box to hold. */
+	name: string | null,
+	/**  The step the person has reached. */
+	at: string | null,
+	steps: PoolSetupStep[],
+};
+
+/**  One step as it stands. */
+export type PoolSetupStep = {
+	id: string,
+	name: string,
+	state: string,
+	line: string | null,
+	findings: string[],
+	next: PoolSetupAction | null,
+	skippable: boolean,
+};
+
 /**  What the person is asked. */
 export type PoolSignInAsk = {
 	id: number,
@@ -12264,21 +12302,6 @@ export type RunnerDispatchWhole = {
 	/**  The brief whole, drawn inertly: escapes written out for what would draw otherwise. */
 	brief: string,
 };
-
-/**
- *  One step's next action.
- */
-export type PoolSetupAction = { id: string; label: string; does: string; command: string | null; url: string | null };
-
-/**
- *  One step as it stands.
- */
-export type PoolSetupStep = { id: string; name: string; state: string; line: string | null; findings: string[]; next: PoolSetupAction | null; skippable: boolean };
-
-/**
- *  What the tab draws.
- */
-export type PoolSetupShown = { pool: string | null; name: string | null; at: string | null; steps: PoolSetupStep[] };
 
 /**
  *  **The runner image a new pool is offered** (the person's ruling of 2026-10-30), by the

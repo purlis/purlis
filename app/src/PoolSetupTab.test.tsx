@@ -207,6 +207,34 @@ describe("PoolSetupTab", () => {
     expect(calls.some((call) => call.cmd === "add_docker_pool")).toBe(false);
   });
 
+  it("keeps the name as it is typed, without waiting to leave the box", async () => {
+    const calls = core(() => CHOSEN);
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.type(await screen.findByRole("textbox", { name: /Name/ }), "dev");
+    await waitFor(() => expect(calls.some((call) => call.cmd === "pool_setup_name")).toBe(true));
+  });
+
+  it("tells the rest of the window a pool was made", async () => {
+    let now = CHOSEN;
+    const calls = core(() => now, {
+      add_docker_pool: () => {
+        now = MADE;
+        return null;
+      },
+    });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.type(await screen.findByRole("textbox", { name: /Name/ }), "dev-box");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create the pool" })).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
+    await screen.findByRole("heading", { name: "Sign-ins" });
+    expect(calls.some((call) => call.cmd === "docker_pools")).toBe(true);
+  });
+
   it("resumes with the name given", async () => {
     core(() => ({ ...CHOSEN, name: "kept-name" }));
     render(<PoolSetupTab plane="p" />);

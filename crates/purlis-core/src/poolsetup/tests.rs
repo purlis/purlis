@@ -117,10 +117,10 @@ fn a_runner_removed_by_hand_needs_attention_on_the_pool_step_alone() {
 }
 
 #[test]
-fn a_pool_with_no_runner_offers_to_make_it_again() {
+fn a_pool_with_no_runner_yet_says_so_and_checks_again() {
     let setup = answer(&on_a_pool(Runner::None, SignIns::NotAsked));
     assert_eq!(states(&setup)[1], Attention);
-    assert_eq!(next(&setup, StepId::Pool), ActionId::MakeRunnerAgain);
+    assert_eq!(next(&setup, StepId::Pool), ActionId::CheckAgain);
 }
 
 #[test]
