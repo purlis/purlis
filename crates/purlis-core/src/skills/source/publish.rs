@@ -22,6 +22,7 @@
 use std::path::Path;
 
 use purlis_skills::tree;
+use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 
 use super::fetch::{REMOTE, Scratch, handing};
@@ -52,6 +53,8 @@ pub trait PublishForge {
 pub struct OnTheForge {
     repo: Repo,
     caller: Caller,
+    /// The window's own credential helper, where the window runs this.
+    helper: Option<String>,
 }
 
 impl OnTheForge {
@@ -73,13 +76,43 @@ impl OnTheForge {
         Ok(OnTheForge {
             repo: Repo { forge, path },
             caller: Caller::command(),
+            helper: None,
         })
+    }
+
+    /// [`Self::of`], as the person in the window: their purlis account for the host and no other
+    /// helper. Without a sign-in nothing is pushed.
+    pub fn for_the_window(plane: &Path, source: &Source) -> Result<OnTheForge, String> {
+        let mut forge = Self::of(plane, source)?;
+        let host = forge.repo.forge.host.clone();
+        forge.helper = Some(
+            crate::forge::gitcredential::for_the_window(&host).ok_or_else(|| {
+                format!(
+                    "purlis has no sign-in to {host} to push with. Sign in in {}, then try again",
+                    crate::forge::signin::SIGN_IN_AT
+                )
+            })?,
+        );
+        forge.caller = Caller::window();
+        Ok(forge)
+    }
+
+    /// What this forge calls a request: "pull request" or "merge request".
+    pub fn request_noun(&self) -> &'static str {
+        self.repo.forge.kind.request_noun()
+    }
+
+    /// The forge's name, as a button says it.
+    pub fn display(&self) -> &'static str {
+        self.repo.forge.kind.display()
     }
 }
 
 impl PublishForge for OnTheForge {
     fn helper(&self) -> Option<String> {
-        Some(crate::forge::helper_for(&self.repo.forge))
+        self.helper
+            .clone()
+            .or_else(|| Some(crate::forge::helper_for(&self.repo.forge)))
     }
 
     fn already(&self, branch: &str) -> Result<Option<String>, String> {
@@ -123,6 +156,8 @@ pub struct PublishReview {
     pub title: String,
     /// Whom the commit names, as the project's git config says: it goes out with the commit.
     pub author: (String, String),
+    /// The grades the description holds.
+    pub grades: Vec<GradeSent>,
     /// The request's description, the grades among it, whole.
     pub body: String,
 }
@@ -132,6 +167,37 @@ impl PublishReview {
     pub fn stopped(&self) -> bool {
         !self.outgoing.stops.is_empty()
     }
+
+    /// **What a yes to this review is a yes to**: everything it showed, by digest.
+    pub fn accepted(&self) -> Accepted {
+        let lands: Vec<&str> = self.lands.iter().map(|land| land.0.as_str()).collect();
+        let shown = [
+            self.outgoing.digest().as_str(),
+            self.base.as_str(),
+            self.commit.as_str(),
+            self.branch.as_str(),
+            &lands.join("\n"),
+            self.title.as_str(),
+            self.author.0.as_str(),
+            self.author.1.as_str(),
+            self.body.as_str(),
+        ]
+        .map(|field| format!("{}:{field}", field.len()))
+        .join("\n");
+        Accepted {
+            base: self.base.clone(),
+            commit: self.commit.clone(),
+            digest: crate::runnerlink::hex_of(&sha2::Sha256::digest(shown.as_bytes())),
+        }
+    }
+}
+
+/// **A person's yes to one review**: where it was reviewed against, and a digest of all it showed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Accepted {
+    pub base: String,
+    pub commit: Commit,
+    pub digest: String,
 }
 
 /// **What a publish of `name` at `level` to `source` would send.** Writes nothing anywhere.
@@ -154,7 +220,7 @@ fn reviewed(
     name: &str,
     source: &Source,
     scratch: &Scratch,
-    at: Option<&PublishReview>,
+    at: Option<&Accepted>,
 ) -> Result<PublishReview, String> {
     source.check()?;
     let author = author_of(plane)?;
@@ -188,7 +254,8 @@ fn reviewed(
         crate::runnerlink::hex_of(&sha2::Sha256::digest(place.as_bytes()))
     };
     let title = title_of(&outgoing.skills, lands.first().is_some_and(|land| land.1));
-    let body = body_of(plane, &outgoing.skills, &lands);
+    let grades = grades_sent(plane, &outgoing.skills);
+    let body = body_of(&outgoing.skills, &lands, &grades);
     // The description goes out too: anything in it stops the publish as a file would.
     for (index, line) in body.lines().enumerate() {
         for leak in secretshape::leaks(line) {
@@ -209,6 +276,7 @@ fn reviewed(
         lands,
         title,
         author,
+        grades,
         body,
     })
 }
@@ -283,8 +351,21 @@ fn percent(value: Option<f64>) -> String {
     value.map_or("not run".to_owned(), |rate| format!("{:.0}%", rate * 100.0))
 }
 
-/// One row of a skill's grades.
-fn grade_row(graded: &Graded, now: Option<&str>) -> String {
+/// **One grade, as it goes out**: nothing the record holds but these.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GradeSent {
+    pub skill: String,
+    pub when: String,
+    pub version: &'static str,
+    pub harness: String,
+    pub grader: String,
+    pub with_it: String,
+    pub without_it: String,
+    pub runs: u8,
+    pub ended: &'static str,
+}
+
+fn grade_sent(skill: &str, graded: &Graded, now: Option<&str>) -> GradeSent {
     let arm = |arm| {
         graded
             .report
@@ -295,20 +376,35 @@ fn grade_row(graded: &Graded, now: Option<&str>) -> String {
             .map(|stat| stat.mean)
     };
     let date: String = graded.ts.chars().take(10).collect();
-    format!(
-        "| {} | {} | {} | {} | {} | {} | {} | {} |",
-        plain(&date),
-        if now == Some(graded.tree.as_str()) {
+    GradeSent {
+        skill: plain(skill),
+        when: plain(&date),
+        version: if now == Some(graded.tree.as_str()) {
             "this one"
         } else {
             "earlier"
         },
-        plain(graded.harness.as_deref().unwrap_or("unknown")),
-        plain(&graded.report.grader),
-        percent(arm(purlis_skills::grade::Arm::With)),
-        percent(arm(purlis_skills::grade::Arm::Without)),
-        graded.runs,
-        grades::ended_said(graded.report.ended),
+        harness: plain(graded.harness.as_deref().unwrap_or("unknown")),
+        grader: plain(&graded.report.grader),
+        with_it: percent(arm(purlis_skills::grade::Arm::With)),
+        without_it: percent(arm(purlis_skills::grade::Arm::Without)),
+        runs: graded.runs,
+        ended: grades::ended_said(graded.report.ended),
+    }
+}
+
+/// One row of a skill's grades, in the request's description.
+fn grade_row(sent: &GradeSent) -> String {
+    format!(
+        "| {} | {} | {} | {} | {} | {} | {} | {} |",
+        sent.when,
+        sent.version,
+        sent.harness,
+        sent.grader,
+        sent.with_it,
+        sent.without_it,
+        sent.runs,
+        sent.ended,
     )
 }
 
@@ -324,8 +420,27 @@ fn tree_now(plane: &Path, folder: &Path) -> Option<String> {
     run.ok().then(|| run.line().trim().to_owned())
 }
 
+/// The grades that go with `skills`, each skill's newest first.
+fn grades_sent(plane: &Path, skills: &[OutSkill]) -> Vec<GradeSent> {
+    let mut out = Vec::new();
+    for skill in skills {
+        let graded = grades::read_followed(plane, &skill.level, &skill.name).grades;
+        let now = skill
+            .level
+            .named(plane, &skill.name)
+            .and_then(|folder| tree_now(plane, &folder));
+        out.extend(
+            graded
+                .iter()
+                .take(MOST_GRADES)
+                .map(|one| grade_sent(&skill.name, one, now.as_deref())),
+        );
+    }
+    out
+}
+
 /// **The request's description**: what goes, then each skill's grades.
-fn body_of(plane: &Path, skills: &[OutSkill], lands: &[(String, bool)]) -> String {
+fn body_of(skills: &[OutSkill], lands: &[(String, bool)], sent: &[GradeSent]) -> String {
     let mut out = String::from("Published with purlis. Review it as you would any change.\n\n");
     out.push_str("## Files\n\n");
     for (skill, (folder, _)) in skills.iter().zip(lands) {
@@ -333,22 +448,19 @@ fn body_of(plane: &Path, skills: &[OutSkill], lands: &[(String, bool)]) -> Strin
     }
     out.push_str("\n## Grades\n");
     for skill in skills {
-        let graded = grades::read_followed(plane, &skill.level, &skill.name).grades;
-        out.push_str(&format!("\n### {}\n\n", plain(&skill.name)));
-        if graded.is_empty() {
+        let name = plain(&skill.name);
+        out.push_str(&format!("\n### {name}\n\n"));
+        let rows: Vec<&GradeSent> = sent.iter().filter(|one| one.skill == name).collect();
+        if rows.is_empty() {
             out.push_str("Not graded.\n");
             continue;
         }
-        let now = skill
-            .level
-            .named(plane, &skill.name)
-            .and_then(|folder| tree_now(plane, &folder));
         out.push_str(
             "| When | Version | Harness | Grader | With the skill | Without | Runs | Ended |\n\
              | --- | --- | --- | --- | --- | --- | --- | --- |\n",
         );
-        for one in graded.iter().take(MOST_GRADES) {
-            out.push_str(&grade_row(one, now.as_deref()));
+        for one in rows {
+            out.push_str(&grade_row(one));
             out.push('\n');
         }
     }
@@ -366,6 +478,10 @@ pub enum Published {
     Already {
         url: String,
     },
+    /// git could not push to the source, which takes write access. Nothing was opened.
+    PushRefused {
+        why: String,
+    },
 }
 
 /// **Sends what `accepted` showed**, refused whole where any of it moved since or anything stops
@@ -376,7 +492,7 @@ pub fn publish(
     level: &Level,
     name: &str,
     source: &Source,
-    accepted: &PublishReview,
+    accepted: &Accepted,
     forge: &dyn PublishForge,
 ) -> Result<Published, String> {
     let scratch = Scratch::new()?;
@@ -389,7 +505,7 @@ pub fn publish(
         &scratch,
         Some(accepted),
     )?;
-    if now != *accepted {
+    if now.accepted() != *accepted {
         return Err(
             "What would go out is not what you reviewed, so nothing was sent. Review it again"
                 .to_owned(),
@@ -409,11 +525,9 @@ pub fn publish(
         let pushed =
             scratch.push_new_branch(&source.remote.url, helper.as_deref(), &commit, &now.branch)?;
         if !pushed.ok() {
-            return Err(format!(
-                "Nothing was opened: git could not push to {source}, which takes write access to \
-                 it: {}",
-                super::fetch::complaint(&pushed)
-            ));
+            return Ok(Published::PushRefused {
+                why: super::fetch::complaint(&pushed),
+            });
         }
     }
     let url = forge

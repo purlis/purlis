@@ -9,7 +9,7 @@
  *
  * - **The header**: the skill's name, its skill level and its state, what it does, and its
  *   actions: Use in this chat, Edit and Grade, then a "…" menu of Rename, Move to another level,
- *   Deprecate, Archive, Improve from runs, Open the file and Delete. A built-in skill's page says it can't be
+ *   Deprecate, Archive, Improve from runs, Publish to a source, Export, Open the file and Delete. A built-in skill's page says it can't be
  *   edited, moved or turned off, and offers only what it can do.
  * - **The banner**: where the skill isn't plainly on (off, left out, a change to review, an update
  *   waiting, hidden by the router, a clash, deprecated or archived), why in one sentence, and the
@@ -47,7 +47,7 @@ import { Fact, Facts } from "./ui/card/Facts";
 import { Dialog } from "./ui/dialog/Dialog";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { TextField } from "./ui/field/Field";
-import { Menu, MenuItem, MenuTrigger, MenuWords } from "./ui/menu/Menu";
+import { Menu, MenuItem, MenuSeparator, MenuTrigger, MenuWords } from "./ui/menu/Menu";
 import { ViewPageHeader } from "./ui/panel/ViewFrame";
 import { PageTabs, type PageTab } from "./ui/tabs/PageTabs";
 import { SkillCompatBadges } from "./SkillCompatBadges";
@@ -377,6 +377,8 @@ export function SkillPage({
   onRename,
   onMove,
   onDelete,
+  onPublish,
+  onExport,
   onPersona,
   onCopy,
   offerFor,
@@ -411,6 +413,8 @@ export function SkillPage({
   onRename: (level: SkillLevel) => void;
   onMove: (level: SkillLevel) => void;
   onDelete: (level: SkillLevel) => void;
+  onPublish: (level: SkillLevel) => void;
+  onExport: (level: SkillLevel) => void;
   onPersona: (who: string, written: string, how: "add" | "remove") => void;
   /** Make my own copy, of a built-in skill (#3686): the studio's dialog. */
   onCopy?: () => void;
@@ -600,7 +604,7 @@ export function SkillPage({
         aria-label={`More for ${name}`}
         disabledKeys={[
           ...(level === null
-            ? ["improve", "rename", "move", "deprecate", "archive", "delete"]
+            ? ["improve", "rename", "move", "deprecate", "archive", "delete", "publish", "export"]
             : []),
           ...(state === "archived" ? ["deprecate"] : []),
           ...("reason" in file || onOpenView === undefined ? ["file"] : []),
@@ -618,6 +622,8 @@ export function SkillPage({
           else if (key === "rename") onRename(level);
           else if (key === "move") onMove(level);
           else if (key === "delete") onDelete(level);
+          else if (key === "publish") onPublish(level);
+          else if (key === "export") onExport(level);
           else if (key === "deprecate") {
             if (state === "deprecated")
               lifecycle({ state: "active" }, "The skill's state was not changed");
@@ -665,6 +671,17 @@ export function SkillPage({
             }
           />
         </MenuItem>
+        <MenuSeparator />
+        <MenuItem id="publish" textValue="Publish to a source…">
+          <MenuWords
+            said="Publish to a source…"
+            under={level === null ? cannotChange : undefined}
+          />
+        </MenuItem>
+        <MenuItem id="export" textValue="Export…">
+          <MenuWords said="Export…" under={level === null ? cannotChange : undefined} />
+        </MenuItem>
+        <MenuSeparator />
         <MenuItem id="file" textValue="Open the file">
           <MenuWords said="Open the file" under={"reason" in file ? file.reason : undefined} />
         </MenuItem>

@@ -713,6 +713,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_updates",
     "skill_update_review",
     "skill_update",
+    // A publish and an export: the person's own press in their window (#2781).
+    "skill_publish_review",
+    "skill_publish",
+    "skill_export_review",
+    "skill_export",
     // A harness's plugin or skill turned on or off in the Skill studio (#2769): it writes this
     // machine's project file, or the workspace's settings. The person's own press in their
     // window.

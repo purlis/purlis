@@ -1979,12 +1979,30 @@ fn publish(
         voice::info("Nothing was sent.");
         return Ok(1);
     }
-    match source::publish::publish(root, built_in, level, name, source, &review, &forge)? {
+    match source::publish::publish(
+        root,
+        built_in,
+        level,
+        name,
+        source,
+        &review.accepted(),
+        &forge,
+    )? {
         source::publish::Published::Opened { url, .. } => {
             voice::info(esc(&format!("Opened {url}")).to_string());
         }
         source::publish::Published::Already { url } => {
             voice::info(esc(&format!("These files already have a request: {url}")).to_string());
+        }
+        source::publish::Published::PushRefused { why } => {
+            voice::err(
+                esc(&format!(
+                    "Nothing was opened: git could not push to the source, which takes write \
+                     access to it: {why}"
+                ))
+                .to_string(),
+            );
+            return Ok(1);
         }
     }
     Ok(0)
