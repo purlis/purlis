@@ -1768,16 +1768,23 @@ impl Browser {
     /// Reads each page's title from its document, in purlis's own world (#2753). The engine
     /// tells of a title by `Target.targetInfoChanged`, and Chrome does not always send it after
     /// a script sets `document.title`. Every read together is given [`TITLES_WITHIN`], a world
-    /// made for one included; a page not read by then, or whose answer is past
+    /// made for one included, the current page's first (#4353): a background page's first world
+    /// can take most of that. A page not read by then, or whose answer is past
     /// [`MOST_TITLE_BYTES`], keeps the title it has. A read is kept only while the page still
     /// shows the document it was read from, and only its first [`MOST_TITLE_CHARS`].
     fn read_titles(&self) {
         let deadline = Instant::now() + TITLES_WITHIN;
-        let pages: Vec<(String, String, u64)> = lock(&self.inner.state)
-            .pages
-            .iter()
-            .filter_map(|p| Some((p.target.clone(), p.session.clone()?, p.shows)))
-            .collect();
+        let pages: Vec<(String, String, u64)> = {
+            let state = lock(&self.inner.state);
+            let current = state.current.as_deref();
+            let mut pages: Vec<_> = state
+                .pages
+                .iter()
+                .filter_map(|p| Some((p.target.clone(), p.session.clone()?, p.shows)))
+                .collect();
+            pages.sort_by_key(|(target, ..)| Some(target.as_str()) != current);
+            pages
+        };
         for (target, session, shows) in pages {
             if Instant::now() >= deadline {
                 break;
