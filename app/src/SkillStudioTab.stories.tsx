@@ -41,7 +41,7 @@ const SKILLS = [
   }),
   skill("figma-handoff", {
     on: false,
-    left_out: "a built-in skill has this name, and a built-in skill is never replaced",
+    left_out: "a name starting with purlis- is purlis's own, so this skill never loads: rename it",
     description: "Checks a Figma frame against the built page and lists every gap.",
   }),
   skill("browser", {
@@ -50,7 +50,7 @@ const SKILLS = [
     grant: null,
     granted: null,
     description: "Drives a real browser for a task that needs one, with credentials from a vault.",
-    folder: "/app/plugin/skills/browser",
+    folder: "/app/plugin/skills/purlis-browser",
   }),
   skill("secrets", {
     level: "built-in",
@@ -58,7 +58,7 @@ const SKILLS = [
     grant: null,
     granted: null,
     description: "Uses a credential held in a vault without its value entering the conversation.",
-    folder: "/app/plugin/skills/secrets",
+    folder: "/app/plugin/skills/purlis-secrets",
   }),
 ];
 

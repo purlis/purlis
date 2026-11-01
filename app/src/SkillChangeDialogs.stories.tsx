@@ -65,7 +65,6 @@ function Shown({ which }: { which: Which }) {
         skill={DEPLOY}
         level={PROJECT}
         taken={["review-pr"]}
-        builtIns={["browser", "secrets"]}
         busy={false}
         onEdit={nothing}
         onRename={nothing}

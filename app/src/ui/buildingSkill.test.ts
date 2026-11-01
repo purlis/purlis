@@ -7,7 +7,7 @@
  *
  * `building-purlis-ui` is the skill an agent loads to build the window, and it points into the
  * docs rather than restating them. A pointer that has gone stale sends the agent nowhere, so
- * every one is held here, as the theme skill's commands are held by `purlis theme --help`:
+ * every one is held here, as the purlis-theme skill's commands are held by `purlis theme --help`:
  *
  * - each repository path it names in code exists, and each `#anchor` after a doc is a heading of
  *   that doc;

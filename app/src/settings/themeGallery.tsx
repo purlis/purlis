@@ -866,7 +866,7 @@ const NO_CHAT_HERE =
  * the moves up a level (#2332): **Use in the whole project** moves a workspace's theme to the
  * project, and **Copy to my machine** copies a project's or a workspace's theme to the person's
  * own, with only the font files approved with the project. **Edit with a chat** and **New theme**
- * (#2333) open a chat at this level on purlis's theme skill, its prompt typed and never sent.
+ * (#2333) open a chat at this level on purlis's purlis-theme skill, its prompt typed and never sent.
  */
 function folderRow(group: string, at: ThemeAt | null): LiveSetting {
   return {

@@ -49,7 +49,7 @@ const LIBRARY = [
     grant: null,
     granted: null,
     description: "Uses a credential without its value entering the chat.",
-    folder: "/app/plugin/skills/secrets",
+    folder: "/app/plugin/skills/purlis-secrets",
   }),
 ];
 

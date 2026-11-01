@@ -34,7 +34,6 @@ function Shown() {
       levels={LEVELS}
       start={SMART_IDE}
       takenAt={() => ["release-notes"]}
-      builtIns={["browser", "secrets"]}
       busy={false}
       onEdit={nothing}
       onMake={nothing}

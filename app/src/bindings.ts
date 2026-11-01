@@ -3680,7 +3680,7 @@ export const commands = {
 } | null, theme: string, from: string | null) => typedError<null, string>(__TAURI_INVOKE("theme_open_folder", { at, theme, from })),
 	/**
 	 *  **New theme** and **Edit with a chat** (#2333): a chat at the level `at` names, with a prompt
-	 *  that names purlis's theme skill typed into it and never sent (ADR 0061), as the Curate menu's
+	 *  that names purlis's purlis-theme skill typed into it and never sent (ADR 0061), as the Curate menu's
 	 *  Create a theme opens one. With `theme`, the prompt names that card's theme, of the level
 	 *  `from`; the card is one this level's gallery shows, never a name the window made up. The
 	 *  machine's level has no project for a chat to work in, so it is never asked. A refused start
@@ -6286,7 +6286,7 @@ export type DeletedSkill = {
 	 */
 	in_history: boolean,
 	/**
-	 *  Whether its name belongs to a built-in skill now (a newer purlis ships one of that name),
+	 *  Whether its name belongs to purlis now (it starts with `purlis-`),
 	 *  so it comes back only under a new name (#3729).
 	 */
 	reserved: boolean,
@@ -9574,7 +9574,7 @@ export type OpenRun = {
 	skill: string,
 	/**
 	 *  The skill it is a run of, by its own name, as the core counts it
-	 *  ([`purlis_core::skilluse::own_name`]): `secrets` for opencode's `purlis-secrets`. The
+	 *  ([`purlis_core::skilluse::own_name`]): `purlis-secrets` for `purlis:purlis-secrets`. The
 	 *  skill whose tab its chip opens.
 	 */
 	name: string,
@@ -10139,7 +10139,7 @@ export type Phase =
 "not_sent" | 
 /**
  *  The chat finished a Smart close and saved its record with no pass: its harness said
- *  `/smart-close`, and no typed one of the person's was behind it. The tab stayed open, and
+ *  `/purlis-smart-close`, and no typed one of the person's was behind it. The tab stayed open, and
  *  the window offers Close tab, a plain close that grants nothing (D-1361-7).
  */
 "kept_open";
@@ -13785,7 +13785,7 @@ export type SkillUpdates = {
 
 /**  A skill another skill names. */
 export type SkillUse = {
-	/**  As the text writes it: `skills:deploy`, `purlis:secrets`. */
+	/**  As the text writes it: `skills:deploy`, `purlis:purlis-secrets`. */
 	said: string,
 	name: string,
 	/**  Whether it names one of the project's skills, not a built-in one. */

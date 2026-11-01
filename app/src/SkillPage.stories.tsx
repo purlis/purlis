@@ -42,7 +42,7 @@ const BROWSER = skill("browser", {
   grant: null,
   granted: null,
   description: "Drives a real browser for a task that needs one, with credentials from a vault.",
-  folder: "/app/plugin/skills/browser",
+  folder: "/app/plugin/skills/purlis-browser",
 });
 const SKILLS = [DEPLOY, LINT, BROWSER];
 

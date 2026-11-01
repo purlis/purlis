@@ -6,7 +6,7 @@ import { RotateCw } from "lucide-react";
 import { commands, type DeletedSkill } from "./bindings";
 import { counted } from "./dispatches";
 import { Field, SettingRow } from "./settings/components";
-import { NAME_RESERVED, copyNameOf } from "./SkillCopy";
+import { NAME_RESERVED, copyNameOf, isReservedName } from "./SkillCopy";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Disclosure } from "./ui/disclosure/Disclosure";
@@ -69,8 +69,7 @@ export function DeletedList({
 type Read = { text: string } | { refused: string } | undefined;
 
 /** What a deleted skill whose name a built-in skill took is told (#3729). */
-export const NAME_TAKEN =
-  "Its name belongs to a built-in skill now, so it comes back under a new name.";
+export const NAME_TAKEN = "Its name belongs to purlis now, so it comes back under a new name.";
 
 /**
  * **A deleted skill's page** (S9, #3691), beside the Deleted list: what bringing it back does
@@ -79,19 +78,16 @@ export const NAME_TAKEN =
  *
  * **One whose name a built-in skill took** (#3729: a newer purlis ships one of that name) comes
  * back only under a new name: the page asks for it, starting as the built-in copy's would, and
- * refuses a built-in skill's name as it is typed, in the core's words; the core checks it again.
+ * refuses a name of purlis's own as it is typed, in the core's words; the core checks it again.
  */
 export function DeletedPage({
   plane,
   deleted,
-  builtIns,
   busy,
   onBringBack,
 }: {
   plane: string;
   deleted: DeletedSkill;
-  /** Every built-in skill's name: the names it cannot come back under. */
-  builtIns: readonly string[];
   busy: boolean;
   /** Bring it back: `under` the new name, where its own is a built-in skill's. */
   onBringBack: (one: DeletedSkill, under?: string) => void;
@@ -100,7 +96,7 @@ export function DeletedPage({
   const [asked, setAsked] = useState(false);
   const [under, setUnder] = useState(() => copyNameOf(deleted.name));
   const wanted = under.trim();
-  const reserved = deleted.reserved && builtIns.includes(wanted);
+  const reserved = deleted.reserved && isReservedName(wanted);
   const ready =
     !busy && (!deleted.reserved || (wanted !== "" && wanted !== deleted.name && !reserved));
   const readIt = () => {
@@ -150,7 +146,7 @@ export function DeletedPage({
             </p>
             <SettingRow
               label="New name"
-              help="Lowercase letters, digits and hyphens: not a built-in skill's name."
+              help="Lowercase letters, digits and hyphens, not starting with purlis-."
               control={(ids) => <Field kind="text" ids={ids} value={under} onChange={setUnder} />}
             />
             {reserved && (
