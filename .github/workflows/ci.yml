@@ -1187,15 +1187,27 @@ jobs:
   # with no parent-death signal, is where an engine outliving its host would show (#2009).
   #
   # **In three parts, as `rust` is in two (#2458).** One runner ran out of its 45 minutes on
-  # 2026-10-13, -14, -16 and -17: the build alone took 9 to 22 minutes, since no night had ever
-  # saved a cache (rust-cache saves after a green job only, and this one was never green), and
-  # the tests are some 6,000 s of test time on a runner that runs three at once. Each part
-  # builds every test binary and runs a third of each one's tests (`count:`), and a red night
-  # still saves its build (`cache-on-failure`), so the next night starts from it.
+  # 2026-10-13, -14, -16 and -17: the tests are some 6,000 s of test time on a runner that runs
+  # three at once. Each part builds every test binary and runs a third of each one's tests
+  # (`count:`).
   #
-  # Each part has 60 minutes, and the app's `behaviour` tests are left out here until #2464: on
-  # macOS each takes some 160 s where Linux takes under 10, and the Linux `rust` job runs them
-  # on every pull request. What each part took, measured, is in #2468.
+  # **One build job at a time, on a 7 GB machine (#2458).** `macos-latest` is one of two machines,
+  # by lot: an M1 with 3 CPUs and 7 GB, or an M2 Pro with 5 and 15. In the week to 2026-11-01 the
+  # build took 24 to 53 minutes where the runner was the M1, and 5 where it was the M2 Pro, on
+  # one commit. The third-party crates are 3 of those minutes. The rest is the workspace's own test
+  # targets, each `rustc` of them 2 to 4 GB: side by side they swap (70-80 % of the CPU in the
+  # system, 1.2 million swapouts, 41 to 56 minutes, with `-j 2` or `debug = none` as well). One at a
+  # time they do not (5,900 swapouts, 26 minutes), and Spotlight is off because it has nothing to
+  # find here. So `CARGO_BUILD_JOBS` is 1, and each part has 80 minutes: 26 to build, some 35 to
+  # test on the M1, and room for a slow night. `The machine` says which of the two a part drew.
+  #
+  # **No build is kept.** The nights' caches were saved and never restored: they are read once a
+  # day, and the repository's caches are over their 10 GB, so the next night found none. Saving one
+  # pushed out caches that the jobs a pull request waits on do read.
+  #
+  # The app's `behaviour` tests are left out here until #2464: on macOS each takes some 160 s
+  # where Linux takes under 10, and the Linux `rust` job runs them on every pull request. What
+  # each part took, measured, is in #2468 and #2458.
   macos-tests:
     name: macos (core and app tests, no orphans, evidence only, part ${{ matrix.part }} of 3)
     if: github.event_name == 'schedule'
@@ -1205,14 +1217,19 @@ jobs:
       matrix:
         part: [1, 2, 3]
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 80
+    env:
+      CARGO_BUILD_JOBS: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          cache-on-failure: true
+          save-if: false
+      - name: The machine
+        run: sysctl hw.ncpu hw.memsize machdep.cpu.brand_string
+      - name: Spotlight off
+        run: sudo mdutil -a -i off
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
       - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
