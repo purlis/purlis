@@ -276,10 +276,9 @@ fn skills_reach_here() -> bool {
     }
 }
 
-/// What the server tells the harness it is for: its tools, and for a chat on the skills'
-/// `Mcp` route the one line that says how its skills are reached
-/// ([`purlis_core::skilltools::briefing`]): a harness that runs none of purlis's hooks is briefed
-/// by nothing else.
+/// What the server tells the harness it is for: its tools, and the one line about its skills
+/// ([`purlis_core::skilltools::briefing`]): how they are reached on the `Mcp` route, and on a
+/// route that hands them, what to do with one the harness does not know.
 fn instructions() -> String {
     let mut said = "purlis's tools for this chat: the todos, memory, session records and changes \
                     of the workspace it works in, a question for the operator, a real browser \

@@ -312,6 +312,27 @@ fn a_harness_with_a_route_of_its_own_or_none_is_not_told_the_line() {
 }
 
 #[test]
+fn a_harness_with_a_route_of_its_own_is_told_what_to_do_with_a_skill_it_does_not_know() {
+    // #4510: the harness's own tool can only answer "Unknown skill" for a skill it was not handed.
+    for harness in ["claude-code", "codex", "opencode"] {
+        let (_p, mut server) = with_a_skill(harness);
+        let hello = server.initialize(false);
+        let instructions = hello["result"]["instructions"].as_str().unwrap_or_default();
+        assert!(
+            instructions.contains(purlis_core::skills::NOT_KNOWN),
+            "{harness}: {instructions}"
+        );
+    }
+    let (_p, mut server) = with_a_skill("undeclared");
+    let hello = server.initialize(false);
+    let instructions = hello["result"]["instructions"].as_str().unwrap_or_default();
+    assert!(
+        !instructions.contains(purlis_core::skills::NOT_KNOWN),
+        "{instructions}"
+    );
+}
+
+#[test]
 fn with_the_studio_off_there_is_no_skill_tool() {
     let p = project();
     let mut server = Server::start(p.path(), "alpha");
