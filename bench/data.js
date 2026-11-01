@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793566751060,
+  "lastUpdate": 1793571590867,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35490,6 +35490,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2285185,
             "unit": "ms",
             "extra": "median of 5 runs: 101.745, 102.220, 102.229, 102.248, 102.794 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6094330cc462abeed4eb3bdcb02ca7858919f25c",
+          "message": "SK-55: outcome evals graded by a judge chat purlis runs (1 of 2) (#4235)\n\n* skills: outcome evals run and a judge chat purlis runs grades them (SK-55)\n\nEach outcome eval runs in each arm three times, its files staged into its chat's\npiece. A judge chat, a run-chat request of its own, reads only what that chat left\nand its final answer, read-only, and answers in skill-creator's grading.json shape,\ntaken through a parser and an allow-list that fails closed. The plan counts every\neval chat and judge chat before Start; the cap and dollar limit hold them all.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: a judge reads only its own folder, by the read guard\n\nRead and Grep are refused outside the folder laid out for it, links followed; Glob, LS,\nSkill and purlis's MCP tools are denied it. fitted() no longer holds a closure over its row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: outcome_holds takes its check as a plain generic\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: outcome evals, from the review: after-edit pins them, a judge has two tools\n\nAn opt-in pins the evals and their files by digest, so a changed eval waits for the person.\nA judge starts with --tools Read,Grep. An eval's files are its own inputs under evals/.\nRates read back are recomputed, evidence is masked, a key said twice is no answer, and a chat\nthat closed mid-turn is no run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: a chat that closed mid-turn is no run; the plan marks all an eval's hidden text\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: outcome evals are off until ticked, and an outcome chat writes in its own piece\n\nThe operator's rulings of 2026-10-31: the plan offers each eval with the chats it adds, and the\nconsent covers exactly what was ticked; an outcome chat may write inside its throwaway piece\nalone, still under the sandbox. Fills in the test literals the last run named.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: outcome eval tests match the runner; stage checks its files before it marks the piece\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: clippy on the two grade commands and a test's slice\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: outcome eval fixes from the second review\n\nOutcome chats' writes are held to their piece by a guard. A judge that reaches past what it may\nread fails that run with the reason (the operator's ruling of 2026-11-01). A chat closing mid-turn\nstops a capped grade where it said no spend. Evals alone can start; a tick stays with its copy;\nestimates share each kind's spend over its own chats; long verdicts come back whole; evidence is\nmasked before it is cut; a grade's row budget counts what was ticked as JSON writes it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: a plan's estimate is told how many of its chats are an eval's\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: close the merged test file and format\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: the outcome write test needs no plane\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: clippy on a test's slice; the masking test uses a shape the mask knows\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: outcome chats have no shell in v1; a judge's refusal fails its run as it happens\n\nAn eval's chat runs without a shell (#4476). A judge's guard says when it refuses, and purlis ends\nthe judge there, reading nothing of the harness's own files. Answers are bounded as JSON writes\nthem, withheld files are listed, and an estimate says not known where a grade did not say.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: clippy on a judge's withheld files\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: outcome evals, from the fourth review\n\nOnly a judge's own read guard's rule fails its run; a fault of purlis's voids it. What a judge\nholds is read whatever it is called. A refusal queued as spend crosses a limit still counts. Paths\nin a chat's answer name where its judge finds them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* skills: outcome evals, from a real check on Claude Code\n\nA profile that signs in through the person's settings is refused for ticked evals. A skill that\nruns a command as it loads has its evals left out. A skill's copy in these chats declares no tools.\nA grade's chat that never reaches its session's start, or whose program ends with no hook, is told\napart from one that runs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T20:28:37Z",
+          "tree_id": "1cd6d1982d699c23563dc952fac7e67e9ed8c10e",
+          "url": "https://github.com/purlis/purlis/commit/6094330cc462abeed4eb3bdcb02ca7858919f25c"
+        },
+        "date": 1793571584422,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.670345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.639, 0.669, 0.670, 0.672, 0.687 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.600155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.409, 16.505, 16.600, 16.742, 16.921 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2106725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.166, 101.567, 102.211, 102.792, 103.102 ms"
           }
         ]
       }
