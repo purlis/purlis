@@ -77,7 +77,14 @@ function harnesses(offLangfuse = false): StudioHarness[] {
         }),
       ],
     },
-    { harness: "opencode", title: "opencode", repo_left_out: [], plugins_off: [], own: null, skills: [] },
+    {
+      harness: "opencode",
+      title: "opencode",
+      repo_left_out: [],
+      plugins_off: [],
+      own: null,
+      skills: [],
+    },
   ];
 }
 
