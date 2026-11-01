@@ -521,6 +521,7 @@ function Body(props: SignInStripProps & { who: string }) {
         <RaiseLimit
           offer={props.limitOffer}
           action="Save to the pool and try again"
+          refused={props.pasteRefused}
           onApply={props.onRaiseLimit}
         />
       )}

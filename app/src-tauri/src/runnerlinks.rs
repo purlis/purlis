@@ -652,14 +652,14 @@ async fn keep_one(
             .map_err(|why| refused_by_the_runner(&why))?;
     }
     // Keeping them writes every file, and asks the harness whether it is signed in.
-    let within = if sending.profile.settings_staged.is_some() {
-        KEPT_WITHIN
+    let (within, late) = if sending.profile.settings_staged.is_some() {
+        (KEPT_WITHIN, LATE)
     } else {
-        answer
+        (answer, ANSWER_LATE)
     };
     let standing = tokio::time::timeout(within, client.keep_profile(sending.profile))
         .await
-        .map_err(|_| if within == answer { ANSWER_LATE } else { LATE }.to_owned())?
+        .map_err(|_| late.to_owned())?
         .map_err(|why| refused_by_the_runner(&why))?;
     Ok(ProfileKept { standing })
 }

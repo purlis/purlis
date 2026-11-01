@@ -1418,12 +1418,17 @@ impl HostLink {
             code: String::new(),
             why,
         };
-        let answered = answer.recv_timeout(within).ok()?;
-        Some(answered.map_err(|why| {
-            why.refusal()
-                .cloned()
-                .unwrap_or_else(|| unanswered(why.to_string()))
-        }))
+        match answer.recv_timeout(within) {
+            Ok(answered) => Some(answered.map_err(|why| {
+                why.refusal()
+                    .cloned()
+                    .unwrap_or_else(|| unanswered(why.to_string()))
+            })),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Some(Err(unanswered("the session host's link ended".to_owned())))
+            }
+        }
     }
 
     /// [`Self::call`], for a command of a chat's start (#4264): waits until the host answers, its

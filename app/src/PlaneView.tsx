@@ -588,9 +588,6 @@ const NONE: readonly never[] = [];
  *  tab, opened as a chat instead (ADR 0062). */
 type Where = { tab: true; in?: string; prefer?: string } | { split: Direction };
 
-/** The folder a start in `where` names, if it names one. */
-const cwdOf = (where: Where): string | null => ("in" in where ? (where.in ?? null) : null);
-
 /** What a new shell tab has typed into it: a line spelled out (FR-4's `gh auth login`), a
  *  harness whose compiled-in installer the core types itself (FR-29, V65), or the sandbox's
  *  install command, which the core types and leaves for the person to run (SD-30, V78 c).
@@ -3567,7 +3564,12 @@ export const PlaneView = memo(function PlaneView({
         // Over a pool's limit, what to raise it to: asked of the core, as the sign-in below is.
         // Said together, so a form on screen isn't taken down and drawn again between them.
         const offer = await commands
-          .poolLimitOffer(profile, refused, root ?? null, cwdOf(picking.where))
+          .poolLimitOffer(
+            profile,
+            refused,
+            root ?? null,
+            ("in" in picking.where ? picking.where.in : undefined) ?? startIn ?? null,
+          )
           .catch(() => null);
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
@@ -3593,7 +3595,7 @@ export const PlaneView = memo(function PlaneView({
       setPickerTrouble(undefined);
       setPickerSignIn(undefined);
     },
-    [picking, plane, startOn],
+    [picking, plane, root, startIn, startOn],
   );
 
   /** The approval IS this click. After it, the whole chain of checks runs again from the
@@ -4371,7 +4373,7 @@ export const PlaneView = memo(function PlaneView({
           }
           // Over a pool's limit, the picker that comes up offers to raise it (spec #4275).
           const offer = await commands
-            .poolLimitOffer(only.name, refused, root ?? null, cwdOf(where))
+            .poolLimitOffer(only.name, refused, root ?? null, where.in ?? startIn ?? null)
             .catch(() => null);
           setPickerTrouble(refused);
           setPickerLimit(offer === null ? undefined : { offer, refused, profile: only.name });

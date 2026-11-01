@@ -467,23 +467,17 @@ pub fn hit_on(pool: &str, hit: LimitHit) -> String {
     said
 }
 
-/// **The limits of pool `pool` that the refusal in the words `refused` said**, taken once: asked
-/// of what was kept, never read from the words. Only the pool acted on is asked of, so words a
+/// **The limits of pool `pool` that the refusal in the words `refused` said**: asked of what was
+/// kept, never read from the words. Only the pool acted on is asked of, so words a
 /// runner echoes reach no other pool's value, and only what purlis itself measured there. Empty
 /// for any other refusal.
 #[must_use]
 pub fn hits_said_in(pool: &str, refused: &str) -> Vec<LimitHit> {
-    let mut held = HITS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let said: Vec<(String, usize)> = held
+    HITS.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .filter(|((of, _), (_, words))| of == pool && refused.contains(words.as_str()))
-        .map(|(key, _)| key.clone())
-        .collect();
-    said.iter()
-        .filter_map(|key| held.remove(key))
-        .map(|(hit, _)| hit)
+        .map(|(_, (hit, _))| *hit)
         .collect()
 }
 
@@ -719,8 +713,8 @@ mod tests {
         assert_eq!(hits_said_in("hits-of-a-test", &refused), vec![hit]);
         assert_eq!(
             hits_said_in("hits-of-a-test", &refused),
-            Vec::new(),
-            "an offer is taken once"
+            vec![hit],
+            "a window drawn again is offered it again"
         );
     }
 
