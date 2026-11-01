@@ -24,7 +24,7 @@ import {
   type ChipNotices,
   type StandingNotice,
 } from "./ChipNotices";
-import { untilFocused } from "./stories.testkit";
+import { untilFocused, untilSettled } from "./stories.testkit";
 import { TitleBarSwitch, type SwitchProject } from "./TitleBarSwitch";
 
 /** What `purlis workspace create` says of a workspace made with no vision. */
@@ -464,7 +464,7 @@ export const ComesUpOnAChipOutOfSight: Story = {
       was = strip.scrollLeft;
       expect(still).toBe(true);
     });
-    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+    await untilSettled(card);
   },
 };
 
@@ -501,7 +501,7 @@ export const OnADormantChip: Story = {
     await userEvent.keyboard("{Enter}");
     await expect(canvas.getByRole("status")).toHaveTextContent("Forgot the pin to second-try");
     // The picture once the card has arrived, never mid-entrance.
-    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+    await untilSettled(card);
   },
 };
 
@@ -529,7 +529,7 @@ export const ADormantChipShowsItsNotice: Story = {
     // Asked for, so the keyboard goes into it.
     await untilFocused(() => card, "the dormant chip's card, brought by its press");
     // The picture once the card has arrived, never mid-entrance.
-    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+    await untilSettled(card);
   },
 };
 
@@ -549,7 +549,7 @@ export const OnTheDashedChip: Story = {
       Math.abs(centre(surface) - centre(chip.getBoundingClientRect())),
     ).toBeLessThanOrEqual(1.5);
     // The picture once the card has arrived, never mid-entrance.
-    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+    await untilSettled(card);
   },
 };
 
@@ -636,7 +636,7 @@ export const FindingsOnTheChip: Story = {
     ).toBeNull();
     await userEvent.click(within(card).getByRole("button", { name: "Switch to main" }));
     await expect(canvas.getByText("Asked to switch web")).toBeInTheDocument();
-    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+    await untilSettled(card);
   },
 };
 

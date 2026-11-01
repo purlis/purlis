@@ -6,15 +6,21 @@ permissions:
   contents: read
 jobs:
   probe:
-    name: probe (${{ matrix.file }}, ${{ matrix.load }} busy)
+    name: probe (${{ matrix.file }}, ${{ matrix.load }} busy, ${{ matrix.leg }})
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
-        file: [src/ChipNotices.stories.tsx, src/ui/panel/PanelView.stories.tsx]
         # Busy loops beside the stories: a shard's runner is rarely as idle as one file's.
-        load: [0, 8]
+        include:
+          - { file: src/ChipNotices.stories.tsx, load: 8, leg: a }
+          - { file: src/ChipNotices.stories.tsx, load: 8, leg: b }
+          - { file: src/ChipNotices.stories.tsx, load: 8, leg: c }
+          - { file: src/ChipNotices.stories.tsx, load: 0, leg: a }
+          - { file: src/ui/panel/PanelView.stories.tsx, load: 0, leg: a }
+          - { file: src/ui/panel/PanelView.stories.tsx, load: 8, leg: a }
+          - { file: src/ui/panel/PanelView.stories.tsx, load: 0, leg: nowait }
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
       options: --init --ipc=host
@@ -37,6 +43,9 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
+      - name: Without the wait, to show what it is for
+        if: matrix.leg == 'nowait'
+        run: sed -i '/await untilFocusWithin(() => first/d' src/ui/panel/PanelView.stories.tsx
       - name: Many runs
         run: |
           mkdir -p "$RUNNER_TEMP/r"
@@ -67,5 +76,7 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: probe-${{ strategy.job-index }}
-          path: ${{ runner.temp }}/r/
+          path: |
+            ${{ runner.temp }}/r/
+            app/.vitest/attachments/
           retention-days: 3

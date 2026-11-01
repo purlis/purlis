@@ -150,7 +150,7 @@ async function untilTheKeyboard(
     const on = at === null || at === document.body ? "nothing" : describe(at);
     throw new Error(
       `${step}: the keyboard is on ${on}, not ${where} ` +
-        (wanted === null ? "an element that is not drawn" : describe(wanted)),
+        (wanted === null ? "an element that is not drawn" : describe(wanted)) + ` [land: ${String((window as unknown as Record<string, unknown>).__landGaveUp)}; hasFocus=${document.hasFocus()}]`,
     );
   }
   // The frame the engine scrolls the focus into sight on: its callback was asked for as the focus

@@ -411,6 +411,11 @@ export function ChipCard({
     const land = () => {
       const at = region.current;
       if (at !== null && !at.contains(document.activeElement)) at.focus({ preventScroll: true });
+      if (at !== null && !at.contains(document.activeElement) && frames >= 10) {
+        const c = at.closest<HTMLElement>('[data-part="root"]');
+        const cs = c === null ? undefined : getComputedStyle(c);
+        (window as unknown as Record<string, unknown>).__landGaveUp = `gave up after ${frames + 1} frames, active=${document.activeElement?.tagName}, connected=${at.isConnected}, visibility=${cs?.visibility}, opacity=${cs?.opacity}, display=${cs?.display}, rect=${JSON.stringify(at.getBoundingClientRect())}`;
+      }
       if ((at !== null && at.contains(document.activeElement)) || ++frames > 10) {
         handed.current.onKeyboardTaken?.();
         return;
