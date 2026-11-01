@@ -1457,6 +1457,23 @@ fn a_sign_out_in_progress_holds_the_running_runner_until_a_sign_in_there() {
     assert!(read(config.path()).unwrap()[0].signed_out.is_empty());
 }
 
+/// #4281: the file has no key for a limit that can't change: one typed in changes nothing.
+#[test]
+fn a_fixed_limit_typed_into_the_file_is_read_as_no_limit() {
+    for fixed in crate::poollimits::fixed() {
+        let dir = tempfile::tempdir().unwrap();
+        record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
+        a_limit_typed_into_the_file(dir.path(), fixed.key, "60");
+        assert!(crate::poollimits::of_key(fixed.key).is_none());
+        // Any key purlis doesn't write refuses the file, as it always has.
+        assert!(
+            limits_held_of(dir.path(), "builds").is_err(),
+            "{}",
+            fixed.key
+        );
+    }
+}
+
 /// PC-8, under the file's lock: another value since writes nothing.
 #[test]
 fn a_set_held_to_what_was_there_writes_nothing_where_it_changed() {
