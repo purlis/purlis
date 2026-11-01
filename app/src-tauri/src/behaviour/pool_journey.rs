@@ -437,7 +437,7 @@ fn measure_limits(target: &Target, machine: &Machine, pool: &str, settings: &Pat
     let folder = settings.join("skills/measure");
     std::fs::create_dir_all(&folder).expect("its folder");
     let mut sent = 0;
-    for mib in [1000_usize] {
+    for mib in [960_usize] {
         for one in sent..mib {
             random(&folder.join(format!("{one}.bin")), 1);
         }

@@ -587,9 +587,7 @@ function AddClusterPool() {
           offer={limitOffer}
           action="Save to the pool and add it"
           working={busy === "adding" ? "Claiming its runner…" : undefined}
-          onApply={(values) =>
-            void add(values.find(([key]) => key === "vouchWait")?.[1] ?? null)
-          }
+          onApply={(values) => void add(values.find(([key]) => key === "vouchWait")?.[1] ?? null)}
         />
       )}
     </Dialog>
