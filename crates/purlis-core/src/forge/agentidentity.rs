@@ -896,11 +896,14 @@ pub struct Proof {
     pub read: Option<String>,
 }
 
+/// A transport that sends a given token as its bearer.
+pub type WithToken<'a> = dyn Fn(&str) -> Result<Box<dyn Transport>, String> + 'a;
+
 /// **Mints a real token from each installation, reads with it and revokes it** (Q17). Each is
 /// narrowed to reading metadata, so the proof can change nothing even while it lives.
 pub fn prove_over(
     jwt: &dyn Transport,
-    with_token: &dyn Fn(&str) -> Result<Box<dyn Transport>, String>,
+    with_token: &WithToken<'_>,
 ) -> Result<Proof, String> {
     let stand = stand_over(jwt)?;
     if stand.installations.is_empty() {
