@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793555106642,
+  "lastUpdate": 1793557000376,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35238,6 +35238,48 @@ window.BENCHMARK_DATA = {
             "value": 103.56511750000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.904, 103.063, 103.565, 104.155, 105.286 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b92c431dbee3b385507e1d69058c3126909a61a6",
+          "message": "Theme: a heavy theme's measure no longer holds up the first frame (#4337) (#4385)\n\n* Tests: a project switch draws the parts that landed, before the core answers (#4337)\n\nThe core is always asked after a switch, for a chat's theme draft, so the old assertion that it was not asked could never pass. The new one checks what is drawn. The line that keeps what landed is out of this commit, so this should go red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQPTYZCPWA0XQEBF8WC8JS\nPurlis-Persona: steward\n\n* Theme: a heavy theme's measure no longer holds up the first frame (#4337)\n\nThe first frame waits about 50 ms for its themes to be measured, counted from the first theme it hands. Past that it draws with no parts of that theme's, the measure goes on off the thread and the window's ask draws them. A second asker waits for the measure under way. This is the rest of the PR, carried onto main beside #4359's colours. The line that keeps what landed is still out, so the switch test should go red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQPTYZCPWA0XQEBF8WC8JS\nPurlis-Persona: steward\n\n* Theme: a project switch draws the parts that landed in its own frame (#4337)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQPTYZCPWA0XQEBF8WC8JS\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T16:07:36Z",
+          "tree_id": "84fc1bd3691155a782de639aae1243e0464ce77c",
+          "url": "https://github.com/purlis/purlis/commit/b92c431dbee3b385507e1d69058c3126909a61a6"
+        },
+        "date": 1793556995109,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.35389499999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.345, 0.347, 0.354, 0.358, 0.360 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4710575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.283, 16.291, 16.471, 16.660, 16.798 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.27792299999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.471, 101.058, 101.278, 101.578, 101.913 ms"
           }
         ]
       }
