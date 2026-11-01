@@ -1024,10 +1024,7 @@ fn names_a_signer(key: &str) -> bool {
 
 /// Whether `key = value` is the credential helper purlis's git policy writes into a clone.
 fn is_the_policys_helper(key: &str, value: &str) -> bool {
-    key.eq_ignore_ascii_case("credential.helper")
-        && crate::forge::KINDS
-            .iter()
-            .any(|kind| value == format!("!{} auth git-credential", kind.cli()))
+    key.eq_ignore_ascii_case("credential.helper") && crate::forge::is_policy_helper(value)
 }
 
 /// Whether two paths name one directory, links resolved.

@@ -142,3 +142,30 @@ fn a_run_given_a_time_is_answered_when_its_command_ends_though_what_it_left_keep
         "its errors are waited on no longer than its time"
     );
 }
+
+/// **What a run given a time left behind ends with it**, though the run ended by itself.
+#[cfg(unix)]
+#[test]
+fn a_helper_a_run_left_running_ends_with_it() {
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "sleep 60 >/dev/null 2>&1 </dev/null & echo $!"]);
+    let ran = run_within(
+        &mut command,
+        None,
+        1024,
+        1024,
+        Some(std::time::Duration::from_secs(20)),
+    )
+    .expect("it answered in time");
+    let helper: i32 = String::from_utf8(ran.printed)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let pid = rustix::process::Pid::from_raw(helper).unwrap();
+    let by = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while rustix::process::test_kill_process(pid).is_ok() {
+        assert!(std::time::Instant::now() < by, "the helper still runs");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}

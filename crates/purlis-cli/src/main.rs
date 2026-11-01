@@ -49,6 +49,8 @@ mod mcp;
 mod memory;
 mod permission;
 mod piece;
+mod pool;
+mod poolsetup;
 mod report;
 mod scan;
 mod secret;
@@ -436,6 +438,10 @@ enum Command {
         #[arg(long, value_name = "DRAFT")]
         from: std::path::PathBuf,
     },
+
+    /// A pool's limits: list them, set one, or return one to purlis's default.
+    #[command(subcommand)]
+    Pool(pool::PoolCommand),
 
     /// Claude Code's footer, from the per-turn JSON on stdin.
     ///
@@ -1302,6 +1308,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Update { .. }
         | Command::Version { .. }
         | Command::News(_)
+        // This machine's pools, in its config home: nothing of a project's.
+        | Command::Pool(_)
         // This machine's themes and the theme folders of the plane and its workspaces: read
         // through the theme engine, and nothing is written.
         | Command::Theme(_)
@@ -3577,6 +3585,7 @@ fn run(command: Command) -> Result<u8, String> {
             | ProfileCommand::Authenticate { .. }
             | ProfileCommand::SignOut { .. },
         )
+        | Command::Pool(_)
         | Command::Vault(_) => {
             unreachable!("answered before run")
         }
@@ -4253,7 +4262,15 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
         } => {
             if let Some(pool) = pool {
                 return match pool_sign_in(&store, name, pool, provider.as_deref()) {
-                    Ok(()) => ExitCode::SUCCESS,
+                    Ok(()) => {
+                        // Signed in there, as its harness said: a drain carries it again.
+                        let carries =
+                            purlis_core::runners::carries_again(store.config_root(), pool, name);
+                        if let Err(why) = carries {
+                            eprintln!("a drain of pool {pool} will not carry '{name}': {why}");
+                        }
+                        ExitCode::SUCCESS
+                    }
                     Err(why) => refused(&why),
                 };
             }
@@ -4401,7 +4418,9 @@ fn profile_sign_in(
 /// or its `kubectl` on a cluster pool (#4164), and followed here ([`sign_in::terminal`]). A profile
 /// the runner does not keep yet is kept there first by the running window, which alone holds a
 /// link's key (#4112). Only a pool shown to be the person's own is signed in on, as
-/// the window's is. Nothing of this machine's sign-in goes to the runner (ADR 0095).
+/// the window's is, and the person confirms it in the running window before a runner or its engine
+/// is reached; with no window this refuses. Nothing of this machine's sign-in goes to the runner
+/// (ADR 0095).
 ///
 /// [`sign_in::driven`]: purlis_core::profilestore::sign_in::driven
 /// [`sign_in::terminal`]: purlis_core::profilestore::sign_in::terminal
@@ -4415,6 +4434,9 @@ fn pool_sign_in(
     use purlis_core::profilestore::{self, sign_in};
     use purlis_core::runners;
     let config = store.config_root();
+    if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+        return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
+    }
     let record = profilestore::list(config)?
         .into_iter()
         .find(|p| p.name == name)
@@ -4466,6 +4488,7 @@ fn pool_sign_in(
             record.name
         ));
     }
+    confirmed_in_the_window(config, pool, name)?;
     if let Some((cluster, kept)) =
         runners::cluster_runner_for(config, pool).map_err(|why| why.to_string())?
     {
@@ -4525,7 +4548,39 @@ fn pool_sign_in(
             }
         }
     });
-    sign_in::terminal::follow(&driving, &lines, &mut ThisTerminal, name, pool)
+    sign_in::terminal::follow_while(&driving, &lines, &mut ThisTerminal, name, pool, &|| {
+        if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+            return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
+        }
+        Ok(())
+    })
+}
+
+/// The person's yes, in their running window, to signing `name` in on pool `pool` from here.
+#[cfg(unix)]
+fn confirmed_in_the_window(config: &std::path::Path, pool: &str, name: &str) -> Result<(), String> {
+    let code = purlis_core::windowline::a_new_code();
+    purlis_core::windowline::approved(config, pool, name, &code, |asked| {
+        eprintln!(
+            "confirm signing '{name}' in on pool {pool} in the purlis window, if it shows the \
+             code {code}…"
+        );
+        purlis_core::windowline::ask(asked)
+    })
+}
+
+/// A runner is never Windows, and no window line reaches one from there.
+#[cfg(not(unix))]
+fn confirmed_in_the_window(
+    _config: &std::path::Path,
+    pool: &str,
+    name: &str,
+) -> Result<(), String> {
+    Err(format!(
+        "signing '{name}' in on pool {pool} from here is confirmed in the purlis window, which \
+         this command cannot reach on this system, so nothing was started. Sign it in from its \
+         row in Settings › Pools."
+    ))
 }
 
 /// Refused where a pool's runner, whose `purlis --version` said `theirs`, runs another version
@@ -5364,6 +5419,8 @@ fn main() -> ExitCode {
             });
         }
         Command::Stop { .. } => return stop_every_agent(),
+        // A pool is this machine's, kept in its config home: no project is looked for.
+        Command::Pool(command) => return pool::run(command),
         // `theme` reads this machine's themes, and the plane's when it runs in one, and needs
         // none; it chooses its own exit, a linter's (`theme.rs`).
         Command::Theme(command) => return theme::run(command),

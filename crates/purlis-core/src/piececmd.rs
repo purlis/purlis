@@ -100,6 +100,7 @@ pub fn add(
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     say(Say::Info(format!("workspace: {ws}").into()));
+    crate::pieceupdate::mended(plane, ws, repo, say);
     let branch_name = branch.unwrap_or(piece);
     if let Some(held) = holder(plane, ws, repo, piece, branch_name) {
         return taken(piece, &held, say);

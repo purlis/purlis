@@ -344,13 +344,59 @@ export const HarnessSkillsNarrow: Story = {
 export const Routing: Story = {
   args: { page: "routing" },
   play: async ({ canvas }) => {
-    const grid = await canvas.findByRole("grid", { name: "Each chat's start" });
+    const grid = await canvas.findByRole("grid", { name: "Each chat's routing" });
     await expect(within(grid).getByText("Fell back to the built-in router")).toBeVisible();
-    await tabInto(() => canvas.getByRole("grid", { name: "Each chat's start" }));
+    await tabInto(() => canvas.getByRole("grid", { name: "Each chat's routing" }));
     await userEvent.keyboard("{Enter}");
     await waitFor(() =>
       expect(canvas.getByText("figma-handoff, gpu-profile, lint-rs")).toBeInTheDocument(),
     );
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **A prompt's routing beside the start's** (#4297): a router quick at one chat's start and slow on
+ * its last prompt, and one that fell back at its start and answered its last prompt. Enter opens
+ * the last prompt's fact beside the list.
+ */
+export const RoutingWithAPromptThatFellBack: Story = {
+  args: {
+    page: "routing",
+    answer: studio([], {
+      workspace: "smart-ide",
+      workspaces: ["smart-ide"],
+      harnesses: HARNESSES,
+      router: {
+        ...ROUTER,
+        chats: [
+          {
+            ...ROUTER.chats[0],
+            routing: {
+              ...ROUTER.chats[0].routing,
+              last_prompt: {
+                fell_back: true,
+                said: "Its last prompt went on with no pointer: 'relevance' did not answer within 100 ms.",
+              },
+            },
+          },
+          {
+            ...ROUTER.chats[1],
+            routing: {
+              ...ROUTER.chats[1].routing,
+              last_prompt: { fell_back: false, said: "Its last prompt took 4 ms." },
+            },
+          },
+        ],
+      },
+    }),
+  },
+  play: async ({ canvas }) => {
+    const grid = await canvas.findByRole("grid", { name: "Each chat's routing" });
+    await expect(within(grid).getByText("Last prompt fell back")).toBeVisible();
+    await tabInto(() => canvas.getByRole("grid", { name: "Each chat's routing" }));
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByText("Last prompt")).toBeInTheDocument());
     expectFocusInSight();
   },
 };

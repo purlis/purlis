@@ -532,6 +532,14 @@ timeout, quota or config.
 _Avoid_: node pool (that is the cluster's), fleet, cluster (for the pool), warm pool (that is one
 setting of it), runner provider (that is the code)
 
+**Pool setup**:
+The one guided view tab that takes anyone from nothing to a working chat on a **Pool**: a list of
+steps on the left, each with its state (done, current, needs attention, skipped, waiting on
+someone), and one step with one main action on the right. The steps of a kind of pool are data.
+Everything it shows is read fresh, and only the person's choices are stored, so work done by hand
+or through `purlis pool` is picked up (spec #4469). Window text says Pool setup.
+_Avoid_: wizard, onboarding, add pool form (that is what it replaces)
+
 **Claim**:
 One person's request for a runner from a pool, and the runner it is given. A **kept** claim has
 storage of its own, its runner's home, and survives the loss of its runner's pod, its pairing
@@ -564,7 +572,8 @@ on the profile's line: it opens the login's page in the browser here, takes the 
 and passes it back, shows the device code a vendor's login gives, or, for a login that waits for
 the browser, carries that one redirect to the runner, and says the profile is **signed in on
 <pool>** once the harness's own status check on the runner says so (spec #4023).
-`purlis profile sign-in <profile> --pool <pool>` takes the same steps in a terminal. As a verb, two
+`purlis profile sign-in <profile> --pool <pool>` takes the same steps in a terminal, once the person
+confirms it in the running window; with no window it refuses. As a verb, two
 words; the noun is "sign-in".
 _Avoid_: log in, login (for the verb), authenticate, authorize, connect (an account), copy a
 sign-in (nothing is copied)
@@ -1546,7 +1555,8 @@ An edit a chat makes to purlis's own configuration (the project's manifest, a pe
 `mcp.json` or `persona.md`, a skill's files), which only the person applies, in the window. The
 chat's edit is held, the change shown whole against the file as it is, and **Apply** writes it as
 the person; **Dismiss** writes nothing. Distinct from an edit ask, where the person allows and the
-harness writes.
+harness writes. A chat proposes a pool's limit the same way, as a value and no file, since a pool's
+file is purlis's state.
 _Avoid_: patch, suggestion, edit ask (that is the harness's own)
 
 **Block**:

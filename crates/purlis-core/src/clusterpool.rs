@@ -663,6 +663,8 @@ pub struct Kubectl {
     cache_dir: Option<PathBuf>,
     /// How long each run is waited for, where it is held to a time ([`Kubectl::within`]).
     within: Option<std::time::Duration>,
+    /// When every run of a check is up, where they share a time ([`Kubectl::all_within`]).
+    until: Option<std::time::Instant>,
 }
 
 /// The variables a run of kubectl is never handed from this process: the kubeconfig is named,
@@ -702,6 +704,7 @@ impl Kubectl {
             path: None,
             cache_dir: None,
             within: None,
+            until: None,
         }
     }
 
@@ -711,6 +714,25 @@ impl Kubectl {
     pub fn within(mut self, within: std::time::Duration) -> Kubectl {
         self.within = Some(within);
         self
+    }
+
+    /// This kubectl, every run from now on ended and refused once `all` is up, whatever each is
+    /// given: what a check of several runs shares, so it answers within one time.
+    #[must_use]
+    pub fn all_within(mut self, all: std::time::Duration) -> Kubectl {
+        self.until = Some(std::time::Instant::now() + all);
+        self
+    }
+
+    /// How long a run started now is given.
+    fn time_left(&self) -> Option<std::time::Duration> {
+        let left = self
+            .until
+            .map(|until| until.saturating_duration_since(std::time::Instant::now()));
+        match (self.within, left) {
+            (Some(within), Some(left)) => Some(within.min(left)),
+            (within, left) => within.or(left),
+        }
     }
 
     /// This kubectl, keeping its caches in `folder` (`--cache-dir`) rather than the home's.
@@ -836,7 +858,11 @@ impl Kubectl {
             return (Vec::new(), Vec::new());
         };
         (
-            vec![("PATH".into(), path.clone())],
+            // Its own preferences file is off: `off` is kubectl's word for that.
+            vec![
+                ("PATH".into(), path.clone()),
+                ("KUBERC".into(), "off".into()),
+            ],
             CLEARED.iter().map(std::ffi::OsString::from).collect(),
         )
     }
@@ -992,7 +1018,7 @@ impl Kubectl {
             input,
             most,
             MOST_SAID,
-            self.within,
+            self.time_left(),
         )
         .map_err(|why| {
             use crate::boundedrun::Unanswered;
@@ -1001,8 +1027,10 @@ impl Kubectl {
                     format!("{} could not be run: {why}", self.program.display())
                 }
                 Unanswered::PrintedTooMuch => format!(
-                    "kubectl {} printed more than the {most} bytes purlis reads of it, so it was ended",
-                    what()
+                    "kubectl {} printed more than the {most} bytes purlis reads of it, so it was \
+                     ended. {}",
+                    what(),
+                    purlis_session_protocol::fixedlimits::RUNNER_OUTPUT.said()
                 ),
                 Unanswered::NotFinished(why) => {
                     format!("{} did not finish: {why}", self.program.display())

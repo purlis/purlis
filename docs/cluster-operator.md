@@ -171,7 +171,7 @@ The chart's values, all in its
 | `imagePullSecrets` | secrets in the release's namespace that pull the image | none |
 | `resources` | the operator's CPU and memory | requests 10m CPU and 32Mi, limit 256Mi |
 | `forge.keySecretNames` | the Secrets in the release's namespace holding a GitHub App's key, which the Role `purlis-forge-key-reader` lets the operator `get` ([below](#minting-github-app-tokens-in-the-cluster)); empty, there is no such Role and it may read no Secret. The one value that changes what the operator may do, and never its own signing key | `[]` |
-| `perPerson.quota` | what each person's runners may hold at once, in their namespace's quota `purlis-person` ([below](#each-persons-namespace)): `claims` (a count), `cpu` and `memory` (what their runners' pods ask for), `storage` (what their kept runners' volumes ask for); a key left out is not limited | `claims: 5`, `cpu: "4"`, `memory: 8Gi`, `storage: 50Gi` |
+| `perPerson.quota` | what each person's runners may hold at once, in their namespace's quota `purlis-person` ([below](#each-persons-namespace)): `claims` (a count), `cpu`, `memory` and `ephemeralStorage` (what their runners' pods ask for), `memoryLimit` (the most those pods may use), `storage` (what their kept runners' volumes ask for); a key left out is not limited | `claims: 5`, `cpu: "4"`, `memory: 8Gi`, `memoryLimit: 64Gi`, `ephemeralStorage: 16Gi`, `storage: 50Gi` |
 
 No value but `forge.keySecretNames` changes what the operator may do, and none changes how its pod
 is confined.
@@ -514,7 +514,11 @@ operator refuses to vouch for them, since they are no longer its template.
 reads the policy's binding before it acts on any Claim. While no binding puts the policy in
 force, it acts on no Claim, and each says `PolicyNotInForce`. The policy is taken to be in force
 30 seconds after its binding was made, the time every API server takes to enforce it. A Claim
-made before then is never acted on: it says `MadeBeforePolicy`; delete it and make it again.
+made before then is never acted on: it says `MadeBeforePolicy`; delete it and make it again. The
+time is the later of the policy's and its binding's (#3854), so a policy made again under a binding
+that stayed counts as made again. A binding changed since it was made (its `generation` is not 1)
+counts as no binding, since a cluster keeps no time for the change: Claims say `PolicyNotInForce`
+until a cluster admin makes it again, as the same rules hold for runner namespaces.
 So wait 30 seconds after installing before making the first Claims.
 
 Making the binding again, by reinstalling the policy or recreating the binding by hand, refuses
@@ -532,9 +536,9 @@ on:
 
 | Object | Name | What it holds |
 |---|---|---|
-| `Namespace` | `purlis-runners-<hash>` | the requester's runner namespace. `<hash>` is the first 16 hex digits of the SHA-256 of the requester, exactly as the Claim names them, so a desktop can work out the name itself. Labelled `app.kubernetes.io/managed-by: purlis-cluster-operator` and annotated `runners.purlis.dev/requester` with the requester: the operator uses a namespace of that name only when it carries both, for this requester, and the Claim otherwise says `NamespaceInTheWay` and waits |
+| `Namespace` | `purlis-runners-<hash>` | the requester's runner namespace. `<hash>` is the first 16 hex digits of the SHA-256 of the requester, exactly as the Claim names them, so a desktop can work out the name itself. Labelled `pod-security.kubernetes.io/enforce: restricted` ([below](#what-a-runners-pod-may-be)) and `app.kubernetes.io/managed-by: purlis-cluster-operator`, and annotated `runners.purlis.dev/requester` with the requester: the operator uses a namespace of that name only when it carries both, for this requester, and the Claim otherwise says `NamespaceInTheWay` and waits |
 | `RoleBinding` | `purlis-runner-owner` | the cluster role `purlis-runner-owner`, which the chart installs, for the requester alone: a `User`, or the `ServiceAccount` a `system:serviceaccount:<namespace>:<name>` requester names. The role allows `get`, `list` and `watch` on pods, `create` and `get` on `pods/exec`, and `get` on `pods/log`: what a desktop needs to pair with and link to the runner over `kubectl exec`, and to read its log. Nothing else: the requester makes, changes and deletes nothing there |
-| `ResourceQuota` | `purlis-person` | the chart's `perPerson.quota`: `claims` as `count/sandboxclaims.extensions.agents.x-k8s.io`, `cpu` as `requests.cpu`, `memory` as `requests.memory` and `storage` as `requests.storage`. Applied again whenever it differs from the chart's value, so a changed value reaches each person as their Claims are next looked at |
+| `ResourceQuota` | `purlis-person` | the chart's `perPerson.quota`: `claims` as `count/sandboxclaims.extensions.agents.x-k8s.io`, `cpu` as `requests.cpu`, `memory` as `requests.memory`, `memoryLimit` as `limits.memory`, `ephemeralStorage` as `requests.ephemeral-storage` and `storage` as `requests.storage`. Applied again whenever it differs from the chart's value, so a changed value reaches each person as their Claims are next looked at |
 
 **The policy on runner namespaces holds them at admission.** A second ValidatingAdmissionPolicy,
 `purlis-runner-namespaces`, installed beside the policy on Claims (`operator/deploy/policy.yaml`)
@@ -592,7 +596,7 @@ then applies server-side:
 
 | Upstream object | Name | What it holds |
 |---|---|---|
-| `SandboxTemplate` | `purlis-pool-p` in `r` | the runner's pod: its first step, `link-key`, making the runner's home and its link key (above), then one container running the pool's image with its own entrypoint (`purlis serve`), both as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in their environment, each asking for the CPU and memory above. The runner's `HOME` is `/var/lib/purlis/home`, on the volume `purlis-kept` mounted at `/var/lib/purlis`: a folder of the node's in the template, which a kept Claim's own volume takes the place of. The pod's group (`fsGroup` 10001) may write that volume. A claim may add a volume of its own (`volumeClaimTemplatesPolicy: Allowed`) |
+| `SandboxTemplate` | `purlis-pool-p` in `r` | the runner's pod: its first step, `link-key`, making the runner's home and its link key (above), then one container running the pool's image with its own entrypoint (`purlis serve`), both as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in their environment, each with the [resources below](#what-a-runners-pod-may-use). The runner's `HOME` is `/var/lib/purlis/home`, on the volume `purlis-kept` mounted at `/var/lib/purlis`: a folder of the node's in the template, which a kept Claim's own volume takes the place of. The pod's group (`fsGroup` 10001) may write that volume. A claim may add a volume of its own (`volumeClaimTemplatesPolicy: Allowed`) |
 | `SandboxWarmPool` | `purlis-pool-p` in `r` | the Pool's `warmReplicas` runners kept warm for that person's fresh Claims, none while the pool is `stopped`; scaled by hand, it is brought back to that count (#3737). Its update strategy is upstream's `Recreate`, so a warm runner made from an earlier template is deleted and made again, and never handed to a fresh Claim (#2058) |
 | `SandboxClaim` | the Claim's own name in `r` | the claim on that warm pool, annotated `runners.purlis.dev/claim-uid` with the Claim's uid; a kept Claim's carries the volume `purlis-kept` its Pool's `keptVolume` asks for, so upstream makes its runner cold and its PersistentVolumeClaim `purlis-kept-<claim>` |
 
@@ -614,6 +618,37 @@ runner it had in its own namespace, as well as getting a new one in its requeste
 namespace, which its desktop links to. The old runner is outside that namespace and outside the
 person's quota, and anyone with rights in the Claim's namespace can still reach it. Delete such
 Claims and make them again soon after upgrading: the old runner goes with the Claim.
+
+### What a runner's pod may use
+
+| Container | Asks for | At most |
+|---|---|---|
+| `runner` | 250m CPU, 512Mi memory, 1Gi ephemeral storage | 4Gi memory, what a Docker pool's runner gets by default; ephemeral storage of the pool's `keptVolume.size` and 2Gi; no CPU limit |
+| `link-key` | 50m CPU, 32Mi memory, 16Mi ephemeral storage | 128Mi memory, 256Mi ephemeral storage |
+
+A runner over its memory limit has the process that went over ended by the kernel, and one over
+its ephemeral storage limit is evicted. The cluster counts a fresh runner's home toward that
+limit; a kept runner's home is its own volume. The numbers do not change per pool, apart from the
+home's size. A kept runner made before there were limits takes them the next time it is suspended,
+with its pool's image. **Until then, or for a fresh runner made before them, a pod that has to be
+made again is refused by a quota holding `memoryLimit`** and its Claim says `Stuck`: set a kept
+Claim stopped and back, or delete a fresh one.
+
+### What a runner's pod may be
+
+A runner namespace the operator makes enforces the restricted
+[Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/)
+(#3824). Upstream agent-sandbox v1.0.6's pods meet it, warm, cold and kept. It admits a `Localhost`
+seccomp profile, and refuses seccomp off and added capabilities, with pod user namespaces or
+without.
+
+A runner namespace made before this has no such label, and the operator holds no right to add it.
+A cluster admin can:
+
+```sh
+kubectl get namespaces -l app.kubernetes.io/managed-by=purlis-cluster-operator -o name |
+  xargs -I{} kubectl label {} pod-security.kubernetes.io/enforce=restricted
+```
 
 ## Its metrics
 
@@ -744,17 +779,29 @@ that sandbox's uid as a precondition. Another admission policy in `policy.yaml`,
 `purlis-operator-changes-only-a-sandboxs-mode`, makes that the cluster's rule: an update by the
 operator's service account to a Sandbox is refused unless a SandboxClaim controls it (any
 SandboxClaim's, purlis's or not), and unless every field of its spec but `operatingMode`, and
-its labels, annotations, owners and finalizers, are as they were; its `spec.podTemplate` alone
-may also change, only on a Sandbox already `Suspended` in a `purlis-runners-*` namespace, so a
-kept runner takes its pool's image (#3982). **Its `delete` on Claims is narrowed the same way**
+its labels, annotations, owners and finalizers, are as they were; its containers' images and plain
+resources alone may also change, only on a Sandbox already `Suspended` in a `purlis-runners-*`
+namespace, so a kept runner takes its pool's image (#3982). **Its `delete` on Claims is narrowed the same way**
 (#3981): `purlis-operator-deletes-only-a-retained-claim` refuses it any Claim but a kept one, not
 stopped, with its own `RetentionEnded` condition. **Only the operator writes a Claim's status**
 (`purlis-only-the-operator-writes-a-claims-status`), since what it does rests on it. The operator holds no right
-on admission policies or their bindings but reading the bindings of the policies on Claims and
-on runner namespaces, so it cannot lift it. The spec fields it holds as they were are the
+on admission policies or their bindings but reading, by name, the policies on Claims, on runner
+namespaces and on App keys and their bindings, so it cannot lift it. The spec fields it holds as they were are the
 pinned upstream's (v1.0.6, and a test holds the list to the vendored definitions): a cluster
 that serves another agent-sandbox version may have fields the policy does not hold, one more
 reason to run the version `doctor` checks for.
+
+**What it writes of upstream's is held to a runner's shape** (#3754).
+`purlis-operator-writes-only-a-runners-shape`, kept on uninstall and failing closed, refuses the
+operator's service account a `SandboxTemplate`, `SandboxClaim` or `SandboxWarmPool` anywhere but
+in a `purlis-runners-*` namespace, which keeps out `kube-system`, `agent-sandbox-system`, the
+operator's own namespace and any other an admin has. A template's pod must use the default service
+account with no token mounted, hold only the volumes `purlis-link` and `purlis-kept` as folders of
+its own, and keep the confinement [above](#what-it-makes) on each container, which reads a variable
+from no Secret; of the pinned upstream's other pod and container fields it may set none. A claim
+adds nothing to its pod, and a kept volume is a new one written to by one node. It does not hold
+which image a template names or which storage class a claim's volume is in: the Pool says those. An
+admin editing a policy in place, with its binding left alone, does not move its time in force.
 
 Upstream's controller holds its own ClusterRoles, in the vendored manifest: it makes and
 removes the runners' pods, services, volume claims and network policies. It holds no Secret
@@ -839,6 +886,10 @@ spec:
 - **The desktop reads `mintInCluster` from the Pool** as the pool is added and again at each link
   to its runner, and records it ([`runners.json`](plane-format.md)); the person does not choose it.
   The operator goes by the Pool as it is now.
+- **A pool that turns it on is said once in the window.** When a link finds a Pool went from off to
+  on, each desktop using it shows one Notice saying the pool's chats now get tokens from the cluster
+  without asking first, and that the cluster's admin controls that. It holds nothing back, and a Pool that was already on
+  when the pool was added says what adding it says and no more. Turned off and on again, it says so again.
 
 ### How a runner gets a token
 

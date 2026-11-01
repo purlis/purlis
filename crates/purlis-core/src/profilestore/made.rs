@@ -186,6 +186,11 @@ pub struct Allowed {
     /// The settings folders, by name: their files are copied, but for a hidden entry or one
     /// named like a credential.
     pub folders: &'static [&'static str],
+    /// What else it loads from its settings folder, by name, which is never sent: a runner keeps
+    /// none ([`loaded_unsent_cleared`]).
+    pub loaded_unsent: &'static [&'static str],
+    /// The files a desktop sends a runner that no import copies: read to send and kept there.
+    pub sent_only: &'static [&'static str],
 }
 
 /// The settings purlis imports, per harness it ships. Anything not named here is not copied:
@@ -196,11 +201,15 @@ pub const ALLOWED: [Allowed; 3] = [
         kind: "claude",
         files: &["settings.json", "CLAUDE.md"],
         folders: &["agents", "commands", "output-styles", "skills"],
+        loaded_unsent: &["rules"],
+        sent_only: &[super::sent::MCP_SERVERS_FILE],
     },
     Allowed {
         kind: "codex",
         files: &["config.toml", "AGENTS.md"],
         folders: &["prompts"],
+        loaded_unsent: &["AGENTS.override.md", "hooks.json", "rules", "skills"],
+        sent_only: &[],
     },
     Allowed {
         kind: "opencode",
@@ -208,6 +217,8 @@ pub const ALLOWED: [Allowed; 3] = [
         folders: &[
             "agent", "agents", "command", "commands", "mode", "modes", "themes",
         ],
+        loaded_unsent: &["plugin", "plugins", "skill", "skills", "tool", "tools"],
+        sent_only: &[],
     },
 ];
 
@@ -1059,6 +1070,8 @@ const MOST_MEASURED: usize = 1024 * 1024;
 pub struct SettingsRead {
     pub files: Vec<(String, Vec<u8>)>,
     pub left_behind: Vec<(String, u64)>,
+    /// What an import would not copy, each with why (a link, a file named like a credential).
+    pub skipped: Vec<String>,
 }
 
 /// **The settings files `kind`'s settings folder `config` holds, as an import reads them**
@@ -1077,7 +1090,7 @@ pub fn settings_read(
 ) -> Result<SettingsRead, String> {
     let mut files = Vec::new();
     let mut left_behind = Vec::new();
-    settings_walked(
+    let skipped = settings_walked(
         kind,
         config,
         Sink::Memory {
@@ -1089,7 +1102,11 @@ pub fn settings_read(
             wanted,
         },
     )?;
-    Ok(SettingsRead { files, left_behind })
+    Ok(SettingsRead {
+        files,
+        left_behind,
+        skipped,
+    })
 }
 
 /// **What [`settings_read`] would find, by whole, with no file read** (#4081), so what stays
@@ -1108,9 +1125,10 @@ pub fn settings_measured(kind: &str, config: &Path) -> Result<Measured, String> 
     Ok(wholes)
 }
 
-/// Walks `kind`'s settings folder `config` as an import does, into `into`.
+/// Walks `kind`'s settings folder `config` as an import does, into `into`. What it left out, each
+/// with why.
 #[cfg(unix)]
-fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<(), String> {
+fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<Vec<String>, String> {
     use rustix::fs::{Mode, OFlags};
     let (_, allowed) = harness_of(kind)?;
     let from = settings_dest(allowed, config);
@@ -1138,6 +1156,13 @@ fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<(), Stri
             .iter()
             .map(|n| (n, false))
             .chain(allowed.folders.iter().map(|n| (n, true)))
+            .chain(
+                allowed
+                    .sent_only
+                    .iter()
+                    .filter(|_| telling)
+                    .map(|n| (n, false)),
+            )
         {
             entry(
                 &mut place,
@@ -1164,7 +1189,8 @@ fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<(), Stri
             from.display(),
             crate::rewrite::os_words(&e)
         )
-    })
+    })?;
+    Ok(copied.skipped)
 }
 
 /// No settings are read where there is no descriptor-relative open to read them with safely.
@@ -1200,7 +1226,7 @@ fn a_settings_path(allowed: &Allowed, path: &str) -> bool {
         return false;
     }
     if rest.is_empty() {
-        return allowed.files.contains(first);
+        return allowed.files.contains(first) || allowed.sent_only.contains(first);
     }
     allowed.folders.contains(first)
         && rest.len() <= DEEPEST
@@ -1404,6 +1430,7 @@ fn swap_each(
         .files
         .iter()
         .chain(allowed.folders)
+        .chain(allowed.sent_only)
         .try_for_each(|one| {
             let had = there(dir, one)?;
             if had {
@@ -1497,6 +1524,35 @@ pub fn settings_kept(
             crate::rewrite::os_words(&e)
         )
     })
+}
+
+/// **What `record`, a profile this runner keeps for a desktop, would load but no desktop sent goes**
+/// ([`Allowed::loaded_unsent`]): what its next chat loads there is what its desktop sent.
+pub fn loaded_unsent_cleared(record: &MachineProfile) -> Result<(), String> {
+    // A harness purlis does not ship has no such list.
+    let Ok((_, allowed)) = harness_of(&record.harness) else {
+        return Ok(());
+    };
+    let dest = settings_dest(allowed, &record.folders.config);
+    allowed
+        .loaded_unsent
+        .iter()
+        .try_for_each(|name| {
+            let through_a_link =
+                std::fs::symlink_metadata(&dest).is_ok_and(|found| found.file_type().is_symlink());
+            if through_a_link {
+                return Err(io::Error::other("the settings folder is a link"));
+            }
+            remove_within(&dest, &dest.join(name))
+        })
+        .map_err(|e| {
+            format!(
+                "this runner could not clear the profile '{}''s folder {} ({})",
+                crate::shown::short(&record.name),
+                dest.display(),
+                crate::rewrite::os_words(&e)
+            )
+        })
 }
 
 /// A file name that may hold a sign-in, which an import never copies from a settings folder.

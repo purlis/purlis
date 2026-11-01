@@ -1301,6 +1301,12 @@ fn every_shipped_fixture_imports_with_no_finding_its_own_palette_could_avoid() {
         // findings left are those, in the theme as it is and in each workspace tint.
         let expected: &[&str] = match *name {
             "Tide.itermcolors" => &["terminal.ansi.black on terminal.background"],
+            // A VS Code theme's comment is drawn as its author wrote it, on the diff's washes it
+            // does not name (#4424): the check says so, and the import does not walk it.
+            "ember.jsonc" => &[
+                "syntax.comment on diff.deleted-text",
+                "syntax.comment on diff.inserted-text",
+            ],
             "moss" => &[
                 "terminal.ansi.black on terminal.background",
                 "terminal.ansi.bright-black on terminal.background",

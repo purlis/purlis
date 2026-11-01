@@ -286,7 +286,7 @@ impl Meter {
 
     /// A meter for `account` kept in the machine tier under `config_root`: it reads the hour
     /// its file holds before each change and writes it after, so every process sending as the
-    /// account shares one count. A change takes a lock beside the file for its read and its
+    /// account shares one count. A change takes a lock of its own for its read and its
     /// write (#1164), as the machine store's own update does, so two processes counting at the
     /// same instant both count.
     pub fn kept_in(config_root: &Path, account: &Account, clock: Arc<dyn Clock>) -> Meter {
@@ -362,20 +362,17 @@ impl Meter {
         )
     }
 
-    /// The lock on this meter's kept file, beside it in a `0700` folder, or `None` for a meter
+    /// The lock on this meter's kept file, with purlis's other locks, or `None` for a meter
     /// kept in memory. Best effort, as [`crate::machine::update`]'s: a lock that cannot be
     /// taken loses at most the count it was there to keep.
     fn lock(&self) -> Option<crate::machine::Lock> {
         let file = self.file.as_ref()?;
-        let dir = file.parent()?;
-        let mut builder = std::fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-        builder.create(dir).ok()?;
-        let mut name = file.file_name()?.to_os_string();
-        name.push(".lock");
-        Some(crate::machine::Lock::at(&dir.join(name)))
+        // `<config>/<store folder>/forge-budget/<account>.json`.
+        let config_root = file.parent()?.parent()?.parent()?;
+        Some(crate::machine::Lock::named(
+            config_root,
+            &lock_name(file.file_name()?.to_str()?),
+        ))
     }
 
     /// Apply `f` to the hour as of `now`, and keep the result when `write`.
@@ -443,8 +440,33 @@ impl Transport for Metered {
     }
 }
 
+/// The name of the lock of the meter kept in the file `kept`. One too long for a file name goes by
+/// its digest, since a lock that cannot be made is a count not kept.
+fn lock_name(kept: &str) -> String {
+    use sha2::Digest as _;
+    /// The longest file name a disk commonly takes, in bytes.
+    const MOST: usize = 255;
+    let name = format!("forge-budget-{kept}.lock");
+    if name.len() <= MOST {
+        return name;
+    }
+    let digest: String = sha2::Sha256::digest(kept.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("forge-budget-{digest}.lock")
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_lock_name_always_fits_a_file_name_and_long_ones_stay_apart() {
+        assert_eq!(super::lock_name("me.json"), "forge-budget-me.json.lock");
+        let (one, other) = ("a".repeat(300), "b".repeat(300));
+        assert!(super::lock_name(&one).len() <= 255);
+        assert_ne!(super::lock_name(&one), super::lock_name(&other));
+    }
+
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
 

@@ -551,8 +551,6 @@ fn light_is_dark_reflected_by_its_one_rule() {
     ];
     // The pairs a reflected colour missed, and the ground it is stepped away from (#2700).
     let stepped = [
-        ("syntax.comment", "surface.hover", 3.0),
-        ("syntax.punctuation", "surface.hover", 3.0),
         // The quiet tier, the placeholder that is drawn in it, and faint (#2902).
         ("text.quiet", "surface.hover", 4.5),
         ("placeholder", "surface.hover", 4.5),

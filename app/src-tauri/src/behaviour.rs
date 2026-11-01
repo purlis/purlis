@@ -393,6 +393,7 @@ const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
 const PARITY: &str = "PURLIS_PARITY";
 
 mod pool_journey;
+mod pool_setup;
 
 /// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
 /// the window adds one ([`a_pool_on`]). The window speaks to its own host, which relays to the
@@ -427,6 +428,53 @@ fn a_window_on_a_pool_of(
     image: &str,
     docker: purlis_core::dockerpool::Docker,
 ) -> (Target, crate::runnerlinks::Machine, String) {
+    let (target, machine, name, _again) = a_window_again_on_a_pool_of(image, docker);
+    (target, machine, name)
+}
+
+/// **A window that is cut as a crash cuts it, and started again on the same machine**, on a pool's
+/// target (#4271): each of its links to the window's host goes, and a new window names itself
+/// as the first did.
+pub(crate) struct AWindowAgain {
+    cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
+    connection: Arc<dyn Fn() -> Arc<Connection> + Send + Sync>,
+    config: PathBuf,
+    pool: String,
+    docker: purlis_core::dockerpool::Docker,
+}
+
+impl AWindowAgain {
+    /// Every link of the window so far ends, as they end when its process goes.
+    pub(crate) fn cut(&self) {
+        for cut in self.cuts.lock().expect("the cuts").drain(..) {
+            cut.abort();
+        }
+    }
+
+    /// The project at `root` as the window started again routes it, every start on the pool.
+    pub(crate) fn sessions_of(&self, root: &Path) -> crate::routedsessions::RoutedSessions {
+        let connection = (self.connection)();
+        crate::routedsessions::RoutedSessions::of_the_project(
+            Box::new(HostedSessions::new(Arc::clone(&connection), root)),
+            &connection,
+            &self.config,
+            root,
+        )
+        .every_start_on(&self.pool)
+        .taking_back_from({
+            let (docker, config) = (self.docker.clone(), self.config.clone());
+            Arc::new(move |pool: &str| {
+                crate::runnerlinks::draining_to_ask_on(&docker, &config, pool)
+            })
+        })
+    }
+}
+
+/// [`a_window_on_a_pool_of`], and what cuts that window and starts it again.
+pub(crate) fn a_window_again_on_a_pool_of(
+    image: &str,
+    docker: purlis_core::dockerpool::Docker,
+) -> (Target, crate::runnerlinks::Machine, String, AWindowAgain) {
     let config = tempfile::tempdir().expect("the desktop's config home");
     let docker = docker.with_settings_in(config.path().join("docker-settings"));
     let machine = crate::runnerlinks::Machine {
@@ -464,33 +512,53 @@ fn a_window_on_a_pool_of(
     // The window's links to it, as the window's binary dials them: its own, and each relayed
     // to a pool's runner by the host.
     let handle = runtime.handle().clone();
-    let link_to = move |naming, pool: Option<String>| {
-        let (host, inner) = (host.clone(), handle.clone());
-        crate::hostedsessions::open_within(&handle, PATIENCE, async move {
-            crate::hostedsessions::HostLink::over_relayed(
-                a_local_ui_link_to(host).await,
-                inner,
-                || {},
-                naming,
-                pool.as_deref(),
-            )
-            .await
+    let cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>> = Arc::default();
+    let link_to = {
+        let cuts = Arc::clone(&cuts);
+        move |naming, pool: Option<String>| {
+            let (host, inner, cuts) = (host.clone(), handle.clone(), Arc::clone(&cuts));
+            crate::hostedsessions::open_within(&handle, PATIENCE, async move {
+                crate::hostedsessions::HostLink::over_relayed(
+                    a_local_ui_link_to(host, &cuts).await,
+                    inner,
+                    || {},
+                    naming,
+                    pool.as_deref(),
+                )
+                .await
+            })
+        }
+    };
+    // Made once for the window, and once for each time it is started again.
+    let a_connection: Arc<dyn Fn() -> Arc<Connection> + Send + Sync> = {
+        let kept_in = config.path().to_path_buf();
+        Arc::new(move || {
+            let connection = Arc::new(Connection::default());
+            // The pool's runners are kept where this target added them, as the window keeps its
+            // own (D-2050-27), and its names for its links too (#2623).
+            connection.runners_in(kept_in.clone());
+            connection.naming_in(kept_in.clone());
+            let window = link_to(None, None).expect("the window's own link");
+            let dial: crate::hostedsessions::Dial = {
+                let link_to = link_to.clone();
+                Arc::new(move |_within, naming| link_to(naming, None))
+            };
+            let link_to = link_to.clone();
+            let relayed: crate::hostedsessions::RelayedDial =
+                Arc::new(move |_within, naming, pool: &str| link_to(naming, Some(pool.to_owned())));
+            connection.ready_relaying(Arc::new(window), dial, relayed);
+            connection
         })
     };
-    let connection = Arc::new(Connection::default());
-    // The pool's runners are kept where this target added them, as the window keeps its own
-    // (D-2050-27).
-    connection.runners_in(config.path().to_path_buf());
-    let window = link_to(None, None).expect("the window's own link");
-    let dial: crate::hostedsessions::Dial = {
-        let link_to = link_to.clone();
-        Arc::new(move |_within, naming| link_to(naming, None))
+    let again = AWindowAgain {
+        cuts,
+        connection: Arc::clone(&a_connection),
+        config: config.path().to_path_buf(),
+        pool: name.clone(),
+        docker: docker.clone(),
     };
-    let relayed: crate::hostedsessions::RelayedDial =
-        Arc::new(move |_within, naming, pool: &str| link_to(naming, Some(pool.to_owned())));
-    connection.ready_relaying(Arc::new(window), dial, relayed);
     let mut target = a_window_over(
-        connection,
+        a_connection(),
         inherited,
         data.path().to_path_buf(),
         Runs::OnAPoolsRunner {
@@ -511,14 +579,24 @@ fn a_window_on_a_pool_of(
     target._keeps.push(Box::new(data));
     target._keeps.push(Box::new(removes));
     target._keeps.push(Box::new(config));
-    (target, machine, name)
+    (target, machine, name, again)
 }
 
 /// A `local-ui` link to `host` over an in-memory stream, served as the window's host serves
-/// each link it admits.
-async fn a_local_ui_link_to(host: purlis_host::Hosting) -> link::Link {
+/// each link it admits. `cuts` holds what cuts its bytes as a crash cuts them: the host still sees
+/// the link end, and lets go of what it held for it.
+async fn a_local_ui_link_to(
+    host: purlis_host::Hosting,
+    cuts: &Mutex<Vec<tokio::task::AbortHandle>>,
+) -> link::Link {
     let held = Credentials::mint().expect("credentials");
-    let (a, b) = tokio::io::duplex(1 << 20);
+    let (a, near) = tokio::io::duplex(1 << 20);
+    let (far, b) = tokio::io::duplex(1 << 20);
+    let carrying = tokio::spawn(async move {
+        let (mut near, mut far) = (near, far);
+        let _ = tokio::io::copy_bidirectional(&mut near, &mut far).await;
+    });
+    cuts.lock().expect("the cuts").push(carrying.abort_handle());
     let (client, served) = tokio::join!(
         link::connect(
             a,

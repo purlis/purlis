@@ -138,6 +138,41 @@ pub fn held_names(path: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// **The links on the way to `path`, each by its own name, with every folder above each**: a folder
+/// above it, or above what one of those points at, that is a link, and `path` itself where it is
+/// one. A rule resolved through a link holds what it points at and not the link, which could be
+/// replaced by one pointing elsewhere (measured), so that `path` no longer leads to what is denied;
+/// and a folder above the link could be moved away whole, with another put in its place.
+fn links_on_the_way(path: &Path) -> Vec<PathBuf> {
+    /// More than the kernel follows, so a loop of links ends here too.
+    const MOST: usize = 64;
+    let mut links: Vec<PathBuf> = Vec::new();
+    let mut looking = vec![path.to_path_buf()];
+    while let Some(next) = looking.pop() {
+        for above in next.ancestors() {
+            if links.len() >= MOST {
+                return links;
+            }
+            let (Some(folder), Ok(to)) = (above.parent(), std::fs::read_link(above)) else {
+                continue;
+            };
+            if !links.iter().any(|link| link == above) {
+                links.push(above.to_path_buf());
+                looking.push(folder.join(to));
+            }
+        }
+    }
+    let mut held: Vec<PathBuf> = Vec::new();
+    for link in &links {
+        for name in link.ancestors().filter(|name| name.parent().is_some()) {
+            if !held.iter().any(|one| one == name) {
+                held.push(name.to_path_buf());
+            }
+        }
+    }
+    held
+}
+
 /// The rules that deny `denial`: under each name it is held by, as itself and as its target
 /// (#1336), each also across a firmlink (#1356). Everything below the name, or the entry alone
 /// for one held as itself, which is then never written as an entry: never created, renamed,
@@ -499,8 +534,7 @@ pub fn profile(
     // moved away with the denied path in it, nor replaced (measured: a plane-root chat could
     // otherwise move `.charter` aside and write `.charter/app` under its new name).
     let mut pinned = std::collections::BTreeSet::new();
-    let mut pin = |folder: &Path, line: &mut dyn FnMut(String)| -> Result<(), &'static str> {
-        let names = kernel_strings(folder)?;
+    let mut pin = |names: Vec<String>, line: &mut dyn FnMut(String)| -> Result<(), &'static str> {
         if pinned.insert(names.first().cloned()) {
             for name in names {
                 line(format!("(deny file-write* (literal {name}))"));
@@ -511,15 +545,18 @@ pub fn profile(
     // The chat's own directory and its temp directory too, as entries: moved whole into the
     // other, every path rule under the one moved would no longer match (measured).
     for root in [&cwd_real, &real(tmp)] {
-        pin(root, &mut line)?;
+        pin(kernel_strings(root)?, &mut line)?;
     }
     // Between a name of the chat's directory and the same side's name of the denied path.
     let cwd_names = super::kernel_names(&cwd_real);
     for denial in denied {
+        for link in links_on_the_way(&denial.path) {
+            pin(kernel_strings_itself(&link)?, &mut line)?;
+        }
         for path in super::kernel_names(&denial.path) {
             for cwd_name in &cwd_names {
                 for ancestor in super::ancestors_within(&path, cwd_name) {
-                    pin(&ancestor, &mut line)?;
+                    pin(kernel_strings(&ancestor)?, &mut line)?;
                 }
             }
         }
@@ -621,6 +658,13 @@ pub fn floor_profile(
     // Every folder above a denied path, as an entry: never moved away with it, nor replaced.
     let mut pinned = std::collections::BTreeSet::new();
     for denial in &all {
+        for link in links_on_the_way(&denial.path) {
+            for name in kernel_strings_itself(&link)? {
+                if pinned.insert(name.clone()) {
+                    line(format!("(deny file-write* (literal {name}))"));
+                }
+            }
+        }
         for path in super::kernel_names(&denial.path) {
             for ancestor in path.ancestors().skip(1) {
                 if ancestor.parent().is_none() {

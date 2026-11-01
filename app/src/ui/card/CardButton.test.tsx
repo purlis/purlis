@@ -185,4 +185,18 @@ describe("a pressed card's theme parts (#3885)", () => {
       box,
     ]);
   });
+
+  it("says the row whose page is showing, on its button and its box", () => {
+    render(<CardButton variant="row" title="Create a project" current onPress={() => undefined} />);
+    const button = screen.getByRole("button", { name: "Create a project" });
+    expect(button).toHaveAttribute("aria-current", "page");
+    expect(button.closest('[data-part="root"]')).toHaveAttribute("data-current");
+  });
+
+  it("says nothing of a row whose page is not showing", () => {
+    render(<CardButton variant="row" title="Get a project" onPress={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Get a project" })).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
 });

@@ -1151,3 +1151,28 @@ fn a_kept_browser_site_policy_now_refuses_reaches_no_browser() {
     assert!(browser_sites_in_force(root, &scopes).is_empty());
     assert_eq!(browser_sites_in_force(root, &Locks::none()), [pasted, news]);
 }
+
+/// Something else holding a lock on the folder, as anything that can read it may, holds up no
+/// write to this machine's file.
+#[cfg(unix)]
+#[test]
+fn a_lock_held_on_the_grants_folder_holds_up_no_write() {
+    let home = tempfile::tempdir().expect("a config home");
+    let project = a_project("");
+    let folder = crate::machine::dir(home.path()).join(MACHINE_GRANTS);
+    std::fs::create_dir_all(&folder).expect("the folder");
+    let open = std::fs::File::open(&folder).expect("opened to read");
+    rustix::fs::flock(&open, rustix::fs::FlockOperation::LockExclusive).expect("held");
+    let (wrote, written) = std::sync::mpsc::channel();
+    let (config, root) = (home.path().to_path_buf(), project.path().to_path_buf());
+    std::thread::spawn(move || {
+        TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(config));
+        let file = path(&root);
+        let _ = wrote.send(write_new(&file, |_| {}).is_ok());
+    });
+    assert_eq!(
+        written.recv_timeout(std::time::Duration::from_secs(20)),
+        Ok(true),
+        "the write waited on the folder"
+    );
+}

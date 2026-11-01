@@ -431,15 +431,35 @@ use crate::view::{Limits, Views};
 /// [`crate::code::LONGEST_TRANSFER_SECS`]. Only ever a send to the host: what a host writes back
 /// stays held to [`crate::code::MOST_BUNDLE_BYTES`]. A host before 1.65 ignores the field and
 /// holds a send to what it always did, so the desktop holds it there too and says so.
+///
+/// 1.66 lets a runner keep a Claude Code profile's user-scope MCP servers (#3846): a keep may stage
+/// `mcp-servers.json` among its settings, which the runner puts into that profile's state file. No
+/// frame changes. A runner before 1.66 refuses a settings file it does not know, so it is sent none.
+///
+/// 1.67 has a runner answer `programs_of` on a link between hosts, with what was opened for the
+/// window that link named (#4271, ruled 2026-11-01). No frame changes. A relay does not ask a
+/// runner before 1.67, which would refuse it, and answers that no program is known of.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 65,
+    minor: 67,
+};
+
+/// The version that first answers `programs_of` on a link between hosts (#4271).
+pub const KNOWS_PROGRAMS_RELAYED: Version = Version {
+    major: 1,
+    minor: 67,
 };
 
 /// The version that first holds a send of code to what its desktop gives it (spec #4275).
 pub const KNOWS_CODE_HELD: Version = Version {
     major: 1,
     minor: 65,
+};
+
+/// The version that first keeps a profile's user-scope MCP servers (#3846).
+pub const KNOWS_PROFILE_MCP_SERVERS: Version = Version {
+    major: 1,
+    minor: 66,
 };
 
 /// The version that first stages a profile's settings up to a pool's limit (spec #4275).
@@ -857,8 +877,9 @@ pub enum Command {
     },
     /// Every program a held project still has, running or ended, that no client has closed
     /// (1.13): what a window that comes back to the host takes back. Answered
-    /// [`Answer::Programs`]. The window's alone ([`crate::grants::Power::Reattach`]). Each
-    /// confinement it answers is named to the link that asked, which may act on it and hear it
+    /// [`Answer::Programs`]. The window's ([`crate::grants::Power::ProgramsOf`]), and, for a
+    /// window it relays, its host's on a link between hosts, answered only what was opened for
+    /// the window that link named (#4271). Each confinement it answers is named to the link that asked, which may act on it and hear it
     /// from then on (#2444).
     ProgramsOf { project: String },
     /// The window is quitting (1.13, ADR 0068 §2): the host ends every program it runs as a quit
@@ -2549,7 +2570,8 @@ impl Command {
             | Command::CancelEngineDownload { .. } => Power::Browser,
             Command::LogIn { .. } => Power::LogIn,
             Command::Inspect { .. } | Command::InspectorInput { .. } => Power::Inspect,
-            Command::ProgramsOf { .. } | Command::NoteProgram { .. } => Power::Reattach,
+            Command::ProgramsOf { .. } => Power::ProgramsOf,
+            Command::NoteProgram { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,

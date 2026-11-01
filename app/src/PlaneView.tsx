@@ -7647,16 +7647,17 @@ export const PlaneView = memo(function PlaneView({
    *  "Not cloned here" draws its own progress and failure from it. */
   const cloning = useRepoClones(plane, ofWorkspace ?? OUTSIDE);
   const absentHere = workspaceState.panels?.absent;
-  // A repo that has cloned stays busy until the panels drop it, so its Clone cannot be pressed
-  // again in between; once they do, the window forgets it (`settleRepoClones`).
+  // A repo that has cloned stays busy until the panels list it, so its Clone cannot be pressed
+  // again in between; once they do, the window forgets it (`settleRepoClones`). The panels can
+  // list it before its clone answers, so an answer settles it as well as a read.
   const cloningNow = useMemo(
     () => [...cloning].filter(([, one]) => one.state !== "failed").map(([repo]) => repo),
     [cloning],
   );
   useEffect(() => {
-    if (ofWorkspace !== undefined && absentHere !== undefined)
-      settleRepoClones(plane, ofWorkspace, absentHere);
-  }, [plane, ofWorkspace, absentHere]);
+    if (ofWorkspace !== undefined && cloneNames !== undefined)
+      settleRepoClones(plane, ofWorkspace, cloneNames);
+  }, [plane, ofWorkspace, cloneNames, cloning]);
 
   /** The repo whose clone the chat being picked would start in, if it would: what the picker's
    *  branch box names (GL-1). The same directory `startOn` sends, compared with the path the
@@ -9415,6 +9416,10 @@ export const PlaneView = memo(function PlaneView({
           workspace: frontWorkspace === OUTSIDE ? undefined : frontWorkspace,
           persona: personaOf(frontSession),
           harness: harnessOf(frontSession),
+          // Only where it is filed: the view names a checkout by the chat's workspace.
+          ...(worktree === undefined || worktree.workspace !== frontWorkspace
+            ? {}
+            : { branchFolder: { repo: worktree.repo, piece: worktree.piece } }),
         };
 
   const view = (

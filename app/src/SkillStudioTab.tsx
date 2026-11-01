@@ -46,6 +46,7 @@ import { DRAFT_WITH_A_CHAT, NEW_SKILL_MENU } from "./SkillStarts";
 import { NewSkillDialog } from "./NewSkillDialog";
 import { askDraft, askSkillChat, useSkillDraftsRead } from "./skillDraftAsks";
 import { SkillSourcesPage } from "./SkillSources";
+import { ExportDialog, SkillPublishPage } from "./SkillPublish";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { Select } from "./ui/select/Select";
 import { Choice } from "./settings/components";
@@ -105,7 +106,8 @@ type Doing =
   | { what: "new"; refused?: string }
   | { what: "rename"; skill: StudioSkill; level: SkillLevel; refused?: string }
   | { what: "move"; skill: StudioSkill; from: SkillLevel; refused?: string }
-  | { what: "delete"; skill: StudioSkill; level: SkillLevel; refused?: string };
+  | { what: "delete"; skill: StudioSkill; level: SkillLevel; refused?: string }
+  | { what: "export"; skill: StudioSkill; level: SkillLevel; refused?: string };
 
 /** **The path inside Sources** (#3687): the source, then the review, as the prototype names
  *  them. Pressing the source goes to its page, and Install all to its list of skills to tick
@@ -951,6 +953,9 @@ export function SkillStudioTab({
       ? gradingPath(at.grading)
       : []),
     ...(inSources === undefined ? [] : sourcesPath(inSources)),
+    ...(chosen !== undefined && at.publishing !== undefined
+      ? [{ id: "publishing", label: "Publish to a source" }]
+      : []),
     // A change in progress is a dialog, which is no place; the editor is.
     ...(edits.editing !== undefined ? [{ id: "doing", label: "Edit" }] : []),
   ];
@@ -992,6 +997,7 @@ export function SkillStudioTab({
           else if (crumb.id === "tab") {
             setDoing(undefined);
             edits.stop();
+            if (at.publishing !== undefined) go({ ...at, publishing: undefined });
             if (at.grading !== undefined) grading(undefined, "go");
           } else if ((crumb.id === "source" || crumb.id === "choose") && inSources !== undefined)
             go({
@@ -1223,6 +1229,28 @@ export function SkillStudioTab({
           onGrading={grading}
           onGradedAt={gradedAt}
         />
+      ) : chosen !== undefined && at.publishing !== undefined ? (
+        <SkillPublishPage
+          key={`${skillRowId(chosen)}:publish`}
+          plane={plane}
+          name={chosen.name}
+          level={at.publishing}
+          onCancel={() => {
+            go({ ...at, publishing: undefined });
+          }}
+          onExport={() => {
+            if (at.publishing !== undefined)
+              setDoing({ what: "export", skill: chosen, level: at.publishing });
+          }}
+          // The move ends this review: its level is another, so publishing starts again from there.
+          onMove={() => {
+            const from = at.publishing;
+            if (from === undefined) return;
+            go({ ...at, publishing: undefined });
+            setDoing({ what: "move", skill: chosen, from });
+          }}
+          onSources={() => go({ page: "sources", scope })}
+        />
       ) : chosen !== undefined && studio !== undefined ? (
         <SkillPage
           key={skillRowId(chosen)}
@@ -1256,6 +1284,10 @@ export function SkillStudioTab({
           }
           onDelete={(level) =>
             edits.leave(() => setDoing({ what: "delete", skill: chosen, level }))
+          }
+          onPublish={(level) => edits.leave(() => go({ ...at, publishing: level }))}
+          onExport={(level) =>
+            edits.leave(() => setDoing({ what: "export", skill: chosen, level }))
           }
           onPersona={personaSkill}
           onCopy={() => setCopying({ from: chosen.name })}
@@ -1651,6 +1683,18 @@ export function SkillStudioTab({
           onEdit={editedInDialog}
           onMove={(to, grant) => move(doing, doing.skill, doing.from, to, grant)}
           onClose={() => setDoing(undefined)}
+        />
+      )}
+      {doing?.what === "export" && (
+        <ExportDialog
+          plane={plane}
+          name={doing.skill.name}
+          level={doing.level}
+          onClose={() => setDoing(undefined)}
+          onExported={(to) => {
+            setDoing(undefined);
+            setSaid({ tone: "news", label: "Skill exported", text: `Written to ${to}.` });
+          }}
         />
       )}
       {doing?.what === "delete" && (

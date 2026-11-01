@@ -38,6 +38,7 @@ fn dropped(kind: &str) -> &'static [&'static str] {
             "otelHeadersHelper",
             "headers",
             "headersHelper",
+            "clientSecret",
         ],
         // Codex's `config.toml`: a server's `env`, a provider's and a server's bearer tokens, the
         // variables that name one, a provider's `env_key` and its command-run `auth`, and the
@@ -73,12 +74,65 @@ fn dropped(kind: &str) -> &'static [&'static str] {
     }
 }
 
+/// **The file a Claude Code profile's user-scope MCP servers travel in** (#3846): Claude Code keeps
+/// them in its state file, among sign-in and project records that never leave, so only they are
+/// sent, in a file of their own, and a runner puts them into its own state file.
+pub const MCP_SERVERS_FILE: &str = "mcp-servers.json";
+
+/// **Where Claude Code keeps its state file for the profile `record`**, as it reads it: in the
+/// settings folder where the folder's variable is set, as it is for a profile purlis makes and one
+/// adopted from where a variable named it, and otherwise in the home, beside its default folder.
+#[must_use]
+pub fn claude_state_file(record: &super::MachineProfile) -> std::path::PathBuf {
+    let config = &record.folders.config;
+    let in_home = record
+        .adopted
+        .as_ref()
+        .filter(|adopted| adopted.variables.is_empty())
+        .and_then(|_| config.parent());
+    in_home
+        .unwrap_or(config)
+        .join(crate::sandbox::claude_wrap::STATE_FILE)
+}
+
+/// The most bytes of a state file read for its MCP servers: well past any.
+const MOST_STATE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// **The file of the user-scope MCP servers in the Claude Code state file `state`**, as it goes
+/// through [`filtered`] like any settings file. No servers is a file too, so a server taken out here
+/// goes on the runner. `None` where the state file cannot be read as one, following no link: the
+/// runner's stay as they are.
+#[must_use]
+pub fn mcp_servers_of(state: &std::path::Path) -> Option<Vec<u8>> {
+    let not_read = |why: &str| {
+        tracing::info!("purlis: no MCP servers are sent to a runner: its state file {why}");
+        None
+    };
+    let servers = match std::fs::symlink_metadata(state) {
+        Ok(found) if found.is_file() && found.len() <= MOST_STATE_BYTES => {
+            let Ok(text) = std::fs::read_to_string(state) else {
+                return not_read("cannot be read");
+            };
+            let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else {
+                return not_read("is not JSON");
+            };
+            doc.get("mcpServers")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}))
+        }
+        Ok(_) => return not_read("is a link, or too large"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Err(_) => return not_read("cannot be read"),
+    };
+    serde_json::to_vec(&serde_json::json!({ "mcpServers": servers })).ok()
+}
+
 /// Whether `path` is a `kind` harness's own settings file, which [`without_credentials`] parses
 /// and always writes again. A Markdown file is written again only where something goes.
 pub fn rewritten(kind: &str, path: &str) -> bool {
     matches!(
         (kind, path),
-        ("claude", "settings.json")
+        ("claude", "settings.json" | MCP_SERVERS_FILE)
             | ("opencode", "opencode.json" | "opencode.jsonc" | "tui.json")
             | ("codex", "config.toml")
     )
@@ -89,9 +143,9 @@ pub fn without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<Vec<u
     filtered(kind, path, bytes).map(|file| file.bytes)
 }
 
-/// [`filtered`]'s bytes, with what was removed said in the log, as what an import leaves out is:
-/// what a desktop sends.
-pub fn sent_without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
+/// [`filtered`], with what was removed said in the log, as what an import leaves out is: what a
+/// desktop sends.
+pub fn sent_without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<Filtered, String> {
     let file = filtered(kind, path, bytes)?;
     for what in &file.removed {
         tracing::info!(
@@ -99,7 +153,7 @@ pub fn sent_without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<
             crate::shown::short(path)
         );
     }
-    Ok(file.bytes)
+    Ok(file)
 }
 
 /// A settings file as it is sent, and what was removed from it.
@@ -108,6 +162,26 @@ pub struct Filtered {
     pub bytes: Vec<u8>,
     /// What went, by where it was and never by its value, each once.
     pub removed: Vec<String>,
+    /// The variables among what went that only choose an endpoint or a provider
+    /// ([`chooses_an_endpoint`]), by name, so a runner chat can say it may use another (#3867).
+    pub variables: Vec<String>,
+}
+
+/// Whether the variable `name` only chooses where a harness's requests go or who serves them.
+fn chooses_an_endpoint(name: &str) -> bool {
+    name.ends_with("_BASE_URL")
+        || name.ends_with("_ENDPOINT")
+        || matches!(
+            name,
+            "CLAUDE_CODE_USE_BEDROCK"
+                | "CLAUDE_CODE_USE_VERTEX"
+                | "CLAUDE_CODE_USE_FOUNDRY"
+                | "ANTHROPIC_MODEL"
+                | "ANTHROPIC_VERTEX_PROJECT_ID"
+                | "CLOUD_ML_REGION"
+                | "AWS_REGION"
+                | "AWS_PROFILE"
+        )
 }
 
 /// **`bytes`, the settings file `path` of a `kind` profile, as it is sent to a runner**: a
@@ -123,6 +197,7 @@ pub fn filtered(kind: &str, path: &str, bytes: &[u8]) -> Result<Filtered, String
     Ok(Filtered {
         bytes,
         removed: said.items,
+        variables: said.variables,
     })
 }
 
@@ -139,7 +214,7 @@ fn filtered_saying(
         )
     };
     match (kind, path) {
-        ("claude", "settings.json") => {
+        ("claude", "settings.json" | MCP_SERVERS_FILE) => {
             let text = std::str::from_utf8(bytes).map_err(|_| unreadable())?;
             json_without(kind, text, said).ok_or_else(unreadable)
         }
@@ -186,12 +261,26 @@ const MOST_SAID: usize = 256;
 struct Said {
     items: Vec<String>,
     seen: std::collections::HashSet<String>,
+    variables: Vec<String>,
 }
 
 impl Said {
     fn push(&mut self, what: String) {
         if self.items.len() < MOST_SAID && self.seen.insert(what.clone()) {
             self.items.push(what);
+        }
+    }
+
+    /// Notes each of the `names` a removed environment block set that chooses an endpoint.
+    fn variables<'a>(&mut self, names: impl Iterator<Item = &'a str>) {
+        for name in names {
+            let new = !self.variables.iter().any(|one| one == name);
+            let plain = name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && name.len() <= 64
+                && crate::secretshape::token_kind(name).is_none();
+            if chooses_an_endpoint(name) && plain && new && self.variables.len() < MOST_SAID {
+                self.variables.push(name.to_owned());
+            }
         }
     }
 }
@@ -396,8 +485,8 @@ fn names_a_credential(name: &str) -> bool {
 }
 
 /// The last word of a name that holds a credential.
-const CREDENTIAL_WORDS: [&str; 7] = [
-    "token", "password", "passwd", "pwd", "secret", "apikey", "bearer",
+const CREDENTIAL_WORDS: [&str; 8] = [
+    "token", "password", "passwd", "pwd", "secret", "apikey", "bearer", "auth",
 ];
 
 /// Whether `value` is written out, and not read from a variable, another command or a harness's
@@ -550,7 +639,26 @@ fn json_runs_a_credential(value: &serde_json::Value) -> bool {
             _ => {}
         }
     }
-    !written.is_empty() && shows_a_credential(&words_of(written.into_iter()), 0)
+    let url = map
+        .get("url")
+        .and_then(Value::as_str)
+        .is_some_and(url_asks_with_a_credential);
+    url || (!written.is_empty() && shows_a_credential(&words_of(written.into_iter()), 0))
+}
+
+/// Whether the query of the address `url` carries what signs its requests: `?key=x`, `?auth=x`.
+fn url_asks_with_a_credential(url: &str) -> bool {
+    let Some((_, query)) = url.split_once('?') else {
+        return false;
+    };
+    query.split('&').any(|pair| {
+        let lower = pair.to_ascii_lowercase();
+        lower.split_once('=').is_some_and(|(name, value)| {
+            written_out(value)
+                && (names_a_credential(name)
+                    || matches!(name, "key" | "auth" | "sig" | "signature" | "code"))
+        })
+    })
 }
 
 /// `value` with every setting `names` lists removed at any depth, each object that runs a command
@@ -572,6 +680,13 @@ fn clean_json(value: &mut serde_json::Value, names: &[&str], at: &str, said: &mu
             }
             map.retain(|key, inner| {
                 if names.contains(&key.as_str()) || crate::secretshape::token_kind(key).is_some() {
+                    // Only the harness's own environment chooses where its chat's requests go.
+                    if at == "settings"
+                        && key == "env"
+                        && let Value::Object(block) = &*inner
+                    {
+                        said.variables(block.keys().map(String::as_str));
+                    }
                     said.push(further(at, key));
                     return false;
                 }
@@ -808,8 +923,11 @@ fn codex_without(text: &str, said: &mut Said) -> Option<Vec<u8>> {
     if let Some(policy) = doc
         .get_mut("shell_environment_policy")
         .and_then(|p| p.as_table_like_mut())
-        && policy.remove("set").is_some()
+        && let Some(set) = policy.remove("set")
     {
+        if let Some(block) = set.as_table_like() {
+            said.variables(block.iter().map(|(name, _)| name));
+        }
         said.push("settings.shell_environment_policy.set".to_owned());
     }
     // Written again through plain values, so no comment travels: a commented-out key is a key

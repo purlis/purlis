@@ -29,7 +29,9 @@ import { drawNatively } from "./theme/native";
 // resolved once by the core's theme engine before the window existed and handed to it with the
 // window (`windowprefs.ts`), so nothing is read or asked on the way to the first frame — the only
 // arrangement ADR 0026's 2 s cold start can afford. The native window was created in the same
-// answer, and the window's later ask of what is in force answers it again: nothing is repainted.
+// answer, and the window's later ask of what is in force answers it again: nothing is repainted,
+// unless a theme's parts were still being measured when the window was created (#4337): they
+// land with that answer.
 // A theme's fonts are asked for by digest after the frame (`theme/faces.ts`, #2326): the first
 // frame is drawn in each family list's fallback, and nothing waits for a face.
 fetchFacesWith(fetchFace);

@@ -1042,7 +1042,7 @@ fn recorded(
 /// one word Linux starts a program with (`MAX_ARG_STRLEN`, 128 KiB), with room for the rest. A
 /// longer one, such as a Claude Code chat's in a project with many workspaces and personas, each
 /// level of which it is denied writing, goes through a file.
-pub const SETTINGS_IN_A_WORD: usize = 96 * 1024;
+pub const SETTINGS_IN_A_WORD: usize = 120 * 1024;
 
 /// The folder of the plane's state chats' settings files were kept in by earlier builds
 /// (`<state>/chat-settings`): never read now, swept ([`sweep_settings`]), and held as an

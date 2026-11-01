@@ -224,7 +224,7 @@ sleep 32
 step "the tests"
 kubectl config use-context "$context" >/dev/null
 PURLIS_RUNNER_IMAGE=$runner cargo test --manifest-path "$here/Cargo.toml" --locked \
-  --test on_a_kind_cluster -- --ignored --test-threads=1
+  --test on_a_kind_cluster -- --ignored --test-threads=1 --show-output
 
 step "a vouched runner gets a token, and everyone else a refusal"
 FAKE_GITHUB_PORT=$fake_github_port PURLIS_RUNNER_IMAGE=$runner cargo test --manifest-path "$here/Cargo.toml" --locked \
@@ -238,7 +238,7 @@ cargo build --manifest-path "$repo/Cargo.toml" --locked -p purlis-cli
 CLUSTER_POOL_TEST_PURLIS=$repo/target/debug/purlis \
 CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context \
   "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
-  --test it -- a_chat_runs_on_a_cluster_runner_through_kubectl_exec:: --ignored --test-threads=1
+  --test it -- a_chat_runs_on_a_cluster_runner_through_kubectl_exec:: --ignored --test-threads=1 --nocapture
 
 step "a whole chat on a Pool that mints, with its desktop away"
 # The stand-in for GitHub is this test's own now: the one above has ended.
@@ -253,5 +253,7 @@ kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners
   validatingadmissionpolicybinding/purlis-claims-use-their-pool \
   validatingadmissionpolicy/purlis-forge \
   validatingadmissionpolicybinding/purlis-forge \
+  validatingadmissionpolicy/purlis-operator-writes-only-a-runners-shape \
+  validatingadmissionpolicybinding/purlis-operator-writes-only-a-runners-shape \
   validatingadmissionpolicy/purlis-operator-changes-only-a-sandboxs-mode \
   validatingadmissionpolicybinding/purlis-operator-changes-only-a-sandboxs-mode >/dev/null

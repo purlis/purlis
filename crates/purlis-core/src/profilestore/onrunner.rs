@@ -62,6 +62,9 @@ pub struct Kept {
     pub limits: Chosen,
     /// The highest those can be on the runner it goes to, where that is lower than any pool's.
     pub highest: Chosen,
+    /// The Claude Code state file its user-scope MCP servers are read from, where the runner it
+    /// goes to keeps them (1.66, #3846).
+    pub mcp_state: Option<PathBuf>,
 }
 
 /// **The most bytes of settings files sent in one `keep_profile`**, to a runner before 1.56
@@ -122,6 +125,7 @@ impl Kept {
             settings_in: None,
             limits: Chosen::default(),
             highest: Chosen::default(),
+            mcp_state: None,
         })
     }
 
@@ -131,6 +135,8 @@ impl Kept {
     #[must_use]
     pub fn with_settings_of(mut self, record: &MachineProfile) -> Self {
         self.settings_in = (!record.sandbox_only).then(|| record.folders.config.clone());
+        self.mcp_state = (!record.sandbox_only && record.harness == "claude")
+            .then(|| super::sent::claude_state_file(record));
         self
     }
 
@@ -138,6 +144,13 @@ impl Kept {
     #[must_use]
     pub fn held_to(mut self, limits: Chosen) -> Self {
         self.limits = limits;
+        self
+    }
+
+    /// This profile, going to a runner before 1.66, which keeps no MCP servers.
+    #[must_use]
+    pub fn with_no_mcp_servers(mut self) -> Self {
+        self.mcp_state = None;
         self
     }
 
@@ -180,7 +193,9 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
             if !read.left_behind.is_empty() {
                 return Err(too_large());
             }
-            let read = read.files;
+            let skipped = read.skipped;
+            let mut read = read.files;
+            read.retain(|(path, _)| path != super::sent::MCP_SERVERS_FILE);
             if read.len() > MOST_SETTINGS_FILES {
                 return Err(format!(
                     "its settings in {} are more than {MOST_SETTINGS_FILES} files, more than a \
@@ -190,14 +205,18 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
             }
             let mut sent = Vec::with_capacity(read.len());
             let mut size = 0;
+            let mut left_out = LeftOut::default();
             for (path, bytes) in read {
-                let bytes = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
+                let file = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
+                left_out.add(&path, &file);
+                let bytes = file.bytes;
                 size += bytes.len() + path.len() + FRAMING_BYTES;
                 sent.push(purlis_session_protocol::session::SettingsFile { path, bytes });
             }
             if size > MOST_SETTINGS_BYTES {
                 return Err(too_large());
             }
+            left_out.keep_for(&kept.name, skipped);
             Some(sent)
         }
         None => None,
@@ -275,6 +294,90 @@ pub fn over_limit_on(pool: &str, refused: &str) -> Option<OverLimit> {
         .values()
         .find(|over| over.pool.as_deref() == Some(pool) && refused.contains(&over.said))
         .cloned()
+}
+
+/// What a profile's settings left out on their way to a runner, as they were last read (#3848).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct LeftOut {
+    /// Each thing left out, by where it was and why, never by its value.
+    what: Vec<String>,
+    /// The variables among it that only choose an endpoint or a provider (#3867).
+    variables: Vec<String>,
+}
+
+impl LeftOut {
+    /// What the filter took from the settings file `path`.
+    fn add(&mut self, path: &str, file: &super::sent::Filtered) {
+        let short = crate::shown::short(path);
+        self.what
+            .extend(file.removed.iter().map(|what| format!("{short}: {what}")));
+        for variable in &file.variables {
+            if !self.variables.contains(variable) {
+                self.variables.push(variable.clone());
+            }
+        }
+    }
+
+    /// Kept as what the profile `name` last left out, with what the read of it passed over after
+    /// what was taken out, whose names are the ones a chat most needs. A name that may hold a value
+    /// is not repeated.
+    fn keep_for(mut self, name: &str, skipped: Vec<String>) {
+        self.what.extend(skipped.iter().map(|one| {
+            if crate::secretshape::token_kind(one).is_some() {
+                "a file named like a credential".to_owned()
+            } else {
+                crate::shown::short(one)
+            }
+        }));
+        LEFT_OUT
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(name.to_owned(), self);
+    }
+}
+
+/// Forgets what the profile `profile` last left out, before a start that may send nothing.
+pub fn forget_left_out(profile: &str) {
+    LEFT_OUT
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .remove(profile);
+}
+
+static LEFT_OUT: Mutex<BTreeMap<String, LeftOut>> = Mutex::new(BTreeMap::new());
+
+/// The most things of a profile's settings [`left_out_said`] names, before it counts the rest.
+const MOST_NAMED: usize = 12;
+
+/// **What a chat's tab says of what the profile `profile`'s settings left out on their way to its
+/// runner**, once for each chat that starts there (#3848, #3867): each thing and why, and each
+/// variable that only chooses an endpoint or a provider, with how to give it. `None` where nothing
+/// was left out, or nothing was sent.
+#[must_use]
+pub fn left_out_said(profile: &str) -> Option<String> {
+    let all = LEFT_OUT.lock().unwrap_or_else(PoisonError::into_inner);
+    let left = all.get(profile)?;
+    if left.what.is_empty() {
+        return None;
+    }
+    let named = left.what[..left.what.len().min(MOST_NAMED)].join("; ");
+    let more = left.what.len().saturating_sub(MOST_NAMED);
+    let mut said = format!(
+        "The runner was sent the profile '{}' without some of its settings: {named}",
+        crate::shown::short(profile)
+    );
+    if more > 0 {
+        said.push_str(&format!("; and {more} more"));
+    }
+    said.push('.');
+    if !left.variables.is_empty() {
+        said.push_str(&format!(
+            " {} set an endpoint or a provider, so this chat may use another than a chat on this \
+             machine. To give it one, put it in a vault a persona declares, and start the chat as that persona.",
+            left.variables[..left.variables.len().min(MOST_NAMED)].join(", ")
+        ));
+    }
+    Some(said)
 }
 
 /// The hits of a profile of `bytes` in `files`, against what `kept` is held to.
@@ -363,7 +466,7 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
         let chosen = kept.limits.in_force(id);
         kept.highest.get(id).map_or(chosen, |most| most.min(chosen))
     };
-    let read = super::made::settings_read(
+    let mut read = super::made::settings_read(
         &kept.harness,
         folder,
         usize::try_from(in_force(LimitId::ProfileSize).saturating_mul(MIB)).unwrap_or(usize::MAX),
@@ -377,14 +480,31 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
         let files = (read.files.len() + read.left_behind.len()) as u64;
         return Err(refused_over_limit(kept, limits_hit(kept, bytes, files)));
     }
+    // Only what the state file says: a file of that name in the folder is no server of its.
+    read.files
+        .retain(|(path, _)| path != super::sent::MCP_SERVERS_FILE);
+    if let Some(servers) = kept
+        .mcp_state
+        .as_deref()
+        .and_then(super::sent::mcp_servers_of)
+    {
+        read.files
+            .push((super::sent::MCP_SERVERS_FILE.to_owned(), servers));
+    }
     let mut sent = Vec::with_capacity(read.files.len());
+    let mut left_out = LeftOut::default();
     for (path, bytes) in read.files {
         if let Some(why) = too_large(&path, bytes.len()) {
             return Err(why);
         }
-        let bytes = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
-        sent.push(wire::SettingsFile { path, bytes });
+        let file = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
+        left_out.add(&path, &file);
+        sent.push(wire::SettingsFile {
+            path,
+            bytes: file.bytes,
+        });
     }
+    left_out.keep_for(&kept.name, read.skipped);
     let sent = match only_what_changed(&kept.harness, sent, held) {
         Ok((changed, sent)) => {
             profile.settings_changed = Some(changed);
@@ -719,6 +839,7 @@ impl From<&purlis_session_protocol::session::ProfileToKeep> for Kept {
             settings_in: None,
             limits: Chosen::default(),
             highest: Chosen::default(),
+            mcp_state: None,
         }
     }
 }
@@ -824,8 +945,26 @@ pub fn kept_for_the_desktop(
     let record = keep(homes, home, &Kept::from(sent), desktop, now)?;
     if let Some(files) = &checked {
         super::made::settings_kept(homes, &record, files)?;
+        keep_mcp_servers_of(&record, files);
     }
+    super::made::loaded_unsent_cleared(&record)?;
     Ok(standing_for_the_wire(standing(&record, look)))
+}
+
+/// Puts the MCP servers among `files`, kept for `record`, into its state file, where only purlis
+/// writes it (#3846). None sent leaves them as they are.
+fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) {
+    let servers = files
+        .iter()
+        .find(|(path, _)| path == super::sent::MCP_SERVERS_FILE)
+        .filter(|_| record.harness == "claude")
+        .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok());
+    if let Some(servers) = servers.as_ref().and_then(|doc| doc.get("mcpServers")) {
+        crate::sandbox::claude_wrap::keep_mcp_servers(
+            &super::sent::claude_state_file(record),
+            servers,
+        );
+    }
 }
 
 /// **The name of each profile this runner, with `homes` its store, keeps for the desktop

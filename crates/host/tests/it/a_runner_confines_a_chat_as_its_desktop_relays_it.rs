@@ -685,12 +685,12 @@ async fn the_window_is_named_on_the_runner_only_the_confinement_of_the_chat_it_s
         })
         .await
         .unwrap_err();
-    let taken_back = window
+    let asked = window
         .call(Command::ProgramsOf {
             project: PROJECT.into(),
         })
         .await
-        .unwrap_err();
+        .expect("the window asks which of its chats run");
     hosts.confines.proxy_did(
         CONFINEMENT,
         SandboxTold::Refused {
@@ -703,10 +703,15 @@ async fn the_window_is_named_on_the_runner_only_the_confinement_of_the_chat_it_s
         refused.refusal().map(|r| r.code.as_str()),
         Some(session::NO_SUCH_CHAT)
     );
-    assert_eq!(
-        taken_back.refusal().map(|r| r.code.as_str()),
-        Some(session::NOT_ALLOWED),
-        "a relayed link is never named a place's every confinement"
+    let Answer::Programs(programs) = asked else {
+        panic!("answered {asked:?}");
+    };
+    assert!(
+        programs
+            .iter()
+            .filter_map(|program| program.confined.as_ref())
+            .all(|confined| confined.confinement != CONFINEMENT),
+        "a relayed link is never named the runner's own window's confinement"
     );
     assert!(
         timeout(Duration::from_millis(300), next_sandbox(&mut events))

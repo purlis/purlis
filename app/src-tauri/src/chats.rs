@@ -187,6 +187,9 @@ pub struct ChatForSkills {
     /// Where its plane skills came from, as its start read them (#3234): what its set is routed
     /// from again (#3245).
     pub start: purlis_core::hoststart::ChatSkills,
+    /// How its router did on its latest prompt (#4297), held with `start` so the two are of one
+    /// start.
+    pub last_prompt: Option<purlis_core::skills::router::Record>,
     /// What its prompts are digested under (SK-38, #3369): its prompt key, which its hooks read
     /// too. None for a chat whose host gave it none.
     pub salt: Option<purlis_core::skillspan::PromptSalt>,
@@ -206,6 +209,8 @@ pub struct ChatRouted {
     pub workspace: Option<String>,
     pub persona: Option<String>,
     pub routed: std::sync::Arc<purlis_core::skills::router::Routed>,
+    /// How its router did on its latest prompt, where it was asked on one (#4297).
+    pub last_prompt: Option<purlis_core::skills::router::Record>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -438,6 +443,10 @@ struct Running {
     /// stamp and Use skill… route it from again, so neither reads its clone a second time and
     /// both see the set it was handed (#3245).
     skills_read: purlis_core::hoststart::ChatSkills,
+    /// **How its router did on its latest prompt** (#4297, ADR 0102 §6): the routing record, which
+    /// holds no word of the prompt, for the Routing page and its tab. Held only while it runs;
+    /// the event log keeps every one.
+    last_prompt: Option<purlis_core::skills::router::Record>,
     /// **A runner chat's workspace clones as its session started here** (#2053): each clone of
     /// the plane's workspaces and its `.git`'s identity, read as this window started it. Only
     /// these name its repos for a GitHub App's token this desktop mints for it. `None` for a
@@ -743,6 +752,9 @@ pub struct Chats {
     /// 2026-10-16): their program's end is no end of the chat, and is taken as none.
     replacing: Mutex<std::collections::HashSet<u32>>,
     late_notes: Mutex<HashMap<u32, Vec<String>>>,
+    /// The chats told what their settings left out on the way to a runner, by session, so a chat
+    /// started again says it once (#3867).
+    left_out_told: Mutex<std::collections::HashSet<u32>>,
     /// The skills each chat's persona names that it started without (SK-5, #2768), by session:
     /// what its tab's Notice says until it is put away ([`Self::skills_missing`]).
     skills_missing: Mutex<HashMap<u32, SkillsMissing>>,
@@ -1269,6 +1281,7 @@ impl Chats {
             settled: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
+            left_out_told: Mutex::new(std::collections::HashSet::new()),
             skills_missing: Mutex::new(HashMap::new()),
             project_settings: crate::projectsettings::Watch::new(),
             sizes: Mutex::new(HashMap::new()),
@@ -3678,12 +3691,21 @@ impl Chats {
         // (#2049): signed in, it starts with nobody asked, a moved chat's too; signed out, it
         // starts nothing and waits as one Ask to sign it in on that pool. Settings over the pool's
         // limits start nothing either, and say what to raise (spec #4275).
+        if let Some(profile) = chat.profile.as_deref().filter(|_| on_the_runner) {
+            purlis_core::profilestore::onrunner::forget_left_out(profile);
+        }
         if on_the_runner
             && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
             && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
         {
             on_pools.ready(&self.project, &pool, profile)?;
         }
+        // What its settings left out on their way there, said once on its tab (#3848, #3867).
+        let left_out = chat
+            .profile
+            .as_deref()
+            .filter(|_| on_the_runner)
+            .and_then(purlis_core::profilestore::onrunner::left_out_said);
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
         // Never a port given for a grant to serve on alone: a runner opens no door (#2019).
@@ -4477,6 +4499,9 @@ impl Chats {
             Some(why) => lock(&self.untaken).insert(session, why),
             None => lock(&self.untaken).remove(&session),
         };
+        if let Some(said) = left_out.filter(|_| lock(&self.left_out_told).insert(session)) {
+            late.push(said);
+        }
         if !late.is_empty() && !reattaching {
             lock(&self.late_notes).insert(session, late);
         }
@@ -4524,6 +4549,7 @@ impl Chats {
                 grants_as: grants_persona_of(chat, &self.project),
                 skills: stamp,
                 skills_read: (*skills).clone(),
+                last_prompt: None,
                 plane_skills,
                 clones_at_start: clones_at_start.take(),
                 prompt_key,
@@ -5470,6 +5496,7 @@ impl Chats {
             harness: running.harness,
             start: running.skills_read.clone(),
             plane_skills: running.plane_skills,
+            last_prompt: running.last_prompt.clone(),
             salt: running.prompt_key.clone(),
             cwd: running.chat.cwd.clone(),
             // As its start read its declaration: what a running chat started with (decision 15).
@@ -5497,11 +5524,35 @@ impl Chats {
             .routed
             .clone()?;
         let router = lock(&self.router).clone()?;
-        let prompted = routed.on_prompt(prompt, &router)?;
+        let Some(prompted) = routed.on_prompt(prompt, &router) else {
+            self.keep_last_prompt(session, &routed, None);
+            return None;
+        };
+        self.keep_last_prompt(session, &routed, Some(&prompted.record));
         if let Some(tell) = lock(&self.routed).as_ref() {
             tell(session, &prompted.record);
         }
         prompted.pointer
+    }
+
+    /// Keeps `record` as chat `session`'s latest prompt's routing, or none where its router was
+    /// not asked, where the chat is still the start `routed` came from: the router may take its
+    /// 100 ms while it is started again.
+    fn keep_last_prompt(
+        &self,
+        session: u32,
+        routed: &Arc<purlis_core::skills::router::Routed>,
+        record: Option<&purlis_core::skills::router::Record>,
+    ) {
+        if let Some(running) = lock(&self.open).get_mut(&session)
+            && running
+                .skills_read
+                .routed
+                .as_ref()
+                .is_some_and(|now| Arc::ptr_eq(now, routed))
+        {
+            running.last_prompt = record.cloned();
+        }
     }
 
     /// **Every chat open here that its start routed by a router extension** (SK-15b), by number,
@@ -5516,6 +5567,7 @@ impl Chats {
                     workspace: running.workspace.clone(),
                     persona: running.persona().started_as,
                     routed: running.skills_read.routed.clone()?,
+                    last_prompt: running.last_prompt.clone(),
                 })
             })
             .collect();

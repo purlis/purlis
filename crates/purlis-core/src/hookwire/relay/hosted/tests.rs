@@ -108,6 +108,16 @@ fn a_desktop(there: &Arc<AtomicBool>, deciding: Deciding) -> Desktop {
 
 /// [`a_desktop`], whose host asks `mints` of the cluster first.
 fn a_desktop_minting(there: &Arc<AtomicBool>, deciding: Deciding, mints: InCluster) -> Desktop {
+    a_desktop_saying(there, deciding, mints, None)
+}
+
+/// [`a_desktop_minting`], whose window writes `says` to each run it sends no values.
+fn a_desktop_saying(
+    there: &Arc<AtomicBool>,
+    deciding: Deciding,
+    mints: InCluster,
+    says: Option<String>,
+) -> Desktop {
     let (window, holding) = a_window();
     let heard: ExecsHeard = Arc::default();
     let mut hearing = the_windows(&window, &holding);
@@ -124,6 +134,8 @@ fn a_desktop_minting(there: &Arc<AtomicBool>, deciding: Deciding, mints: InClust
             }
             if let Some(handed) = deciding(&ask, reader) {
                 assert!(hand_values(handed).is_ok(), "sent to the host");
+            } else if let Some(says) = &says {
+                let _ = writeln!(writer, "{says}");
             }
         })
     };
@@ -780,7 +792,8 @@ fn a_host_told_of_no_port_hands_a_minting_tool_to_the_window_saying_nothing_of_i
 }
 
 /// A chat that keeps running its tool while the port refuses it asks the operator once for now
-/// (#4332), and each run still reaches the window, whose gate and Ask decide.
+/// (#4332), and each run still reaches the window, whose gate and Ask decide. The pace a hang-up
+/// leaves on asking is cleared here: [`a_run_that_hangs_up_once_asked_paces_the_next_ask`] has it.
 #[test]
 fn a_chats_refused_mints_are_paced_and_each_still_goes_to_the_window() {
     let project = a_composed_minting_chat();
@@ -788,7 +801,7 @@ fn a_chats_refused_mints_are_paced_and_each_still_goes_to_the_window() {
     let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let desktop = a_desktop_minting(
         &there,
-        Arc::new(|_, _| None),
+        a_window_asking_until_input_ends(),
         Arc::new({
             let asked = Arc::clone(&asked);
             move |_, _| {
@@ -811,12 +824,56 @@ fn a_chats_refused_mints_are_paced_and_each_still_goes_to_the_window() {
         );
         asker.shutdown(std::net::Shutdown::Write).unwrap();
         let _ = done.recv_timeout(Duration::from_secs(10));
+        let paced = (project.path().to_path_buf(), MINTING, "gh".to_owned());
+        soon("the hang-up left no pace", || {
+            desktop.relaying.asks_paced.waits(&paced).is_some()
+        });
+        desktop.relaying.asks_paced.cleared(&paced);
     }
     assert_eq!(
         asked.load(Ordering::SeqCst),
         1,
         "the operator is asked once"
     );
+}
+
+/// A window that holds its Ask open until the run's input ends, as one asking the person does.
+fn a_window_asking_until_input_ends() -> Deciding {
+    Arc::new(|_: &brokered::Ask, mut reader: Box<dyn BufRead + Send>| {
+        let _ = std::io::copy(&mut reader, &mut std::io::sink());
+        None
+    })
+}
+
+/// A run that hangs up once the person is asked withdraws the Ask, which costs them as a refusal
+/// does: the next is refused here, with nobody asked again.
+#[test]
+fn a_run_that_hangs_up_once_asked_paces_the_next_ask() {
+    let project = a_composed_minting_chat();
+    let there = Arc::new(AtomicBool::new(true));
+    let desktop = a_desktop_minting(
+        &there,
+        a_window_asking_until_input_ends(),
+        Arc::new(|_, _| Some(Err("the claim or its pool is stopped".to_owned()))),
+    );
+    desktop.relaying.of_project_at(project.path());
+    let paced = (project.path().to_path_buf(), MINTING, "gh".to_owned());
+    let host = Arc::new(desktop.host);
+    let (_, asker, _done) = an_exec_on(Arc::clone(&host), gh_asked());
+    soon("the window never heard it", || {
+        desktop.heard.lock().unwrap().len() == 1
+    });
+    assert_eq!(desktop.relaying.asks_paced.waits(&paced), None);
+    asker.shutdown(std::net::Shutdown::Write).unwrap();
+    soon("the hang-up left no pace", || {
+        desktop.relaying.asks_paced.waits(&paced).is_some()
+    });
+    let (written, again, _again_done) = an_exec_on(Arc::clone(&host), gh_asked());
+    soon("the next was never told", || {
+        said(&written).contains("does not ask again")
+    });
+    assert_eq!(desktop.heard.lock().unwrap().len(), 1, "asked once");
+    let _ = again.shutdown(std::net::Shutdown::Write);
 }
 
 /// Once the window has refused such a run too, the next is refused here, saying so, with the person
@@ -844,6 +901,106 @@ fn a_run_the_window_refused_is_not_asked_of_the_person_again_at_once() {
     let _ = done.recv_timeout(Duration::from_secs(10));
     assert!(desktop.heard.lock().unwrap().is_empty(), "nobody is asked");
     assert!(desktop.ran.lock().unwrap().is_empty());
+}
+
+/// Runs started together cost the operator one question, and the person one Ask: those that come
+/// while one is under way wait for what comes of it (#4374).
+#[test]
+fn runs_started_together_ask_once_and_the_rest_go_by_what_came_of_it() {
+    let project = a_composed_minting_chat();
+    let there = Arc::new(AtomicBool::new(true));
+    let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let refused = serde_json::to_string(&brokered::Frame::Refused {
+        why: "refused by the person".to_owned(),
+        code: 1,
+    })
+    .unwrap();
+    let desktop = a_desktop_saying(
+        &there,
+        Arc::new(|_, _| None),
+        Arc::new({
+            let asked = Arc::clone(&asked);
+            move |_, _| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                // Long enough for every run below to have come while it is under way.
+                std::thread::sleep(Duration::from_millis(300));
+                Some(Err("the claim or its pool is stopped".to_owned()))
+            }
+        }),
+        Some(refused),
+    );
+    desktop.relaying.of_project_at(project.path());
+    let host = Arc::new(desktop.host);
+    let runs: Vec<_> = (0..4)
+        .map(|_| an_exec_on(Arc::clone(&host), gh_asked()))
+        .collect();
+    soon("the others were never told", || {
+        runs.iter()
+            .filter(|(written, ..)| said(written).contains("does not ask again"))
+            .count()
+            == 3
+    });
+    assert_eq!(
+        asked.load(Ordering::SeqCst),
+        1,
+        "the operator is asked once"
+    );
+    assert_eq!(
+        desktop.heard.lock().unwrap().len(),
+        1,
+        "the person is asked once"
+    );
+    for (_, asker, _) in &runs {
+        let _ = asker.shutdown(std::net::Shutdown::Write);
+    }
+}
+
+/// An asker that hangs up while it waits stops waiting, and takes no turn (#4374).
+#[test]
+fn a_run_waiting_for_its_turn_that_hangs_up_asks_nothing() {
+    let project = a_composed_minting_chat();
+    let there = Arc::new(AtomicBool::new(true));
+    let desktop = a_desktop_minting(
+        &there,
+        Arc::new(|_, _| None),
+        Arc::new(|_, _| Some(Err("the claim or its pool is stopped".to_owned()))),
+    );
+    desktop.relaying.of_project_at(project.path());
+    let paced = (project.path().to_path_buf(), MINTING, "gh".to_owned());
+    let held = desktop
+        .relaying
+        .ask_turns
+        .taken_within(&paced, Duration::ZERO)
+        .expect("free");
+    let (_, asker, done) = an_exec_through(desktop.host, gh_asked());
+    asker.shutdown(std::net::Shutdown::Write).unwrap();
+    done.recv_timeout(Duration::from_secs(10))
+        .expect("it stopped waiting");
+    drop(held);
+    assert!(desktop.heard.lock().unwrap().is_empty(), "nobody is asked");
+    assert_eq!(
+        desktop.relaying.asks_paced.waits(&paced),
+        None,
+        "and it costs no pace"
+    );
+}
+
+/// A chat that went leaves no pace for what starts again under its number (#4374).
+#[test]
+fn a_chat_that_went_leaves_no_pace_for_its_number() {
+    let project = a_composed_minting_chat();
+    let there = Arc::new(AtomicBool::new(true));
+    let desktop = a_desktop_minting(
+        &there,
+        Arc::new(|_, _| None),
+        Arc::new(|_, _| Some(Err("the claim or its pool is stopped".to_owned()))),
+    );
+    let paced = (project.path().to_path_buf(), MINTING, "gh".to_owned());
+    desktop.relaying.port_paced.refused(&paced, "no");
+    desktop.relaying.asks_paced.refused(&paced, "no");
+    desktop.relaying.chat_went(MINTING);
+    assert_eq!(desktop.relaying.port_paced.waits(&paced), None);
+    assert_eq!(desktop.relaying.asks_paced.waits(&paced), None);
 }
 
 /// The window says the person is being asked before they answer: only its refusal paces.

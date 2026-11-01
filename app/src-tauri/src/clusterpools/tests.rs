@@ -10,6 +10,19 @@ const CLUSTER: &str = "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b";
 #[cfg(unix)]
 const OTHER: &str = "ed25519:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
 
+/// What the Notice reads follows what `runners.json` keeps (#4442).
+#[cfg(unix)]
+#[test]
+fn the_pools_told_of_are_those_that_began_minting_until_it_is_put_away() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool_kept(config.path());
+    assert!(minting_without_asking(config.path()).unwrap().is_empty());
+    assert!(purlis_core::runners::keep_cluster_minting(config.path(), "team", true).unwrap());
+    assert_eq!(minting_without_asking(config.path()).unwrap(), ["team"]);
+    purlis_core::runners::put_away_mint_notice(config.path(), "team").unwrap();
+    assert!(minting_without_asking(config.path()).unwrap().is_empty());
+}
+
 /// A `runners.json` holding the cluster pool `team` and its runner, under `config`.
 #[cfg(unix)]
 pub(crate) fn a_cluster_pool_kept(config: &Path) {

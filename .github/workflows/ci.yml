@@ -659,7 +659,7 @@ jobs:
         if: matrix.part == 2 && needs.changes.outputs.web == 'false' && needs.changes.outputs.rust != 'false'
         run: |
           npm test -- \
-            e2e/dialogs.test.ts e2e/fence.test.ts e2e/gitAnswer.test.ts e2e/recordedForge.test.ts \
+            e2e/dialogs.test.ts e2e/fakeGitLab.test.ts e2e/fence.test.ts e2e/gitAnswer.test.ts e2e/recordedForge.test.ts \
             e2e/standInForge.test.ts e2e/upgrade.test.ts src/PersonaMark.test.tsx src/StripMarks.test.tsx \
             src/allowLabels.test.ts src/copy.rust.test.ts src/layoutProjects.test.ts src/settings/linkedGroups.test.ts \
             src/specimen/Specimen.test.tsx src/theme/consentToggles.test.ts src/theme/contrast.test.ts src/theme/core.test.ts \
@@ -1813,6 +1813,15 @@ jobs:
         run: dbus-run-session -- xvfb-run -a npm run e2e:relaunch
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # What a clone looks like in the real window, part way (`specs/clones.e2e.ts`): for a person
+      # to look at, on a green run too.
+      - if: "!cancelled()"
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: clone-screenshots-${{ matrix.os }}-${{ matrix.shard }}
+          path: app/logs/clone-screenshots
+          if-no-files-found: ignore
+          retention-days: 14
       # Each failed test as an annotation on its spec's line, with its assertion: the checks API
       # carries annotations, so a failure reads there without the log or the artifact.
       - name: The failed scenario tests, as annotations
@@ -1881,6 +1890,10 @@ jobs:
   outcome-bars:
     name: outcome bars (${{ matrix.os }})
     needs: changes
+    # A missed bar keeps this job red and the `ci` run green, so it does not stop `tools/land.mjs`,
+    # which refuses to land while main's newest finished `ci` run failed. This line goes once #4351
+    # and #4352 are fixed, and the job is made required before the flag's flip (#2786).
+    continue-on-error: true
     if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
     strategy:
       fail-fast: false

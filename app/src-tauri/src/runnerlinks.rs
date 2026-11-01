@@ -138,7 +138,13 @@ impl ToARunner {
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
-                let checked = if resumes {
+                // One whose sign-ins were carried off, or kept no more, is not started again.
+                let wakes = resumes
+                    && purlis_core::runners::named(&config, of.name())
+                        .ok()
+                        .flatten()
+                        .is_some_and(|now| !now.carried);
+                let checked = if wakes {
                     // When it ran, as read before it was started, then its start (#3492).
                     checking.resumed(&made).map(|resumed| {
                         hours_seen(&config, &of, resumed.before);
@@ -302,6 +308,30 @@ pub fn cluster_reached(
     }
 }
 
+/// **The draining runners of `pool` a window's restart asks for the chats it left** (#4271), each
+/// as `<pool>/<runner>`. Only one that runs: a link wakes a suspended runner (#2051), which holds
+/// no chat. None whose drain began, which takes no link or has no chat left.
+pub fn draining_to_ask(config: &Path, pool: &str) -> Vec<String> {
+    docker().map_or_else(
+        |_| Vec::new(),
+        |docker| draining_to_ask_on(&docker, config, pool),
+    )
+}
+
+/// [`draining_to_ask`], through `docker`.
+pub(crate) fn draining_to_ask_on(docker: &Docker, config: &Path, pool: &str) -> Vec<String> {
+    let Ok(draining) = purlis_core::runners::draining(config) else {
+        return Vec::new();
+    };
+    draining
+        .into_iter()
+        .filter(|kept| kept.pool() == pool)
+        .filter(|kept| !kept.unpaired && !kept.carried && !kept.carry_failed)
+        .filter(|kept| docker.running(&kept.made).unwrap_or(false))
+        .map(|kept| format!("{}/{}", kept.pool(), kept.name()))
+        .collect()
+}
+
 /// This machine's `docker`, where the window's `PATH` or Docker's installers put it.
 pub fn docker() -> Result<Docker, String> {
     let path = purlis_core::envvar::var("PATH");
@@ -348,24 +378,10 @@ pub fn relaying(
         }
         let resolved = format!("{}/{}", kept.pool(), kept.name());
         let to = ToARunner::of_kept_waking(&machine, &kept)?;
-        Ok((
-            Arc::new(move || {
-                // A runner removed outside purlis and made again (#4149) is kept no more: the
-                // pool's runner made in its place is linked to. A runner still kept, a draining
-                // one too, is kept to, so a pool moved after an update leaves its chats where
-                // they run.
-                let forgotten = matches!(
-                    purlis_core::runners::named(&machine.config, kept.name()),
-                    Ok(None)
-                );
-                let again = (forgotten && !kept.draining)
-                    .then(|| purlis_core::runners::runner_for(&machine.config, kept.pool()).ok())
-                    .flatten()
-                    .and_then(|now| ToARunner::of_kept_waking(&machine, &now).ok());
-                again.as_ref().unwrap_or(&to).keep()
-            }) as purlis_host::Keep,
-            resolved,
-        ))
+        // Only ever this runner: a pool moved after an update, or a runner made again, leaves this
+        // link where it was until it ends (#4168), and what comes next is relayed anew to the
+        // runner kept then.
+        Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
     })
 }
 
@@ -834,10 +850,15 @@ fn as_its_runner_holds(
     version: purlis_session_protocol::version::Version,
     kept: &purlis_core::profilestore::onrunner::Kept,
 ) -> purlis_core::profilestore::onrunner::Kept {
-    if version >= purlis_session_protocol::session::KNOWS_LARGER_PROFILE_SETTINGS {
+    let kept = if version >= purlis_session_protocol::session::KNOWS_LARGER_PROFILE_SETTINGS {
         kept.clone()
     } else {
         kept.clone().on_an_older_runner()
+    };
+    if version >= purlis_session_protocol::session::KNOWS_PROFILE_MCP_SERVERS {
+        kept
+    } else {
+        kept.with_no_mcp_servers()
     }
 }
 

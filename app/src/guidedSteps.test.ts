@@ -29,18 +29,32 @@ describe("the guided steps", () => {
     expect(guides(held, true)).toBe(true);
   });
 
-  it("go welcome, project, harness, open on a fresh machine", () => {
+  it("move between the doors from any page, since the doors stay in sight", () => {
+    const atCreate = walk({ kind: "door", door: "create" });
+    expect(next(atCreate, { kind: "door", door: "get" })).toMatchObject({
+      step: "project",
+      door: "get",
+    });
+    const signing = next(atCreate, { kind: "sign-in" });
+    expect(signing).toMatchObject({ step: "sign-in", door: null, signing_in: true });
+    expect(next(signing, { kind: "door", door: "get" })).toMatchObject({
+      step: "project",
+      door: "get",
+    });
+  });
+
+  it("count a project and a harness on a fresh machine, and not the welcome or the end", () => {
     const counted = (progress: Progress) => stepsOf(progress, { harnessMissing: false });
     expect(counted(FRESH)).toEqual({
-      steps: ["welcome", "project", "harness", "open"],
+      steps: ["project", "harness"],
       at: 0,
     });
     const atCreate = walk({ kind: "door", door: "create" });
     expect(atCreate).toMatchObject({ step: "project", door: "create" });
-    expect(counted(atCreate).at).toBe(1);
+    expect(counted(atCreate).at).toBe(0);
     const holding = next(atCreate, { kind: "arrived", made, harnessMissing: false });
     expect(holding).toMatchObject({ step: "harness", made });
-    expect(counted(holding)).toEqual({ steps: ["welcome", "project", "harness", "open"], at: 2 });
+    expect(counted(holding)).toEqual({ steps: ["project", "harness"], at: 1 });
     const done = next(holding, { kind: "finish" });
     expect(done).toEqual({ ...FRESH, finished_once: true });
   });
@@ -49,13 +63,13 @@ describe("the guided steps", () => {
     const signing = walk({ kind: "sign-in" });
     expect(signing.step).toBe("sign-in");
     expect(stepsOf(signing, { harnessMissing: true })).toEqual({
-      steps: ["welcome", "sign-in", "project", "harness", "open"],
-      at: 1,
+      steps: ["sign-in", "project", "harness"],
+      at: 0,
     });
     // Skip for now goes on to the project, and the sign-in stays counted among the steps.
     const skipped = next(signing, { kind: "skip" });
     expect(skipped).toMatchObject({ step: "project", door: null, signing_in: true });
-    expect(stepsOf(skipped, { harnessMissing: true }).at).toBe(2);
+    expect(stepsOf(skipped, { harnessMissing: true }).at).toBe(1);
     // Back from the sign-in is the welcome, without it.
     expect(next(signing, { kind: "back" })).toMatchObject({ step: "welcome", signing_in: false });
   });
@@ -65,8 +79,8 @@ describe("the guided steps", () => {
     const asked = walk({ kind: "door", door: "create" }, { kind: "needs-sign-in" });
     expect(asked).toMatchObject({ step: "sign-in", door: "create", signing_in: true });
     expect(stepsOf(asked, { harnessMissing: false })).toEqual({
-      steps: ["welcome", "sign-in", "project", "harness", "open"],
-      at: 1,
+      steps: ["sign-in", "project", "harness"],
+      at: 0,
     });
     // Signed in (Continue) or not (Skip for now): back on Create, the sign-in still counted.
     expect(next(asked, { kind: "skip" })).toMatchObject({
@@ -84,8 +98,8 @@ describe("the guided steps", () => {
     const waiting = walk({ kind: "door", door: "get" }, { kind: "git-missing" });
     expect(waiting).toMatchObject({ step: "git", door: "get", git_missing: true });
     expect(stepsOf(waiting, { harnessMissing: false })).toEqual({
-      steps: ["welcome", "project", "git", "harness", "open"],
-      at: 2,
+      steps: ["project", "git", "harness"],
+      at: 1,
     });
     const back = next(waiting, { kind: "git-settled" });
     expect(back).toMatchObject({ step: "project", door: "get", git_missing: true });
@@ -96,11 +110,7 @@ describe("the guided steps", () => {
   it("show the harness step after the first run only while no harness is installed", () => {
     const again = { ...FRESH, finished_once: true };
     const create = next(again, { kind: "door", door: "create" });
-    expect(stepsOf(create, { harnessMissing: false }).steps).toEqual([
-      "welcome",
-      "project",
-      "open",
-    ]);
+    expect(stepsOf(create, { harnessMissing: false }).steps).toEqual(["project"]);
     expect(next(create, { kind: "arrived", made, harnessMissing: false })).toEqual(again);
     expect(stepsOf(create, { harnessMissing: true }).steps).toContain("harness");
     expect(next(create, { kind: "arrived", made, harnessMissing: true })).toMatchObject({

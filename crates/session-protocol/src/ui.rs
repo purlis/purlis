@@ -299,6 +299,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A move that waited on its profile's sign-in is prepared again (#3477): it may then send
     // the chat's work to the runner, so only the person's own window says it signed in.
     "chat_move_signed_in",
+    // A pool sign-in from the command is confirmed by the person's press here, and by nothing else.
+    "pool_sign_in_asked",
+    "answer_pool_sign_in",
     "start_chat_fresh",
     "ask_chat_restart",
     // Reads what a chat was sent or said to another.
@@ -713,6 +716,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_updates",
     "skill_update_review",
     "skill_update",
+    // A publish and an export: the person's own press in their window (#2781).
+    "skill_publish_review",
+    "skill_publish",
+    "skill_export_review",
+    "skill_export",
     // A harness's plugin or skill turned on or off in the Skill studio (#2769): it writes this
     // machine's project file, or the workspace's settings. The person's own press in their
     // window.
@@ -756,6 +764,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's mark that a cluster pool is their own (#4071): half of what lets its runner
     // receive vault values and tokens, so only their own press in their window sets it.
     "set_cluster_pool_owned",
+    // The Notice that a cluster pool began minting without asking (#4442): the person's to read
+    // and to put away, so no chat can hide it from them.
+    "pools_minting_without_asking",
+    "put_away_pool_minting_notice",
     // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
     // runner, so only the person's own look in their window does.
     "pool_profiles",

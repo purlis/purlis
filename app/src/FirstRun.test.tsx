@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { chosenIn, findSelectNamed, offeredIn, pickIn } from "./ui/select/select.testkit";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
@@ -192,23 +193,20 @@ describe("the first run's project template (FR-17)", () => {
     core();
     await renderCreate();
 
-    const group = await screen.findByRole("radiogroup", { name: "Project template" });
+    const select = await findSelectNamed("Project template");
+    expect(chosenIn(select)).toBe(":fits");
     // What fits the repo, every template the core ships, and none.
-    expect(within(group).getAllByRole("radio")).toHaveLength(4);
-    expect(within(group).getByRole("radio", { name: "Fits the repo" })).toBeChecked();
-    expect(within(group).getByRole("radio", { name: "Rust" })).not.toBeChecked();
-    expect(within(group).getByRole("radio", { name: "None" })).not.toBeChecked();
-    expect(within(group).getByText("A Cargo crate or workspace.")).toBeInTheDocument();
+    expect(await offeredIn(select)).toHaveLength(4);
   });
 
   it("draws its path and template as settings are drawn (DS-3d)", async () => {
     core();
     await renderCreate();
 
-    const group = await screen.findByRole("radiogroup", { name: "Project template" });
-    const page = group.closest(".first-run") as HTMLElement;
-    // Where it lives (#1819, ruling Q2), the template and the path.
-    expect(page.querySelectorAll(".ui-setting-row")).toHaveLength(3);
+    const select = await findSelectNamed("Project template");
+    const page = select.closest(".first-run") as HTMLElement;
+    // Where it lives (#1819, ruling Q2), a new project's name, the template and the path.
+    expect(page.querySelectorAll(".ui-setting-row")).toHaveLength(4);
     // The deleted dialog classes are `settings/oldFormClasses.test.ts`'s to hold (#1210).
     expect(page.querySelector(".by-path")).toBeNull();
     const box = screen.getByLabelText("Or type the repo's path");
@@ -220,7 +218,7 @@ describe("the first run's project template (FR-17)", () => {
     core();
     await renderCreate();
 
-    const group = await screen.findByRole("radiogroup", { name: "Project template" });
+    const group = await findSelectNamed("Project template");
     const pick = screen.getByRole("button", { name: "Open a repo…" });
     const box = screen.getByLabelText("Or type the repo's path");
     // Drawn before both, so a repo is never opened before the choice is seen.
@@ -248,27 +246,16 @@ describe("the first run's project template (FR-17)", () => {
     expect(screen.getByLabelText("Or type the repo's path")).toBeInTheDocument();
   });
 
-  it("leads with its picker, and offers New project… at its foot (#1719, #1812)", async () => {
-    core();
-    await renderCreate();
-
-    const pick = await screen.findByRole("button", { name: "Open a repo…" });
-    expect(pick.closest(".ui-setting-actions")).not.toBeNull();
-    const other = screen.getByRole("button", { name: "New project…" });
-    expect(pick.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
   it("says which template fits the repo whose path is typed", async () => {
     const { calls } = core((cmd, args) =>
       cmd === "template_that_fits" ? (args.path === REPO ? "rust" : null) : undefined,
     );
     await renderCreate();
 
-    const group = await screen.findByRole("radiogroup", { name: "Project template" });
+    const select = await findSelectNamed("Project template");
     await userEvent.setup().type(screen.getByLabelText("Or type the repo's path"), REPO);
 
-    const fits = within(group).getByRole("radio", { name: "Fits the repo" });
-    await waitFor(() => expect(fits).toHaveAccessibleDescription(/Rust/));
+    await waitFor(() => expect(select).toHaveAccessibleDescription(/Rust/));
     expect(calls("template_that_fits").at(-1)?.args).toEqual({ path: REPO });
   });
 
@@ -276,8 +263,7 @@ describe("the first run's project template (FR-17)", () => {
     const { calls } = core();
     await renderCreate();
 
-    const group = await screen.findByRole("radiogroup", { name: "Project template" });
-    await userEvent.setup().click(within(group).getByRole("radio", { name: "Rust" }));
+    await pickIn(await findSelectNamed("Project template"), "Rust");
     await openRepoByPath(REPO);
 
     await vi.waitFor(() =>
@@ -291,8 +277,7 @@ describe("the first run's project template (FR-17)", () => {
     const { calls } = core();
     await renderCreate();
 
-    const group = await screen.findByRole("radiogroup", { name: "Project template" });
-    await userEvent.setup().click(within(group).getByRole("radio", { name: "None" }));
+    await pickIn(await findSelectNamed("Project template"), "None");
     await openRepoByPath(REPO);
 
     await vi.waitFor(() =>
@@ -382,29 +367,46 @@ describe("the first run", () => {
     const where = document.querySelector('[data-setting="create-project-where"]');
     const rest = (document.body.textContent ?? "").replace(where?.textContent ?? "", "");
     expect(rest).not.toMatch(/account|cloud|telemetry|sign up/i);
-    // ADR 0072's words: what a project is, and no "plane" or "repository" on the way in.
-    expect(
-      screen.getByText(/A project is where purlis keeps your workspaces, personas and memory/),
-    ).toBeInTheDocument();
+    // ADR 0072's words: no "plane" or "repository" on the way in.
     expect(document.body.textContent).not.toMatch(/plane|repository/i);
   });
 
-  it("says which harnesses are installed and signed in, and leaves the forges to Sign in", async () => {
-    core();
+  it("creates a project with no repo and no account, on the name alone (#1810 story 8)", async () => {
+    const { calls } = core((cmd, args) => {
+      if (cmd === "new_project_folder") return `/home/dev/Projects/${String(args.name)}`;
+      if (cmd === "create_project")
+        return { opened: { plane: "/home/dev/Projects/garden", ask: null }, asks_forge: null };
+      return undefined;
+    });
     await renderCreate();
+    const person = userEvent.setup();
 
-    const found = await screen.findByRole("list", { name: "On this machine" });
-    await waitFor(() => expect(within(found).getAllByRole("listitem")).toHaveLength(3));
-    const rows = within(found)
-      .getAllByRole("listitem")
-      .map((row) => row.textContent);
-    expect(rows).toEqual([
-      "Claude Code: ready",
-      "Codex: installed; it asks you to sign in when its chat starts",
-      "opencode: not installed",
-    ]);
-    // The forge tools' sign-ins are the welcome's Sign in entry's (#1812).
-    expect(screen.queryByRole("button", { name: /^Sign in to/ })).not.toBeInTheDocument();
+    const create = screen.getByRole("button", { name: "Create project" });
+    expect(create).toBeDisabled();
+    await person.type(screen.getByLabelText("Name"), "garden");
+    await screen.findByText("/home/dev/Projects/garden");
+    await waitFor(() => expect(create).toBeEnabled());
+    await person.click(create);
+
+    await vi.waitFor(() =>
+      expect(calls("create_project").map((one) => one.args)).toEqual([
+        { path: "/home/dev/Projects/garden", planeIsThisRepo: false, adopt: null, forge: null },
+      ]),
+    );
+  });
+
+  it("says why a name cannot be a project's, and keeps Create project out of reach", async () => {
+    core((cmd) => {
+      if (cmd === "new_project_folder") throw "A project's name cannot hold a slash.";
+      return undefined;
+    });
+    await renderCreate();
+    const person = userEvent.setup();
+
+    await person.type(screen.getByLabelText("Name"), "a/b");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("cannot hold a slash");
+    expect(screen.getByRole("button", { name: "Create project" })).toBeDisabled();
   });
 
   it("opens the repo into the local project and starts the first chat in its clone", async () => {
@@ -491,7 +493,7 @@ describe("the first run", () => {
     });
     await renderCreate();
 
-    expect(screen.getByRole("radiogroup", { name: "Project template" })).toBeInTheDocument();
+    expect(await findSelectNamed("Project template")).toBeInTheDocument();
   });
 
   it("starts the first chat without the picker when exactly one harness is signed in", async () => {
@@ -969,13 +971,6 @@ describe("no harness found (FR-29)", () => {
       return undefined;
     });
   }
-
-  it("says on the first run that a harness is installed after the repo is open", async () => {
-    noHarness();
-    await renderCreate();
-
-    expect(await screen.findByText(/No harness is installed on this machine/)).toBeInTheDocument();
-  });
 
   it("reaches a working chat: the official installer in a shell tab, then the picker", async () => {
     let installed = false;

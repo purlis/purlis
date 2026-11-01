@@ -114,6 +114,16 @@ pub fn update(
 ) -> io::Result<bool> {
     let dir = directory_of(path)?;
     let _held = Lock::on(&dir);
+    update_held(root, path, change)
+}
+
+/// [`update`], for a caller that holds a lock of its own for this file: a folder a chat may open
+/// is locked by name elsewhere instead, since a chat could hold a lock on the folder itself.
+pub fn update_held(
+    root: &Path,
+    path: &Path,
+    change: impl FnOnce(Option<&str>) -> io::Result<Option<String>>,
+) -> io::Result<bool> {
     let now = match std::fs::read(path) {
         Ok(bytes) => Some(String::from_utf8(bytes).map_err(|_| {
             io::Error::new(

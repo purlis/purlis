@@ -1933,7 +1933,10 @@ pub fn standing_by_login(
             format!("{} could not be run: {e}", login.program)
         }
         crate::boundedrun::Unanswered::PrintedTooMuch => {
-            "it printed more than a status check does".to_owned()
+            format!(
+                "it printed more than a status check does. {}",
+                purlis_session_protocol::fixedlimits::RUNNER_OUTPUT.said()
+            )
         }
         crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
     })?;
@@ -2193,8 +2196,10 @@ impl Docker {
                     format!("{} could not be run: {why}", self.program.display())
                 }
                 Unanswered::PrintedTooMuch => format!(
-                    "docker {} printed more than the {most} bytes purlis reads of it, so it was ended",
-                    first()
+                    "docker {} printed more than the {most} bytes purlis reads of it, so it was \
+                     ended. {}",
+                    first(),
+                    purlis_session_protocol::fixedlimits::RUNNER_OUTPUT.said()
                 ),
                 Unanswered::NotFinished(why) => {
                     format!("{} did not finish: {why}", self.program.display())
@@ -2798,6 +2803,23 @@ impl Docker {
                  runner was removed",
             )),
         }
+    }
+
+    /// **Whether an engine answers this `docker` at all** (#4478): a listing Docker and Podman
+    /// both answer, and fail where nothing is behind them. It changes nothing.
+    pub fn answers(&self) -> Result<(), Refused> {
+        self.read(
+            &[
+                "container".into(),
+                "ls".into(),
+                "--quiet".into(),
+                "--no-trunc".into(),
+                "--filter".into(),
+                "id=0".into(),
+            ],
+            MOST_INSPECTED,
+        )
+        .map(|_| ())
     }
 
     /// **Which engine this `docker` reaches** (#4166), by the id `docker info` prints for it.

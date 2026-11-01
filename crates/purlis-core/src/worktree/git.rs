@@ -592,7 +592,9 @@ fn reaches_a_remote(from: &[&str]) -> bool {
 /// **LFS's standard filter is kept** ([`LFS_FILTER`]), unless the repository's own config also
 /// names a program LFS itself would run (its transfer agents and extensions, a credential
 /// helper, an ssh or askpass program): then every `filter.lfs` program is held, the
-/// operator's own included, so `git-lfs` is never started there.
+/// operator's own included, so `git-lfs` is never started there. The helper purlis's own git
+/// policy writes into a clone is not such a program, because the filter never gets to ask it
+/// ([`lfs_filter_offline`]).
 fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
     let listing = String::from_utf8_lossy(listing);
     let mut held: Vec<String> = Vec::new();
@@ -624,7 +626,7 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
             Some((sub, variable)) => (Some(sub), variable),
             None => (None, rest),
         };
-        if lfs_names_a_program(section, sub, variable) {
+        if lfs_names_a_program(section, sub, variable, value) {
             lfs_runs_programs = true;
         }
         let driver = match (section, sub, variable) {
@@ -734,18 +736,185 @@ fn repo_names_a_recent_objects_hook(listing: &str) -> bool {
     })
 }
 
+/// Whether the repository's own config at `dir` names a program `git-lfs` itself would start, or
+/// moves its store: what refuses an upload before a push ([`crate::lfsupload`], #4399). Your
+/// global and system files are yours, and what the command line gives is the caller's. A listing
+/// that cannot be had counts as naming one.
+pub(crate) fn lfs_would_start_a_program(dir: &Path) -> Result<bool, GitUnavailable> {
+    let listed = run_raw_listing(dir)?;
+    let Some(listing) = listed else {
+        return Ok(true);
+    };
+    Ok(listed_entries(&listing).any(|(scope, key, value)| {
+        if matches!(scope, "global" | "system" | "unknown" | "command") {
+            return false;
+        }
+        // Lowered whole: a sub-section keeps its case in git's listing, and git-lfs may not.
+        let key = key.to_ascii_lowercase();
+        let Some((section, rest)) = key.split_once('.') else {
+            return false;
+        };
+        let (sub, variable) = match rest.rsplit_once('.') {
+            Some((sub, variable)) => (Some(sub), variable),
+            None => (None, rest),
+        };
+        // git-lfs finds some of these with loose patterns, and a URL-scoped key outranks the
+        // command line ([`crate::lfsupload`]): anything that spells one counts, at any depth.
+        // The exact helper purlis's git policy writes never runs: the one-credential rule empties
+        // the list, and the push's own helper follows.
+        match (section, sub, variable) {
+            ("credential", None, "helper") => !matches!(
+                value,
+                "!gh auth git-credential" | "!glab auth git-credential"
+            ),
+            ("credential", _, "helper") | ("core", None, "sshcommand" | "askpass") => true,
+            ("lfs", Some(sub), "path") if sub.starts_with("customtransfer.") => true,
+            ("lfs", Some(sub), "clean" | "smudge") if sub.starts_with("extension.") => true,
+            ("lfs", _, "storage") | ("http", _, "extraheader") => true,
+            ("alias", None, "lfs") | ("alias", Some("lfs"), _) => true,
+            _ => key.contains("customtransfer") || key.contains("standalonetransferagent"),
+        }
+    }))
+}
+
+fn run_raw_listing(dir: &Path) -> Result<Option<String>, GitUnavailable> {
+    let ran = run(dir, &["config", "--list", "--show-scope", "-z"], READ)?;
+    Ok(ran.ok().then_some(ran.out))
+}
+
 /// Whether a config key (lowercased as git lists it) names a program `git-lfs` runs when git
 /// starts it as a filter: a transfer agent or an extension of LFS's own, or the credential,
-/// ssh and askpass programs it asks for itself when it downloads.
-fn lfs_names_a_program(section: &str, sub: Option<&str>, variable: &str) -> bool {
+/// ssh and askpass programs it asks for itself when it downloads. The exact helper purlis's git
+/// policy writes is left out ([`lfs_filter_offline`]): nothing else counts as that one, neither
+/// another value nor the same value kept for one URL.
+fn lfs_names_a_program(section: &str, sub: Option<&str>, variable: &str, value: &str) -> bool {
     match (section, sub, variable) {
+        ("credential", None, "helper") if crate::forge::is_policy_helper(value) => false,
         ("lfs", Some(sub), "path") => sub.starts_with("customtransfer."),
         ("lfs", Some(sub), "clean" | "smudge") => sub.starts_with("extension."),
         ("lfs", None, "standalonetransferagent") => true,
+        // Not a program, but where git-lfs writes each file it reads, outside any sandbox.
+        ("lfs", None, "storage") => true,
         ("credential", _, "helper") => true,
         ("core", None, "sshcommand" | "askpass") => true,
         _ => false,
     }
+}
+
+/// What keeps `git-lfs` off the network as a filter (#4380): told by name to leave a file as its
+/// pointer rather than download it, which is what `git lfs install --skip-smudge` asks for. It
+/// also leaves a pointer where the object is here, measured on git-lfs 3.8.1.
+const LFS_SKIP_SMUDGE: &str = "GIT_LFS_SKIP_SMUDGE";
+
+/// Whether the filter is kept in a clone only because the helper in the repository's own config
+/// (`listing`, as [`listed_entries`] reads it) is the one purlis's git policy wrote (#4380), and
+/// so has to be kept off the network: a clone purlis wired reads its LFS files through the clean
+/// filter, or git takes their content for a change, and stores it whole in a commit.
+///
+/// The filter gains nothing by it while the wiring stands (a repository with no helper of its
+/// own has the person's filter and helpers, as any clone of theirs does). [`programs_held`] tells it never to download
+/// ([`LFS_SKIP_SMUDGE`]), so no credential is asked for and no `.netrc` read, and a call off the
+/// network also resets every helper on the command line, which git-lfs's own `git credential`
+/// inherits. A call on the network has only the one helper [`NETWORK_RULE`] names, and still
+/// downloads nothing. So a download in such a clone is `git lfs pull`, under that rule. A store
+/// that is not the repository's own holds the filter instead ([`lfs_store_is_its_own`]).
+fn lfs_filter_offline(listing: &str) -> bool {
+    let mut wired = false;
+    for (scope, key, value) in listed_entries(listing) {
+        if matches!(scope, "global" | "system" | "unknown" | "command") {
+            continue;
+        }
+        let Some((section, rest)) = key.split_once('.') else {
+            continue;
+        };
+        let (sub, variable) = match rest.rsplit_once('.') {
+            Some((sub, variable)) => (Some(sub), variable),
+            None => (None, rest),
+        };
+        if lfs_names_a_program(section, sub, variable, value) {
+            return false;
+        }
+        wired |= section == "credential" && sub.is_none() && variable == "helper";
+    }
+    wired
+}
+
+/// What holds the whole of the LFS filter, the person's own included.
+const LFS_HELD: [&str; 4] = [
+    "filter.lfs.clean=",
+    "filter.lfs.smudge=",
+    "filter.lfs.process=",
+    "filter.lfs.required=false",
+];
+
+/// Whether the store `git-lfs` would write to here is the repository's own: no symbolic link at
+/// `.git/lfs`, among what it holds, or in `objects/<xx>/<yy>`, the deepest folder it writes in.
+/// A chat's sandbox lets it write there, and this git runs outside that sandbox, so a link would
+/// have the filter write the chat's bytes where the chat chose (#4380). Where it cannot tell
+/// (git is told of another directory, a folder cannot be read, or any config moves the store
+/// with `lfs.storage`) the answer is no, and the filter is held. **Not a closed race**, like the listing: a link made after this is followed.
+fn lfs_store_is_its_own(
+    dir: &Path,
+    before_verb: &[&str],
+    link: Option<&(PathBuf, PathBuf)>,
+    listing: &str,
+) -> bool {
+    if listed_entries(listing).any(|(_, key, _)| key.eq_ignore_ascii_case("lfs.storage")) {
+        return false;
+    }
+    if !before_verb.iter().all(|word| {
+        !matches!(*word, "-C" | "--git-dir" | "--work-tree")
+            && !word.starts_with("--git-dir=")
+            && !word.starts_with("--work-tree=")
+    }) {
+        return false;
+    }
+    let Some(common) = common_git_dir(dir, link) else {
+        return false;
+    };
+    let store = common.join("lfs");
+    match store.symlink_metadata() {
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        Ok(found) => found.is_dir() && holds_no_link(&store, 2),
+    }
+}
+
+/// The git directory whose `lfs` folder serves `dir`: the one its top's `.git` folder is, or for
+/// a linked worktree the one the checked git directory's `commondir` names.
+fn common_git_dir(dir: &Path, link: Option<&(PathBuf, PathBuf)>) -> Option<PathBuf> {
+    if let Some((_, git_dir)) = link {
+        let Ok(named) = std::fs::read_to_string(git_dir.join("commondir")) else {
+            return Some(git_dir.clone());
+        };
+        return Some(git_dir.join(named.trim()));
+    }
+    // The folder as git climbs it, links resolved. The nearest `.git` must be one git takes: it
+    // climbs past a folder that is no repository, and this cannot say how far.
+    std::fs::canonicalize(dir)
+        .ok()?
+        .ancestors()
+        .map(|folder| folder.join(".git"))
+        .find(|git| git.symlink_metadata().is_ok())
+        .filter(|git| {
+            git.symlink_metadata().is_ok_and(|found| found.is_dir()) && git.join("HEAD").is_file()
+        })
+}
+
+/// Whether `folder`, down `depth` folders, holds no symbolic link and can all be read.
+fn holds_no_link(folder: &Path, depth: u8) -> bool {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return false;
+    };
+    entries.into_iter().all(|entry| {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        let Ok(kind) = entry.file_type() else {
+            return false;
+        };
+        !kind.is_symlink()
+            && (!kind.is_dir() || depth == 0 || holds_no_link(&entry.path(), depth - 1))
+    })
 }
 
 /// `extra` with the programs the repository's own config names held ([`held_programs`]) for a
@@ -807,6 +976,17 @@ fn programs_held(
     match held_programs(reaches_a_remote(&args[at..]), &listed) {
         Some(settings) => {
             extra.config.extend(settings);
+            // `git lfs` itself is no filter: it is how such a clone downloads, under the rule.
+            if args[at] != "lfs" && lfs_filter_offline(&said) {
+                if lfs_store_is_its_own(dir, &args[..at], extra.link.as_ref(), &said) {
+                    extra.pass.push((LFS_SKIP_SMUDGE.to_owned(), "1".into()));
+                    if !extra.network {
+                        extra.config.push("credential.helper=".to_owned());
+                    }
+                } else {
+                    extra.config.extend(LFS_HELD.map(str::to_owned));
+                }
+            }
             Ok(Ok(extra))
         }
         None => Ok(Err(refused_raw(UNHELD_PROGRAM))),
@@ -2133,6 +2313,14 @@ pub(crate) fn network_call_ended(dir: &Path, args: &[&str], ok: bool, started: I
     for (operation, remote) in destinations(dir, args) {
         crate::netlog::git_call(operation, &remote, ok, started.elapsed());
     }
+}
+
+/// Each URL a push given `args` goes to, read as git reads it ([`destinations`]).
+pub(crate) fn push_destinations(dir: &Path, args: &[&str]) -> Vec<String> {
+    destinations(dir, args)
+        .into_iter()
+        .map(|(_, url)| url)
+        .collect()
 }
 
 /// The verbs that reach a remote the repository names, by its name or as its default.

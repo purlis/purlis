@@ -22,8 +22,8 @@ export type Progress = OnboardingProgress;
 export type Door = OnboardingDoor;
 export type Made = OnboardingMade;
 
-/** A step the person is counted through. `open` is the last, and is the project in front. */
-export type Counted = OnboardingStep | "open";
+/** A step the person is counted through. */
+export type Counted = Exclude<OnboardingStep, "welcome">;
 
 /** Where a machine with nothing kept starts. */
 export const FRESH: Progress = {
@@ -73,10 +73,13 @@ const FINISHED: Progress = { ...FRESH, finished_once: true };
 export function next(progress: Progress, event: Event): Progress {
   switch (event.kind) {
     case "door":
-      if (progress.step !== "welcome" && progress.step !== "project") return progress;
+      // The doors stay in sight on every page (the launcher, #1812): one door to another, and from
+      // the sign-in to a door, is a move like the first.
+      if (progress.step !== "welcome" && progress.step !== "project" && progress.step !== "sign-in")
+        return progress;
       return { ...progress, step: "project", door: event.door };
     case "sign-in":
-      if (progress.step !== "welcome") return progress;
+      if (progress.step !== "welcome" && progress.step !== "project") return progress;
       return { ...progress, step: "sign-in", door: null, signing_in: true };
     case "needs-sign-in":
       // The door is kept, so the sign-in's way on, and Back, come back to the page that asked.
@@ -129,22 +132,22 @@ export function stepsOf(
   progress: Progress,
   machine: { harnessMissing: boolean },
 ): { steps: Counted[]; at: number } {
-  const steps: Counted[] = ["welcome"];
+  const steps: Counted[] = [];
   if (progress.signing_in) steps.push("sign-in");
   steps.push("project");
   if (progress.git_missing) steps.push("git");
   if (progress.step === "harness" || harnessStep(progress, machine.harnessMissing))
     steps.push("harness");
-  steps.push("open");
-  return { steps, at: Math.max(0, steps.indexOf(progress.step)) };
+  // The welcome is the project step not yet begun: nobody is "at" a welcome, and the project in
+  // front is the end of the steps rather than one of them.
+  const at = steps.indexOf(progress.step === "welcome" ? "project" : progress.step);
+  return { steps, at: Math.max(0, at) };
 }
 
 /** What each step is called, in the counter and in the list of steps. */
 export const STEP_NAMES: Record<Counted, string> = {
-  welcome: "Welcome",
   "sign-in": "Sign in",
-  project: "Create, get or open a project",
+  project: "Pick a project",
   git: "Install git",
   harness: "Pick your harness",
-  open: "Open the project",
 };

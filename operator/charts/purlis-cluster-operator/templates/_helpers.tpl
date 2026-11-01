@@ -22,3 +22,16 @@ The operator's image, by digest only: a tag can move.
 {{- end -}}
 {{- printf "%s@%s" .Values.image.repository $digest -}}
 {{- end }}
+
+{{- /*
+The fields of the pinned upstream's pod spec, and of a container's, but those the operator's own
+template must set or a renewal may change (operator/tests/the_install_manifests.rs holds these to
+the vendored definitions, so a new one fails there when the pin moves).
+*/ -}}
+{{- define "purlis-cluster-operator.pod-fields" -}}
+activeDeadlineSeconds affinity dnsConfig dnsPolicy ephemeralContainers evictionResponders hostAliases hostIPC hostNetwork hostPID hostUsers hostname hostnameOverride imagePullSecrets nodeName nodeSelector os overhead preemptionPolicy priority priorityClassName readinessGates resourceClaims resources restartPolicy runtimeClassName schedulerName schedulingGates schedulingGroup setHostnameAsFQDN shareProcessNamespace subdomain terminationGracePeriodSeconds tolerations topologySpreadConstraints
+{{- end }}
+
+{{- define "purlis-cluster-operator.container-fields" -}}
+command envFrom imagePullPolicy lifecycle livenessProbe ports readinessProbe resizePolicy restartPolicy restartPolicyRules startupProbe stdin stdinOnce tty volumeDevices workingDir
+{{- end }}

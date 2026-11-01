@@ -171,13 +171,17 @@ fn places(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
         .unwrap_or_else(|| panic!("{} names a file", path.display()))
         .to_string_lossy()
         .into_owned();
+    // A count, as a clock may not move between two threads' calls. The process's id and the time
+    // tell it from an earlier process's file left behind.
+    static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let beside = parent.join(format!(
-        ".{stem}.{}.{}.writing",
+        ".{stem}.{}.{}.{}.writing",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .expect("a clock after 1970")
-            .as_nanos()
+            .as_nanos(),
+        WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     (path, beside)
 }
@@ -539,5 +543,20 @@ impl Default for NoChatWrites {
 impl Drop for NoChatWrites {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod where_it_is_written_first {
+    use super::places;
+
+    /// Seen red on macOS, whose clock moves in microseconds: two threads writing the same program
+    /// in one folder were given one temporary name, and the second's rename found it gone.
+    #[test]
+    fn every_write_of_one_program_has_a_temporary_name_of_its_own() {
+        let dir = std::path::Path::new("/nowhere");
+        let names: std::collections::HashSet<_> =
+            (0..5000).map(|_| places(dir, "claude").1).collect();
+        assert_eq!(names.len(), 5000);
     }
 }

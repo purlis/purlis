@@ -1952,11 +1952,17 @@ fn publish(
     level: &Level,
 ) -> Result<Code, String> {
     use std::io::IsTerminal as _;
+    let secrets = purlis_core::secrets::Ctx::new(root, purlis_core::secrets::Env::from_process());
+    let place = purlis_core::secrets::setup::in_a_chat(&secrets);
     if !may_publish(
         gradelink::in_a_chat(&purlis_core::envvar::var),
+        &place,
         std::io::stdin().is_terminal() && std::io::stderr().is_terminal(),
     ) {
         voice::err(PUBLISH_NEEDS_A_PERSON);
+        if let purlis_core::secrets::setup::Where::Unsure(why) = &place {
+            voice::err(esc(why).to_string());
+        }
         return Ok(1);
     }
     let forge = source::publish::OnTheForge::of(root, source)?;
@@ -1973,12 +1979,30 @@ fn publish(
         voice::info("Nothing was sent.");
         return Ok(1);
     }
-    match source::publish::publish(root, built_in, level, name, source, &review, &forge)? {
+    match source::publish::publish(
+        root,
+        built_in,
+        level,
+        name,
+        source,
+        &review.accepted(),
+        &forge,
+    )? {
         source::publish::Published::Opened { url, .. } => {
             voice::info(esc(&format!("Opened {url}")).to_string());
         }
         source::publish::Published::Already { url } => {
             voice::info(esc(&format!("These files already have a request: {url}")).to_string());
+        }
+        source::publish::Published::PushRefused { why } => {
+            voice::err(
+                esc(&format!(
+                    "Nothing was opened: git could not push to the source, which takes write \
+                     access to it: {why}"
+                ))
+                .to_string(),
+            );
+            return Ok(1);
         }
     }
     Ok(0)
@@ -1989,9 +2013,16 @@ const PUBLISH_NEEDS_A_PERSON: &str = "Publishing takes a yes from a person at a 
                                       nothing was sent. Run `purlis skill publish` in your own \
                                       terminal, outside any chat.";
 
-/// Whether a publish may ask at all.
-fn may_publish(in_a_chat: bool, at_a_terminal: bool) -> bool {
-    !in_a_chat && at_a_terminal
+/// Whether a publish may ask at all: a terminal, and no sign of a chat in the environment or in
+/// where this process runs. A doubt about where it runs counts as a chat.
+fn may_publish(
+    chat_in_the_environment: bool,
+    place: &purlis_core::secrets::setup::Where,
+    at_a_terminal: bool,
+) -> bool {
+    !chat_in_the_environment
+        && matches!(place, purlis_core::secrets::setup::Where::Outside)
+        && at_a_terminal
 }
 
 /// What `--all` says where its review is more than one read of the source may take: why, and the

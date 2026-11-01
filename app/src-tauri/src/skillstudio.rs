@@ -77,15 +77,18 @@ pub(crate) fn with_list_lints<T>(
     root: &std::path::Path,
     with: impl FnOnce(&[&dyn purlis_core::skills::SkillLint]) -> T,
 ) -> T {
-    purlis_core::skills::studio::with_studio(executor, root, |studio| {
-        let lints = studio
-            .map(|studio| studio.list_lints())
-            .filter(|lints| !lints.is_empty());
-        let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
-            .iter()
-            .map(|lints| lints as &dyn purlis_core::skills::SkillLint)
-            .collect();
-        with(&more)
+    // One list asks git about the Local file once, whichever of its readers hold a table (#4351).
+    purlis_core::profiles::git_asked_once(|| {
+        purlis_core::skills::studio::with_studio(executor, root, |studio| {
+            let lints = studio
+                .map(|studio| studio.list_lints())
+                .filter(|lints| !lints.is_empty());
+            let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
+                .iter()
+                .map(|lints| lints as &dyn purlis_core::skills::SkillLint)
+                .collect();
+            with(&more)
+        })
     })
 }
 
@@ -731,11 +734,16 @@ pub struct StudioRouted {
 }
 
 impl StudioRouted {
-    /// Chat `session`'s routing at its start, as the Routing page lists it.
-    pub(crate) fn of(session: u32, routed: &purlis_core::skills::router::Routed) -> Self {
+    /// Chat `session`'s routing at its start and on its latest prompt, as the Routing page lists
+    /// it.
+    pub(crate) fn of(
+        session: u32,
+        routed: &purlis_core::skills::router::Routed,
+        last_prompt: Option<&purlis_core::skills::router::Record>,
+    ) -> Self {
         StudioRouted {
             session,
-            routing: routed.into(),
+            routing: crate::useskill::SkillRouting::of(routed, last_prompt),
             hidden: routed
                 .record
                 .hidden
@@ -1519,7 +1527,7 @@ pub(crate) async fn skill_studio(
                 .routings()
                 .into_iter()
                 .filter(|one| one.workspace == workspace && one.persona == persona)
-                .map(|one| StudioRouted::of(one.session, &one.routed))
+                .map(|one| StudioRouted::of(one.session, &one.routed, one.last_prompt.as_ref()))
                 .collect();
         }
         Ok(studio)

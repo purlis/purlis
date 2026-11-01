@@ -473,6 +473,35 @@ fn every_git_call_is_recorded_and_the_push_is_one_refspec_with_no_force() {
                 "refs/remotes/origin/HEAD"
             ],
             vec![
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "refs/heads/change/api-2^{commit}"
+            ],
+            vec![
+                "for-each-ref",
+                "--format=^%(objectname)",
+                "refs/remotes/origin/"
+            ],
+            vec![
+                "-c",
+                "core.quotePath=false",
+                "-c",
+                "core.useReplaceRefs=false",
+                "rev-list",
+                "--objects",
+                "--filter=blob:limit=1025",
+                "--ignore-missing",
+                "--stdin",
+                "refs/heads/change/api-2"
+            ],
+            vec![
+                "-c",
+                "core.useReplaceRefs=false",
+                "cat-file",
+                "--batch-check"
+            ],
+            vec![
                 "-c",
                 "push.followTags=false",
                 "-c",

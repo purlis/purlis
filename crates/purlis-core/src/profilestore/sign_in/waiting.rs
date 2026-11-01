@@ -8,10 +8,12 @@
 //! a folder of the data home no chat's sandbox reads or writes (so none can lock
 //! one). Named by the state's digest, so the folder says nothing of it. The record is locked for as long as its
 //! holder runs, so one a holder left behind when it was killed counts for nothing. A record is
-//! taken once ([`take`]): one answer goes to one login.
+//! taken once ([`take`]): one answer goes to one login. It says which of the loopback's addresses
+//! the login was found listening on when its page was printed, so the answer goes there alone.
 
 use std::fs::File;
-use std::io;
+use std::io::{self, Write};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use sha2::Digest;
@@ -40,12 +42,20 @@ pub struct Waiting {
 }
 
 impl Waiting {
-    /// Records `state` in `dir`, made if it is not there.
+    /// Records `state` in `dir`, made if it is not there, of a login not found listening.
     pub fn record(dir: &Path, state: &str) -> io::Result<Self> {
+        Self::record_at(dir, state, None)
+    }
+
+    /// [`Self::record`], of a login found listening on `at`.
+    pub fn record_at(dir: &Path, state: &str, at: Option<IpAddr>) -> io::Result<Self> {
         private_folder(dir)?;
         let path = record_of(dir, state);
-        let held = File::create(&path)?;
+        let mut held = File::create(&path)?;
         held.try_lock()?;
+        if let Some(at) = at {
+            write!(held, "{at}")?;
+        }
         Ok(Self { path, _held: held })
     }
 }
@@ -56,16 +66,24 @@ impl Drop for Waiting {
     }
 }
 
-/// **Whether a login is waiting with `state`, which takes its record**: `false` with no record, one
+/// A record taken: the login's loopback address, where it was found listening.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Taken {
+    pub at: Option<IpAddr>,
+}
+
+/// **Whether a login is waiting with `state`, which takes its record**: `None` with no record, one
 /// already taken, or one its holder left behind.
-pub fn take(dir: &Path, state: &str) -> bool {
+pub fn take(dir: &Path, state: &str) -> Option<Taken> {
     let path = record_of(dir, state);
-    let Ok(record) = File::open(&path) else {
-        return false;
-    };
+    let mut record = File::open(&path).ok()?;
     let held = matches!(record.try_lock(), Err(std::fs::TryLockError::WouldBlock));
+    let at = io::read_to_string(&mut record)
+        .ok()
+        .and_then(|text| text.parse::<IpAddr>().ok())
+        .filter(IpAddr::is_loopback);
     // Removed whoever held it: of two asking, one removes it.
-    std::fs::remove_file(&path).is_ok() && held
+    (std::fs::remove_file(&path).is_ok() && held).then_some(Taken { at })
 }
 
 /// `dir`, made private.
@@ -98,9 +116,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let _waiting = Waiting::record(dir.path(), STATE).unwrap();
 
-        assert!(!take(dir.path(), "another-sign-ins-state"));
-        assert!(take(dir.path(), STATE));
-        assert!(!take(dir.path(), STATE));
+        assert!(take(dir.path(), "another-sign-ins-state").is_none());
+        assert_eq!(take(dir.path(), STATE), Some(Taken { at: None }));
+        assert!(take(dir.path(), STATE).is_none());
     }
 
     #[test]
@@ -108,7 +126,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         drop(Waiting::record(dir.path(), STATE).unwrap());
 
-        assert!(!take(dir.path(), STATE));
+        assert!(take(dir.path(), STATE).is_none());
+    }
+
+    #[test]
+    fn a_record_says_where_its_login_was_found_listening_on_the_loopback_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let at = IpAddr::from(std::net::Ipv6Addr::LOCALHOST);
+        let _waiting = Waiting::record_at(dir.path(), STATE, Some(at)).unwrap();
+        assert_eq!(take(dir.path(), STATE), Some(Taken { at: Some(at) }));
+
+        let other = IpAddr::from([192, 0, 2, 1]);
+        let _waiting = Waiting::record_at(dir.path(), STATE, Some(other)).unwrap();
+        assert_eq!(take(dir.path(), STATE), Some(Taken { at: None }));
     }
 
     /// A holder that was killed left its record, and no lock on it.
@@ -117,7 +147,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         File::create(record_of(dir.path(), STATE)).unwrap();
 
-        assert!(!take(dir.path(), STATE));
+        assert!(take(dir.path(), STATE).is_none());
         assert!(!record_of(dir.path(), STATE).exists());
     }
 

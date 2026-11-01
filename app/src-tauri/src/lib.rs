@@ -89,6 +89,7 @@ mod skillchange;
 mod skilldrafts;
 mod skillgrade;
 mod skillhistory;
+mod skillpublish;
 mod skillrun;
 mod skillsources;
 mod skillstudio;
@@ -132,6 +133,7 @@ mod planes;
 mod planewatch;
 mod poolfollow;
 mod poolprofiles;
+mod poolsignin_confirm;
 mod pooltools;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
@@ -3062,6 +3064,11 @@ fn commands() -> Builder<tauri::Wry> {
             "ENGINE_SANDBOX_NEEDED",
             enginesandbox::ENGINE_SANDBOX_NEEDED,
         )
+        // The event a pool's beginning to mint without asking raises its Notice on (#4442).
+        .constant(
+            "POOL_MINTS_WITHOUT_ASKING",
+            clusterpools::POOL_MINTS_WITHOUT_ASKING,
+        )
         // The event the engine's downloads changed on (#2207).
         .constant("ENGINE_DOWNLOAD", enginedownload::ENGINE_DOWNLOAD)
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
@@ -3785,6 +3792,13 @@ pub fn run() {
                     let _ = window.emit(enginesandbox::ENGINE_SANDBOX_NEEDED, machine);
                 }));
             }
+            // A pool that began minting without asking raises its Notice (#4442).
+            {
+                let window = app.handle().clone();
+                purlis_core::pools::telling_of_minting(Box::new(move || {
+                    let _ = window.emit(clusterpools::POOL_MINTS_WITHOUT_ASKING, ());
+                }));
+            }
             // A finish leans on that lock, and is refused without it.
             app.manage(vaultswaiting::VaultsWaiting::of(
                 waiting,
@@ -3888,19 +3902,31 @@ pub fn run() {
             app.manage(findfiles::FileFinder::default());
             // The branches each window shows the changes of, listened to whole so an agent's
             // first write anywhere in one moves its markers (FM-4).
-            app.manage(branchwatch::BranchWatch::new(
-                {
+            app.manage(
+                branchwatch::BranchWatch::new(
+                    {
+                        let app = app.handle().clone();
+                        std::sync::Arc::new(move |window: &str, branches| {
+                            let _ = app.emit_to(
+                                window,
+                                branchwatch::CHANGED,
+                                branchwatch::BranchChanged { branches },
+                            );
+                        })
+                    },
+                    reader(),
+                )
+                .telling_skills({
                     let app = app.handle().clone();
                     std::sync::Arc::new(move |window: &str, branches| {
                         let _ = app.emit_to(
                             window,
-                            branchwatch::CHANGED,
+                            branchwatch::SKILLS_MOVED,
                             branchwatch::BranchChanged { branches },
                         );
                     })
-                },
-                reader(),
-            ));
+                }),
+            );
             // The clones whose save standing is shared ask the same watch to listen to their
             // working trees (FD-11), so an idle clone's standing costs no `git status`.
             {

@@ -148,7 +148,16 @@ call site.
   **Git LFS keeps working.** The three values `git lfs install` writes are left alone, and
   `git-lfs` is found on the runner's fixed `PATH`. If the repo's config also names a program
   `git-lfs` itself would start (its transfer agents or extensions, a credential helper, an ssh
-  or askpass program), the LFS filter is turned off there too, yours included.
+  or askpass program, or the folder it stores objects in), the LFS filter is turned off there too, yours included. The exact
+  `credential.helper` purlis's git policy writes into a clone is not one of those, so a clone
+  purlis wired reads its LFS files as you do. There the filter never downloads: it is told to
+  leave each file as its pointer (`GIT_LFS_SKIP_SMUDGE`, what `git lfs install --skip-smudge`
+  asks for), and a call off the network also empties `credential.helper`. A file git checks out
+  there, an updated or a new branch folder's included, is its pointer until `git lfs pull`.
+  A symbolic link in the repo's LFS store turns the filter off, as a planted program does.
+  A git-lfs outside the runner's `PATH` is not found: where the filter is marked `required`, an
+  `add` fails rather than store a file whole, and a `status` still reads the file as changed.
+  A push through purlis's git runs no hook, so it does not upload the objects of its commits.
 
   Keys that cannot run, or that the runner already holds another way, are not turned off:
   `core.pager` and `pager.<verb>` (git's output is never a terminal), `alias.<verb>` (never
@@ -205,10 +214,56 @@ call site.
 | `run_untimed` | a call that checks out a tree (`worktree add`, `merge`) |
 | `run_with_input`, `spawn_fed` | a verb fed on standard input (`--stdin`, `cat-file --batch`) |
 | `run_network` | a chat's brokered `clone`, `fetch`, and `publish` when it lands |
-| `spawn_network` | a `clone` that is not a chat's, under the same rule: its caller reads git as it runs (see below) |
+| `spawn_network` | a `clone` that is not a chat's, and the Git LFS upload before a push, under the same rule: its caller reads git as it runs (see below) |
 | `run_as_session` | the project-root guards, which ask what the session's own git would do |
 | `run_in_hook` | a read from inside a git hook, of the index the hook's command is using |
 | `spawn_persons_clone` | the person's own clone from the welcome's Get a project (see below) |
+
+### A push sends its Git LFS objects first
+
+Purlis's git runs no hooks, so git-lfs's own `pre-push` never runs. Before a push of a repo save,
+`purlis worktree push`, `purlis change push` or a project's first publish, purlis reads the commits
+going out for Git LFS pointers (#4399). None going out, nothing else happens: git-lfs is never
+started. A plane's own save is not covered: it pushes the plane's repository.
+
+Otherwise it uploads each object before the push leaves, or refuses the push with a sentence
+saying what to do. The upload:
+
+- **Goes only to the LFS address of the URL the push goes to**, over HTTPS, as git-lfs would derive
+  it. It is given on the command line, which beats a committed `.lfsconfig` and the repository's
+  config. A repository whose LFS server is elsewhere is refused, and pushes from your own terminal.
+- **Has only the helper the push has**, on the one-credential rule. git-lfs also reads your own
+  `~/.netrc`, as git itself does.
+- **Lets the forge's answer name where the bytes go**, as a forge names its storage. That host is
+  the forge's choice, not a chat's and not in the chat's `[sandbox] egress`. The helper is asked
+  about it like any other host, and it is not in the network log.
+- **Sends only what its pointer names**: each object is opened one folder at a time, following no
+  link, must have one name, and is hashed as it is copied to a folder of the call's own under the
+  machine's config folder, which no chat can write. git-lfs is told to read that copy. So a link
+  or a later change in `.git/lfs`, which a chat can write, is never read outside its sandbox.
+- **Scans what a push's scan would read**: an object up to the scan's size limit whose first
+  bytes hold no NUL is read as a commit's added lines are, and a finding refuses the push.
+- **Starts no program.** A repository whose own config names one git-lfs would start, or an
+  `alias.lfs`, moves its store (`lfs.storage`), or sets `http.extraheader`, is refused before
+  git-lfs is asked anything. The exact helper `purlis git-policy` writes is let through: the
+  one-credential rule empties the helper list before the push's own helper, so it never runs.
+- **Is stopped at the stall limit** (`cloning::STALL`) rather than a total deadline.
+
+What is on the remote is read from the clone's tracking refs, as `pre-push` reads it, so a ref a
+chat planted there can hide a commit from this and send a pointer on its own branch without its
+object. It gains no reach. A pointer that names extensions is refused. Reading a very large
+history can take as long as the stall limit; past that, the push is refused. The copy needs free
+space for what it sends.
+
+Recorded limits, none of which gains a chat another host or credential. git-lfs runs in the
+folder being pushed, so a `.lfsconfig` there that is a link is read outside the sandbox; its values
+are outranked or harmless, and a pipe there only waits for the stall limit. A global `lfs.storage`
+shared by several repositories can serve any object whose id and size a chat already knows. A
+project's first publish to a folder on this machine uploads nothing, and crosses no network.
+The first push of a project purlis creates uploads nothing either: it holds only what purlis wrote.
+
+An object that is not in the clone refuses the push even where the server has it already: purlis
+does not ask. `git lfs fetch --all` brings it here.
 
 ### A git that is stopped is stopped with what it started
 

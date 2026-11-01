@@ -1480,6 +1480,19 @@ export const commands = {
 	 *  on no sign-in.
 	 */
 	chatMoveSignedIn: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("chat_move_signed_in", { plane, session })),
+	/**  The question waiting for the person's answer, if one is. */
+	poolSignInAsked: () => __TAURI_INVOKE<{
+	id: number,
+	profile: string,
+	pool: string,
+	/**  What the terminal of the command that asks shows. */
+	code: string,
+} | null>("pool_sign_in_asked"),
+	/**
+	 *  **The person's answer to the question `id`**: only their press in the window calls this. One
+	 *  no longer waiting is left alone.
+	 */
+	answerPoolSignIn: (id: number, yes: boolean) => __TAURI_INVOKE<void>("answer_pool_sign_in", { id, yes }),
 	/**
 	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
 	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
@@ -2313,6 +2326,17 @@ export const commands = {
 { to: "all" } | 
 /**  The workspaces named. */
 { to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_install", { plane, source, level, reviewed, grant })),
+	/**  **The review of publishing `name` at `level` to `source`.** Nothing goes anywhere. */
+	skillPublishReview: (plane: PlaneId, level: SkillLevel, name: string, source: SkillSource) => typedError<PublishReviewView, string>(__TAURI_INVOKE("skill_publish_review", { plane, level, name, source })),
+	/**  **Sends what the person accepted**, and only that. */
+	skillPublish: (plane: PlaneId, level: SkillLevel, name: string, source: SkillSource, accepted: PublishAccepted) => typedError<PublishDone, string>(__TAURI_INVOKE("skill_publish", { plane, level, name, source, accepted })),
+	/**  **What an export of `name` at `level` would write.** */
+	skillExportReview: (plane: PlaneId, level: SkillLevel, name: string) => typedError<ExportReview, string>(__TAURI_INVOKE("skill_export_review", { plane, level, name })),
+	/**
+	 *  **Asks where, and writes the export**: the place written, or `None` where the person chose
+	 *  none. Nothing is written over anything.
+	 */
+	skillExport: (plane: PlaneId, level: SkillLevel, name: string, zip: boolean) => typedError<string | null, string>(__TAURI_INVOKE("skill_export", { plane, level, name, zip })),
 	/**
 	 *  **The updates there are**: each source this machine may contact asked for its newest commit,
 	 *  nothing fetched.
@@ -3123,6 +3147,17 @@ export const commands = {
 	 *  mark asks about each again.
 	 */
 	setClusterPoolOwned: (name: string, owned: boolean) => typedError<null, string>(__TAURI_INVOKE("set_cluster_pool_owned", { name, owned })),
+	/**
+	 *  **The cluster pools whose Pool began minting without asking, for the person to be told** (#4442,
+	 *  the person's ruling of 2026-11-01): one Notice for each change. It holds and refuses nothing, as
+	 *  the admin's opt-in stands. The window's alone (`ui::WINDOW_ONLY`).
+	 */
+	poolsMintingWithoutAsking: () => typedError<string[], string>(__TAURI_INVOKE("pools_minting_without_asking")),
+	/**
+	 *  **The person put away the Notice of [`pools_minting_without_asking`] for pool `name`** (#4442).
+	 *  The window's alone (`ui::WINDOW_ONLY`): a chat that could press it could hide the Notice.
+	 */
+	putAwayPoolMintingNotice: (name: string) => typedError<null, string>(__TAURI_INVOKE("put_away_pool_minting_notice", { name })),
 	/**
 	 *  **The profiles chosen for pool `pool`, kept on its runner** (#2049, #4047), as the runner
 	 *  stands with each, and this machine's others Add a profile… offers: the ones its `profiles`
@@ -4464,6 +4499,8 @@ export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
 export const PERSONA_SCOPE_KEY = "persona/" as const;
 
+export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
+
 export const ROUTER_GRADE = "router-grade" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
@@ -5115,6 +5152,12 @@ export type AwayRefusal = {
 	 *  for an item that reads differently now grants nothing ([`CHANGED_AWAY`]).
 	 */
 	shown: string,
+};
+
+/**  One file that stays behind. */
+export type BehindFile = {
+	path: string,
+	why: string,
 };
 
 /**  One socket or service the person may choose. */
@@ -7052,6 +7095,14 @@ export type ExpectedShown = {
 	 *  where it drew the item as one that cannot be allowed here now.
 	 */
 	named: string | null,
+};
+
+/**  **What the export dialog says.** */
+export type ExportReview = {
+	skills: string[],
+	behind: BehindFile[],
+	broken: string[],
+	stops: OutgoingStop[],
 };
 
 /**
@@ -9567,6 +9618,22 @@ export type OpenedRepo = {
 	forge_said?: string | null,
 };
 
+/**  One file that goes. */
+export type OutgoingFile = {
+	/**  Its path, under its skill's folder. */
+	path: string,
+	bytes: number,
+	runs: boolean,
+	/**  Whether it is of a skill the named one refers to. */
+	comes_along: boolean,
+};
+
+/**  One thing that stops it, as `where` and what it holds, never the value itself. */
+export type OutgoingStop = {
+	place: string,
+	said: string,
+};
+
 /**  A task's own branch, as its Changes tab says it. */
 export type OwnBranch = {
 	repo: string,
@@ -10517,6 +10584,8 @@ export type PoolLimitRow = {
 	set: number | null,
 	/**  When a change applies, where its group doesn't say it for all of its limits. */
 	applies: string | null,
+	/**  Why the value in the pool's file can't be used, where one can't (#4381). */
+	refused: string | null,
 };
 
 /**
@@ -10642,6 +10711,15 @@ export type PoolRow = {
 	 *  itself, as `runners.json` spells it (`24h`, `90m`; #3471).
 	 */
 	suspend_after: string,
+};
+
+/**  What the person is asked. */
+export type PoolSignInAsk = {
+	id: number,
+	profile: string,
+	pool: string,
+	/**  What the terminal of the command that asks shows. */
+	code: string,
 };
 
 /**
@@ -11122,6 +11200,35 @@ export type ProposedWhole = {
 	why: string | null,
 };
 
+/**  What a yes hands back. */
+export type PublishAccepted = {
+	base: string,
+	commit: string,
+	digest: string,
+};
+
+/**  **How a publish ended.** */
+export type PublishDone = { kind: "opened"; url: string } | { kind: "already"; url: string } | { kind: "cannot-push"; why: string };
+
+/**  One grade the description holds. */
+export type PublishGrade = {
+	skill: string,
+	when: string,
+	version: string,
+	harness: string,
+	grader: string,
+	with_it: string,
+	without_it: string,
+	runs: number,
+	ended: string,
+};
+
+/**  One folder of the source that takes a skill. */
+export type PublishLand = {
+	folder: string,
+	replaces: boolean,
+};
+
 /**
  *  What the person asked to publish: #1819's form, less the template and the folder, which the
  *  project already has.
@@ -11132,6 +11239,31 @@ export type PublishOnForge = {
 	name: string,
 	/**  Private unless the person said public. */
 	private: boolean,
+};
+
+/**  **What the publish review page draws.** */
+export type PublishReviewView = {
+	/**  "pull request" or "merge request". */
+	request: string,
+	forge: string,
+	base: string,
+	commit_short: string,
+	branch: string,
+	title: string,
+	author: string,
+	files: OutgoingFile[],
+	behind: BehindFile[],
+	stops: OutgoingStop[],
+	/**  Each skill that is this machine's alone, by name. */
+	local: string[],
+	/**  Each folder of the source that takes a skill, and whether it replaces what is there. */
+	lands: PublishLand[],
+	/**  References to a skill that is not there, by name. */
+	broken: string[],
+	grades: PublishGrade[],
+	/**  The request's description, whole. */
+	body: string,
+	accepted: PublishAccepted,
 };
 
 /**  One member's destination, as the question names it and the yes hands it back. */
@@ -13482,6 +13614,17 @@ export type SkillPinsTogether = {
 	most: number,
 };
 
+/**
+ *  **How a chat's router did on its latest prompt** (#4297, ADR 0102 §6): the core's routing
+ *  record of it, as the chat's tab and the studio say it. No word of the prompt.
+ */
+export type SkillPromptRouting = {
+	/**  Whether the prompt went on with no pointer because of how it did. */
+	fell_back: boolean,
+	/**  What a person is told of it, in the core's words. */
+	said: string,
+};
+
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
 /**  purlis's own. */
@@ -13517,6 +13660,11 @@ export type SkillRouting = {
 	fell_back: boolean,
 	/**  What a person is told of it, in the core's words. */
 	said: string,
+	/**
+	 *  How it did on the chat's latest prompt (#4297), where it reads prompts and was asked on
+	 *  one. Optional in the window's type, as most routers never are.
+	 */
+	last_prompt?: SkillPromptRouting | null,
 };
 
 /**  A skill source as the studio shows and adds one. */

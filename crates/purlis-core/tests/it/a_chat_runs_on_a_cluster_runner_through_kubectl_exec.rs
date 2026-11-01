@@ -394,6 +394,33 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
     });
     runtime.shutdown_timeout(Duration::from_secs(5));
 
+    // What a runner used starting a chat, for the job's log (#3844): what its limits rest on.
+    let measured = kubectl
+        .run(
+            &kubectl.args(&[
+                "exec",
+                "--namespace",
+                &paired.vouched.runner_namespace,
+                "--container",
+                clusterpool::RUNNER_CONTAINER,
+                &format!("pod/{}", paired.vouched.pod),
+                "--",
+                "sh",
+                "-c",
+                "echo memory.peak $(cat /sys/fs/cgroup/memory.peak); \
+                 grep -E 'usage_usec|nr_throttled' /sys/fs/cgroup/cpu.stat; \
+                 du -sk \"$HOME\" /tmp || true",
+            ]),
+            None,
+            64 * 1024,
+        )
+        .expect("what the runner used");
+    std::io::Write::write_all(
+        &mut std::io::stderr(),
+        format!("measured #3844: {measured}\n").as_bytes(),
+    )
+    .expect("said");
+
     // A killed `kubectl exec -i` closes the input of what it ran in the pod (#3819): what Cancel
     // ends a sign-in on a cluster runner by, since nothing else reaches into the pod.
     let (runners, pod) = (&paired.vouched.runner_namespace, &paired.vouched.pod);
@@ -1148,6 +1175,21 @@ fn the_command_signs_in_on_a_cluster_pool_only_marked_and_vouched_and_a_runner_f
     );
     assert!(made, "{said}");
     let sign_in = ["profile", "sign-in", "work", "--pool", "team"];
+
+    // With no window, the command refuses and reaches nothing.
+    let (signed_in, said) = the_command(&purlis, machine.path(), &sign_in);
+    assert!(!signed_in);
+    assert!(said.contains("none is running"), "{said}");
+
+    // The person's window, saying yes.
+    let window = purlis_core::windowline::beside(&purlis_core::hostsocket::here_for(
+        std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
+        Some(&config),
+    ));
+    purlis_core::windowline::serve_on(&window, |_| purlis_core::windowline::Said::Asked {
+        note: None,
+    })
+    .expect("it listens");
 
     // Unmarked: refused, in words.
     let (signed_in, said) = the_command(&purlis, machine.path(), &sign_in);

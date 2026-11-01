@@ -656,6 +656,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "start_program",
             "attach_view",
             "browse",
+            // Which of its window's chats run, as the window comes back (#4271).
+            "programs_of",
             // The desktop removing the runner (1.25, #2525).
             "unpair",
             "keep_profile",

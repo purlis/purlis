@@ -678,6 +678,8 @@ export const commands = {
 	/**  **This project's chat moves** (#2048), as the window draws them when it is drawn anew. */
 	chatMoves: (plane: PlaneId) => typedError<ChatMove[], string>(__TAURI_INVOKE("chat_moves", { plane })),
 	chatMoveSignedIn: __WINDOW_ONLY_RESULT,
+	poolSignInAsked: __WINDOW_ONLY,
+	answerPoolSignIn: __WINDOW_ONLY,
 	/**
 	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
 	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
@@ -1161,6 +1163,10 @@ export const commands = {
 	skillInstallSetReview: __WINDOW_ONLY_RESULT,
 	skillInstallWidenings: __WINDOW_ONLY_RESULT,
 	skillInstall: __WINDOW_ONLY_RESULT,
+	skillPublishReview: __WINDOW_ONLY_RESULT,
+	skillPublish: __WINDOW_ONLY_RESULT,
+	skillExportReview: __WINDOW_ONLY_RESULT,
+	skillExport: __WINDOW_ONLY_RESULT,
 	skillUpdates: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,
 	skillUpdate: __WINDOW_ONLY_RESULT,
@@ -1545,6 +1551,8 @@ export const commands = {
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
 	setClusterPoolOwned: __WINDOW_ONLY_RESULT,
+	poolsMintingWithoutAsking: __WINDOW_ONLY_RESULT,
+	putAwayPoolMintingNotice: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	poolProfileAdd: __WINDOW_ONLY_RESULT,
 	poolLimitOffer: __WINDOW_ONLY,
@@ -2215,6 +2223,8 @@ export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
 export const PERSONA_SCOPE_KEY = "persona/" as const;
 
+export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
+
 export const ROUTER_GRADE = "router-grade" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
@@ -2866,6 +2876,12 @@ export type AwayRefusal = {
 	 *  for an item that reads differently now grants nothing ([`CHANGED_AWAY`]).
 	 */
 	shown: string,
+};
+
+/**  One file that stays behind. */
+export type BehindFile = {
+	path: string,
+	why: string,
 };
 
 /**  One socket or service the person may choose. */
@@ -4803,6 +4819,14 @@ export type ExpectedShown = {
 	 *  where it drew the item as one that cannot be allowed here now.
 	 */
 	named: string | null,
+};
+
+/**  **What the export dialog says.** */
+export type ExportReview = {
+	skills: string[],
+	behind: BehindFile[],
+	broken: string[],
+	stops: OutgoingStop[],
 };
 
 /**
@@ -7318,6 +7342,22 @@ export type OpenedRepo = {
 	forge_said?: string | null,
 };
 
+/**  One file that goes. */
+export type OutgoingFile = {
+	/**  Its path, under its skill's folder. */
+	path: string,
+	bytes: number,
+	runs: boolean,
+	/**  Whether it is of a skill the named one refers to. */
+	comes_along: boolean,
+};
+
+/**  One thing that stops it, as `where` and what it holds, never the value itself. */
+export type OutgoingStop = {
+	place: string,
+	said: string,
+};
+
 /**  A task's own branch, as its Changes tab says it. */
 export type OwnBranch = {
 	repo: string,
@@ -8268,6 +8308,8 @@ export type PoolLimitRow = {
 	set: number | null,
 	/**  When a change applies, where its group doesn't say it for all of its limits. */
 	applies: string | null,
+	/**  Why the value in the pool's file can't be used, where one can't (#4381). */
+	refused: string | null,
 };
 
 /**
@@ -8393,6 +8435,15 @@ export type PoolRow = {
 	 *  itself, as `runners.json` spells it (`24h`, `90m`; #3471).
 	 */
 	suspend_after: string,
+};
+
+/**  What the person is asked. */
+export type PoolSignInAsk = {
+	id: number,
+	profile: string,
+	pool: string,
+	/**  What the terminal of the command that asks shows. */
+	code: string,
 };
 
 /**
@@ -8873,6 +8924,35 @@ export type ProposedWhole = {
 	why: string | null,
 };
 
+/**  What a yes hands back. */
+export type PublishAccepted = {
+	base: string,
+	commit: string,
+	digest: string,
+};
+
+/**  **How a publish ended.** */
+export type PublishDone = { kind: "opened"; url: string } | { kind: "already"; url: string } | { kind: "cannot-push"; why: string };
+
+/**  One grade the description holds. */
+export type PublishGrade = {
+	skill: string,
+	when: string,
+	version: string,
+	harness: string,
+	grader: string,
+	with_it: string,
+	without_it: string,
+	runs: number,
+	ended: string,
+};
+
+/**  One folder of the source that takes a skill. */
+export type PublishLand = {
+	folder: string,
+	replaces: boolean,
+};
+
 /**
  *  What the person asked to publish: #1819's form, less the template and the folder, which the
  *  project already has.
@@ -8883,6 +8963,31 @@ export type PublishOnForge = {
 	name: string,
 	/**  Private unless the person said public. */
 	private: boolean,
+};
+
+/**  **What the publish review page draws.** */
+export type PublishReviewView = {
+	/**  "pull request" or "merge request". */
+	request: string,
+	forge: string,
+	base: string,
+	commit_short: string,
+	branch: string,
+	title: string,
+	author: string,
+	files: OutgoingFile[],
+	behind: BehindFile[],
+	stops: OutgoingStop[],
+	/**  Each skill that is this machine's alone, by name. */
+	local: string[],
+	/**  Each folder of the source that takes a skill, and whether it replaces what is there. */
+	lands: PublishLand[],
+	/**  References to a skill that is not there, by name. */
+	broken: string[],
+	grades: PublishGrade[],
+	/**  The request's description, whole. */
+	body: string,
+	accepted: PublishAccepted,
 };
 
 /**  One member's destination, as the question names it and the yes hands it back. */
@@ -11233,6 +11338,17 @@ export type SkillPinsTogether = {
 	most: number,
 };
 
+/**
+ *  **How a chat's router did on its latest prompt** (#4297, ADR 0102 §6): the core's routing
+ *  record of it, as the chat's tab and the studio say it. No word of the prompt.
+ */
+export type SkillPromptRouting = {
+	/**  Whether the prompt went on with no pointer because of how it did. */
+	fell_back: boolean,
+	/**  What a person is told of it, in the core's words. */
+	said: string,
+};
+
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
 /**  purlis's own. */
@@ -11268,6 +11384,11 @@ export type SkillRouting = {
 	fell_back: boolean,
 	/**  What a person is told of it, in the core's words. */
 	said: string,
+	/**
+	 *  How it did on the chat's latest prompt (#4297), where it reads prompts and was asked on
+	 *  one. Optional in the window's type, as most routers never are.
+	 */
+	last_prompt?: SkillPromptRouting | null,
 };
 
 /**  A skill source as the studio shows and adds one. */

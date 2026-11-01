@@ -165,7 +165,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
             (
                 "admissionregistration.k8s.io",
                 "validatingadmissionpolicies",
-                "purlis-forge",
+                "purlis-claims-use-their-pool,purlis-runner-namespaces,purlis-forge",
                 "get",
             ),
             (
@@ -288,7 +288,11 @@ fn the_operator_reads_only_its_own_policys_binding() {
     assert_eq!(strings(&rules[1]["verbs"]), ["get"]);
     assert_eq!(
         strings(&rules[1]["resourceNames"]),
-        [purlis_cluster_operator::FORGE_POLICY]
+        [
+            purlis_cluster_operator::POLICY,
+            purlis_cluster_operator::RUNNER_NAMESPACES_POLICY,
+            purlis_cluster_operator::FORGE_POLICY,
+        ]
     );
 }
 
@@ -488,7 +492,7 @@ fn the_operators_right_on_sandboxes_is_narrowed_to_the_mode_of_a_claims_sandbox(
     // Its mode may change; its template only while it is suspended, in a runner namespace.
     assert!(!validations[1].contains("object.spec.operatingMode"));
     assert!(validations[1].contains(
-        "request.namespace.startsWith('purlis-runners-')&&has(oldObject.spec.operatingMode)&&oldObject.spec.operatingMode=='Suspended'"
+        "request.namespace.startsWith('purlis-runners-')&&has(oldObject.spec.operatingMode)&&oldObject.spec.operatingMode=='Suspended'&&variables.renewed"
     ));
     for field in ["labels", "annotations", "ownerReferences", "finalizers"] {
         assert!(
@@ -665,7 +669,17 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
         .iter()
         .map(|v| flat(&v["expression"]))
         .collect();
-    assert_eq!(validations.len(), 6, "{validations:?}");
+    assert_eq!(validations.len(), 7, "{validations:?}");
+    // What it makes, it makes under the restricted Pod Security Standard (#3824).
+    assert_eq!(
+        validations[6],
+        "request.resource.resource!='namespaces'||!variables.operator||\
+         request.operation!='CREATE'||\
+         has(object.metadata.labels)&&'pod-security.kubernetes.io/enforce'inobject.metadata.labels&&\
+         object.metadata.labels['pod-security.kubernetes.io/enforce']=='restricted'&&\
+         (!('pod-security.kubernetes.io/enforce-version'inobject.metadata.labels)||\
+         object.metadata.labels['pod-security.kubernetes.io/enforce-version']=='latest')"
+    );
     // Its mark opens the mint port, so no one else marks another namespace (#4206).
     assert_eq!(
         validations[1],
@@ -770,4 +784,200 @@ fn spending_an_app_key_takes_use_on_it() {
         })
         .expect("its binding");
     assert_eq!(strings(&binding["spec"]["validationActions"]), ["Deny"]);
+}
+
+/// Whether `text` names `name`, and not a longer word that starts with it.
+fn names(text: &str, name: &str) -> bool {
+    text.match_indices(name)
+        .any(|(at, _)| !text[at + name.len()..].starts_with(char::is_alphanumeric))
+}
+
+/// The spec schema of the pinned upstream's definition of `kind`.
+fn upstream_definition(kind: &str) -> Value {
+    let vendored = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("vendor/agent-sandbox")
+        .join(purlis_cluster_operator::upstream::VERSION)
+        .join("sandbox-with-extensions.yaml");
+    let definition = common::yaml_documents(&vendored)
+        .into_iter()
+        .find(|d| d["kind"] == "CustomResourceDefinition" && d["spec"]["names"]["kind"] == kind)
+        .expect("the definition");
+    definition["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"].clone()
+}
+
+fn fields_of(properties: &Value) -> Vec<String> {
+    properties
+        .as_object()
+        .expect("its fields")
+        .keys()
+        .cloned()
+        .collect()
+}
+
+/// The fields of a spec in the pinned upstream's definition of `kind`.
+fn upstream_spec_fields(kind: &str) -> Vec<String> {
+    fields_of(&upstream_definition(kind)["properties"])
+}
+
+#[test]
+fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
+    let documents = documents("policy.yaml");
+    let name = "purlis-operator-writes-only-a-runners-shape";
+    let policy = policy_named(&documents, name);
+    let spec = &policy["spec"];
+    assert_eq!(spec["failurePolicy"], "Fail");
+    assert_eq!(
+        policy["metadata"]["annotations"]["helm.sh/resource-policy"],
+        "keep"
+    );
+    let rule = &spec["matchConstraints"]["resourceRules"][0];
+    assert_eq!(strings(&rule["operations"]), ["CREATE", "UPDATE"]);
+    assert_eq!(
+        strings(&rule["resources"]),
+        ["sandboxclaims", "sandboxtemplates", "sandboxwarmpools"]
+    );
+    assert!(
+        spec["matchConditions"][0]["expression"]
+            .as_str()
+            .expect("its condition")
+            .contains("system:serviceaccount:purlis-system:purlis-cluster-operator")
+    );
+    let binding = documents
+        .iter()
+        .find(|d| d["kind"] == "ValidatingAdmissionPolicyBinding" && d["metadata"]["name"] == name)
+        .expect("its binding");
+    assert_eq!(binding["spec"]["policyName"], name);
+    assert_eq!(strings(&binding["spec"]["validationActions"]), ["Deny"]);
+    let validations: Vec<String> = spec["validations"]
+        .as_array()
+        .expect("validations")
+        .iter()
+        .map(|v| v["expression"].as_str().expect("an expression").to_owned())
+        .collect();
+    assert_eq!(validations.len(), 7, "{validations:?}");
+    assert_eq!(
+        validations[0],
+        "request.namespace.startsWith('purlis-runners-')"
+    );
+    // Every field the pinned upstream gives a claim and a template is named, so a new one fails
+    // here and is looked at when the pin moves.
+    for field in upstream_spec_fields("SandboxClaim") {
+        assert!(
+            names(&validations[1], &field),
+            "{field}: {}",
+            validations[1]
+        );
+    }
+    for field in upstream_spec_fields("SandboxTemplate") {
+        assert!(
+            field == "podTemplate" || names(&validations[3], &field),
+            "{field}: {}",
+            validations[3]
+        );
+    }
+    for words in [
+        "automountServiceAccountToken == false",
+        "serviceAccountName == 'default'",
+        "object.spec.updateStrategy.type == 'Recreate'",
+        "!has(object.spec.volumeClaimTemplates[0].spec.volumeName)",
+        "!has(object.spec.volumeClaimTemplates[0].spec.dataSourceRef)",
+    ] {
+        assert!(
+            validations[1..=4].iter().any(|held| held.contains(words)),
+            "{words}"
+        );
+    }
+    // Every field the pinned upstream gives a pod, a container and their security contexts is
+    // named, by what the template sets or by being refused, so a new one fails here.
+    let template = upstream_definition("SandboxTemplate");
+    let pod = &template["properties"]["podTemplate"]["properties"]["spec"]["properties"];
+    for field in fields_of(pod)
+        .into_iter()
+        .filter(|field| field != "initContainers")
+    {
+        assert!(
+            names(&validations[4], &format!("variables.pod.{field}"))
+                || names(&validations[5], &format!("variables.pod.{field}"))
+                || names(&validations[6], &format!("variables.pod.{field}")),
+            "the pod's {field}"
+        );
+    }
+    for field in fields_of(&pod["securityContext"]["properties"]) {
+        assert!(
+            names(
+                &validations[4],
+                &format!("variables.pod.securityContext.{field}")
+            ),
+            "the pod's securityContext.{field}"
+        );
+    }
+    let container = &pod["containers"]["items"]["properties"];
+    for field in fields_of(container) {
+        let set_by_it = [
+            "args",
+            "image",
+            "name",
+            "terminationMessagePath",
+            "terminationMessagePolicy",
+        ]
+        .contains(&field.as_str());
+        assert!(
+            set_by_it || names(&validations[6], &format!("c.{field}")),
+            "a container's {field}"
+        );
+    }
+    for field in fields_of(&container["securityContext"]["properties"]) {
+        assert!(
+            names(&validations[6], &format!("c.securityContext.{field}")),
+            "a container's securityContext.{field}"
+        );
+    }
+    // A new kept volume's fields too: its size, how it is written and its class alone are free.
+    let volume = &upstream_definition("SandboxClaim")["properties"]["volumeClaimTemplates"]["items"]
+        ["properties"]["spec"]["properties"];
+    for field in fields_of(volume) {
+        assert!(
+            ["accessModes", "resources", "storageClassName"].contains(&field.as_str())
+                || names(&validations[1], &format!("spec.{field}")),
+            "a kept volume's {field}"
+        );
+    }
+    // A renewal holds every one of them as it was, but a container's image and resources.
+    let renewal = policy_named(&documents, "purlis-operator-changes-only-a-sandboxs-mode")["spec"]
+        ["variables"][0]["expression"]
+        .as_str()
+        .expect("its expression")
+        .to_owned();
+    for field in fields_of(pod) {
+        assert!(
+            names(
+                &renewal,
+                &format!("oldObject.spec.podTemplate.spec.{field}")
+            ),
+            "the pod's {field}"
+        );
+    }
+    for field in fields_of(container) {
+        let may_differ = ["image", "name", "resources"].contains(&field.as_str());
+        assert!(
+            may_differ || names(&renewal, &format!("o.{field}")),
+            "a container's {field}"
+        );
+    }
+    assert!(validations[5].contains("['purlis-link', 'purlis-kept'] && has(v.emptyDir)"));
+    for words in [
+        "runAsNonRoot == true",
+        "allowPrivilegeEscalation == false",
+        "drop == ['ALL']",
+        "!has(c.securityContext.capabilities.add)",
+        "type == 'RuntimeDefault'",
+        "!has(c.command)",
+        "has(e.valueFrom.fieldRef)",
+    ] {
+        assert!(
+            validations[6].contains(words),
+            "{words}: {}",
+            validations[6]
+        );
+    }
 }

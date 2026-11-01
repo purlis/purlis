@@ -155,6 +155,42 @@ pub struct SkillRouting {
     pub fell_back: bool,
     /// What a person is told of it, in the core's words.
     pub said: String,
+    /// How it did on the chat's latest prompt (#4297), where it reads prompts and was asked on
+    /// one. Optional in the window's type, as most routers never are.
+    #[specta(optional)]
+    pub last_prompt: Option<SkillPromptRouting>,
+}
+
+/// **How a chat's router did on its latest prompt** (#4297, ADR 0102 §6): the core's routing
+/// record of it, as the chat's tab and the studio say it. No word of the prompt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillPromptRouting {
+    /// Whether the prompt went on with no pointer because of how it did.
+    pub fell_back: bool,
+    /// What a person is told of it, in the core's words.
+    pub said: String,
+}
+
+impl From<&purlis_core::skills::router::Record> for SkillPromptRouting {
+    fn from(record: &purlis_core::skills::router::Record) -> SkillPromptRouting {
+        SkillPromptRouting {
+            fell_back: record.fell_back.is_some(),
+            said: record.prompt_said(),
+        }
+    }
+}
+
+impl SkillRouting {
+    /// How it did at its chat's start and on the chat's latest prompt.
+    pub(crate) fn of(
+        routed: &purlis_core::skills::router::Routed,
+        last_prompt: Option<&purlis_core::skills::router::Record>,
+    ) -> SkillRouting {
+        SkillRouting {
+            last_prompt: last_prompt.map(Into::into),
+            ..routed.into()
+        }
+    }
 }
 
 impl From<&purlis_core::skills::router::Routed> for SkillRouting {
@@ -164,6 +200,7 @@ impl From<&purlis_core::skills::router::Routed> for SkillRouting {
             ms: u32::try_from(routed.record.ms).unwrap_or(u32::MAX),
             fell_back: routed.record.fell_back.is_some(),
             said: routed.said(),
+            last_prompt: None,
         }
     }
 }
@@ -312,7 +349,11 @@ pub(crate) async fn chat_skills(
         );
         if shown.known {
             shown.repos = repos_of_the_chat(&held, &chat);
-            shown.routing = chat.start.routed.as_deref().map(Into::into);
+            shown.routing = chat
+                .start
+                .routed
+                .as_deref()
+                .map(|routed| SkillRouting::of(routed, chat.last_prompt.as_ref()));
             shown.missing = held.chats().skills_missing(session);
         } else {
             shown.not_supported = chat.not_supported.clone();

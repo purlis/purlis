@@ -30,7 +30,10 @@
 //! while the port refuses it asks the operator less and less often, and meanwhile goes straight to
 //! the window. Once the window has refused such a run too, the next ones are refused here for a
 //! while, so a loop does not keep asking the person. Runs the window's values answered are never
-//! held back: they clear the pace, and a host told of no port is not paced at all.
+//! held back: they clear the pace, and a host told of no port is not paced at all. Runs of one
+//! chat's tool started at once take turns to ask (#4374): each waits for what came of the one under
+//! way. The turn is let go of once the cluster's token or the window's values are in hand, or the
+//! window refused, so what runs still runs together, and a tool that asks nothing never waits.
 //!
 //! **An asker that hangs up is told to the window** while the window decides
 //! ([`Heard::InputEnded`] for the line, which for such a run carries no input), so the window lets
@@ -47,7 +50,7 @@ use super::{A_HANDED_LINE_WAITS_AT_MOST, Heard, Lines, Relaying, Replied, waits_
 use crate::secrets::brokered::{self, Asker};
 
 mod paced;
-pub(super) use paced::Paced;
+pub(super) use paced::{Paced, Turns};
 
 /// What runs a `secret exec` on the values the window sent ([`brokered::serve_handed`]).
 pub type RunsHanded = Arc<
@@ -107,12 +110,17 @@ pub fn in_cluster(
     None
 }
 
+/// What a pace left by a run hanging up follows: an Ask raised and withdrawn costs the person as a
+/// refusal does. One that hung up before it went to the window costs nothing.
+const HUNG_UP: &str = "the run hung up";
+
 /// What the asker of `tool` is told where the window refused a run the cluster refused too, moments
-/// ago.
+/// ago, or the run hung up once the person was asked.
 fn asked_too_soon_said(tool: &str, left: Duration) -> String {
     format!(
-        "the person's desktop did not let {tool} run moments ago, and the cluster minted it no \
-         token, so purlis does not ask again for {} seconds: run it again after that",
+        "{tool} did not run moments ago: the person's desktop did not let it, or the run hung up \
+         while they were asked, and the cluster minted it no token. So purlis does not ask again \
+         for {} seconds: run it again after that",
         left.as_secs().max(1)
     )
 }
@@ -158,6 +166,31 @@ fn waited_too_long_said(tool: &str) -> String {
     format!(
         "the person's desktop was not back within {within}, so {tool} did not run and was sent \
          no value: run it again once they are back",
+        within = waits_at_most_said()
+    )
+}
+
+/// What the asker of `tool` is told while another run of it is asking.
+fn waits_for_another_run_said(tool: &str) -> String {
+    format!(
+        "another run of {tool} in this chat is finding out whether it may run, so this one waits \
+         for that answer"
+    )
+}
+
+/// What the asker of `tool` is told where too many runs wait on one that is asking.
+fn too_many_runs_said(tool: &str) -> String {
+    format!(
+        "too many runs of {tool} in this chat wait for one that is asking, so this one did not \
+         run and was sent no value: run it again once that has its answer"
+    )
+}
+
+/// What the asker of `tool` is told where another run of it was asking for too long.
+fn another_run_too_long_said(tool: &str) -> String {
+    format!(
+        "another run of {tool} in this chat was still waiting to hear whether it may run after \
+         {within}, so this one did not run and was sent no value: run it again",
         within = waits_at_most_said()
     )
 }
@@ -291,6 +324,11 @@ impl Relaying {
         };
         // Chat's own pace, for this tool: what it costs the operator and the person (#4332).
         let paced = (asker.root.clone(), ask.chat, tool.clone());
+        let turn = match self.turn_to_ask(&paced, &input, &tool, &mut writer) {
+            Ok(turn) => turn,
+            Err(Some(why)) => return brokered::refused(writer, why),
+            Err(None) => return,
+        };
         let in_cluster = match self.port_paced.waits(&paced) {
             Some(waiting) => Some(Err(waiting.words)),
             None => {
@@ -307,6 +345,8 @@ impl Relaying {
             }
         };
         let cluster_refused = matches!(in_cluster, Some(Err(_)));
+        // Only a refusal goes on to ask anyone, so only that keeps the others waiting.
+        let mut turn = cluster_refused.then_some(turn);
         match in_cluster {
             Some(Ok((key, token))) => {
                 if input.gone() {
@@ -361,6 +401,7 @@ impl Relaying {
         };
         let (id, replied) = exchanged;
         let mut told_gone = false;
+        let mut paced_now = false;
         loop {
             let reply = match replied.recv_timeout(LOOKED_AT_EVERY) {
                 Ok(reply) => reply,
@@ -370,6 +411,11 @@ impl Relaying {
                     if input.gone() && !told_gone {
                         told_gone = true;
                         self.tell(&Heard::InputEnded { of: id });
+                        if cluster_refused && !paced_now {
+                            paced_now = true;
+                            self.asks_paced.refused(&paced, HUNG_UP);
+                            drop(turn.take());
+                        }
                     }
                     continue;
                 }
@@ -395,6 +441,8 @@ impl Relaying {
                         self.port_paced.cleared(&paced);
                         self.asks_paced.cleared(&paced);
                     }
+                    // Its run is its own: the others do not wait through it.
+                    drop(turn.take());
                     if input.gone() {
                         return;
                     }
@@ -414,14 +462,23 @@ impl Relaying {
                 }
                 // The window's own words: a refusal, said as it said it.
                 Replied::Wrote { text } => {
-                    if cluster_refused && is_a_refusal(&text) {
+                    if cluster_refused && !paced_now && is_a_refusal(&text) {
+                        paced_now = true;
                         self.asks_paced.refused(&paced, &text);
+                        drop(turn.take());
                     }
                     if writer
                         .write_all(text.as_bytes())
                         .and_then(|()| writer.flush())
                         .is_err()
                     {
+                        // Gone for good, however it closed: told, and paced, as a hang-up is.
+                        if !told_gone {
+                            self.tell(&Heard::InputEnded { of: id });
+                        }
+                        if cluster_refused && !paced_now {
+                            self.asks_paced.refused(&paced, HUNG_UP);
+                        }
                         break;
                     }
                 }
@@ -430,11 +487,55 @@ impl Relaying {
                     brokered::refused(writer, not_taken_said(&tool, &why));
                     break;
                 }
-                Replied::Ended => break,
+                Replied::Ended => {
+                    if cluster_refused && !paced_now && input.gone() {
+                        self.asks_paced.refused(&paced, HUNG_UP);
+                    }
+                    break;
+                }
                 _ => {}
             }
         }
         self.done(id);
+    }
+
+    /// **This run's turn to ask for `whose`** ([`Turns`]), at most [`A_HANDED_LINE_WAITS_AT_MOST`]
+    /// after it came. `Err` with what to tell the asker, or with nothing where it hung up or its
+    /// chat is gone.
+    fn turn_to_ask(
+        &self,
+        whose: &paced::Whose,
+        input: &Input,
+        tool: &str,
+        writer: &mut Box<dyn Write + Send>,
+    ) -> Result<paced::Turn<'_>, Option<String>> {
+        if let Some(turn) = self.ask_turns.taken_within(whose, Duration::ZERO) {
+            return Ok(turn);
+        }
+        let Some(_counted) = self.ask_turns.waits(whose.1) else {
+            return Err(Some(too_many_runs_said(tool)));
+        };
+        let note = brokered::Frame::Note(waits_for_another_run_said(tool));
+        serde_json::to_string(&note)
+            .ok()
+            .and_then(|line| {
+                writeln!(writer, "{line}")
+                    .and_then(|()| writer.flush())
+                    .ok()
+            })
+            .ok_or(None)?;
+        let since = Instant::now();
+        loop {
+            if let Some(turn) = self.ask_turns.taken_within(whose, LOOKED_AT_EVERY) {
+                return Ok(turn);
+            }
+            if input.gone() || !self.still_there(whose.1) {
+                return Err(None);
+            }
+            if since.elapsed() > A_HANDED_LINE_WAITS_AT_MOST {
+                return Err(Some(another_run_too_long_said(tool)));
+            }
+        }
     }
 
     /// Runs `wanted` here on `handed`, its asker's input as read so far.

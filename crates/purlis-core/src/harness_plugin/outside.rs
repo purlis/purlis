@@ -91,6 +91,16 @@ pub fn repo_skills(
     out
 }
 
+/// **Whether a move at `relative`, in a checkout, can change its repo skills** (#4377): it is in a
+/// folder some harness reads them from ([`Adapter::repo_skill_dirs`]), or above one, whose rename
+/// names only itself. The branch's own folder (empty) is above every one.
+pub fn moves_a_repo_skill(relative: &Path) -> bool {
+    super::adapters()
+        .flat_map(|adapter| adapter.repo_skill_dirs())
+        .map(Path::new)
+        .any(|dir| relative.starts_with(dir) || dir.starts_with(relative))
+}
+
 /// One skill from outside the plane, by the name the harness knows it by: a plugin's prefixed
 /// with its plugin's name.
 fn outside(

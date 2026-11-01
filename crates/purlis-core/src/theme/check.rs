@@ -31,7 +31,8 @@
 //! **A workspace's own colour can be any hue** (#4308), so each pair a tint can move
 //! ([`super::floors::moves_with_hue`]) is read at every whole degree too. A pair that falls only
 //! between the named tints is said once, at the degree it is lowest
-//! ([`Finding::ContrastBetweenTints`]).
+//! ([`Finding::ContrastBetweenTints`]). So is what must stand apart and is not a pair (#4406): the
+//! selected row, a side view's card row and a notice card's secondary way.
 //!
 //! `app/src/theme/contrast.test.ts` reads [`PAIRS`] out of this file and fails when a stylesheet
 //! draws a pair of tokens that is not in it.
@@ -209,6 +210,10 @@ pub const TIER_GROUNDS: [&str; 11] = [
     "control.base",
     "control.hover",
 ];
+
+/// **How far a changed word's wash has to stand from its line's** (#4424): the diff's only mark of
+/// which words changed. The thinnest a built-in draws is about 1.32:1.
+pub const WORD_WASH_APART: f64 = 1.3;
 
 /// **Every pair that ends up as something drawn on something**, and the floor it has to clear.
 pub const PAIRS: &[Pair] = &[
@@ -776,14 +781,108 @@ pub const PAIRS: &[Pair] = &[
     p("terminal.cursor", "terminal.background", 3.0),
     p("terminal.cursor-accent", "terminal.cursor", TEXT),
     // - The editor's words on the diff's washes (#2987, `editor/look.ts`): a changed line's wash
-    //   on the editor's ground, and a changed word's laid on its line's. The syntax roles are
-    //   drawn there too, and are not held here: see #2987's pull request for what they measure.
+    //   on the editor's ground, and a changed word's laid on its line's.
     p("terminal.foreground", "diff.inserted", TEXT).over("terminal.background"),
     p("terminal.foreground", "diff.deleted", TEXT).over("terminal.background"),
     p("terminal.foreground", "diff.inserted-text", TEXT)
         .over("diff.inserted")
         .over("terminal.background"),
     p("terminal.foreground", "diff.deleted-text", TEXT)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    // - A changed word has to stand out from its line (#4424): a step, as a hairline is, since a
+    //   wash thinned for the syntax colours must not vanish.
+    p("diff.inserted-text", "diff.inserted", WORD_WASH_APART).over("terminal.background"),
+    p("diff.deleted-text", "diff.deleted", WORD_WASH_APART).over("terminal.background"),
+    // - The syntax roles on a changed word's wash, the furthest a diff moves their ground (#4424).
+    p("syntax.keyword", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.string", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.number", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.constant", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.comment", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.function", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.type", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.property", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.attribute", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.tag", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.heading", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.invalid", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.variable", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.operator", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.punctuation", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.keyword", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.string", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.number", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.constant", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.comment", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.function", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.type", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.property", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.attribute", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.tag", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.heading", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.invalid", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.variable", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.operator", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.punctuation", "diff.deleted-text", 3.0)
         .over("diff.deleted")
         .over("terminal.background"),
     // **Every grey tier on every ground a part draws it on** (#2902, ruling #2803): the four text
@@ -964,6 +1063,28 @@ pub enum Finding {
     /// it at a hue between them (#4308): a workspace's own colour can be any hue. `degree` is the
     /// hue it is lowest at, and `ratio` its contrast there (to two places).
     ContrastBetweenTints { degree: u16, pair: Pair, ratio: f64 },
+    /// [`Finding::SelectedNotApart`], only at a hue between the named tints (#4406): the first
+    /// `degree` the selected row is drawn exactly as `other`.
+    SelectedBetweenTints { degree: u16, other: &'static str },
+    /// [`Finding::CardNotApart`], only at a hue between the named tints (#4406): `degree` is the
+    /// hue the step is smallest at, and `ratio` the step there.
+    CardBetweenTints {
+        degree: u16,
+        card: &'static str,
+        ground: &'static str,
+        ratio: f64,
+        floor: f64,
+    },
+    /// [`Finding::NoticeWayNotApart`], only at a hue between the named tints (#4406): `degree` is
+    /// the hue the way is nearest its ground at, and `distance` how far it is there.
+    NoticeWayBetweenTints {
+        degree: u16,
+        variant: &'static str,
+        ground: &'static str,
+        pointed: bool,
+        distance: f64,
+        floor: f64,
+    },
     /// An ANSI colour too close to the terminal's background.
     Ansi {
         tint: Option<&'static str>,
@@ -1104,17 +1225,145 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
             card_apart(&tinted, Some(one.name), card, &mut findings);
             notice_ways_apart(&tinted, Some(one.name), ways, &mut findings);
         }
-        between_named_tints(theme, &mut findings);
+        between_named_tints(theme, card, ways, &mut findings);
     }
     Report { findings }
 }
 
-/// **Each pair that falls only between the named tints** (#4308), said at its lowest whole degree.
-/// A pair already found is not said again, and a pair a tint cannot move is not read: what the
-/// rounding of a turned shade does to it only raises its contrast. The check runs while a person
-/// edits a draft, so a pair is read every [`COARSE_DEGREES`] first, and at every degree only when
-/// that comes within [`NEAR_A_FLOOR`] of its floor.
-fn between_named_tints(theme: &ResolvedTheme, findings: &mut Vec<Finding>) {
+/// **How near its floor a card row's step or edge is read at every degree** (#4406): the step
+/// moves far less than words do, since both sides of it are near one shade, and a test holds the
+/// largest coarse gap under this.
+pub(super) const NEAR_A_STEP: f64 = 0.02;
+
+/// **How near in OKLab a way is to its floor, or a selected row to what it must not equal, to be
+/// read at every degree** (#4406). A turned colour keeps its chroma, at most about 0.32 in sRGB, so
+/// the 5° to the nearest coarse reading moves it at most 2 × 0.32 × sin 2.5°, about 0.028. A test
+/// holds the largest coarse gap under this.
+pub(super) const NEAR_IN_OKLAB: f64 = 0.03;
+
+/// **What must stand apart in a tint and is not a pair of [`PAIRS`]**.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Stands {
+    Selected {
+        other: &'static str,
+    },
+    Card {
+        card: &'static str,
+        ground: &'static str,
+    },
+    Way {
+        variant: &'static str,
+        ground: &'static str,
+        pointed: bool,
+    },
+}
+
+/// One [`Stands`], as a theme draws it.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Standing {
+    what: Stands,
+    /// What a finding says of it: the card's step or the way's distance. The selected row's
+    /// distance is only how near it comes.
+    value: f64,
+    falls: bool,
+    near: bool,
+}
+
+/// **Each [`Stands`] a tint can move** as `theme` draws it: one with a token the recipe turns.
+pub(super) fn standing(
+    theme: &ResolvedTheme,
+    card: Option<super::parts::CardOnSide>,
+    ways: super::parts::NoticeWays,
+) -> Vec<Standing> {
+    let turned = |token: &str| theme.tint.tabs().contains(&token);
+    let mut all = Vec::new();
+    let selected = theme.value("list.selected");
+    if let Some(row) = tint::oklab_of(&solid(selected)) {
+        for other in SELECTED_APART_FROM {
+            if !turned("list.selected") && !turned(other) {
+                continue;
+            }
+            let Some(them) = tint::oklab_of(&solid(theme.value(other))) else {
+                continue;
+            };
+            let value = tint::distance(row, them);
+            all.push(Standing {
+                what: Stands::Selected { other },
+                value,
+                falls: selected.eq_ignore_ascii_case(theme.value(other)),
+                near: value < NEAR_IN_OKLAB,
+            });
+        }
+    }
+    if let Some(on) = card
+        && (["surface.deep", on.card, on.ground].into_iter().any(turned)
+            || on.edge.is_some_and(turned))
+    {
+        let (step, edge) = card_step(theme, on);
+        let edged = |floor: f64| edge.is_some_and(|edge| edge >= floor);
+        all.push(Standing {
+            what: Stands::Card {
+                card: on.card,
+                ground: on.ground,
+            },
+            value: step,
+            falls: step < CARD_STEP && !edged(CARD_EDGE),
+            near: step < CARD_STEP + NEAR_A_STEP && !edged(CARD_EDGE + NEAR_A_STEP),
+        });
+    }
+    for way in way_distances(theme, ways) {
+        if [way.ground, way.fill, "text.primary"]
+            .into_iter()
+            .any(turned)
+        {
+            all.push(Standing {
+                what: Stands::Way {
+                    variant: way.variant,
+                    ground: way.ground,
+                    pointed: way.pointed,
+                },
+                value: way.distance,
+                falls: way.distance < super::parts::SEEN,
+                near: way.distance < super::parts::SEEN + NEAR_IN_OKLAB,
+            });
+        }
+    }
+    all
+}
+
+/// Whether `what` is already found as written or at a named tint.
+fn already_found(findings: &[Finding], what: Stands) -> bool {
+    findings.iter().any(|one| match (one, what) {
+        (Finding::SelectedNotApart { other: said, .. }, Stands::Selected { other }) => {
+            *said == other
+        }
+        (Finding::CardNotApart { .. }, Stands::Card { .. }) => true,
+        (
+            Finding::NoticeWayNotApart {
+                variant: said,
+                pointed: at,
+                ..
+            },
+            Stands::Way {
+                variant, pointed, ..
+            },
+        ) => *said == variant && *at == pointed,
+        _ => false,
+    })
+}
+
+/// **What falls only between the named tints** (#4308, #4406), said at its lowest whole degree: a
+/// pair of [`PAIRS`], and each [`Stands`]. What is already found is not said again, and what a tint
+/// cannot move is not read: what the rounding of a turned shade does to a pair only raises its
+/// contrast. The check runs while a person edits a draft, so each is read every
+/// [`COARSE_DEGREES`] first, and at every degree only when that comes near its floor
+/// ([`NEAR_A_FLOOR`], [`NEAR_A_STEP`], [`NEAR_IN_OKLAB`]).
+fn between_named_tints(
+    theme: &ResolvedTheme,
+    card: Option<super::parts::CardOnSide>,
+    ways: super::parts::NoticeWays,
+    findings: &mut Vec<Finding>,
+) {
     let found = |pair: &Pair| {
         findings
             .iter()
@@ -1125,7 +1374,12 @@ fn between_named_tints(theme: &ResolvedTheme, findings: &mut Vec<Finding>) {
         .filter(|pair| !found(pair))
         .filter(|pair| floors::moves_with_hue(theme, pair))
         .collect();
-    if near.is_empty() {
+    let mut stands: Vec<Stands> = standing(theme, card, ways)
+        .into_iter()
+        .map(|one| one.what)
+        .filter(|what| !already_found(findings, *what))
+        .collect();
+    if near.is_empty() && stands.is_empty() {
         return;
     }
     let coarse: Vec<ResolvedTheme> = (0..360_u16)
@@ -1138,11 +1392,19 @@ fn between_named_tints(theme: &ResolvedTheme, findings: &mut Vec<Finding>) {
             .filter_map(|drawn| ratio(drawn, pair))
             .any(|ratio| ratio < pair.floor + NEAR_A_FLOOR)
     });
-    if near.is_empty() {
+    let coarse_stands: Vec<Standing> = coarse
+        .iter()
+        .flat_map(|drawn| standing(drawn, card, ways))
+        .filter(|one| one.near)
+        .collect();
+    stands.retain(|what| coarse_stands.iter().any(|one| one.what == *what));
+    if near.is_empty() && stands.is_empty() {
         return;
     }
     let mut lowest: Vec<(&'static Pair, Option<(u16, f64)>)> =
         near.into_iter().map(|pair| (pair, None)).collect();
+    let mut least: Vec<(Stands, Option<(u16, f64)>)> =
+        stands.into_iter().map(|what| (what, None)).collect();
     for degree in 0..360_u16 {
         let drawn = tint::tinted_at(theme, f64::from(degree));
         for (pair, low) in &mut lowest {
@@ -1153,6 +1415,17 @@ fn between_named_tints(theme: &ResolvedTheme, findings: &mut Vec<Finding>) {
                 *low = Some((degree, ratio));
             }
         }
+        if !least.is_empty() {
+            let read = standing(&drawn, card, ways);
+            for (what, low) in &mut least {
+                let Some(one) = read.iter().find(|one| one.what == *what && one.falls) else {
+                    continue;
+                };
+                if low.is_none_or(|(_, least)| one.value < least) {
+                    *low = Some((degree, one.value));
+                }
+            }
+        }
     }
     findings.extend(lowest.into_iter().filter_map(|(pair, low)| {
         low.map(|(degree, ratio)| Finding::ContrastBetweenTints {
@@ -1161,25 +1434,55 @@ fn between_named_tints(theme: &ResolvedTheme, findings: &mut Vec<Finding>) {
             ratio,
         })
     }));
+    findings.extend(least.into_iter().filter_map(|(what, low)| {
+        let (degree, value) = low?;
+        Some(match what {
+            Stands::Selected { other } => Finding::SelectedBetweenTints { degree, other },
+            Stands::Card { card, ground } => Finding::CardBetweenTints {
+                degree,
+                card,
+                ground,
+                ratio: value,
+                floor: CARD_STEP,
+            },
+            Stands::Way {
+                variant,
+                ground,
+                pointed,
+            } => Finding::NoticeWayBetweenTints {
+                degree,
+                variant,
+                ground,
+                pointed,
+                distance: (value * 1000.0).round() / 1000.0,
+                floor: super::parts::SEEN,
+            },
+        })
+    }));
 }
 
-/// **Whether a notice card's secondary way stands apart from each card ground** (#4210): the
-/// fill a theme's own button rules give it, else `notice.css`'s mix of the button's fill and the
-/// words ([`NOTICE_WAY_REST`], [`NOTICE_WAY_POINTED`]), each at least
-/// [`super::parts::SEEN`] from the ground in OKLab. A see-through fill is laid on the ground; a
-/// ground the window does not draw is skipped.
-fn notice_ways_apart(
-    theme: &ResolvedTheme,
-    tint: Option<&'static str>,
-    ways: super::parts::NoticeWays,
-    findings: &mut Vec<Finding>,
-) {
+/// A notice card's secondary way as a theme draws it on one card ground.
+struct WayOnGround {
+    variant: &'static str,
+    ground: &'static str,
+    /// The token that fills it: a theme's own, or the button's fill the card mixes.
+    fill: &'static str,
+    pointed: bool,
+    distance: f64,
+}
+
+/// **How far a notice card's secondary way stands from each card ground** (#4210): the fill a
+/// theme's own button rules give it, else `notice.css`'s mix of the button's fill and the words
+/// ([`NOTICE_WAY_REST`], [`NOTICE_WAY_POINTED`]), in OKLab. A see-through fill is laid on the
+/// ground; a ground the window does not draw is skipped.
+fn way_distances(theme: &ResolvedTheme, ways: super::parts::NoticeWays) -> Vec<WayOnGround> {
     let drawn = |token: &str| {
         let value = theme.value(token);
         (token != "transparent" && !value.is_empty() && !is_platform(token, value))
             .then(|| value.to_owned())
     };
     let words = drawn("text.primary").and_then(|one| tint::oklab_of(&solid(&one)));
+    let mut all = Vec::new();
     for (variant, ground) in ways.grounds {
         let Some(under) = drawn(ground) else {
             continue;
@@ -1208,35 +1511,44 @@ fn notice_ways_apart(
             let Some(fill) = fill else {
                 continue;
             };
-            let distance = tint::distance(fill, on);
-            if distance < super::parts::SEEN {
-                findings.push(Finding::NoticeWayNotApart {
-                    tint,
-                    variant,
-                    ground,
-                    pointed,
-                    distance: (distance * 1000.0).round() / 1000.0,
-                    floor: super::parts::SEEN,
-                });
-            }
+            all.push(WayOnGround {
+                variant,
+                ground,
+                fill: set.unwrap_or("control.base"),
+                pointed,
+                distance: tint::distance(fill, on),
+            });
+        }
+    }
+    all
+}
+
+/// **Whether a notice card's secondary way stands apart from each card ground** (#4210): each at
+/// least [`super::parts::SEEN`] from the ground ([`way_distances`]).
+fn notice_ways_apart(
+    theme: &ResolvedTheme,
+    tint: Option<&'static str>,
+    ways: super::parts::NoticeWays,
+    findings: &mut Vec<Finding>,
+) {
+    for way in way_distances(theme, ways) {
+        if way.distance < super::parts::SEEN {
+            findings.push(Finding::NoticeWayNotApart {
+                tint,
+                variant: way.variant,
+                ground: way.ground,
+                pointed: way.pointed,
+                distance: (way.distance * 1000.0).round() / 1000.0,
+                floor: super::parts::SEEN,
+            });
         }
     }
 }
 
-/// **Whether a side view's card row stands apart from its panel** (#3774): its fill a step from
-/// the panel's ([`CARD_STEP`]), or an edge a hairline from it ([`CARD_EDGE`]). A see-through
-/// panel is laid on the window's frame, a see-through card on the panel and a see-through edge on
-/// the card. Held where the theme's parts, its own or inherited, choose a card row's or a side
-/// panel's look ([`super::parts::card_on_side`]).
-fn card_apart(
-    theme: &ResolvedTheme,
-    tint: Option<&'static str>,
-    on: Option<super::parts::CardOnSide>,
-    findings: &mut Vec<Finding>,
-) {
-    let Some(on) = on else {
-        return;
-    };
+/// **A side view's card row on its panel**: its step, and its edge's contrast if it draws one. A
+/// see-through panel is laid on the window's frame, a see-through card on the panel and a
+/// see-through edge on the card.
+fn card_step(theme: &ResolvedTheme, on: super::parts::CardOnSide) -> (f64, Option<f64>) {
     let laid = |token: &str, under: &str| {
         let value = theme.value(token);
         if token == "transparent" || value.is_empty() || is_platform(token, value) {
@@ -1247,12 +1559,28 @@ fn card_apart(
     };
     let panel = laid(on.ground, &solid(theme.value("surface.deep")));
     let card = laid(on.card, &panel);
-    let step = two_places(contrast(&card, &panel));
     // An edge is drawn over the card's own fill, and told from the panel around it.
-    let edged = on
+    let edge = on
         .edge
-        .is_some_and(|edge| two_places(contrast(&laid(edge, &card), &panel)) >= CARD_EDGE);
-    if step < CARD_STEP && !edged {
+        .map(|edge| two_places(contrast(&laid(edge, &card), &panel)));
+    (two_places(contrast(&card, &panel)), edge)
+}
+
+/// **Whether a side view's card row stands apart from its panel** (#3774): its fill a step from
+/// the panel's ([`CARD_STEP`]), or an edge a hairline from it ([`CARD_EDGE`]) ([`card_step`]).
+/// Held where the theme's parts, its own or inherited, choose a card row's or a side panel's look
+/// ([`super::parts::card_on_side`]).
+fn card_apart(
+    theme: &ResolvedTheme,
+    tint: Option<&'static str>,
+    on: Option<super::parts::CardOnSide>,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(on) = on else {
+        return;
+    };
+    let (step, edge) = card_step(theme, on);
+    if step < CARD_STEP && !edge.is_some_and(|edge| edge >= CARD_EDGE) {
         findings.push(Finding::CardNotApart {
             tint,
             card: on.card,

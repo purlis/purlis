@@ -193,10 +193,11 @@ A baseline is a PNG at
 one for each pictured cell of the matrix.
 Every baseline is drawn and compared in one image, Playwright's own Docker image for the
 Playwright version the lockfile names, by the `stories` workflow's shards
-(`.github/workflows/stories.yml`). The workflow names the image by its tag and its digest,
+(`.github/workflows/stories.yml`). One file names the image by its tag and its digest,
 `mcr.microsoft.com/playwright:v<version>-noble@sha256:<digest>`, so a tag pushed again never
-changes a picture; the stories fail unless it names the lockfile's version
-(`tools/story-image.mjs`).
+changes a picture: `app/.storybook/playwright-image/Dockerfile`, which nothing builds. The stories
+fail unless it names the lockfile's version, and any workflow that names a Playwright image, in
+any form, must name that one (`tools/story-image.mjs`).
 
 **The stories run in shards**, as many as main's last good run says they need: a stories step
 past 8 minutes means more parts on the next run (`tools/story-shards.mjs`, #3040), and never
@@ -262,7 +263,20 @@ Only a pull request from a branch of this repository can be labelled this way: t
 token cannot push to a fork. A fork's author takes the baselines with
 `tools/story-baselines-pull.mjs` instead.
 
-When the lockfile's Playwright moves, the `stories` check fails until both workflows name the
-image of the new version, by its tag and the digest
-`docker buildx imagetools inspect mcr.microsoft.com/playwright:v<version>-noble` prints, and every
-baseline is drawn again by that pull request's `stories` run and taken.
+**A Playwright upgrade is one Dependabot pull request.** The `playwright` group in
+`.github/dependabot.yml` moves `playwright`, `vitest` and their `@playwright/*` and `@vitest/*`
+packages together with the pin's tag and digest, weekly, so nobody edits the digest by hand and no
+single bump of one of them opens a red pull request. It is also how a tag pushed again reaches the
+stories: the digest moves alone, in the same group. If the npm release is out and its image is not
+yet, the pull request's stories fail on the version and name it; the next run moves the image.
+
+The pictures of such a pull request cost what they differ by. Its `stories` run compares every
+baseline in the new image. A picture that still matches is kept as it is; a shard with a picture
+that differs draws again, with `--update`, only the story files and cells that failed in it, and
+the run keeps every live baseline as `story-baselines`. Take it as above, and review the pictures:
+the label's commit starts `stories` itself, and `story-baselines-pull` with your own push starts
+every check. A new rasteriser or font in the image can differ everywhere, so that one pull request
+carries a whole set of new pictures. Merge it on its own rather than with other picture changes.
+
+To move the image by hand, write the digest
+`docker buildx imagetools inspect mcr.microsoft.com/playwright:v<version>-noble` prints in the pin.

@@ -58,18 +58,28 @@ function routerSaid(router: string): string {
   return router === BUILT_IN_ROUTER ? "the built-in router" : `the router ${router}`;
 }
 
-/** What a chat's start row says under its number: why it fell back, or what it hid. */
+/** What a chat's row says under its number: its start's line and its last prompt's (#4297). The
+ *  line is cut at its end, so it leads with the one its mark says. */
 function lineOf(chat: StudioRouted): string {
-  if (chat.routing.fell_back) return chat.routing.said;
-  return chat.hidden.length === 0
-    ? "It hid nothing at the chat's start."
-    : `It hid ${counted(chat.hidden.length, "skill", "skills")} at the chat's start.`;
+  const start = chat.routing.fell_back
+    ? chat.routing.said
+    : chat.hidden.length === 0
+      ? "It hid nothing at the chat's start."
+      : `It hid ${counted(chat.hidden.length, "skill", "skills")} at the chat's start.`;
+  const prompt = chat.routing.last_prompt;
+  if (!prompt) return start;
+  return prompt.fell_back && !chat.routing.fell_back
+    ? `${prompt.said} ${start}`
+    : `${start} ${prompt.said}`;
 }
 
-/** A chat's start's one mark: its timing, or that it fell back on the built-in router. */
+/** A chat's one mark: that its start fell back on the built-in router, which is its whole list;
+ *  that its last prompt fell back (#4297); or its start's timing. */
 function markOf(chat: StudioRouted) {
   return chat.routing.fell_back ? (
     <Badge variant="waiting">Fell back to the built-in router</Badge>
+  ) : chat.routing.last_prompt?.fell_back ? (
+    <Badge variant="waiting">Last prompt fell back</Badge>
   ) : (
     <Badge>{`${chat.routing.ms} ms`}</Badge>
   );
@@ -379,9 +389,9 @@ export function RouterChange({
 }
 
 /**
- * **How the router did at each chat's start** (#3692): each chat open here that an extension's
- * router was asked about, with its timing or why it fell back. The built-in router asks nothing
- * and writes no record, so its chats are not listed.
+ * **How the router did at each chat's start and on its last prompt** (#3692, #4297): each chat
+ * open here that an extension's router was asked about, with its timing or why it fell back. The
+ * built-in router asks nothing and writes no record, so its chats are not listed.
  */
 export function RoutedChats({
   chats,
@@ -402,7 +412,7 @@ export function RoutedChats({
     );
   return (
     <List
-      aria-label="Each chat's start"
+      aria-label="Each chat's routing"
       className="skill-library"
       selectionMode="single"
       disallowEmptySelection
@@ -428,8 +438,8 @@ export function RoutedChats({
   );
 }
 
-/** **A chat's start, beside the list** (#3692): the router asked, how long it took, what came of
- *  it, and every skill it hid. */
+/** **A chat's routing, beside the list** (#3692, #4297): the router asked, how long it took at the
+ *  chat's start, what came of it, every skill it hid, and how it did on the last prompt. */
 export function RoutedChatItem({ chat }: { chat: StudioRouted | undefined }) {
   if (chat === undefined)
     return (
@@ -453,6 +463,9 @@ export function RoutedChatItem({ chat }: { chat: StudioRouted | undefined }) {
           </Fact>
           <Fact label="Answered in">{`${chat.routing.ms} ms`}</Fact>
           <Fact label="Hid">{chat.hidden.length === 0 ? "Nothing" : chat.hidden.join(", ")}</Fact>
+          {chat.routing.last_prompt && (
+            <Fact label="Last prompt">{chat.routing.last_prompt.said}</Fact>
+          )}
         </Facts>
       </div>
     </div>
