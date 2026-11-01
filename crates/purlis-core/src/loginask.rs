@@ -487,6 +487,12 @@ pub fn with_line(text: &str, proposal: &Proposal) -> Result<String, String> {
     }
 }
 
+/// Whether the project's file `text` has the `[sandbox]` [`with_line`] writes in.
+pub fn has_a_sandbox(text: &str) -> bool {
+    text.parse::<toml::Table>()
+        .is_ok_and(|top| top.get("sandbox").is_some_and(toml::Value::is_table))
+}
+
 /// Whether `after` is `before` and this one login, whole.
 fn only_added(before: &str, after: &str, proposal: &Proposal) -> bool {
     let (Ok(mut expected), Ok(after)) =
