@@ -132,13 +132,16 @@ fn purlis_classic_draws_exactly_today_s_values() {
     // `accent.wash-hover`, the chosen title-bar chip under the pointer, its `tab.active` (#3345).
     // Both gained `attention.surface` and `attention.text`, what needs a decision (#3678), a
     // tone Classic never drew before, so nothing it drew moved.
+    // Dark's `syntax.comment` and both word washes, and light's `syntax.keyword`, `type`,
+    // `property`, `attribute`, word washes and scrim, moved so syntax holds 3:1 on a changed word
+    // and the scrim 3:1 on the window (#4424).
     assert_eq!(
         digest(classic_dark()),
-        "60cc5868a167acc9d70103997f1be1dd9f45a8bb54b35631bf36424982af9b2d"
+        "079e2351d141af89e5546d8822444aa44778fa709dd902c3982ce2b7e229393f"
     );
     assert_eq!(
         digest(classic_light()),
-        "dc0a3fe9646851f38020d246f2f80f3f99ded065a0c7650e4814adae15677610"
+        "39f834d15688f53ed49d5fdc9d96698d66bdffa6c2c5f78ab468f4b007b3f340"
     );
     for theme in [classic_dark(), classic_light()] {
         assert_eq!(theme.motion.durations["duration.quick"], 120);

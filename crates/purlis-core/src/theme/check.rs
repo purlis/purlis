@@ -211,6 +211,10 @@ pub const TIER_GROUNDS: [&str; 11] = [
     "control.hover",
 ];
 
+/// **How far a changed word's wash has to stand from its line's** (#4424): the diff's only mark of
+/// which words changed. The thinnest a built-in draws is about 1.32:1.
+pub const WORD_WASH_APART: f64 = 1.3;
+
 /// **Every pair that ends up as something drawn on something**, and the floor it has to clear.
 pub const PAIRS: &[Pair] = &[
     p("text.primary", "surface.base", 4.5),
@@ -777,14 +781,108 @@ pub const PAIRS: &[Pair] = &[
     p("terminal.cursor", "terminal.background", 3.0),
     p("terminal.cursor-accent", "terminal.cursor", TEXT),
     // - The editor's words on the diff's washes (#2987, `editor/look.ts`): a changed line's wash
-    //   on the editor's ground, and a changed word's laid on its line's. The syntax roles are
-    //   drawn there too, and are not held here: see #2987's pull request for what they measure.
+    //   on the editor's ground, and a changed word's laid on its line's.
     p("terminal.foreground", "diff.inserted", TEXT).over("terminal.background"),
     p("terminal.foreground", "diff.deleted", TEXT).over("terminal.background"),
     p("terminal.foreground", "diff.inserted-text", TEXT)
         .over("diff.inserted")
         .over("terminal.background"),
     p("terminal.foreground", "diff.deleted-text", TEXT)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    // - A changed word has to stand out from its line (#4424): a step, as a hairline is, since a
+    //   wash thinned for the syntax colours must not vanish.
+    p("diff.inserted-text", "diff.inserted", WORD_WASH_APART).over("terminal.background"),
+    p("diff.deleted-text", "diff.deleted", WORD_WASH_APART).over("terminal.background"),
+    // - The syntax roles on a changed word's wash, the furthest a diff moves their ground (#4424).
+    p("syntax.keyword", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.string", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.number", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.constant", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.comment", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.function", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.type", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.property", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.attribute", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.tag", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.heading", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.invalid", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.variable", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.operator", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.punctuation", "diff.inserted-text", 3.0)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("syntax.keyword", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.string", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.number", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.constant", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.comment", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.function", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.type", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.property", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.attribute", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.tag", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.heading", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.invalid", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.variable", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.operator", "diff.deleted-text", 3.0)
+        .over("diff.deleted")
+        .over("terminal.background"),
+    p("syntax.punctuation", "diff.deleted-text", 3.0)
         .over("diff.deleted")
         .over("terminal.background"),
     // **Every grey tier on every ground a part draws it on** (#2902, ruling #2803): the four text

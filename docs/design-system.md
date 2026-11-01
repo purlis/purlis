@@ -103,8 +103,9 @@ a colour `platform`. The window's rules stop at the light editor, which draws it
 and caret.
 Purlis Classic leaves all six to the platform.
 Purlis Classic gives every other new token the colour the window drew before it: a syntax role
-the ANSI colour the editor borrowed for it (but light's `property` and `attribute`, `#1283ff`
-rather than the bright blue's `#218bff`, so they read on the editor's current line, #2522), a
+the ANSI colour the editor borrowed for it (but dark's `comment`, `#8b949e`, and light's
+`keyword`, `#7c48d9`, `type`, `#19757c`, and `property` and `attribute`, `#0969da`, which read on
+the editor's current line and on a diff's changed word, #2522, #4424), a
 markdown link and `chart.1` the accent (and both turn with a workspace's colour, as the accent
 does), markdown's code, quotes and headings the
 words' colour, `window.background` the window's surface (the native window's colour, #2328), and the terminal's extras xterm's own
@@ -456,9 +457,8 @@ asked for), whatever the system's appearance. Where its values come from:
 - **Light is derived from dark by one rule**: each colour's OKLCH lightness is reflected about
   the record's deepest colour (`#121215`, L 0.184), so L becomes 1 − (L − 0.184), keeping its
   hue, chroma and alpha. A reflected colour that misses a floor of the check steps its
-  lightness away from its ground by 0.01 until it clears: the comment and punctuation grey, on
-  the editor's current line (`#7c7a84`), and the quiet and faint tiers on the row under the
-  pointer (`#61606c`, the placeholder too, and `#7c7a87`). **A wash is not reflected** (#2924):
+  lightness away from its ground by 0.01 until it clears: the quiet and faint tiers on the row
+  under the pointer (`#61606c`, the placeholder too, and `#7c7a87`). **A wash is not reflected** (#2924):
   a hue reflected dark and laid thin on a light ground reads as grey, so `wash.warning`,
   `danger.wash`, `diff.deleted` and `diff.inserted` are each their hue's purest colour, where
   sRGB holds the most chroma for it, at dark's alpha: amber `#fdb0051f`, red `#fd04441f`, green
