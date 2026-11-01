@@ -136,6 +136,11 @@ impl Answer {
     }
 
     /// The text at `key`, when it is a string that is not empty.
+    pub fn value(&self, key: &str) -> Option<&Value> {
+        self.body.get(key)
+    }
+
+    /// A key's text, where it is a string that is not empty.
     pub fn text(&self, key: &str) -> Option<&str> {
         self.body
             .get(key)

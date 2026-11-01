@@ -532,6 +532,12 @@ timeout, quota or config.
 _Avoid_: node pool (that is the cluster's), fleet, cluster (for the pool), warm pool (that is one
 setting of it), runner provider (that is the code)
 
+**Agent identity**:
+What a chat acts as on a forge: a GitHub App's short-lived token, or a GitLab project or group
+token. It is never a person's forge account, whose sign-in reaches no chat (ADR 0077). One view tab,
+with one row per forge host, is where it is inspected and removed. Window text says Agent identity.
+_Avoid_: login, sign-in, bot account
+
 **Pool setup**:
 The one guided view tab that takes anyone from nothing to a working chat on a **Pool**: a list of
 steps on the left, each with its state (done, current, needs attention, skipped, waiting on

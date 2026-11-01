@@ -253,6 +253,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The browser sign-in to gitlab.com (#730, ADR 0077 §3): it opens the person's browser and
     // a loopback listener on this machine, and ends with a token in the keychain. No link
     // starts one or stops one.
+    // Agent identity (#4485): GitHub's App flow, the tool lines and the key, each the person's.
+    "agent_identities",
+    "agent_identity_create",
+    "agent_identity_create_cancel",
+    "agent_identity_reopen",
+    "agent_identity_stand",
+    "agent_identity_lines",
+    "agent_identity_finish",
+    "agent_identity_remove",
     "forge_pkce_sign_in",
     "forge_pkce_sign_in_cancel",
     // This machine's profiles (#2034, ADR 0095): the list, and the person's make, import and

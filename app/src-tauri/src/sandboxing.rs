@@ -1146,7 +1146,7 @@ fn hosts_and_tools(hosts: &[sandbox::hosts::Host], tools: &[sandbox::tools::Tool
 /// [`allow_persona_hosts`] in the project at `root`: checked against the list as it stands,
 /// audited, then kept with the digest of what was shown, and recorded for the Granted list.
 /// Chats already running take it at their next start.
-fn allow_persona(
+pub(crate) fn allow_persona(
     root: &std::path::Path,
     persona: &str,
     digest: &str,

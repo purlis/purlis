@@ -685,6 +685,11 @@ fn keep_one(
 /// **The tokens kept for chat `chat` of project `root`**, or for every chat of it where `chat`
 /// is `None`, that GitHub still takes: taken out, so none is handed out again.
 fn taken_at_end(root: &Path, chat: Option<u32>) -> Vec<Zeroizing<String>> {
+    taken_of(root, chat, None)
+}
+
+/// [`taken_at_end`], only the tokens of the App `app` where one is named.
+fn taken_of(root: &Path, chat: Option<u32>, app: Option<&str>) -> Vec<Zeroizing<String>> {
     let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
     let now = chrono::Utc::now();
     {
@@ -694,9 +699,12 @@ fn taken_at_end(root: &Path, chat: Option<u32>) -> Vec<Zeroizing<String>> {
         let end = ENDS.fetch_add(1, Ordering::SeqCst) + 1;
         ended.push((root.to_path_buf(), chat, end, now));
     }
-    let (ended, staying): (Vec<Kept>, Vec<Kept>) = std::mem::take(&mut *kept)
-        .into_iter()
-        .partition(|one| one.asked.root == root && chat.is_none_or(|chat| one.asked.chat == chat));
+    let (ended, staying): (Vec<Kept>, Vec<Kept>) =
+        std::mem::take(&mut *kept).into_iter().partition(|one| {
+            one.asked.root == root
+                && chat.is_none_or(|chat| one.asked.chat == chat)
+                && app.is_none_or(|app| one.asked.app == app)
+        });
     *kept = staying;
     ended
         .into_iter()
@@ -799,6 +807,18 @@ pub fn project_ended(root: &Path, within: Duration) {
     if let Some(finished) = revoke_later(taken_at_end(root, None), "every chat".to_owned()) {
         let _ = finished.recv_timeout(within);
     }
+}
+
+/// **The agent identity of App `app` was removed** (#4485): every token of it kept in project
+/// `root` is revoked now, waiting at most `within` for GitHub. A mint under way is treated as for
+/// an ended project, so none of them is handed over. Answers how many were taken.
+pub fn app_removed(root: &Path, app: &str, within: Duration) -> usize {
+    let tokens = taken_of(root, None, Some(app));
+    let taken = tokens.len();
+    if let Some(finished) = revoke_later(tokens, format!("the App {app}")) {
+        let _ = finished.recv_timeout(within);
+    }
+    taken
 }
 
 /// Keeps `token` for chat `chat` of project `root`, as a mint would, for an hour: a test's own,

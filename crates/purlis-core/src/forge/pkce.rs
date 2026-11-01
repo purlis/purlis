@@ -113,7 +113,7 @@ impl State {
         bool::from(mine.as_slice().ct_eq(theirs.as_slice()))
     }
 
-    fn expose(&self) -> &str {
+    pub(super) fn expose(&self) -> &str {
         self.0.expose_secret()
     }
 }
@@ -215,8 +215,13 @@ fn decoded(raw: &str) -> Option<String> {
 /// whatever else it says, so nothing on the machine can end a sign-in, or hand it a code, by
 /// calling the listener. Nothing of the query is kept but the code.
 pub fn read_redirect(target: &str, state: &State) -> Redirected {
+    read_redirect_at(REDIRECT_PATH, target, state)
+}
+
+/// [`read_redirect`], for a redirect that comes back on `at`.
+pub fn read_redirect_at(at: &str, target: &str, state: &State) -> Redirected {
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    if path != REDIRECT_PATH {
+    if path != at {
         return Redirected::NotOurs;
     }
     let mut code = None;

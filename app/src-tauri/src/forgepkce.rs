@@ -39,7 +39,7 @@ const MOST_STOPPED: usize = 16;
 
 /// The sign-ins running in this process, and the ones stopped before they started.
 #[derive(Default)]
-struct Tries {
+pub(crate) struct Tries {
     running: HashMap<String, Arc<AtomicBool>>,
     stopped: VecDeque<String>,
 }
@@ -47,7 +47,7 @@ struct Tries {
 impl Tries {
     /// Starts the try `name`: every other running try is stopped, and the flag that stops this
     /// one is answered, already set when the window stopped it before it started.
-    fn begin(&mut self, name: &str) -> Result<Arc<AtomicBool>, String> {
+    pub(crate) fn begin(&mut self, name: &str) -> Result<Arc<AtomicBool>, String> {
         let named = (1..=64).contains(&name.len())
             && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
         if !named || self.running.contains_key(name) {
@@ -68,12 +68,12 @@ impl Tries {
     }
 
     /// The try `name` is over, however it ended.
-    fn end(&mut self, name: &str) {
+    pub(crate) fn end(&mut self, name: &str) {
         self.running.remove(name);
     }
 
     /// Stops the try `name`: now when it is running, as it starts when it has not yet.
-    fn stop(&mut self, name: &str) {
+    pub(crate) fn stop(&mut self, name: &str) {
         match self.running.get(name) {
             Some(flag) => flag.store(true, Ordering::SeqCst),
             None if name.len() <= 64 => {
@@ -89,7 +89,7 @@ impl Tries {
 
 static TRIES: Mutex<Option<Tries>> = Mutex::new(None);
 
-fn tries<T>(with: impl FnOnce(&mut Tries) -> T) -> T {
+pub(crate) fn tries<T>(with: impl FnOnce(&mut Tries) -> T) -> T {
     let mut held = TRIES.lock().unwrap_or_else(|e| e.into_inner());
     with(held.get_or_insert_with(Tries::default))
 }
