@@ -879,9 +879,43 @@ const STANDING_MOST: u64 = 64 * 1024;
 /// How long a runner's sign-in check is waited for.
 const STANDING_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
 
-/// **What `purlis profile sign-in <name> --check` said of `name`, in `printed`**: signed in, not
-/// signed in, or that its harness cannot tell, each by the words that command writes. `Err`, in
-/// the runner's own words cut short, for anything else, such as a profile it does not keep.
+/// **What a runner's `purlis profile sign-in <name> --check` answered** (#4113), by how it exited
+/// ([`check_exit`]): `None` where it keeps no profile of that name. The words are read only where
+/// the status alone does not settle it: a purlis before these statuses exits 0 for an answer it
+/// cannot be sure of, and 1 for signed out and for a refusal alike ([`standing_said`]). Exiting 0
+/// having said nothing at all is no answer. `Err`, in the runner's own words cut short, for
+/// anything else.
+///
+/// [`check_exit`]: crate::profilestore::sign_in::check_exit
+pub fn standing_answered(
+    name: &str,
+    status: Option<i32>,
+    printed: &str,
+) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
+    use crate::profilestore::sign_in::{Standing, check_exit};
+    let is = |code: u8| status == Some(i32::from(code));
+    if is(check_exit::NOT_KEPT) {
+        return Ok(None);
+    }
+    if is(check_exit::SIGNED_OUT) {
+        return Ok(Some(Standing::SignedOut));
+    }
+    if is(check_exit::CANNOT_TELL) {
+        return Ok(Some(Standing::CannotTell));
+    }
+    if is(check_exit::FETCHING) {
+        return Ok(Some(Standing::Fetching));
+    }
+    match standing_said(name, printed) {
+        Err(_) if status == Some(0) && !printed.trim().is_empty() => Ok(Some(Standing::SignedIn)),
+        said => said.map(Some),
+    }
+}
+
+/// **What a purlis before the statuses [`standing_answered`] reads said of `name`, in `printed`**:
+/// signed in, not signed in, fetching, or that its harness cannot tell, each by the words that
+/// command writes. `Err`, in the runner's own words cut short, for anything else, such as a
+/// profile it does not keep.
 pub fn standing_said(
     name: &str,
     printed: &str,
@@ -900,6 +934,9 @@ pub fn standing_said(
         }
         if line.contains(&format!("cannot tell whether '{name}'")) {
             return Ok(Standing::CannotTell);
+        }
+        if line.contains(&format!("cannot yet say whether '{name}'")) {
+            return Ok(Standing::Fetching);
         }
     }
     let last = printed.lines().rfind(|line| !line.trim().is_empty());
@@ -1870,12 +1907,12 @@ const DOCKER_IN_HOME: &[&str] = &[
 /// **Whether the runner `login` reaches says `name` is signed in** (#4046, #4164): that login's
 /// own words, with `--check`. Bounded, in time and in what is kept of it: the runner's answer is
 /// its own. A runner that fetches the harness first (#4007) is given the time a fetch takes.
-/// `Err` where it says neither, as for a profile it does not keep. A check is no login, so it
+/// `None` where it keeps no such profile, `Err` where it could not say. A check is no login, so it
 /// is not held to its input: the runner refuses the two together.
 pub fn standing_by_login(
     login: &crate::profilestore::sign_in::Login,
     name: &str,
-) -> Result<crate::profilestore::sign_in::Standing, String> {
+) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
     let mut command = std::process::Command::new(&login.program);
     command
         .args(login.args.iter().filter(|arg| *arg != "--until-input-ends"))
@@ -1900,7 +1937,7 @@ pub fn standing_by_login(
         }
         crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
     })?;
-    standing_said(name, &String::from_utf8_lossy(&ran.said))
+    standing_answered(name, ran.status.code(), &String::from_utf8_lossy(&ran.said))
 }
 
 impl Docker {
@@ -2480,15 +2517,15 @@ impl Docker {
     }
 
     /// **Whether the runner says `name` is signed in**, by its own `purlis profile sign-in
-    /// --check` ([`standing_said`]), through the same `docker` as [`Docker::driven_sign_in`]:
-    /// for a sign-in with no link to the runner to ask over (#4046). `Err` where it says neither,
-    /// as for a profile it does not keep.
+    /// --check` ([`standing_answered`]), through the same `docker` as [`Docker::driven_sign_in`]:
+    /// for a sign-in with no link to the runner to ask over (#4046). `None` where it keeps no
+    /// profile of that name; `Err` where it could not say.
     pub fn standing_on_runner(
         &self,
         made: &Made,
         engine: &std::path::Path,
         name: &str,
-    ) -> Result<crate::profilestore::sign_in::Standing, String> {
+    ) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
         let login = self.driven_sign_in(made, engine, name, None)?;
         standing_by_login(&login, name)
     }

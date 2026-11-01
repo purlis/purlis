@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatMove, PoolSignInStep } from "./bindings";
@@ -13,6 +13,7 @@ import {
   heardMove,
   movedAfterSignIn,
   putAwayMove,
+  useMovedAfterSignIn,
 } from "./chatMoves";
 import { MoveNotice } from "./MoveNotice";
 import { PROFILE_SIGN_IN, type ProfileSignInAsk } from "./settings/links";
@@ -124,6 +125,19 @@ describe("a move waiting on its profile's sign-in", () => {
     act(() => heardMove(PLANE, { ...waiting(), stage: "preparing", sign_in: null }));
     expect(await screen.findByText(/Moving to pool builds/)).toBeInTheDocument();
     expect(calls("put_away_chat_move")).toEqual([]);
+  });
+
+  it("keeps a wait on a sign-in only while the move stays on that pool (#4325)", () => {
+    const moved = renderHook(() => useMovedAfterSignIn(PLANE, 9));
+    const after = (to: string) => {
+      act(() => heardMove(PLANE, waiting()));
+      act(() => heardMove(PLANE, { ...waiting(), stage: "preparing", sign_in: null, to }));
+      act(() => movedAfterSignIn(PLANE, 3, 9));
+      return moved.result.current;
+    };
+    expect(after("other")).toBeUndefined();
+    expect(after("builds")).toBe("builds");
+    act(() => dismissMovedAfterSignIn(PLANE, 9));
   });
 
   it("Cancel in the strip cancels the move, and the chat stays here", async () => {

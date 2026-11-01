@@ -400,12 +400,14 @@ export async function askVersion(name: string) {
 }
 
 /** Removes pool `name`, its runner, its container and its home; answers what could not be
- *  removed, or why nothing was, in purlis's or Docker's words already shown safely. */
-export async function removePool(name: string): Promise<string | undefined> {
+ *  removed, or why nothing was, in purlis's or Docker's words already shown safely. `elsewhere`
+ *  is what the person was told: that its runner is on an engine Docker no longer reaches, so nothing
+ *  there goes. Where that no longer holds, or the other way round, nothing is done (#4325). */
+export async function removePool(name: string, elsewhere = false): Promise<string | undefined> {
   if (held.removing !== undefined)
     return `purlis is removing pool ${held.removing}: remove ${name} once it is gone.`;
   set((was) => ({ ...was, removing: name, said: undefined }));
-  const said = await caught(commands.removeDockerPool(name));
+  const said = await caught(commands.removeDockerPool(name, elsewhere));
   const left = said.status === "error" ? said.error : (said.data ?? undefined);
   set((was) => {
     const links = { ...was.links };

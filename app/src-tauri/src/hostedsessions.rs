@@ -441,17 +441,19 @@ impl Connection {
     }
 
     /// **The pool `pool` was removed from this machine**: every link the window holds to its
-    /// runner ends, each chat on it told it ended with its host, and whatever comes next is
-    /// dialled anew, by the name, to the runner kept under it now. What the window held against
-    /// that name goes too: a pool added under it is a new runner.
+    /// runner ends, each chat on it told it ended with that runner (#4350), and whatever comes
+    /// next is dialled anew, by the name, to the runner kept under it now. What the window held
+    /// against that name goes too: a pool added under it is a new runner.
     pub fn pool_removed(&self, pool: &str) {
         lock(&self.untrusted).remove(pool);
-        self.links_to_pool_end(pool);
+        for link in self.links_of_pool(pool) {
+            link.end_with_its_runner();
+        }
     }
 
     /// **Each link to a runner kept no more ends** (#4168): made again in its place, or removed
     /// outside purlis as it drained, its chats do not exist on any runner now, so each is told it
-    /// ended rather than staying dimmed as if it would come back. Only for a Docker pool whose
+    /// ended with that runner (#4350) rather than staying dimmed as if it would come back. Only for a Docker pool whose
     /// runners this machine reads; a list that cannot be read, or is empty, says nothing.
     pub fn links_to_gone_runners_end(&self, config: &Path) {
         let Some(kept) = purlis_core::runners::read(config)
@@ -490,7 +492,7 @@ impl Connection {
                 });
             }
             for link in ended {
-                link.end();
+                link.end_with_its_runner();
             }
         }
     }
@@ -498,18 +500,22 @@ impl Connection {
     /// Every link the window holds to the runner of `pool` ends, each chat on it told it ended
     /// with its host, and whatever comes next is dialled anew.
     pub fn links_to_pool_end(&self, pool: &str) {
+        for link in self.links_of_pool(pool) {
+            link.end();
+        }
+    }
+
+    /// Every link the window holds to the runner of `pool`, let go of for a removal.
+    fn links_of_pool(&self, pool: &str) -> Vec<Arc<HostLink>> {
         let Some(of_it) = lock(&self.pools).get(pool).cloned() else {
-            return;
+            return Vec::new();
         };
         of_it.removals.fetch_add(1, Ordering::SeqCst);
-        let links: Vec<Arc<HostLink>> = lock(&of_it.projects)
+        lock(&of_it.projects)
             .drain()
             .map(|(_, link)| link)
             .chain(lock(&of_it.left_on_draining).drain().flat_map(|(_, on)| on))
-            .collect();
-        for link in links {
-            link.end();
-        }
+            .collect()
     }
 
     /// How many times the pool `pool` was removed.
@@ -1058,6 +1064,9 @@ pub struct HostLink {
     hearing: tokio::task::AbortHandle,
     /// Whether the window ended it ([`HostLink::end`]): what hears it then runs to its end.
     ended: std::sync::atomic::AtomicBool,
+    /// Whether it ended because its runner is gone for good ([`HostLink::end_with_its_runner`]):
+    /// its chats' conversations went with that runner's home (#4350).
+    runner_gone: Arc<std::sync::atomic::AtomicBool>,
     /// Why the host did not take the window's name on it, where it was named and did not
     /// (#2623): said by whoever opened it, never with the name.
     unnamed: Option<String>,
@@ -1313,6 +1322,7 @@ impl HostLink {
             shared,
             hearing,
             ended: std::sync::atomic::AtomicBool::new(false),
+            runner_gone: Arc::default(),
             unnamed,
             most_bundle_bytes: purlis_session_protocol::code::MOST_BUNDLE_BYTES,
             pool: relaying.map(str::to_owned),
@@ -1334,6 +1344,13 @@ impl HostLink {
     pub(crate) fn end(&self) {
         self.ended.store(true, Ordering::SeqCst);
         self.client.end_link();
+    }
+
+    /// [`Self::end`], **its runner being gone for good**: each chat on it says it ended with that
+    /// runner, not that nothing was lost (#4350).
+    pub(crate) fn end_with_its_runner(&self) {
+        self.runner_gone.store(true, Ordering::SeqCst);
+        self.end();
     }
 
     /// This link, reading its pool's limits from `config`.
@@ -2626,8 +2643,8 @@ pub struct HostedSessions {
     ended: Mutex<Option<Ends>>,
     kill_switch: Arc<crate::killswitch::KillSwitch>,
     /// The chats whose program ended with their host, until each is started again or closed
-    /// (#2007).
-    lost: Arc<Mutex<std::collections::HashSet<u32>>>,
+    /// (#2007), each with whether that host was a runner gone for good (#4350).
+    lost: Arc<Mutex<HashMap<u32, bool>>>,
     /// Each program the host still had for this project as the window held it, from before
     /// this window, that nothing has reattached yet, by its number (#2006).
     left: Arc<Mutex<HashMap<u32, HeldProgram>>>,
@@ -4021,7 +4038,11 @@ impl SessionHost for HostedSessions {
     }
 
     fn lost_with_its_host(&self, id: u32) -> bool {
-        lock(&self.lost).contains(&id)
+        lock(&self.lost).contains_key(&id)
+    }
+
+    fn lost_with_its_runner(&self, id: u32) -> bool {
+        lock(&self.lost).get(&id).copied().unwrap_or(false)
     }
 
     fn running(&self) -> Vec<u32> {
@@ -4431,6 +4452,7 @@ impl HostedSessions {
         let tell = lock(&self.ended).clone();
         let running = Arc::clone(&self.running);
         let lost = Arc::clone(&self.lost);
+        let runner_gone = Arc::clone(&link.runner_gone);
         let ended = program.to_owned();
         link.when_it_ends(
             program,
@@ -4451,7 +4473,7 @@ impl HostedSessions {
                     }
                     // Its terminal closed with its host, which hangs its program up.
                     Ending::WithTheHost => {
-                        lock(&lost).insert(id);
+                        lock(&lost).insert(id, runner_gone.load(Ordering::SeqCst));
                         purlis_core::session::Exit::Signal(ENDED_WITH_THE_HOST.to_owned())
                     }
                 };
