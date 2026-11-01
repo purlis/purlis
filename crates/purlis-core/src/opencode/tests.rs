@@ -454,7 +454,7 @@ fn every_dispatch_tool() -> Vec<String> {
 fn each_dispatch_tool_is_allowed_where_the_operator_names_none_of_them() {
     // #3794: on purlis's own dispatch grant, each by the name opencode asks it under.
     assert_eq!(allowed_with(&[]), every_dispatch_tool());
-    assert_eq!(every_dispatch_tool().len(), 11);
+    assert_eq!(every_dispatch_tool().len(), 12);
     // A rule for another tool, or every tool allowed, leaves them to purlis.
     assert_eq!(
         allowed_with(&[(
