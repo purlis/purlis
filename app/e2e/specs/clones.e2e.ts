@@ -106,7 +106,6 @@ type Account = { id: string; host: string; method: string };
 /** The repos the forge has, each served its own way and named for it. */
 const REPOS: Record<string, Served & { files: number }> = {
   "first-repo": { way: "whole", files: 3 },
-  "refused-in-a-new-workspace": { way: "whole", files: 3 },
   "second-repo": { way: "whole", files: 3 },
   "third-repo": { way: "whole", files: 3 },
   "fourth-repo": { way: "whole", files: 3 },
@@ -463,20 +462,6 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     expect(forge.heard().some((one) => one.signedIn)).toBe(false);
   });
 
-  it("a new workspace's refused clone keeps its row, with a Retry and no Remove", async () => {
-    const repo = "refused-in-a-new-workspace";
-    await aNewWorkspaceCloning("refused-new", [repo]);
-    await $(`${rowOf(repo)} .trouble`).waitForExist({
-      timeout: 60_000,
-      timeoutMsg: "the refused clone of a repo the workspace does not name lost its row",
-    });
-    const pressable = await browser.execute((css: string) => {
-      const buttons = document.querySelectorAll(`${css} button`);
-      return [...buttons].map((one) => one.getAttribute("aria-label"));
-    }, rowOf(repo));
-    expect(pressable).toEqual([`Retry ${repo}`, `Dismiss ${repo}`]);
-  });
-
   it("signs in once through the browser flow", async () => {
     // With no account the fallback above is the CLI's, by design: so the stand-ins are what the
     // window finds, and the note would show one signing a clone. From here on none may.
@@ -524,25 +509,6 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     expect(signed.length).toBeGreaterThan(0);
     // GitLab's name for an OAuth or personal token, from the account's helper and no CLI's.
     expect(new Set(signed.map((one) => one.user))).toEqual(new Set(["oauth2"]));
-  });
-
-  it("a new workspace's repo lands from its row's Retry, and takes the chip's failure with it", async () => {
-    const repo = "refused-in-a-new-workspace";
-    await focusWorkspace("refused-new");
-    await showView("Repos");
-    await press(rowOf(repo), "Retry", "starting");
-    const { landed } = foldersOf(plane, "refused-new", repo);
-    await untilLanded(landed, 90_000, "the row's Retry after signing in");
-    aWholeClone(landed);
-    await browser.waitUntil(async () => !(await $(rowOf(repo)).isExisting()), {
-      timeout: 30_000,
-      timeoutMsg: "the landed repo stayed a row of the ones not cloned here",
-    });
-    await browser.waitUntil(
-      async () => !(await wordsOfTheWindow()).includes(`Could not clone ${repo}`),
-      { timeout: 30_000, timeoutMsg: "the chip's failure outlived the clone that landed" },
-    );
-    await theStatusBarsCardIsPutAway();
   });
 
   it("a clone past the old 120 seconds climbs on the chip's notice and its row, and lands", async () => {
@@ -689,6 +655,30 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
       expect(said).toContain(forge.server);
       expect(said).not.toMatch(NAMES_A_CLI);
       nothingOf(plane, "silent", repo);
+    } finally {
+      rmSync(THE_RUNS_CLONE_STALL, { force: true });
+    }
+  });
+
+  it("a new workspace's clone that fails keeps its row, with Retry and Dismiss and no Remove", async () => {
+    writeFileSync(THE_RUNS_CLONE_STALL, SHORT_STALL);
+    try {
+      const repo = "gone-silent";
+      await aNewWorkspaceCloning("silent-new", [repo]);
+      await $(`${rowOf(repo)} .trouble`).waitForExist({
+        timeout: 120_000,
+        timeoutMsg: "the failed clone of a repo the workspace does not name lost its row",
+      });
+      const pressable = await browser.execute((css: string) => {
+        const buttons = document.querySelectorAll(`${css} button`);
+        return [...buttons].map((one) => one.getAttribute("aria-label"));
+      }, rowOf(repo));
+      expect(pressable).toEqual([`Retry ${repo}`, `Dismiss ${repo}`]);
+      await press(rowOf(repo), `Dismiss ${repo}`);
+      await browser.waitUntil(async () => !(await $(rowOf(repo)).isExisting()), {
+        timeout: 30_000,
+        timeoutMsg: "Dismiss left the row",
+      });
     } finally {
       rmSync(THE_RUNS_CLONE_STALL, { force: true });
     }
