@@ -41,13 +41,15 @@ spec:
     - expression: request.namespace.startsWith('purlis-runners-')
       message: purlis's cluster operator writes upstream's objects in a runner namespace alone.
       reason: Forbidden
-    # What it changes of a claim: upstream adds to one as it adopts a warm runner, and the operator's
-    # apply leaves that as it is.
+    # A claim as upstream writes it: its update as it adopts a warm runner leaves
+    # additionalPodMetadata empty, which is present but adds nothing.
     - expression: >-
         request.resource.resource != 'sandboxclaims' ||
-        (request.operation == 'UPDATE' && object.spec == oldObject.spec) ||
         (object.spec.warmPoolRef.name.startsWith('purlis-pool-') &&
-        !has(object.spec.env) && !has(object.spec.additionalPodMetadata) &&
+        !has(object.spec.env) &&
+        (!has(object.spec.additionalPodMetadata) ||
+        (!has(object.spec.additionalPodMetadata.labels) &&
+        !has(object.spec.additionalPodMetadata.annotations))) &&
         !has(object.spec.lifecycle) &&
         (!has(object.spec.volumeClaimTemplates) ||
         (size(object.spec.volumeClaimTemplates) == 1 &&
@@ -131,6 +133,20 @@ spec:
         (!has(c.env) || c.env.all(e, !has(e.valueFrom) || has(e.valueFrom.fieldRef))) &&
         (!has(c.volumeMounts) || c.volumeMounts.all(m, m.name in ['purlis-link', 'purlis-kept']))))
       message: purlis's cluster operator's template confines each container as purlis's runner is.
+      reason: Forbidden
+    # A claim's own labels and annotations: the operator writes its mark of the Claim, and leaves
+    # what upstream has written as it is.
+    - expression: >-
+        request.resource.resource != 'sandboxclaims' ||
+        ((!has(object.metadata.labels) || object.metadata.labels.all(k,
+        request.operation == 'UPDATE' && has(oldObject.metadata.labels) &&
+        k in oldObject.metadata.labels && oldObject.metadata.labels[k] == object.metadata.labels[k])) &&
+        (!has(object.metadata.annotations) || object.metadata.annotations.all(k,
+        k == 'runners.purlis.dev/claim-uid' ||
+        (request.operation == 'UPDATE' && has(oldObject.metadata.annotations) &&
+        k in oldObject.metadata.annotations &&
+        oldObject.metadata.annotations[k] == object.metadata.annotations[k]))))
+      message: purlis's cluster operator writes only its own mark on a claim.
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

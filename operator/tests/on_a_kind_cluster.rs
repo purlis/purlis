@@ -2060,6 +2060,106 @@ fn claims_in(client: &Client, namespace: &str) -> Api<Claim> {
     Api::<Claim>::namespaced(client.clone(), namespace)
 }
 
+/// What upstream's claim `name` holds once it has adopted a warm runner, and the writes the
+/// cluster refuses on it, asked as dry runs so nothing changes: the operator adding to its pod or
+/// to its labels and annotations, and anyone adding the label no claim of a purlis pool carries.
+async fn an_adopted_claim_holds_its_shape(client: &Client, name: &str) {
+    use kube::api::{ApiResource, DynamicObject};
+    use purlis_cluster_operator::upstream::SandboxClaim;
+    let resource = ApiResource::erase::<SandboxClaim>(&());
+    let held = Api::<DynamicObject>::namespaced_with(client.clone(), &runners(), &resource)
+        .get(name)
+        .await
+        .expect("its upstream claim");
+    let mut fields: Vec<&str> = held.data["spec"]
+        .as_object()
+        .expect("its spec")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    fields.sort_unstable();
+    assert_eq!(
+        fields,
+        ["additionalPodMetadata", "warmPoolRef"],
+        "what an adopted claim holds: {}",
+        held.data["spec"]
+    );
+    assert_eq!(
+        held.data["spec"]["additionalPodMetadata"],
+        serde_json::json!({})
+    );
+    let dry = PatchParams {
+        dry_run: true,
+        ..PatchParams::default()
+    };
+    let as_operator = acting_as(SERVICE_ACCOUNT).await;
+    let operators = Api::<DynamicObject>::namespaced_with(as_operator, &runners(), &resource);
+    let shape = "nothing added to the pod";
+    let marks = "only its own mark on a claim";
+    for (what, change, words) in [
+        (
+            "a pod label",
+            serde_json::json!({ "spec": { "additionalPodMetadata": { "labels": { "sandbox.users.io/e2e": "x" } } } }),
+            shape,
+        ),
+        (
+            "a pod annotation",
+            serde_json::json!({ "spec": { "additionalPodMetadata": { "annotations": { "e2e": "x" } } } }),
+            shape,
+        ),
+        (
+            "an environment variable",
+            serde_json::json!({ "spec": { "env": [{ "name": "E2E", "value": "x" }] } }),
+            shape,
+        ),
+        (
+            "a label",
+            serde_json::json!({ "metadata": { "labels": { "e2e": "x" } } }),
+            marks,
+        ),
+        (
+            "an annotation",
+            serde_json::json!({ "metadata": { "annotations": { "e2e": "x" } } }),
+            marks,
+        ),
+        (
+            "the upstream annotation changed",
+            serde_json::json!({ "metadata": { "annotations": { "agents.x-k8s.io/sandbox-name": "another" } } }),
+            marks,
+        ),
+    ] {
+        let refused = operators.patch(name, &dry, &Patch::Merge(&change)).await;
+        assert!(refused_saying(&refused, words), "{what}: {refused:?}");
+    }
+    // Nor by anyone else, for the one label.
+    let by_admin = Api::<DynamicObject>::namespaced_with(client.clone(), &runners(), &resource)
+        .patch(
+            name,
+            &dry,
+            &Patch::Merge(serde_json::json!({
+                "metadata": { "labels": { "agents.x-k8s.io/created-by": "x" } }
+            })),
+        )
+        .await;
+    assert!(
+        refused_saying(&by_admin, "does not carry a created-by label"),
+        "{by_admin:?}"
+    );
+    // The operator's own mark, as it is, passes: what its apply writes on every pass.
+    let uid =
+        &held.metadata.annotations.as_ref().expect("its marks")["runners.purlis.dev/claim-uid"];
+    operators
+        .patch(
+            name,
+            &dry,
+            &Patch::Merge(serde_json::json!({
+                "metadata": { "annotations": { "runners.purlis.dev/claim-uid": uid } }
+            })),
+        )
+        .await
+        .expect("its own mark, as it is");
+}
+
 /// A client acting as `user`, through the admin's right to impersonate.
 async fn acting_as(user: &str) -> Client {
     let mut config = kube::Config::infer().await.expect("the cluster");
@@ -2843,6 +2943,7 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
         .expect("a fresh claim");
     let (pod, _) = vouched_pod(&claims, "ada-fresh").await;
     assert_eq!(pod, warm, "the fresh claim took the warm runner");
+    an_adopted_claim_holds_its_shape(&client, "ada-fresh").await;
     assert_eq!(
         warm_pools
             .get(&name)
