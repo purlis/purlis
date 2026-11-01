@@ -738,3 +738,48 @@ fn a_chip_s_count_stands_on_the_bar_s_ground_whatever_the_chip_s_fill() {
         parts::fallen(&theme)
     );
 }
+
+/// Purlis's dark with a light counts button under each tab's count, and `count` on it.
+fn on_a_light_counts_button(count: Value) -> ResolvedTheme {
+    let loaded = load(&json!({
+        "name": "Light counts",
+        "extends": "purlis",
+        "appearances": [{ "id": "dark", "tokens": { "surface.sunken": "#e8e8e8" } }],
+        "parts": count,
+    }));
+    assert!(!loaded.refused, "{:?}", loaded.complaints);
+    loaded
+        .theme
+        .appearances
+        .into_iter()
+        .find(|one| one.id == "dark")
+        .unwrap()
+}
+
+fn tab_count_fell(theme: &ResolvedTheme) -> bool {
+    parts::fallen(theme)
+        .iter()
+        .any(|one| one.floor.starts_with("the count's words"))
+}
+
+#[test]
+fn a_see_through_tab_count_is_measured_over_the_counts_button() {
+    // Light words read on the wash over the dark tab, and not on it over the light button the
+    // tab's chip paints under its counts (#4406).
+    let theme = on_a_light_counts_button(json!({
+        "tabs.count.fill": "accent.wash",
+        "tabs.count.text": "text.primary",
+    }));
+    assert!(tab_count_fell(&theme), "{:?}", parts::fallen(&theme));
+}
+
+#[test]
+fn a_tab_count_that_only_reads_over_the_counts_button_keeps_the_theme_s_colours() {
+    // The opposite way round, and the control: dark words read on the wash over the light
+    // button, though not over the dark tab.
+    let theme = on_a_light_counts_button(json!({
+        "tabs.count.fill": "accent.wash",
+        "tabs.count.text": "surface.deep",
+    }));
+    assert!(!tab_count_fell(&theme), "{:?}", parts::fallen(&theme));
+}

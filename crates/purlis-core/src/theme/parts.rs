@@ -2653,7 +2653,8 @@ const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count")];
 /// **What part `at` is laid on, as drawn** (#3303): the root's own fill over the family's grounds
 /// `on`, so a see-through part fill is measured where it is. A part with no ground of its own
 /// reads the root's fill itself, and one drawn around the root, on a ground of its own or on its
-/// variant's stands on `on` alone.
+/// variant's stands on `on` alone. A part with a fill of a theme's own over what its parent paints
+/// ([`Family::under`]) is laid over that too (#4406): a tab's count over its counts button.
 fn under_part(
     theme: &ResolvedTheme,
     on: &[String],
@@ -2664,6 +2665,11 @@ fn under_part(
 ) -> Vec<String> {
     let name = family.parts[at].name;
     let ground = look.grounds[at];
+    if let Some((_, parent)) = family.under.iter().find(|(part, _)| *part == name)
+        && ground != *parent
+    {
+        return laid_over(theme, parent, &laid_over(theme, look.fill, on));
+    }
     if at == 0
         || ground == look.fill
         || family.around.contains(&name)
