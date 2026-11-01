@@ -58,8 +58,9 @@ export const Clean: Story = {
     await canvas.findByText("deploy/scripts/release.sh");
     const open = canvas.getByRole("button", { name: "Open draft pull request" });
     await waitFor(() => expect(open).not.toHaveAttribute("aria-disabled", "true"));
-    await userEvent.tab();
-    await expectFocusInSight();
+    for (let step = 0; step < 40 && document.activeElement !== open; step++) await userEvent.tab();
+    await expect(open).toHaveFocus();
+    expectFocusInSight();
   },
 };
 
@@ -91,6 +92,8 @@ export const Narrow: Story = {
 };
 
 export const Export: Story = {
+  // A dialog is drawn over the page, outside the story's frame: the page is pictured.
+  parameters: { screenshot: "page" },
   render: () => (
     <ExportDialog
       plane="p"

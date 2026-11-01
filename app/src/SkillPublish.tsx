@@ -259,7 +259,7 @@ function Reviewed({ review, onAgain }: { review: PublishReviewView; onAgain: () 
             label={`${counted(review.stops.length, "thing stops", "things stop")} this publish`}
             fixes={[{ label: "Review again", onPress: onAgain }]}
           >
-            {`${counted(review.stops.length, "thing stops", "things stop")} this publish. Fix them in the skill, then review again. There is no way to send it past them.`}
+            {`${counted(review.stops.length, "thing stops", "things stop")} this publish. Fix ${review.stops.length === 1 ? "it" : "them"} in the skill, then review again. There is no way to send it past ${review.stops.length === 1 ? "it" : "them"}.`}
           </Notice>
           <ul className="skill-publish-rows">
             {review.stops.map((stop) => (
