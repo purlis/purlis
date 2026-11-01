@@ -235,6 +235,18 @@ fn a_runner_not_ready_for_long_is_said_to_be_stuck_and_nothing_more() {
         !says("False", "Stopped", 1, None),
         "it was stopped until now"
     );
+    // Its time starts over: `Ready` is `Unknown` for the pass after a stop.
+    let mut previous = purlis_cluster_operator::status_of(None);
+    previous.conditions[0].reason = "Stopped".into();
+    let mut next = purlis_cluster_operator::status_of(None);
+    saying_stuck(
+        &mut next,
+        Some(&previous),
+        None,
+        Duration::from_secs(1800),
+        now,
+    );
+    assert_eq!(next.conditions[0].status, "Unknown");
 }
 
 fn object(name: &str, namespace: &str, age: i64, uid: Option<&str>) -> ObjectMeta {

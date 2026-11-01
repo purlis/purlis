@@ -761,10 +761,9 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         if claim.spec.kept
             && suspension == Suspension::Suspended
             && let Some(sandbox) = sandbox.as_ref()
+            && let Err(error) = renew_image(client, sandbox, &pool).await
         {
-            if let Err(error) = renew_image(client, sandbox, &pool).await {
-                tracing::warn!(claim = %name, %namespace, %error, "a suspended runner could not take its pool's image");
-            }
+            tracing::warn!(claim = %name, %namespace, %error, "a suspended runner could not take its pool's image");
         }
         let mut status = status_of_a_stopped_claim(&claim, Some(&pool), suspension);
         lifecycle::pausing_idle(&mut status, claim.status.as_ref());
