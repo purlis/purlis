@@ -1171,6 +1171,27 @@ impl Kubectl {
         (!said.is_empty()).then(|| crate::shown::short(&said.join(": ")))
     }
 
+    /// **Where the Claim `namespace`/`name`'s runner has got to** (#3709), for a window waiting on
+    /// it; `None` where it is not on its way, or the Claim could not be read. Only shown, never
+    /// read to decide.
+    pub fn claim_stage(&self, namespace: &str, name: &str) -> Option<RunnerStage> {
+        let held = self
+            .json(
+                &[
+                    "get",
+                    "claims.runners.purlis.dev",
+                    name,
+                    "--namespace",
+                    namespace,
+                    "--output",
+                    "json",
+                ],
+                None,
+            )
+            .ok()?;
+        stage_of(&held)
+    }
+
     /// **What a pool's status says of its operator**: its key, its cluster and any roll.
     pub fn pool(&self, pool: &str) -> Result<PoolSeen, Refused> {
         let held = self.json(
@@ -2124,6 +2145,72 @@ pub fn suspended_for_being_idle(held: &serde_json::Value) -> bool {
                         && one.get("reason").and_then(serde_json::Value::as_str) == Some("Idle")
                 })
             })
+}
+
+/// **Where a runner on its way has got to** (#3709), in the words Pool setup uses: no Claim, pod or
+/// node, for a reader who has never heard of them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnerStage {
+    pub said: &'static str,
+    pub more: &'static str,
+    /// The cluster's own words for why it waits, where it gave them.
+    pub cluster_said: Option<String>,
+}
+
+/// What a stage says where the cluster gave a reason for the wait.
+const STUCK: &str = "This is taking a while. The cluster says why below. Your admin can act on it.";
+
+/// **The stage the Claim `held` says its runner is at**: `Ready` is `False` with the reason the
+/// operator gives while a cold claim starts, or `Idle` for one that was resting. Any other reason
+/// is not a stage, and the window says what it says of any start.
+pub fn stage_of(held: &serde_json::Value) -> Option<RunnerStage> {
+    let ready = held
+        .pointer("/status/conditions")?
+        .as_array()?
+        .iter()
+        .find(|one| one.get("type").and_then(serde_json::Value::as_str) == Some("Ready"))?;
+    let field = |name: &str| ready.get(name).and_then(serde_json::Value::as_str);
+    if field("status") != Some("False") {
+        return None;
+    }
+    // Only what the cluster said is wrong: the operator words every stage for kubectl, and those
+    // words are no reason to worry. Whole here: what shows it masks and cuts it.
+    let message = field("message").unwrap_or_default();
+    let why = |after: &str| {
+        message
+            .split_once(after)
+            .map(|(_, why)| why.trim().to_owned())
+            .filter(|why| !why.is_empty())
+    };
+    let (said, more, cluster_said) = match field("reason")? {
+        "Scheduling" => (
+            "Waiting for room in the cluster",
+            "The cluster has no machine free for your runner yet. You can keep working; this \
+             chat starts by itself.",
+            why(" The scheduler: "),
+        ),
+        "Pulling" => (
+            "Downloading the runner image",
+            "Only the first runner on a machine needs this. It can take a few minutes.",
+            why("is not pulled yet: "),
+        ),
+        "Starting" => ("Starting your runner", "Almost there.", None),
+        "Idle" => (
+            "Your runner was resting, and is coming back",
+            "It rests when nothing runs on it. Your work is still there.",
+            None,
+        ),
+        _ => return None,
+    };
+    let more = match cluster_said {
+        Some(_) => STUCK,
+        None => more,
+    };
+    Some(RunnerStage {
+        said,
+        more,
+        cluster_said,
+    })
 }
 
 /// What the Claim `held`'s `DeletionNotice` condition says, where it is `True` (#3981).
