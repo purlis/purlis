@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793503040161,
+  "lastUpdate": 1793505926301,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34608,6 +34608,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8456675,
             "unit": "ms",
             "extra": "median of 5 runs: 101.572, 101.758, 101.846, 101.898, 102.952 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a487ff4050cabe032902aa5d6d6c362d9afbd133",
+          "message": "A pool's limits: code sends and waits, each offering a value when hit (#4379)\n\n* A pool's limits: largest code sent and longest code send (#4282)\n\nBoth are pool limits. A send is held to them on both ends, measured here before anything goes, and over either the refusal offers a value. What a runner writes back stays fixed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: waits for a sign-in, vouching and a runner's answer (#4283)\n\nEach wait follows its pool. Run out, it says so and offers double; applied, the attempt runs again and every check with it. Vouching is a cluster pool's alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* PROBE, not to land: the journey on code over its limit, and measuring near the top\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: format, and the tests of a sign-in name their wait (#4283)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: the sign-in's wait is read before what checks it takes the config (#4283)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: a link reads them where its connection keeps the pool (#4282)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* PROBE, not to land: report why a send failed, in smaller steps\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: a newer sign-in test names its wait (#4283)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: the client as generated, the sign-in's wait read in the core, and a real failed send in its test (#4283)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: keeping a profile has the time its limit could take (#4314)\n\nThe whole wait is not a limit of its own: it follows profileSize, so any value of it has time to go, and every batch stays held to its answer.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* PROBE, not to land: a whole profile near the top of its limit, and the runner's memory\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: review fixes (#4282, #4283)\n\nAn offer is asked of the pool acted on and taken once, so no words reach another pool. Only this machine's clock says a wait ran out. A start's quick path keeps its fixed wait. Only a wait that follows the limit offers to raise it. The vouch wait stays with the add. Hand-edited rows meet the same check.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: format; PROBE sized under the top\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: a large profile is read off the thread the link stays alive on (#4314)\n\nNear the top of the limit the read outlasted the link's 30 seconds of silence, and the runner closed it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: each default's measurement, and the probe out (#4282, #4283, #4314)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n* A pool's limits: a start from + or a split keeps its offer; a redrawn window too (#4282, #4283)\n\nA failed save is said in the form; a fixed keep wait offers nothing; a dropped call is not a wait run out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A1FDJ4FDM401CTKQJVXBRA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T03:43:56Z",
+          "tree_id": "d67e6494d2f3737468fedaf9347935c11ddaed2a",
+          "url": "https://github.com/purlis/purlis/commit/a487ff4050cabe032902aa5d6d6c362d9afbd133"
+        },
+        "date": 1793505920248,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6992404999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.665, 0.699, 0.699, 0.704, 0.705 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.461391499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.435, 16.452, 16.461, 16.462, 16.555 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.375581,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.990, 101.142, 101.376, 102.104, 102.331 ms"
           }
         ]
       }
