@@ -16,6 +16,9 @@ claimed (#2056, [below](#who-the-runner-is)). Each person's runners run in a nam
 operator makes for that person alone, within a quota (#2055,
 [below](#each-persons-namespace)).
 
+**New to this?** [Set up a pool on your cluster](cluster-pool-setup.md) walks through it step by
+step. This page is the reference behind it.
+
 ## What it needs
 
 - **Kubernetes 1.36 or later.** The operator's tests run on kind's Kubernetes 1.36.4.
