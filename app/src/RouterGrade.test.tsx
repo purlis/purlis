@@ -620,6 +620,101 @@ describe("A router's grade running, a page on Routing (#4222)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled());
   });
 
+  it("opens its scorecard when the router it graded is chosen again after its end (#4338)", async () => {
+    mockIPC((cmd) => (cmd === "router_grade_running" ? step({ ran: 1 }) : null), {
+      shouldMockEvents: true,
+    });
+    const told = { ended: vi.fn(), back: vi.fn() };
+    const page = (router: string | null) => (
+      <RouterGradeRunningPage
+        plane="p"
+        router={router}
+        grade="01GRADE"
+        onEnded={told.ended}
+        onBack={told.back}
+      />
+    );
+    const drawn = render(page(null));
+    await screen.findByRole("group", { name: "How far the grade of the router relevance is" });
+    await emit("router-grade", step({ ran: 2, ended: "whole" }));
+    await screen.findByTestId("router-grade-ended");
+    expect(told.ended).not.toHaveBeenCalled();
+
+    drawn.rerender(page("relevance"));
+    await waitFor(() => expect(told.ended).toHaveBeenCalledTimes(1));
+    // Drawn again as it was, it opens nothing a second time.
+    drawn.rerender(page("relevance"));
+    expect(told.ended).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves nobody when an end lands after the page was left (#4338)", async () => {
+    mockIPC((cmd) => (cmd === "router_grade_running" ? step({ ran: 1 }) : null), {
+      shouldMockEvents: true,
+    });
+    const told = { ended: vi.fn(), back: vi.fn() };
+    const drawn = render(
+      <RouterGradeRunningPage
+        plane="p"
+        router="relevance"
+        grade="01GRADE"
+        onEnded={told.ended}
+        onBack={told.back}
+      />,
+    );
+    // Left before its listener was let go, which waits on the listen under way.
+    drawn.unmount();
+    await emit("router-grade", step({ ran: 2, ended: "whole" }));
+    await new Promise((settled) => setTimeout(settled, 0));
+    expect(told.ended).not.toHaveBeenCalled();
+  });
+
+  it("opens its scorecard once for an end told by both the event and the read (#4338)", async () => {
+    let answer: (now: RouterGradeStep) => void = () => undefined;
+    const read = new Promise<RouterGradeStep>((resolve) => {
+      answer = resolve;
+    });
+    mockIPC((cmd) => (cmd === "router_grade_running" ? read : null), { shouldMockEvents: true });
+    const told = renderRunning();
+    await new Promise((settled) => setTimeout(settled, 0));
+    await emit("router-grade", step({ ran: 2, ended: "whole" }));
+    await waitFor(() => expect(told.ended).toHaveBeenCalledTimes(1));
+
+    answer(step({ ran: 2, ended: "whole" }));
+    await emit("router-grade", step({ ran: 2, ended: "whole" }));
+    await new Promise((settled) => setTimeout(settled, 0));
+    expect(told.ended).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens its scorecard where the read says the end after an older step was told (#4338)", async () => {
+    let answer: (now: RouterGradeStep) => void = () => undefined;
+    const read = new Promise<RouterGradeStep>((resolve) => {
+      answer = resolve;
+    });
+    mockIPC((cmd) => (cmd === "router_grade_running" ? read : null), { shouldMockEvents: true });
+    const told = renderRunning();
+    await new Promise((settled) => setTimeout(settled, 0));
+    await emit("router-grade", step({ ran: 1 }));
+    answer(step({ ran: 2, ended: "whole" }));
+    await waitFor(() => expect(told.ended).toHaveBeenCalledTimes(1));
+  });
+
+  it("says an end with words the read brings after an older step was told, with Stop done (#4338)", async () => {
+    let answer: (now: RouterGradeStep) => void = () => undefined;
+    const read = new Promise<RouterGradeStep>((resolve) => {
+      answer = resolve;
+    });
+    mockIPC((cmd) => (cmd === "router_grade_running" ? read : null), { shouldMockEvents: true });
+    const told = renderRunning();
+    await new Promise((settled) => setTimeout(settled, 0));
+    await emit("router-grade", step({ ran: 1 }));
+    answer(step({ ran: 2, ended: "whole", said: "The scorecard could not be saved." }));
+    expect(await screen.findByTestId("router-grade-ended")).toHaveTextContent(
+      "The scorecard could not be saved.",
+    );
+    expect(screen.getByRole("button", { name: "Stop" })).toBeDisabled();
+    expect(told.ended).not.toHaveBeenCalled();
+  });
+
   it("says a grade that ended while the page was away, and opens its scorecard", async () => {
     mockIPC((cmd) => (cmd === "router_grade_running" ? null : null), { shouldMockEvents: true });
     const told = renderRunning();
