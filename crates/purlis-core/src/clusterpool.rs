@@ -1454,6 +1454,15 @@ impl Kubectl {
         .map(|_| ())
     }
 
+    /// **What the Claim `namespace`/`name` says of its deletion** (#3981), where its operator gave
+    /// notice: when, in its words. Data, never read to decide.
+    pub fn deletion_notice(&self, namespace: &str, name: &str) -> Result<Option<String>, Refused> {
+        Ok(self
+            .claim_json(namespace, name)?
+            .as_ref()
+            .and_then(deletion_notice_of))
+    }
+
     /// The Claim `namespace`/`name` as the cluster has it, where it does.
     fn claim_json(
         &self,
@@ -2052,6 +2061,22 @@ pub fn idle_since(held: &serde_json::Value) -> Option<&str> {
         })?
         .get("lastTransitionTime")?
         .as_str()
+}
+
+/// What the Claim `held`'s `DeletionNotice` condition says, where it is `True` (#3981).
+pub fn deletion_notice_of(held: &serde_json::Value) -> Option<String> {
+    let notice = held
+        .pointer("/status/conditions")?
+        .as_array()?
+        .iter()
+        .find(|one| {
+            one.get("type").and_then(serde_json::Value::as_str) == Some("DeletionNotice")
+                && one.get("status").and_then(serde_json::Value::as_str) == Some("True")
+        })?;
+    notice
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .map(crate::shown::short)
 }
 
 pub mod idle;
