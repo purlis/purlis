@@ -195,10 +195,17 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     // Code's own sandbox already keeps commands from writing, never in their place. A name
     // that holds only itself (`.git`) is left out: a glob here denies what is below it too,
     // and git writes there.
-    for planted in super::PLANTED
-        .iter()
-        .filter(|planted| planted.reach == super::Reach::AndBelow)
-    {
+    // A glob can't be written past one path, so a name a person lifted for this chat goes whole
+    // ([`super::grant::lift`]; the Notice says so).
+    let held = |planted: &&super::Planted| {
+        planted.reach == super::Reach::AndBelow
+            && !compiled
+                .widened
+                .lifted
+                .iter()
+                .any(|folder| folder.ends_with(planted.path))
+    };
+    for planted in super::PLANTED.iter().filter(held) {
         let glob = format!("**/{}", planted.path);
         deny_write.extend(plain_and_cased("**/", planted.path));
         edit_rules.push(format!("Edit({glob})"));
@@ -314,10 +321,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         allow_write = vec!["/".to_owned()];
         // Every later-code name wherever it is, the home's among them: a relative `**/<name>`
         // is read against the chat's folder, and at the floor every folder is written.
-        for planted in super::PLANTED
-            .iter()
-            .filter(|planted| planted.reach == super::Reach::AndBelow)
-        {
+        for planted in super::PLANTED.iter().filter(held) {
             let mut globs = vec![(
                 format!("/**/{}", planted.path),
                 format!("/**/{}", either_case(planted.path)),

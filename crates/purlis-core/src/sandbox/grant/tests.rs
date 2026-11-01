@@ -1040,3 +1040,72 @@ fn a_grant_above_the_data_home_leaves_the_app_state_denied_to_writes() {
         }
     }
 }
+
+/// Where a held folder is judged: a project at the floor, or not, in `m`'s home.
+fn ground_of(m: &Disk, floor: bool) -> Ground {
+    Ground {
+        root: m.at.join("plane"),
+        chat: m.at.join("plane"),
+        home: Some(m.at.join("home")),
+        denied: Vec::new(),
+        allowed: Vec::new(),
+        refused: Vec::new(),
+        harness_temp: &[],
+        folded: false,
+        floor,
+    }
+}
+
+#[test]
+fn a_held_folder_is_lifted_only_by_its_whole_name_below_the_home_at_the_floor() {
+    let m = Disk::new();
+    let ground = ground_of(&m, true);
+    let gh = m.path("home/.config/gh");
+    assert_eq!(lift(&gh, &ground), Ok(m.at.join("home/.config/gh")));
+    // Below it, another copy of the name, or a name not on the list: never.
+    for typed in [
+        m.path("home/.config/gh/hosts.yml"),
+        m.path("plane/.config/gh"),
+        m.path("home/.config/git"),
+        m.path("home/.zshrc"),
+        m.path("home/Library/LaunchAgents"),
+    ] {
+        assert!(
+            matches!(lift(&typed, &ground), Err(Refused::Never(_))),
+            "{typed}"
+        );
+    }
+    // The full sandbox keeps its refusal.
+    assert!(matches!(
+        lift(&gh, &ground_of(&m, false)),
+        Err(Refused::Never(_))
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_held_folder_reached_through_a_link_is_not_lifted() {
+    let m = Disk::new();
+    m.link("home/.kube", "tmp");
+    assert!(matches!(
+        lift(&m.path("home/.kube/kuberc"), &ground_of(&m, true)),
+        Err(Refused::Not(_))
+    ));
+}
+
+#[test]
+fn only_what_this_chat_holds_for_itself_stays_lifted() {
+    let m = Disk::new();
+    let ground = ground_of(&m, true);
+    let gh = m.at.join("home/.config/gh");
+    let locks = crate::sandbox::policy::Locks::default();
+    let mut chat = Grants::default();
+    chat.add(&What::Write(gh.clone()));
+    chat.add(&What::Write(m.at.join("plane/out")));
+    assert_eq!(still_lifted(&chat, &locks, &ground), vec![gh.clone()]);
+    // Not kept for a run alone, and not past the floor.
+    let mut once = Grants::default();
+    once.add_once(&What::Write(gh));
+    assert!(still_lifted(&once, &locks, &ground).is_empty());
+    assert!(still_lifted(&chat, &locks, &ground_of(&m, false)).is_empty());
+}

@@ -1875,6 +1875,14 @@ fn a_forge_programs_and_kubectls_settings_are_held_from_writing() {
         ".config/glab-cli",
         ".local/share/gh",
         ".kube/kuberc",
+        ".local/share/fish/vendor_conf.d",
+        ".local/share/fish/vendor_functions.d",
+        ".local/share/nvim/site/plugin",
+        ".local/share/nvim/site/ftplugin",
+        ".local/share/nvim/site/pack",
+        ".local/share/bash-completion/completions",
+        ".local/share/dbus-1/services",
+        ".claude/rules",
     ] {
         assert!(
             PLANTED
@@ -1885,6 +1893,29 @@ fn a_forge_programs_and_kubectls_settings_are_held_from_writing() {
         assert!(crate::sandboxblock::is_planted(std::path::Path::new(
             &format!("{held}/some/file")
         )));
+    }
+}
+
+/// Every name a person may lift is one the floor holds, whole.
+#[test]
+fn every_name_that_may_be_lifted_is_held() {
+    for name in crate::sandbox::MAY_LIFT {
+        assert!(
+            PLANTED
+                .iter()
+                .any(|planted| planted.path == name && planted.reach == Reach::AndBelow),
+            "{name}"
+        );
+        // Never below what no Allow reaches.
+        for never in [
+            ".gitconfig",
+            ".config/git",
+            ".ssh",
+            ".zshrc",
+            "Library/LaunchAgents",
+        ] {
+            assert!(!name.starts_with(never), "{name}");
+        }
     }
 }
 

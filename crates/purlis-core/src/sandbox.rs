@@ -834,7 +834,7 @@ impl Planted {
 /// have code run outside its sandbox the next time a person, an editor or another chat opens
 /// the directory. The project's manifests are held only where they could change a chat's
 /// sandbox ([`MANIFESTS`]).
-pub const PLANTED: [Planted; 81] = [
+pub const PLANTED: [Planted; 89] = [
     // A `.git` moved into place brings its own config and hooks.
     Planted::itself(".git"),
     Planted::and_below(".git/config"),
@@ -904,6 +904,15 @@ pub const PLANTED: [Planted; 81] = [
     Planted::and_below(".local/share/gh"),
     // kubectl's preferences, which each later run applies.
     Planted::and_below(".kube/kuberc"),
+    // What fish, Neovim, bash's completion and the session's message bus load or start from
+    // under `~/.local/share`, measured to run what is there.
+    Planted::and_below(".local/share/fish/vendor_conf.d"),
+    Planted::and_below(".local/share/fish/vendor_functions.d"),
+    Planted::and_below(".local/share/nvim/site/plugin"),
+    Planted::and_below(".local/share/nvim/site/ftplugin"),
+    Planted::and_below(".local/share/nvim/site/pack"),
+    Planted::and_below(".local/share/bash-completion/completions"),
+    Planted::and_below(".local/share/dbus-1/services"),
     // ssh's own: what it runs, and who it lets in. Its `known_hosts` stays the chat's to add to,
     // as ssh does on a first connection; the folder itself is never moved aside.
     Planted::itself(".ssh"),
@@ -916,6 +925,7 @@ pub const PLANTED: [Planted; 81] = [
     Planted::and_below("Library/LaunchAgents"),
     Planted::and_below(".claude.json"),
     Planted::and_below(".claude/hooks"),
+    Planted::and_below(".claude/rules"),
     Planted::and_below(".claude/plugins"),
     Planted::and_below(".config/opencode"),
     Planted::and_below("Library/Application Support/Code/User"),
@@ -939,6 +949,34 @@ pub const PLANTED: [Planted; 81] = [
     Planted::and_below(".config/Cursor/User"),
     Planted::and_below(".config/JetBrains"),
 ];
+
+/// **The later-code names a person may lift for one chat at the floor** (ADR 0067, amended
+/// 2026-11-02): each below the home alone, by [`grant::lift`]. Other tools' settings, whose owners
+/// write them in ordinary use. Git's config, shell startup files, what the system starts at login
+/// and every harness's and editor's own are not here, and no Allow reaches them.
+pub const MAY_LIFT: [&str; 12] = [
+    ".config/gh",
+    ".config/glab-cli",
+    ".local/share/gh",
+    ".kube/kuberc",
+    ".local/share/fish/vendor_conf.d",
+    ".local/share/fish/vendor_functions.d",
+    ".local/share/nvim/site/plugin",
+    ".local/share/nvim/site/ftplugin",
+    ".local/share/nvim/site/pack",
+    ".local/share/bash-completion/completions",
+    ".local/share/dbus-1/services",
+    ".claude/rules",
+];
+
+/// Whether `path` holds a name of [`MAY_LIFT`].
+pub fn names_what_may_be_lifted(path: &Path) -> bool {
+    let parts: Vec<&std::ffi::OsStr> = path.iter().collect();
+    MAY_LIFT.iter().any(|name| {
+        let wanted: Vec<&std::ffi::OsStr> = Path::new(name).iter().collect();
+        parts.windows(wanted.len()).any(|here| here == wanted)
+    })
+}
 
 /// The project's manifests, under both names (RN-2a): `purlis.toml`, which turns the sandbox
 /// on, and `purlis.local.toml`, what the machine adds to the project and purlis reads at every
@@ -3271,6 +3309,9 @@ pub struct Widened {
     /// The ports a person let this chat listen on that something on this Mac already listened
     /// on as it was compiled: neither served nor reached, and told so.
     pub unserved: Vec<u16>,
+    /// At the floor, the held folders a person let this chat write ([`grant::lift`]), each named
+    /// whole. Every other copy of the name stays held where the sandbox can say so.
+    pub lifted: Vec<PathBuf>,
 }
 
 impl Widened {
@@ -3497,6 +3538,13 @@ impl Homes {
     }
 }
 
+impl Widened {
+    /// With `lifted` as [`Self::lifted`].
+    fn lifting(self, lifted: Vec<PathBuf>) -> Self {
+        Self { lifted, ..self }
+    }
+}
+
 impl Compiled {
     /// **The floor** ([`Level::Floor`]) for a chat in the project at `root` on `machine`: every
     /// denial class, and nothing else held. No hosts are listed, since nothing limits the
@@ -3554,6 +3602,11 @@ impl Compiled {
                 .certificate_checks,
             ..Widened::default()
         }
+        .lifting(grant::still_lifted(
+            chat,
+            &locks,
+            &grant::Ground::of(root, root, machine),
+        ))
         .and_granted(
             &sockets,
             &services,

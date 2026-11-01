@@ -357,6 +357,8 @@ pub struct Ground {
     pub refused: Vec<PathBuf>,
     pub harness_temp: &'static [&'static str],
     pub folded: bool,
+    /// Whether the project is at the floor, where a person may lift a held folder ([`lift`]).
+    pub floor: bool,
 }
 
 /// The system temp folders, as the kernel names them: a harness's own temp roots in them are
@@ -443,7 +445,8 @@ impl Ground {
         // person's `PATH` and the packages it leads to, is a block like any other, whose Allow
         // lets the chat write it: allowed here, and no longer refused for being on `PATH`.
         let locks = super::policy::Locks::of(root);
-        if super::Plane::read(root).in_force(&locks).is_none() {
+        let floor = super::Plane::read(root).in_force(&locks).is_none();
+        if floor {
             let held = super::floor_held(root, machine, &[]);
             refused.retain(|dir| !held.contains(&super::real(dir)) && !held.contains(dir));
             allowed.extend(held);
@@ -458,6 +461,7 @@ impl Ground {
             refused,
             harness_temp: harness_temp(),
             folded: machine.os == super::Os::MacOs,
+            floor,
         }
     }
 
@@ -783,6 +787,59 @@ fn judged(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
         return Err(Refused::Never(brokered_route(Class::LaterCode).to_owned()));
     }
     Ok(resolved)
+}
+
+/// **The held folder of [`super::MAY_LIFT`] that `path` is, or is in**, below the home alone.
+pub fn liftable(path: &Path, place: &Place<'_>) -> Option<PathBuf> {
+    let home = place.home?;
+    let path = key(&lexical(path), place);
+    super::MAY_LIFT
+        .iter()
+        .map(|name| home.join(name))
+        .find(|folder| path.starts_with(key(&lexical(folder), place)))
+}
+
+/// **`typed` as a held folder a person lets one chat write at the floor** (ADR 0067, amended
+/// 2026-11-02), or why not: exactly a folder of [`super::MAY_LIFT`] below the home, reached by no
+/// link, in a project at the floor. Never [`write`]'s allowlist: this chat alone holds it, and
+/// each start judges it again ([`still_lifted`]).
+pub fn lift(typed: &str, ground: &Ground) -> Result<PathBuf, Refused> {
+    let never = || Refused::Never(brokered_route(Class::LaterCode).to_owned());
+    let place = ground.place();
+    let asked = Path::new(typed.trim());
+    let folder = liftable(asked, &place).ok_or_else(never)?;
+    if !ground.floor || key(&lexical(asked), &place) != key(&lexical(&folder), &place) {
+        return Err(never());
+    }
+    let resolved = super::real(&folder);
+    let home = place.home.map(super::real).ok_or_else(never)?;
+    let name = folder
+        .strip_prefix(place.home.ok_or_else(never)?)
+        .map_err(|_| never())?;
+    if resolved != home.join(name) {
+        return Err(Refused::Not(
+            "purlis will not lift that folder: it, or a folder above it, is a link, so it is not \
+             the folder it names."
+                .to_owned(),
+        ));
+    }
+    Ok(resolved)
+}
+
+/// The held folders `chat` holds at the floor of `ground`: each this chat's own, at a scope policy
+/// leaves open, and still what it was ([`lift`]).
+pub fn still_lifted(chat: &Grants, locks: &super::policy::Locks, ground: &Ground) -> Vec<PathBuf> {
+    if locks.forbids_write_grants() {
+        return Vec::new();
+    }
+    chat.writes
+        .iter()
+        .filter(|folder| {
+            let level = chat.level_of(&What::Write((*folder).clone()));
+            level == Level::Chat && locks.keeps_scope(level)
+        })
+        .filter_map(|folder| lift(&folder.display().to_string(), ground).ok())
+        .collect()
 }
 
 /// Whether any part of `path` is a project manifest's name ([`super::MANIFESTS`]).
