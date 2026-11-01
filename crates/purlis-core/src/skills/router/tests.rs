@@ -1248,3 +1248,54 @@ fn a_router_s_arm_that_reads_prompts_points_its_trigger_test_s_prompt_as_a_real_
     let baseline = arm(root, &bundle, None, &reading(&fake));
     assert!(baseline.routed.is_none());
 }
+
+#[test]
+fn a_prompt_s_routing_says_its_timing_or_that_it_went_on_with_no_pointer() {
+    let answered = on_prompt(
+        relevance(),
+        &left_out(),
+        "go",
+        &reading(&Fake::answering(
+            serde_json::json!({ "pointed": ["release"] }),
+        )),
+        Duration::from_secs(30),
+    )
+    .expect("asked");
+    assert_eq!(
+        answered.record.prompt_said(),
+        format!("Its last prompt took {} ms.", answered.record.ms)
+    );
+
+    let slow = Arc::new(Fake {
+        wait: Duration::from_secs(2),
+        answer: Ok(serde_json::json!({ "pointed": ["release"] })),
+        asked: Mutex::default(),
+    });
+    let fell = on_prompt(
+        relevance(),
+        &left_out(),
+        "go",
+        &reading(&slow),
+        ROUTER_DEADLINE,
+    )
+    .expect("asked");
+    assert_eq!(
+        fell.record.prompt_said(),
+        "Its last prompt went on with no pointer: 'relevance' did not answer within 100 ms."
+    );
+}
+
+#[test]
+fn what_a_prompt_s_routing_says_holds_none_of_the_prompt() {
+    const PROMPT: &str = "the-private-words";
+    for router in [
+        Arc::new(Echoes) as Arc<dyn AskRouter>,
+        reading(&Fake::answering(serde_json::json!({ "pointed": PROMPT }))),
+    ] {
+        let prompted =
+            on_prompt(relevance(), &left_out(), PROMPT, &router, ROUTER_DEADLINE).expect("asked");
+        let said = prompted.record.prompt_said();
+        assert!(said.contains("no pointer"), "{said}");
+        assert!(!said.contains(PROMPT), "{said}");
+    }
+}

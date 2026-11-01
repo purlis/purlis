@@ -731,11 +731,16 @@ pub struct StudioRouted {
 }
 
 impl StudioRouted {
-    /// Chat `session`'s routing at its start, as the Routing page lists it.
-    pub(crate) fn of(session: u32, routed: &purlis_core::skills::router::Routed) -> Self {
+    /// Chat `session`'s routing at its start and on its latest prompt, as the Routing page lists
+    /// it.
+    pub(crate) fn of(
+        session: u32,
+        routed: &purlis_core::skills::router::Routed,
+        last_prompt: Option<&purlis_core::skills::router::Record>,
+    ) -> Self {
         StudioRouted {
             session,
-            routing: routed.into(),
+            routing: crate::useskill::SkillRouting::of(routed, last_prompt),
             hidden: routed
                 .record
                 .hidden
@@ -1519,7 +1524,7 @@ pub(crate) async fn skill_studio(
                 .routings()
                 .into_iter()
                 .filter(|one| one.workspace == workspace && one.persona == persona)
-                .map(|one| StudioRouted::of(one.session, &one.routed))
+                .map(|one| StudioRouted::of(one.session, &one.routed, one.last_prompt.as_ref()))
                 .collect();
         }
         Ok(studio)

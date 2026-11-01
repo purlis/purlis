@@ -29,7 +29,8 @@ import {
  * - **Its budget**: its set near or past purlis's skill budget, fixed on the studio's Routing.
  * - **Its pins**: its workspace's and persona's pins past the most it reads together, fixed in
  *   the studio of one who pins.
- * - **Its router**: a router extension that fell back at its start, seen on Routing.
+ * - **Its router**: a router extension that fell back at its start or on its last prompt (#4297),
+ *   seen on Routing.
  * - **Started without**: skills its persona names that it started without, fixed in the studio.
  * - **Changed since it started**: what is new, gone and changed, which it gets on a restart.
  */
@@ -109,11 +110,19 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
       fix: { act: "studio", label: `Open ${skillStudioTitle(at)}`, scope: at, page: "library" },
     });
   }
+  const prompt = said.routing?.last_prompt;
   if (said.routing?.fell_back === true)
     needs.push({
       id: "routing",
       title: "Its router fell back",
-      says: said.routing.said,
+      says: prompt?.fell_back ? `${said.routing.said} ${prompt.said}` : said.routing.said,
+      fix: routing,
+    });
+  else if (prompt?.fell_back)
+    needs.push({
+      id: "routing",
+      title: "Its router fell back on a prompt",
+      says: prompt.said,
       fix: routing,
     });
   const missing = said.missing;
@@ -163,13 +172,16 @@ function budgetFix(budget: SkillBudget, routing: ChatNeedFix): ChatNeedFix {
 }
 
 /** **What the view's header says of the chat's set** under whose it is: its budget, its program's
- *  own catalogue beside it (#3324), and how its router did at its start where it did not fall
- *  back (that is a need). */
+ *  own catalogue beside it (#3324), and how its router did at its start and on its last prompt
+ *  (#4297), each where it did not fall back (that is a need). */
 export function chatSetSaid(said: ChatSkillsSaid): string[] {
   return [
     ...(said.budget === null ? [] : [budgetSaid(said.budget)]),
     ...(said.budget === null || !said.own ? [] : [said.own]),
     ...(said.routing === null || said.routing.fell_back ? [] : [said.routing.said]),
+    ...(said.routing?.last_prompt && !said.routing.last_prompt.fell_back
+      ? [said.routing.last_prompt.said]
+      : []),
   ];
 }
 
