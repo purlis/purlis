@@ -384,6 +384,18 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
         "how purlis waits or looks",
     ),
     (
+        "crates/purlis-core/src/pools.rs",
+        "ALL_VOUCHED_NOW_WITHIN",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/onrunner.rs",
+        "MOST_NAMED",
+        Internal,
+        "how much a sentence names",
+    ),
+    (
         "crates/purlis-core/src/profilestore/onrunner.rs",
         "MOST_SETTINGS_BYTES",
         Internal,
