@@ -142,3 +142,15 @@ fn a_skill_already_so_is_said_with_its_name_escaped() {
         format!("{SHOWN} was already {}.", Lifecycle::Active.word())
     );
 }
+
+#[test]
+fn a_publish_asks_only_at_a_terminal_outside_any_chat_and_a_doubt_counts_as_a_chat() {
+    use purlis_core::secrets::setup::Where;
+    let unsure = Where::Unsure("the record could not be read".to_owned());
+
+    assert!(may_publish(false, &Where::Outside, true));
+    assert!(!may_publish(false, &Where::Inside, true));
+    assert!(!may_publish(false, &unsure, true));
+    assert!(!may_publish(true, &Where::Outside, true));
+    assert!(!may_publish(false, &Where::Outside, false));
+}
