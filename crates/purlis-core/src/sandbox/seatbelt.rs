@@ -13,6 +13,7 @@
 //! denies anything), so a harness whose own sandbox is applied through Seatbelt cannot keep it
 //! on inside this one.
 
+use purlis_terminal::session::OWN_TERMINAL;
 use std::path::{Path, PathBuf};
 
 use super::{Access, Denial, PLANTED, Reach, real};
@@ -481,6 +482,7 @@ pub fn profile(
     }
     out.push_str(DEVICES);
     out.push_str(")\n");
+    out.push_str(&terminal_rules());
 
     // What it may never write, after what it may: Seatbelt takes the last rule that matches.
     let mut line = |text: String| {
@@ -578,6 +580,7 @@ pub fn floor_profile(
 ) -> Result<String, &'static str> {
     let mut out = String::from(FLOOR_BASE);
     out.push_str(FLOOR_HELD);
+    out.push_str(&terminal_rules());
     let mut line = |text: String| {
         out.push_str(&text);
         out.push('\n');
@@ -909,6 +912,25 @@ const DEVICES: &str = "  (literal \"/dev/null\")
   (literal \"/dev/tty\")
   (literal \"/dev/ptmx\")
   (regex #\"^/dev/ttys[0-9]+$\")";
+
+/// **A chat's own terminal.** The terminal a session opens for a chat is its owner's alone
+/// ([`purlis_terminal::session`]), and a terminal a program makes is group-writable, so a chat
+/// keeps to the first of those that is its own, named as the session opens it
+/// ([`OWN_TERMINAL`]), and to every terminal it makes. Metadata stays readable: `ttyname` and
+/// `stat` look through them all. Seatbelt's rule only: Linux's supervisor judges terminals itself.
+fn terminal_rules() -> String {
+    if !cfg!(target_os = "macos") {
+        return String::new();
+    }
+    let others = "(require-all (regex #\"^/dev/ttys[0-9]+$\") (require-not (file-mode #o020)))";
+    let own = format!("(literal {OWN_TERMINAL:?})");
+    format!(
+        "(deny file-read-data file-write* {others})\n\
+         (deny file-ioctl {others})\n\
+         (allow file-read-data file-write* {own})\n\
+         (allow file-ioctl {own})\n"
+    )
+}
 
 /// The variables that point a wrapped chat's traffic at charter's egress proxy. Both cases,
 /// because programs disagree on which they read.

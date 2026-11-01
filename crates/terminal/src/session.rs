@@ -32,6 +32,11 @@ use crate::engine::{Engine, Screen, Size};
 /// The terminal type every program a session starts is given, as `TERM`.
 pub const TERM: &str = "xterm-256color";
 
+/// Stands for the name of the program's own terminal in the words it starts with: the name is
+/// known only once the terminal is open, after those words were made (a sandbox's profile names
+/// it). As long as any name a terminal is given, so a start measured with it still fits.
+pub const OWN_TERMINAL: &str = "/dev/purlis-own-terminal";
+
 /// What to run, where, and at what size.
 #[derive(Debug, Clone)]
 pub struct Spec {
@@ -347,6 +352,7 @@ impl Session {
             native_pty_system().openpty(pty_size(size))
         })
         .map_err(pty_error)?;
+        make_its_own(pair.master.tty_name().as_deref(), &mut command).map_err(pty_error)?;
         // Everything that can fail is done before the program starts, so a failure never
         // leaves a program running that no session owns.
         let reader = pair.master.try_clone_reader().map_err(pty_error)?;
@@ -1168,6 +1174,31 @@ fn deliver(queued: Receiver<Vec<u8>>, mut writer: Box<dyn Write + Send>) {
     }
 }
 
+/// Makes the terminal at `name` its owner's alone, and names it in the words of `command`.
+fn make_its_own(
+    name: Option<&std::path::Path>,
+    command: &mut CommandBuilder,
+) -> std::io::Result<()> {
+    let Some(name) = name else {
+        return Ok(());
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(name, std::fs::Permissions::from_mode(0o600))?;
+    }
+    for word in command.get_argv_mut() {
+        if let Some(text) = word.to_str()
+            && text.contains(OWN_TERMINAL)
+        {
+            *word = text
+                .replace(OWN_TERMINAL, &name.display().to_string())
+                .into();
+        }
+    }
+    Ok(())
+}
+
 fn pty_error(err: impl std::fmt::Display) -> SessionError {
     SessionError::Pty(err.to_string())
 }
@@ -1313,6 +1344,24 @@ mod tests {
 
     fn shows(text: &str) -> impl Fn(&Screen) -> bool + '_ {
         move |screen| screen.lines.iter().any(|line| line.contains(text))
+    }
+
+    #[test]
+    fn a_program_s_terminal_is_its_owner_s_alone_and_named_in_its_words() {
+        let session = sh_with_word(
+            "[ \"$(tty)\" = \"$0\" ] && echo same; ls -l \"$(tty)\"",
+            OWN_TERMINAL,
+        );
+        screen_until(&session, shows("same"));
+        screen_until(&session, shows("crw-------"));
+    }
+
+    fn sh_with_word(script: &str, word: &str) -> Session {
+        Session::spawn(
+            Spec::new("/bin/sh", SIZE).args(["-c", script, word]),
+            Box::new(AlacrittyEngine::new(SIZE, 1000)),
+        )
+        .expect("the session starts")
     }
 
     #[test]
