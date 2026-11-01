@@ -271,3 +271,17 @@ fn a_pools_links_end_once_it_is_gone_and_not_while_it_is_kept() {
         "only a pool seen to be gone lets go of what is held against its name"
     );
 }
+
+/// Forgetting a pool on another engine takes that engine's word for where its runner is, so it is
+/// refused unless the engine is shown to be the person's own. A pool on its own engine isn't asked.
+#[cfg(unix)]
+#[test]
+fn a_removal_from_another_engine_is_refused_unless_that_engine_is_your_own() {
+    let not = || Err("Docker's context names another machine".to_owned());
+    let yes = || Ok(std::path::PathBuf::from("/var/run/docker.sock"));
+    let refused = elsewhere_only_from_your_own("builds", true, not).expect_err("refused");
+    assert!(refused.contains("Pool builds was not removed"), "{refused}");
+    assert!(refused.contains("another machine"), "{refused}");
+    assert_eq!(elsewhere_only_from_your_own("builds", true, yes), Ok(()));
+    assert_eq!(elsewhere_only_from_your_own("builds", false, not), Ok(()));
+}

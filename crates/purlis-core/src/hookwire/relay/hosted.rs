@@ -110,12 +110,17 @@ pub fn in_cluster(
     None
 }
 
+/// What a pace left by a run hanging up follows: an Ask raised and withdrawn costs the person as a
+/// refusal does. One that hung up before it went to the window costs nothing.
+const HUNG_UP: &str = "the run hung up";
+
 /// What the asker of `tool` is told where the window refused a run the cluster refused too, moments
-/// ago.
+/// ago, or the run hung up once the person was asked.
 fn asked_too_soon_said(tool: &str, left: Duration) -> String {
     format!(
-        "the person's desktop did not let {tool} run moments ago, and the cluster minted it no \
-         token, so purlis does not ask again for {} seconds: run it again after that",
+        "{tool} did not run moments ago: the person's desktop did not let it, or the run hung up \
+         while they were asked, and the cluster minted it no token. So purlis does not ask again \
+         for {} seconds: run it again after that",
         left.as_secs().max(1)
     )
 }
@@ -396,6 +401,7 @@ impl Relaying {
         };
         let (id, replied) = exchanged;
         let mut told_gone = false;
+        let mut paced_now = false;
         loop {
             let reply = match replied.recv_timeout(LOOKED_AT_EVERY) {
                 Ok(reply) => reply,
@@ -405,6 +411,11 @@ impl Relaying {
                     if input.gone() && !told_gone {
                         told_gone = true;
                         self.tell(&Heard::InputEnded { of: id });
+                        if cluster_refused && !paced_now {
+                            paced_now = true;
+                            self.asks_paced.refused(&paced, HUNG_UP);
+                            drop(turn.take());
+                        }
                     }
                     continue;
                 }
@@ -451,7 +462,8 @@ impl Relaying {
                 }
                 // The window's own words: a refusal, said as it said it.
                 Replied::Wrote { text } => {
-                    if cluster_refused && is_a_refusal(&text) {
+                    if cluster_refused && !paced_now && is_a_refusal(&text) {
+                        paced_now = true;
                         self.asks_paced.refused(&paced, &text);
                         drop(turn.take());
                     }
@@ -460,6 +472,13 @@ impl Relaying {
                         .and_then(|()| writer.flush())
                         .is_err()
                     {
+                        // Gone for good, however it closed: told, and paced, as a hang-up is.
+                        if !told_gone {
+                            self.tell(&Heard::InputEnded { of: id });
+                        }
+                        if cluster_refused && !paced_now {
+                            self.asks_paced.refused(&paced, HUNG_UP);
+                        }
                         break;
                     }
                 }
@@ -468,7 +487,12 @@ impl Relaying {
                     brokered::refused(writer, not_taken_said(&tool, &why));
                     break;
                 }
-                Replied::Ended => break,
+                Replied::Ended => {
+                    if cluster_refused && !paced_now && input.gone() {
+                        self.asks_paced.refused(&paced, HUNG_UP);
+                    }
+                    break;
+                }
                 _ => {}
             }
         }

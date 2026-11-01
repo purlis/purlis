@@ -800,3 +800,96 @@ fn in_a_docker_pool() {
     let first = Image::pinned(&format!("{PURLIS_RUNNER_IMAGE}@{image}")).expect("named by digest");
     in_the_journey(&target, &machine, &pool, &next, &first);
 }
+
+/// **A window started again takes back its chats on a pool's runners** (#4271), each on a real
+/// container: one on the pool's runner now, and one on a runner that drains after an update.
+mod a_window_started_again {
+    use super::*;
+
+    #[test]
+    fn in_a_docker_pool() {
+        use purlis_core::dockerpool::{Image, PURLIS_RUNNER_IMAGE};
+        let (Ok(image), Ok(next)) = (std::env::var(IMAGE), std::env::var(NEXT_IMAGE)) else {
+            assert!(
+                std::env::var_os(PARITY).is_none(),
+                "{PARITY} is set and {IMAGE} names no runner image: the parity job built none"
+            );
+            return;
+        };
+        let scripts = tempfile::tempdir().expect("a folder for its docker");
+        let docker = a_docker_of_the_jobs_registry(scripts.path());
+        let (target, machine, pool, again) =
+            a_window_again_on_a_pool_of(&format!("{PURLIS_RUNNER_IMAGE}@{image}"), docker);
+        let next =
+            Image::pinned(&format!("{PURLIS_RUNNER_IMAGE}@{next}")).expect("named by digest");
+        let a_chat_that_answers = |said: &str| {
+            let id = target
+                .sessions
+                .open(
+                    None,
+                    &a_shell(&format!(
+                        "printf '{said}.'; read line; printf ' got %s.' \"$line\"; read line"
+                    )),
+                    &|_| {},
+                )
+                .expect("it starts on the runner");
+            Pane::on(&target, id).shows_within(&format!("{said}."), LONG);
+            id
+        };
+
+        // How far it got, read where it fails or runs out of time.
+        let step = |what: &str| {
+            use std::io::Write as _;
+            let _ = writeln!(std::io::stderr(), "a window started again: {what}");
+        };
+        step("a chat starts on the pool's runner");
+        let on_the_old = a_chat_that_answers("on the old");
+        let chats_on = |to: &ToARunner| crate::runnerlinks::chats_on(to);
+        let said = crate::poolfollow::follow_and_drain(&machine, Some(&next), &chats_on);
+        assert_eq!(
+            crate::poolfollow::waiting_on(&machine.config, &pool),
+            1,
+            "the old runner keeps its chat: {said:?}"
+        );
+        step("a chat starts on the runner the pool followed");
+        let on_the_new = a_chat_that_answers("on the new");
+
+        step("the window is cut and started again");
+        again.cut();
+        let back = again.sessions_of(&target.root);
+
+        for (id, said) in [(on_the_new, "on the new"), (on_the_old, "on the old")] {
+            step(&format!("the window looks for the chat {said}"));
+            let deadline = Instant::now() + Duration::from_secs(60);
+            while !back.left_running_in(id, None) {
+                assert!(
+                    Instant::now() < deadline,
+                    "the window started again never found the chat {said}"
+                );
+                std::thread::sleep(Duration::from_secs(1));
+            }
+            assert_eq!(back.reattach(id, &|_| {}), Ok(id));
+            let pane = Pane::of(&back, id);
+            pane.shows_within(&format!("{said}."), LONG);
+            back.input(id, b"hello\n").expect("typed to it");
+            pane.shows_within(" got hello.", LONG);
+        }
+        back.close(on_the_old).expect("it closes");
+        let deadline = Instant::now() + LONG;
+        while crate::poolfollow::waiting_on(&machine.config, &pool) > 0 {
+            let said = crate::poolfollow::follow_and_drain(&machine, None, &chats_on);
+            assert!(Instant::now() < deadline, "it never drained: {said:?}");
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        let deadline = Instant::now() + LONG;
+        while !purlis_core::runners::draining(&machine.config)
+            .expect("read")
+            .is_empty()
+        {
+            let said = crate::poolfollow::follow_and_drain(&machine, None, &chats_on);
+            assert!(Instant::now() < deadline, "it was never removed: {said:?}");
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        back.close(on_the_new).expect("it closes");
+    }
+}

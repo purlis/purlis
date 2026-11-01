@@ -508,6 +508,8 @@ const WALK_ONLY_CODE = {
   "crates/purlis-core/src/doctor/shadowed/tests.rs": "a plane's docs/; purlis's own is exempt",
   "crates/purlis-core/tests/it/every_git_call_goes_through_the_runner.rs":
     "crates/ and app/src-tauri/",
+  "crates/purlis-core/tests/it/every_named_limit_on_a_runners_path_is_sorted.rs":
+    "crates/ and app/src-tauri/ Rust",
   "crates/purlis-core/tests/it/four_unsafe_blocks.rs": "crates/ and app/src-tauri/ Rust",
   "crates/purlis-core/tests/it/only_the_resolver_builds_the_native_transport.rs": "shipped Rust",
   "crates/purlis-core/tests/it/only_the_updater_and_report_name_charters_own_address.rs":

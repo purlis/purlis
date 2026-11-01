@@ -71,6 +71,17 @@ fn only_the_window_takes_back_a_projects_programs_or_quits_its_host() {
 }
 
 #[test]
+fn only_the_window_and_a_link_between_hosts_ask_a_projects_programs() {
+    for scope in Scope::ALL {
+        assert_eq!(
+            scope.may(Power::ProgramsOf),
+            matches!(scope, Scope::LocalUi | Scope::RemoteLink),
+            "{scope}"
+        );
+    }
+}
+
+#[test]
 fn only_a_relaying_host_takes_back_its_windows_runner_chats() {
     for scope in Scope::ALL {
         assert_eq!(
