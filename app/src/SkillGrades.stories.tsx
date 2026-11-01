@@ -44,7 +44,10 @@ const PLAN: SkillGradePlan = {
   after_edit_chats: 36,
   tests_refused: null,
   left_out: [],
+  evals: [],
   outcome_evals: 0,
+  judge_chats: 0,
+  outcomes_left_out: [],
   outcomes_refused: null,
   estimate: {
     tokens: 300000,
@@ -195,6 +198,7 @@ const meta = {
             grades: args.grades,
             said: null,
             tests: args.plan.tests.length,
+            evals: args.plan.evals.length,
             tests_refused: args.plan.tests_refused,
             // The grade running, at the step the app last told: none of its chats ran yet.
             running:

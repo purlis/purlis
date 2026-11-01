@@ -297,6 +297,13 @@ pub fn pretooluse_read(hook: &Hook) -> Answer {
     }
     let input = hook.tool_input();
     let named = targets(input);
+    if let Some(why) = judge_reads_outside(hook, &named) {
+        return deny(why);
+    }
+    // All a judge holds is what purlis copied in, whatever a file of it is called.
+    if (hook.env)(JUDGE_FOLDER_ENV).is_some() {
+        return Answer::Nothing;
+    }
     // `_names_a_vault_path` and nothing else — the Bash route's predicate, with no private
     // half of the answer here (#462).
     if named.iter().any(|t| leakguard::names_a_vault_path(t)) {
@@ -338,6 +345,169 @@ pub fn pretooluse_read(hook: &Hook) -> Answer {
     ))
 }
 
+/// **What a judge's read guard refuses by, and the rule a call it refused is recorded under**
+/// (SK-55): a grade tells a judge's own reach from a fault of purlis's by this word. Within what a
+/// refusal's reason keeps.
+pub const JUDGE_READ_RULE: &str = "a judge reads only the folder purlis laid out for it";
+
+/// **Set on a judge's chat alone** (SK-55, #3235): the folder it may read, its own piece. Its
+/// adapter sets it, and a judge has no tool that could change it.
+pub const JUDGE_FOLDER_ENV: &str = "PURLIS_JUDGE_FOLDER";
+
+/// **Why a judge's chat may not make this read**, or `None`: it reads only what purlis laid out
+/// for it. Each path is resolved, links followed, and has to be inside its folder; one that does
+/// not resolve is refused, and a search that names none stands where the harness says it does.
+fn judge_reads_outside(hook: &Hook, named: &[String]) -> Option<String> {
+    let folder = (hook.env)(JUDGE_FOLDER_ENV)?;
+    let refused = || Some(JUDGE_READ_RULE.to_owned());
+    let Ok(folder) = std::fs::canonicalize(&folder) else {
+        return refused();
+    };
+    let base = match hook.text("cwd") {
+        "" => folder.clone(),
+        cwd => Path::new(cwd).to_path_buf(),
+    };
+    (!inside(&folder, &base, named)).then(refused).flatten()
+}
+
+/// How long a judge's limits have to answer, as long as the harness gives the hook.
+const JUDGE_CHECK_TIME: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// **Whether purlis's `binary` refuses a judge in `folder` a read outside it**, answered by
+/// asking it as a chat's harness would. No answer in time, or any other answer, is no.
+pub fn judge_guard_answers(binary: &Path, folder: &Path) -> bool {
+    let payload = serde_json::json!({
+        "tool_name": "Read",
+        "tool_input": {"file_path": "/"},
+        "cwd": folder,
+    });
+    let mut asking = std::process::Command::new(binary);
+    asking
+        .args(["hook", "pretooluse-read"])
+        .current_dir(folder)
+        .env(JUDGE_FOLDER_ENV, folder);
+    crate::boundedrun::run_within(
+        &mut asking,
+        Some(&payload.to_string()),
+        64 * 1024,
+        64 * 1024,
+        Some(JUDGE_CHECK_TIME),
+    )
+    .is_ok_and(|ran| {
+        ran.status.code() == Some(2) || String::from_utf8_lossy(&ran.printed).contains("\"deny\"")
+    })
+}
+
+/// Whether each of `named`, from `base`, or `base` itself where none is named, lands inside
+/// `folder` ([`lands_inside`]).
+fn inside(folder: &Path, base: &Path, named: &[String]) -> bool {
+    let here = [".".to_owned()];
+    let paths = if named.is_empty() { &here[..] } else { named };
+    paths
+        .iter()
+        .all(|path| !path.starts_with('~') && lands_inside(folder, &base.join(path)))
+}
+
+/// **Whether `path` lands inside `folder`** ([`landed_in`]).
+fn lands_inside(folder: &Path, path: &Path) -> bool {
+    landed_in(folder, path).is_some()
+}
+
+/// **Where `path` lands in `folder`**, a resolved folder, relative to it: the deepest part of it
+/// that exists, links followed, has to be inside, and what does not exist yet below that is plain
+/// names. A link that leads nowhere does not land anywhere.
+fn landed_in(folder: &Path, path: &Path) -> Option<PathBuf> {
+    let mut at = path;
+    let mut below: Vec<&std::ffi::OsStr> = Vec::new();
+    loop {
+        match std::fs::symlink_metadata(at) {
+            Ok(_) => {
+                let real = std::fs::canonicalize(at).ok()?;
+                let mut landed = real.strip_prefix(folder).ok()?.to_path_buf();
+                landed.extend(below.iter().rev());
+                return Some(landed);
+            }
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => {
+                below.push(at.file_name()?);
+                at = at.parent()?;
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+/// **Set on an outcome eval's chat alone** (SK-55): the folder its writes are held to, its own
+/// piece. Its adapter sets it.
+pub const OUTCOME_FOLDER_ENV: &str = "PURLIS_OUTCOME_FOLDER";
+
+/// **What an outcome eval's chat's write is answered**, or `None` for every other chat: refused
+/// unless it lands in its own piece, and there **allowed by this answer alone**: no rule of the
+/// chat's settings allows a write, so one this hook did not answer for asks, and the run ends.
+fn outcome_write(hook: &Hook) -> Option<Answer> {
+    let folder = (hook.env)(OUTCOME_FOLDER_ENV)?;
+    let refused =
+        || deny("a grade's chat writes inside the folder purlis laid out for it alone".to_owned());
+    let Ok(folder) = std::fs::canonicalize(&folder) else {
+        return Some(refused());
+    };
+    let named = targets(hook.tool_input());
+    let base = match hook.text("cwd") {
+        "" => folder.clone(),
+        cwd => Path::new(cwd).to_path_buf(),
+    };
+    // Compared where it lands in the piece, so a piece that itself lies below such a folder is fine.
+    let held_back = |path: &String| {
+        !path.starts_with('~')
+            && landed_in(&folder, &base.join(path)).is_some_and(|landed| {
+                landed.components().any(|part| {
+                    let part = part.as_os_str().to_string_lossy().to_lowercase();
+                    [".claude", ".mcp.json", ".git"].contains(&part.as_str())
+                })
+            })
+    };
+    Some(
+        if named.is_empty() || named.iter().any(held_back) || !inside(&folder, &base, &named) {
+            refused()
+        } else {
+            say("PreToolUse", &[("permissionDecision", "allow".to_owned())])
+        },
+    )
+}
+
+/// **Whether purlis's `binary` answers an outcome chat in `folder`**, asked as a chat's harness
+/// would: it allows a write inside and refuses one outside. No answer in time, or any other answer,
+/// is no.
+pub fn outcome_guard_answers(binary: &Path, folder: &Path) -> bool {
+    let asked = |path: &str| {
+        let payload = serde_json::json!({
+            "tool_name": "Write",
+            "tool_input": {"file_path": path},
+            "cwd": folder,
+        });
+        let mut asking = std::process::Command::new(binary);
+        asking
+            .args(["hook", "pretooluse-edit"])
+            .current_dir(folder)
+            .env(OUTCOME_FOLDER_ENV, folder);
+        crate::boundedrun::run_within(
+            &mut asking,
+            Some(&payload.to_string()),
+            64 * 1024,
+            64 * 1024,
+            Some(JUDGE_CHECK_TIME),
+        )
+    };
+    let allowed = |path: &str| {
+        asked(path).is_ok_and(|ran| String::from_utf8_lossy(&ran.printed).contains("\"allow\""))
+    };
+    allowed("new.txt")
+        && allowed(&folder.join("new.txt").display().to_string())
+        && asked("../outside.txt").is_ok_and(|ran| {
+            ran.status.code() == Some(2)
+                || String::from_utf8_lossy(&ran.printed).contains("\"deny\"")
+        })
+}
+
 /// `_state_write_reason`'s sentence.
 pub const STATE_WRITE_REASON: &str = "writes purlis's own state directly (that directory \
      decides which commands run without a prompt). Use the purlis command that owns it — \
@@ -347,6 +517,9 @@ pub const STATE_WRITE_REASON: &str = "writes purlis's own state directly (that d
 /// `pretooluse_edit`: refuse a `Write`/`Edit` into charter's own state directory, which holds
 /// the tool-gate ceiling, the persona pointers and the vault registry.
 pub fn pretooluse_edit(hook: &Hook) -> Answer {
+    if let Some(answer) = outcome_write(hook) {
+        return answer;
+    }
     if !hook.in_plane {
         return Answer::Nothing;
     }
@@ -389,6 +562,9 @@ pub fn pretooluse_edit_proposing(
     hook: &Hook,
     hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool,
 ) -> Answer {
+    if let Some(answer) = outcome_write(hook) {
+        return answer;
+    }
     drafting(hook, hand)
         .or_else(|| proposing(hook, hand))
         .unwrap_or_else(|| pretooluse_edit(hook))

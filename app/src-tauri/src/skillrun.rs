@@ -69,8 +69,20 @@ pub enum Watched {
     TurnEnded,
     /// It asked the person something: a permission, or a notice that it waits on them.
     Asked,
+    /// Its program got as far as its session's start.
+    Began,
     /// It closed, or its session ended.
     Closed,
+    /// **What its turn ended saying** (SK-55): the harness's last message, as its `Stop` hook
+    /// handed it (#1981), heard just before the turn's end. What an outcome eval's judge reads,
+    /// and what a judge answers with.
+    Said(String),
+    /// **Its read guard refused a call of it** (SK-55): in a judge, a reach past what it may read.
+    /// Told as it happens.
+    ReadPast,
+    /// **A call of it was refused by anything else**: in a judge, a fault of purlis's, such as a
+    /// guard that crashed or did not answer, which says nothing of the judge.
+    RefusedOtherwise,
 }
 
 /// The open skill runs of one project's chats.
@@ -128,6 +140,12 @@ impl SkillRuns {
         }
     }
 
+    /// **What chat `chat`'s turn ended saying, `text`** (SK-55), told to the grade watching it,
+    /// where one does: no other chat's last message goes anywhere from here.
+    pub fn said(&self, chat: u32, text: String) {
+        self.tell_watching(chat, Watched::Said(text));
+    }
+
     /// Who is told each change from now on.
     pub fn tell_to(&self, teller: Teller) {
         *self.teller.lock().unwrap_or_else(PoisonError::into_inner) = Some(teller);
@@ -175,6 +193,17 @@ impl SkillRuns {
         if call.decision == purlis_core::hookwire::Decision::Ask {
             self.tell_watching(call.chat, Watched::Asked);
         }
+        if call.decision == purlis_core::hookwire::Decision::Deny {
+            let judges_own = call.rule.as_deref() == Some(purlis_core::toolhooks::JUDGE_READ_RULE);
+            self.tell_watching(
+                call.chat,
+                if judges_own {
+                    Watched::ReadPast
+                } else {
+                    Watched::RefusedOtherwise
+                },
+            );
+        }
         let key = call.chat.to_string();
         let (told, opened) = {
             let mut runs = self.runs();
@@ -210,6 +239,9 @@ impl SkillRuns {
                 match report.event {
                     purlis_core::state::Event::Stop => {
                         self.tell_watching(report.chat, Watched::TurnEnded);
+                    }
+                    purlis_core::state::Event::SessionStart => {
+                        self.tell_watching(report.chat, Watched::Began);
                     }
                     purlis_core::state::Event::SessionEnd => {
                         self.tell_watching(report.chat, Watched::Closed);
