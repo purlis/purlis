@@ -1866,6 +1866,22 @@ fn the_homes_git_config_is_made_empty_only_where_there_is_none() {
     }
 }
 
+/// What a forge program loads when the person runs it is a later-code name, read as usual.
+#[test]
+fn a_forge_programs_settings_and_extensions_are_held_from_writing() {
+    for held in [".config/gh", ".config/glab-cli", ".local/share/gh"] {
+        assert!(
+            PLANTED
+                .iter()
+                .any(|planted| planted.path == held && planted.reach == Reach::AndBelow),
+            "{held} is not held"
+        );
+        assert!(crate::sandboxblock::is_planted(std::path::Path::new(
+            &format!("{held}/some/file")
+        )));
+    }
+}
+
 /// What the floor makes is a later-code name it holds, the home's among them.
 #[test]
 fn the_homes_git_config_made_is_one_the_floor_holds() {
