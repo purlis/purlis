@@ -28,17 +28,27 @@
 //! pair with one of them in it is held again at every hue. The tint keeps each shade's luminance to make that hold by construction; this is the
 //! check that the construction did.
 //!
+//! **A workspace's own colour can be any hue** (#4308), so each pair a tint can move
+//! ([`super::floors::moves_with_hue`]) is read at every whole degree too. A pair that falls only
+//! between the named tints is said once, at the degree it is lowest
+//! ([`Finding::ContrastBetweenTints`]).
+//!
 //! `app/src/theme/contrast.test.ts` reads [`PAIRS`] out of this file and fails when a stylesheet
 //! draws a pair of tokens that is not in it.
 
 use super::fonts::{Style, without_a_face};
 use super::geometry::Geometry;
+use super::parts::{COARSE_DEGREES, NEAR_A_FLOOR};
 use super::vocabulary::{TOKENS, is_platform};
-use super::{Density, ResolvedTheme, tint};
+use super::{Density, ResolvedTheme, floors, tint};
 
 #[cfg(test)]
 #[path = "check_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "between_tints_tests.rs"]
+mod between_tints_tests;
 
 #[cfg(test)]
 #[path = "tiers_tests.rs"]
@@ -224,6 +234,12 @@ pub const PAIRS: &[Pair] = &[
     p("text.secondary", "control.base", 4.5),
     p("text.secondary", "surface.raised", 4.5),
     p("needs-you.text", "needs-you.base", 4.5),
+    // The hot count's words on its own fill (#3098).
+    p("needs-you.count-text", "needs-you.count", 4.5),
+    // The hot count on each ground its bar stands on: the ring around it is that ground.
+    p("needs-you.count", "surface.deep", 3.0),
+    p("needs-you.count", "surface.base", 3.0),
+    p("needs-you.count", "surface.raised", 3.0),
     p("danger.text", "danger.surface", 4.5),
     // What needs a decision (#3678): an attention Notice's words and mark on its own ground, and
     // a card's title and sentence on it.
@@ -904,6 +920,10 @@ pub enum Finding {
         pair: Pair,
         ratio: f64,
     },
+    /// A pair of [`PAIRS`] that clears its floor as it is and in every named tint and falls under
+    /// it at a hue between them (#4308): a workspace's own colour can be any hue. `degree` is the
+    /// hue it is lowest at, and `ratio` its contrast there (to two places).
+    ContrastBetweenTints { degree: u16, pair: Pair, ratio: f64 },
     /// An ANSI colour too close to the terminal's background.
     Ansi {
         tint: Option<&'static str>,
@@ -1037,8 +1057,63 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
             card_apart(&tinted, Some(one.name), card, &mut findings);
             notice_ways_apart(&tinted, Some(one.name), ways, &mut findings);
         }
+        between_named_tints(theme, &mut findings);
     }
     Report { findings }
+}
+
+/// **Each pair that falls only between the named tints** (#4308), said at its lowest whole degree.
+/// A pair already found is not said again, and a pair a tint cannot move is not read: what the
+/// rounding of a turned shade does to it only raises its contrast. The check runs while a person
+/// edits a draft, so a pair is read every [`COARSE_DEGREES`] first, and at every degree only when
+/// that comes within [`NEAR_A_FLOOR`] of its floor.
+fn between_named_tints(theme: &ResolvedTheme, findings: &mut Vec<Finding>) {
+    let found = |pair: &Pair| {
+        findings
+            .iter()
+            .any(|one| matches!(one, Finding::Contrast { pair: said, .. } if said == pair))
+    };
+    let mut near: Vec<&'static Pair> = PAIRS
+        .iter()
+        .filter(|pair| !found(pair))
+        .filter(|pair| floors::moves_with_hue(theme, pair))
+        .collect();
+    if near.is_empty() {
+        return;
+    }
+    let coarse: Vec<ResolvedTheme> = (0..360_u16)
+        .step_by(COARSE_DEGREES)
+        .map(|degree| tint::tinted_at(theme, f64::from(degree)))
+        .collect();
+    near.retain(|pair| {
+        coarse
+            .iter()
+            .filter_map(|drawn| ratio(drawn, pair))
+            .any(|ratio| ratio < pair.floor + NEAR_A_FLOOR)
+    });
+    if near.is_empty() {
+        return;
+    }
+    let mut lowest: Vec<(&'static Pair, Option<(u16, f64)>)> =
+        near.into_iter().map(|pair| (pair, None)).collect();
+    for degree in 0..360_u16 {
+        let drawn = tint::tinted_at(theme, f64::from(degree));
+        for (pair, low) in &mut lowest {
+            let Some(ratio) = ratio(&drawn, pair) else {
+                continue;
+            };
+            if ratio < pair.floor && low.is_none_or(|(_, least)| ratio < least) {
+                *low = Some((degree, ratio));
+            }
+        }
+    }
+    findings.extend(lowest.into_iter().filter_map(|(pair, low)| {
+        low.map(|(degree, ratio)| Finding::ContrastBetweenTints {
+            degree,
+            pair: *pair,
+            ratio,
+        })
+    }));
 }
 
 /// **Whether a notice card's secondary way stands apart from each card ground** (#4210): the

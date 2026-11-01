@@ -100,6 +100,7 @@ jobs:
       confinement: ${{ steps.scope.outputs.confinement }}
       parity: ${{ steps.scope.outputs.parity }}
       bench: ${{ steps.scope.outputs.bench }}
+      outcome-bars: ${{ steps.scope.outputs.outcome-bars }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1498,6 +1499,7 @@ jobs:
         extras: [false]
         specs: [true]
         sandbox: [false]
+        outcome: [false]
         include:
           - os: macos-latest
             shard: extras
@@ -1683,6 +1685,44 @@ jobs:
         run: xvfb-run -a npm run e2e:state
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). `outcome-bars`
+      # alone runs these. Each runs whatever the one before it did, so a red run names every miss.
+      - name: The Skill studio's outcome bars on claude's stand-in
+        run: npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: claude
+      - name: The Skill studio's outcome bars on claude's stand-in
+        run: xvfb-run -a npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: claude
+      - name: The Skill studio's outcome bars on codex's stand-in
+        run: npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: codex
+      - name: The Skill studio's outcome bars on codex's stand-in
+        run: xvfb-run -a npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: codex
+      - name: The Skill studio's outcome bars on opencode's stand-in
+        run: npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: opencode
+      - name: The Skill studio's outcome bars on opencode's stand-in
+        run: xvfb-run -a npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: opencode
       # The app started the way an operator starts it — from Finder, with the `PATH` Finder
       # gives — on purlis's own built-in profile. Its own run, because it is the app's
       # ENVIRONMENT that is under test and one run is one environment (charter-app#134).
@@ -1816,6 +1856,7 @@ jobs:
         os: [ubuntu-24.04]
         shard: [1, 2]
         shards: [2]
+        outcome: [false]
         include:
           - shard: 1
             extras: false
@@ -1825,6 +1866,32 @@ jobs:
             extras: true
             specs: true
             sandbox: false
+    runs-on: ${{ matrix.os }}
+    steps: *scenario-steps
+
+  # **The Skill studio's outcome bars** (SK-23, #4343): the scenario legs' steps, with every leg's
+  # own flag off and `outcome` on, so it builds as they do and runs the three runs alone. Not
+  # required, and no `scenario-checks` waits on it: its 300 ms is measured on a debug build on a
+  # shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a block on
+  # every merge. It becomes required with the flag's flip (#2786).
+  #
+  # On main's push, and on a pull request that touches what the bars measure (`GATES`), by the
+  # operator's choice of 2026-11-01: it takes a macOS and a Linux runner for 11 to 17 minutes. A
+  # regression from anywhere else shows on main, not on its pull request.
+  outcome-bars:
+    name: outcome bars (${{ matrix.os }})
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04]
+        shard: [bars]
+        shards: [1]
+        extras: [false]
+        specs: [false]
+        sandbox: [false]
+        outcome: [true]
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 

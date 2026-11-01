@@ -12,6 +12,9 @@
  *   until Start is pressed. **A plan that changed under the person** (Start refused on it, or
  *   the skill changed on disk) is never started: the page says so in the attention tone and Start
  *   waits until they read the new one.
+ * - **A Grader extension** (#3236) is listed beside purlis's own runner where one is installed. The
+ *   pick is in what Start consents to, and the plan names it plainly. Grading after each edit runs
+ *   purlis's own alone.
  * - **A grade running** shows its chats done, what it has spent against its dollar limit and its
  *   tokens against its cap, with Stop fixed at the bottom. A grade's chats are drawn nowhere.
  */
@@ -20,6 +23,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   commands,
   SKILL_GRADE,
+  type GradeGrader,
   type ProfileRow,
   type SkillGradeAfterEdit,
   type SkillGradePlan,
@@ -167,10 +171,29 @@ function armsOf(plan: SkillGradePlan): number {
 
 /** **What changed in a plan**, in a clause: what the new one runs and may spend. */
 export function planChangedSaid(
-  now: Pick<SkillGradePlan, "chats" | "profile" | "model" | "cost_cap_usd">,
+  now: Pick<SkillGradePlan, "chats" | "profile" | "model" | "cost_cap_usd"> & {
+    /** The Grader it names (#3236), or why the one picked is gone: a skill's plan's. */
+    grader?: GradeGrader | null;
+    grader_refused?: string | null;
+  },
 ): string {
   const on = [now.profile, now.model].filter((one) => one !== null).join(", ");
-  return `it now runs ${counted(now.chats, "chat", "chats")}${on === "" ? "" : ` on ${on}`}, and may spend at most ${dollarsSaid(now.cost_cap_usd ?? 0)}`;
+  const by = now.grader ? `, scored by ${graderSaid(now.grader)}` : "";
+  const gone = now.grader_refused ? `. ${now.grader_refused}` : "";
+  return `it now runs ${counted(now.chats, "chat", "chats")}${on === "" ? "" : ` on ${on}`}${by}, and may spend at most ${dollarsSaid(now.cost_cap_usd ?? 0)}${gone}`;
+}
+
+/** **Where a Grader can send what it is handed**, in a sentence: each host its manifest names. */
+export function graderHostsSaid(hosts: readonly string[]): string {
+  return hosts.length === 0
+    ? "It reaches no host on the network."
+    : `It can send what it is handed to ${hosts.join(", ")}, and to no other host.`;
+}
+
+/** **A Grader extension, as a plan names it**: its title, which it gives itself, and its id, which
+ *  says whose program it is. */
+export function graderSaid(grader: GradeGrader): string {
+  return `${grader.title} (${grader.id})`;
 }
 
 /** Why the plan's main action can't be pressed now, or nothing where it can. */
@@ -184,6 +207,7 @@ function startRefused(
   if (plan.tests.length === 0) return `${name} has no trigger tests to run yet.`;
   if (plan.refused !== null) return `No grade can run on ${plan.profile ?? "this profile"}.`;
   if (!afterEdit && plan.running !== null) return `A grade of ${name} is running already.`;
+  if (plan.grader_refused !== null) return plan.grader_refused;
   if (plan.consent === null) return "purlis could not say what this grade would run.";
   return undefined;
 }
@@ -241,21 +265,37 @@ export function GradePlanPage({
   const [profile, setProfile] = useState(DEFAULT);
   // The model the chats run on (SK-60): the profile's own where none is picked.
   const [model, setModel] = useState(DEFAULT);
+  // The Grader that scores it (#3236): purlis's own where none is picked.
+  const [grader, setGrader] = useState(DEFAULT);
   const [again, setAgain] = useState(0);
   const picked = profile === DEFAULT ? null : profile;
   const pickedModel = model === DEFAULT ? null : model;
+  const pickedGrader = grader === DEFAULT ? null : grader;
   // The level as a value: a page drawn again with an equal level reads nothing anew.
   const levelKey = JSON.stringify(level);
   const drawn = useRef<SkillGradePlan>(undefined);
+  // The latest read: an older one's answer, for a pick since changed, is dropped.
+  const latest = useRef(0);
+  // Whether a read for a new pick is on its way: Start waits on what the pick consents to.
+  const [reading, setReading] = useState(false);
   useEffect(() => {
     drawn.current = plan;
   });
 
   /** Reads the plan: drawn, or (`check`) held as newer where it consents to something else. */
-  const read = (on: string | null, onModel: string | null, check = false) =>
-    void commands
-      .skillGradePlan(plane, level, name, on, onModel)
+  const read = (
+    on: string | null,
+    onModel: string | null,
+    check = false,
+    by: string | null = pickedGrader,
+  ) => {
+    latest.current += 1;
+    const asked = latest.current;
+    return void commands
+      .skillGradePlan(plane, level, name, on, onModel, by)
       .then((answer) => {
+        if (asked !== latest.current) return;
+        setReading(false);
         if (answer.status !== "ok") {
           if (!check) setRefused(answer.error);
           return;
@@ -270,8 +310,11 @@ export function GradePlanPage({
         }
       })
       .catch((err: unknown) => {
+        if (asked !== latest.current) return;
+        setReading(false);
         if (!check) setRefused(String(err));
       });
+  };
 
   useEffect(() => {
     read(picked, pickedModel);
@@ -311,7 +354,7 @@ export function GradePlanPage({
   const consent = plan.consent ?? "";
   const start = () =>
     void commands
-      .skillGradeStart(plane, level, name, picked, pickedModel, consent)
+      .skillGradeStart(plane, level, name, picked, pickedModel, pickedGrader, consent)
       .then((answer) => {
         if (answer.status === "ok") onStarted(answer.data);
         else {
@@ -331,7 +374,9 @@ export function GradePlanPage({
           read(picked, pickedModel, true);
         }
       });
-  const why = startRefused(name, plan, newer !== undefined, afterEdit);
+  const why = reading
+    ? "Reading the plan of the Grader you picked."
+    : startRefused(name, plan, newer !== undefined, afterEdit);
   const limit = dollarsSaid(plan.cost_cap_usd ?? 0);
   const whose = plan.profile ?? "the profile";
   const nothing = plan.tests.length === 0;
@@ -347,7 +392,7 @@ export function GradePlanPage({
       summary={
         afterEdit
           ? `Nothing runs now. Each edit you save then runs up to ${counted(plan.after_edit_chats, "chat", "chats")}, at most ${limit} each time, of ${whose}'s account.`
-          : `Nothing runs until you press Start. It spends at most ${limit} of ${whose}'s account.`
+          : `Nothing runs until you press Start. It spends at most ${limit} of ${whose}'s account.${plan.grader === null ? "" : ` Scored by ${graderSaid(plan.grader)}, an extension you installed.`}`
       }
       onCancel={onCancel}
       main={{
@@ -506,6 +551,53 @@ export function GradePlanPage({
               }}
             />
           </section>
+          {afterEdit
+            ? plan.graders.length > 0 && (
+                <p className="honest" data-testid="skill-grade-after-edit-grader">
+                  Each edit is graded by purlis&apos;s own runner. An extension&apos;s Grader is
+                  picked for one grade at a time, on its plan.
+                </p>
+              )
+            : (plan.graders.length > 0 || plan.grader_refused !== null) && (
+                <section aria-labelledby="skill-grade-by">
+                  <PanelSectionTitle id="skill-grade-by">Who scores it</PanelSectionTitle>
+                  <Select
+                    size="sm"
+                    aria-label={`Who scores ${name}'s grade`}
+                    value={grader}
+                    options={[
+                      { value: DEFAULT, label: "purlis's own runner" },
+                      ...plan.graders.map((one) => ({ value: one.id, label: graderSaid(one) })),
+                      // A pick no longer on offer stays what the picker says, until it is changed.
+                      ...(plan.grader_refused !== null && pickedGrader !== null
+                        ? [{ value: pickedGrader, label: pickedGrader }]
+                        : []),
+                    ]}
+                    onValueChange={(to) => {
+                      setGrader(to);
+                      setReading(true);
+                      read(picked, pickedModel, false, to === DEFAULT ? null : to);
+                    }}
+                  />
+                  {plan.grader_refused !== null && (
+                    <p className="honest" data-testid="skill-grade-grader-refused">
+                      {plan.grader_refused}
+                    </p>
+                  )}
+                  {plan.grader !== null && (
+                    <p data-testid="skill-grade-grader">
+                      {graderSaid(plan.grader)} is an extension you installed, not part of purlis.
+                      It is handed the trigger tests above, asks purlis for the chats it wants, and
+                      writes the scores this grade records. It is told each chat&apos;s id, which
+                      skills it started, what it spent, how long it took and how it ended, not what
+                      it said. {graderHostsSaid(plan.grader.hosts)} purlis keeps it from the model
+                      services it knows, and holds it to this plan: up to{" "}
+                      {counted(plan.chats, "chat", "chats")}, and the limits below. Asking past them
+                      ends the grade.
+                    </p>
+                  )}
+                </section>
+              )}
           <section aria-labelledby="skill-grade-spend">
             <PanelSectionTitle id="skill-grade-spend">What it may spend</PanelSectionTitle>
             {afterEdit && (
@@ -522,7 +614,7 @@ export function GradePlanPage({
               cap={plan.token_cap ?? 0}
               onCap={(tokens) =>
                 void commands
-                  .skillGradeSetCap(plane, level, name, picked, pickedModel, tokens)
+                  .skillGradeSetCap(plane, level, name, picked, pickedModel, pickedGrader, tokens)
                   .then((answer) => {
                     if (answer.status === "ok") {
                       setPlan(answer.data);
@@ -589,7 +681,7 @@ export function PlanChanged({
   onShow,
 }: {
   cause: string;
-  newer: Pick<SkillGradePlan, "chats" | "profile" | "model" | "cost_cap_usd">;
+  newer: Parameters<typeof planChangedSaid>[0];
   testid: string;
   onShow: () => void;
 }) {

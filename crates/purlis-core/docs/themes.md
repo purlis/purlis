@@ -364,6 +364,11 @@ own fills back after it, keeping what the theme sets in a state itself. A switch
 `titlebar.row-count`, in no state, held on its amber wash over the popover and the selected row;
 `titlebar.count` is a chip's.
 
+A part's fill with alpha is measured where it is drawn: over its root's own fill, then the
+family's grounds, so a `rail.badge.fill` wash is read over the button that holds it. A part drawn
+around its root stands on the grounds alone, and a chip's count on the bar's ground, which
+`titlebar.css` draws under its wash whatever the chip's fill.
+
 A card pressed whole (the welcome's doors, the Get page's repo picks) is the `card-button`
 family, not a part of the card's: a theme's `card.title` reaches a card's own title and never a
 pressed card's, even one drawn inside a card, which `card-button.title` reaches.
@@ -666,6 +671,12 @@ warnings (2):
   text.muted on surface.hover, in the red, blue tints: down to 2.07, under 4.5
 ```
 
+A workspace's own colour can be any hue, so each pair a tint can move is read at every whole
+degree too. A pair that clears its floor at every named tint and falls between them is said once,
+at the degree it is lowest (`state.waiting on wash.warning over surface.deep, in a workspace's own
+colour at 121°: 4.49, under 4.5`). In `--json` it is a warning of kind `contrast-between-tints`,
+with the `degree`, the `pair` and the `ratio`.
+
 Then `consent floors:`, what the window draws of the theme. Every combination of appearance
 and option values is checked against the consent floors as the window draws it, with the option
 values layered first, and the line says in how many of them the window holds one (`none held
@@ -928,6 +939,18 @@ follows the value the theme gives the old one (`vocabulary::KIN`):
 Later, `accent.wash-hover` came in (#3345): the chosen title-bar chip's ground under the pointer,
 a step stronger than `accent.wash`, which is the chosen chip's ground at rest; both hold the
 primary words at 4.5:1 over the title bar.
+
+Later still, the hot count (#3098): `needs-you.count` and `needs-you.count-text`, the fill and the
+words of the Needs-you count on an activity bar. Each follows `needs-you.base` and `needs-you.text`
+in `vocabulary::KIN`, the values Purlis and Purlis Classic give them by default, so a theme that
+sets neither draws as it did. Its words are held to 4.5:1 on its fill and its fill to 3:1 on each
+ground a bar stands on (`surface.deep`, `surface.base`, `surface.raised`). The fill stays at least
+0.1 apart in OKLab from the plain count's `surface.hover`, both laid on each of those grounds as the
+screen draws them, as written and in every tint, or the window draws purlis's own. A count drawn in
+its mark's colour stays on it: when a floor takes either, or more contrast raises the mark, or a
+person's colour for the mark is drawn or left out, the count goes with it. A theme whose count is
+its own colour is held on its own. A rule on `activity.count` never reaches the hot count, and one
+whose fill comes that near the hot count draws the family default.
 
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names

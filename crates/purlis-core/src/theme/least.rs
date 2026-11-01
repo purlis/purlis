@@ -28,7 +28,7 @@
 
 use super::ResolvedTheme;
 use super::check::{self, PAIRS, Pair};
-use super::vocabulary::is_platform;
+use super::vocabulary::{hot_count_following, is_platform};
 
 /// The contrast held, at least.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
@@ -78,10 +78,16 @@ pub fn raise(theme: &ResolvedTheme) -> ResolvedTheme {
     let mut pairs: Vec<Pair> = PAIRS.iter().copied().chain(check::ansi_pairs()).collect();
     // Marks first, so words are raised last in each round and their floor is the one held.
     pairs.sort_by(|a, b| a.floor.total_cmp(&b.floor));
+    // A hot count that follows its mark is drawn in whatever the mark is raised to (#3098).
+    let following = hot_count_following(&theme.values);
     for _ in 0..ROUNDS {
         let mut moved = false;
         for pair in &pairs {
             moved |= lift(&mut drawn, pair, &pairs);
+        }
+        for (count, mark) in &following {
+            let raised = drawn.value(mark).to_owned();
+            drawn.values.insert(*count, raised);
         }
         if !moved {
             break;

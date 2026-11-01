@@ -59,6 +59,15 @@ pub struct Asked {
     pub approved: Option<String>,
 }
 
+/// **A Grader extension a grade's plan can name** (#3236): its id, the title it gives itself, and
+/// the hosts its program can send what it is handed to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraderOffered {
+    pub id: String,
+    pub title: String,
+    pub hosts: Vec<String>,
+}
+
 /// **What the studio asks extensions with in the project at `root`, handed to `with`**: the
 /// executor, this machine's record of extensions and the project's choices, read once here for
 /// the window and the command line alike. With no config home, `None`: purlis's own alone.
@@ -126,12 +135,16 @@ impl<'a> Studio<'a> {
     /// **Each Grader the project can grade with besides purlis's own** (#3236): each extension
     /// that declares `grader`, by its id and the title its shape gives it, for a grade's plan to
     /// list beside purlis's.
-    pub fn graders(&self) -> Vec<(String, String)> {
+    pub fn graders(&self) -> Vec<GraderOffered> {
         self.declaring(Capability::Grader)
             .into_iter()
-            .map(|asked| {
-                let title = asked.declared.grader.clone().unwrap_or(asked.name);
-                (asked.id, title)
+            .map(|asked| GraderOffered {
+                hosts: crate::extension::studio::reachable(&asked.declared.hosts)
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                title: asked.declared.grader.clone().unwrap_or(asked.name),
+                id: asked.id,
             })
             .collect()
     }
@@ -824,9 +837,15 @@ pub fn ran_on_said(graded: &super::grades::Graded) -> String {
         .as_deref()
         .map(crate::skilluse::harness_title)
         .unwrap_or_else(|| "Not recorded".to_owned());
-    match &graded.model {
+    let ran_on = match &graded.model {
         Some(model) => format!("{harness} · {model}"),
         None => harness,
+    };
+    // A Grader extension's scores are its own (#3236): the record says whose they are.
+    if graded.report.grader == purlis_skills::grade::BUILT_IN {
+        ran_on
+    } else {
+        format!("{ran_on} · graded by {}", graded.report.grader)
     }
 }
 

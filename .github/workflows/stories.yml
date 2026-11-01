@@ -52,9 +52,15 @@ jobs:
     name: what this change touches
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # To read main's last run's jobs, for how many parts the stories need.
+    permissions:
+      contents: read
+      actions: read
     outputs:
       image: ${{ steps.image.outputs.image }}
       stories: ${{ steps.scope.outputs.stories }}
+      shards: ${{ steps.parts.outputs.shards }}
+      of: ${{ steps.parts.outputs.of }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,6 +75,11 @@ jobs:
       - name: The scopes this change needs
         id: scope
         uses: ./.github/actions/change-scope
+      - name: How many parts the stories need, from main's last good run
+        id: parts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/story-shards.mjs
 
   # Not a required check, so it is skipped whole when nothing it draws has changed: a docs-, skills-
   # or tools-only pull request pulls no Playwright image. A push to main and a run by hand run it;
@@ -95,12 +106,14 @@ jobs:
       matrix:
         browser: [chromium, webkit]
         # `of` is how many parts `--shard` splits a browser's story files into, and `shard` lists
-        # each part: the two change together. Each report is named by both, so the check finds a
-        # part that never ran (`tools/story-failures.mjs shards`).
-        # Three, so the slower browser's part runs about 7 minutes and has room to draw its
-        # pictures again and for the stories to grow, well under 20 (#4038).
-        shard: [1, 2, 3]
-        of: [3]
+        # each part. Each report is named by both, so the check finds a part that never ran
+        # (`tools/story-failures.mjs shards`).
+        # **The sharding trigger** (#3040, `tools/story-shards.mjs`): a stories step past 8 minutes
+        # on main's last good run means more parts here on the next, leaving a part room to draw
+        # its pictures again and for the stories to grow. Three when `changes` could not say
+        # (#4038).
+        shard: ${{ fromJson(needs.changes.outputs.shards || '[1,2,3]') }}
+        of: ${{ fromJson(needs.changes.outputs.of || '[3]') }}
     container:
       image: ${{ needs.changes.outputs.image }}
       # An init that reaps, and the host's IPC namespace, which Chromium wants for its shared

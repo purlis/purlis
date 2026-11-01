@@ -29,21 +29,19 @@ ships, in each density. One decorator in `app/.storybook/preview.tsx` draws it i
 story picks a theme of its own; each cell is a Vitest project of its own, `stories <cell>
 (<browser>)` (`app/.storybook/vitest.project.ts`, `app/.storybook/matrix.ts`).
 
-| Theme | Appearances | Densities | Pictures |
-| --- | --- | --- | --- |
-| Purlis Classic (`purlis-classic`) | `dark`, `light` | `comfortable`, `compact` | dark and light, comfortable |
-| Purlis (`purlis`) | `dark`, `light`, `dark-high-contrast` | `comfortable`, `compact` | dark, light and dark high contrast, comfortable |
+| Theme | Appearances | Densities |
+| --- | --- | --- |
+| Purlis Classic (`purlis-classic`) | `dark`, `light` | `comfortable`, `compact` |
+| Purlis (`purlis`) | `dark`, `light`, `dark-high-contrast` | `comfortable`, `compact` |
 
-Every cell renders the story, plays its keyboard path and runs axe. A picture is taken only in
-the cells `app/.storybook/pictured.json` names, each its own baseline, named for its theme and
+Every cell renders the story, plays its keyboard path, runs axe and takes a picture. A picture is
+taken in the cells `app/.storybook/pictured.json` names, each its own baseline, named for its theme and
 appearance: `<story id>_<theme>_<appearance>-<browser>-linux.png`, so
 `ui-button-primary_purlis_light-webkit-linux.png` is the Primary button in Purlis's light
 appearance in WebKit. A cell's name is `<theme>_<appearance>`, and `_compact` after it for the
 compact density, which its pictures' names carry too
-(`ui-button-primary_purlis_dark_compact-webkit-linux.png`). Any cell can be pictured by adding its
-name to `pictured.json`; five are today (Purlis's high contrast since #2924, so its derived
-look is seen beside dark and light), to keep the `stories` job short, and axe and the
-keyboard run in all ten. A picture's name is held to the names `tools/story-baselines.mjs`
+(`ui-button-primary_purlis_dark_compact-webkit-linux.png`). All ten cells are pictured (#3040),
+so a story has twenty baselines. A picture's name is held to the names `tools/story-baselines.mjs`
 takes, cell by cell, in `tools/story-baselines.test.mjs`.
 
 Every face a theme names is made before its story renders, so the keyboard path, axe and the
@@ -201,7 +199,9 @@ changes a picture: `app/.storybook/playwright-image/Dockerfile`, which nothing b
 fail unless it names the lockfile's version, and any workflow that names a Playwright image, in
 any form, must name that one (`tools/story-image.mjs`).
 
-**The stories run in shards.** Each browser's story files are split by Vitest's `--shard`, each
+**The stories run in shards**, as many as main's last good run says they need: a stories step
+past 8 minutes means more parts on the next run (`tools/story-shards.mjs`, #3040), and never
+fewer than three. Each browser's story files are split by Vitest's `--shard`, each
 part a job of its own, `stories (<browser> <part>/<parts>)`, so a part and the pictures it draws
 again stay well inside its time limit. Each shard's check carries the annotations of the stories
 that failed in it. The `stories (Chromium and WebKit, axe, keyboard, screenshots)` check reads

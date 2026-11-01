@@ -38,10 +38,13 @@ import {
 } from "./theme/theme";
 import {
   atCreation,
+  builtInMine,
   forgetTheirTheme,
   sayAboutThisMachine,
   sayTheFloors,
+  sayYourColours,
   theirFloors,
+  theirMine,
   theirThemeOnce,
 } from "./windowprefs";
 import { drawNatively, forgetNativeWindow } from "./theme/native";
@@ -638,17 +641,20 @@ let following = false;
  * is asked. Anything else is the core's to say: with no project in front, the person's machine
  * default may choose a theme folder (#2602), so the core is asked.
  */
-function handedFor(pick: string | null): Theme | undefined {
+function handedFor(pick: string | null): { theme: Theme; mine: readonly string[] } | undefined {
   // What was handed was drawn with the person's colours and contrast as the window was created:
   // once Settings changed them, the core is asked (#2925).
   if (personLook() !== lookHanded) return undefined;
   const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
-  if (pick === null) return where === null ? undefined : theirThemeOnce();
+  if (pick === null) {
+    const theirs = where === null ? undefined : theirThemeOnce();
+    return theirs === undefined ? undefined : { theme: theirs, mine: theirMine() };
+  }
   // Purlis Classic's pick may name an appearance the core reads with it, and Purlis's dark is
   // drawn high contrast when more contrast is asked for: the core is asked for both (#3034).
   if (pick === CLASSIC || moreContrastAsked()) return undefined;
   const id = has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
-  return has(BUILT_IN, id) ? BUILT_IN[id] : undefined;
+  return has(BUILT_IN, id) ? { theme: BUILT_IN[id], mine: builtInMine(id) } : undefined;
 }
 
 /** The person's look the window was handed its themes in: what {@link handedFor} draws. */
@@ -662,22 +668,6 @@ let unfollowLook: (() => void) | undefined;
  *  by the first draw. */
 function followLook() {
   unfollowLook ??= onPersonLook(() => void drawWhatIsInForce());
-}
-
-/** Says, or takes back, which of the person's colours the theme in force leaves out, and why
- *  (#2925): each would put a pair under its floor in this theme. */
-function sayYourColours(mine: readonly string[] | undefined) {
-  sayAboutThisMachine(
-    "your colours",
-    mine !== undefined && mine.length > 0
-      ? {
-          severity: "warn",
-          detail: mine.join("; "),
-          remedy: "pick another colour in Settings, or clear it to draw the theme's",
-          settings: "you.colours",
-        }
-      : undefined,
-  );
 }
 
 /** Puts `theme` in force, unless it is already what is drawn — so the terminal is told only of
@@ -727,7 +717,9 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
     sayTheFloors(picked === null ? theirFloors(theirs) : null, {
       theirs: theirs.path || undefined,
     });
-    draw(handed);
+    // Which of the person's colours it left out, as the core would say it (#3023).
+    sayYourColours(handed.mine);
+    draw(handed.theme);
     // A chat's theme draft where the window is draws in place of the pick (#2332): only the
     // core knows of one, so it is asked after this frame, and draws only when there is one.
     if (where !== null) void drawADraftOver(mine);
@@ -836,6 +828,7 @@ async function drawADraftOver(mine: number): Promise<void> {
   following = given.follows_system === true;
   if (following) followSystem();
   sayTheFloors(typeof given.floors === "string" ? given.floors : null, {});
+  sayYourColours(Array.isArray(given.mine) ? given.mine : undefined);
   draw(given.theme as unknown as Theme);
 }
 

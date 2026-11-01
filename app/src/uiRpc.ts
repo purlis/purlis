@@ -961,6 +961,13 @@ export const commands = {
 	skillShare: __WINDOW_ONLY_RESULT,
 	personaSkill: __WINDOW_ONLY_RESULT,
 	/**
+	 *  **The repo skills of the branch folder chat `session` works in** (#4326): what the Skills view
+	 *  lists for it, whose rows from the studio say only what the clone's own branch holds. None for
+	 *  any other chat, and none while the Skill studio is off. Only the view asks, never a chat's open;
+	 *  on a blocking thread, as it reads the folder.
+	 */
+	chatBranchFolderSkills: (plane: PlaneId, session: number) => typedError<StudioSkill[], string>(__TAURI_INVOKE("chat_branch_folder_skills", { plane, session })),
+	/**
 	 *  **The skills a chat's persona names that it started without** (SK-5, #2768): what its tab's
 	 *  Notice says, until it is put away. `None` for a chat that has every one.
 	 */
@@ -1058,7 +1065,7 @@ export const commands = {
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillLevelsConfirm: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, grader: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model, grader })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	/**  **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it. */
@@ -5624,6 +5631,17 @@ export type GradeEstimate = {
 	same_profile: boolean | null,
 	/**  Whether that grade was interrupted before it was scored (#3602): the plan says so. */
 	interrupted: boolean,
+};
+
+/**
+ *  **A Grader extension a plan can name** (#3236): its id, which is what says whose program it
+ *  is, and the title it gives itself.
+ */
+export type GradeGrader = {
+	id: string,
+	title: string,
+	/**  The hosts its program can send what it is handed to: the plan says each. */
+	hosts: string[],
 };
 
 /**
@@ -11022,6 +11040,13 @@ export type SkillGradePlan = {
 	 */
 	previous: GradePrevious | null,
 	previous_refused: string | null,
+	/**
+	 *  **The Grader extensions it can be graded by besides purlis's own** (#3236), the one picked
+	 *  (`None` is purlis's own), and why the one picked is not on offer now, where it is not.
+	 */
+	graders: GradeGrader[],
+	grader: GradeGrader | null,
+	grader_refused: string | null,
 };
 
 /**

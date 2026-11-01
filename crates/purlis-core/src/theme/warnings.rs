@@ -123,6 +123,19 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 *tint,
                 Some(*ratio),
             ),
+            Finding::ContrastBetweenTints {
+                degree,
+                pair,
+                ratio,
+            } => (
+                format!(
+                    "{}, in a workspace's own colour at {degree}°",
+                    laid(pair.front, pair.back, [pair.under, pair.beneath])
+                ),
+                Some(pair.floor),
+                None,
+                Some(*ratio),
+            ),
             Finding::Ansi {
                 tint,
                 token,

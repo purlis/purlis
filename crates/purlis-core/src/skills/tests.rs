@@ -3093,3 +3093,51 @@ fn purlis_s_own_plugin_is_no_part_of_a_harness_s_own_catalogue_3324() {
 }
 
 mod read_budget;
+
+/// #4326: the Skills view's rows of a chat in a branch folder are that folder's: a skill only the
+/// branch holds, not one only the clone's own branch holds, each with its folder in the branch
+/// folder, under the clone's name, also where the plane's own path goes through a link.
+#[test]
+fn a_chat_in_a_branch_folder_lists_the_repo_skills_of_that_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let clone = plane.join("workspaces/alpha/api");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    a_repo_skill(&clone, "on-main");
+    let folder = branch_folder(&plane, "api", "fix");
+    a_repo_skill(&folder, "on-the-branch");
+
+    let env = crate::harness_plugin::Env::of(&[]);
+    let rows = |plane: &Path, cwd: &Path| {
+        branch_folder_rows(None, plane, "alpha", None, Harness::Codex, cwd, &env)
+    };
+    let check = |listed: Vec<StudioRow>| {
+        let got: Vec<(String, String)> = listed
+            .iter()
+            .map(|row| (row.name.clone(), row.folder.clone()))
+            .collect();
+        assert_eq!(
+            got,
+            [(
+                "on-the-branch".to_owned(),
+                "workspaces/alpha/.worktrees/api/fix/.agents/skills/on-the-branch".to_owned()
+            )]
+        );
+        assert_eq!(
+            listed[0].outside.as_ref().map(|one| one.owner.clone()),
+            Some(Owner::Repo("api".to_owned()))
+        );
+    };
+    check(rows(&plane, &folder));
+    #[cfg(unix)]
+    {
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&plane, &link).unwrap();
+        check(rows(&link, &folder));
+    }
+
+    // A chat in the clone's own folder has its rows from the studio's answer, as ever, and a chat
+    // in no clone has none.
+    assert!(rows(&plane, &clone).is_empty());
+    assert!(rows(&plane, &plane.join("workspaces/alpha")).is_empty());
+}
