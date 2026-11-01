@@ -54,6 +54,7 @@ const TROUBLE: ReadonlySet<UpdateKind> = new Set<UpdateKind>([
   "smart-close",
   "report-undelivered",
   "commit-refused",
+  "question-failed",
 ]);
 
 /** The kind of an update: trouble where it says something came to nothing. */

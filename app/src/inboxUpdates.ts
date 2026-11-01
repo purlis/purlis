@@ -81,6 +81,7 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   "root-update-refused": "Asks you to update the project",
   "browser-ask-ended": "Browser ended",
   "question-closed": "Question closed",
+  "question-failed": "Question not routed",
 };
 
 /**

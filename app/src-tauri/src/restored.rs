@@ -137,7 +137,12 @@ pub(crate) fn finish(
         crate::dispatched::brought_back(held, open.session, &records, kept.contains(&open.session));
     }
     // A question of a task that did not come back ended with it (#4553).
-    let back: Vec<String> = launch.back.chats.iter().filter_map(|chat| chat.id.clone()).collect();
+    let back: Vec<String> = launch
+        .back
+        .chats
+        .iter()
+        .filter_map(|chat| chat.id.clone())
+        .collect();
     crate::dispatched::only_these_came_back(held, &back);
     after_put_back(held, &launch, coming, settles);
     // What the chats queued while the app was away is delivered now that their tasks are back

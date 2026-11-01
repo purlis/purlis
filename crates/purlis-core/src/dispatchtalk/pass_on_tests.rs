@@ -52,7 +52,8 @@ fn a_passed_on_question_reaches_the_person_in_the_task_s_own_words_with_its_reas
 #[test]
 fn a_question_is_passed_on_once() {
     let (mut talk, _) = a_task_that_asked("Which host?");
-    talk.pass_on(TASK, ASKER, "task", None, NOW).expect("passed");
+    talk.pass_on(TASK, ASKER, "task", None, NOW)
+        .expect("passed");
 
     assert_eq!(
         talk.pass_on(TASK, ASKER, "task", None, NOW + 1),
@@ -88,10 +89,18 @@ fn a_question_that_reached_the_person_by_itself_keeps_when_it_did_as_its_asking_
 #[test]
 fn the_person_s_answer_to_a_passed_on_question_reaches_the_task_as_theirs() {
     let (mut talk, number) = a_task_that_asked("Which host?");
-    talk.pass_on(TASK, ASKER, "task", None, NOW).expect("passed");
+    talk.pass_on(TASK, ASKER, "task", None, NOW)
+        .expect("passed");
 
-    talk.person_answers(TASK, "task", Some(ASKER), number, "Which host?", "The blue one.")
-        .expect("taken");
+    talk.person_answers(
+        TASK,
+        "task",
+        Some(ASKER),
+        number,
+        "Which host?",
+        "The blue one.",
+    )
+    .expect("taken");
 
     assert!(talk.answered(TASK).is_some_and(|given| given.by_person));
     assert!(talk.reached().is_empty(), "one answer clears it");
@@ -108,7 +117,8 @@ fn the_person_s_answer_to_a_passed_on_question_reaches_the_task_as_theirs() {
 #[test]
 fn the_asking_chat_s_answer_to_a_passed_on_question_is_never_the_person_s() {
     let (mut talk, _) = a_task_that_asked("Which host?");
-    talk.pass_on(TASK, ASKER, "task", None, NOW).expect("passed");
+    talk.pass_on(TASK, ASKER, "task", None, NOW)
+        .expect("passed");
 
     let given = Given {
         from: "steward".to_owned(),
@@ -127,7 +137,10 @@ fn the_asking_chat_s_answer_to_a_passed_on_question_is_never_the_person_s() {
 fn a_note_is_one_bounded_line_and_masked() {
     assert_eq!(pass_on_note(None), Ok(None));
     assert_eq!(pass_on_note(Some("  ")), Ok(None));
-    assert_eq!(pass_on_note(Some(" Yours. ")), Ok(Some("Yours.".to_owned())));
+    assert_eq!(
+        pass_on_note(Some(" Yours. ")),
+        Ok(Some("Yours.".to_owned()))
+    );
     assert!(pass_on_note(Some("one\ntwo")).is_err());
     assert!(pass_on_note(Some(&"a".repeat(MOST_NOTE_BYTES + 1))).is_err());
     assert!(pass_on_note(Some("bell\u{7}")).is_err());
