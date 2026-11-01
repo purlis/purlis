@@ -81,6 +81,8 @@ end() {
     kubectl --context "$context" get claims -A \
       -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]}{"\n  "}{.type}={.status} {.reason}: {.message}{end}{"\n"}{end}' >&2 || true
     kubectl --context "$context" -n purlis-system logs deployment/purlis-cluster-operator --tail=100 >&2 || true
+    kubectl --context "$context" -n purlis-system logs deployment/purlis-cluster-operator |
+      grep -E 'left behind|leave behind|panicked|its claim has gone' | tail -n 30 >&2 || true
     kubectl --context "$context" -n agent-sandbox-system logs deployment/agent-sandbox-controller --tail=100 >&2 || true
     kubectl --context "$context" get events -A --sort-by=.lastTimestamp >&2 || true
   fi
