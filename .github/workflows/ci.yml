@@ -1626,7 +1626,7 @@ jobs:
       # workspace's crates change with every pull request that runs this job).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
-        run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings
+        run: npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings # DEBUG-4351
         working-directory: app
       # Cargo's own account of that build, unit by unit (`--timings`), kept a week: what a slow
       # build spent its time on, read without rerunning it (#3742).
@@ -1693,36 +1693,51 @@ jobs:
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: claude
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
+          PURLIS_4351_LOG: ${{ runner.temp }}/probe-claude.log
       - name: The Skill studio's outcome bars on claude's stand-in
         run: xvfb-run -a npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: claude
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
+          PURLIS_4351_LOG: ${{ runner.temp }}/probe-claude.log
       - name: The Skill studio's outcome bars on codex's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
+          PURLIS_4351_LOG: ${{ runner.temp }}/probe-codex.log
       - name: The Skill studio's outcome bars on codex's stand-in
         run: xvfb-run -a npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
+          PURLIS_4351_LOG: ${{ runner.temp }}/probe-codex.log
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
+          PURLIS_4351_LOG: ${{ runner.temp }}/probe-opencode.log
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: xvfb-run -a npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
+          PURLIS_4351_LOG: ${{ runner.temp }}/probe-opencode.log
+      - name: DEBUG-4351 what the core spent
+        if: ${{ !cancelled() && matrix.outcome }}
+        run: tail -n 400 "$RUNNER_TEMP"/probe-*.log || true
       # The app started the way an operator starts it — from Finder, with the `PATH` Finder
       # gives — on purlis's own built-in profile. Its own run, because it is the app's
       # ENVIRONMENT that is under test and one run is one environment (charter-app#134).
