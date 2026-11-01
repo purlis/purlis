@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793563929000,
+  "lastUpdate": 1793566751060,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35448,6 +35448,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7632895,
             "unit": "ms",
             "extra": "median of 5 runs: 100.204, 101.348, 101.763, 102.725, 102.976 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7e723d5d4ca444fffb750d0cf24f0176a1c909e4",
+          "message": "Onboarding: the first window as a launcher (#4474)\n\n* Onboarding: the first window as a launcher, and Create on this Mac from a name\n\nWays in stay down the left and open their page beside them. One step line, first run only.\nFixes the Get page's missing layout, 'null reaches no repos' and touching buttons.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6BR8541HWQR05MMM0MRG6DA\nPurlis-Persona: steward\n\n* Onboarding: keep CHANGELOG's old entries as written, format, count the new page's alerts\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6BR8541HWQR05MMM0MRG6DA\nPurlis-Persona: steward\n\n* Onboarding: Create on a forge's test picks the template from its select\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6BR8541HWQR05MMM0MRG6DA\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-01T19:52:48Z",
+          "tree_id": "817b7df01039ceea648d51e9b5cd2023e2eeacac",
+          "url": "https://github.com/purlis/purlis/commit/7e723d5d4ca444fffb750d0cf24f0176a1c909e4"
+        },
+        "date": 1793566746408,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.668666,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.660, 0.669, 0.669, 0.680, 0.683 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.538753,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.474, 16.491, 16.539, 16.566, 16.989 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2285185,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.745, 102.220, 102.229, 102.248, 102.794 ms"
           }
         ]
       }
