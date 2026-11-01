@@ -18,12 +18,13 @@
 //! - **The server may then name where the bytes go**, as a forge names its storage. That is the
 //!   forge's answer, not a chat's, and the helper is asked about that host like any other.
 //! - **Only objects this push needs, whose bytes hash to their pointer**, copied into a store of
-//!   this call's own first ([`Store`]). A chat can write `.git/lfs`, and this process runs
-//!   outside its sandbox: a link there, or a file swapped after it was checked, reaches nothing.
+//!   this call's own first ([`Store`]), under the machine's folder, which no chat can write. A
+//!   chat can write `.git/lfs`, and this process runs outside its sandbox: a link at any level
+//!   there, a second name for a file, or a file swapped after it was checked, reaches nothing.
 //! - **No program.** A repository whose config names one git-lfs would start is refused.
 
 use std::io::{Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
@@ -49,12 +50,12 @@ pub(crate) struct Push<'a> {
 
 /// The most a pointer can be, as git-lfs reads one.
 const POINTER_MOST: u64 = 1024;
-/// The least a pointer can be: its version and oid lines and a one-digit size.
-const POINTER_LEAST: u64 = 126;
+/// Below the least a pointer can be, in any spelling git-lfs reads.
+const POINTER_LEAST: u64 = 100;
 /// How many objects one `git lfs push` names, so that a command line always fits.
 const NAMED_AT_ONCE: usize = 1000;
 /// The deadline for reading what a push sends, which can be a whole history at a first push.
-const READING: Duration = git::NETWORK;
+const READING: Duration = cloning::STALL;
 
 /// A pointer in a commit going out.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,19 +93,20 @@ pub(crate) fn before_push(push: &Push) -> Result<(), String> {
         return Ok(());
     }
     let endpoints = endpoints_of(push)?;
+    // First, and before git-lfs is asked anything: `git lfs` can itself be a repository's alias.
+    if git::lfs_would_start_a_program(push.dir).map_err(|e| e.to_string())? {
+        return Err(format!(
+            "This push carries {}, and this repository's git config names a program or setting \
+             git-lfs would use, so nothing was pushed. Remove it from .git/config, or push from \
+             your own terminal",
+            carried(pointers.len())
+        ));
+    }
     let lfs = git::run(push.dir, &["lfs", "version"], git::READ).map_err(|e| e.to_string())?;
     if !lfs.ok() {
         return Err(format!(
             "This push carries {} and git-lfs is not on this machine, so nothing was pushed. \
              Install git-lfs and push again",
-            carried(pointers.len())
-        ));
-    }
-    if git::lfs_would_start_a_program(push.dir).map_err(|e| e.to_string())? {
-        return Err(format!(
-            "This push carries {}, and this repository's git config names a program git-lfs \
-             would start, so nothing was pushed. Remove it from .git/config, or push from your \
-             own terminal",
             carried(pointers.len())
         ));
     }
@@ -128,12 +130,15 @@ fn carried(count: usize) -> String {
 /// attributes say: `pre-push` reads them the same way. Each object once.
 fn going_out(dir: &Path, tip: &str, remote: &str) -> Result<Vec<Pointer>, String> {
     let failed = |why: String| format!("purlis could not read what this push sends: {why}");
+    crate::hookwire::alive::beat();
     let not = format!("--remotes={remote}");
     let listed = git::run(
         dir,
         &[
             "-c",
             "core.quotePath=false",
+            "-c",
+            "core.useReplaceRefs=false",
             "rev-list",
             "--objects",
             "--filter=blob:limit=1025",
@@ -168,7 +173,15 @@ fn going_out(dir: &Path, tip: &str, remote: &str) -> Result<Vec<Pointer>, String
         .iter()
         .flat_map(|(id, _)| format!("{id}\n").into_bytes())
         .collect();
-    let checked = ask(&["cat-file", "--batch-check"], input)?;
+    let checked = ask(
+        &[
+            "-c",
+            "core.useReplaceRefs=false",
+            "cat-file",
+            "--batch-check",
+        ],
+        input,
+    )?;
     let sized: Vec<&(&str, &str)> = String::from_utf8_lossy(&checked)
         .lines()
         .zip(&named)
@@ -189,7 +202,10 @@ fn going_out(dir: &Path, tip: &str, remote: &str) -> Result<Vec<Pointer>, String
         .iter()
         .flat_map(|(id, _)| format!("{id}\n").into_bytes())
         .collect();
-    let blobs = ask(&["cat-file", "--batch"], input)?;
+    let blobs = ask(
+        &["-c", "core.useReplaceRefs=false", "cat-file", "--batch"],
+        input,
+    )?;
     let mut rest = blobs.as_slice();
     let mut pointers: Vec<Pointer> = Vec::new();
     for (_, path) in sized {
@@ -205,43 +221,87 @@ fn going_out(dir: &Path, tip: &str, remote: &str) -> Result<Vec<Pointer>, String
         let Some(body) = rest.get(end + 1..end + 1 + size) else {
             return Err(failed("git's answer ended early".to_owned()));
         };
-        if let Some((oid, size)) = pointer_in(body)
-            && !pointers.iter().any(|one| one.oid == oid)
-        {
-            pointers.push(Pointer {
-                oid,
-                size,
-                path: (*path).to_owned(),
-            });
+        match pointer_in(body) {
+            Blob::Other => {}
+            Blob::Extended => {
+                return Err(format!(
+                    "{} is a Git LFS file that uses an extension, which purlis cannot upload, so \
+                     nothing was pushed. Push from your own terminal",
+                    crate::shown::line(path)
+                ));
+            }
+            Blob::Pointer(oid, size) => {
+                if !pointers.iter().any(|one| one.oid == oid) {
+                    pointers.push(Pointer {
+                        oid,
+                        size,
+                        path: (*path).to_owned(),
+                    });
+                }
+            }
         }
         rest = rest.get(end + 2 + size..).unwrap_or_default();
     }
     Ok(pointers)
 }
 
-/// The object a blob points at, where the blob is exactly a Git LFS pointer.
-fn pointer_in(blob: &[u8]) -> Option<(String, u64)> {
-    let text = std::str::from_utf8(blob).ok()?;
-    let mut lines = text.strip_suffix('\n')?.split('\n');
-    let version = lines.next()?;
-    if version != "version https://git-lfs.github.com/spec/v1"
-        && version != "version https://hawser.github.com/spec/v1"
-    {
-        return None;
+/// What a blob is, read as git-lfs reads a pointer: lines of a key and a value, blank lines and
+/// a carriage return let by, the version first.
+#[derive(Debug, PartialEq, Eq)]
+enum Blob {
+    Other,
+    Pointer(String, u64),
+    /// A pointer that names extensions, which purlis does not upload.
+    Extended,
+}
+
+fn pointer_in(blob: &[u8]) -> Blob {
+    let Ok(text) = std::str::from_utf8(blob) else {
+        return Blob::Other;
+    };
+    let mut lines = text
+        .split('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+        .filter(|line| !line.is_empty());
+    if !matches!(
+        lines.next(),
+        Some(
+            "version https://git-lfs.github.com/spec/v1"
+                | "version https://hawser.github.com/spec/v1"
+        )
+    ) {
+        return Blob::Other;
     }
-    let oid = lines.next()?.strip_prefix("oid sha256:")?;
-    let size = lines.next()?.strip_prefix("size ")?;
-    if lines.next().is_some()
-        || oid.len() != 64
+    let (mut oid, mut size, mut extended) = (None, None, false);
+    for line in lines {
+        match line.split_once(' ') {
+            Some(("oid", value)) if oid.is_none() => oid = value.strip_prefix("sha256:"),
+            Some(("size", value)) if size.is_none() => size = Some(value),
+            Some((key, _)) if key.starts_with("ext-") => extended = true,
+            _ => return Blob::Other,
+        }
+    }
+    let (Some(oid), Some(size)) = (oid, size) else {
+        return Blob::Other;
+    };
+    if oid.len() != 64
         || !oid
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        || size.is_empty()
-        || !size.bytes().all(|b| b.is_ascii_digit())
     {
-        return None;
+        return Blob::Other;
     }
-    Some((oid.to_owned(), size.parse().ok()?))
+    if !size.bytes().all(|b| b.is_ascii_digit()) {
+        return Blob::Other;
+    }
+    let Ok(size) = size.parse() else {
+        return Blob::Other;
+    };
+    if extended {
+        Blob::Extended
+    } else {
+        Blob::Pointer(oid.to_owned(), size)
+    }
 }
 
 /// Where each object goes: the LFS address of every URL the push goes to.
@@ -320,28 +380,24 @@ impl Store {
         let could_not = |why: std::io::Error| {
             format!("purlis could not set the Git LFS files aside to upload them: {why}")
         };
-        let common = git::run(
-            dir,
-            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-            git::READ,
-        )
-        .map_err(|e| e.to_string())?;
-        if !common.ok() {
-            return Err("purlis could not find this clone's Git LFS files".to_owned());
-        }
-        let theirs = PathBuf::from(common.line().trim())
-            .join("lfs")
-            .join("objects");
+        let theirs = store_of(dir)?;
+        let config = crate::machine::config_root().ok_or_else(|| {
+            "purlis could not find its own folder to set the Git LFS files aside in, so nothing \
+             was pushed"
+                .to_owned()
+        })?;
+        let aside = crate::machine::dir(&config).join(ASIDE);
+        std::fs::create_dir_all(&aside).map_err(could_not)?;
+        clear_what_a_crash_left(&aside);
         let held = tempfile::Builder::new()
-            .prefix("purlis-lfs-upload-")
-            .tempdir()
+            .prefix("upload-")
+            .tempdir_in(&aside)
             .map_err(could_not)?;
         let store = Self { held };
         let mut unread = Vec::new();
         for one in pointers {
-            let from = object_path(&theirs, &one.oid);
             let to = object_path(&store.held.path().join("objects"), &one.oid);
-            if let Some(text) = copied(&from, &to, one, &could_not)? {
+            if let Some(text) = copied(&theirs, &to, one, &could_not)? {
                 unread.push((one.path.clone(), text));
             }
         }
@@ -364,6 +420,85 @@ impl Store {
     }
 }
 
+/// Where this call sets objects aside, in the machine's own folder, which no chat can write
+/// (`docs/plane-format.md`).
+const ASIDE: &str = "lfs-upload";
+
+/// What a call older than this left behind can only be a crash's.
+const A_CRASH_LEFT_IT: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+
+fn clear_what_a_crash_left(aside: &Path) {
+    let Ok(entries) = std::fs::read_dir(aside) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|found| found.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_some_and(|age| age > A_CRASH_LEFT_IT);
+        if old {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// Where to find the objects: a folder that is trusted as it stands, and the one in it that a
+/// chat can write, opened like everything below it.
+struct Theirs {
+    root: PathBuf,
+    inside: Option<&'static str>,
+}
+
+/// The folder git-lfs keeps objects under here: yours where your own config moved it (a
+/// repository's own is refused before this), else the clone's. Its own `objects` is below it.
+fn store_of(dir: &Path) -> Result<Theirs, String> {
+    let lost = || "purlis could not find this clone's Git LFS files".to_owned();
+    let ask = |args: &[&str]| git::run(dir, args, git::READ).map_err(|e| e.to_string());
+    let common = ask(&["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+    if !common.ok() {
+        return Err(lost());
+    }
+    let common = PathBuf::from(common.line().trim());
+    let moved = ask(&["config", "--get", "lfs.storage"])?;
+    let moved = moved.line().trim();
+    Ok(if moved.is_empty() {
+        Theirs {
+            root: common,
+            inside: Some("lfs"),
+        }
+    } else {
+        Theirs {
+            root: common.join(moved),
+            inside: None,
+        }
+    })
+}
+
+/// The object `oid` opened through `store`, one folder at a time, following no link in any of
+/// them and never waiting on a pipe: `None` where it is not there.
+fn opened(store: &Theirs, oid: &str) -> std::io::Result<Option<std::fs::File>> {
+    use rustix::fs::{CWD, Mode, OFlags, openat};
+    let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    let mut at = openat(CWD, &store.root, folder, Mode::empty())?;
+    let held = folder | OFlags::NOFOLLOW;
+    let below = ["objects", &oid[..2], &oid[2..4]];
+    for name in store.inside.iter().copied().chain(below) {
+        at = match openat(&at, name, held, Mode::empty()) {
+            Ok(next) => next,
+            Err(rustix::io::Errno::NOENT) => return Ok(None),
+            Err(why) => return Err(why.into()),
+        };
+    }
+    let file = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+    match openat(&at, oid, file, Mode::empty()) {
+        Ok(found) => Ok(Some(std::fs::File::from(found))),
+        Err(rustix::io::Errno::NOENT) => Ok(None),
+        Err(why) => Err(why.into()),
+    }
+}
+
 /// `<root>/aa/bb/<oid>`, as git-lfs lays its objects out.
 fn object_path(root: &Path, oid: &str) -> PathBuf {
     root.join(&oid[..2]).join(&oid[2..4]).join(oid)
@@ -372,7 +507,7 @@ fn object_path(root: &Path, oid: &str) -> PathBuf {
 /// One object copied from `from` to `to`, or the sentence that refuses the push. Its text, where
 /// it is text the scan of a push would read, for [`crate::diffscan::in_large_file`].
 fn copied(
-    from: &Path,
+    from: &Theirs,
     to: &Path,
     one: &Pointer,
     could_not: &dyn Fn(std::io::Error) -> String,
@@ -393,18 +528,14 @@ fn copied(
              .git/lfs/objects, run `git lfs fetch --all` in your own terminal, then push again"
         )
     };
-    // Not through a link, and never waiting on a pipe planted there.
-    let mut source = match std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
-        .open(from)
-    {
-        Ok(source) => source,
-        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Err(missing()),
+    let mut source = match opened(from, &one.oid) {
+        Ok(Some(source)) => source,
+        Ok(None) => return Err(missing()),
         Err(_) => return Err(wrong()),
     };
     let found = source.metadata().map_err(could_not)?;
-    if !found.is_file() || found.len() != one.size {
+    // More than one name can be a name for something outside the store.
+    if !found.is_file() || found.len() != one.size || found.nlink() != 1 {
         return Err(wrong());
     }
     if let Some(parent) = to.parent() {
@@ -424,6 +555,7 @@ fn copied(
             break;
         }
         read += got as u64;
+        crate::hookwire::alive::beat();
         hash.update(&chunk[..got]);
         copy.write_all(&chunk[..got]).map_err(could_not)?;
         if keep.is_some() {
@@ -519,12 +651,26 @@ fn host_of(endpoint: &str) -> String {
     crate::shown::line(&crate::forge::host_of(endpoint))
 }
 
+/// `said` with each address's query taken out: a storage address can be signed in its query.
+fn without_queries(said: &str) -> String {
+    said.split(' ')
+        .map(|word| {
+            if word.contains("://") {
+                word.split('?').next().unwrap_or(word)
+            } else {
+                word
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn not_uploaded(endpoint: &str, said: &str) -> String {
     format!(
         "Git LFS could not upload to {}, so nothing was pushed: {}. Check your access to that \
          repository's large files, then push again",
         host_of(endpoint),
-        crate::shown::line(said)
+        crate::shown::line(&without_queries(said))
     )
 }
 
@@ -610,25 +756,67 @@ mod tests {
     fn a_blob_is_a_pointer_only_where_it_reads_exactly_as_one() {
         assert_eq!(
             pointer_in(pointer(OID, "12").as_bytes()),
-            Some((OID.to_owned(), 12))
+            Blob::Pointer(OID.to_owned(), 12)
         );
+        for same in [
+            pointer(OID, "12").trim_end().to_owned(),
+            pointer(OID, "12").replace('\n', "\r\n"),
+            pointer(OID, "12").replace('\n', "\n\n"),
+            pointer(OID, "12").replace("git-lfs.github", "hawser.github"),
+        ] {
+            assert_eq!(
+                pointer_in(same.as_bytes()),
+                Blob::Pointer(OID.to_owned(), 12),
+                "{same}"
+            );
+        }
+        let extended = pointer(OID, "12").replace("oid", &format!("ext-0-x sha256:{OID}\noid"));
+        assert_eq!(pointer_in(extended.as_bytes()), Blob::Extended);
         for not in [
             pointer(&OID[1..], "12"),
             pointer(&OID.to_uppercase(), "12"),
             pointer(OID, "x"),
-            pointer(OID, "12").trim_end().to_owned(),
             format!("{}extra\n", pointer(OID, "12")),
             format!("#{}", pointer(OID, "12")),
             "plain text\n".to_owned(),
         ] {
-            assert_eq!(pointer_in(not.as_bytes()), None, "{not}");
+            assert_eq!(pointer_in(not.as_bytes()), Blob::Other, "{not}");
         }
     }
 
     #[test]
-    fn the_least_a_pointer_can_be_is_what_the_size_filter_keeps() {
-        let least = pointer(OID, "1");
-        assert_eq!(least.len() as u64, POINTER_LEAST);
+    fn the_least_a_pointer_can_be_is_above_what_the_size_filter_drops() {
+        let least = pointer(OID, "1").replace("git-lfs.github", "hawser.github");
+        assert!(least.len() as u64 > POINTER_LEAST, "{}", least.len());
+    }
+
+    #[test]
+    fn an_object_is_opened_through_no_link_at_any_level_of_the_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path().canonicalize().unwrap();
+        let (common, kept) = (top.join("git"), top.join("kept"));
+        let folder = kept.join("objects").join(&OID[..2]).join(&OID[2..4]);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(OID), "bytes").unwrap();
+        std::fs::create_dir(&common).unwrap();
+        let theirs = Theirs {
+            root: common.clone(),
+            inside: Some("lfs"),
+        };
+        assert!(opened(&theirs, OID).unwrap().is_none());
+        std::os::unix::fs::symlink(&kept, common.join("lfs")).unwrap();
+        assert!(opened(&theirs, OID).is_err(), "through a link at lfs");
+        std::fs::remove_file(common.join("lfs")).unwrap();
+        std::fs::rename(&kept, common.join("lfs")).unwrap();
+        assert!(opened(&theirs, OID).unwrap().is_some());
+    }
+
+    #[test]
+    fn an_address_in_what_git_lfs_says_loses_its_query() {
+        assert_eq!(
+            without_queries("PUT https://s.example/o?sig=secret: 500"),
+            "PUT https://s.example/o 500"
+        );
     }
 
     #[test]

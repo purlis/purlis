@@ -244,6 +244,9 @@ fn real_git_lfs_an_object_not_here_refuses_the_push_naming_what_to_run() {
     let place = place();
     let object = Object::of(1, 24);
     place.commit_large("large.bin", &object);
+    // Gone from the worktree too: a status would clean the file there into the store again.
+    plain_git(&place.folder, &["rm", "-q", "large.bin"]);
+    plain_git(&place.folder, &["commit", "-q", "-m", "gone"]);
     std::fs::remove_file(place.the_copy_of(&object)).unwrap();
     let server = Uploads::serving(Taking::Everything, None);
 
@@ -271,6 +274,33 @@ fn real_git_lfs_the_upload_reads_nothing_through_a_link_or_a_changed_copy_in_the
     std::fs::remove_file(&copy).unwrap();
     std::os::unix::fs::symlink(&secret, &copy).unwrap();
     let server = Uploads::serving(Taking::Everything, None);
+
+    let (code, said) = place.push(&server, NO_STALL);
+
+    assert_eq!(code, 1, "{said}");
+    assert!(!place.ref_moved(), "{said}");
+    assert_eq!(server.requests(), 0, "{said}");
+
+    // A folder of the store that is a link, to the bytes it names, kept elsewhere.
+    std::fs::remove_file(&copy).unwrap();
+    let folder = copy.parent().unwrap();
+    let kept = place.base.join("kept-elsewhere");
+    std::fs::create_dir(&kept).unwrap();
+    std::fs::write(kept.join(&object.oid), &object.bytes).unwrap();
+    std::fs::remove_dir(folder).unwrap();
+    std::os::unix::fs::symlink(&kept, folder).unwrap();
+
+    let (code, said) = place.push(&server, NO_STALL);
+
+    assert_eq!(code, 1, "{said}");
+    assert!(!place.ref_moved(), "{said}");
+    assert_eq!(server.requests(), 0, "{said}");
+    std::fs::remove_file(folder).unwrap();
+    std::fs::create_dir(folder).unwrap();
+
+    // A second name for the right bytes.
+    std::fs::write(kept.join("twin"), &object.bytes).unwrap();
+    std::fs::hard_link(kept.join("twin"), &copy).unwrap();
 
     let (code, said) = place.push(&server, NO_STALL);
 
@@ -338,6 +368,12 @@ fn real_git_lfs_a_program_the_repository_names_refuses_the_push_and_never_runs()
         ("credential.helper", "helper"),
         ("lfs.customtransfer.planted.path", "transfer"),
         ("lfs.standalonetransferagent", "agent"),
+        ("alias.lfs", "alias"),
+        ("xlfs.customtransfer.planted.path", "loose-transfer"),
+        (
+            "lfs.https://f.example/.standalonetransferagent",
+            "scoped-agent",
+        ),
     ] {
         let place = place();
         let object = Object::of(1, 27);

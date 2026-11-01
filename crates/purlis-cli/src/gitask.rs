@@ -77,8 +77,10 @@ fn asked(of: impl FnOnce(u32) -> hookwire::Ask, within: Duration) -> Forwarded {
     answered(asking.ask(&of(chat), within))
 }
 
-/// How long the app may take to update or push a branch folder: a fetch and a push each held
-/// to git's network limit, and a rebase and a handful of local calls (qw387).
+/// How long the app may take to update a branch folder, or stay silent pushing one: a fetch and
+/// a push each held to git's network limit, and a rebase and a handful of local calls (qw387). A
+/// push's upload of its large files says it is alive as it goes, so this bounds silence there
+/// (#4399).
 pub const A_PIECE_UPDATE_TAKES_AT_MOST: Duration =
     Duration::from_secs(3 * git::NETWORK.as_secs() + 8 * git::READ.as_secs());
 

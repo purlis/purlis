@@ -237,14 +237,22 @@ saying what to do. The upload:
 - **Lets the forge's answer name where the bytes go**, as a forge names its storage. That host is
   the forge's choice, not a chat's and not in the chat's `[sandbox] egress`. The helper is asked
   about it like any other host, and it is not in the network log.
-- **Sends only what its pointer names**: each object is read once without following a link, hashed
-  and copied to a folder of the call's own, which is what git-lfs is told to read. So a link or a
-  later change in `.git/lfs`, which a chat can write, is never read outside its sandbox.
+- **Sends only what its pointer names**: each object is opened one folder at a time, following no
+  link, must have one name, and is hashed as it is copied to a folder of the call's own under the
+  machine's config folder, which no chat can write. git-lfs is told to read that copy. So a link
+  or a later change in `.git/lfs`, which a chat can write, is never read outside its sandbox.
 - **Scans what a push's scan would read**: an object up to the scan's size limit whose first
   bytes hold no NUL is read as a commit's added lines are, and a finding refuses the push.
-- **Starts no program.** A repository whose own config names one git-lfs would start, or moves
-  its store (`lfs.storage`), is refused.
+- **Starts no program.** A repository whose own config names one git-lfs would start, or an
+  `alias.lfs`, moves its store (`lfs.storage`), or sets `http.extraheader`, is refused before
+  git-lfs is asked anything.
 - **Is stopped at the stall limit** (`cloning::STALL`) rather than a total deadline.
+
+What is on the remote is read from the clone's tracking refs, as `pre-push` reads it, so a ref a
+chat planted there can hide a commit from this and send a pointer on its own branch without its
+object. It gains no reach. A pointer that names extensions is refused. Reading a very large
+history can take as long as the stall limit; past that, the push is refused. The copy needs free
+space for what it sends.
 
 An object that is not in the clone refuses the push even where the server has it already: purlis
 does not ask. `git lfs fetch --all` brings it here.

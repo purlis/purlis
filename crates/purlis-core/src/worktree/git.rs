@@ -756,8 +756,14 @@ pub(crate) fn lfs_would_start_a_program(dir: &Path) -> Result<bool, GitUnavailab
             Some((sub, variable)) => (Some(sub), variable),
             None => (None, rest),
         };
+        // git-lfs finds some of these with loose patterns, and a URL-scoped key outranks the
+        // command line ([`crate::lfsupload`]): anything that spells one counts, at any depth.
         lfs_names_a_program(section, sub, variable)
-            || (section == "lfs" && sub.is_none() && variable == "storage")
+            || (section == "lfs" && variable == "storage")
+            || (section == "alias" && sub.is_none() && variable == "lfs")
+            || (section == "http" && variable == "extraheader")
+            || key.contains("customtransfer")
+            || key.contains("standalonetransferagent")
     }))
 }
 
