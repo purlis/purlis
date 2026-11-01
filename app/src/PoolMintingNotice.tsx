@@ -47,13 +47,13 @@ export function PoolMintingNotice({ onOpenPools }: { onOpenPools: () => void }) 
           key={pool}
           cause={`pool-mints-without-asking:${pool}`}
           tone="news"
-          label="Pool stopped asking"
+          label={`Pool ${pool} stopped asking`}
           link={{ label: "Open Pools settings", onPress: onOpenPools }}
           onDismiss={() => dismiss(pool)}
         >
-          Chats on pool {pool} no longer ask you before each GitHub App token. They get it from the
-          cluster instead, and its operator logs each one. The cluster&apos;s admin turned this on,
-          and the admin controls this setting.
+          Chats on pool {pool} now get GitHub App tokens from the cluster without asking you first,
+          and its operator logs each one. You are asked only where the cluster refuses. The
+          cluster&apos;s admin turned this on, and the admin controls this setting.
         </Notice>
       ))}
     </>

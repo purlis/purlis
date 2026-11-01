@@ -562,11 +562,7 @@ pub struct Locked(#[expect(dead_code, reason = "held for its drop")] crate::mach
 
 /// Takes [`Locked`].
 pub fn lock(config_root: &Path) -> Locked {
-    // Some pool work holds it across a container's making.
-    Locked(crate::machine::Lock::named_until_free(
-        config_root,
-        RUNNERS_LOCK,
-    ))
+    Locked(crate::machine::Lock::named(config_root, RUNNERS_LOCK))
 }
 
 /// **Records `pool`, once** (#2679): refused where a pool or a runner of its name is kept
@@ -2136,9 +2132,9 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
 /// after it was added. Read only to say whether a chat's repos are sent to the Claim, so it decides
 /// nothing the cluster's own policy and operator do not.
 ///
-/// **Answers whether the Pool just began minting without asking** (#4442): that leaves its Notice
-/// due, kept here so a window opened later still shows it. Going back to asking takes it away, so
-/// the next change shows it again. It holds and refuses nothing.
+/// **Answers whether that moved its Notice** (#4442): a Pool that began minting without asking leaves
+/// it due, kept here so a window opened later still shows it, and going back to asking takes it
+/// away, so the next change shows it again. It holds and refuses nothing.
 pub fn keep_cluster_minting(
     config_root: &Path,
     name: &str,
@@ -2157,7 +2153,7 @@ pub fn keep_cluster_minting(
         ..held.clusters[at].clone().minting_in_cluster(opted_in)
     };
     write(config_root, &held)?;
-    Ok(opted_in)
+    Ok(true)
 }
 
 /// **The person put away the Notice that the cluster pool `name` mints without asking** (#4442).

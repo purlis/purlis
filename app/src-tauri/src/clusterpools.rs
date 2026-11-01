@@ -357,12 +357,18 @@ pub async fn pools_minting_without_asking() -> Result<Vec<String>, String> {
 /// The window's alone (`ui::WINDOW_ONLY`): a chat that could press it could hide the Notice.
 #[tauri::command]
 #[specta::specta]
-pub async fn put_away_pool_minting_notice(name: String) -> Result<(), String> {
+pub async fn put_away_pool_minting_notice(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<(), String> {
     crate::off_the_window("putting away a pool's notice", move || {
         purlis_core::runners::put_away_mint_notice(&config_root()?, &name)
             .map_err(|why| why.to_string())
     })
-    .await
+    .await?;
+    // Every window reads it again, so none keeps what was put away.
+    let _ = tauri::Emitter::emit(&app, POOL_MINTS_WITHOUT_ASKING, ());
+    Ok(())
 }
 
 /// **Removes the cluster pool `name`** on `config` (#3292): this machine out of its runner's

@@ -1262,10 +1262,14 @@ mod cluster {
             "put away, the same state does not bring it back"
         );
         assert!(!due());
-        assert!(!keep(false), "back to asking raises nothing");
+        assert!(
+            keep(false),
+            "back to asking is told, so a Notice standing goes"
+        );
+        assert!(!due());
         assert!(keep(true), "and the next change is told again");
         assert!(due());
-        assert!(!keep(false));
+        assert!(keep(false));
         assert!(!due(), "back to asking, what was due is not true now");
         runners::put_away_mint_notice(config.path(), "no-such-pool").unwrap();
     }

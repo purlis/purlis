@@ -42,7 +42,9 @@ describe("the notice that a pool began minting without asking", () => {
     const onOpenPools = vi.fn();
     render(<PoolMintingNotice onOpenPools={onOpenPools} />);
     const notice = await screen.findByRole("status");
-    expect(notice.textContent).toMatch(/pool team no longer ask you before each GitHub App token/);
+    expect(notice.textContent).toMatch(
+      /pool team now get GitHub App tokens from the cluster without asking you first/,
+    );
     expect(notice.textContent).toMatch(/the admin controls this setting/);
     expect(screen.getAllByRole("status")).toHaveLength(1);
     await userEvent.click(screen.getByRole("button", { name: "Open Pools settings" }));

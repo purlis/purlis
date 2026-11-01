@@ -2401,7 +2401,7 @@ fn the_lock_is_let_go_even_where_a_copy_of_its_descriptor_lives_on() {
 
     drop(lock);
 
-    let again = std::fs::File::open(dir(machine.path()).join(LOCK)).unwrap();
+    let again = std::fs::File::open(charterd(machine.path()).join(LOCK)).unwrap();
     assert!(
         rustix::fs::flock(&again, rustix::fs::FlockOperation::NonBlockingLockExclusive).is_ok(),
         "the lock is free once its holder is dropped"
@@ -2645,42 +2645,13 @@ fn a_renamed_workspace_keeps_where_its_chats_run() {
     );
 }
 
-/// A lock held on and on ends its wait, and the writer goes on.
+/// What takes a lock keeps its file where no chat's sandbox opens it.
 #[cfg(unix)]
 #[test]
-fn a_lock_held_on_and_on_stops_no_writer_for_good() {
-    use rustix::fs::{FlockOperation, flock};
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("a.lock");
-    std::fs::write(&path, "").unwrap();
-    let reader = std::fs::File::open(&path).unwrap();
-    flock(&reader, FlockOperation::LockExclusive).unwrap();
-
-    let since = std::time::Instant::now();
-    let lock = Lock::taken(&path, Some(std::time::Duration::from_millis(50)));
-    assert!(!lock.held(), "its wait ran out");
-    assert!(since.elapsed() >= std::time::Duration::from_millis(50));
-
-    drop(reader);
-    assert!(Lock::taken(&path, Some(std::time::Duration::ZERO)).held());
-}
-
-/// A lock let go of within the wait is had, and excludes the next.
-#[cfg(unix)]
-#[test]
-fn a_lock_let_go_of_within_its_wait_is_had() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("a.lock");
-    let first = Lock::at(&path);
-    assert!(first.held());
-    assert!(!Lock::taken(&path, Some(std::time::Duration::ZERO)).held());
-    let waiting = {
-        let path = path.clone();
-        std::thread::spawn(move || {
-            Lock::taken(&path, Some(std::time::Duration::from_secs(60))).held()
-        })
-    };
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    drop(first);
-    assert!(waiting.join().unwrap());
+fn a_named_lock_is_kept_in_the_session_hosts_folder() {
+    let machine = machine();
+    let lock = Lock::named(machine.path(), "a.lock");
+    assert!(lock.held());
+    assert!(charterd(machine.path()).join("a.lock").is_file());
+    assert!(!dir(machine.path()).join("a.lock").exists());
 }

@@ -60,10 +60,7 @@ pub fn desktop(config_root: &Path, store: &dyn keyring::Store) -> Result<Desktop
     let device = crate::machine::device_id(config_root)
         .map_err(|why| format!("this device has no id to link with: {why}"))?;
     let service = format!("{SERVICE}/{device}");
-    // Across the keyring, which may be asking the person. Past this, a second key made alongside
-    // does not read back as kept, and is refused below.
-    let _held =
-        crate::machine::Lock::named_within(config_root, LOCK, std::time::Duration::from_secs(300));
+    let _held = crate::machine::Lock::named(config_root, LOCK);
     let key = match read(store, &service)? {
         Some(key) => key,
         None => {

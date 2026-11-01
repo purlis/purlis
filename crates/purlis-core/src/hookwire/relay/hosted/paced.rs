@@ -103,6 +103,34 @@ impl Paced {
 pub struct Turns {
     under_way: Mutex<HashSet<Whose>>,
     one_ended: Condvar,
+    /// How many of each chat's runs wait for a turn now.
+    waiting: Mutex<HashMap<u32, usize>>,
+}
+
+/// One chat's runs waiting for a turn at once, past which the next is refused: a chat's own runs do
+/// not fill the host's connections, which other chats and their hooks share.
+const MOST_WAITING_FOR_A_TURN: usize = 8;
+
+/// One run counted as waiting for a turn, until dropped.
+pub struct WaitsForATurn<'a> {
+    turns: &'a Turns,
+    chat: u32,
+}
+
+impl Drop for WaitsForATurn<'_> {
+    fn drop(&mut self) {
+        let mut waiting = self
+            .turns
+            .waiting
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(count) = waiting.get_mut(&self.chat) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                waiting.remove(&self.chat);
+            }
+        }
+    }
 }
 
 /// One run's turn to ask, until dropped.
@@ -112,6 +140,17 @@ pub struct Turn<'a> {
 }
 
 impl Turns {
+    /// Counts one more of chat `chat`'s runs as waiting; `None` where too many do already.
+    pub fn waits(&self, chat: u32) -> Option<WaitsForATurn<'_>> {
+        let mut waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
+        let count = waiting.entry(chat).or_default();
+        if *count >= MOST_WAITING_FOR_A_TURN {
+            return None;
+        }
+        *count += 1;
+        Some(WaitsForATurn { turns: self, chat })
+    }
+
     /// `whose`'s turn once it is free, looking no longer than `within`; `None` past that. A turn let
     /// go of wakes what waits at once, so a tool that asks nothing costs its parallel runs nothing.
     pub fn taken_within(&self, whose: &Whose, within: Duration) -> Option<Turn<'_>> {
@@ -219,6 +258,18 @@ mod tests {
         assert!(turns.taken_within(&a_chat(2), Duration::ZERO).is_some());
         drop(held);
         assert!(turns.taken_within(&a_chat(1), Duration::ZERO).is_some());
+    }
+
+    #[test]
+    fn a_chats_runs_waiting_for_a_turn_are_bounded_and_its_own() {
+        let turns = Turns::default();
+        let held: Vec<_> = (0..MOST_WAITING_FOR_A_TURN)
+            .map(|_| turns.waits(1).expect("room"))
+            .collect();
+        assert!(turns.waits(1).is_none());
+        assert!(turns.waits(2).is_some(), "another chat has its own");
+        drop(held);
+        assert!(turns.waits(1).is_some());
     }
 
     #[test]

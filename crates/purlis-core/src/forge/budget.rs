@@ -286,7 +286,7 @@ impl Meter {
 
     /// A meter for `account` kept in the machine tier under `config_root`: it reads the hour
     /// its file holds before each change and writes it after, so every process sending as the
-    /// account shares one count. A change takes a lock beside the file for its read and its
+    /// account shares one count. A change takes a lock of its own for its read and its
     /// write (#1164), as the machine store's own update does, so two processes counting at the
     /// same instant both count.
     pub fn kept_in(config_root: &Path, account: &Account, clock: Arc<dyn Clock>) -> Meter {
@@ -362,20 +362,17 @@ impl Meter {
         )
     }
 
-    /// The lock on this meter's kept file, beside it in a `0700` folder, or `None` for a meter
+    /// The lock on this meter's kept file, with purlis's other locks, or `None` for a meter
     /// kept in memory. Best effort, as [`crate::machine::update`]'s: a lock that cannot be
     /// taken loses at most the count it was there to keep.
     fn lock(&self) -> Option<crate::machine::Lock> {
         let file = self.file.as_ref()?;
-        let dir = file.parent()?;
-        let mut builder = std::fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-        builder.create(dir).ok()?;
-        let mut name = file.file_name()?.to_os_string();
+        // `<config>/<store folder>/forge-budget/<account>.json`.
+        let config_root = file.parent()?.parent()?.parent()?;
+        let mut name = std::ffi::OsString::from("forge-budget-");
+        name.push(file.file_name()?);
         name.push(".lock");
-        Some(crate::machine::Lock::at(&dir.join(name)))
+        Some(crate::machine::Lock::named(config_root, name.to_str()?))
     }
 
     /// Apply `f` to the hour as of `now`, and keep the result when `write`.

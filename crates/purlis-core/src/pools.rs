@@ -816,7 +816,7 @@ pub fn claim_name(device: &str, pool: &str) -> String {
 /// that pool takes it first, so it waits for the add to finish rather than meet a pool half
 /// made.
 fn adding(config_root: &Path, name: &str) -> crate::machine::Lock {
-    crate::machine::Lock::named_until_free(config_root, &format!("cluster-add-{name}.lock"))
+    crate::machine::Lock::named(config_root, &format!("cluster-add-{name}.lock"))
 }
 
 /// How long adding a cluster pool waits for the cluster operator to vouch for its runner.
@@ -1179,12 +1179,12 @@ pub fn before_cluster_link_to(
 static TOLD_AT_A_LINK: std::sync::Mutex<std::collections::BTreeSet<String>> =
     std::sync::Mutex::new(std::collections::BTreeSet::new());
 
-/// What tells the window a pool began minting without asking (#4442).
+/// What tells the window a pool's Notice of minting without asking moved (#4442).
 static TOLD_OF_MINTING: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> =
     std::sync::OnceLock::new();
 
-/// Tells the window with `tell` each time a pool's link finds it began minting without asking
-/// (#4442). What is due is kept in `runners.json`, so a window opened later reads it there.
+/// Tells the window with `tell` each time a pool's link finds it began minting without asking, or
+/// went back to asking (#4442). What is due is kept in `runners.json`, so a window opened later reads it there.
 pub fn telling_of_minting(tell: Box<dyn Fn() + Send + Sync>) {
     let _ = TOLD_OF_MINTING.set(tell);
 }
@@ -1224,9 +1224,9 @@ fn told_at_a_link(
     };
     let reached = pool.kubectl(&kubectl.clone().within(VOUCHED_NOW_WITHIN));
     let seen = reached.pool(pool.pool()).map_err(|why| why.to_string())?;
-    let began = runners::keep_cluster_minting(config_root, name, seen.mints_in_cluster)
+    let moved = runners::keep_cluster_minting(config_root, name, seen.mints_in_cluster)
         .map_err(|why| why.to_string())?;
-    if began && let Some(tell) = TOLD_OF_MINTING.get() {
+    if moved && let Some(tell) = TOLD_OF_MINTING.get() {
         tell();
     }
     let pin = pool.pin().map_err(|why| why.to_string())?;

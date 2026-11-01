@@ -165,6 +165,22 @@ fn waited_too_long_said(tool: &str) -> String {
     )
 }
 
+/// What the asker of `tool` is told while another run of it is asking.
+fn waits_for_another_run_said(tool: &str) -> String {
+    format!(
+        "another run of {tool} in this chat is finding out whether it may run, so this one waits \
+         for that answer"
+    )
+}
+
+/// What the asker of `tool` is told where too many runs wait on one that is asking.
+fn too_many_runs_said(tool: &str) -> String {
+    format!(
+        "too many runs of {tool} in this chat wait for one that is asking, so this one did not \
+         run and was sent no value: run it again once that has its answer"
+    )
+}
+
 /// What the asker of `tool` is told where another run of it was asking for too long.
 fn another_run_too_long_said(tool: &str) -> String {
     format!(
@@ -303,7 +319,7 @@ impl Relaying {
         };
         // Chat's own pace, for this tool: what it costs the operator and the person (#4332).
         let paced = (asker.root.clone(), ask.chat, tool.clone());
-        let turn = match self.turn_to_ask(&paced, &input, &tool) {
+        let turn = match self.turn_to_ask(&paced, &input, &tool, &mut writer) {
             Ok(turn) => turn,
             Err(Some(why)) => return brokered::refused(writer, why),
             Err(None) => return,
@@ -467,7 +483,23 @@ impl Relaying {
         whose: &paced::Whose,
         input: &Input,
         tool: &str,
+        writer: &mut Box<dyn Write + Send>,
     ) -> Result<paced::Turn<'_>, Option<String>> {
+        if let Some(turn) = self.ask_turns.taken_within(whose, Duration::ZERO) {
+            return Ok(turn);
+        }
+        let Some(_counted) = self.ask_turns.waits(whose.1) else {
+            return Err(Some(too_many_runs_said(tool)));
+        };
+        let note = brokered::Frame::Note(waits_for_another_run_said(tool));
+        serde_json::to_string(&note)
+            .ok()
+            .and_then(|line| {
+                writeln!(writer, "{line}")
+                    .and_then(|()| writer.flush())
+                    .ok()
+            })
+            .ok_or(None)?;
         let since = Instant::now();
         loop {
             if let Some(turn) = self.ask_turns.taken_within(whose, LOOKED_AT_EVERY) {
