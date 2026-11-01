@@ -856,7 +856,10 @@ fn a_pools_page_says_which_limit_the_file_got_wrong() {
 #[test]
 fn a_pools_page_shows_what_the_team_set() {
     use purlis_core::poollimits::{Chosen, LimitId};
-    let team = serde_json::json!({"signInWait": {"default": 20, "highest": 40}});
+    let team = serde_json::json!({
+        "signInWait": {"default": 10, "highest": 40},
+        "codeSize": {"default": 2048},
+    });
     let chosen = Chosen::default()
         .under_team(Some(&team))
         .with(LimitId::SignInWait, Some(100));
@@ -867,7 +870,8 @@ fn a_pools_page_shows_what_the_team_set() {
         .flat_map(|group| &group.limits)
         .collect();
     let row = rows.iter().find(|row| row.key == "signInWait").unwrap();
-    assert_eq!(row.default, 20);
+    assert_eq!(row.default, 10);
+    assert_eq!(row.suggested, None);
     assert_eq!(
         row.highest_said.as_deref(),
         Some("The team allows up to 40 minutes.")
@@ -878,6 +882,9 @@ fn a_pools_page_shows_what_the_team_set() {
             .unwrap_or("")
             .contains("at most 40 minutes")
     );
+    let code = rows.iter().find(|row| row.key == "codeSize").unwrap();
+    assert_eq!(code.default, 1024, "a higher default raises nothing");
+    assert_eq!(code.suggested, Some(2048));
     let other = rows.iter().find(|row| row.key == "profileSize").unwrap();
     assert_eq!(other.highest_said, None);
 }

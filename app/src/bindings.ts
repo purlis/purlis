@@ -10622,6 +10622,10 @@ export type PoolLimitRow = {
 	highest_said: string | null,
 	/**  Whether its default is what the team defining the pool set (#4287). */
 	default_by_team: boolean,
+	/**  The value the team suggests, above what holds: one press sets it, as the person's (#4287). */
+	suggested: number | null,
+	/**  That value in words. */
+	suggested_said: string | null,
 };
 
 /**

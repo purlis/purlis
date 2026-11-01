@@ -687,13 +687,24 @@ impl Chosen {
         id.limit().unit.as_time(self.in_force(id))
     }
 
-    /// The default this pool's limit follows: the team's, or purlis's, and never above the highest
-    /// the team allows.
+    /// **The default this pool's limit follows**: purlis's, or the team's where it is lower, and
+    /// never above the highest the team allows. A team's default never raises a limit unasked
+    /// (the person's ruling of 2026-11-01): a higher one is [`Self::team_suggests`].
     #[must_use]
     pub fn default_of(&self, id: LimitId) -> u64 {
-        let default = self.team_default[id as usize].map_or(id.limit().default, u64::from);
+        let ours = id.limit().default;
+        let default = self.team_default[id as usize].map_or(ours, |team| u64::from(team).min(ours));
         self.team_highest(id)
             .map_or(default, |top| top.min(default))
+    }
+
+    /// **The value the team suggests**: its default, where that is above what holds now. Only the
+    /// person's press sets it.
+    #[must_use]
+    pub fn team_suggests(&self, id: LimitId) -> Option<u64> {
+        self.team_default[id as usize]
+            .map(u64::from)
+            .filter(|team| *team > self.in_force(id) && *team > id.limit().default)
     }
 
     /// Whether the default this limit follows is the team's doing.
@@ -800,9 +811,17 @@ impl Chosen {
             (Some(team), Some(older)) => Some(team.min(older)),
             (team, older) => team.or(older),
         };
+        let hit = id.limit().hit(in_force, needed, highest);
+        // What the team suggests is offered where it holds what is needed.
+        let suggested = self.team_default[id as usize]
+            .map(u64::from)
+            .filter(|team| *team > in_force && *team >= needed)
+            .filter(|team| highest.is_none_or(|top| *team <= top))
+            .or(hit.suggested);
         LimitHit {
             by_team: team.is_some() && team == highest,
-            ..id.limit().hit(in_force, needed, highest)
+            suggested,
+            ..hit
         }
     }
 
@@ -1206,11 +1225,11 @@ mod tests {
     #[test]
     fn a_teams_default_and_highest_hold_and_a_suggestion_stops_at_the_highest() {
         let team = json!({
-            "signInWait": {"default": 20, "highest": 40},
+            "signInWait": {"default": 10, "highest": 40},
             "profileSize": {"highest": 160},
         });
         let chosen = Chosen::default().under_team(Some(&team));
-        assert_eq!(chosen.in_force(LimitId::SignInWait), 20);
+        assert_eq!(chosen.in_force(LimitId::SignInWait), 10);
         assert_eq!(chosen.team_highest(LimitId::SignInWait), Some(40));
         // A value kept from before the team lowered it holds to it.
         let high = chosen.with(LimitId::SignInWait, Some(100));
@@ -1266,6 +1285,39 @@ mod tests {
 
         let why = LimitId::SignInWait.limit().check(41, Some(40)).unwrap_err();
         assert!(why.contains("team that defines this pool"), "{why}");
+    }
+
+    /// The person's ruling of 2026-11-01: a team's default only lowers unasked. A higher one is an
+    /// offer, on the page and on a hit, and holds nothing until the person sets it.
+    #[test]
+    fn a_teams_higher_default_is_an_offer_and_raises_nothing() {
+        let team = json!({"profileSize": {"default": 256, "highest": 512}});
+        let chosen = Chosen::default().under_team(Some(&team));
+        assert_eq!(
+            chosen.in_force(LimitId::ProfileSize),
+            128,
+            "purlis's default holds"
+        );
+        assert_eq!(chosen.default_of(LimitId::ProfileSize), 128);
+        assert!(!chosen.default_by_team(LimitId::ProfileSize));
+        assert_eq!(chosen.team_suggests(LimitId::ProfileSize), Some(256));
+
+        // Offered where it holds what is needed; the usual suggestion where it doesn't.
+        let hit = chosen.hit(LimitId::ProfileSize, 128, 150, None);
+        assert_eq!(hit.suggested, Some(256));
+        assert!(hit.said().contains("raise it to 256 MiB"), "{}", hit.said());
+        let more = chosen.hit(LimitId::ProfileSize, 128, 300, None);
+        assert_eq!(more.suggested, Some(384));
+
+        // Once the person is there, nothing is offered.
+        let set = chosen.with(LimitId::ProfileSize, Some(256));
+        assert_eq!(set.in_force(LimitId::ProfileSize), 256);
+        assert_eq!(set.team_suggests(LimitId::ProfileSize), None);
+
+        // A lower one holds with no prompt, and offers nothing.
+        let lower = Chosen::default().under_team(Some(&json!({"profileSize": {"default": 64}})));
+        assert_eq!(lower.in_force(LimitId::ProfileSize), 64);
+        assert_eq!(lower.team_suggests(LimitId::ProfileSize), None);
     }
 
     /// A Pool can't make a limit more than purlis carries, and what it set round-trips a row.

@@ -325,6 +325,23 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
         {row.highest_said !== null && <span>{row.highest_said}</span>}
         {row.applies !== null && <span>{row.applies}</span>}
       </p>
+      {row.suggested !== null && row.suggested_said !== null && (
+        <p className="ui-setting-help pool-limit-says">
+          <span>The team suggests {row.suggested_said}.</span>
+          <Button
+            size="sm"
+            aria-label={`Use ${row.suggested_said}: ${row.plain} on pool ${pool}`}
+            onPress={() => {
+              const mine = ++typing.current;
+              setWhy(undefined);
+              setTyped(undefined);
+              save(row.suggested, mine);
+            }}
+          >
+            Use {row.suggested_said}
+          </Button>
+        </p>
+      )}
     </div>
   );
 }

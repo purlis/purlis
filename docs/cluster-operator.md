@@ -448,6 +448,9 @@ spec:
     signInWait: { highest: 60 }                  # minutes
 ```
 
+- **A `default` only lowers a limit on its own.** Below purlis's default, it holds for anyone who chose
+  no value. Above it, it is an offer: the window says "The team suggests X", the offer on a limit that
+  was hit uses it, and one press sets it as the person's value. Nothing rises unasked.
 - **A desktop reads them as the pool is added and at each link**, so a change reaches a person at their
   next link. A value above the highest is refused as it is typed and everywhere else, a suggestion stops
   at it, and a value kept from before holds to it.
