@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793561071820,
+  "lastUpdate": 1793561809857,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35364,6 +35364,48 @@ window.BENCHMARK_DATA = {
             "value": 101.52885599999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.904, 100.626, 101.529, 102.513, 103.924 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d471e62d40900a80a0bcb19edd725c733728ff2b",
+          "message": "Runners: a window started again takes back its chats on a pool's runners (#4407)\n\n* Runners: a test of a window started again taking back its chats on a real Docker pool (#4271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6SFTD7W6FMW83CXA2VWZ\nPurlis-Persona: steward\n\n* Runners: the restart test is named so the parity job runs it (#4271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6SFTD7W6FMW83CXA2VWZ\nPurlis-Persona: steward\n\n* Runners: the restart test says how far it got, and looks for a minute (#4271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6SFTD7W6FMW83CXA2VWZ\nPurlis-Persona: steward\n\n* Runners: a window started again takes back its chats on a pool's runners (#4271)\n\nThe person ruled on 2026-11-01 that a paired desktop's link may ask its own runner which chats run. programs_of is a power of its own, and a runner answers a link between hosts only what was opened for the window that link named. A program's note stays the window's on its own host. The take-back from draining runners comes back as it was, with its review fixes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6SFTD7W6FMW83CXA2VWZ\nPurlis-Persona: steward\n\n* Runners: a branch only a drained runner had stays in the clone (#4363)\n\nA fetch removes a pool's ref the runner no longer has only where another ref of the clone holds its commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6SFTD7W6FMW83CXA2VWZ\nPurlis-Persona: steward\n\n* Runners: review fixes for a window taking back its runner chats (#4271)\n\nA runner names a link between hosts only the sandbox take_back names that window. A runner that does not say its programs counts as one that may have run outside the sandbox again, as the ruling lets go of the stopgap. The test cuts a window's bytes, so the host sees its links end. The change for #4363 comes out: its rule needs a design of its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6SFTD7W6FMW83CXA2VWZ\nPurlis-Persona: steward\n\n* Runners: the restart test asks draining runners through its own Docker (#4271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6SFTD7W6FMW83CXA2VWZ\nPurlis-Persona: steward\n\n* Runners: session protocol 1.66 gates asking a runner its programs (#4271)\n\nThe person ruled it on 2026-11-01. A relay does not ask a runner before 1.66, and nothing marks it. From 1.66 a runner that does not say its programs marks its pool, unless it was a draining runner removed while it was asked. A hold again on a pool's link does not refill what the first hold found, so it cannot close a chat already taken back. The restart test checks the old runner is really removed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6SFTD7W6FMW83CXA2VWZ\nPurlis-Persona: steward\n\n* Runners: the refusing host in the drain tests asks for no Clone (#4271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6SFTD7W6FMW83CXA2VWZ\nPurlis-Persona: steward\n\n* Runners: asking a runner its programs is session protocol 1.67 (#4271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ6SFTD7W6FMW83CXA2VWZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T18:45:50Z",
+          "tree_id": "ec262a75f671912442fefa7b30939a6c94e52c43",
+          "url": "https://github.com/purlis/purlis/commit/d471e62d40900a80a0bcb19edd725c733728ff2b"
+        },
+        "date": 1793561805193,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.358997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.341, 0.356, 0.359, 0.365, 0.372 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.627234,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.519, 16.557, 16.627, 16.697, 16.741 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.62642299999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.053, 101.232, 101.626, 101.816, 102.867 ms"
           }
         ]
       }
