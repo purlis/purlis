@@ -110,7 +110,13 @@ import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { AddVision } from "./AddVision";
-import { cloneRepos, settleRepoClones, stopRepoClones, useRepoClones } from "./repoClones";
+import {
+  cloneRepos,
+  forgetLandedClones,
+  settleRepoClones,
+  stopRepoClones,
+  useRepoClones,
+} from "./repoClones";
 import { StartChat } from "./StartChat";
 import {
   handedSaid,
@@ -7658,6 +7664,11 @@ export const PlaneView = memo(function PlaneView({
     if (ofWorkspace !== undefined && cloneNames !== undefined)
       settleRepoClones(plane, ofWorkspace, cloneNames);
   }, [plane, ofWorkspace, cloneNames, cloning]);
+  // One that landed while another workspace was focused was never going to be settled: the panels
+  // this focus asks for are later than it, and may never list it (#4466).
+  useEffect(() => {
+    if (ofWorkspace !== undefined) forgetLandedClones(plane, ofWorkspace);
+  }, [plane, ofWorkspace]);
 
   /** The repo whose clone the chat being picked would start in, if it would: what the picker's
    *  branch box names (GL-1). The same directory `startOn` sends, compared with the path the

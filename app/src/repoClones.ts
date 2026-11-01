@@ -341,6 +341,22 @@ export function settleRepoClones(plane: PlaneId, workspace: string, clones: read
   tell();
 }
 
+/**
+ * **Forget every clone that landed before `workspace` was focused** (#4466), called as it is
+ * focused. Until now the panels of another workspace were being read, so `settleRepoClones` never
+ * heard of them, and the read this focus asks for is later than they are: it says what became of
+ * them, whether cloned, dropped or deleted, and a row kept for them would never go.
+ */
+export function forgetLandedClones(plane: PlaneId, workspace: string) {
+  const key = keyOf(plane, workspace);
+  const held = byWorkspace.get(key);
+  if (held === undefined) return;
+  const next = new Map([...held].filter(([, one]) => one.state !== "cloned"));
+  if (next.size === held.size) return;
+  byWorkspace.set(key, next);
+  tell();
+}
+
 /** For tests: forget every clone. */
 export function forgetRepoClones() {
   byWorkspace.clear();
