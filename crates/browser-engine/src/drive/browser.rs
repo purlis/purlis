@@ -4341,7 +4341,7 @@ impl Inner {
                 let _ = devtools.call("Network.enable", json!({}), on);
                 let _ = devtools.call(
                     "Target.setAutoAttach",
-                    json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }),
+                    json!({ "autoAttach": true, "waitForDebuggerOnStart": std::env::var_os("PURLIS_PROBE_NOWAIT").is_none(), "flatten": true }),
                     on,
                 );
                 if let Ok(tree) = devtools.call("Page.getFrameTree", json!({}), on) {

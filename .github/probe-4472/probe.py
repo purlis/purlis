@@ -267,10 +267,12 @@ def chrome_round(arm, proxy, label):
     return result
 
 
-def purlis_round(binary, label):
+def purlis_round(binary, label, nowait):
     since = time.time()
     trace = os.path.join(tempfile.gettempdir(), f"trace-{label}")
     env = dict(os.environ, PURLIS_PROBE_TRACE=trace, RUST_BACKTRACE="0")
+    if nowait:
+        env["PURLIS_PROBE_NOWAIT"] = "1"
     began = time.monotonic()
     try:
         run = subprocess.run(
@@ -284,7 +286,7 @@ def purlis_round(binary, label):
         out, passed = run.stdout + run.stderr, run.returncode == 0
     except subprocess.TimeoutExpired as why:
         out, passed = f"timed out {why.stdout}", False
-    result = dict(arm="purlis", outcome="ok", took=round(time.monotonic() - began, 2))
+    result = dict(arm="purlis-nowait" if nowait else "purlis", outcome="ok", took=round(time.monotonic() - began, 2))
     if not passed:
         said = [l for l in out.splitlines() if "panicked" in l or "the browser" in l or "Open" in l]
         result.update(outcome="failed", said=" | ".join(said)[:900])
@@ -312,7 +314,7 @@ def main():
         arm = arms[n % len(arms)]
         n += 1
         label = f"{arm}-{n}"
-        r = purlis_round(binary, label) if arm == "purlis" else chrome_round(arm, proxy, label)
+        r = purlis_round(binary, label, arm == "purlis-nowait") if arm.startswith("purlis") else chrome_round(arm, proxy, label)
         results.write(json.dumps(r) + "\n")
         results.flush()
         t = tally.setdefault(arm, {})

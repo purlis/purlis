@@ -13,13 +13,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kind: [ladder]
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
-        include:
-          - { kind: control, shard: 1 }
-          - { kind: control, shard: 2 }
-          - { kind: control, shard: 3 }
-          - { kind: control, shard: 4 }
+        kind: [plain, real]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
@@ -37,7 +32,7 @@ jobs:
           "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
       - name: Rounds under load
         env:
-          ARMS: ${{ matrix.kind == 'ladder' && 'plain,discover,attach,nowait,wait,full,purlis' || 'purlis' }}
+          ARMS: ${{ matrix.kind == 'plain' && 'wait,nowait' || 'purlis,purlis-nowait' }}
           BIN: ${{ steps.build.outputs.bin }}
           OUT: ${{ github.workspace }}/probe-out
         run: |
