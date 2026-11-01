@@ -1305,10 +1305,10 @@ fn a_piece_on_feature_that_conflicts_with_main(w: &World) -> PathBuf {
     piece
 }
 
+/// #4436: `--continue` runs with HEAD detached, so the branch git names is empty; the base was
+/// written as `[branch ""]`, which stops every chat on the clone.
 #[test]
 fn a_new_base_that_stopped_on_a_conflict_is_recorded_on_the_branch_when_it_goes_on() {
-    // #4436: `--continue` runs with HEAD detached, so the branch git names is empty; the base
-    // was written as `[branch ""]`, which stops every chat on the clone.
     purlis_core::unsteered!();
     let w = world();
     let piece = a_piece_on_feature_that_conflicts_with_main(&w);
