@@ -1789,9 +1789,6 @@ enum Named<'a> {
     All,
 }
 
-/// `purlis skill install`: what `source` offers where no skill is named; else the review of
-/// `names` (or of every skill not installed from it yet), asked about, then the install at
-/// `level`.
 /// How `purlis skill install` was told to settle a name clash (#4530).
 struct Settled {
     renames: Vec<String>,
@@ -1830,6 +1827,9 @@ fn unsettled(review: &source::Review, new_names: &source::Renames) -> Vec<String
         .collect()
 }
 
+/// `purlis skill install`: what `source` offers where no skill is named; else the review of
+/// `names` (or of every skill not installed from it yet), asked about, then the install at
+/// `level`.
 fn install(
     cx: &mut verbs::Ctx<'_>,
     source: &Source,
@@ -1895,23 +1895,10 @@ fn install(
             source::review(root, cx.built_in, source, &without_skipped(names), level)
         }
         Named::All => match source::review_all(root, cx.built_in, source, level) {
-            Ok(source::SetReview::Review { review, there }) => {
-                // Those the level has already, made there or from another source, or a
-                // built-in's name: left as they are, and said (#4153).
-                for name in &there {
-                    voice::info(format!(
-                        "{} is there already at {level}, so it is left as it is.",
-                        esc(name)
-                    ));
-                }
+            Ok(source::SetReview::Review { review, .. }) => {
                 if review.skills.is_empty() {
                     voice::info(format!(
-                        "{} {} offers is installed already.",
-                        if there.is_empty() {
-                            "Every skill"
-                        } else {
-                            "Every other skill"
-                        },
+                        "Every skill {} offers is installed already.",
                         esc(&source.to_string())
                     ));
                     return Ok(0);
@@ -1919,11 +1906,11 @@ fn install(
                 if settled.skips.is_empty() {
                     Ok(review)
                 } else {
-                    // Reviewed again without them, so what they alone bring along stays out.
+                    // Reviewed again without them. All of these were named: one marked as brought
+                    // along by a skipped skill is still one `--all` offers.
                     let named: Vec<String> = review
                         .skills
                         .iter()
-                        .filter(|skill| skill.brought_by.is_none())
                         .map(|skill| skill.name.clone())
                         .collect();
                     source::review(root, cx.built_in, source, &without_skipped(&named), level)

@@ -1118,6 +1118,42 @@ describe("Install all… (#4024)", () => {
     expect(install?.args.reviewed).toEqual(setReview(["deploy", "huge"], ["huge"]).review.accepted);
   });
 
+  it("asks again when a skipped skill is ticked back in (#4530)", async () => {
+    const clash = { held_by: "held", offered: "example-huge", taken: ["huge"] };
+    core({
+      answers: {
+        skill_install_set_review: (args) => {
+          const set = setReview(args.names as string[]);
+          return {
+            ...set,
+            review: {
+              ...set.review,
+              skills: set.review.skills.map((one) =>
+                one.name === "huge" ? { ...one, clash } : one,
+              ),
+            },
+          };
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    const taken = await within(review).findByTestId("clash-huge");
+    await user.click(within(taken).getByRole("radio", { name: "Skip it" }));
+    const left = await within(review).findByTestId("left-out-huge");
+    await user.click(within(left).getByRole("checkbox"));
+
+    const back = await within(review).findByTestId("clash-huge");
+    expect(within(back).getByRole("radio", { name: "Skip it" })).not.toBeChecked();
+    expect(within(review).getByRole("button", { name: "Install" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
   it("keeps a skill there already named when it reviews the first part (#4153)", async () => {
     let first = true;
     const asked = core({

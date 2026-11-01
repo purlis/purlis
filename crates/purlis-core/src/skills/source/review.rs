@@ -42,7 +42,7 @@ pub struct Clash {
     pub held_by: String,
     /// The new name offered: `<source>-<name>`.
     pub offered: String,
-    /// The names of the skills at that level, which a new name cannot take.
+    /// The names a new name cannot take: the skills at that level, and the built-in skills'.
     pub taken: Vec<String>,
 }
 
@@ -59,6 +59,8 @@ pub struct SkillReview {
     /// The skills it refers to that the level it lands in holds already (#4032): they are not
     /// brought along, and the install leaves them as they are.
     pub already: Vec<String>,
+    /// Every skill it refers to, each once, wherever it is met.
+    pub refers: Vec<String>,
     /// Where its name is taken at the level it lands in.
     pub clash: Option<Clash>,
     /// A line each for what the review warns of and does not stop on: a copy at another level, and
@@ -128,16 +130,18 @@ impl Review {
     fn marked(mut self, plane: &Path, reserved: &Reserved, level: &Level) -> Review {
         let (locked, _) = lock::every(plane);
         let label = self.source.remote.label();
+        let levels = Level::every(plane);
+        let held = names_at(plane, level);
         for skill in &mut self.skills {
             let name = skill.name.clone();
             skill.clash = held_by(plane, &locked, reserved, level, &name).map(|held_by| Clash {
                 held_by,
                 offered: format!("{label}-{name}"),
-                taken: names_at(plane, level),
+                taken: held.iter().cloned().chain(reserved.names()).collect(),
             });
-            let others: Vec<String> = Level::every(plane)
-                .into_iter()
-                .filter(|other| other != level && has(plane, other, &name))
+            let others: Vec<String> = levels
+                .iter()
+                .filter(|other| *other != level && has(plane, other, &name))
                 .map(|other| other.to_string())
                 .collect();
             if !others.is_empty() {
@@ -147,11 +151,11 @@ impl Review {
                     others.join(", ")
                 ));
             }
-            for other in &skill.already {
+            for other in &skill.refers {
                 let theirs = locked.iter().find(|(_, one)| {
                     one.name == *other
                         && one.source != self.source.remote
-                        && (one.level.0 == *level || one.level.0 == Level::project())
+                        && (one.level.0.at == level.at || one.level.0.at == Whose::Project)
                 });
                 if let Some((_, one)) = theirs {
                     skill.notes.push(format!(
@@ -305,10 +309,11 @@ pub(super) fn review_of(
         })
         .unwrap_or_default();
     let mut already = Vec::new();
-    for name in referenced(files) {
-        if name == found.name {
-            continue;
-        }
+    let refers: Vec<String> = referenced(files)
+        .into_iter()
+        .filter(|name| *name != found.name)
+        .collect();
+    for name in refers.iter().cloned() {
         if have(&name) {
             already.push(name);
         } else if !held.contains(&name) {
@@ -323,6 +328,7 @@ pub(super) fn review_of(
         folder: found.folder.clone(),
         brought_by,
         already,
+        refers,
         clash: None,
         notes: Vec::new(),
         files: files
@@ -744,19 +750,10 @@ pub fn review_all(
         .filter(|skill| installed_at(&locked, source, &skill.name).is_empty())
         .map(|skill| skill.name.clone())
         .collect();
-    let installed = lock::every(plane).0;
+    // Those it names are installed nowhere from this source, so none is there already.
     let reserved = Reserved::of(built_in);
     Ok(fetched
-        .set_review(
-            &found,
-            &names,
-            &|name| {
-                installed_at(&installed, source, name)
-                    .iter()
-                    .any(|at| at == level)
-            },
-            &met_at(plane, built_in, level),
-        )?
+        .set_review(&found, &names, &|_| false, &met_at(plane, built_in, level))?
         .marked(plane, &reserved, level))
 }
 

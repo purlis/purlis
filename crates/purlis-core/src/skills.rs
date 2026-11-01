@@ -255,6 +255,11 @@ impl Reserved {
     pub fn holds(&self, name: &str) -> bool {
         self.0.contains(name)
     }
+
+    /// Every name reserved.
+    pub fn names(&self) -> impl Iterator<Item = String> + '_ {
+        self.0.iter().cloned()
+    }
 }
 
 /// **Whether `name` belongs to a built-in skill** ([`Reserved`]) with the built-in skills in
@@ -3226,9 +3231,14 @@ fn persona_rows_with(
         .map(|persona| {
             let set = purlis_skills::persona_set(plane, &machine, &persona, Route::Plugin);
             let names = names_of(plane, &persona);
+            let labels = SourceLabels::of(plane, None, Some(&persona));
             let rows = studio_rows(&set, plane, &names)
                 .into_iter()
                 .filter(|row| row.origin == Origin::Persona)
+                .map(|mut row| {
+                    row.source_label = labels.of_skill(&row.name, row.origin, row.local);
+                    row
+                })
                 .collect();
             PersonaRows { persona, rows }
         })
