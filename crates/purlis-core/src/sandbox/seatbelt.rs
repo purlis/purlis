@@ -878,8 +878,9 @@ const FLOOR_BASE: &str = "(version 1)
 /// gets nothing out of the probe.
 pub fn probe_profile(tmp: &Path) -> Result<String, &'static str> {
     Ok(format!(
-        "{BASE}(allow file-write* (subpath {}) (literal \"/dev/null\"))\n",
-        quote(tmp)?
+        "{BASE}(allow file-write* (subpath {}) (literal \"/dev/null\"))\n{}",
+        quote(tmp)?,
+        terminal_rules()
     ))
 }
 

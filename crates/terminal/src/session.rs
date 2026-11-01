@@ -1174,7 +1174,10 @@ fn deliver(queued: Receiver<Vec<u8>>, mut writer: Box<dyn Write + Send>) {
     }
 }
 
-/// Makes the terminal at `name` its owner's alone, and names it in the words of `command`.
+/// Makes the terminal at `name` its owner's alone, and names it in the words of `command`, where
+/// a sandbox's profile holds [`OWN_TERMINAL`]. A profile that names its terminal relies on the
+/// mode, so a mode that could not be set refuses that start; any other program starts as it
+/// would on a terminal left as it was opened.
 fn make_its_own(
     name: Option<&std::path::Path>,
     command: &mut CommandBuilder,
@@ -1182,20 +1185,47 @@ fn make_its_own(
     let Some(name) = name else {
         return Ok(());
     };
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(name, std::fs::Permissions::from_mode(0o600))?;
-    }
+    let named = format!("(literal \"{OWN_TERMINAL}\")");
+    let mut relies_on_it = false;
     for word in command.get_argv_mut() {
         if let Some(text) = word.to_str()
-            && text.contains(OWN_TERMINAL)
+            && text.contains(&named)
         {
             *word = text
-                .replace(OWN_TERMINAL, &name.display().to_string())
+                .replace(&named, &format!("(literal \"{}\")", name.display()))
                 .into();
+            relies_on_it = true;
         }
     }
+    match keep_to_owner(name) {
+        Err(why) if relies_on_it => Err(why),
+        _ => Ok(()),
+    }
+}
+
+/// The terminal at `name` as its owner's alone, unless this process could then not open it: a
+/// session inside a sandbox whose rules keep to terminals of the mode they were opened with.
+#[cfg(unix)]
+fn keep_to_owner(name: &std::path::Path) -> std::io::Result<()> {
+    use std::fs::{OpenOptions, Permissions, set_permissions};
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let was = std::fs::metadata(name)?.permissions();
+    set_permissions(name, Permissions::from_mode(0o600))?;
+    // Never taken as this process's controlling terminal.
+    let opens = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_NOCTTY)
+        .open(name);
+    if let Err(why) = opens {
+        set_permissions(name, was)?;
+        return Err(why);
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn keep_to_owner(_: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
@@ -1349,11 +1379,21 @@ mod tests {
     #[test]
     fn a_program_s_terminal_is_its_owner_s_alone_and_named_in_its_words() {
         let session = sh_with_word(
-            "[ \"$(tty)\" = \"$0\" ] && echo same; ls -l \"$(tty)\"",
-            OWN_TERMINAL,
+            "[ \"$0\" = \"(literal \\\"$(tty)\\\")\" ] && echo same; \
+             ls -l \"$(tty)\"",
+            &format!("(literal \"{OWN_TERMINAL}\")"),
         );
         screen_until(&session, shows("same"));
         screen_until(&session, shows("crw-------"));
+    }
+
+    #[test]
+    fn a_word_that_only_mentions_the_mark_is_left_as_it_is() {
+        let session = sh_with_word(
+            "[ \"$0\" = /dev/purlis-own-terminal ] && echo same",
+            OWN_TERMINAL,
+        );
+        screen_until(&session, shows("same"));
     }
 
     fn sh_with_word(script: &str, word: &str) -> Session {

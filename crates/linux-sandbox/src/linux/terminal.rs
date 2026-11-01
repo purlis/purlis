@@ -96,7 +96,7 @@ fn held_inside(world: &World, number: u32) -> bool {
     processes
         .flatten()
         .filter_map(|it| it.file_name().to_str()?.parse::<i32>().ok())
-        .any(|pid| holds_other_end(pid, number) && world.inside(pid))
+        .any(|pid| world.inside(pid) && holds_other_end(pid, number))
 }
 
 /// Whether process `pid` has the other end of terminal `number` open. A process this one may not
