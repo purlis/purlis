@@ -3132,11 +3132,27 @@ export const commands = {
 	hits: PoolLimitHitRow[],
 } | null>("pool_limit_offer", { profile, refused }),
 	/**
-	 *  **Saves `value` as pool `pool`'s limit `key`** (spec #4275), the person's own press in their
-	 *  window: a chat has no way to it, and can only propose through the edit ask (Q6). It applies
-	 *  from the next attempt, with nothing restarted.
+	 *  **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
+	 *  move's line offers beside that refusal, as [`pool_limit_offer`] does for a start.
 	 */
-	poolLimitSet: (pool: string, key: string, value: number) => typedError<null, string>(__TAURI_INVOKE("pool_limit_set", { pool, key, value })),
+	poolLimitOfferForMove: (pool: string, refused: string) => __TAURI_INVOKE<{
+	pool: string,
+	hits: PoolLimitHitRow[],
+} | null>("pool_limit_offer_for_move", { pool, refused }),
+	/**  **Pool `pool`'s limits** (#4285), as its page draws them. */
+	poolLimits: (pool: string) => typedError<PoolLimitsPage, string>(__TAURI_INVOKE("pool_limits", { pool })),
+	/**
+	 *  **The value in the words `typed` for limit `key`, or why they aren't one it can be** (#4285):
+	 *  the file's and the command's check, asked as the person types.
+	 */
+	poolLimitCheck: (key: string, typed: string) => typedError<number, string>(__TAURI_INVOKE("pool_limit_check", { key, typed })),
+	/**
+	 *  **Saves `value` as pool `pool`'s limit `key`, or, `null`, returns it to following purlis's
+	 *  default** (spec #4275), the person's own press in their window: a chat has no way to it, and
+	 *  can only propose through the edit ask (Q6). It applies as the limit says, with nothing
+	 *  restarted.
+	 */
+	poolLimitSet: (pool: string, key: string, value: number | null) => typedError<null, string>(__TAURI_INVOKE("pool_limit_set", { pool, key, value })),
 	/**
 	 *  **Takes profile `name` off pool `pool`** (#4047): its runner forgets it first, its folder
 	 *  and its sign-in there with it, then the pool's record leaves it out, starting from the
@@ -10421,6 +10437,15 @@ export type PoolDisk = {
 	not_listed: number,
 };
 
+/**  **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced. */
+export type PoolLimitGroup = {
+	label: string,
+	help: string,
+	/**  When a change applies, where that's the same for all of its limits. */
+	applies: string | null,
+	limits: PoolLimitRow[],
+};
+
 /**  **A limit a start was refused on**, as Start a chat offers to raise it (spec #4275). */
 export type PoolLimitHitRow = {
 	/**  The limit's key: what [`pool_limit_set`] takes. */
@@ -10439,6 +10464,33 @@ export type PoolLimitHitRow = {
 export type PoolLimitOffer = {
 	pool: string,
 	hits: PoolLimitHitRow[],
+};
+
+/**  **One of a pool's limits, as its page draws it** (#4285). */
+export type PoolLimitRow = {
+	/**  Its key: what [`pool_limit_set`] and [`pool_limit_check`] take. */
+	key: string,
+	/**  Its name in plain words. */
+	plain: string,
+	/**  The word beside a number of it. */
+	unit: string,
+	/**  purlis's default. */
+	default: number,
+	/**  The default in words: `128 MiB`. */
+	default_said: string,
+	/**  What the person set; `null` where it follows purlis's default. */
+	set: number | null,
+	/**  When a change applies, where its group doesn't say it for all of its limits. */
+	applies: string | null,
+};
+
+/**
+ *  **A pool's limits, as its page draws them** (#4285): whatever the core's list holds, by group,
+ *  and those under Advanced. A group with no limit isn't listed.
+ */
+export type PoolLimitsPage = {
+	groups: PoolLimitGroup[],
+	advanced: PoolLimitRow[],
 };
 
 /**

@@ -2,8 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import type { MoveSignIn, PlaneId, PlanRow } from "./bindings";
 import {
+  commands,
+  type ChatMove,
+  type MoveSignIn,
+  type PlaneId,
+  type PlanRow,
+  type PoolLimitOffer,
+} from "./bindings";
+import {
+  askMove,
   dismissMovedAfterSignIn,
   forgetMove,
   moveCancellable,
@@ -15,6 +23,8 @@ import {
   useMovedAfterSignIn,
 } from "./chatMoves";
 import { Notice, type NoticeAction } from "./Notice";
+import { saveLimits } from "./pools";
+import { RaiseLimit } from "./RaiseLimit";
 import { askProfileSignIn } from "./settings/links";
 import { DRIVEN } from "./settings/PoolProfiles";
 import { PoolSignIn, approvesIn, drivenPlan } from "./settings/PoolSignIn";
@@ -33,6 +43,9 @@ import { PoolSignIn, approvesIn, drivenPlan } from "./settings/PoolSignIn";
  * Try the move tells it the same after a sign-in elsewhere (Open in terminal). The strip's Cancel,
  * like Cancel move, cancels the move, and the chat stays here. Having gone ahead by itself, it
  * says it moved, until that is dismissed (#4135).
+ *
+ * **A move refused by a pool's limit offers to raise it** (#4313), as Start a chat does: saving
+ * the values asks for the move again.
  */
 export function MoveNotice({ plane, session }: { plane: PlaneId; session: number }) {
   const one = useChatMoves(plane)[session];
@@ -51,15 +64,14 @@ export function MoveNotice({ plane, session }: { plane: PlaneId; session: number
   const said = moveSaid(one);
   if (said.trouble)
     return (
-      <Notice
-        cause={`chat-move-failed:${session}`}
-        at="pane"
-        tone="trouble"
-        label="Move"
-        onDismiss={() => putAwayMove(plane, session)}
-      >
-        {said.words}
-      </Notice>
+      // Another refusal is a form afresh.
+      <MoveFailed
+        key={one.why ?? ""}
+        plane={plane}
+        session={session}
+        one={one}
+        words={said.words}
+      />
     );
   // Being made now, past cancelling (#3814): it says so, and Dismiss only hides the line.
   if (!moveCancellable(one))
@@ -94,6 +106,80 @@ export function MoveNotice({ plane, session }: { plane: PlaneId; session: number
       fixes={[{ label: "Cancel move", onPress: () => putAwayMove(plane, session) }]}
     >
       {said.words}
+    </Notice>
+  );
+}
+
+/** A move that did not happen, why, and the limit to raise where one refused it. */
+function MoveFailed({
+  plane,
+  session,
+  one,
+  words,
+}: {
+  plane: PlaneId;
+  session: number;
+  one: ChatMove;
+  words: string;
+}) {
+  const { from, to, why } = one;
+  const [offer, setOffer] = useState<PoolLimitOffer | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [refused, setRefused] = useState<string>();
+  // Dismissed or gone while the limit saves: the move isn't asked for after all.
+  const left = useRef(false);
+  useEffect(() => {
+    left.current = false;
+    return () => {
+      left.current = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (to === null || why === null) return;
+    let gone = false;
+    void commands
+      .poolLimitOfferForMove(to, why)
+      .catch(() => null)
+      .then((said) => {
+        if (!gone) setOffer(said);
+      });
+    return () => {
+      gone = true;
+    };
+  }, [to, why]);
+  const apply = async (values: ReadonlyArray<readonly [string, number]>) => {
+    if (offer === null) return;
+    setSaving(true);
+    setRefused(undefined);
+    const saved = await saveLimits(offer.pool, values);
+    if (left.current) return;
+    if (saved === undefined) await askMove(plane, session, from, to);
+    else setRefused(saved);
+    setSaving(false);
+  };
+  return (
+    <Notice
+      cause={`chat-move-failed:${session}`}
+      at="pane"
+      tone="trouble"
+      label="Move"
+      onDismiss={() => {
+        left.current = true;
+        putAwayMove(plane, session);
+      }}
+      under={
+        offer === null ? undefined : (
+          <RaiseLimit
+            offer={offer}
+            action="Save to the pool and move"
+            working={saving ? "Saving…" : undefined}
+            refused={refused}
+            onApply={(values) => void apply(values)}
+          />
+        )
+      }
+    >
+      {words}
     </Notice>
   );
 }

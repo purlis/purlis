@@ -36,7 +36,7 @@ import { ListBox, ListOption } from "./ui/list/List";
 import { FILTERED_FROM, ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
 import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { reachableWords, startAnswer } from "./StartChatApproval";
-import { StartChatLimit } from "./StartChatLimit";
+import { RaiseLimit } from "./RaiseLimit";
 
 /**
  * The key of the row that stands for "no persona at all".
@@ -157,6 +157,7 @@ export function StartChat({
   signIn,
   onShowSignIn,
   limitOffer,
+  limitProfile,
   onRaiseLimit,
   onStart,
   onApprove,
@@ -191,6 +192,8 @@ export function StartChat({
   onShowSignIn?: () => void;
   /** The limit the last attempt was refused on, offered to raise (spec #4275). */
   limitOffer?: PoolLimitOffer;
+  /** The profile it was refused on: it is offered only while that one is picked. */
+  limitProfile?: string;
   /** Saves the values to the pool: `true` where they were, and the start then goes again. */
   onRaiseLimit?: (values: ReadonlyArray<readonly [string, number]>) => Promise<boolean>;
   /** `label` is the Name field, or `null` when it was left empty. `newBranch` is the branch
@@ -354,7 +357,16 @@ export function StartChat({
   const unavailable = (approves ? !picked : !profile) || blockedByPolicy;
   // What ⏎ from the list or the cards and ⌘⏎ from anywhere may start: a plain start, never an
   // approval or a start without the sandbox (ADR 0097 §6), and nothing while one is running.
-  const byKey = !approves && withoutSandbox === null && !unavailable && !starting;
+  const [savingLimit, setSavingLimit] = useState(false);
+  const byKey = !approves && withoutSandbox === null && !unavailable && !starting && !savingLimit;
+  // Raising a limit starts the chat too, so it is offered only where that is a plain start of the
+  // profile it was refused on: never an approval or a start without the sandbox (ADR 0097 §6).
+  const raises =
+    limitProfile !== undefined &&
+    picked?.name === limitProfile &&
+    !approves &&
+    withoutSandbox === null &&
+    !unavailable;
 
   // The list, and whether the picked row is to be brought into view after this render (R22).
   const list = useRef<HTMLDivElement>(null);
@@ -530,7 +542,7 @@ export function StartChat({
       main={startAnswer({
         approves,
         withoutSandbox: withoutSandbox !== null,
-        starting,
+        starting: starting || savingLimit,
         unavailable,
         reach,
         onPress: start,
@@ -637,12 +649,17 @@ export function StartChat({
                 <Button onPress={onShowSignIn}>Go to the Inbox</Button>
               </p>
             )}
-            {trouble && limitOffer !== undefined && onRaiseLimit && (
-              <StartChatLimit
+            {trouble && limitOffer !== undefined && onRaiseLimit && raises && (
+              <RaiseLimit
+                // A later refusal's suggestion is a form afresh.
+                key={limitOffer.hits.map((hit) => `${hit.key}:${hit.needed}`).join()}
                 offer={limitOffer}
-                applying={starting}
+                action="Save to the pool and start"
+                working={savingLimit ? "Saving…" : starting ? "Starting…" : undefined}
                 onApply={(values) => {
+                  setSavingLimit(true);
                   void onRaiseLimit(values).then((saved) => {
+                    setSavingLimit(false);
                     if (saved && open.current) start();
                   });
                 }}

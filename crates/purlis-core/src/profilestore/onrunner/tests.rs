@@ -1239,6 +1239,14 @@ fn the_typed_refusal_is_had_by_the_words_of_the_start_refused() {
     assert_eq!(over.hits[0].needed, 151);
     assert_eq!(over.hits[0].suggested, Some(192));
     assert_eq!(over_limit("typed-refusal", "some other refusal"), None);
+
+    // A move's line knows its pool and not its profile (#4313).
+    assert_eq!(
+        over_limit_on("builds", &said).map(|o| o.profile),
+        Some("typed-refusal".to_owned())
+    );
+    assert_eq!(over_limit_on("another", &said), None);
+    assert_eq!(over_limit_on("builds", "some other refusal"), None);
 }
 
 /// **Raised past what a runner tells its desktop, a profile is told as nothing** (spec #4275), so

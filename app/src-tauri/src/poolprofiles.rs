@@ -747,26 +747,137 @@ pub async fn pool_limit_offer(profile: String, refused: String) -> Option<PoolLi
     onrunner::over_limit(&profile, &refused).and_then(offer_of)
 }
 
-/// **Saves `value` as pool `pool`'s limit `key`** (spec #4275), the person's own press in their
-/// window: a chat has no way to it, and can only propose through the edit ask (Q6). It applies
-/// from the next attempt, with nothing restarted.
+/// **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
+/// move's line offers beside that refusal, as [`pool_limit_offer`] does for a start.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_limit_set(pool: String, key: String, value: u32) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let limit = purlis_core::poollimits::of_key(&key).ok_or_else(|| {
-            format!(
-                "a pool has no limit named {}",
-                purlis_core::shown::short(&key)
-            )
-        })?;
-        purlis_core::runners::set_pool_limit(
-            &config_root()?,
-            &pool,
-            limit.id,
-            Some(u64::from(value)),
+pub async fn pool_limit_offer_for_move(pool: String, refused: String) -> Option<PoolLimitOffer> {
+    onrunner::over_limit_on(&pool, &refused).and_then(offer_of)
+}
+
+/// **One of a pool's limits, as its page draws it** (#4285).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolLimitRow {
+    /// Its key: what [`pool_limit_set`] and [`pool_limit_check`] take.
+    pub key: String,
+    /// Its name in plain words.
+    pub plain: String,
+    /// The word beside a number of it.
+    pub unit: String,
+    /// purlis's default.
+    pub default: u32,
+    /// The default in words: `128 MiB`.
+    pub default_said: String,
+    /// What the person set; `null` where it follows purlis's default.
+    pub set: Option<u32>,
+    /// When a change applies, where its group doesn't say it for all of its limits.
+    pub applies: Option<String>,
+}
+
+/// **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolLimitGroup {
+    pub label: String,
+    pub help: String,
+    /// When a change applies, where that's the same for all of its limits.
+    pub applies: Option<String>,
+    pub limits: Vec<PoolLimitRow>,
+}
+
+/// **A pool's limits, as its page draws them** (#4285): whatever the core's list holds, by group,
+/// and those under Advanced. A group with no limit isn't listed.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolLimitsPage {
+    pub groups: Vec<PoolLimitGroup>,
+    pub advanced: Vec<PoolLimitRow>,
+}
+
+/// What the page draws of the values `chosen`.
+fn limits_shown(chosen: &purlis_core::poollimits::Chosen) -> PoolLimitsPage {
+    use purlis_core::poollimits::{Group, Limit, all};
+    let number = |value: u64| u32::try_from(value).unwrap_or(u32::MAX);
+    let row = |limit: &Limit, says: bool| PoolLimitRow {
+        key: limit.key.to_owned(),
+        plain: limit.plain.to_owned(),
+        unit: limit.unit.word().to_owned(),
+        default: number(limit.default),
+        default_said: limit.unit.said(limit.default),
+        set: chosen.get(limit.id).map(number),
+        applies: says.then(|| limit.takes_effect.said().to_owned()),
+    };
+    let groups = Group::ALL
+        .into_iter()
+        .filter_map(|group| {
+            let held: Vec<&Limit> = all()
+                .iter()
+                .filter(|limit| limit.group == group && !limit.advanced)
+                .collect();
+            let first = held.first()?;
+            let same = held
+                .iter()
+                .all(|limit| limit.takes_effect == first.takes_effect);
+            Some(PoolLimitGroup {
+                label: group.plain().to_owned(),
+                help: group.help().to_owned(),
+                applies: same.then(|| first.takes_effect.said().to_owned()),
+                limits: held.iter().map(|limit| row(limit, !same)).collect(),
+            })
+        })
+        .collect();
+    PoolLimitsPage {
+        groups,
+        advanced: all()
+            .iter()
+            .filter(|limit| limit.advanced)
+            .map(|limit| row(limit, true))
+            .collect(),
+    }
+}
+
+/// The limit named `key`, or why there is none.
+fn limit_named(key: &str) -> Result<&'static purlis_core::poollimits::Limit, String> {
+    purlis_core::poollimits::of_key(key).ok_or_else(|| {
+        format!(
+            "a pool has no limit named {}",
+            purlis_core::shown::short(key)
         )
-        .map_err(|why| why.to_string())
+    })
+}
+
+/// **Pool `pool`'s limits** (#4285), as its page draws them.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_limits(pool: String) -> Result<PoolLimitsPage, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let chosen = purlis_core::runners::chosen_limits_of(&config_root()?, &pool)
+            .map_err(|why| why.to_string())?;
+        Ok(limits_shown(&chosen))
+    })
+    .await
+    .map_err(|why| format!("the limits were not read: {why}"))?
+}
+
+/// **The value in the words `typed` for limit `key`, or why they aren't one it can be** (#4285):
+/// the file's and the command's check, asked as the person types.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_limit_check(key: String, typed: String) -> Result<u32, String> {
+    let limit = limit_named(&key)?;
+    let value = limit.check_typed(&typed, None)?;
+    u32::try_from(value).map_err(|_| format!("{} is too large a number here", limit.plain))
+}
+
+/// **Saves `value` as pool `pool`'s limit `key`, or, `null`, returns it to following purlis's
+/// default** (spec #4275), the person's own press in their window: a chat has no way to it, and
+/// can only propose through the edit ask (Q6). It applies as the limit says, with nothing
+/// restarted.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_limit_set(pool: String, key: String, value: Option<u32>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let limit = limit_named(&key)?;
+        purlis_core::runners::set_pool_limit(&config_root()?, &pool, limit.id, value.map(u64::from))
+            .map_err(|why| why.to_string())
     })
     .await
     .map_err(|why| format!("the limit was not saved: {why}"))?

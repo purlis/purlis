@@ -730,8 +730,8 @@ pub fn chosen_limits_of(
 }
 
 /// **Sets pool `name`'s limit `id` to `value`**, or, `None`, back to purlis's default (spec
-/// #4275), of either kind, under the file's lock. It applies from the next attempt, and defines
-/// no new runner. A value [`crate::poollimits::Limit::check`] refuses, or no such pool, is
+/// #4275), of either kind, under the file's lock. It applies as the limit says
+/// ([`crate::poollimits::TakesEffect`]). A value [`crate::poollimits::Limit::check`] refuses, or no such pool, is
 /// refused, and what is kept stays.
 pub fn set_pool_limit(
     config_root: &Path,

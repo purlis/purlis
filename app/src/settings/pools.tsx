@@ -22,6 +22,7 @@ import { Tooltip } from "../ui/tooltip/Tooltip";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Badge } from "../ui/badge/Badge";
 import { Switch } from "../ui/choice/Switch";
+import { PoolLimits } from "./PoolLimits";
 import { PoolProfiles } from "./PoolProfiles";
 
 /**
@@ -57,6 +58,8 @@ import { PoolProfiles } from "./PoolProfiles";
  * context and namespace, the cluster operator key pinned as it was added, and Remove, which
  * deletes its claim. A changed runner key and a changed cluster operator key get the same Notice
  * with Remove ({@link KeyChangedNotice}): either refuses every link to its runner.
+ *
+ * **Each pool's limits fold under its row** ({@link PoolLimits}, #4285).
  *
  * **A runner removed outside purlis says so** ({@link RemovedNotice}, #4149): Docker has no
  * container of its id, so purlis no longer links to it, and its row offers Make the runner
@@ -254,6 +257,7 @@ function PoolEntry({
       )}
       {notHeld}
       {profiles}
+      <PoolLimits pool={pool.name} />
     </li>
   );
 }
@@ -385,6 +389,7 @@ function ClusterPoolEntry({
       )}
       {pool.owned ? profiles : <p className="ui-setting-help">{notMarkedSaid(pool.name)}</p>}
       {notHeld}
+      <PoolLimits pool={pool.name} />
     </li>
   );
 }

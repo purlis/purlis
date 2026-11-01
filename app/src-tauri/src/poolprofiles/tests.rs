@@ -773,3 +773,38 @@ fn a_removed_profile_leaves_a_cluster_pool_only_where_its_runner_forgot_it() {
         Some(Vec::new())
     );
 }
+
+/// The page draws whatever the core's list holds, so a limit added there reaches it (#4285).
+#[test]
+fn a_pools_page_lists_every_limit_once_with_what_the_person_set() {
+    use purlis_core::poollimits::{Chosen, LimitId, all};
+    let chosen = Chosen::default().with(LimitId::ProfileFiles, Some(9000));
+    let shown = limits_shown(&chosen);
+    let rows: Vec<&PoolLimitRow> = shown
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .chain(&shown.advanced)
+        .collect();
+    assert_eq!(rows.len(), all().len());
+    for limit in all() {
+        let row = rows.iter().find(|row| row.key == limit.key).unwrap();
+        assert_eq!(row.plain, limit.plain);
+        assert_eq!(u64::from(row.default), limit.default);
+        assert_eq!(row.default_said, limit.unit.said(limit.default));
+        assert_eq!(row.set.map(u64::from), chosen.get(limit.id));
+    }
+    for group in &shown.groups {
+        assert!(!group.limits.is_empty(), "{} is empty", group.label);
+        // Said once for the group, or on each of its rows.
+        for row in &group.limits {
+            assert_ne!(
+                group.applies.is_some(),
+                row.applies.is_some(),
+                "{}",
+                row.key
+            );
+        }
+    }
+    assert!(shown.advanced.iter().all(|row| row.applies.is_some()));
+}
