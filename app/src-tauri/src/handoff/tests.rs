@@ -3056,6 +3056,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::ThemePreview(_) => 15,
             Ask::ThemeDraft(_) => 16,
             Ask::Prompt(_) => 17,
+            Ask::ProposeLimit(_) => 18,
         }
     }
     let asks = vec![
@@ -3125,6 +3126,13 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             change: purlis_core::proposed::Change::Whole {
                 content: "[plane]\n".to_owned(),
             },
+        })),
+        // A proposed value for a pool's limit (#4284): it names a value, and writes nothing.
+        Ask::ProposeLimit(Box::new(purlis_core::hookwire::ProposeLimitAsk {
+            chat,
+            pool: "builds".to_owned(),
+            key: "signInWait".to_owned(),
+            value: Some(30),
         })),
         Ask::Browse(Box::new(purlis_core::hookwire::BrowseAsk {
             chat,

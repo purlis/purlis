@@ -27,6 +27,11 @@
 //! settings, an editor's tasks, package scripts, `.envrc`), never a repo clone's own file, never
 //! purlis's state, and never a path with a link in it.
 //!
+//! **A pool's limit** (#4284, the person's ruling of 2026-11-01, amending PC-1): a value and no
+//! file ([`crate::hookwire::Ask::ProposeLimit`]), since a pool's limits share a file with what
+//! pins its runners. It's held, shown and applied as any other, and judged by
+//! [`crate::poollimits`], not by [`proposable`], which stays as it is.
+//!
 //! **Policy** (PC-14): `sandbox.proposed-changes = "off"` turns it off on this machine
 //! ([`crate::sandbox::policy::Locks::proposed_changes_refused`]); the chat then gets the refusal
 //! it got before.

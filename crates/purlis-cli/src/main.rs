@@ -49,6 +49,7 @@ mod mcp;
 mod memory;
 mod permission;
 mod piece;
+mod pool;
 mod report;
 mod scan;
 mod secret;
@@ -436,6 +437,10 @@ enum Command {
         #[arg(long, value_name = "DRAFT")]
         from: std::path::PathBuf,
     },
+
+    /// A pool's limits: list them, set one, or return one to purlis's default.
+    #[command(subcommand)]
+    Pool(pool::PoolCommand),
 
     /// Claude Code's footer, from the per-turn JSON on stdin.
     ///
@@ -3577,6 +3582,7 @@ fn run(command: Command) -> Result<u8, String> {
             | ProfileCommand::Authenticate { .. }
             | ProfileCommand::SignOut { .. },
         )
+        | Command::Pool(_)
         | Command::Vault(_) => {
             unreachable!("answered before run")
         }
@@ -5380,6 +5386,8 @@ fn main() -> ExitCode {
             });
         }
         Command::Stop { .. } => return stop_every_agent(),
+        // A pool is this machine's, kept in its config home: no project is looked for.
+        Command::Pool(command) => return pool::run(command),
         // `theme` reads this machine's themes, and the plane's when it runs in one, and needs
         // none; it chooses its own exit, a linter's (`theme.rs`).
         Command::Theme(command) => return theme::run(command),

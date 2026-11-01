@@ -29,6 +29,7 @@ const row = (
   default_said: `${by} ${unit}`,
   set: null,
   applies: null,
+  refused: null,
   ...over,
 });
 
@@ -80,13 +81,29 @@ const LIMITS = (set: Readonly<Record<string, number>>): PoolLimitsPage => {
 };
 
 /** The core, faked: it holds `set`, and refuses what the real check does. */
-function theCore(set: Record<string, number>, unread?: string, refuseSave?: string) {
+function theCore(
+  set: Record<string, number>,
+  unread?: string,
+  refuseSave?: string,
+  refusedInFile?: string,
+) {
   mockIPC((cmd, args) => {
     const asked = (args ?? {}) as { key: string; typed: string; value: number | null };
     if (cmd === "pool_limits") {
       if (unread === "never") return new Promise(() => undefined);
       if (unread !== undefined) throw unread;
-      return LIMITS(set);
+      const page = LIMITS(set);
+      return refusedInFile === undefined
+        ? page
+        : {
+            ...page,
+            groups: page.groups.map((group) => ({
+              ...group,
+              limits: group.limits.map((one) =>
+                one.key === "profileSize" ? { ...one, refused: refusedInFile } : one,
+              ),
+            })),
+          };
     }
     if (cmd === "pool_limit_check") {
       if (!/^\d+$/.test(asked.typed.trim())) throw "This limit is a whole number";
@@ -111,6 +128,7 @@ const meta = {
       { ...(parameters.set as Record<string, number> | undefined) },
       parameters.unread as string | undefined,
       parameters.refuseSave as string | undefined,
+      parameters.refusedInFile as string | undefined,
     );
     // The window's limits are held once for every story drawn in this page.
     if (parameters.unread !== "never") await askLimits("builds");
@@ -224,6 +242,21 @@ export const RefusedAsTyped: Story = {
     await canvas.findByText(/is at most 1024 MiB/);
     await expect(box).toHaveAttribute("aria-invalid", "true");
     expectFocusInSight();
+  },
+};
+
+/** **The file holds a value its limit can't be** (#4381): said on that row, with Reset on. */
+export const RefusedInTheFile: Story = {
+  parameters: {
+    refusedInFile:
+      "The value in this pool's file can't be used, so this follows purlis's default: Most a profile may send: size is a whole number.",
+  },
+  play: async ({ canvas }) => {
+    await open(canvas);
+    await canvas.findByText(/can't be used/);
+    await expect(
+      canvas.getByRole("button", { name: /Reset to .*Most a profile may send: size/ }),
+    ).toBeEnabled();
   },
 };
 

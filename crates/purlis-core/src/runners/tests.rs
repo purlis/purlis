@@ -1355,20 +1355,86 @@ fn a_docker_pool_refuses_the_wait_only_a_cluster_pool_has() {
     );
 }
 
-/// A hand-edited file is held to the same check as the command (Q15).
-#[test]
-fn a_docker_pools_row_holding_the_vouch_wait_is_not_read() {
-    let dir = tempfile::tempdir().unwrap();
-    record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
-    let file = crate::machine::dir(dir.path()).join(crate::machine::RUNNERS_FILE);
+/// The file edited by hand: the first pool's row gains `key: value`.
+fn a_limit_typed_into_the_file(config: &Path, key: &str, value: &str) {
+    let file = crate::machine::dir(config).join(crate::machine::RUNNERS_FILE);
     let edited = std::fs::read_to_string(&file).unwrap().replacen(
         "\"name\"",
-        "\"vouchWait\":10,\"name\"",
+        &format!("\"{key}\":{value},\"name\""),
         1,
     );
     std::fs::write(&file, edited).unwrap();
     std::fs::set_permissions(&file, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
-    assert!(chosen_limits_of(dir.path(), "builds").is_err());
+}
+
+/// A hand-edited file is held to the same check as the command (Q15), and costs that limit alone
+/// (#4381).
+#[test]
+fn a_docker_pools_row_holding_the_vouch_wait_refuses_that_limit_in_the_commands_words() {
+    use crate::poollimits::LimitId::VouchWait;
+    let dir = tempfile::tempdir().unwrap();
+    record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
+    a_limit_typed_into_the_file(dir.path(), "vouchWait", "10");
+
+    let held = limits_held_of(dir.path(), "builds").unwrap();
+    assert_eq!(held.chosen.get(VouchWait), None);
+    let by_the_command = set_pool_limit(dir.path(), "builds", VouchWait, Some(10))
+        .unwrap_err()
+        .to_string();
+    assert_eq!(held.refused[0].why, by_the_command);
+}
+
+/// **#4381**: one bad value leaves every pool and runner on the machine listed; the value stays
+/// in the file through other writes, and setting or resetting that limit replaces it.
+#[test]
+fn a_bad_limit_in_the_file_costs_that_limit_alone_and_stays_until_it_is_put_right() {
+    use crate::poollimits::LimitId::{CodeSendTime, ProfileSize};
+    let dir = tempfile::tempdir().unwrap();
+    record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
+    record_pool(dir.path(), &pool("other", Set::default())).unwrap();
+    a_limit_typed_into_the_file(dir.path(), "profileSize", "\"lots\"");
+
+    assert_eq!(pools(dir.path()).unwrap().len(), 2, "every pool is listed");
+    let refused = |config: &Path| limits_held_of(config, "builds").unwrap().refused;
+    let name_of_the_bad = refused(dir.path())[0].limit;
+    assert_eq!(name_of_the_bad, ProfileSize);
+
+    // Another write keeps what was typed.
+    set_pool_limit(dir.path(), "builds", CodeSendTime, Some(20)).unwrap();
+    assert_eq!(refused(dir.path()).len(), 1);
+    let file = crate::machine::dir(dir.path()).join(crate::machine::RUNNERS_FILE);
+    assert!(std::fs::read_to_string(&file).unwrap().contains("lots"));
+
+    // A reset puts it right.
+    set_pool_limit(dir.path(), "builds", ProfileSize, None).unwrap();
+    assert_eq!(refused(dir.path()), Vec::new());
+    assert!(!std::fs::read_to_string(&file).unwrap().contains("lots"));
+}
+
+/// **A project reaches no limit** (Q6, story 27): a limit is read from this machine's file alone,
+/// and a chat may propose no change to that file: it proposes a value (`Ask::ProposeLimit`).
+#[test]
+fn a_projects_files_change_no_limit_and_the_pools_file_cannot_be_proposed() {
+    use crate::poollimits::LimitId::ProfileSize;
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("purlis.toml"),
+        "[pool.builds]\nprofileSize = 1024\n[pools.builds]\nprofileSize = 1024\n",
+    )
+    .unwrap();
+    assert_eq!(
+        chosen_limits_of(config.path(), "builds")
+            .unwrap()
+            .get(ProfileSize),
+        None
+    );
+
+    // Even with the config home inside the project, the file is no proposable file.
+    let inside = project.path().join(crate::machine::RUNNERS_FILE);
+    std::fs::write(&inside, "{}").unwrap();
+    assert!(crate::proposed::proposable(project.path(), &inside).is_err());
 }
 
 /// **A sign-out waiting in a terminal holds the running runner from a later drain's carry**, and

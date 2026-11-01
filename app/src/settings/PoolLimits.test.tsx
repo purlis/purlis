@@ -21,6 +21,7 @@ const row = (over: Partial<PoolLimitRow> & { key: string }): PoolLimitRow => ({
   default_said: "128 MiB",
   set: null,
   applies: null,
+  refused: null,
   ...over,
 });
 
@@ -112,6 +113,37 @@ describe("a pool's limits page", () => {
     expect(screen.queryByText("You set this")).toBeNull();
     const reset = resetOf("first", POOL);
     expect((reset as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("says which limit the file got wrong, and Reset puts it right", async () => {
+    let refused: string | null = "The value in this pool's file can't be used.";
+    mockIPC((cmd) => {
+      if (cmd === "pool_limits") {
+        return {
+          groups: [
+            {
+              label: "Sign-in",
+              help: "Help.",
+              applies: null,
+              limits: [row({ key: "first", refused })],
+            },
+          ],
+          advanced: [],
+        } satisfies PoolLimitsPage;
+      }
+      if (cmd === "pool_limit_set") {
+        refused = null;
+        return null;
+      }
+      return null;
+    });
+    render(<PoolLimits pool="builds" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Limits of pool builds" }));
+    await screen.findByText("The value in this pool's file can't be used.");
+    await userEvent.click(screen.getByRole("button", { name: /^Reset to/ }));
+    await waitFor(() =>
+      expect(screen.queryByText("The value in this pool's file can't be used.")).toBeNull(),
+    );
   });
 
   it("refuses a bad value as it is typed, in the core's words, and saves nothing", async () => {

@@ -59,6 +59,7 @@ pub const CORE_WORDS: [&str; 49] = [
     "news",
     "persona",
     "plugin",
+    "pool",
     "profile",
     "propose",
     "recall",
