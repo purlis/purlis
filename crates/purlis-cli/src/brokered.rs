@@ -326,6 +326,40 @@ pub fn propose(root: &Path, file: &Path, draft: &Path) -> Result<u8, String> {
     }
 }
 
+/// **`purlis pool limit` in a chat** (#4284, the person's ruling of 2026-11-01 on PC-1): hands the
+/// app the value as a proposal, for the person to apply in the window. Nothing is written here,
+/// and nothing that goes wrong writes anything.
+pub fn propose_limit(
+    pool: &str,
+    limit: &purlis_core::poollimits::Limit,
+    value: Option<u64>,
+) -> Result<u8, String> {
+    let answered = asked(
+        |chat| {
+            Ask::ProposeLimit(Box::new(hookwire::ProposeLimitAsk {
+                chat,
+                pool: pool.to_owned(),
+                key: limit.key.to_owned(),
+                value,
+            }))
+        },
+        A_WRITE_TAKES_AT_MOST,
+    );
+    let nothing = "so nothing was changed: ask the person to change it in the window";
+    match answered {
+        Ok(Ok(Answer::Said { lines, code })) => {
+            for line in lines {
+                crate::speak(line);
+            }
+            Ok(code)
+        }
+        Ok(Ok(Answer::No { why })) => Err(why),
+        Ok(Ok(_)) => Err(format!("this app can't take a proposed limit, {nothing}")),
+        Ok(Err(e)) => Err(format!("the app did not answer ({e}), {nothing}")),
+        Err(_) => Err(format!("this chat could not reach the app, {nothing}")),
+    }
+}
+
 /// The sentence a sandboxed chat is refused with when a command would change a workspace other
 /// than its own, or every workspace (#1408): nothing is changed, and `instead`, the way round,
 /// is named.

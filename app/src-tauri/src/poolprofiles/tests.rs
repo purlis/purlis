@@ -827,12 +827,59 @@ fn a_removed_profile_leaves_a_cluster_pool_only_where_its_runner_forgot_it() {
     );
 }
 
+/// #4381: a value the file holds that its limit can't be is said on that limit's row alone.
+#[test]
+fn a_pools_page_says_which_limit_the_file_got_wrong() {
+    use purlis_core::poollimits::{Chosen, LimitId, RefusedValue};
+    let refused = [RefusedValue {
+        limit: LimitId::ProfileSize,
+        held: serde_json::json!("lots"),
+        why: "Most a profile may send: size is a whole number".to_owned(),
+    }];
+    let shown = limits_shown(&Chosen::default(), &refused);
+    let rows: Vec<&PoolLimitRow> = shown
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .collect();
+    for row in rows {
+        assert_eq!(
+            row.refused.is_some(),
+            row.key == "profileSize",
+            "{}",
+            row.key
+        );
+    }
+}
+
+/// Q15: the window's check and the file's refusal are one, word for word.
+#[test]
+fn the_windows_check_refuses_as_the_file_does() {
+    use purlis_core::poollimits::{Chosen, of_key};
+    for (key, typed, held) in [
+        ("profileSize", "0", serde_json::json!(0)),
+        ("signInWait", "121", serde_json::json!(121)),
+        ("codeSize", "lots", serde_json::json!("lots")),
+    ] {
+        let by_window =
+            tauri::async_runtime::block_on(pool_limit_check(key.to_owned(), typed.to_owned()))
+                .unwrap_err();
+        let row = serde_json::json!({ key: held });
+        let (_, refused) = Chosen::read_row(row.as_object().unwrap(), None);
+        assert_eq!(by_window, refused[0].why);
+        assert_eq!(
+            Err(by_window),
+            of_key(key).unwrap().check_typed(typed, None)
+        );
+    }
+}
+
 /// The page draws whatever the core's list holds, so a limit added there reaches it (#4285).
 #[test]
 fn a_pools_page_lists_every_limit_once_with_what_the_person_set() {
     use purlis_core::poollimits::{Chosen, LimitId, all};
     let chosen = Chosen::default().with(LimitId::ProfileFiles, Some(9000));
-    let shown = limits_shown(&chosen);
+    let shown = limits_shown(&chosen, &[]);
     let rows: Vec<&PoolLimitRow> = shown
         .groups
         .iter()
@@ -875,7 +922,7 @@ fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait()
     let hits = hits_said_in("ran-out-signing-in", &said);
     assert_eq!(hits[0].limit, LimitId::SignInWait);
 
-    let page = limits_shown(&Chosen::default());
+    let page = limits_shown(&Chosen::default(), &[]);
     let keys: Vec<&str> = page
         .groups
         .iter()

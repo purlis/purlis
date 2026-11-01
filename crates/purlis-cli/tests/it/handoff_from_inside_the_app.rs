@@ -259,6 +259,7 @@ fn opens_as_nine(tickets: &Tickets, connection: u64, ask: Ask) -> Answer {
         | Ask::Vaults { .. }
         | Ask::Keys { .. }
         | Ask::Propose(_)
+        | Ask::ProposeLimit(_)
         | Ask::WhereWorking(_)
         | Ask::Dispatch(_)
         | Ask::Task(_)

@@ -1546,7 +1546,8 @@ An edit a chat makes to purlis's own configuration (the project's manifest, a pe
 `mcp.json` or `persona.md`, a skill's files), which only the person applies, in the window. The
 chat's edit is held, the change shown whole against the file as it is, and **Apply** writes it as
 the person; **Dismiss** writes nothing. Distinct from an edit ask, where the person allows and the
-harness writes.
+harness writes. A chat proposes a pool's limit the same way, as a value and no file, since a pool's
+file is purlis's state.
 _Avoid_: patch, suggestion, edit ask (that is the harness's own)
 
 **Block**:

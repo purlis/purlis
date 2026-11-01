@@ -141,7 +141,7 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
     if (typed === undefined) return;
     const mine = typing.current;
     if (typed.trim() === "") {
-      if (isSet || saving.current > 0) save(null, mine);
+      if (isSet || row.refused !== null || saving.current > 0) save(null, mine);
       else setTyped(undefined);
       return;
     }
@@ -160,12 +160,12 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
           label: `Reset to ${row.default_said}`,
           name: `Reset to ${row.default_said}: ${row.plain} on pool ${pool}`,
           // A refused value on a limit never set still has to be clearable.
-          disabled: !isSet && !refused && (typed ?? "") === "",
+          disabled: !isSet && !refused && row.refused === null && (typed ?? "") === "",
           onReset: () => {
             const mine = ++typing.current;
             setWhy(undefined);
             setTyped(undefined);
-            if (isSet || saving.current > 0) save(null, mine);
+            if (isSet || row.refused !== null || saving.current > 0) save(null, mine);
           },
         }}
         control={(ids) => (
@@ -205,7 +205,7 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
       {/* There from the start, so its words are heard as they land, politely, under the typing:
         empty, it takes no room, so the box stays where it is. */}
       <div className="ui-setting-error" id={refusal} aria-live="polite" aria-atomic="true">
-        {why !== undefined && <p>{why}</p>}
+        {why !== undefined ? <p>{why}</p> : row.refused !== null && <p>{row.refused}</p>}
       </div>
       <p className="ui-setting-help pool-limit-says" id={says}>
         {isSet && <Badge variant="accent">You set this</Badge>}

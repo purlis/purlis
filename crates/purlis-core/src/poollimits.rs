@@ -358,6 +358,18 @@ impl Limit {
         }
     }
 
+    /// **Why pool `name`, a Docker pool, can't hold this limit**, where only a cluster pool has it:
+    /// the words the file, the command and the window all give.
+    #[must_use]
+    pub fn not_on_docker(&self, name: &str) -> Option<String> {
+        self.clusters_only.then(|| {
+            format!(
+                "{} is a cluster pool's, and {name} is a Docker pool",
+                self.plain
+            )
+        })
+    }
+
     /// **The value in the words `typed`**, or why they aren't one this limit can be: [`Self::check`]
     /// for what a person types, so a window never reads a number by rules of its own.
     pub fn check_typed(&self, typed: &str, highest: Option<u64>) -> Result<u64, String> {
@@ -520,20 +532,70 @@ impl Chosen {
         }
     }
 
-    /// The values a pool's row holds, each a whole number [`Limit::check`] takes, or why not.
-    pub fn from_row(fields: &Map<String, Value>) -> Result<Chosen, String> {
+    /// **The values a pool's row holds, and those it can't** (#4381): a value [`Limit::check`]
+    /// refuses costs only that limit, which follows purlis's default and says why, so a typo
+    /// never stops the file being read. `docker` names a Docker pool, which holds no limit only
+    /// a cluster pool has.
+    #[must_use]
+    pub fn read_row(
+        fields: &Map<String, Value>,
+        docker: Option<&str>,
+    ) -> (Chosen, Vec<RefusedValue>) {
         let mut chosen = Chosen::default();
+        let mut refused = Vec::new();
         for limit in all() {
-            let Some(value) = fields.get(limit.key) else {
+            let Some(held) = fields.get(limit.key) else {
                 continue;
             };
-            let value = value
+            let read = held
                 .as_u64()
-                .ok_or_else(|| format!("{} is a whole number", limit.plain))?;
-            limit.check(value, None)?;
-            chosen = chosen.with(limit.id, Some(value));
+                .ok_or_else(|| format!("{} is a whole number", limit.plain))
+                .and_then(|value| limit.check(value, None).map(|()| value))
+                .and_then(
+                    |value| match docker.and_then(|name| limit.not_on_docker(name)) {
+                        Some(why) => Err(why),
+                        None => Ok(value),
+                    },
+                );
+            match read {
+                Ok(value) => chosen = chosen.with(limit.id, Some(value)),
+                Err(why) => refused.push(RefusedValue {
+                    limit: limit.id,
+                    held: held.clone(),
+                    why,
+                }),
+            }
         }
-        Ok(chosen)
+        (chosen, refused)
+    }
+}
+
+/// **A value in a pool's file its limit can't be** (#4381). The limit follows purlis's default,
+/// and the value stays in the file as it was typed, for the person to put right, until they set
+/// or reset that limit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefusedValue {
+    pub limit: LimitId,
+    /// What the file holds, written back as it was. Never said: only [`Self::why`] is.
+    pub held: Value,
+    /// The check's own words.
+    pub why: String,
+}
+
+impl RefusedValue {
+    /// In plain words, for the pool's page and the command.
+    #[must_use]
+    pub fn said(&self) -> String {
+        format!(
+            "The value in this pool's file can't be used, so this follows purlis's default. {}. \
+             Set a value or reset it.",
+            self.why
+        )
+    }
+
+    /// Writes the value back into a pool's `row`.
+    pub fn to_row(&self, row: &mut Value) {
+        row[self.limit.limit().key] = self.held.clone();
     }
 }
 
@@ -792,15 +854,54 @@ mod tests {
     }
 
     #[test]
-    fn a_row_holds_only_the_values_set_and_refuses_a_bad_one() {
+    fn a_row_holds_only_the_values_set() {
         let chosen = Chosen::default().with(LimitId::ProfileFiles, Some(9000));
         let mut row = json!({"name": "builds"});
         chosen.to_row(&mut row);
         assert_eq!(row, json!({"name": "builds", "profileFiles": 9000}));
-        assert_eq!(Chosen::from_row(row.as_object().unwrap()), Ok(chosen));
+        assert_eq!(
+            Chosen::read_row(row.as_object().unwrap(), None),
+            (chosen, Vec::new())
+        );
+    }
 
-        for bad in [json!({"profileSize": 0}), json!({"profileSize": "128"})] {
-            assert!(Chosen::from_row(bad.as_object().unwrap()).is_err(), "{bad}");
+    /// #4381: a bad value costs that limit alone, and the file's refusal is the command's and the
+    /// window's, word for word.
+    #[test]
+    fn a_bad_value_in_a_row_refuses_that_limit_alone_in_the_checks_own_words() {
+        let size = LimitId::ProfileSize.limit();
+        for (bad, typed) in [
+            (json!(0), "0"),
+            (json!(1025), "1025"),
+            (json!("128"), "x"),
+            (json!(1.5), "1.5"),
+            (json!(-1), "-1"),
+        ] {
+            let row = json!({"profileSize": bad, "profileFiles": 9000});
+            let (chosen, refused) = Chosen::read_row(row.as_object().unwrap(), None);
+            assert_eq!(chosen.get(LimitId::ProfileSize), None, "{bad}");
+            assert_eq!(chosen.in_force(LimitId::ProfileSize), size.default);
+            assert_eq!(chosen.get(LimitId::ProfileFiles), Some(9000), "{bad}");
+            assert_eq!(refused.len(), 1, "{bad}");
+            assert_eq!(refused[0].held, bad);
+            assert_eq!(Err(refused[0].why.clone()), size.check_typed(typed, None));
+            assert!(refused[0].said().contains("follows purlis's default"));
         }
+    }
+
+    #[test]
+    fn a_docker_pools_row_refuses_only_the_limit_only_a_cluster_pool_has() {
+        let row = json!({"vouchWait": 10, "answerWait": 45});
+        let row = row.as_object().unwrap();
+        let (chosen, refused) = Chosen::read_row(row, Some("builds"));
+        assert_eq!(chosen.get(LimitId::VouchWait), None);
+        assert_eq!(chosen.get(LimitId::AnswerWait), Some(45));
+        assert_eq!(
+            Some(refused[0].why.clone()),
+            LimitId::VouchWait.limit().not_on_docker("builds")
+        );
+        let (on_a_cluster, none) = Chosen::read_row(row, None);
+        assert_eq!(on_a_cluster.get(LimitId::VouchWait), Some(10));
+        assert!(none.is_empty());
     }
 }

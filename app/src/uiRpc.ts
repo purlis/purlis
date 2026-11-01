@@ -8272,6 +8272,8 @@ export type PoolLimitRow = {
 	set: number | null,
 	/**  When a change applies, where its group doesn't say it for all of its limits. */
 	applies: string | null,
+	/**  Why the value in the pool's file can't be used, where one can't (#4381). */
+	refused: string | null,
 };
 
 /**
