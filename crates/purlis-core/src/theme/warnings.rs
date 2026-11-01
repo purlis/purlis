@@ -168,6 +168,12 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 *tint,
                 Some(*distance),
             ),
+            Finding::ScrimTooThin { tint, ratio, floor } => (
+                "overlay.scrim on the window it lies over".to_owned(),
+                Some(*floor),
+                *tint,
+                Some(*ratio),
+            ),
             Finding::SelectionTextAlone => (
                 "selection.text is a colour while selection.background is \"platform\", so it \
                  is never drawn"

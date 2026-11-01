@@ -48,6 +48,9 @@ use super::{Complaint, ResolvedTheme, stringify};
 /// The settings `appearance` holds.
 const KEYS: [&str; 5] = ["density", "fonts", "motion", "contrast", "colours"];
 
+/// The modal scrim's token, which [`Layer::over`] holds to [`check::SCRIM_DIM`].
+const SCRIM: &str = "overlay.scrim";
+
 /// How tightly the window is laid out.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -181,6 +184,25 @@ impl Layer {
             ));
             let theirs = theme.value(out).to_owned();
             drawn.values.insert(out, theirs);
+        }
+        // The scrim is held as a measure of its own, not a pair (#2987). A window's ground or
+        // words of the person's that would thin the theme's scrim break a pair of words above.
+        let dim = check::scrim_dim(&drawn);
+        if drawn.value(SCRIM) != theme.value(SCRIM)
+            && dim < check::SCRIM_DIM
+            && dim < check::scrim_dim(theme)
+        {
+            said.push(Complaint::about(
+                SCRIM,
+                format!(
+                    "your colour for {SCRIM}, {}, is left out in {}: it would move the window \
+                     only {dim}:1, under its floor of {}:1, so the theme's is drawn",
+                    drawn.value(SCRIM),
+                    theme.name,
+                    check::SCRIM_DIM
+                ),
+            ));
+            drawn.values.insert(SCRIM, theme.value(SCRIM).to_owned());
         }
         if self.contrast == Least::More {
             drawn = least::raise(&drawn);

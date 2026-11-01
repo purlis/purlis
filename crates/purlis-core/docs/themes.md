@@ -755,6 +755,10 @@ row's look or a side panel's fill; the check only reports it and redraws nothing
 only `distance` from the `variant` card's `ground` in OKLab, under the `floor` of 0.02: the
 fill a theme's button parts give it, or else the card's own mix of `control.base` toward
 `text.primary`, 14% at rest and 22% under the pointer; the check only reports it),
+`scrim-too-thin` (a modal scrim, `overlay.scrim`, that moves the window it lies over only `ratio`,
+under the `floor` of 2: the further it moves `surface.base` or `text.primary`, each against
+itself with the scrim laid on it, since black over a dark window hardly moves its ground; a
+person's own scrim under it is left out),
 `selection-text-alone` (a colour for selected text on a selection left to the platform),
 `line-does-not-fit` (a line of words taller than the box it is drawn in:
 its `density`, the `fit` it breaks, a `size`, a `line_height` and a `height` token, and the
