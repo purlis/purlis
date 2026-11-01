@@ -988,8 +988,9 @@ pub fn give(repo: &Path, have: &[String], into: &Path) -> Result<(Vec<Ref>, Bund
 /// **The desktop takes a runner's branches back** into `repo`, as `refs/remotes/<pool>/<branch>`
 /// and nowhere else: from the bundle at `bundle` where the runner sent one, else from the
 /// commits `repo` holds. `heads` are the runner's branches, each one [`carried`] takes; a remote
-/// ref of `pool` that the runner no longer has is removed. No local branch, work tree or index is
-/// touched. Answers the remote refs as they are after it.
+/// ref of `pool` that the runner no longer has is removed, unless it alone holds its commit in
+/// `repo`: a branch only a drained runner had stays where the person sees it (#4363). No local
+/// branch, work tree or index is touched. Answers the remote refs as they are after it.
 pub fn take_back(
     repo: &Path,
     pool: &str,
@@ -1098,7 +1099,7 @@ fn take_back_as(
         .map(|head| remote(&head.name))
         .collect::<Result<_, _>>()?;
     for kept in refs_under(repo, &[prefix.as_str()])? {
-        if !beside && !wanted.contains(&kept.name) {
+        if !beside && !wanted.contains(&kept.name) && reached_elsewhere(repo, &kept)? {
             let ran = run(repo, &["update-ref", "-d", &kept.name])?;
             if !ran.ok() {
                 return Err(git_failed("remove a branch the runner no longer has", &ran));
@@ -1106,6 +1107,23 @@ fn take_back_as(
         }
     }
     refs_under(repo, &[prefix.as_str()])
+}
+
+/// Whether a ref of `repo` other than `one` holds `one`'s commit.
+fn reached_elsewhere(repo: &Path, one: &Ref) -> Result<bool, Refused> {
+    let ran = run(
+        repo,
+        &[
+            "for-each-ref",
+            "--format=%(refname)",
+            "--contains",
+            &one.oid,
+        ],
+    )?;
+    if !ran.ok() {
+        return Err(git_failed("read which branches hold a commit", &ran));
+    }
+    Ok(ran.out.lines().any(|name| name != one.name))
 }
 
 /// The branch `repo` is on, where it is on one with a commit.
