@@ -1522,7 +1522,7 @@ fn a_plan_with_outcome_evals_is_estimated_only_from_a_grade_that_ran_some() {
     assert_eq!(estimate.chats_then, 12, "each eval's chat and its judge's");
     assert_eq!(estimate.tokens, Some(2400));
     assert_eq!(
-        estimate_of(&[both.clone()], 36, Some("work"), 24).map(|one| one.tokens),
+        estimate_of(std::slice::from_ref(&both), 36, Some("work"), 24).map(|one| one.tokens),
         Some(None),
         "it ran no trigger test, so what they spend is not known"
     );
@@ -1653,16 +1653,17 @@ fn only_what_a_row_can_hold_is_ticked_and_an_eval_left_off_takes_nothing() {
 /// Evidence is masked whole before it is cut, so a cut leaves no part of a credential.
 #[test]
 fn evidence_is_masked_before_it_is_cut() {
-    let secret = format!("ghp_{}", "a1B2c3D4".repeat(5));
+    // A credential shape, built here so no line holds one, across where the cut falls.
+    let secret = ["AK", "IA", &"Z7Q2".repeat(4)].concat();
     let mut row = outcome_row();
     row.report.outcomes[0].results[0].checks[0].evidence = format!(
-        "{}{secret}",
+        "{} {secret}",
         "x".repeat(grade::outcomes::MOST_EVIDENCE_BYTES - 8)
     );
     let kept = masked(&row);
     let evidence = &kept.report.outcomes[0].results[0].checks[0].evidence;
     assert!(evidence.len() <= grade::outcomes::MOST_EVIDENCE_BYTES);
-    assert!(!evidence.contains("ghp_"), "{evidence}");
+    assert!(!evidence.contains(&["AK", "IA"].concat()), "{evidence}");
 }
 
 #[test]
