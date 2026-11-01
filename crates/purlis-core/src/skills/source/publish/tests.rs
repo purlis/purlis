@@ -139,7 +139,7 @@ fn review_of(set: &Set) -> PublishReview {
     review(&set.plane, None, &Level::project(), "deploy", &set.source).unwrap()
 }
 
-fn publish_of(set: &Set, accepted: &PublishReview, forge: &StandIn) -> Result<Published, String> {
+fn publish_of(set: &Set, accepted: &Accepted, forge: &StandIn) -> Result<Published, String> {
     publish(
         &set.plane,
         None,
@@ -169,7 +169,7 @@ fn a_publish_pushes_a_new_branch_with_the_skill_and_the_sources_own_files_and_op
     let review = review_of(&set);
     let forge = StandIn::default();
 
-    let done = publish_of(&set, &review, &forge).unwrap();
+    let done = publish_of(&set, &review.accepted(), &forge).unwrap();
 
     let Published::Opened { url, branch } = done else {
         panic!("{done:?}")
@@ -200,7 +200,7 @@ fn a_file_changed_after_the_review_sends_nothing() {
     let before = branches(&set.bare);
     let forge = StandIn::default();
 
-    let refused = publish_of(&set, &review, &forge).unwrap_err();
+    let refused = publish_of(&set, &review.accepted(), &forge).unwrap_err();
 
     assert!(refused.contains("not what you reviewed"), "{refused}");
     assert_eq!(branches(&set.bare), before);
@@ -217,7 +217,7 @@ fn a_secret_sends_nothing_even_from_a_review_that_showed_it() {
     assert!(review.stopped());
     let before = branches(&set.bare);
 
-    let refused = publish_of(&set, &review, &StandIn::default()).unwrap_err();
+    let refused = publish_of(&set, &review.accepted(), &StandIn::default()).unwrap_err();
 
     assert!(
         refused.starts_with("Nothing was sent") && !refused.contains(&token),
@@ -236,7 +236,7 @@ fn the_same_files_with_a_request_already_open_answer_that_request() {
     };
     let before = branches(&set.bare);
 
-    let done = publish_of(&set, &review, &forge).unwrap();
+    let done = publish_of(&set, &review.accepted(), &forge).unwrap();
 
     assert_eq!(
         done,
@@ -267,7 +267,8 @@ fn publishing_over_a_skill_the_source_holds_replaces_its_folder_whatever_its_nam
 
     let review = review_of(&set);
     assert_eq!(review.title, "Update the skill deploy");
-    let Published::Opened { branch, .. } = publish_of(&set, &review, &StandIn::default()).unwrap()
+    let Published::Opened { branch, .. } =
+        publish_of(&set, &review.accepted(), &StandIn::default()).unwrap()
     else {
         panic!()
     };
@@ -287,13 +288,13 @@ fn a_request_that_failed_after_the_push_opens_on_the_next_try_from_the_same_bran
     let forge = StandIn::default();
     forge.fails.set(true);
     assert!(
-        publish_of(&set, &review, &forge)
+        publish_of(&set, &review.accepted(), &forge)
             .unwrap_err()
             .contains("was pushed")
     );
 
     forge.fails.set(false);
-    let again = publish_of(&set, &review, &forge).unwrap();
+    let again = publish_of(&set, &review.accepted(), &forge).unwrap();
 
     assert!(matches!(again, Published::Opened { .. }), "{again:?}");
     assert_eq!(forge.opened.borrow().len(), 1);
@@ -314,6 +315,26 @@ fn the_same_files_to_another_folder_are_another_branch() {
 fn the_review_names_whom_the_commit_will_name() {
     let set = set();
     assert_eq!(review_of(&set).author, ("Ada".to_owned(), ADDRESS.clone()));
+}
+
+#[test]
+fn a_source_that_refuses_the_push_is_said_as_such_and_opens_nothing() {
+    let set = set();
+    let review = review_of(&set);
+    let hooks = set.bare.join("hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    let hook = hooks.join("pre-receive");
+    std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let forge = StandIn::default();
+
+    let done = publish_of(&set, &review.accepted(), &forge).unwrap();
+
+    assert!(matches!(done, Published::PushRefused { .. }), "{done:?}");
+    assert!(forge.opened.borrow().is_empty());
 }
 
 #[test]
@@ -338,6 +359,9 @@ fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
         seconds: None,
         chats: 3,
         not_run: 0,
+        outcome_pass_rate: None,
+        outcome_chats: 0,
+        outcome_not_run: 0,
     };
     let report = GradeReport {
         grader: "built-in".to_owned(),
@@ -352,6 +376,10 @@ fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
         spent_usd: Some(7.77),
         counted_usd: None,
         priced: None,
+        outcomes: Vec::new(),
+        outcome_delta: None,
+        outcome_tokens: None,
+        outcome_usd: None,
         failed: None,
     };
     let graded = Graded {
@@ -373,7 +401,7 @@ fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
         after_edit: false,
     };
 
-    let row = grade_row(&graded, Some("abc"));
+    let row = grade_row(&grade_sent("deploy", &graded, Some("abc")));
 
     assert!(
         row.contains("90%") && row.contains("50%") && row.contains("this one"),

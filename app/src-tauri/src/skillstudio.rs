@@ -77,15 +77,18 @@ pub(crate) fn with_list_lints<T>(
     root: &std::path::Path,
     with: impl FnOnce(&[&dyn purlis_core::skills::SkillLint]) -> T,
 ) -> T {
-    purlis_core::skills::studio::with_studio(executor, root, |studio| {
-        let lints = studio
-            .map(|studio| studio.list_lints())
-            .filter(|lints| !lints.is_empty());
-        let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
-            .iter()
-            .map(|lints| lints as &dyn purlis_core::skills::SkillLint)
-            .collect();
-        with(&more)
+    // One list asks git about the Local file once, whichever of its readers hold a table (#4351).
+    purlis_core::profiles::git_asked_once(|| {
+        purlis_core::skills::studio::with_studio(executor, root, |studio| {
+            let lints = studio
+                .map(|studio| studio.list_lints())
+                .filter(|lints| !lints.is_empty());
+            let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
+                .iter()
+                .map(|lints| lints as &dyn purlis_core::skills::SkillLint)
+                .collect();
+            with(&more)
+        })
     })
 }
 

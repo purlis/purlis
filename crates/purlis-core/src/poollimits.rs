@@ -323,6 +323,13 @@ pub fn all() -> &'static [Limit] {
     &ALL
 }
 
+/// **Every limit that can't change** (#4281): kept apart from [`all`], so nothing that reads a
+/// value, draws a row or offers a raise can reach one.
+#[must_use]
+pub fn fixed() -> &'static [purlis_session_protocol::fixedlimits::FixedLimit] {
+    &purlis_session_protocol::fixedlimits::ALL
+}
+
 /// The limit whose row key is `key`.
 #[must_use]
 pub fn of_key(key: &str) -> Option<&'static Limit> {
@@ -778,6 +785,21 @@ mod tests {
             vec![hit],
             "a window drawn again is offered it again"
         );
+    }
+
+    /// #4281: a fixed limit says why and what to do instead, and has no way to be changed.
+    #[test]
+    fn a_fixed_limit_says_why_and_what_instead_and_is_no_limit_that_can_change() {
+        for limit in fixed() {
+            assert!(of_key(limit.key).is_none(), "{}", limit.key);
+            assert!(!limit.why.is_empty() && !limit.instead.is_empty());
+            let said = limit.said();
+            assert!(said.contains("fixed") && said.contains("Instead"), "{said}");
+            let lower = format!("{} {said}", limit.plain).to_lowercase();
+            for word in ["timeout", "time out", "quota", "config", "raise"] {
+                assert!(!lower.contains(word), "{lower}");
+            }
+        }
     }
 
     /// A wait set and left unset, as what it is held to.

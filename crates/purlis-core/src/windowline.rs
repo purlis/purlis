@@ -18,6 +18,11 @@
 //! profile's line would do. It is private to one build and promises nothing across versions: where the words do
 //! not read, the command says what it says with no window. What the window says is marked before
 //! a terminal shows it.
+//!
+//! **A pool sign-in started from the command is confirmed in the window** ([`approved`]): the
+//! command asks before it reaches a runner or its engine, shows a code the dialog shows too, and
+//! goes on only on the person's answer there. With no window it refuses. A keep from the command
+//! then needs that yes as well.
 
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -28,6 +33,10 @@ use std::time::{Duration, Instant};
 const THE_WINDOW_ANSWERS_WITHIN: Duration = Duration::from_secs(60);
 /// How long the command waits on the window keeping a profile: a runner may fetch its harness.
 const THE_WINDOW_KEEPS_WITHIN: Duration = Duration::from_secs(180);
+/// How long the person has to answer in the window: then it is taken back, as a no.
+pub const THE_PERSON_HAS: Duration = Duration::from_secs(120);
+/// How much longer than that the command waits, to hear the window say so.
+const THE_WINDOW_SAYS_WITHIN: Duration = Duration::from_secs(10);
 /// The most of one line either side reads: a name, or a note that names pools.
 const LONGEST_LINE: usize = 64 * 1024;
 /// How long the window waits for a peer's whole line, and to write its answer.
@@ -42,6 +51,15 @@ pub enum Asked {
     /// This machine's profile `name` is about to be signed in on pool `pool`: its runner keeps it
     /// first, and the pool names it (#4112).
     KeepOnAPool { name: String, pool: String },
+    /// This machine's profile `name` is about to be signed in on pool `pool`, by the command: the
+    /// person answers in the window. `code` is what the command's terminal shows, for the person
+    /// to compare; `config` is the config home the command goes on to read.
+    ApproveSignIn {
+        name: String,
+        pool: String,
+        code: String,
+        config: PathBuf,
+    },
 }
 
 /// What the window says.
@@ -66,15 +84,21 @@ pub enum Answered {
 
 /// **The window's answer to `asked`**: `forget` runs only for a name this machine, with its
 /// config home at `config`, no longer has among its profiles, so no line takes a live profile's
-/// sign-in off a runner; `keep` only for one it has, so no line puts anything else on one.
+/// sign-in off a runner; `keep` only for one it has, so no line puts anything else on one;
+/// `approve`, given the name, the pool and the code, only for a profile it has on a pool it has
+/// that may be signed in on, and a command reading these same files, so the person is asked only
+/// of what the window's own files name.
 pub fn answer(
     config: &Path,
     asked: Asked,
     forget: impl FnOnce(&str) -> Result<Option<String>, String>,
     keep: impl FnOnce(&str, &str) -> Result<Option<String>, String>,
+    approve: impl FnOnce(&str, &str, &str) -> Result<Option<String>, String>,
 ) -> Said {
     let name = match &asked {
-        Asked::ForgetOffThePools { name } | Asked::KeepOnAPool { name, .. } => name,
+        Asked::ForgetOffThePools { name }
+        | Asked::KeepOnAPool { name, .. }
+        | Asked::ApproveSignIn { name, .. } => name,
     };
     if !crate::profiles::name_ok(name) {
         return Said::Refused {
@@ -95,7 +119,7 @@ pub fn answer(
             };
         }
         Asked::ForgetOffThePools { name } => forget(name),
-        Asked::KeepOnAPool { .. } if !has_it => {
+        Asked::KeepOnAPool { .. } | Asked::ApproveSignIn { .. } if !has_it => {
             return Said::Refused {
                 why: format!(
                     "this machine has no profile named '{}'",
@@ -104,10 +128,96 @@ pub fn answer(
             };
         }
         Asked::KeepOnAPool { name, pool } => keep(name, pool),
+        Asked::ApproveSignIn {
+            name,
+            pool,
+            code,
+            config: theirs,
+        } => {
+            if let Err(why) = may_ask_the_person(config, pool, code, theirs) {
+                return Said::Refused { why };
+            }
+            approve(name, pool, code)
+        }
     };
     match said {
         Ok(note) => Said::Asked { note },
         Err(why) => Said::Refused { why },
+    }
+}
+
+/// Why the window would not ask the person of a sign-in on `pool`, if it would not.
+fn may_ask_the_person(config: &Path, pool: &str, code: &str, theirs: &Path) -> Result<(), String> {
+    if !a_code(code) {
+        return Err("that is not a code this purlis made".to_owned());
+    }
+    let same = |one: &Path, other: &Path| match (one.canonicalize(), other.canonicalize()) {
+        (Ok(one), Ok(other)) => one == other,
+        _ => false,
+    };
+    if !same(config, theirs) {
+        return Err("that command reads another config home than this window".to_owned());
+    }
+    let pools = crate::runners::pool_names(config).map_err(|why| why.to_string())?;
+    if !pools.iter().any(|one| one == pool) {
+        return Err(format!(
+            "this machine has no pool named '{}'",
+            crate::shown::short(pool)
+        ));
+    }
+    if crate::runnertaint::pool_ran_unsandboxed(config, pool) {
+        return Err(crate::runnertaint::signs_nothing_in_on(pool));
+    }
+    Ok(())
+}
+
+/// How many letters a sign-in's code has.
+const CODE_LETTERS: usize = 6;
+
+/// Whether `code` reads as [`a_new_code`] writes one.
+fn a_code(code: &str) -> bool {
+    code.len() == CODE_LETTERS && code.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+/// **A code for one sign-in's question**: the random end of a new ULID.
+pub fn a_new_code() -> String {
+    let ulid = ulid::Ulid::generate().to_string();
+    ulid[ulid.len() - CODE_LETTERS..].to_owned()
+}
+
+/// **Whether the person approved, in their window, signing `name` in on pool `pool`** from this
+/// command, whose config home is `config`: `ask` puts the question, with `code`, to the running
+/// window, and only its yes goes on. With no window running, no answer in time, or a no, this says
+/// so and nothing was started.
+pub fn approved(
+    config: &Path,
+    pool: &str,
+    name: &str,
+    code: &str,
+    ask: impl FnOnce(&Asked) -> Answered,
+) -> Result<(), String> {
+    let asked = Asked::ApproveSignIn {
+        name: name.to_owned(),
+        pool: pool.to_owned(),
+        code: code.to_owned(),
+        config: config.to_path_buf(),
+    };
+    match ask(&asked) {
+        Answered::Said(Said::Asked { .. }) => Ok(()),
+        Answered::NoWindow => Err(format!(
+            "signing '{name}' in on pool {pool} from here is confirmed in the purlis window, and \
+             none is running, so nothing was started. Open purlis and run this again, or sign it \
+             in from its row in Settings › Pools."
+        )),
+        Answered::NoAnswer => Err(format!(
+            "the purlis window did not answer in time, so '{name}' was not signed in on pool \
+             {pool} and nothing was started. Run this again."
+        )),
+        Answered::Said(Said::Refused { why }) => Err(format!(
+            "the purlis window did not confirm signing '{name}' in on pool {pool}: {}. Nothing \
+             was started.",
+            shown(&why)
+        )),
     }
 }
 
@@ -217,7 +327,7 @@ pub fn socket() -> PathBuf {
 }
 
 /// The window's socket beside the host's socket `host`.
-fn beside(host: &Path) -> PathBuf {
+pub fn beside(host: &Path) -> PathBuf {
     let stem = host.file_stem().map_or_else(
         || "purlisd".into(),
         |stem| stem.to_string_lossy().into_owned(),
@@ -230,6 +340,7 @@ pub fn ask(asked: &Asked) -> Answered {
     let within = match asked {
         Asked::ForgetOffThePools { .. } => THE_WINDOW_ANSWERS_WITHIN,
         Asked::KeepOnAPool { .. } => THE_WINDOW_KEEPS_WITHIN,
+        Asked::ApproveSignIn { .. } => THE_PERSON_HAS + THE_WINDOW_SAYS_WITHIN,
     };
     ask_on(&socket(), asked, within)
 }
@@ -296,6 +407,14 @@ pub fn serve_on(
     socket: &Path,
     answer: impl Fn(Asked) -> Said + Send + Sync + 'static,
 ) -> std::io::Result<()> {
+    serve_watching(socket, move |asked, _| answer(asked))
+}
+
+/// [`serve_on`], `answer` also handed what says whether its peer has hung up, for what waits long.
+pub fn serve_watching(
+    socket: &Path,
+    answer: impl Fn(Asked, &dyn Fn() -> bool) -> Said + Send + Sync + 'static,
+) -> std::io::Result<()> {
     crate::hostsocket::make_the_folder(socket)?;
     match UnixStream::connect(socket) {
         Ok(_) => {
@@ -331,18 +450,32 @@ pub fn serve_on(
                 };
                 if this_user(&peer) {
                     let answer = std::sync::Arc::clone(&answer);
-                    std::thread::spawn(move || serve_one(&peer, answer.as_ref()));
+                    // Out of threads, the peer hears nothing, which it says as no answer.
+                    let _ = std::thread::Builder::new()
+                        .spawn(move || serve_one(&peer, answer.as_ref()));
                 }
             }
         })?;
     Ok(())
 }
 
+/// Whether the peer closed its end: it sends nothing more after its line, so a read ends at once
+/// where it did, and waits out a moment where it did not.
+fn hung_up(mut peer: &UnixStream) -> bool {
+    if peer
+        .set_read_timeout(Some(Duration::from_millis(1)))
+        .is_err()
+    {
+        return false;
+    }
+    matches!(peer.read(&mut [0u8; 16]), Ok(0))
+}
+
 /// One peer's line, answered.
-fn serve_one(peer: &UnixStream, answer: &impl Fn(Asked) -> Said) -> Option<()> {
+fn serve_one(peer: &UnixStream, answer: &impl Fn(Asked, &dyn Fn() -> bool) -> Said) -> Option<()> {
     peer.set_write_timeout(Some(A_PEER_HAS)).ok()?;
     let said = match serde_json::from_str(&line_of(peer, A_PEER_HAS)?) {
-        Ok(asked) => answer(asked),
+        Ok(asked) => answer(asked, &|| hung_up(peer)),
         Err(_) => Said::Refused {
             why: "this window does not read that; update purlis".to_owned(),
         },

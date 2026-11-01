@@ -94,7 +94,7 @@ fn skill_grade_says_what_a_grade_runs_and_spends_then_each_grade() {
         ),
         "{text}"
     );
-    assert!(text.contains("1 outcome eval waits"), "{text}");
+    assert!(text.contains("Outcome eval 1 is left out:"), "{text}");
     assert!(
         text.contains("A grade stops once its chats have spent 200000 tokens (the default;"),
         "{text}"

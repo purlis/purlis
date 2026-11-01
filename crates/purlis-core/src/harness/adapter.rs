@@ -132,6 +132,14 @@ pub trait HarnessAdapter: Sync {
         None
     }
 
+    /// **Why an outcome eval's chats and judges' cannot run under `env`**, or `None` (SK-55): they
+    /// load none of the person's settings files, so what those alone give them is missing. Asked
+    /// only where [`Self::can_grade`] says it can.
+    fn outcome_refused(&self, env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+        let _ = env;
+        None
+    }
+
     /// **The model a grade's chat on this harness runs on**, as `command` (the program, then the
     /// profile's own words) under the chat's environment `env` would start it, where the
     /// harness's words say one (#3469): what its dollar limit is priced from

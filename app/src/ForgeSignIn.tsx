@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { commands, type ForgeAccountRow, type ForgeRow } from "./bindings";
 import { DoorPage } from "./DoorPage";
@@ -37,6 +38,7 @@ export function ForgeSignIn({
   onSignInToForge,
   trouble,
   onSignedIn,
+  end,
 }: {
   /** Comes back to the welcome. */
   onBack: () => void;
@@ -46,6 +48,8 @@ export function ForgeSignIn({
   trouble?: string;
   /** A token signed in here: the guided steps' way on is then Continue (#1817). */
   onSignedIn?: () => void;
+  /** The guided steps' way on, at the page's end: Skip for now, or Continue (#1817). */
+  end?: ReactNode;
 }) {
   const [forges, setForges] = useState<ForgeRow[]>();
   // The window keeps one refusal for every way a repo or the local project is opened. One that
@@ -164,6 +168,8 @@ export function ForgeSignIn({
           {said}
         </p>
       )}
+
+      {end}
     </DoorPage>
   );
 }

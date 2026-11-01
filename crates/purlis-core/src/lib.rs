@@ -136,6 +136,7 @@ pub mod inventory;
 pub mod layer;
 pub mod leakguard;
 pub mod leftovers;
+pub(crate) mod lfsupload;
 #[cfg(test)]
 mod lineartime;
 #[cfg(unix)]
@@ -182,6 +183,8 @@ pub mod poollimits;
 pub mod poollogins;
 #[cfg(unix)]
 pub mod pools;
+#[cfg(unix)]
+pub mod poolsetup;
 pub mod process;
 pub mod profiles;
 pub mod profilesignin;

@@ -45,6 +45,9 @@ pub(super) fn planned(query: &str) -> Planned {
             tokens: 50_000,
             from: grades::cap::From::Yours,
         },
+        outcomes_left_out: Vec::new(),
+        offered: Vec::new(),
+        eval_chats: 12,
         consent: Some("abc".into()),
         previous: None,
         previous_refused: None,
@@ -63,7 +66,60 @@ fn on(checked: Result<String, String>, priced: grading::Priced) -> On {
         priced,
         models: ["opus", "sonnet", "haiku"].map(str::to_owned).to_vec(),
         model: None,
+        evals_refused: None,
     }
+}
+
+/// SK-55 (#3235): the plan shows each outcome eval as its chat reads it, counts its chats and
+/// its judges' in the chats, and names each eval it leaves out.
+#[test]
+fn the_plan_offers_each_outcome_eval_and_counts_only_those_ticked() {
+    let mut planned = planned("ship it");
+    let eval = purlis_core::skills::grade::OutcomeEval {
+        id: 4,
+        prompt: "fill\u{200b} it".into(),
+        expected_output: None,
+        files: vec!["evals/files/form.txt".into()],
+        expectations: vec!["It is filled".into(), "It is dated".into()],
+    };
+    let other = purlis_core::skills::grade::OutcomeEval {
+        id: 5,
+        prompt: "file it".into(),
+        files: Vec::new(),
+        ..eval.clone()
+    };
+    planned.offered = vec![eval.clone(), other];
+    let request = planned.request.as_mut().unwrap();
+    request.outcomes.push(eval);
+    planned.plan = Some(grading::plan(request));
+    planned.outcomes_left_out = vec![grades::LeftOutEval {
+        id: 9,
+        why: "it has no expectations, so a judge would have nothing to check".into(),
+    }];
+    let plan = SkillGradePlan::of(
+        &planned,
+        None,
+        on(Ok("full sandbox".into()), grades::price::of_model(None)),
+    );
+    // A test: 3 runs × 2 arms; the ticked eval: 3 runs × 2 arms × its chat and its judge's.
+    assert_eq!(plan.chats, 6 + 12);
+    assert_eq!((plan.outcome_evals, plan.judge_chats), (1, 6));
+    let eval = &plan.evals[0];
+    assert_eq!(eval.id, "4");
+    assert!(eval.on && eval.hides);
+    assert_eq!(eval.chats, 12);
+    assert!(
+        eval.prompt.starts_with("fill⟦U+200B⟧ it"),
+        "{}",
+        eval.prompt
+    );
+    assert!(
+        eval.prompt
+            .ends_with("in this folder: evals/files/form.txt.")
+    );
+    assert_eq!((eval.files.len(), eval.expectations), (1, 2));
+    assert!(!plan.evals[1].on, "off until it is ticked");
+    assert_eq!(plan.outcomes_left_out[0].id, "9");
 }
 
 #[test]
@@ -282,6 +338,9 @@ fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
                 seconds: None,
                 chats: 3,
                 not_run: 0,
+                outcome_pass_rate: None,
+                outcome_chats: 0,
+                outcome_not_run: 0,
             }],
             delta: Some(0.333),
             ended: GradeEnd::Whole,
@@ -292,6 +351,10 @@ fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
             spent_usd: None,
             counted_usd: None,
             priced: None,
+            outcomes: Vec::new(),
+            outcome_delta: None,
+            outcome_tokens: None,
+            outcome_usd: None,
             failed: None,
         },
         spent: Spent::default(),
@@ -406,6 +469,9 @@ fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_difference
         seconds: None,
         chats: 3,
         not_run: 0,
+        outcome_pass_rate: None,
+        outcome_chats: 0,
+        outcome_not_run: 0,
     };
     let graded = Graded {
         v: grades::VERSION,
@@ -435,6 +501,10 @@ fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_difference
             spent_usd: None,
             counted_usd: None,
             priced: None,
+            outcomes: Vec::new(),
+            outcome_delta: None,
+            outcome_tokens: None,
+            outcome_usd: None,
             failed: None,
         },
         spent: Spent::default(),
@@ -522,6 +592,7 @@ fn a_grade_ends_graded_stopped_at_its_limit_or_interrupted() {
 #[test]
 fn what_a_grades_chats_spent_is_counted_from_what_each_said_3582() {
     let chat = |tokens: Option<u64>, cost_usd: Option<f64>, end: ChatEnd| ChatRan {
+        answer: None,
         chat: None,
         started: Vec::new(),
         tokens,
@@ -614,6 +685,7 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
     let tests = || {
         Ok(grades::TriggerTests {
             runs: 2,
+            evals: 0,
             refused: None,
         })
     };
@@ -869,4 +941,47 @@ fn a_grader_is_handed_the_trigger_tests_alone() {
     assert_eq!(handed.triggers, request.triggers);
     assert_eq!(handed.arms, request.arms);
     assert_eq!(handed.runs, request.runs);
+}
+
+/// SK-55: a Grader and ticked outcome evals are not one grade: the plan says so and consents to
+/// nothing, and a start is refused by the same word.
+#[test]
+fn a_grader_is_refused_beside_ticked_outcome_evals() {
+    let mut ticked = planned("ship it");
+    let request = ticked.request.as_mut().unwrap();
+    request
+        .outcomes
+        .push(purlis_core::skills::grade::OutcomeEval {
+            id: 4,
+            prompt: "fill it".into(),
+            expected_output: None,
+            files: Vec::new(),
+            expectations: vec!["It is filled".into()],
+        });
+    assert!(grader_takes(&ticked, true).is_err());
+    assert!(grader_takes(&ticked, false).is_ok());
+    assert!(grader_takes(&planned("ship it"), true).is_ok());
+}
+
+/// SK-55: ticked outcome evals on a profile they cannot run on start nothing; left off, they cost
+/// that profile nothing.
+#[test]
+fn ticked_evals_are_refused_on_a_profile_they_cannot_run_on() {
+    let why = "it signs in another way".to_owned();
+    let mut ticked = planned("ship it");
+    assert!(evals_can_run(&ticked, Some(&why)).is_ok());
+    ticked
+        .request
+        .as_mut()
+        .unwrap()
+        .outcomes
+        .push(purlis_core::skills::grade::OutcomeEval {
+            id: 4,
+            prompt: "fill it".into(),
+            expected_output: None,
+            files: Vec::new(),
+            expectations: vec!["It is filled".into()],
+        });
+    assert_eq!(evals_can_run(&ticked, Some(&why)), Err(why));
+    assert!(evals_can_run(&ticked, None).is_ok());
 }

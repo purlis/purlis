@@ -822,6 +822,20 @@ fn pushed(p: &Plan, say: &mut dyn FnMut(Say)) -> bool {
     let helper = forge::helper_for(&p.on.forge);
     let mut args: Vec<&str> = PUSH_ONLY_THE_BRANCH.to_vec();
     args.extend(["push", p.to.as_str(), refspec.as_str()]);
+    // Its Git LFS objects first: a hook would have sent them, and purlis's git runs none (#4399).
+    let tip = format!("refs/heads/{}", p.branch);
+    if let Err(why) = crate::lfsupload::before_push(&crate::lfsupload::Push {
+        dir: &p.clone,
+        helper: Some(&helper),
+        args: &args,
+        tip: &tip,
+        remote: "origin",
+    }) {
+        say(Say::Fail(
+            format!("{}: not pushed. {why}.", named(&p.repo)).into(),
+        ));
+        return false;
+    }
     let run = match git::run_network(&p.clone, Some(&helper), &args) {
         Ok(run) => run,
         Err(unavailable) => {

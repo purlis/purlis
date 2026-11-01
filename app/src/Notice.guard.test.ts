@@ -226,9 +226,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "report is still on the row to read (#1485)",
   },
   "FirstRun.tsx": {
-    count: 4,
+    count: 6,
     why:
-      "the first-run page's progress and refusal, inside its tab; and " +
+      "the first-run page's progress and refusal, and why a new project's name or folder cannot " +
+      "be used, inside its tab; and " +
       READING +
       ": reading what this machine has, or that it could not",
   },

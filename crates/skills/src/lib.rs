@@ -73,7 +73,7 @@ pub use lint::{
     BuiltInLints, Finding, Lint, MOST_LINT_BYTES, MOST_LIST_BYTES, ReadBudget, Severity,
     SkillFiles, SkillLint,
 };
-pub use load::{Entry, Loaded, Narrowing, POINTER, SkillFolder, by_name, find, load};
+pub use load::{Entry, Loaded, NOT_KNOWN, Narrowing, POINTER, SkillFolder, by_name, find, load};
 pub use moving::{Unmoved, move_between, move_skill};
 pub use read::{
     DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan, scan_dir,

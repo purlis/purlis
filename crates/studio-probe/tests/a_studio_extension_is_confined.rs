@@ -1024,6 +1024,7 @@ impl purlis_skills::grade::Chats for Chats {
             cost_usd: None,
             ms: 10,
             end: purlis_skills::grade::ChatEnd::Turn,
+            answer: None,
         }
     }
 

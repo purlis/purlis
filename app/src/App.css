@@ -4396,26 +4396,59 @@ body {
   font-weight: var(--font-weight-strong);
 }
 
-/* **The welcome** (#1812, `Welcome.tsx`): what a window with no project draws, and the pages
-   behind its doors (`DoorPage.tsx`). It is the first thing a new person sees, so it is a page
-   with room around it and not a message tucked into a corner of the pane area. One column, a
-   reading width wide, scrolled on its own when the window is short. */
+/* **The launcher** (#1812, `Welcome.tsx`, `DoorPage.tsx`): what a window with no project draws. The
+   ways in down the left side, always in sight, and the page they open beside them. The panes
+   scroll the whole of it as one (#3325), and the left side's words stay at the top as they do. */
 .welcome {
+  flex: 1 0 auto;
   box-sizing: border-box;
+  display: flex;
   width: 100%;
-  max-width: 46rem;
-  margin: 0 auto;
-  padding: var(--space-8) var(--space-7) var(--space-7);
-  overflow: auto;
+  min-block-size: 100%;
 }
 
-.welcome h1 {
+.welcome-side {
+  flex: none;
+  box-sizing: border-box;
+  inline-size: clamp(15rem, 28%, 20rem);
+  border-inline-end: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+  background-color: var(--surface-sunken);
+}
+
+.welcome-side-in {
+  position: sticky;
+  inset-block-start: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-5);
+}
+
+.welcome-brand {
+  margin: 0;
+  padding-inline: var(--space-4);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-strong);
+}
+
+.welcome-pane {
+  flex: 1;
+  min-inline-size: 0;
+  box-sizing: border-box;
+  padding: var(--space-8);
+}
+
+.welcome-pane > * {
+  max-inline-size: 42rem;
+}
+
+.welcome-pane h1 {
   margin: 0 0 var(--space-3);
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-strong);
 }
 
-.welcome h2 {
+.welcome-pane h2 {
   margin: var(--space-7) 0 var(--space-3);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-strong);
@@ -4424,108 +4457,81 @@ body {
 
 /* A heading the keyboard is put on as its page appears is not a stop Tab reaches, so it draws
    no ring: the page arriving is the signal. */
-.welcome h1:focus {
+.welcome-pane h1:focus {
   outline: none;
 }
 
 .welcome-lede {
   margin: 0 0 var(--space-7);
-  max-width: 38rem;
+  max-inline-size: 38rem;
   line-height: var(--line-height-body);
   color: var(--text-secondary);
 }
 
-/* **The guided steps** (#1817, `Onboarding.tsx`): the welcome and the pages after it, with
-   "Step N of M" and the list of steps above them, at the welcome's own width. The steps scroll
-   as one page, so the welcome inside does not scroll on its own. */
-.onboarding {
-  box-sizing: border-box;
-  width: 100%;
-  overflow: auto;
+/* **A first run's next steps**, in the place recent projects will be: three lines, numbered because
+   they happen in that order. */
+.welcome-next {
+  margin: 0 0 var(--space-7);
+  padding-inline-start: var(--space-6);
+  line-height: var(--line-height-body);
+  color: var(--text-secondary);
 }
 
-.onboarding .welcome {
-  overflow: visible;
-  padding-top: var(--space-5);
+.welcome-next li + li {
+  margin-block-start: var(--space-3);
+}
+
+/* **The guided steps** (#1817, `Onboarding.tsx`): the launcher, and the steps' one line under its
+   ways in. */
+.onboarding,
+.onboarding-page {
+  flex: 1 0 auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-block-size: 100%;
+}
+
+.onboarding-page[hidden] {
+  display: none;
 }
 
 .onboarding-steps {
-  box-sizing: border-box;
-  max-width: 46rem;
-  margin: 0 auto;
-  padding: var(--space-7) var(--space-7) 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-.onboarding-count {
-  margin: 0 0 var(--space-2);
-}
-
-.onboarding-steps ol {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-5);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.onboarding-steps li {
+  padding-inline: var(--space-4);
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
-.onboarding-steps li.done {
-  color: var(--text-secondary);
+.onboarding-count {
+  margin: 0;
 }
 
-.onboarding-steps li[aria-current="step"] {
-  color: var(--text-primary);
-  font-weight: var(--font-weight-strong);
-  box-shadow: inset 0 -2px 0 var(--accent-base);
-}
-
-/* The step's own way on (Skip for now), under the page at the page's width. */
-.onboarding-on {
-  box-sizing: border-box;
-  max-width: 46rem;
-  margin: 0 auto;
-  padding: 0 var(--space-7) var(--space-7);
-}
-
-.welcome .onboarding-on {
-  padding: var(--space-7) 0 0;
-}
-
-/* **The three doors**: one row of equal cards, as many to a row as the width holds, each a card
-   pressed whole (`ui/card/CardButton`), which draws itself. */
+/* **The ways in**: rows of the card family, one under another. */
 .welcome-doors {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
-  gap: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.welcome-doors li {
-  display: flex;
+.welcome-sign-in {
+  padding-block-start: var(--space-5);
+  border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
-/* A quiet act inside the page's prose: Sign in under the doors, Back above a door's page, and
-   New project… at the foot of Create a project. Drawn as a link, because none of them is the
-   page's own act, and still a button, because each does something rather than goes somewhere. */
-.welcome .welcome-link {
+/* A quiet act inside the page's prose: Back above a door's page, and New project… at the foot of
+   Create a project. Drawn as a link, because neither is the page's own act, and still a button,
+   because each does something rather than goes somewhere. */
+.welcome-pane .welcome-link {
   display: inline-flex;
   gap: var(--space-2);
   align-items: center;
   padding: var(--space-1) var(--space-2);
   border: 0;
   color: var(--accent-base);
-}
-
-.welcome-sign-in {
-  margin: var(--space-5) 0 var(--space-6);
 }
 
 .welcome-elsewhere {
@@ -4540,6 +4546,7 @@ body {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-5);
+  margin-block-end: var(--space-5);
 }
 
 .welcome-page-head .welcome-link {
@@ -4547,19 +4554,165 @@ body {
 }
 
 .welcome-recents {
-  margin-top: var(--space-3);
+  margin-block-end: var(--space-7);
 }
 
+/* The path box, its act beside it on the field's line. */
 .by-path {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.by-path [data-setting] {
+  border: 0;
+  padding: 0;
+}
+
+.by-path .ui-setting-actions {
+  margin: 0;
+}
+
+/* A page's end: where it goes, and the page's act. */
+.get-project-end {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  align-items: center;
+  margin-block-start: var(--space-5);
+}
+
+.get-project-folder {
+  flex: 1 1 14rem;
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+}
+
+.get-project-local {
+  margin: var(--space-6) 0 0;
+  color: var(--text-secondary);
+}
+
+.get-project-progress:not(:empty) {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  margin-block-start: var(--space-5);
+}
+
+/* The forges a repo list asked: lines, each with its own way to sign in. */
+.your-repos-hosts {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+  color: var(--text-muted);
+}
+
+/* A row of acts on these pages, with room between them. */
+.welcome-pane .doing,
+.harness-setup .doing {
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
   align-items: center;
+  margin-block-start: var(--space-6);
+}
+
+.first-run h2 {
+  margin-block-start: var(--space-8);
+}
+
+/* A sentence on these pages is the page's own words, not a strip across a pane. */
+.welcome-pane .came-back {
+  padding: 0;
+  margin-block-end: var(--space-3);
+  background: none;
+  border: 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-body);
+  color: var(--text-secondary);
+}
+
+.git-missing h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-strong);
+}
+
+/* Where a project lives: the three answers side by side, as many as the pane holds. */
+[data-setting="create-project-where"] .ui-setting-line {
+  display: block;
+}
+
+[data-setting="create-project-where"] .ui-setting-name {
+  margin-block-end: var(--space-3);
+}
+
+[data-setting="create-project-where"]
+  [data-scope="option-card"][data-part="root"]:not([data-selected]) {
+  border-color: var(--border-subtle);
+}
+
+[data-setting="create-project-where"] [data-scope="option-cards"] {
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+/* A repo to pick: a list as wide as the page, each row its name, then where it is at the end. */
+.your-repos .repo-picker-head [data-setting] {
+  flex: 1;
+  border: 0;
+}
+
+.your-repos .repo-picks {
+  max-block-size: 18rem;
+  border: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+  border-radius: var(--radius-lg);
+}
+
+.your-repos .repo-picks li + li {
+  border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}
+
+.your-repos .repo-picks li {
+  display: flex;
+}
+
+.your-repos .repo-picks [data-scope="card-button"][data-part="root"][data-variant="pick"] {
+  display: flex;
+  flex: 1;
+  flex-wrap: nowrap;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-radius: 0;
+  color: var(--text-primary);
+}
+
+.your-repos .repo-picks [data-scope="card-button"][data-part="line"] {
+  margin-inline-start: auto;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+/* In the launcher the harness rows sit in the page's own margins. */
+.welcome-pane .harness-setup {
+  padding: 0;
 }
 
 /* The recent projects are rows of the list family (`ui/list`, #2911); a project's path is its
    description, cut to one line. */
 .recents .where {
   font-size: var(--font-size-xs);
+}
+
+.recents .value {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
 }
 
 /* The first run's list of what this machine has (FR-4): statuses, not controls. */
@@ -4588,14 +4741,48 @@ body {
 }
 
 .harness-setup-rows li {
-  padding: var(--space-3) 0;
+  padding: var(--space-4) 0;
   border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}
+
+/* A harness: what it is and its state, Install at the line's end, and how it installs under them. */
+.harness-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2) var(--space-5);
+  align-items: center;
+}
+
+.harness-row-says {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.harness-row-state,
+.harness-row-how {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.harness-row-how {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
 }
 
 .harness-installer {
   display: block;
-  margin: var(--space-2) 0;
+  margin-block-end: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
   overflow-wrap: anywhere;
+}
+
+.welcome-pane .harness-setup [data-scope="empty-state"][data-part="root"] {
+  align-items: flex-start;
+  padding-inline: 0;
+  text-align: start;
 }
 
 /* New project's two-directory form, under Advanced (FR-4). Closed by default, and a summary
@@ -8022,6 +8209,30 @@ nav.piece-files-head {
 
 .skill-summary li[data-risky="true"] {
   color: var(--danger-text);
+}
+
+.skill-publish-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skill-publish-rows > li {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+}
+
+.skill-publish-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.skill-publish-done {
+  padding: var(--space-4);
 }
 
 .skill-review-files {

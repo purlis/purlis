@@ -10,7 +10,7 @@ import { Button } from "./ui/button/Button";
  * **A page behind one of the welcome's doors** (#1812): Create a project, Get a project from
  * your forge, or Sign in to GitHub or GitLab.
  *
- * It is drawn in the welcome's place, at the welcome's width, with **Back** first and the page's
+ * It is drawn in the launcher's right pane ({@link Launcher}), with **Back** first and the page's
  * heading after it. The keyboard is put on the heading as the page appears, before paint, so a
  * screen reader says where the person has arrived and Tab goes on from the top of the page;
  * Back hands it to the door that was pressed (`Welcome.tsx`). Back changes nothing, so it is
@@ -39,7 +39,7 @@ export function DoorPage({
     heading.current?.focus();
   }, []);
   return (
-    <section className={clsx("welcome", "welcome-page", className)} aria-labelledby={id}>
+    <section className={clsx("welcome-page", className)} aria-labelledby={id}>
       <header className="welcome-page-head">
         {onBack && (
           <Button variant="link" onPress={onBack} icon={<ChevronLeft />} className="welcome-link">
@@ -52,6 +52,25 @@ export function DoorPage({
         </h1>
       </header>
       {children}
+    </section>
+  );
+}
+
+/**
+ * **The window with no project in front, as a launcher**: the ways in down its left side, always
+ * in sight, and the page they open beside them. The left side stays put while the page scrolls,
+ * and the whole of it scrolls as one (`.panes`, #3325).
+ */
+export function Launcher({ side, children }: { side?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="welcome" aria-label="purlis">
+      <div className="welcome-side">
+        <div className="welcome-side-in">
+          <p className="welcome-brand">purlis</p>
+          {side}
+        </div>
+      </div>
+      <div className="welcome-pane">{children}</div>
     </section>
   );
 }

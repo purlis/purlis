@@ -21,12 +21,12 @@ pub use purlis_skills::fence;
 pub use purlis_skills::{
     Argument, At, BUILT_IN_OWN_PREFIX, BUILT_IN_PREFIXES, Budget, Chat, Clash, Compat,
     DIR_IN_BUNDLE, Declared, Effective, Field, Finding, Fit, FromHarness, Given, Grant,
-    HarnessSkills, Honours, LOCAL_DIR, LeftOut, Lint, Machine, ManualOnly, Missing, Narrowing,
-    OnMachine, Origin, Outcome, OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference,
-    Refusal, Reload, Route, Severity, Shared, Skill, SkillSet, SkillsChanged, Spent, Stamp, Switch,
-    Whose, beside, compat, declared, grant_file, grant_of, handed_text, handed_text_as, in_bundle,
-    leaf_name, level_dir, level_shown, listing, named, named_at, persona_dir, read, scan,
-    set_grant, share,
+    HarnessSkills, Honours, LOCAL_DIR, LeftOut, Lint, Machine, ManualOnly, Missing, NOT_KNOWN,
+    Narrowing, OnMachine, Origin, Outcome, OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason,
+    Reference, Refusal, Reload, Route, Severity, Shared, Skill, SkillSet, SkillsChanged, Spent,
+    Stamp, Switch, Whose, beside, compat, declared, grant_file, grant_of, handed_text,
+    handed_text_as, in_bundle, leaf_name, level_dir, level_shown, listing, named, named_at,
+    persona_dir, read, scan, set_grant, share,
 };
 pub use purlis_skills::{Hidden, HiddenWhy, INDEX, Index, Router, Routing, StillOver};
 pub use purlis_skills::{SkillFiles, SkillLint};

@@ -207,8 +207,8 @@ pub fn layer_text(root: &Path, which: Which) -> LayerText {
     LayerText::Text(text)
 }
 
-/// [`layer_text`] of the Local file **for a reader of one table that is read at every chat
-/// start** (#968): git is asked only where the file holds `table` at its top, and a file that
+/// [`layer_text`] of the Local file **for a reader of one table on a path a person waits on**: a
+/// chat's start (#968), a studio's read (#4351): git is asked only where the file holds `table` at its top, and a file that
 /// does not is [`LayerText::Nothing`], as it says nothing to that reader either way.
 ///
 /// The check is the same one, from the same function, so a Local file git would carry still
@@ -343,7 +343,10 @@ pub(crate) fn shared_text(root: &Path) -> Option<String> {
 /// is refused at once with a sentence instead. **And capped** at
 /// [`crate::sandbox::PLANE_FILE_MAX`], the most a chat's start reads of the same file, so a save
 /// never reads more under the lock than a start would.
-fn on_disk(root: &Path, which: Which) -> Result<(bool, String), String> {
+///
+/// **Nothing decides by a Local file's text from here**: that is [`layer_text`]'s. This is for
+/// the file as text, for a save or a change proposed to it (`harness_plugin::old`).
+pub(crate) fn on_disk(root: &Path, which: Which) -> Result<(bool, String), String> {
     let path = which.path(root);
     match read_capped(root, &path) {
         Ok(bytes) if bytes.len() > crate::sandbox::PLANE_FILE_MAX => Err(format!(

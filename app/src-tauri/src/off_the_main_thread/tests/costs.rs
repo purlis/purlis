@@ -413,6 +413,9 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             // A move waiting on a sign-in prepared again (#3477): in memory, the preparing on its
             // own thread.
             "chat_move_signed_in",
+            // A pool sign-in's question and its answer (`poolsignin_confirm`): in memory.
+            "pool_sign_in_asked",
+            "answer_pool_sign_in",
             "smart_closing",
             "task_ending",
             "all_tasks_ending",

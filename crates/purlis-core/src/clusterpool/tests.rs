@@ -338,6 +338,29 @@ fn kubectl_answering(dir: &std::path::Path, answer: &str) -> Kubectl {
     Kubectl::at(script).with_context("kind-test")
 }
 
+/// **#4281**: what kubectl prints past what purlis reads: a limit that says it is fixed.
+#[cfg(unix)]
+#[test]
+fn kubectl_printing_past_what_purlis_reads_says_the_limit_is_fixed() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("kubectl");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\ncat > /dev/null\nhead -c 2097152 /dev/zero | tr '\\000' x\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let refused = Kubectl::at(script)
+        .with_context("kind-test")
+        .pool("default")
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("printed more"), "{refused}");
+    let fixed = purlis_session_protocol::fixedlimits::RUNNER_OUTPUT.said();
+    assert!(refused.contains(&fixed), "{refused}");
+}
+
 #[cfg(unix)]
 #[test]
 fn pairing_execs_into_the_vouched_pod_and_refuses_a_runner_answering_another_key() {

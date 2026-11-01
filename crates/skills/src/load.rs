@@ -22,6 +22,14 @@ pub const POINTER: &str = "⬢ **This chat's skills** are reached through purlis
      request may match one, find it with `skill_find` and load it with `skill_load`, then follow \
      what it says before acting.";
 
+/// **What a chat its harness was handed skills for is told of one the harness does not know**
+/// (#4510): a skill can name another that was hidden by the router or installed since the chat
+/// started, and the harness's own tool can only answer that it knows no such skill.
+pub const NOT_KNOWN: &str = "⬢ **When your harness does not know a skill**: if its own way of \
+     starting a skill says it does not know a skill's name, load that skill with purlis's \
+     `skill_load` tool before giving up or working around it. purlis does not hand all of this \
+     chat's skills to its harness.";
+
 /// The most skills one `skill_find` answers with.
 pub(crate) const MOST_FOUND: usize = 10;
 
@@ -83,15 +91,23 @@ pub(crate) fn narrowing(text: &str) -> Narrowing {
         .unwrap_or_default()
 }
 
-/// **The skill of `set` named `name`**: by its whole name, or by the name after a harness's
-/// namespace (`skills:deploy` is `deploy`), as a chat may give it. `None` where the set holds
-/// none of that name, whatever is on disk.
+/// **The skill of `set` named `name`**: by its whole name, or by the name after one of purlis's
+/// own namespaces (`skills:deploy` is `deploy`), as a chat may give it. Another plugin's
+/// `other:deploy` is not this set's `deploy` (#4510). `None` where the set holds none of that
+/// name, whatever is on disk.
 pub fn by_name<'a>(set: &'a SkillSet, name: &str) -> Option<&'a Effective> {
     let name = name.trim();
-    let leaf = crate::leaf_name(name);
+    let bare = match name.rsplit_once(':') {
+        Some((namespace, leaf))
+            if namespace == "skills" || crate::BUILT_IN_PREFIXES.contains(&namespace) =>
+        {
+            leaf
+        }
+        _ => name,
+    };
     set.effective
         .iter()
-        .find(|effective| effective.skill.name == name || effective.skill.name == leaf)
+        .find(|effective| effective.skill.name == name || effective.skill.name == bare)
 }
 
 /// **The skills of `set` that match `query`**, best first and at most [`MOST_FOUND`]: each word

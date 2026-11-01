@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { commands, type GetProgress, type ProjectFolder } from "./bindings";
 import { DoorPage } from "./DoorPage";
-import { Field, SettingActions, SettingRow } from "./settings/components";
+import { Field, SettingRow } from "./settings/components";
 import { YourRepos } from "./YourRepos";
 import { Button } from "./ui/button/Button";
 import { Form } from "./ui/field/Field";
@@ -171,7 +171,7 @@ export function GetProject({
   return (
     <DoorPage title="Get a project from your forge" className="get-project" onBack={onBack}>
       <Form
-        className="by-path"
+        className="get-project-form"
         aria-busy={getting}
         onSubmit={(event) => {
           event.preventDefault();
@@ -195,20 +195,25 @@ export function GetProject({
             />
           )}
         />
-        {/* The place, not a box to type in: Choose… picks the folder that holds it, and the
-            project's own folder is named after it. */}
-        <p className="get-project-folder">
-          {/* Before a URL names the project, the folder that will hold it, once one was picked. */}
-          Goes into <code className="where">{folder?.folder ?? parent ?? "—"}</code>{" "}
-          <Button isDisabled={getting} onPress={choose}>
+        <div className="get-project-end">
+          {/* The place, not a box to type in: Choose… picks the folder that holds it, and the
+              project's own folder is named after it. */}
+          <p className="get-project-folder">
+            {/* Before a URL names the project, the folder that will hold it, once one was
+                picked. */}
+            Goes into <code className="where">{folder?.folder ?? parent ?? "—"}</code>
+          </p>
+          <Button variant="ghost" isDisabled={getting} onPress={choose}>
             Choose a folder…
           </Button>
-        </p>
-        <SettingActions>
-          <Button type="submit" isDisabled={!url.trim() || getting}>
+          <Button
+            variant={url.trim() ? "primary" : "secondary"}
+            type="submit"
+            isDisabled={!url.trim() || getting}
+          >
             Get project
           </Button>
-        </SettingActions>
+        </div>
       </Form>
 
       <div role="status" className="get-project-progress">

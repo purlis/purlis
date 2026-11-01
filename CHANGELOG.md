@@ -13,6 +13,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A redesigned first window.** With no project open, the ways in now stay down the left of the
+  window and each one opens its page beside them. Recent projects sit in the same place on every
+  launch, and a person who has already been through setup is no longer counted through steps.
+- **Create a project on this Mac from a name alone**, with no repo and no account. Starting from
+  a repo you already have is still on the same page.
 - **The event log keeps 30 days and can be followed from a cursor.** The host's event log
   (`<data>/events/<device>/`) is now written in segments: at 16 MiB a segment is sealed as
   `events.<first seq>.jsonl`, and a sealed segment whose newest event is more than 30 days old is

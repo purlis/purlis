@@ -40,6 +40,7 @@ impl Chats for Scripted {
                 tokens: None,
                 cost_usd: None,
                 ms: 0,
+                answer: None,
                 end: ChatEnd::NotStarted {
                     why: "the profile is signed out".into(),
                 },
@@ -51,6 +52,7 @@ impl Chats for Scripted {
             tokens: self.tokens,
             cost_usd: None,
             ms: 2000,
+            answer: None,
             end: ChatEnd::Turn,
         }
     }
@@ -122,7 +124,7 @@ fn a_good_skill(arm: Arm, prompt: &str, _: usize) -> Vec<String> {
 }
 
 #[test]
-fn the_plan_is_one_chat_per_test_arm_and_run_and_says_what_waits() {
+fn the_plan_is_one_chat_per_test_arm_and_run_and_an_eval_with_nothing_to_judge_runs_none() {
     let mut asked = request();
     asked.outcomes.push(OutcomeEval {
         id: 1,
@@ -137,7 +139,8 @@ fn the_plan_is_one_chat_per_test_arm_and_run_and_says_what_waits() {
             chats: 12,
             per_arm: 6,
             trigger_tests: 2,
-            outcome_evals_waiting: 1,
+            outcome_evals: 0,
+            judge_chats: 0,
         }
     );
 }
@@ -270,6 +273,7 @@ fn the_four_messages_are_spelled_as_the_adr_says() {
         tokens: None,
         cost_usd: None,
         ms: 5,
+        answer: None,
         end: ChatEnd::NotStarted { why: "no".into() },
     };
     assert_eq!(
@@ -282,7 +286,8 @@ fn the_four_messages_are_spelled_as_the_adr_says() {
     assert_eq!(
         serde_json::to_value(RunChat {
             arm: Arm::Without,
-            prompt: "p".into()
+            prompt: "p".into(),
+            kind: ChatKind::Trigger,
         })
         .unwrap(),
         serde_json::json!({"arm": "without", "prompt": "p"})
@@ -318,6 +323,7 @@ fn a_chat_the_host_ended_at_the_cap_is_no_run_and_ends_the_grade() {
                 tokens: left.map(|left| left + 1),
                 cost_usd: None,
                 ms: 10,
+                answer: None,
                 end: ChatEnd::OverCap,
             }
         }
@@ -360,6 +366,7 @@ fn a_chat_that_asked_the_person_is_no_run_and_the_grade_goes_on() {
                 tokens: Some(10),
                 cost_usd: None,
                 ms: 10,
+                answer: None,
                 end: ChatEnd::Asked,
             }
         }
@@ -399,6 +406,7 @@ impl Chats for Silent {
             tokens: None,
             cost_usd: None,
             ms: 10,
+            answer: None,
             end: self.0.clone(),
         }
     }
@@ -446,6 +454,7 @@ fn a_grade_stops_at_its_cost_bound_before_its_tokens() {
                 tokens: Some(10),
                 cost_usd: Some(2.0),
                 ms: 10,
+                answer: None,
                 end: ChatEnd::Turn,
             }
         }
@@ -488,6 +497,7 @@ fn a_chat_the_host_ended_at_the_limit_is_no_run_and_ends_the_grade_there() {
                 tokens: Some(10),
                 cost_usd: Some(5.5),
                 ms: 10,
+                answer: None,
                 end: ChatEnd::OverLimit,
             }
         }
@@ -560,6 +570,7 @@ fn a_stopped_chats_spend_is_counted_though_it_is_no_run() {
                 tokens: Some(700),
                 cost_usd: Some(0.07),
                 ms: 1000,
+                answer: None,
                 end: if self.0 == 2 {
                     ChatEnd::Cancelled
                 } else {
@@ -592,7 +603,33 @@ fn chat(arm: Arm, prompt: &str) -> RunChat {
     RunChat {
         arm,
         prompt: prompt.into(),
+        kind: ChatKind::Trigger,
     }
+}
+
+/// SK-55: an outcome eval's and a judge's chats are purlis's own runner's: a Grader names no
+/// chat for a judge to read, and asks for none past the plan that way.
+#[test]
+fn a_grader_is_refused_an_outcome_evals_or_a_judges_chat() {
+    let request = request();
+    let mut host = Scripted::of(a_good_skill);
+    let mut held = Held::new(&request, &mut host, None);
+    for kind in [
+        ChatKind::Outcome { files: Vec::new() },
+        ChatKind::Judge {
+            of: "01J".into(),
+            task: "{}".into(),
+        },
+    ] {
+        let asked = RunChat {
+            kind,
+            ..chat(Arm::With, "make me a pdf")
+        };
+        assert!(held.ask(&asked).is_err());
+    }
+    assert_eq!(held.ran().count(), 0);
+    drop(held);
+    assert!(host.asked.is_empty(), "never run");
 }
 
 #[test]
