@@ -593,8 +593,8 @@ fn reaches_a_remote(from: &[&str]) -> bool {
 /// names a program LFS itself would run (its transfer agents and extensions, a credential
 /// helper, an ssh or askpass program): then every `filter.lfs` program is held, the
 /// operator's own included, so `git-lfs` is never started there. The helper purlis's own git
-/// policy writes into a clone is not such a program, because the filter never gets to ask it
-/// ([`lfs_filter_offline`]).
+/// policy writes into a clone is not such a program, because a filter that is kept never gets to
+/// ask one ([`lfs_filter_offline`]).
 fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
     let listing = String::from_utf8_lossy(listing);
     let mut held: Vec<String> = Vec::new();
@@ -806,37 +806,35 @@ fn lfs_names_a_program(section: &str, sub: Option<&str>, variable: &str, value: 
 /// also leaves a pointer where the object is here, measured on git-lfs 3.8.1.
 const LFS_SKIP_SMUDGE: &str = "GIT_LFS_SKIP_SMUDGE";
 
-/// Whether the filter is kept in a clone only because the helper in the repository's own config
-/// (`listing`, as [`listed_entries`] reads it) is the one purlis's git policy wrote (#4380), and
-/// so has to be kept off the network: a clone purlis wired reads its LFS files through the clean
-/// filter, or git takes their content for a change, and stores it whole in a commit.
+/// Whether the filter is kept here (#4380, #4400): the repository's own config (`listing`, as
+/// [`listed_entries`] reads it) names no program LFS would run, so [`held_programs`] leaves it to
+/// run. A clone needs its clean filter to read its LFS files as unchanged, and to keep them out of
+/// a commit whole.
 ///
-/// The filter gains nothing by it while the wiring stands (a repository with no helper of its
-/// own has the person's filter and helpers, as any clone of theirs does). [`programs_held`] tells it never to download
-/// ([`LFS_SKIP_SMUDGE`]), so no credential is asked for and no `.netrc` read, and a call off the
-/// network also resets every helper on the command line, which git-lfs's own `git credential`
-/// inherits. A call on the network has only the one helper [`NETWORK_RULE`] names, and still
-/// downloads nothing. So a download in such a clone is `git lfs pull`, under that rule. A store
-/// that is not the repository's own holds the filter instead ([`lfs_store_is_its_own`]).
+/// **A filter that is kept stays off the network, in any repository.** The call runs outside any
+/// sandbox, and a chat can commit the `.lfsconfig` that says where a filter goes, so one that may
+/// download reaches a host a chat chose, with whatever it asks. Wiring has nothing to do with it:
+/// the person's own helpers, and their `.netrc`, are as much there in a repository no policy
+/// wired. [`programs_held`] tells the filter never to download ([`LFS_SKIP_SMUDGE`]), so no
+/// credential is asked for and no `.netrc` read, and a call off the network also resets every
+/// helper on the command line, which git-lfs's own `git credential` inherits. A call on the
+/// network has only the one helper [`NETWORK_RULE`] names, and still downloads nothing. So a
+/// download is `git lfs pull`, in your own terminal or under that rule. A store that is not the
+/// repository's own holds the filter instead ([`lfs_store_is_its_own`]).
 fn lfs_filter_offline(listing: &str) -> bool {
-    let mut wired = false;
-    for (scope, key, value) in listed_entries(listing) {
+    !listed_entries(listing).any(|(scope, key, value)| {
         if matches!(scope, "global" | "system" | "unknown" | "command") {
-            continue;
+            return false;
         }
         let Some((section, rest)) = key.split_once('.') else {
-            continue;
+            return false;
         };
         let (sub, variable) = match rest.rsplit_once('.') {
             Some((sub, variable)) => (Some(sub), variable),
             None => (None, rest),
         };
-        if lfs_names_a_program(section, sub, variable, value) {
-            return false;
-        }
-        wired |= section == "credential" && sub.is_none() && variable == "helper";
-    }
-    wired
+        lfs_names_a_program(section, sub, variable, value)
+    })
 }
 
 /// What holds the whole of the LFS filter, the person's own included.

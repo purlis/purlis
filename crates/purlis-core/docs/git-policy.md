@@ -145,19 +145,39 @@ call site.
   | `remote.<name>.vcs` | the remote helper git starts for that remote | an empty one names a helper too: a call that reaches the remote is refused, as above |
   | `gc.recentObjectsHook` | commands a gc runs (git 2.42 and later) | a list that no `-c` empties: the gc and maintenance a commit, merge or fetch starts on its own are turned off (`gc.auto=0`, `maintenance.auto=false`), and a `gc`, `repack`, `prune`, `maintenance` or cruft `pack-objects` is refused |
 
-  **Git LFS keeps working.** The three values `git lfs install` writes are left alone, and
-  `git-lfs` is found on the runner's fixed `PATH`. If the repo's config also names a program
-  `git-lfs` itself would start (its transfer agents or extensions, a credential helper, an ssh
-  or askpass program, or the folder it stores objects in), the LFS filter is turned off there too, yours included. The exact
-  `credential.helper` purlis's git policy writes into a clone is not one of those, so a clone
-  purlis wired reads its LFS files as you do. There the filter never downloads: it is told to
-  leave each file as its pointer (`GIT_LFS_SKIP_SMUDGE`, what `git lfs install --skip-smudge`
-  asks for), and a call off the network also empties `credential.helper`. A file git checks out
-  there, an updated or a new branch folder's included, is its pointer until `git lfs pull`.
-  A symbolic link in the repo's LFS store turns the filter off, as a planted program does.
+  **Git LFS keeps working, off the network.** The three values `git lfs install` writes are left
+  alone, and `git-lfs` is found on the runner's fixed `PATH`. If the repo's config also names a
+  program `git-lfs` itself would start (its transfer agents or extensions, a credential helper, an
+  ssh or askpass program, or the folder it stores objects in), the LFS filter is turned off there
+  too, yours included. The exact `credential.helper` purlis's git policy writes into a clone is not
+  one of those, so a clone purlis wired reads its LFS files as you do.
+
+  **In any repository, the filter purlis's git keeps never downloads** (#4400). A chat can commit
+  the `.lfsconfig` that says where a filter goes, and this git runs outside its sandbox, so a filter
+  that could download would reach a host a chat chose, wired clone or not. It is told to leave each
+  file as its pointer (`GIT_LFS_SKIP_SMUDGE`, what `git lfs install --skip-smudge` asks for), so no
+  credential is asked for and no `~/.netrc` read, and a call off the network also empties
+  `credential.helper`, so none of your helpers is asked. A file purlis's git checks out, an updated
+  or a new branch folder's included, is its pointer until `git lfs pull`, even where its object is
+  here. Your own git, in your own terminal, is untouched.
+
+  A symbolic link in the repo's LFS store, or an `lfs.storage` in any config, turns the filter off,
+  as a planted program does, and git then reads the repo's LFS files as changed. So does a `.git`
+  purlis cannot tell git takes (#4402): it requires what git requires of one (a `HEAD` git reads as
+  one, and `objects` and `refs` it can search), and holds where any of them is a link or a
+  `commondir` makes the repository another folder's.
   A git-lfs outside the runner's `PATH` is not found: where the filter is marked `required`, an
   `add` fails rather than store a file whole, and a `status` still reads the file as changed.
-  A push through purlis's git runs no hook, so it does not upload the objects of its commits.
+  A push through purlis's git runs no hook; [its Git LFS objects go first](#a-push-sends-its-git-lfs-objects-first).
+
+  **A `worktree add` holds what its checkout will read** (#4401). The checkout runs in the new
+  branch folder, on the new branch, with a git directory of its own, and the listing is taken in the
+  folder the call starts in. An `includeIf` in the repo's own config can hold there and not here
+  (`onbranch:` and `gitdir:` do, measured on git 2.50.1), so a filter it names would run unheld, and
+  a path in a worktree config is read from where the new folder's copy of it is. A `worktree add`
+  in a repo whose own config holds either is refused with a sentence, as a brokered call already
+  is. A plain `include.path` in the repo's config and a worktree config's own keys read the same
+  there and are held as usual, and what your global and system files include is yours.
 
   Keys that cannot run, or that the runner already holds another way, are not turned off:
   `core.pager` and `pager.<verb>` (git's output is never a terminal), `alias.<verb>` (never
@@ -324,7 +344,8 @@ repo and sees them run.
 
 - **A config rewritten between the runner's listing and git's own read** is read by git as it
   is then. The listing is taken, or found unchanged, before each git call; it is not a lock
-  on the file.
+  on the file. The same goes for a `.git`, or a link in an LFS store, made after the runner
+  looked.
 - **Other ways for git to start a program** that the table above does not name, in a git
   newer than the one it was last checked against, are not held until the runner is checked
   against them.
