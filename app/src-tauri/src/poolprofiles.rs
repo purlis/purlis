@@ -530,12 +530,15 @@ pub fn listen_for_the_command_line() {
             return;
         };
         let socket = purlis_core::windowline::socket();
-        let listening = purlis_core::windowline::serve_on(&socket, move |asked| {
+        let listening = purlis_core::windowline::serve_watching(&socket, move |asked, hung_up| {
             purlis_core::windowline::answer(
                 &config,
                 asked,
                 asking_the_runners_to_forget,
                 |name, pool| {
+                    if !crate::poolsignin_confirm::take_the_yes(name, pool) {
+                        return Err("it was not confirmed in this window".to_owned());
+                    }
                     keep_for_the_command(
                         yours(&config, pool),
                         &config,
@@ -543,6 +546,12 @@ pub fn listen_for_the_command_line() {
                         name,
                         &|yours, kept| keep_on_as(Ok(yours), &config, pool, kept, Waking::No),
                     )
+                },
+                |name, pool, code| match APP.get() {
+                    Some(app) => {
+                        crate::poolsignin_confirm::ask_the_person(app, name, pool, code, hung_up)
+                    }
+                    None => Err("this window is still starting".to_owned()),
                 },
             )
         });

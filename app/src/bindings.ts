@@ -1480,6 +1480,19 @@ export const commands = {
 	 *  on no sign-in.
 	 */
 	chatMoveSignedIn: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("chat_move_signed_in", { plane, session })),
+	/**  The question waiting for the person's answer, if one is. */
+	poolSignInAsked: () => __TAURI_INVOKE<{
+	id: number,
+	profile: string,
+	pool: string,
+	/**  What the terminal of the command that asks shows. */
+	code: string,
+} | null>("pool_sign_in_asked"),
+	/**
+	 *  **The person's answer to the question `id`**: only their press in the window calls this. One
+	 *  no longer waiting is left alone.
+	 */
+	answerPoolSignIn: (id: number, yes: boolean) => __TAURI_INVOKE<void>("answer_pool_sign_in", { id, yes }),
 	/**
 	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
 	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
@@ -10657,6 +10670,15 @@ export type PoolRow = {
 	 *  itself, as `runners.json` spells it (`24h`, `90m`; #3471).
 	 */
 	suspend_after: string,
+};
+
+/**  What the person is asked. */
+export type PoolSignInAsk = {
+	id: number,
+	profile: string,
+	pool: string,
+	/**  What the terminal of the command that asks shows. */
+	code: string,
 };
 
 /**

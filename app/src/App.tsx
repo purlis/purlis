@@ -113,6 +113,7 @@ import { ClosingProject } from "./ClosingProject";
 import { discardUnsavedIn, unsavedIn } from "./unsavedWork";
 import { carriedBack, carryOut, useUnsavedAcrossWindows } from "./unsavedWindows";
 import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
+import { PoolSignInConfirm } from "./PoolSignInConfirm";
 import { QuitWarning, type Ending } from "./QuitWarning";
 import { RelaunchAsk } from "./RelaunchAsk";
 import { useNoBrowserMenu } from "./Menus";
@@ -2757,6 +2758,8 @@ function App() {
       {extensions && <Extensions onClose={() => setExtensions(false)} />}
 
       {asking && <QuitWarning chats={everyEnding} onQuit={quit} onCancel={dontQuit} />}
+
+      <PoolSignInConfirm />
 
       {/* The one question a close asks about a view's unsaved work (#3929): a project's, a
           quit's. */}

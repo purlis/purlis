@@ -206,6 +206,7 @@ describe("App", () => {
       if (cmd === "plane_sidebar") return SIDEBAR;
       // Nothing to put back, so no question (charter-app#250) — `[]` is not an answer to it.
       if (cmd === "relaunch_ask") return null;
+      if (cmd === "pool_sign_in_asked") return null;
       return [];
     });
 
