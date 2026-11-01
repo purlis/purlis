@@ -258,6 +258,7 @@ export function GradePlanPage({
   level,
   changed,
   afterEdit = false,
+  draft,
   onStarted,
   onAfterEdit,
   onRunning,
@@ -268,6 +269,8 @@ export function GradePlanPage({
   level: SkillLevel;
   changed: number;
   afterEdit?: boolean;
+  /** The draft of it this plan grades (#2780), by its id; `undefined` is the skill itself. */
+  draft?: string;
   /** A grade started: its id. */
   onStarted: (grade: string) => void;
   /** Grading after each edit was turned on: what was accepted. */
@@ -319,8 +322,11 @@ export function GradePlanPage({
   ) => {
     latest.current += 1;
     const asked = latest.current;
-    return void commands
-      .skillGradePlan(plane, level, name, on, onModel, evals, by)
+    const planned =
+      draft === undefined
+        ? commands.skillGradePlan(plane, level, name, on, onModel, evals, by)
+        : commands.skillDraftGradePlan(plane, draft, on, onModel, evals, by);
+    return void planned
       .then((answer) => {
         if (asked !== latest.current) return;
         setReading(false);
@@ -381,17 +387,36 @@ export function GradePlanPage({
 
   const consent = plan.consent ?? "";
   const start = () =>
-    void commands
-      .skillGradeStart(plane, level, name, picked, pickedModel, ticked, pickedGrader, consent)
-      .then((answer) => {
-        if (answer.status === "ok") onStarted(answer.data);
-        else {
-          setSaid(answer.error);
-          // The plan is read again after any refusal: one that changed since it was shown is
-          // held, to be read and pressed again.
-          read(picked, pickedModel, true);
-        }
-      });
+    void (
+      draft === undefined
+        ? commands.skillGradeStart(
+            plane,
+            level,
+            name,
+            picked,
+            pickedModel,
+            ticked,
+            pickedGrader,
+            consent,
+          )
+        : commands.skillDraftGradeStart(
+            plane,
+            draft,
+            picked,
+            pickedModel,
+            ticked,
+            pickedGrader,
+            consent,
+          )
+    ).then((answer) => {
+      if (answer.status === "ok") onStarted(answer.data);
+      else {
+        setSaid(answer.error);
+        // The plan is read again after any refusal: one that changed since it was shown is
+        // held, to be read and pressed again.
+        read(picked, pickedModel, true);
+      }
+    });
   const turnOn = () =>
     void commands
       .skillGradeAfterEditOn(plane, level, name, picked, pickedModel, ticked, consent)
@@ -413,9 +438,10 @@ export function GradePlanPage({
   const chats = afterEdit ? plan.after_edit_chats : plan.chats;
   const arms = afterEdit && plan.after_edit_chats > plan.chats ? 3 : armsOf(plan);
   const scale = plan.chats > 0 ? chats / plan.chats : 1;
+  const graded = plan.draft ? `the draft of ${name}` : name;
   return (
     <ReviewPage
-      label={afterEdit ? `Grade ${name} after each edit` : `Grade ${name}`}
+      label={afterEdit ? `Grade ${name} after each edit` : `Grade ${graded}`}
       data-testid="skill-grade-plan"
       summary={
         afterEdit
@@ -435,8 +461,12 @@ export function GradePlanPage({
       }}
     >
       <GradingHeading
-        name={afterEdit ? `Grade ${name} after each edit` : `Grade ${name}`}
-        description={`A grade runs ${name}'s trigger tests in chats with it and without it, and shows what it may spend before anything runs.`}
+        name={afterEdit ? `Grade ${name} after each edit` : `Grade ${graded}`}
+        description={
+          plan.draft
+            ? `A grade runs the draft's trigger tests in chats with the draft, with the current version where there is one, and with neither, and shows what it may spend before anything runs. It stays on this machine.`
+            : `A grade runs ${name}'s trigger tests in chats with it and without it, and shows what it may spend before anything runs.`
+        }
       />
       {newer !== undefined && (
         <PlanChanged
@@ -505,11 +535,14 @@ export function GradePlanPage({
           <>
             <p data-testid="skill-grade-cost">
               Grading runs {counted(plan.chats, "chat", "chats")}, one turn each: each of the{" "}
-              {fixturesSaid(plan, true)} {counted(plan.runs, "time", "times")} with the skill and{" "}
-              {counted(plan.runs, "time", "times")} without it
+              {fixturesSaid(plan, true)} {counted(plan.runs, "time", "times")} with{" "}
+              {plan.draft ? "the draft" : "the skill"} and {counted(plan.runs, "time", "times")}{" "}
+              without it
               {plan.previous === null
                 ? ""
-                : `, and ${counted(plan.runs, "time", "times")} with its previous version, ${plan.previous.commit} (${plan.previous.subject}), which it is compared with`}
+                : plan.draft
+                  ? `, and ${counted(plan.runs, "time", "times")} with the current version, which it is compared with`
+                  : `, and ${counted(plan.runs, "time", "times")} with its previous version, ${plan.previous.commit} (${plan.previous.subject}), which it is compared with`}
               {plan.judge_chats > 0
                 ? `; and a judge chat for each outcome eval's chat, ${counted(plan.judge_chats, "judge chat", "judge chats")} in all, which reads what that chat left and changes nothing`
                 : ""}
@@ -669,24 +702,34 @@ export function GradePlanPage({
               key={plan.token_cap ?? 0}
               cap={plan.token_cap ?? 0}
               onCap={(tokens) =>
-                void commands
-                  .skillGradeSetCap(
-                    plane,
-                    level,
-                    name,
-                    picked,
-                    pickedModel,
-                    ticked,
-                    pickedGrader,
-                    tokens,
-                  )
-                  .then((answer) => {
-                    if (answer.status === "ok") {
-                      setPlan(answer.data);
-                      setNewer(undefined);
-                      setSaid(undefined);
-                    } else setSaid(answer.error);
-                  })
+                void (
+                  draft === undefined
+                    ? commands.skillGradeSetCap(
+                        plane,
+                        level,
+                        name,
+                        picked,
+                        pickedModel,
+                        ticked,
+                        pickedGrader,
+                        tokens,
+                      )
+                    : commands.skillDraftGradeSetCap(
+                        plane,
+                        draft,
+                        picked,
+                        pickedModel,
+                        ticked,
+                        pickedGrader,
+                        tokens,
+                      )
+                ).then((answer) => {
+                  if (answer.status === "ok") {
+                    setPlan(answer.data);
+                    setNewer(undefined);
+                    setSaid(undefined);
+                  } else setSaid(answer.error);
+                })
               }
             />
           </section>
@@ -1091,6 +1134,7 @@ export function GradeRunningPage({
   name,
   level,
   grade,
+  draft,
   onEnded,
   onBack,
 }: {
@@ -1098,6 +1142,8 @@ export function GradeRunningPage({
   name: string;
   level: SkillLevel;
   grade: string;
+  /** The draft of it the grade grades (#2780), by its id; `undefined` is the skill itself. */
+  draft?: string;
   onEnded: () => void;
   /** Back to the Grades tab: the grade keeps going. */
   onBack: () => void;
@@ -1111,14 +1157,17 @@ export function GradeRunningPage({
       plane={plane}
       grade={grade}
       event={SKILL_GRADE}
-      isOurs={(step) => step.skill === name}
+      isOurs={(step) => step.skill === name && step.draft === (draft ?? null)}
       read={async () => {
-        const answer = await commands.skillGrades(plane, level, name);
+        const answer =
+          draft === undefined
+            ? await commands.skillGrades(plane, level, name)
+            : await commands.skillDraftGrade(plane, draft);
         if (answer.status !== "ok") return answer;
         const now = answer.data.running;
         return { status: "ok", data: now !== null && now.grade === grade ? now : null };
       }}
-      of={() => name}
+      of={() => (draft === undefined ? name : `the draft of ${name}`)}
       opensItsScorecard={(step) => step.ended !== null && step.said === null}
       // An end with words to say: something went wrong on the way (not recorded, chats that did
       // not start), so its scorecard may not be there to open.

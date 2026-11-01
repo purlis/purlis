@@ -19,6 +19,9 @@
  *   (`summary`), then holds at most three answers in a dialog's places: Cancel leads, the main
  *   action trails, and one other answer may stand between them. They are the dialog's own answer
  *   row (`DialogAnswerRow`), so the two cannot drift. The summary describes the main action.
+ * - **Ways on that are no answer to the review** (`actions`) stand between the summary and the
+ *   answers: a draft's Grade beside its Accept. Pressing one answers nothing, and the summary does
+ *   not describe it.
  * - **The main action can be unavailable with its reason** (`isDisabled` with a `tooltip`): it
  *   stays a Tab stop and its reason is heard (`ui/unavailable.ts`, #2908).
  * - **⏎ in a field of the body is the main action**, as in a dialog, unless it is a grant or an act
@@ -28,8 +31,8 @@
  *   keeps the room of the largest.
  * - **Narrow** (under 30rem, the page's own width), the summary takes its own line over the
  *   answers.
- * - **By its parts** (ADR 0103): the `root`, the `body`, the `bar`, its `summary` and its
- *   `answers`. The bar is a consent surface where it holds a grant, so **its edge is not a
+ * - **By its parts** (ADR 0103): the `root`, the `body`, the `bar`, its `summary`, its `actions`
+ *   and its `answers`. The bar is a consent surface where it holds a grant, so **its edge is not a
  *   theme's**: the hairline over it is the window's.
  */
 import {
@@ -67,6 +70,8 @@ export interface ReviewPageProps {
   main?: DialogAction;
   /** One more answer, between the two. */
   alternative?: DialogAction;
+  /** Ways on that answer nothing, between the summary and the answers. */
+  actions?: ReactNode;
   /** A hook for what is inside it, and for the tests that find it. Never its size or place. */
   className?: string;
   "data-testid"?: string;
@@ -129,6 +134,7 @@ export function ReviewPage({
   cancel,
   main,
   alternative,
+  actions,
   className,
   "data-testid": testId,
 }: ReviewPageProps) {
@@ -189,6 +195,11 @@ export function ReviewPage({
             summary
           )}
         </div>
+        {actions !== undefined && actions !== null && (
+          <div data-scope="review-page" data-part="actions">
+            {actions}
+          </div>
+        )}
         <div data-scope="review-page" data-part="answers">
           <DialogAnswerRow
             cancel={cancel}

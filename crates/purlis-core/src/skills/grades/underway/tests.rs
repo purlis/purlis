@@ -39,6 +39,7 @@ fn starting(id: &str, level: &Level) -> Graded {
         model: None,
         previous: None,
         after_edit: false,
+        draft: None,
     }
 }
 

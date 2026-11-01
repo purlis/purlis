@@ -7997,8 +7997,10 @@ refuses a `<data>` under a project or inside any git work tree.
   plane, `skills`, `workspaces/ops/skills.local` or `personas/reviewer/skills`; `folder`: the skill's folder name; `chat`: the
   number of the chat that wrote it last; `bases`: each file the draft changed, below the skill's
   folder, with the SHA-256 of what the project held there when the draft first changed it, `null`
-  for nothing) and `files/`, each drafted file at its path below the skill's folder. Folders are
-  private to the person, as the app state is.
+  for nothing; `mint`, sixteen random hex characters that tell this draft from the next of the same
+  skill, which its grades are marked with, absent in a draft from before #2780) and `files/`, each
+  drafted file at its path below the skill's folder. Folders are private to the person, as the app
+  state is.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
 - **Tier:** Machine, device-bound — this machine's. A draft is never committed: Accept writes its files into
   the skill's folder and commits exactly those (a local skill's are only written), and Reject
@@ -8017,6 +8019,11 @@ refuses a `<data>` under a project or inside any git work tree.
   machine's alone, a `skills.local/` copy or one in a workspace that is this machine's alone
   (SK-16, #2779, the review of #3229). Written `0600` through no link (`grades::record`), read
   beside the committed record by `grades::grades_of`, held to the same limits.
+  **A draft's grade goes here whatever its copy** (#2780, ADR 0105 as amended 2026-11-02): the row
+  adds `draft`, `{id, digest}`, the draft's mint and the SHA-256 of what it wrote, and may hold a
+  `previous` arm with no `previous` commit, as the current version it compared with is read from
+  the folder. It is left out of `grades::grades_of`; only its id
+  (`grades::grade_of`) or the draft's page (`grades::draft::of`) reads it.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Machine, device-bound — this machine's own; nothing rebuilds it.
 - **Git:** outside every project, in the data home.

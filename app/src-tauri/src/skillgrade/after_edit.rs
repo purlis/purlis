@@ -492,6 +492,7 @@ fn grade_after(
                     after_edit: true,
                     grader: None,
                     follower: None,
+                    draft: None,
                 },
                 planned,
             );

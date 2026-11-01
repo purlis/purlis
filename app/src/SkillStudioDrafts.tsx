@@ -13,6 +13,8 @@ import { ViewPageHeader } from "./ui/panel/ViewFrame";
 import { ReviewPage } from "./ui/review-page/ReviewPage";
 import { Select } from "./ui/select/Select";
 import { Notice } from "./Notice";
+import { DraftGradeActions, DraftGradeLine, draftGradeState, useDraftGrade } from "./SkillDraftGrade";
+import type { GradingGo } from "./SkillGrades";
 import { askSkillChat } from "./skillDraftAsks";
 
 /** The merge view, from the editor's own chunk (ADR 0086 row M2), loaded when a file opens. */
@@ -113,6 +115,7 @@ function fileMark(file: SkillDraftFile) {
  *   with **Ask the chat to redo it** in place of Accept. The chat that drafted it is asked where
  *   it is still open, else a chat is opened to redo it, and what it writes is drafted on the
  *   project's copy (`drafts::take`).
+ * - **Its grade** (#2780): beside Accept, which no state of it touches ({@link DraftGradeLine}).
  */
 export function DraftPage({
   plane,
@@ -120,6 +123,8 @@ export function DraftPage({
   label,
   local,
   busy,
+  changed,
+  onGrading,
   onAccept,
   onDiscard,
   onBack,
@@ -131,6 +136,10 @@ export function DraftPage({
   /** Whether its level is this machine's alone, so Accept commits nothing. */
   local: boolean;
   busy: boolean;
+  /** Bumped when the project's skills change: its grade is read again. */
+  changed: number;
+  /** Goes to a grading page of the draft. */
+  onGrading: GradingGo;
   onAccept: (draft: SkillDraft) => void;
   onDiscard: (draft: SkillDraft) => void;
   /** Back to the list of drafts. */
@@ -139,6 +148,8 @@ export function DraftPage({
   const [profiles, setProfiles] = useState<readonly ProfileRow[]>([]);
   const [profile, setProfile] = useState(DEFAULT);
   const tryOn = useId();
+  const grade = useDraftGrade(plane, draft.id, changed);
+  const graded = grade === undefined ? undefined : draftGradeState(grade);
   useEffect(() => {
     let live = true;
     void commands
@@ -179,8 +190,26 @@ export function DraftPage({
       <ReviewPage
         label={`The draft of ${draft.name}`}
         data-testid="skill-studio-draft"
-        summary={draft.stale ? discard : accept}
-        summaryReserve={[accept, discard]}
+        summary={
+          <div className="skill-draft-summary" data-testid="skill-draft-grade">
+            {graded !== undefined && <DraftGradeLine name={draft.name} state={graded} />}
+            <span>{draft.stale ? discard : accept}</span>
+          </div>
+        }
+        actions={
+          graded === undefined ? undefined : (
+            <DraftGradeActions
+              state={graded}
+              isNew={draft.new}
+              onGrade={() => onGrading({ at: "plan" }, "go")}
+              onShow={(grade) => onGrading({ at: "running", grade }, "go")}
+              onScorecard={(grade) => onGrading({ at: "scorecard", grade }, "go")}
+              onAskForTests={() =>
+                askSkillChat({ plane, kind: "triggers", level: draft.level, name: draft.name })
+              }
+            />
+          )
+        }
         onCancel={onBack}
         cancel={false}
         main={

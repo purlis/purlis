@@ -283,7 +283,7 @@ pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Mar
         spent: Spent::default(),
         ..graded.clone()
     }));
-    hold(root, is_local(root, level), row)
+    hold(root, super::kept_here(root, level, graded), row)
 }
 
 /// **Holds `graded`, a router's grade starting in the project at `root`, as under way**

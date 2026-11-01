@@ -237,6 +237,7 @@ fn a_skill_s_grade_running_is_no_router_s_step() {
             level: None,
             stop: Arc::new(AtomicBool::new(false)),
             after_edit: None,
+            draft: None,
             step: RunningStep::Skill(crate::skillgrade::SkillGradeStep {
                 plane: plane.clone(),
                 skill: "deploy".into(),
@@ -251,6 +252,7 @@ fn a_skill_s_grade_running_is_no_router_s_step() {
                 asked: 0,
                 ended: None,
                 said: None,
+                draft: None,
             }),
         },
     );
@@ -287,6 +289,7 @@ fn a_router_grade_s_page_finds_its_latest_step_while_it_runs_and_none_after() {
             level: None,
             stop: Arc::new(AtomicBool::new(false)),
             after_edit: None,
+            draft: None,
             step: RunningStep::Router(step.clone()),
         },
     );

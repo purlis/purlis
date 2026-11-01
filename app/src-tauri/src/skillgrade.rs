@@ -213,6 +213,9 @@ pub struct SkillGradePlan {
     pub graders: Vec<GradeGrader>,
     pub grader: Option<GradeGrader>,
     pub grader_refused: Option<String>,
+    /// **Whether it grades a draft** (#2780): its `previous` is then the current version, read
+    /// from the folder, which may be no commit.
+    pub draft: bool,
 }
 
 /// **The version a grade compares with, as its plan says it** (SK-57).
@@ -623,6 +626,7 @@ impl SkillGradePlan {
             graders: Vec::new(),
             grader: None,
             grader_refused: None,
+            draft: false,
         }
     }
 }
@@ -688,6 +692,9 @@ pub struct SkillGradeStep {
     /// What the window says of its end: why its chats did not start, or that it was not
     /// recorded.
     pub said: Option<String>,
+    /// **The draft it grades, by its id** (#2780): a step of this one moves nothing on the
+    /// skill's Grades tab.
+    pub draft: Option<String>,
 }
 
 /// One grade running, and its way to be stopped.
@@ -703,6 +710,8 @@ pub(crate) struct Running {
     /// The copy a saved edit of which started it (SK-58), by its opt-in's key (level and
     /// name): the next save of that copy stops it. `None` for a grade pressed by hand.
     pub(crate) after_edit: Option<String>,
+    /// The draft it grades, by its id (#2780): none of the skill's own pages shows it.
+    pub(crate) draft: Option<String>,
     /// Its latest step told to the window: what a page that opens while it runs starts from
     /// (#3928, #4222).
     pub(crate) step: RunningStep,
@@ -765,11 +774,12 @@ pub(crate) fn record_interrupted(root: &std::path::Path) -> Vec<String> {
     recorded
 }
 
-/// The grade of `skill` running in `plane` now, by id.
+/// The grade of `skill` running in `plane` now, by id: never a draft's, which is the draft's own
+/// page's to show.
 fn running_of(plane: &PlaneId, skill: &str) -> Option<String> {
     running()
         .iter()
-        .find(|(_, one)| one.plane == *plane && one.skill == skill)
+        .find(|(_, one)| one.plane == *plane && one.skill == skill && one.draft.is_none())
         .map(|(id, _)| id.clone())
 }
 
@@ -875,6 +885,7 @@ pub(crate) async fn skill_grade_start(
                     executor,
                 }),
                 follower: None,
+                draft: None,
             },
             planned,
         )
@@ -1027,6 +1038,7 @@ fn answering_a_terminal(
                     after_edit: false,
                     grader: None,
                     follower: Some(follower),
+                    draft: None,
                 },
                 planned,
             )?;
@@ -1056,6 +1068,14 @@ pub(crate) struct Begin {
     pub grader: Option<ByGrader>,
     /// The terminal that asked for it (SK-61, #3241), told each step the window is.
     pub follower: Option<Follower>,
+    /// The draft it grades (#2780), where it grades one.
+    pub draft: Option<DraftBegun>,
+}
+
+/// **The draft a grade grades**: its id, which the window finds it by, and the mark its row holds.
+pub(crate) struct DraftBegun {
+    pub id: String,
+    pub mark: grades::draft::Mark,
 }
 
 /// **The Grader extension a grade runs through**, and what asks it.
@@ -1117,6 +1137,7 @@ pub(crate) fn begin(
         after_edit,
         grader,
         follower,
+        draft,
     } = begin;
     let root = held.root().to_path_buf();
     // The one read of the copy the consent was taken from: laid out and recorded as is.
@@ -1151,6 +1172,7 @@ pub(crate) fn begin(
         let (plane, skill, grade) = (plane.clone(), skill.clone(), id.clone());
         let copy_level = SkillLevel::from(&level);
         let limit_usd = limits.cost_usd;
+        let draft = draft.as_ref().map(|one| one.id.clone());
         move |spent: Spent, asked: u32, ended: Option<GradeEnded>, said: Option<String>| {
             SkillGradeStep {
                 plane: plane.clone(),
@@ -1166,6 +1188,7 @@ pub(crate) fn begin(
                 asked,
                 ended,
                 said,
+                draft: draft.clone(),
             }
         }
     };
@@ -1188,6 +1211,7 @@ pub(crate) fn begin(
                 after_edit: after_edit
                     .then(|| grades::after_edit::key(&level, &skill))
                     .flatten(),
+                draft: draft.as_ref().map(|one| one.id.clone()),
                 step: RunningStep::Skill(step_of(Spent::default(), 0, None, None)),
             },
         );
@@ -1216,11 +1240,14 @@ pub(crate) fn begin(
         },
         plugins_off: None,
         model: None,
+        // A draft's current version may be no commit: the folder is what it was read from.
         previous: copy
             .previous
             .as_ref()
-            .map(|previous| previous.commit.clone()),
+            .map(|previous| previous.commit.clone())
+            .filter(|commit| !commit.is_empty()),
         after_edit,
+        draft: draft.map(|one| one.mark),
     };
     // Its lock is held while the grade runs (#3466): what tells a start it runs.
     let marker = match grades::underway::began(&root, &level, &under_way) {
@@ -1536,6 +1563,8 @@ pub struct GradeScorecard {
     pub delta_without: Option<f64>,
     /// Whether a saved edit started it (SK-58, #3238), rather than a press of Grade.
     pub after_edit: bool,
+    /// Whether it graded a draft (#2780): its arms are the draft and the current version.
+    pub draft: bool,
     /// How many of its chats asked the person something and were ended there.
     pub asked: u32,
     pub tests: Vec<ScoredTest>,
@@ -1707,7 +1736,10 @@ fn step_of_running(plane: &PlaneId, level: &Level, skill: &str) -> Option<SkillG
     running()
         .values()
         .filter(|one| {
-            one.plane == *plane && one.skill == skill && one.level.as_ref() == Some(level)
+            one.plane == *plane
+                && one.skill == skill
+                && one.level.as_ref() == Some(level)
+                && one.draft.is_none()
         })
         .find_map(|one| match &one.step {
             RunningStep::Skill(step) => Some(step.clone()),
@@ -1806,8 +1838,8 @@ impl GradeScorecard {
                 .compared_with()
                 .map(|commit| purlis_core::skills::history::short(commit).to_owned()),
             delta_without: graded
-                .previous
-                .as_ref()
+                .report
+                .arm(Arm::Previous)
                 .and_then(|_| {
                     let mean = |arm: Arm| {
                         graded
@@ -1820,6 +1852,7 @@ impl GradeScorecard {
                 })
                 .map(|(with, without)| ((with - without) * 100.0).round()),
             after_edit: graded.after_edit,
+            draft: graded.draft.is_some(),
             asked: graded.report.asked(),
             tests,
             outcome: graded.report.ended.into(),
@@ -2428,6 +2461,7 @@ fn gathered(pieces: &std::sync::mpsc::Receiver<String>, begun: Instant) -> Optio
 }
 
 pub(crate) mod after_edit;
+pub(crate) mod drafted;
 
 #[cfg(test)]
 mod tests;

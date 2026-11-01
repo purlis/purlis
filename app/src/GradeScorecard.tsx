@@ -59,6 +59,13 @@ function points(delta: number): string {
  *  no skill. */
 export function differenceSaid(card: GradeScorecard): string {
   if (card.delta === null) return ".";
+  if (card.draft) {
+    const without =
+      card.delta_without === null ? "" : `, and ${points(card.delta_without)} against no skill`;
+    return card.delta_without === null
+      ? `, the draft made a difference of ${points(card.delta)} points.`
+      : `, the draft made a difference of ${points(card.delta)} points against the current version${without}.`;
+  }
   if (card.against === null)
     return `, the skill made a difference of ${points(card.delta)} points.`;
   const without =
@@ -266,7 +273,11 @@ export function GradeScorecardPage({
       )}
       {it.outcome !== "interrupted" && (
         <Totals aria-label={`Totals of the grade of ${name}`}>
-          <Tile label="With it" value={pointsSaid(it.arms.with)} line="of tests passed" />
+          <Tile
+            label={it.draft ? "The draft" : "With it"}
+            value={pointsSaid(it.arms.with)}
+            line="of tests passed"
+          />
           <Tile
             label="Without it"
             value={pointsSaid(it.arms.without)}
@@ -274,7 +285,7 @@ export function GradeScorecardPage({
           />
           {it.arms.previous !== null && (
             <Tile
-              label="Previous version"
+              label={it.draft ? "Current version" : "Previous version"}
               value={pointsSaid(it.arms.previous)}
               line={against(it.arms.with, it.arms.previous)}
             />

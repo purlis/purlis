@@ -138,6 +138,7 @@ fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
         model: None,
         previous: None,
         after_edit: false,
+        draft: None,
     }
 }
 
@@ -612,6 +613,7 @@ fn uncommitted_row() -> Graded {
         model: None,
         previous: None,
         after_edit: false,
+        draft: None,
     }
 }
 

@@ -91,6 +91,15 @@
   display: none;
 }
 
+/* Ways on that answer nothing: beside the answers, never squeezed by the summary. */
+[data-scope="review-page"][data-part="actions"] {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 /* The answers at the trailing edge, in the dialog's places, never squeezed by the summary. */
 [data-scope="review-page"][data-part="answers"] {
   display: flex;
