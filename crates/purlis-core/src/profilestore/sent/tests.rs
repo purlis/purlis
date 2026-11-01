@@ -293,7 +293,10 @@ fn a_frontmatter_purlis_cannot_read_keeps_only_its_name_and_description() {
         b"---\nname: x\ndescription: a: b\nenv: {KEY: of-the-desktop\n---\nBody\n",
     )
     .unwrap();
-    assert_eq!(sent.bytes, b"---\nname: x\ndescription: a: b\n---\nBody\n");
+    assert_eq!(
+        String::from_utf8(sent.bytes).unwrap(),
+        "---\nname: \"x\"\ndescription: \"a: b\"\n---\nBody\n"
+    );
     assert_eq!(sent.removed.len(), 1, "{:?}", sent.removed);
 }
 
@@ -409,6 +412,9 @@ fn filtering_what_was_filtered_changes_nothing() {
             &b"---\nname: a # why\nenv: {A: b}\ndescription: \"x\\ny\"\nv: 1.10\nn: 3\n---\nhttps://u@h\n"[..],
         ),
         ("claude", "skills/x/SKILL.md", b"---\nname: a\nbad: {\n---\nb\n"),
+        ("claude", "skills/x/SKILL.md", b"---\nname: x # why\nbad: {\n---\nb\n"),
+        ("claude", "skills/x/SKILL.md", b"---\ndescription: see #12\nbad: [\n---\nb\n"),
+        ("claude", "agents/a.md", b"---\nname: x\nenv: {A: b}\n---\ncaf\xE9\n"),
         ("claude", "settings.json", br#"{"statusLine":{"command":"x https://u:p@h"}}"#),
         ("codex", "config.toml", b"a = \"https://u:p@h\"\n"),
     ] {
@@ -431,4 +437,156 @@ fn a_file_that_is_not_text_is_sent_as_it_is() {
         without_credentials("claude", "skills/x/a.bin", written).unwrap(),
         written
     );
+}
+
+/// **What a frontmatter purlis cannot read keeps is only plain text**: a value that opens a mapping,
+/// and a comment, stay behind.
+#[test]
+fn what_an_unreadable_frontmatter_keeps_holds_no_value_it_declares() {
+    for written in [
+        &b"---\ndescription: {env: {K: of-the-desktop}}\nbad: {\n---\nb\n"[..],
+        b"---\nname: x # API_KEY=of-the-desktop\nbad: {\n---\nb\n",
+        b"---\nname: x\t# API_KEY=of-the-desktop\nbad: {\n---\nb\n",
+    ] {
+        let sent = without_credentials("claude", "skills/x/SKILL.md", written).unwrap();
+        let text = String::from_utf8(sent).unwrap();
+        assert!(!text.contains("of-the-desktop"), "{text}");
+    }
+}
+
+/// A comment after a tab or a bare carriage return is a comment all the same.
+#[test]
+fn a_comment_however_it_is_set_off_does_not_travel() {
+    for written in [
+        &b"---\nname: x\t# of-the-desktop\n---\nb\n"[..],
+        b"---\nname: x\r# of-the-desktop\n---\nb\n",
+    ] {
+        let sent = without_credentials("claude", "agents/a.md", written).unwrap();
+        assert!(!String::from_utf8(sent).unwrap().contains("of-the-desktop"));
+    }
+}
+
+/// **One byte that is not UTF-8 does not turn the filter off** for Markdown, which a harness can
+/// read past it.
+#[test]
+fn a_markdown_file_with_a_stray_byte_is_filtered_all_the_same() {
+    let sent = filtered(
+        "claude",
+        "agents/a.md",
+        b"---\nenv:\n  K: of-the-desktop\nname: a\n---\nhttps://me:of-the-desktop@h caf\xE9\n",
+    )
+    .unwrap();
+    assert!(!String::from_utf8_lossy(&sent.bytes).contains("of-the-desktop"));
+    assert!(sent.removed.contains(&"frontmatter.env".to_owned()));
+}
+
+/// **Codex's removals are said too**, the shell policy's among them.
+#[test]
+fn what_is_removed_from_codexs_settings_is_said() {
+    let sent = filtered(
+        "codex",
+        "config.toml",
+        b"[shell_environment_policy.set]\nA = \"of-the-desktop\"\n\
+          [mcp_servers.a.env]\nB = \"of-the-desktop\"\n",
+    )
+    .unwrap();
+    assert!(
+        sent.removed
+            .contains(&"settings.shell_environment_policy.set".to_owned()),
+        "{:?}",
+        sent.removed
+    );
+    assert!(
+        sent.removed
+            .contains(&"settings.mcp_servers.a.env".to_owned()),
+        "{:?}",
+        sent.removed
+    );
+}
+
+/// **The usual ways a command is handed a credential are all read**, and a command reading a
+/// variable is left to run.
+#[test]
+fn a_commands_credential_is_read_however_it_is_written() {
+    for command in [
+        "GH_TOKEN=of-the-desktop x",
+        "DB_PASSWORD=of-the-desktop ./run",
+        "export MY_API_KEY=of-the-desktop; x",
+        "curl --header='Authorization: Bearer of-the-desktop' x",
+        "curl -H'Authorization: Bearer of-the-desktop' x",
+        "sh -c 'curl -H \"Authorization: Bearer of-the-desktop\" x'",
+        "sh -c 'curl --password of-the-desktop x'",
+        "curl -u me:of-the-desktop x",
+        "curl -ume:of-the-desktop x",
+    ] {
+        let written = serde_json::json!({ "statusLine": { "command": command } }).to_string();
+        let sent = without_credentials("claude", "settings.json", written.as_bytes()).unwrap();
+        assert!(
+            !String::from_utf8(sent).unwrap().contains("of-the-desktop"),
+            "{command}"
+        );
+    }
+    for command in [
+        "tool --token=$TOKEN",
+        "TOKEN=$TOKEN tool",
+        "tool --api-key \"$APIKEY\"",
+        "curl -u me:$PW x",
+        "curl -H \"Authorization: Bearer $T\" x",
+        "tool --max-tokens 4096",
+        "tool --token-file ./t",
+        "docker login --password-stdin me",
+    ] {
+        let written = serde_json::json!({ "statusLine": { "command": command } }).to_string();
+        let sent = filtered("claude", "settings.json", written.as_bytes()).unwrap();
+        assert!(sent.removed.is_empty(), "{command}: {:?}", sent.removed);
+    }
+}
+
+/// A list of tables in Codex's settings is read as JSON's list is.
+#[test]
+fn a_command_in_a_codex_list_of_tables_is_read() {
+    let sent = without_credentials(
+        "codex",
+        "config.toml",
+        b"[[hooks.Stop]]\ncommand = \"deploy --token of-the-desktop\"\n",
+    )
+    .unwrap();
+    assert!(!String::from_utf8(sent).unwrap().contains("of-the-desktop"));
+}
+
+/// **A name can hold a URL too**: it is cleaned, and what is said does not repeat it.
+#[test]
+fn a_name_holding_a_url_is_cleaned_and_not_repeated() {
+    let sent = filtered(
+        "claude",
+        "settings.json",
+        br#"{"mcp":{"https://me:of-the-desktop@host":{"env":{"A":"b"}}}}"#,
+    )
+    .unwrap();
+    assert!(
+        !String::from_utf8(sent.bytes)
+            .unwrap()
+            .contains("of-the-desktop")
+    );
+    assert!(!format!("{:?}", sent.removed).contains("of-the-desktop"));
+}
+
+/// A value shaped like a token goes wherever it is, under whatever name.
+#[test]
+fn a_value_shaped_like_a_token_is_emptied() {
+    let token = format!("ghp_{}", "a".repeat(36));
+    let written = format!("---\nname: a\noptions:\n  anything: {token}\n---\nb\n");
+    let sent = without_credentials("claude", "agents/a.md", written.as_bytes()).unwrap();
+    assert!(!String::from_utf8(sent).unwrap().contains(&token));
+}
+
+/// **What is said does not grow with the file**: a removal repeated for as long as a file allows
+/// is said once.
+#[test]
+fn what_is_said_stays_small_however_often_a_thing_is_removed() {
+    let long = "k".repeat(4096);
+    let items = vec![serde_json::json!({ "env": 1 }); 20_000];
+    let written = serde_json::json!({ long: items }).to_string();
+    let sent = filtered("claude", "settings.json", written.as_bytes()).unwrap();
+    assert_eq!(sent.removed, ["settings.(a name).env"]);
 }

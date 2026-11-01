@@ -74,7 +74,7 @@ fn dropped(kind: &str) -> &'static [&'static str] {
 }
 
 /// Whether `path` is a `kind` harness's own settings file, which [`without_credentials`] parses
-/// and writes again.
+/// and always writes again. A Markdown file is written again only where something goes.
 pub fn rewritten(kind: &str, path: &str) -> bool {
     matches!(
         (kind, path),
@@ -118,18 +118,19 @@ pub struct Filtered {
 /// sent again and the two must come to one digest. `Err`, in words, for a settings file that does
 /// not parse.
 pub fn filtered(kind: &str, path: &str, bytes: &[u8]) -> Result<Filtered, String> {
-    let mut removed = Vec::new();
-    let bytes = filtered_saying(kind, path, bytes, &mut removed)?;
-    let mut seen = std::collections::HashSet::new();
-    removed.retain(|what| seen.insert(what.clone()));
-    Ok(Filtered { bytes, removed })
+    let mut said = Said::default();
+    let bytes = filtered_saying(kind, path, bytes, &mut said)?;
+    Ok(Filtered {
+        bytes,
+        removed: said.items,
+    })
 }
 
 fn filtered_saying(
     kind: &str,
     path: &str,
     bytes: &[u8],
-    said: &mut Vec<String>,
+    said: &mut Said,
 ) -> Result<Vec<u8>, String> {
     let unreadable = || {
         format!(
@@ -157,6 +158,14 @@ fn filtered_saying(
                 no_url_users(&text, said).into_owned().into_bytes()
             }
             Ok(text) => no_url_users(text, said).into_owned().into_bytes(),
+            // A harness can read Markdown past a byte that is not UTF-8, frontmatter and all, so
+            // it is filtered all the same, as the text it reads.
+            Err(_) if is_markdown(path) => {
+                let text = String::from_utf8_lossy(bytes);
+                let text = frontmatter_without(&text, said);
+                said.push("a character that is not UTF-8".to_owned());
+                no_url_users(&text, said).into_owned().into_bytes()
+            }
             // No text to read a URL in, and rewriting one could only break it.
             Err(_) => bytes.to_vec(),
         }),
@@ -168,6 +177,35 @@ fn is_markdown(path: &str) -> bool {
     lower.ends_with(".md") || lower.ends_with(".markdown")
 }
 
+/// The most things one file's [`Said`] holds: a hostile file can repeat a removal for as long as
+/// its size allows, and what is said of it need not grow with it.
+const MOST_SAID: usize = 256;
+
+/// What was removed from a file, each once, up to [`MOST_SAID`].
+#[derive(Default)]
+struct Said {
+    items: Vec<String>,
+    seen: std::collections::HashSet<String>,
+}
+
+impl Said {
+    fn push(&mut self, what: String) {
+        if self.items.len() < MOST_SAID && self.seen.insert(what.clone()) {
+            self.items.push(what);
+        }
+    }
+}
+
+/// `at`, one name further in. A name that is long, or could hold a value, is not repeated: what is
+/// said names where a thing was and never what it held.
+fn further(at: &str, name: &str) -> String {
+    let plain = name.len() <= 64
+        && !name.contains("://")
+        && !name.contains('@')
+        && crate::secretshape::token_kind(name).is_none();
+    format!("{at}.{}", if plain { name } else { "(a name)" })
+}
+
 /// What a frontmatter may not carry: whatever any harness's settings file may not, since a
 /// frontmatter can declare a server or a hook for any of them.
 fn dropped_from_frontmatter() -> Vec<&'static str> {
@@ -177,40 +215,67 @@ fn dropped_from_frontmatter() -> Vec<&'static str> {
         .collect()
 }
 
-/// `text`, with its frontmatter as it may be sent. One with nothing to remove and no comment is
-/// left byte for byte, and any other written again, one plain `key: value` a line, with no comment,
-/// since a commented-out key is a key copied all the same. One purlis cannot read keeps only its
-/// `name` and `description` lines, so what it may declare goes and the skill or agent still loads.
-fn frontmatter_without(text: &str, said: &mut Vec<String>) -> String {
+/// `text`, with its frontmatter as it may be sent. One with nothing to remove and no `#` is left
+/// byte for byte. Any other is written again, one plain `key: value` a line, so no comment travels:
+/// a commented-out key is a key copied all the same. One purlis cannot read keeps only the plain
+/// values of its `name` and `description`, so what it may declare goes and the skill or agent still
+/// loads. Either is read the same way the next time, so filtering it again changes nothing.
+fn frontmatter_without(text: &str, said: &mut Said) -> String {
     let Some((span, read)) = purlis_skills::handed::frontmatter_value(text) else {
         return text.to_owned();
     };
     let block = &text[span.clone()];
+    let names = dropped_from_frontmatter();
     let written = match read {
         Ok(mut value) => {
-            let names = dropped_from_frontmatter();
             let before = value.clone();
+            if json_runs_a_credential(&value)
+                && let serde_json::Value::Object(map) = &mut value
+            {
+                map.remove("command");
+                map.remove("args");
+                said.push("frontmatter: a command with a credential in it".to_owned());
+            }
             clean_json(&mut value, &names, "frontmatter", said);
-            let commented = block
-                .lines()
-                .any(|line| line.trim_start().starts_with('#') || line.contains(" #"));
-            if value == before && !commented {
+            if value == before && !block.contains('#') {
                 return text.to_owned();
             }
             frontmatter_written(&value)
         }
         Err(_) => {
-            let kept: String = block
-                .split_inclusive('\n')
-                .filter(|line| line.starts_with("name:") || line.starts_with("description:"))
-                .collect();
-            if kept != block {
-                said.push("frontmatter, but for its name and description: not readable".to_owned());
-            }
-            kept
+            let mut value = serde_json::Value::Object(plain_name_and_description(block));
+            clean_json(&mut value, &names, "frontmatter", said);
+            said.push("frontmatter, but for its name and description: not readable".to_owned());
+            frontmatter_written(&value)
         }
     };
     format!("{}{written}{}", &text[..span.start], &text[span.end..])
+}
+
+/// The `name` and `description` of a frontmatter that is not YAML, each read off its own line as
+/// plain text up to any comment. One that opens anything but plain text (a mapping, a list, a block,
+/// a reference) is left out, since what it holds is not plain.
+fn plain_name_and_description(block: &str) -> serde_json::Map<String, serde_json::Value> {
+    let mut kept = serde_json::Map::new();
+    for line in block.split(['\n', '\r']) {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        if !matches!(key, "name" | "description") {
+            continue;
+        }
+        let value = value
+            .find(" #")
+            .or_else(|| value.find("\t#"))
+            .map_or(value, |comment| &value[..comment])
+            .trim();
+        let plain =
+            !value.is_empty() && !value.starts_with(['{', '[', '|', '>', '&', '*', '!', '#']);
+        if plain {
+            kept.insert(key.to_owned(), serde_json::Value::String(value.to_owned()));
+        }
+    }
+    kept
 }
 
 /// A frontmatter's values, one key a line, each value in JSON's notation, which is YAML's too.
@@ -236,7 +301,8 @@ fn frontmatter_written(value: &serde_json::Value) -> String {
 }
 
 /// `text` with each URL's user information removed: `https://me:pw@host/x` as `https://host/x`.
-fn no_url_users<'a>(text: &'a str, said: &mut Vec<String>) -> std::borrow::Cow<'a, str> {
+/// Whether any was comes back with it.
+fn without_url_users(text: &str) -> (std::borrow::Cow<'_, str>, bool) {
     let mut out = String::new();
     let mut copied = 0;
     let mut from = 0;
@@ -252,7 +318,7 @@ fn no_url_users<'a>(text: &'a str, said: &mut Vec<String>) -> std::borrow::Cow<'
             continue;
         }
         let end = text[authority..]
-            .find(|c: char| c.is_whitespace() || "/?#\"'<>\\`".contains(c))
+            .find(|c: char| c.is_whitespace() || "/?#\"'<>\\`,;".contains(c))
             .map_or(text.len(), |n| authority + n);
         if let Some(user_end) = text[authority..end].rfind('@') {
             out.push_str(&text[copied..authority]);
@@ -261,49 +327,120 @@ fn no_url_users<'a>(text: &'a str, said: &mut Vec<String>) -> std::borrow::Cow<'
         }
     }
     if copied == 0 {
-        return std::borrow::Cow::Borrowed(text);
+        return (std::borrow::Cow::Borrowed(text), false);
     }
     out.push_str(&text[copied..]);
-    said.push("a URL's user information".to_owned());
-    std::borrow::Cow::Owned(out)
+    (std::borrow::Cow::Owned(out), true)
 }
 
-/// Whether a command, as `words`, shows a credential where it is written: an assignment or a token
-/// the plane's own save would refuse, a header that signs a request, or an option that takes a
-/// secret, each with a value and not a variable's name.
-fn shows_a_credential(words: &[String]) -> bool {
-    let whole = words.join(" ");
-    if crate::secretshape::secret_kind(&whole).is_some() {
+/// [`without_url_users`], saying so where any went.
+fn no_url_users<'a>(text: &'a str, said: &mut Said) -> std::borrow::Cow<'a, str> {
+    let (clean, any) = without_url_users(text);
+    if any {
+        said.push("a URL's user information".to_owned());
+    }
+    clean
+}
+
+/// A string setting at `at`, as it may be sent: no URL's user information, and empty where it is
+/// a token by its shape alone.
+fn clean_string(text: &mut String, at: &str, said: &mut Said) {
+    if crate::secretshape::token_kind(text).is_some() {
+        text.clear();
+        said.push(format!("{at}: a value shaped like a token"));
+        return;
+    }
+    let (clean, any) = without_url_users(text);
+    if any {
+        let clean = clean.into_owned();
+        said.push(format!("{at}: a URL's user information"));
+        *text = clean;
+    }
+}
+
+/// A word of a name that holds a credential, as it is folded to lower case.
+const CREDENTIAL_WORDS: [&str; 8] = [
+    "token", "password", "passwd", "secret", "api-key", "api_key", "apikey", "bearer",
+];
+
+fn names_a_credential(name: &str) -> bool {
+    !name.contains("tokens")
+        && !name.ends_with("-file")
+        && !name.ends_with("-env")
+        && !name.ends_with("-stdin")
+        && CREDENTIAL_WORDS.iter().any(|word| name.contains(word))
+}
+
+/// Whether `value` is written out, and not read from a variable or another command.
+fn written_out(value: &str) -> bool {
+    let value = value.trim_start_matches(['"', '\'']);
+    !value.is_empty() && !value.starts_with(['$', '`'])
+}
+
+/// How deep a command is read through commands quoted inside it (`sh -c '…'`).
+const MOST_QUOTED: usize = 3;
+
+/// Whether `word`, the word after it `next`, shows a credential.
+fn word_shows_a_credential(word: &str, next: Option<&str>) -> bool {
+    let lower = word.to_ascii_lowercase();
+    // A header that signs a request, wherever in the word it is: `--header=…`, `-H…`, or in a
+    // command quoted whole.
+    for header in ["authorization:", "x-api-key:", "cookie:"] {
+        if let Some(found) = lower.find(header) {
+            let mut value = lower[found + header.len()..].split_whitespace();
+            let first = value.next().unwrap_or_default();
+            let given = if matches!(first, "bearer" | "basic" | "token") {
+                value.next().unwrap_or_default()
+            } else {
+                first
+            };
+            if written_out(given) {
+                return true;
+            }
+        }
+    }
+    let (name, given) = match lower.split_once('=') {
+        Some((name, given)) => (name, Some(given)),
+        None => (lower.as_str(), None),
+    };
+    // An assignment: `GH_TOKEN=x`.
+    if !word.starts_with('-') {
+        let assignment =
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        return assignment && names_a_credential(name) && given.is_some_and(written_out);
+    }
+    // A user and password: `-u me:pw`, `-ume:pw`, `--user me:pw`.
+    let user = |value: &str| {
+        value
+            .split_once(':')
+            .is_some_and(|(_, password)| written_out(password))
+    };
+    if matches!(name, "-u" | "--user" | "--proxy-user") {
+        if given.or(next).is_some_and(user) {
+            return true;
+        }
+    } else if let Some(glued) = word.strip_prefix("-u")
+        && !glued.starts_with('-')
+        && user(glued)
+    {
         return true;
     }
-    let literal = |value: &str| !value.is_empty() && !value.starts_with('$');
+    // An option that takes a secret: `--token x`, `--api-key=x`.
+    names_a_credential(name) && given.or(next).is_some_and(written_out)
+}
+
+/// Whether a command, as `words`, shows a credential where it is written: a token by its shape, an
+/// assignment, a header or an option holding one, each with a value and not a variable's name. A
+/// word holding a command quoted whole is read too.
+fn shows_a_credential(words: &[String], depth: usize) -> bool {
+    if crate::secretshape::token_kind(&words.join(" ")).is_some() {
+        return true;
+    }
     words.iter().enumerate().any(|(at, word)| {
-        let lower = word.to_ascii_lowercase();
-        if let Some(value) = ["authorization:", "x-api-key:"]
-            .iter()
-            .find_map(|header| lower.strip_prefix(header))
-        {
-            return !value.contains('$');
-        }
-        if !word.starts_with('-') {
-            return false;
-        }
-        let (name, given) = match lower.split_once('=') {
-            Some((name, given)) => (name, Some(given)),
-            None => (lower.as_str(), None),
-        };
-        let value = given.or_else(|| words.get(at + 1).map(String::as_str));
-        let user = matches!(name, "-u" | "--user");
-        let secret = [
-            "token", "password", "passwd", "secret", "api-key", "api_key", "apikey",
-        ]
-        .iter()
-        .any(|one| name.contains(one))
-            && !name.ends_with("-file")
-            && !name.ends_with("-env");
-        value.is_some_and(|value| {
-            (secret && literal(value)) || (user && literal(value) && value.contains(':'))
-        })
+        word_shows_a_credential(word, words.get(at + 1).map(String::as_str))
+            || (depth < MOST_QUOTED
+                && word.contains(char::is_whitespace)
+                && shows_a_credential(&words_of([(false, word.as_str())].into_iter()), depth + 1))
     })
 }
 
@@ -339,30 +476,42 @@ fn json_runs_a_credential(value: &serde_json::Value) -> bool {
             _ => {}
         }
     }
-    !written.is_empty() && shows_a_credential(&words_of(written.into_iter()))
+    !written.is_empty() && shows_a_credential(&words_of(written.into_iter()), 0)
 }
 
 /// `value` with every setting `names` lists removed at any depth, each object that runs a command
-/// showing a credential removed whole, and each URL without its user information. `at` is where it
-/// is, for what is said.
-fn clean_json(value: &mut serde_json::Value, names: &[&str], at: &str, said: &mut Vec<String>) {
+/// showing a credential removed whole, and each string and name as [`clean_string`] leaves it. `at`
+/// is where it is, for what is said.
+fn clean_json(value: &mut serde_json::Value, names: &[&str], at: &str, said: &mut Said) {
     use serde_json::Value;
     match value {
         Value::Object(map) => {
+            let odd: Vec<String> = map.keys().filter(|k| k.contains("://")).cloned().collect();
+            for key in odd {
+                if let (clean, true) = without_url_users(&key) {
+                    let clean = clean.into_owned();
+                    if let Some(inner) = map.remove(&key) {
+                        map.insert(clean, inner);
+                        said.push(format!("{at}: a URL's user information"));
+                    }
+                }
+            }
             map.retain(|key, inner| {
-                let where_ = format!("{at}.{key}");
                 if names.contains(&key.as_str()) {
-                    said.push(where_);
+                    said.push(further(at, key));
                     return false;
                 }
                 if json_runs_a_credential(inner) {
-                    said.push(format!("{where_}: a command with a credential in it"));
+                    said.push(format!(
+                        "{}: a command with a credential in it",
+                        further(at, key)
+                    ));
                     return false;
                 }
                 true
             });
             for (key, inner) in map.iter_mut() {
-                clean_json(inner, names, &format!("{at}.{key}"), said);
+                clean_json(inner, names, &further(at, key), said);
             }
         }
         Value::Array(items) => {
@@ -375,78 +524,90 @@ fn clean_json(value: &mut serde_json::Value, names: &[&str], at: &str, said: &mu
                 clean_json(inner, names, at, said);
             }
         }
-        Value::String(text) => {
-            let mut found = Vec::new();
-            let clean = no_url_users(text, &mut found).into_owned();
-            if !found.is_empty() {
-                said.push(format!("{at}: a URL's user information"));
-                *text = clean;
-            }
-        }
+        Value::String(text) => clean_string(text, at, said),
         _ => {}
     }
 }
 
-/// [`clean_json`]'s command and URL walk, for the plain values of a Codex `config.toml`. Its
-/// `notify` is a command too, as a bare list.
-fn clean_toml(table: &mut toml::Table, at: &str, said: &mut Vec<String>) {
+/// Whether the TOML table `value` runs a command that [`shows_a_credential`].
+fn toml_runs_a_credential(value: &toml::Value) -> bool {
     use toml::Value;
-    let runs = |value: &Value| {
-        let mut written = Vec::new();
-        if let Value::Table(inner) = value {
-            for key in ["command", "args"] {
-                match inner.get(key) {
-                    Some(Value::String(text)) => written.push((false, text.as_str())),
-                    Some(Value::Array(items)) => {
-                        written.extend(items.iter().filter_map(Value::as_str).map(|t| (true, t)));
-                    }
-                    _ => {}
+    let mut written = Vec::new();
+    if let Value::Table(inner) = value {
+        for key in ["command", "args"] {
+            match inner.get(key) {
+                Some(Value::String(text)) => written.push((false, text.as_str())),
+                Some(Value::Array(items)) => {
+                    written.extend(items.iter().filter_map(Value::as_str).map(|t| (true, t)));
                 }
+                _ => {}
             }
         }
-        !written.is_empty() && shows_a_credential(&words_of(written.into_iter()))
-    };
+    }
+    !written.is_empty() && shows_a_credential(&words_of(written.into_iter()), 0)
+}
+
+/// [`clean_json`]'s command and string walk, for the plain values of a Codex `config.toml`. Its
+/// `notify` is a command too, as a bare list.
+fn clean_toml(table: &mut toml::Table, at: &str, said: &mut Said) {
+    use toml::Value;
+    let odd: Vec<String> = table
+        .keys()
+        .filter(|k| k.contains("://"))
+        .cloned()
+        .collect();
+    for key in odd {
+        if let (clean, true) = without_url_users(&key) {
+            let clean = clean.into_owned();
+            if let Some(inner) = table.remove(&key) {
+                table.insert(clean, inner);
+                said.push(format!("{at}: a URL's user information"));
+            }
+        }
+    }
     table.retain(|key, inner| {
         let list_command = key == "notify"
             && inner.as_array().is_some_and(|items| {
-                shows_a_credential(&words_of(
-                    items.iter().filter_map(Value::as_str).map(|t| (true, t)),
-                ))
+                shows_a_credential(
+                    &words_of(items.iter().filter_map(Value::as_str).map(|t| (true, t))),
+                    0,
+                )
             });
-        if list_command || runs(&*inner) {
-            said.push(format!("{at}.{key}: a command with a credential in it"));
+        if list_command || toml_runs_a_credential(inner) {
+            said.push(format!(
+                "{}: a command with a credential in it",
+                further(at, key)
+            ));
             return false;
         }
         true
     });
     for (key, inner) in table.iter_mut() {
-        clean_toml_value(inner, &format!("{at}.{key}"), said);
+        clean_toml_value(inner, &further(at, key), said);
     }
 }
 
-fn clean_toml_value(value: &mut toml::Value, at: &str, said: &mut Vec<String>) {
+fn clean_toml_value(value: &mut toml::Value, at: &str, said: &mut Said) {
     match value {
         toml::Value::Table(inner) => clean_toml(inner, at, said),
         toml::Value::Array(items) => {
+            let before = items.len();
+            items.retain(|inner| !toml_runs_a_credential(inner));
+            if items.len() != before {
+                said.push(format!("{at}: a command with a credential in it"));
+            }
             for inner in items {
                 clean_toml_value(inner, at, said);
             }
         }
-        toml::Value::String(text) => {
-            let mut found = Vec::new();
-            let clean = no_url_users(text, &mut found).into_owned();
-            if !found.is_empty() {
-                said.push(format!("{at}: a URL's user information"));
-                *text = clean;
-            }
-        }
+        toml::Value::String(text) => clean_string(text, at, said),
         _ => {}
     }
 }
 
 /// `text`, a JSON settings file of `kind`'s, with every setting [`dropped`] names removed at any
 /// depth, written again. `None` where it is not JSON.
-fn json_without(kind: &str, text: &str, said: &mut Vec<String>) -> Option<Vec<u8>> {
+fn json_without(kind: &str, text: &str, said: &mut Said) -> Option<Vec<u8>> {
     let mut value: serde_json::Value = serde_json::from_str(text).ok()?;
     clean_json(&mut value, dropped(kind), "settings", said);
     let mut written = serde_json::to_vec_pretty(&value).ok()?;
@@ -543,15 +704,16 @@ fn closes_next(mut rest: std::iter::Peekable<std::str::Chars<'_>>) -> bool {
 /// `text`, a Codex `config.toml`, with every setting [`dropped`] names removed at any depth, and
 /// the variables `[shell_environment_policy]` sets, written again with no comment. `None` where
 /// it is not TOML.
-fn codex_without(text: &str, said: &mut Vec<String>) -> Option<Vec<u8>> {
+fn codex_without(text: &str, said: &mut Said) -> Option<Vec<u8>> {
     let mut doc: toml_edit::DocumentMut = text.parse().ok()?;
     let names = dropped("codex");
-    drop_toml(doc.as_table_mut(), names);
+    drop_toml(doc.as_table_mut(), names, "settings", said);
     if let Some(policy) = doc
         .get_mut("shell_environment_policy")
         .and_then(|p| p.as_table_like_mut())
+        && policy.remove("set").is_some()
     {
-        policy.remove("set");
+        said.push("settings.shell_environment_policy.set".to_owned());
     }
     // Written again through plain values, so no comment travels: a commented-out key is a key
     // copied all the same.
@@ -560,32 +722,35 @@ fn codex_without(text: &str, said: &mut Vec<String>) -> Option<Vec<u8>> {
     toml::to_string(&plain).ok().map(String::into_bytes)
 }
 
-fn drop_toml(table: &mut dyn toml_edit::TableLike, names: &[&str]) {
+fn drop_toml(table: &mut dyn toml_edit::TableLike, names: &[&str], at: &str, said: &mut Said) {
     let keys: Vec<String> = table.iter().map(|(k, _)| k.to_owned()).collect();
     for key in keys {
         if names.contains(&key.as_str()) {
             table.remove(&key);
+            said.push(further(at, &key));
             continue;
         }
         if let Some(item) = table.get_mut(&key) {
-            drop_toml_item(item, names);
+            drop_toml_item(item, names, &further(at, &key), said);
         }
     }
 }
 
-fn drop_toml_item(item: &mut toml_edit::Item, names: &[&str]) {
+fn drop_toml_item(item: &mut toml_edit::Item, names: &[&str], at: &str, said: &mut Said) {
     match item {
-        toml_edit::Item::Table(table) => drop_toml(table, names),
+        toml_edit::Item::Table(table) => drop_toml(table, names, at, said),
         toml_edit::Item::ArrayOfTables(tables) => {
             for table in tables.iter_mut() {
-                drop_toml(table, names);
+                drop_toml(table, names, at, said);
             }
         }
-        toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => drop_toml(table, names),
+        toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
+            drop_toml(table, names, at, said);
+        }
         toml_edit::Item::Value(toml_edit::Value::Array(items)) => {
             for value in items.iter_mut() {
                 if let toml_edit::Value::InlineTable(table) = value {
-                    drop_toml(table, names);
+                    drop_toml(table, names, at, said);
                 }
             }
         }

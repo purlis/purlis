@@ -293,9 +293,10 @@ fn as_value(node: &Node) -> Result<serde_json::Value, Refusal> {
             "true" => Value::Bool(true),
             "false" => Value::Bool(false),
             "" | "~" | "null" => Value::Null,
-            other => other
-                .parse::<i64>()
-                .map_or_else(|_| Value::String(other.to_owned()), Value::from),
+            other => match other.parse::<i64>() {
+                Ok(number) if number.to_string() == other => Value::from(number),
+                _ => Value::String(other.to_owned()),
+            },
         },
         Node::Scalar { text, .. } => Value::String(text.clone()),
         Node::Seq(items) => Value::Array(items.iter().map(as_value).collect::<Result<_, _>>()?),
