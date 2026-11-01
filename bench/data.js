@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793495721339,
+  "lastUpdate": 1793496968436,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34524,6 +34524,48 @@ window.BENCHMARK_DATA = {
             "value": 102.383712,
             "unit": "ms",
             "extra": "median of 5 runs: 101.640, 101.845, 102.384, 102.633, 103.626 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d3f5367553b7999d4f2afe3314c09401e4d4fd17",
+          "message": "Runners: gh and glab are in purlis's runner image (#4365)\n\n* Runners: gh and glab are in purlis's runner image (#4354)\n\nEach comes from its vendor's release package, pinned by version and checked by SHA-256 per\narchitecture as the build fetches it. The contract's --carries asks purlis's image to have\nthem; the team example passes without. A persona's declared tool whose program the image has\nnot says so, naming the program and the pool's image.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X60NDX3K6GFC9G3QK1C03\nPurlis-Persona: steward\n\n* Runners: review of #4354: forge programs' folders held, image name stays with the host\n\nWhat the forge programs keep in a runner's home is out of a chat's reach, and a pool's image\nvariable is not inherited by a chat. Image pins and the SBOM's two programs are held by tests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X60NDX3K6GFC9G3QK1C03\nPurlis-Persona: steward\n\n* Runners: the #4354 behaviour's script needs no format call\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X60NDX3K6GFC9G3QK1C03\nPurlis-Persona: steward\n\n* Runners: the #4354 behaviour starts a browser first, as a Codex profile there needs\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X60NDX3K6GFC9G3QK1C03\nPurlis-Persona: steward\n\n* Runners: a sandboxed chat keeps its forge programs' settings in a folder of its own (#4354)\n\ngh and glab stop without a settings folder, and what they keep in the runner's home is held.\nA declared tool's run takes neither variable.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X60NDX3K6GFC9G3QK1C03\nPurlis-Persona: steward\n\n* Runners: a chat's forge settings live in its own temporary folder, at every level (#4354)\n\nTheir variables follow the same test as what holds the folders in the runner's home, the hold\nfollows where the runner's environment moves them, and the image test reads FROM lines in order.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X60NDX3K6GFC9G3QK1C03\nPurlis-Persona: steward\n\n* Runners: clippy on the #4354 hold\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69X60NDX3K6GFC9G3QK1C03\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T00:59:34Z",
+          "tree_id": "c543ead29beb710e5a2c207db8501ce7722265ec",
+          "url": "https://github.com/purlis/purlis/commit/d3f5367553b7999d4f2afe3314c09401e4d4fd17"
+        },
+        "date": 1793496961143,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.69055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.644, 0.672, 0.691, 0.700, 0.714 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4388195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.317, 16.423, 16.439, 16.558, 16.579 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.26242500000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.982, 102.035, 102.262, 103.038, 103.258 ms"
           }
         ]
       }
