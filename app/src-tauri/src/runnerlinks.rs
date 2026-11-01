@@ -826,10 +826,15 @@ fn as_its_runner_holds(
     version: purlis_session_protocol::version::Version,
     kept: &purlis_core::profilestore::onrunner::Kept,
 ) -> purlis_core::profilestore::onrunner::Kept {
-    if version >= purlis_session_protocol::session::KNOWS_LARGER_PROFILE_SETTINGS {
+    let kept = if version >= purlis_session_protocol::session::KNOWS_LARGER_PROFILE_SETTINGS {
         kept.clone()
     } else {
         kept.clone().on_an_older_runner()
+    };
+    if version >= purlis_session_protocol::session::KNOWS_PROFILE_MCP_SERVERS {
+        kept
+    } else {
+        kept.with_no_mcp_servers()
     }
 }
 
