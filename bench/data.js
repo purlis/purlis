@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793543783248,
+  "lastUpdate": 1793545769183,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34986,6 +34986,48 @@ window.BENCHMARK_DATA = {
             "value": 102.334372,
             "unit": "ms",
             "extra": "median of 5 runs: 102.064, 102.189, 102.334, 102.713, 102.868 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e759781f08213b05b39394c504333cda1fa31885",
+          "message": "stories: the compact pictures main is missing (#4448)\n\n* stories: redraw a Pools compact picture with the limits row\n\nSeeds the repair so a stories run on this branch draws the rest.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AX3A4WSMNGB3YMSW25ZFBE\nPurlis-Persona: steward\n\n* stories: the compact pictures of #4378 and the grade plan, drawn by this branch's run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AX3A4WSMNGB3YMSW25ZFBE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T14:22:09Z",
+          "tree_id": "3c51f26115cbb50847b8463ece8d088d1b502fee",
+          "url": "https://github.com/purlis/purlis/commit/e759781f08213b05b39394c504333cda1fa31885"
+        },
+        "date": 1793545763084,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3260615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.313, 0.319, 0.326, 0.332, 0.339 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.386862999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.299, 16.368, 16.387, 16.471, 16.488 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.42375799999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.311, 101.377, 101.424, 102.163, 102.181 ms"
           }
         ]
       }
