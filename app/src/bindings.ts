@@ -2326,6 +2326,17 @@ export const commands = {
 { to: "all" } | 
 /**  The workspaces named. */
 { to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_install", { plane, source, level, reviewed, grant })),
+	/**  **The review of publishing `name` at `level` to `source`.** Nothing goes anywhere. */
+	skillPublishReview: (plane: PlaneId, level: SkillLevel, name: string, source: SkillSource) => typedError<PublishReviewView, string>(__TAURI_INVOKE("skill_publish_review", { plane, level, name, source })),
+	/**  **Sends what the person accepted**, and only that. */
+	skillPublish: (plane: PlaneId, level: SkillLevel, name: string, source: SkillSource, accepted: PublishAccepted) => typedError<PublishDone, string>(__TAURI_INVOKE("skill_publish", { plane, level, name, source, accepted })),
+	/**  **What an export of `name` at `level` would write.** */
+	skillExportReview: (plane: PlaneId, level: SkillLevel, name: string) => typedError<ExportReview, string>(__TAURI_INVOKE("skill_export_review", { plane, level, name })),
+	/**
+	 *  **Asks where, and writes the export**: the place written, or `None` where the person chose
+	 *  none. Nothing is written over anything.
+	 */
+	skillExport: (plane: PlaneId, level: SkillLevel, name: string, zip: boolean) => typedError<string | null, string>(__TAURI_INVOKE("skill_export", { plane, level, name, zip })),
 	/**
 	 *  **The updates there are**: each source this machine may contact asked for its newest commit,
 	 *  nothing fetched.
@@ -5143,6 +5154,12 @@ export type AwayRefusal = {
 	shown: string,
 };
 
+/**  One file that stays behind. */
+export type BehindFile = {
+	path: string,
+	why: string,
+};
+
 /**  One socket or service the person may choose. */
 export type BlockChoice = {
 	/**  What choosing it names: a socket's whole path, as a grant names it, or a service's name. */
@@ -7078,6 +7095,14 @@ export type ExpectedShown = {
 	 *  where it drew the item as one that cannot be allowed here now.
 	 */
 	named: string | null,
+};
+
+/**  **What the export dialog says.** */
+export type ExportReview = {
+	skills: string[],
+	behind: BehindFile[],
+	broken: string[],
+	stops: OutgoingStop[],
 };
 
 /**
@@ -9593,6 +9618,22 @@ export type OpenedRepo = {
 	forge_said?: string | null,
 };
 
+/**  One file that goes. */
+export type OutgoingFile = {
+	/**  Its path, under its skill's folder. */
+	path: string,
+	bytes: number,
+	runs: boolean,
+	/**  Whether it is of a skill the named one refers to. */
+	comes_along: boolean,
+};
+
+/**  One thing that stops it, as `where` and what it holds, never the value itself. */
+export type OutgoingStop = {
+	place: string,
+	said: string,
+};
+
 /**  A task's own branch, as its Changes tab says it. */
 export type OwnBranch = {
 	repo: string,
@@ -11159,6 +11200,35 @@ export type ProposedWhole = {
 	why: string | null,
 };
 
+/**  What a yes hands back. */
+export type PublishAccepted = {
+	base: string,
+	commit: string,
+	digest: string,
+};
+
+/**  **How a publish ended.** */
+export type PublishDone = { kind: "opened"; url: string } | { kind: "already"; url: string } | { kind: "cannot-push"; why: string };
+
+/**  One grade the description holds. */
+export type PublishGrade = {
+	skill: string,
+	when: string,
+	version: string,
+	harness: string,
+	grader: string,
+	with_it: string,
+	without_it: string,
+	runs: number,
+	ended: string,
+};
+
+/**  One folder of the source that takes a skill. */
+export type PublishLand = {
+	folder: string,
+	replaces: boolean,
+};
+
 /**
  *  What the person asked to publish: #1819's form, less the template and the folder, which the
  *  project already has.
@@ -11169,6 +11239,31 @@ export type PublishOnForge = {
 	name: string,
 	/**  Private unless the person said public. */
 	private: boolean,
+};
+
+/**  **What the publish review page draws.** */
+export type PublishReviewView = {
+	/**  "pull request" or "merge request". */
+	request: string,
+	forge: string,
+	base: string,
+	commit_short: string,
+	branch: string,
+	title: string,
+	author: string,
+	files: OutgoingFile[],
+	behind: BehindFile[],
+	stops: OutgoingStop[],
+	/**  Each skill that is this machine's alone, by name. */
+	local: string[],
+	/**  Each folder of the source that takes a skill, and whether it replaces what is there. */
+	lands: PublishLand[],
+	/**  References to a skill that is not there, by name. */
+	broken: string[],
+	grades: PublishGrade[],
+	/**  The request's description, whole. */
+	body: string,
+	accepted: PublishAccepted,
 };
 
 /**  One member's destination, as the question names it and the yes hands it back. */
