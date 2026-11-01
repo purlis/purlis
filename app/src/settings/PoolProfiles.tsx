@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PoolProfileRow, PoolProfiles as PoolProfilesAnswered } from "../bindings";
 import {
   ASK_AGAIN_WHILE_FETCHING_MS,
@@ -11,6 +11,7 @@ import {
   signProfileOutOfPool,
   usePools,
 } from "../pools";
+import { OfferToRaise } from "../RaiseLimit";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
 import { askProfileSignIn, askProfileSignOut } from "./links";
@@ -86,6 +87,8 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   // The profile whose Sign out was pressed, asked about first, then running; and what it said.
   const [out, setOut] = useState<{ name: string; running: boolean }>();
   const [outSaid, setOutSaid] = useState<{ text: string; trouble: boolean }>();
+  // What was last pressed, for a raised limit to go again (#4397).
+  const tried = useRef<() => void>(undefined);
   useEffect(() => {
     if (asked === undefined) void askProfiles(pool, plane);
   }, [pool, plane, asked]);
@@ -118,6 +121,12 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
         <p className="ui-setting-help" role="alert">
           {rows.trouble}
         </p>
+        <OfferToRaise
+          pool={pool}
+          refused={rows.trouble}
+          action="Save to the pool and ask again"
+          onRaised={() => void askProfiles(pool, plane)}
+        />
         {again}
       </>
     );
@@ -149,13 +158,16 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
     if (signedIn) void askProfiles(pool, plane);
   };
   const add = async (name: string) => {
+    tried.current = () => void add(name);
     setSaid(await addProfileToPool(pool, name, plane));
   };
   const remove = async (name: string) => {
+    tried.current = () => void remove(name);
     setRemoving(undefined);
     setSaid(await removeProfileFromPool(pool, name, plane));
   };
   const signOut = async (name: string) => {
+    tried.current = () => void signOut(name);
     setOut({ name, running: true });
     setOutSaid(undefined);
     const said = await signProfileOutOfPool(pool, name, plane);
@@ -195,9 +207,17 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   ) : null;
   const told =
     said === undefined ? null : (
-      <p className="ui-setting-help" role="status">
-        {said}
-      </p>
+      <>
+        <p className="ui-setting-help" role="status">
+          {said}
+        </p>
+        <OfferToRaise
+          pool={pool}
+          refused={said}
+          action="Save to the pool and try again"
+          onRaised={() => tried.current?.()}
+        />
+      </>
     );
   if (rows.kept.length === 0) {
     return (
@@ -402,6 +422,14 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
         <p className="ui-setting-help" role={outSaid.trouble ? "alert" : "status"}>
           {outSaid.text}
         </p>
+      )}
+      {outSaid?.trouble === true && (
+        <OfferToRaise
+          pool={pool}
+          refused={outSaid.text}
+          action="Save to the pool and try again"
+          onRaised={() => tried.current?.()}
+        />
       )}
       {signing === undefined && adding}
       {signing === undefined && again}

@@ -243,3 +243,24 @@ fn a_sign_in_waiting_on_no_code_ends_once_the_runner_is_no_longer_yours() {
 
     assert_eq!(said, Err("the mark was taken back".to_owned()));
 }
+
+/// **A sign-in that ran out of its pool's limit says the value to raise it to** (#4397).
+#[test]
+fn a_sign_in_out_of_its_wait_names_double_it_and_where_to_change_it() {
+    let said = failed_said(
+        "work",
+        "builds",
+        crate::profilestore::sign_in::driven::TOOK_TOO_LONG,
+        Duration::from_secs(15 * 60),
+    );
+    assert!(said.contains("raise it to 30 minutes"), "{said}");
+    assert!(said.contains("Settings › Pools"), "{said}");
+    let other = failed_said(
+        "work",
+        "builds",
+        "the login failed",
+        Duration::from_secs(60),
+    );
+    assert!(!other.contains("raise it"), "{other}");
+    assert!(other.contains("Run this again"), "{other}");
+}
