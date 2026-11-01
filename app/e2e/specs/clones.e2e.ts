@@ -407,6 +407,23 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
         { timeout: 20_000, interval: 250, timeoutMsg: "the launch's project never came back" },
       );
     });
+    // Letting the project go said so on the launch's project: left up, it makes the next spec's
+    // card taller, over what that spec presses.
+    await step(async () => {
+      await browser
+        .waitUntil(
+          async () =>
+            browser.execute(() => {
+              const closes = document.querySelectorAll<HTMLElement>(
+                '[data-chip="status/bar/notices"] button[aria-label="Dismiss"]',
+              );
+              for (const close of closes) close.click();
+              return closes.length > 0;
+            }),
+          { timeout: 5_000, interval: 250 },
+        )
+        .catch(() => undefined);
+    });
     if (failed.length > 0) throw failed[0];
   });
 

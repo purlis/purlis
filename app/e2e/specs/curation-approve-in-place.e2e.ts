@@ -71,17 +71,6 @@ describe("a curation action refused for its profile's approval", function () {
     else writeFileSync(file, local);
   });
 
-  afterEach(async function () {
-    if (this.currentTest?.state !== "failed") return;
-    const { mkdirSync } = await import("node:fs");
-    mkdirSync("logs/clone-screenshots", { recursive: true });
-    await browser.saveScreenshot("logs/clone-screenshots/curation-failed.png");
-    writeFileSync(
-      "logs/clone-screenshots/curation-failed.txt",
-      await browser.execute(() => document.body.innerText),
-    );
-  });
-
   it("offers Approve and start, showing what it runs, and starts the action's chat", async () => {
     await runFromThePalette("Safe remove", ACTION);
 
