@@ -3055,7 +3055,7 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
     let waits = for_a_start && *kept_on_the_runner && waits_for_its_runner();
     // Decided once: a link that came back during the wait still needs what a hold does after it,
     // its code sent above all.
-    let waited = waits && !lock(held).as_ref().is_some_and(&stays_held);
+    let waited = waits && !lock(held).as_ref().is_some_and(stays_held);
     if waited {
         waits_off_the_lock(holding, &link)?;
     }

@@ -533,11 +533,9 @@ fn on_an_idle_runner(takes: Duration) -> OnAnIdleRunner {
             "first",
         ][..],
     ] {
-        let git = std::process::Command::new("git")
-            .args(args)
-            .current_dir(&root)
-            .status()
-            .unwrap();
+        let mut command = std::process::Command::new("git");
+        command.args(args).current_dir(&root);
+        let git = purlis_core::forklock::status(&mut command).unwrap();
         assert!(git.success(), "git {args:?}");
     }
     let projects = top.join("runner");
