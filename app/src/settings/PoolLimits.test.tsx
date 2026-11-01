@@ -23,6 +23,7 @@ const row = (over: Partial<PoolLimitRow> & { key: string }): PoolLimitRow => ({
   applies: null,
   refused: null,
   highest_said: null,
+  default_by_team: false,
   ...over,
 });
 

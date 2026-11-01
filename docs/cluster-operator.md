@@ -438,7 +438,7 @@ binding, passes it. Rights in the operator's namespace are the operator's rights
 
 A Pool's `spec.limits` sets the default and the highest allowed of any of a pool's limits, by the key
 each has in `docs/plane-format.md` (`profileSize`, `profileFiles`, `codeSize`, `codeSendTime`,
-`signInWait`, `answerWait`), each in that limit's unit. Each person then chooses within it, in the
+`signInWait`, `answerWait`), each in that limit's unit. `vouchWait` isn't a Pool's to set: it is the wait for the cluster to vouch. Each person then chooses within it, in the
 window, in `purlis pool limit`, or in their pool's file.
 
 ```yaml

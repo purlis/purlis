@@ -885,13 +885,14 @@ fn a_pools_page_shows_what_the_team_set() {
 /// Q15: the window's check and the file's refusal are one, word for word.
 #[test]
 fn the_windows_check_refuses_as_the_file_does() {
-    use purlis_core::poollimits::{Chosen, of_key};
+    use purlis_core::poollimits::Chosen;
     for (key, typed, held) in [
         ("profileSize", "0", serde_json::json!(0)),
         ("signInWait", "121", serde_json::json!(121)),
         ("codeSize", "lots", serde_json::json!("lots")),
     ] {
-        let by_window = of_key(key).unwrap().check_typed(typed, None).unwrap_err();
+        let config = tempfile::tempdir().unwrap();
+        let by_window = limit_checked_on(config.path(), "builds", key, typed).unwrap_err();
         let row = serde_json::json!({ key: held });
         let (_, refused) = Chosen::read_row(row.as_object().unwrap(), None);
         assert_eq!(by_window, refused[0].why);

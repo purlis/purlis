@@ -31,6 +31,7 @@ const row = (
   applies: null,
   refused: null,
   highest_said: null,
+  default_by_team: false,
   ...over,
 });
 
@@ -274,7 +275,7 @@ export const RefusedInTheFile: Story = {
   },
 };
 
-/** **A cluster pool's team set a highest** (#4287): said under the limit, and refused as typed. */
+/** **A cluster pool's team set a highest** (#4287): said under the limit. */
 export const TeamHighest: Story = {
   parameters: { teamHighest: "The team allows up to 512 MiB." },
   play: async ({ canvas }) => {

@@ -318,7 +318,10 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
       </div>
       <p className="ui-setting-help pool-limit-says" id={says}>
         {isSet && <Badge variant="accent">You set this</Badge>}
-        <span>Default {row.default_said}.</span>
+        <span>
+          Default {row.default_said}
+          {row.default_by_team && ", set by the team"}.
+        </span>
         {row.highest_said !== null && <span>{row.highest_said}</span>}
         {row.applies !== null && <span>{row.applies}</span>}
       </p>

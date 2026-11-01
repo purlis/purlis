@@ -8338,6 +8338,8 @@ export type PoolLimitRow = {
 	refused: string | null,
 	/**  The highest the team defining the pool allows, in words, where it set one (#4287). */
 	highest_said: string | null,
+	/**  Whether its default is what the team defining the pool set (#4287). */
+	default_by_team: boolean,
 };
 
 /**
