@@ -378,7 +378,7 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     // CREATE alone: who may change the repos it names is the policy on App keys' (#4206).
     assert_eq!(strings(&rules[0]["operations"]), ["CREATE"]);
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 4, "{spec}");
+    assert_eq!(validations.len(), 5, "{spec}");
     let expression = |at: usize| {
         validations[at]["expression"]
             .as_str()
@@ -854,10 +854,70 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
         .iter()
         .map(|v| v["expression"].as_str().expect("an expression").to_owned())
         .collect();
-    assert_eq!(validations.len(), 7, "{validations:?}");
+    assert_eq!(validations.len(), 8, "{validations:?}");
     assert_eq!(
         validations[0],
         "request.namespace.startsWith('purlis-runners-')"
+    );
+    // A claim is judged whole on every write: nothing lets an update through for leaving its spec
+    // as it was, and of additionalPodMetadata only the empty form upstream writes passes.
+    let claim_rule: String = validations[1].split_whitespace().collect();
+    assert_eq!(
+        claim_rule,
+        "request.resource.resource!='sandboxclaims'||\
+         (object.spec.warmPoolRef.name.startsWith('purlis-pool-')&&\
+         !has(object.spec.env)&&\
+         (!has(object.spec.additionalPodMetadata)||\
+         (!has(object.spec.additionalPodMetadata.labels)&&\
+         !has(object.spec.additionalPodMetadata.annotations)))&&\
+         !has(object.spec.lifecycle)&&\
+         (!has(object.spec.volumeClaimTemplates)||\
+         (size(object.spec.volumeClaimTemplates)==1&&\
+         object.spec.volumeClaimTemplates[0].metadata.name=='purlis-kept'&&\
+         object.spec.volumeClaimTemplates[0].spec.accessModes==['ReadWriteOnce']&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.volumeName)&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.dataSource)&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.dataSourceRef)&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.selector)&&\
+         !has(object.spec.volumeClaimTemplates[0].metadata.labels)&&\
+         !has(object.spec.volumeClaimTemplates[0].metadata.annotations)&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.volumeAttributesClassName)&&\
+         !has(object.spec.volumeClaimTemplates[0].spec.volumeMode))))"
+    );
+    // Its own mark on a claim, added once; all else there neither added, changed nor removed.
+    let marks: String = validations[7].split_whitespace().collect();
+    assert_eq!(
+        marks,
+        "request.resource.resource!='sandboxclaims'||\
+         (request.operation=='UPDATE'?\
+         ((!has(object.metadata.labels)||object.metadata.labels.all(k,\
+         has(oldObject.metadata.labels)&&kinoldObject.metadata.labels&&\
+         oldObject.metadata.labels[k]==object.metadata.labels[k]))&&\
+         (!has(oldObject.metadata.labels)||oldObject.metadata.labels.all(k,\
+         has(object.metadata.labels)&&kinobject.metadata.labels))&&\
+         (!has(object.metadata.annotations)||object.metadata.annotations.all(k,\
+         has(oldObject.metadata.annotations)&&kinoldObject.metadata.annotations?\
+         oldObject.metadata.annotations[k]==object.metadata.annotations[k]:\
+         k=='runners.purlis.dev/claim-uid'))&&\
+         (!has(oldObject.metadata.annotations)||oldObject.metadata.annotations.all(k,\
+         has(object.metadata.annotations)&&kinobject.metadata.annotations))):\
+         (!has(object.metadata.labels)&&\
+         (!has(object.metadata.annotations)||object.metadata.annotations.all(k,\
+         k=='runners.purlis.dev/claim-uid'))))"
+    );
+    // The fixed label, from any writer, on a purlis pool's claim.
+    let claims_policy = policy_named(&documents, purlis_cluster_operator::POLICY);
+    let label_rule: String = claims_policy["spec"]["validations"][4]["expression"]
+        .as_str()
+        .expect("its expression")
+        .split_whitespace()
+        .collect();
+    assert_eq!(
+        label_rule,
+        "request.resource.resource!='sandboxclaims'||\
+         !object.spec.warmPoolRef.name.startsWith('purlis-pool-')||\
+         !has(object.metadata.labels)||\
+         !('agents.x-k8s.io/created-by'inobject.metadata.labels)"
     );
     // Every field the pinned upstream gives a claim and a template is named, so a new one fails
     // here and is looked at when the pin moves.
