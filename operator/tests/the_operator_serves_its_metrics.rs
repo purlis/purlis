@@ -121,6 +121,7 @@ fn suspensions_and_deletions_count_up_by_pool_and_cause() {
     metrics.suspended("team", Cause::Idle);
     metrics.deleted("team", Cause::Requested);
     metrics.deleted("gpu", Cause::Requested);
+    metrics.deleted("gpu", Cause::Retention);
     let text = metrics.render(&[], &[]);
     let said = lines(&text);
     for line in [

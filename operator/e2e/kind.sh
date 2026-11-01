@@ -81,6 +81,8 @@ end() {
     kubectl --context "$context" get claims -A \
       -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]}{"\n  "}{.type}={.status} {.reason}: {.message}{end}{"\n"}{end}' >&2 || true
     kubectl --context "$context" -n purlis-system logs deployment/purlis-cluster-operator --tail=100 >&2 || true
+    kubectl --context "$context" -n purlis-system logs deployment/purlis-cluster-operator |
+      grep -E 'left behind|leave behind|panicked|its claim has gone' | tail -n 30 >&2 || true
     kubectl --context "$context" -n agent-sandbox-system logs deployment/agent-sandbox-controller --tail=100 >&2 || true
     kubectl --context "$context" get events -A --sort-by=.lastTimestamp >&2 || true
   fi
@@ -210,7 +212,8 @@ if [ -z "$gateway" ]; then
   exit 1
 fi
 kubectl --context "$context" -n purlis-system set env deployment/purlis-cluster-operator \
-  "PURLIS_FORGE_API_URL=http://$gateway:$fake_github_port" >/dev/null
+  "PURLIS_FORGE_API_URL=http://$gateway:$fake_github_port" \
+  PURLIS_OPERATOR_STUCK_AFTER=90 PURLIS_OPERATOR_ORPHANS_EVERY=30 >/dev/null
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
 
 step "the policy settles"

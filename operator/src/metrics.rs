@@ -47,6 +47,8 @@ pub enum Cause {
     Idle,
     /// Someone deleted the Claim.
     Requested,
+    /// Its retention ended (#3981).
+    Retention,
 }
 
 impl Cause {
@@ -55,6 +57,7 @@ impl Cause {
             Cause::Stopped => "stopped",
             Cause::Idle => "idle",
             Cause::Requested => "requested",
+            Cause::Retention => "retention",
         }
     }
 }
