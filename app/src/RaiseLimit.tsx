@@ -1,9 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
-import type { PoolLimitHitRow, PoolLimitOffer } from "./bindings";
-import { checkLimit } from "./pools";
+import { useEffect, useRef, useState } from "react";
+import { commands, type PoolLimitHitRow, type PoolLimitOffer } from "./bindings";
+import { checkLimit, saveLimits } from "./pools";
 import { Button } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 
@@ -114,5 +114,60 @@ export function RaiseLimit({
         {working ?? action}
       </Button>
     </div>
+  );
+}
+
+/**
+ * **The form where a refusal on pool `pool` said a limit was hit** (#4397): asked of the core,
+ * never read from the words, so a refusal that hit no limit draws nothing. A value saved goes to the
+ * pool, then `onRaised` goes again. Used where a person meets a limit with no flow of its own, as
+ * Start a chat and a move have. Given a `key` of the refusal, so another refusal starts over.
+ */
+export function OfferToRaise({
+  pool,
+  refused,
+  action,
+  onRaised,
+}: {
+  pool: string;
+  /** The refusal, in the words it was said in. */
+  refused: string;
+  /** The press: `Save to the pool and ask again`. */
+  action: string;
+  onRaised: () => void;
+}) {
+  const [offer, setOffer] = useState<PoolLimitOffer | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [why, setWhy] = useState<string>();
+  useEffect(() => {
+    let gone = false;
+    void commands
+      .poolLimitOfferForMove(pool, refused)
+      .catch(() => null)
+      .then((said) => {
+        if (!gone) setOffer(said);
+      });
+    return () => {
+      gone = true;
+    };
+  }, [pool, refused]);
+  if (offer === null) return null;
+  const apply = async (values: ReadonlyArray<readonly [string, number]>) => {
+    setSaving(true);
+    setWhy(undefined);
+    const saved = await saveLimits(offer.pool, values);
+    setSaving(false);
+    if (saved === undefined) onRaised();
+    else setWhy(saved);
+  };
+  return (
+    <RaiseLimit
+      key={offer.hits.map((hit) => `${hit.key}:${hit.needed}`).join()}
+      offer={offer}
+      action={action}
+      working={saving ? "Saving…" : undefined}
+      refused={why}
+      onApply={(values) => void apply(values)}
+    />
   );
 }

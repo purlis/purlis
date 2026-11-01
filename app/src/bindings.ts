@@ -3118,6 +3118,13 @@ export const commands = {
 	 *  exist on the new one, so the window's links to it end and each says it ended (#4168).
 	 */
 	dockerPoolMakeAgain: (name: string) => typedError<MadeAgain, string>(__TAURI_INVOKE("docker_pool_make_again", { name })),
+	/**
+	 *  **Replaces pool `name`'s runner, as the person pressed** (#4286, Q13): one of the pool's limits
+	 *  as they stand is made beside it, new chats start there, and the old one's chats carry on on it
+	 *  until they end. Nothing happens where no change waits. The window's alone: a chat only proposes
+	 *  a limit, through the edit ask (Q6), and never replaces a runner.
+	 */
+	dockerPoolReplaceRunner: (name: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_replace_runner", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**
@@ -10619,6 +10626,11 @@ export type PoolLimitRow = {
 export type PoolLimitsPage = {
 	groups: PoolLimitGroup[],
 	advanced: PoolLimitRow[],
+	/**
+	 *  The limits changed since its runner was made, in plain words (#4286): what waits for it
+	 *  to be replaced. Empty where nothing waits, the only time Replace is offered.
+	 */
+	waiting: string[],
 };
 
 /**
