@@ -3579,6 +3579,27 @@ fn the_record_opens_in_your_editor_at_its_own_path_and_a_link_does_not() {
     }
 }
 
+#[test]
+fn a_graders_id_is_no_longer_than_the_eval_record_reads_back() {
+    let manifest = |id: &str| {
+        format!(
+            r#"{{"version":4,"id":"{id}","capabilities":["grader"],"contributes":{{"runs":"bin/run",
+                "grader":{{"title":"G"}}}}}}"#
+        )
+    };
+    let most = "g".repeat(MOST_GRADER_ID_BYTES);
+    parse_knowing(&manifest(&most), &[Capability::Grader]).expect("at most is a Grader");
+    let why = parse_knowing(&manifest(&format!("{most}g")), &[Capability::Grader])
+        .expect_err("past it is refused as it is declared");
+    assert!(why.contains("a Grader's id is at most 64"), "{why}");
+    let why = parse_knowing(
+        &manifest(purlis_skills::grade::BUILT_IN),
+        &[Capability::Grader],
+    )
+    .expect_err("purlis's own runner's name is no Grader's");
+    assert!(why.contains("names purlis's own runner"), "{why}");
+}
+
 // ---------------------------------------------------------------------------------------
 // A router's reading of prompts: the person's own switch (ADR 0102 as amended 2026-10-31)
 // ---------------------------------------------------------------------------------------

@@ -462,6 +462,9 @@ struct Table {
     /// the moment the slot is taken until the program exists, and again once it has been taken
     /// out to be reaped.
     running: std::collections::BTreeMap<String, i32>,
+    /// Each extension whose slot a Grader's question holds (#4242): it may hold it for a whole
+    /// grade, so what else it is asked is refused at once, and says why.
+    grading: std::collections::BTreeSet<String>,
     /// Set by [`Executor::stop_all`], and never cleared: charter is closing. A slot is not given
     /// out after it, and a program that was started before it and recorded after it is killed
     /// the moment it is recorded.
@@ -758,6 +761,10 @@ impl Executor {
         let mut grading =
             extension::studio::grading::Grading::new(extension, request, chats, limits);
         let ask = extension::studio::Ask::Grade { request };
+        // Stopped before it began: no program is started for it.
+        if Talk::stopped(&grading) {
+            return grading.finished(Ok(()));
+        }
         let talked = self
             .put_talking(
                 config_root,
@@ -998,6 +1005,9 @@ impl Executor {
             )?,
             _ => self.hold(extension)?,
         };
+        if talking {
+            _held.grading();
+        }
         let started = Instant::now();
         let said = self.converse(
             extension,
@@ -1173,6 +1183,9 @@ impl Executor {
                 "purlis is closing, so it starts nothing more — '{extension}' was not asked."
             ));
         }
+        if table.grading.contains(extension) {
+            return Err(grading_now(extension));
+        }
         if table.running.contains_key(extension) {
             return Err(format!(
                 "'{extension}' is still answering the last thing it was asked. purlis asks an \
@@ -1199,6 +1212,10 @@ impl Executor {
                 return Err(format!(
                     "purlis is closing, so it starts nothing more — '{extension}' was not asked."
                 ));
+            }
+            // A grade runs for as long as it runs: waiting out a deadline would only fail later.
+            if table.grading.contains(extension) {
+                return Err(grading_now(extension));
             }
             if !table.running.contains_key(extension) {
                 table.running.insert(extension.to_owned(), 0);
@@ -1410,7 +1427,7 @@ impl Executor {
             .name(format!("extension {extension} request"))
             .spawn({
                 let request = request.to_vec();
-                move || ask_within(&ours_to_write, &request, until, !talking)
+                move || ask_within(&ours_to_write, &request, until, !talking, &|| false)
             }) {
             Ok(writer) => writer,
             Err(why) => {
@@ -1578,14 +1595,34 @@ struct Held<'a> {
     extension: String,
 }
 
-impl Drop for Held<'_> {
-    fn drop(&mut self) {
+impl Held<'_> {
+    /// Says this slot is held for a Grader's question, for as long as it is held.
+    fn grading(&self) {
         self.by
             .table
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .running
-            .remove(&self.extension);
+            .grading
+            .insert(self.extension.clone());
+        // Whoever already waits for this slot would wait out its deadline: told now.
+        self.by.freed.notify_all();
+    }
+}
+
+/// What `extension` is told apart from a question it is answering: it is grading.
+fn grading_now(extension: &str) -> String {
+    format!(
+        "'{extension}' is grading a skill, which can take a long time, and purlis asks an \
+         extension one thing at a time, so it was not asked this."
+    )
+}
+
+impl Drop for Held<'_> {
+    fn drop(&mut self) {
+        let mut table = self.by.table.lock().unwrap_or_else(PoisonError::into_inner);
+        table.running.remove(&self.extension);
+        table.grading.remove(&self.extension);
+        drop(table);
         self.by.freed.notify_all();
     }
 }
@@ -1944,6 +1981,7 @@ fn ask_within(
     request: &[u8],
     until: Instant,
     shut: bool,
+    stopped: &dyn Fn() -> bool,
 ) -> bool {
     use std::io::Write;
     let mut ours = ours;
@@ -1953,16 +1991,28 @@ fn ask_within(
             break true;
         }
         let left = until.saturating_duration_since(Instant::now());
+        // A person's Stop is looked at between waits of at most [`LOOK_FOR_A_STOP`] (#4244).
         // A zero timeout is itself an error to `set_write_timeout`, so the second half is
         // true whenever the first is and `&&` would decide the same.
-        if left.is_zero() || ours.set_write_timeout(Some(left)).is_err() {
+        if left.is_zero()
+            || stopped()
+            || ours
+                .set_write_timeout(Some(left.min(LOOK_FOR_A_STOP)))
+                .is_err()
+        {
             break false;
         }
         let piece = &request[at..request.len().min(at + WRITTEN_AT_ONCE)];
         match ours.write(piece) {
             Ok(0) => break false,
             Ok(put) => at += put,
-            Err(why) if why.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(why)
+                if matches!(
+                    why.kind(),
+                    std::io::ErrorKind::Interrupted
+                        | std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                ) => {}
             Err(_) => break false,
         }
     };
@@ -2524,6 +2574,9 @@ fn talk_through(
         // An answer's next line waits for the question's own to be all written: a program that
         // answers what it has not read is answering nothing.
         while !writer.is_finished() {
+            if talk.stopped() {
+                return Ok(());
+            }
             if Instant::now() >= until {
                 return Err(too_late());
             }
@@ -2532,7 +2585,11 @@ fn talk_through(
         // No deadline ran while `talk` was busy (a grade's chat runs as long as it runs): the
         // program's next answer has its own from here.
         until = Instant::now() + deadline;
-        if !ask_within(ours, &next, until, false) {
+        if !ask_within(ours, &next, until, false, &|| talk.stopped()) {
+            // The person stopped it while it was being written: no fault of the program's.
+            if talk.stopped() {
+                return Ok(());
+            }
             return Err(format!(
                 "'{extension}' did not read purlis's line within {} seconds, so purlis stopped it",
                 deadline.as_secs_f32()
