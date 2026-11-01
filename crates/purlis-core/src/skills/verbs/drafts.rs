@@ -763,7 +763,7 @@ pub fn lay_out_judge(
             usize::MAX,
         )
         .map_err(|why| super::not_written("the grade's record of its folder", why))?;
-        let (withheld, outcome): (Vec<&(String, String)>, Vec<&(String, String)>) =
+        let (withheld, outcome): (Vec<_>, Vec<_>) =
             outcome.iter().partition(|(path, _)| instruction_file(path));
         let mut listed: String = outcome
             .iter()
