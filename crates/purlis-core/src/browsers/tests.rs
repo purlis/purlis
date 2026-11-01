@@ -394,6 +394,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         password: Secret::new("fixture-word".into()),
         keep: None,
         identity: None,
+        suggested: false,
     })
     .unwrap();
     assert_eq!(login.origin, "https://shop.example.test");
@@ -405,6 +406,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         password: Secret::new("fixture-word".into()),
         keep: None,
         identity: None,
+        suggested: false,
     })
     .unwrap();
     assert_eq!(local.0.origin, "http://127.0.0.1:8123");
@@ -415,6 +417,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         password: Secret::new("fixture-word".into()),
         keep: None,
         identity: None,
+        suggested: false,
     })
     .unwrap_err();
     assert!(refused.contains("not one a browser opens"), "{refused}");
@@ -431,6 +434,7 @@ fn a_login_is_refused_on_plain_http_but_this_machines_loopback() {
         password: Secret::new("fixture-word".into()),
         keep: None,
         identity: None,
+        suggested: false,
     })
     .unwrap_err();
     assert!(refused.contains("plain http"), "{refused}");
@@ -440,6 +444,7 @@ fn a_login_is_refused_on_plain_http_but_this_machines_loopback() {
         password: Secret::new("fixture-word".into()),
         keep: None,
         identity: None,
+        suggested: false,
     })
     .unwrap();
     assert_eq!(login.origin, "https://xn--bcher-kva.example");

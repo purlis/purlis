@@ -19,7 +19,7 @@
 //!   persona, keep no sealed login, and go with the chat. Each fills in a new browser of its own,
 //!   so nothing the chat did in another browser is there when the password goes in.
 //! - **Always writes the one line and allows it here**, only where the persona's list was already
-//!   seen ([`purlis_core::sandbox::persona::list_seen_here`]), so its Allow carries nothing nobody
+//!   seen ([`purlis_core::sandbox::persona::list_seen_in`]), so its Allow carries nothing nobody
 //!   was shown. `sandbox.proposed-changes = "off"` holds it, and the line is shown first.
 //! - **A chat on a runner still needs its opt-in** (ADR 0089): its call can't wait across the
 //!   link, so it's told once the person answers, and the opt-in is asked on its next call.
@@ -95,6 +95,9 @@ const KEPT_AT_MOST: usize = 2;
 #[derive(Debug, Default)]
 pub struct Grants {
     inner: Mutex<Inner>,
+    /// Held by a press from its read of what waits to its answer: the Inbox and a pane draw one
+    /// notice, and two presses never both pass.
+    answering: Mutex<()>,
 }
 
 impl Grants {
@@ -207,11 +210,18 @@ impl Grants {
             .map(|one| one.tool.clone())
     }
 
-    /// A values' read of login `name` for chat `session`: Allow once goes with it.
-    pub fn used(&self, session: u32, name: &str) {
-        self.lock()
-            .grants
-            .retain(|one| !(one.session == session && one.tool.name == name && one.once));
+    /// **The login `name` to read now**: as [`Self::granted`], and Allow once goes with it, in
+    /// one step, so two calls never both fill it and a read that fails leaves nothing behind.
+    pub fn take(&self, session: u32, persona: Option<&str>, name: &str) -> Option<Tool> {
+        let mut inner = self.lock();
+        let at = inner.grants.iter().position(|one| {
+            one.session == session && persona == Some(one.persona.as_str()) && one.tool.name == name
+        })?;
+        if inner.grants[at].once {
+            Some(inner.grants.remove(at).tool)
+        } else {
+            Some(inner.grants[at].tool.clone())
+        }
     }
 
     /// Every login allowed from a notice, for what a warning counts as declared.
@@ -341,7 +351,12 @@ pub fn before_the_login(
         Ok(Heard::Kept(reason)) => no(kept_said(login, reason.as_deref())),
         Ok(Heard::Gone) | Err(mpsc::RecvTimeoutError::Disconnected) => no(NOT_ANSWERED.to_owned()),
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            grants.end(id, Heard::Gone);
+            // A press in that very moment has ended it, and its answer is waiting here.
+            if !grants.end(id, Heard::Gone)
+                && let Ok(Heard::Allowed) = heard.try_recv()
+            {
+                return None;
+            }
             held.chats().asks_may_have_moved();
             no(NOT_ANSWERED.to_owned())
         }
@@ -395,11 +410,7 @@ fn finish(root: &Path, locks: &Locks, proposal: Proposal) -> Result<Judged, Stri
     }
     let no_always = locks
         .proposed_changes_refused()
-        .or_else(|| {
-            locks
-                .scope_removed(sandbox::grant::Level::You)
-                .map(str::to_owned)
-        })
+        .or_else(|| locks.scope_removed(sandbox::grant::Level::You))
         .or_else(|| {
             let file =
                 std::fs::read_to_string(purlis_core::names::manifest(root)).unwrap_or_default();
@@ -471,6 +482,10 @@ pub fn answer(
     audit: Audit<'_>,
 ) -> Result<Pressed, String> {
     const NO_MORE: &str = "That ask has gone, and nothing was allowed.";
+    let _one_press = grants
+        .answering
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     let Asked {
         session,
         id,
@@ -490,7 +505,9 @@ pub fn answer(
             said: "Kept blocked. Nothing was filled.".to_owned(),
         });
     }
-    let moved = match typed.map(str::trim).filter(|typed| !typed.is_empty()) {
+    // A field left empty names no site: it never falls back to the one the chat suggested.
+    let moved = match typed.map(str::trim) {
+        Some("") => return Err("Type the site to fill this on, or Keep blocked.".to_owned()),
         Some(typed) => Some((typed, wait.proposal.at(root, typed, &grants.held())?)),
         None => None,
     };
@@ -522,7 +539,8 @@ pub fn answer(
     )?;
     let judged = finish(root, &locks, fresh)?;
     let changed = judged.proposal.digest() != wait.proposal.digest();
-    if changed && (!spelled || !judged.proposal.warnings.is_empty()) {
+    // Always writes a line, and the line is shown before it's written.
+    if changed && (!spelled || !judged.proposal.warnings.is_empty() || press == Press::Always) {
         let said = format!(
             "purlis would fill this on {}. Check it, then choose again.",
             judged.proposal.origin
@@ -542,6 +560,10 @@ pub fn answer(
         Press::Chat => (sandbox::grant::Level::Chat, false),
         Press::Always | Press::Keep => (sandbox::grant::Level::You, false),
     };
+    // Policy's list of scopes holds here as well as on the notice.
+    if let Some(why) = locks.scope_removed(level) {
+        return Err(why);
+    }
     let target = tool.whole();
     audit(
         Some(session),
@@ -632,6 +654,7 @@ const NOT_WRITTEN: &str = "The project's settings changed or can't be written, s
 /// **The person's press on a login's notice** (#4595). The window's alone (`ui::WINDOW_ONLY`).
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)]
 pub async fn answer_browser_login(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
@@ -689,7 +712,13 @@ fn pressed(
             } else {
                 Outcome {
                     about,
-                    answer: Said::Allowed { scope: Scope::Chat },
+                    answer: Said::Allowed {
+                        scope: match asked.press {
+                            Press::Once => Scope::Once,
+                            Press::Always => Scope::You,
+                            Press::Chat | Press::Keep => Scope::Chat,
+                        },
+                    },
                 }
             },
         );

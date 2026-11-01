@@ -173,7 +173,11 @@ pub fn site_of(site: &str) -> Result<(String, String), String> {
         || last
             .strip_prefix("0x")
             .is_some_and(|hex| hex.bytes().all(|b| b.is_ascii_hexdigit()));
-    if labels.len() < 2 || numeric || host.starts_with('[') || last == "localhost" {
+    let private = matches!(
+        last,
+        "localhost" | "local" | "internal" | "lan" | "home" | "corp"
+    );
+    if labels.len() < 2 || numeric || host.starts_with('[') || private {
         return Err(format!(
             "{host} is an address, a name on this machine or a bare name, so it can't be \
              confirmed by reading it. A login there is declared in the project's settings"
@@ -283,7 +287,10 @@ pub fn warnings_of(root: &Path, proposal: &Proposal, granted: &[Tool]) -> Vec<Wa
         let tool = declared.iter().find(|tool| {
             tool.login.is_none()
                 && tool.vault == proposal.vault
-                && tool.values.iter().any(|value| value.key == *key)
+                && tool
+                    .values
+                    .iter()
+                    .any(|value| value.key.eq_ignore_ascii_case(key))
         });
         if let Some(tool) = tool {
             warnings.push(Warning::ToolsKey {
@@ -331,15 +338,23 @@ fn declared_tools(root: &Path) -> Vec<Tool> {
         .unwrap_or_default()
 }
 
-/// The other origins the proposal's password key is declared on, each persona's, or `granted`.
+/// The other origins either of the proposal's keys is on, in any spelling: a password named as a
+/// user name goes to the site all the same. Each persona's logins, and `granted`.
 fn elsewhere(declared: &[Tool], proposal: &Proposal, granted: &[Tool]) -> Vec<String> {
+    let same = |key: &str| {
+        key.eq_ignore_ascii_case(&proposal.key)
+            || proposal
+                .user_key
+                .as_ref()
+                .is_some_and(|user| key.eq_ignore_ascii_case(user))
+    };
     let mut origins: Vec<String> = declared
         .iter()
         .chain(granted)
         .filter(|tool| tool.vault == proposal.vault)
         .filter(|tool| {
             tool.login_keys()
-                .is_some_and(|(_, key)| key == proposal.key)
+                .is_some_and(|(user, key)| same(key) || user.is_some_and(same))
         })
         .filter_map(|tool| tool.login.as_ref().map(|login| login.origin.clone()))
         .filter(|origin| *origin != proposal.origin)
