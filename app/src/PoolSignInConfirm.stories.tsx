@@ -10,6 +10,8 @@ import { untilFocused } from "./stories.testkit";
 const meta: Meta<typeof PoolSignInConfirm> = {
   title: "PoolSignInConfirm",
   component: PoolSignInConfirm,
+  // The dialog draws over the page, outside the story's frame.
+  parameters: { screenshot: "page" },
 };
 export default meta;
 
