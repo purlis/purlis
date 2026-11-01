@@ -547,6 +547,9 @@ struct Inner {
     drains: OnceLock<crate::routing::DrainsTo>,
     /// What asks for a suspended runner it relays to to run again, as a chat starts there (#3980).
     runs_again: OnceLock<crate::routing::RunsAgain>,
+    /// Until when a start waits for each runner asked to run again (#4403), by `<pool>/<runner>`:
+    /// a wake is one word on its Claim, and every link's start waits for that one wake.
+    waking: Mutex<HashMap<String, std::time::Instant>>,
     /// The runners this machine keeps, which the kill switch reaches (#2051).
     runners: Arc<crate::reach::Runners>,
     /// The desktop's links to this host, which a runner's suspends itself without (#2051).
@@ -1139,6 +1142,7 @@ impl Hosting {
                 most_bundle: OnceLock::new(),
                 drains: OnceLock::new(),
                 runs_again: OnceLock::new(),
+                waking: Mutex::default(),
                 runners,
                 unattended: crate::unattended::Links::default(),
                 seen_elsewhere: Mutex::new(None),
@@ -1360,6 +1364,43 @@ impl Hosting {
     pub fn running_again_with(self, runs_again: crate::routing::RunsAgain) -> Hosting {
         let _ = self.inner.runs_again.set(runs_again);
         self
+    }
+
+    /// Whether this host is stopped: nothing wakes a runner meanwhile (#2051, #4403).
+    pub(crate) fn is_stopped(&self) -> bool {
+        self.inner.switch.is_stopped()
+    }
+
+    /// **How long a start still waits for `runner`** (#4403), with `asked`, its time, where it was
+    /// just asked to run again: that answer means it is suspended now, so any time held for it
+    /// is an earlier wake's.
+    pub(crate) fn waits_for(
+        &self,
+        runner: &str,
+        asked: Option<std::time::Duration>,
+    ) -> Option<std::time::Duration> {
+        let now = std::time::Instant::now();
+        let mut waking = self
+            .inner
+            .waking
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        waking.retain(|_, until| *until > now);
+        if let Some(asked) = asked {
+            waking.insert(runner.to_owned(), now + asked);
+        }
+        waking
+            .get(runner)
+            .map(|until| until.saturating_duration_since(now))
+    }
+
+    /// `runner` is back, so a later start waits for nothing.
+    pub(crate) fn came_back(&self, runner: &str) {
+        self.inner
+            .waking
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(runner);
     }
 
     /// What asks for a suspended runner to run again, where it is told.

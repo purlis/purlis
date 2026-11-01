@@ -1544,6 +1544,15 @@ pub struct ClusterPool {
 }
 
 impl ClusterPool {
+    /// How long this pool waits for its operator to vouch for a runner: what the person raised it
+    /// to, or purlis's default (spec #4275).
+    #[must_use]
+    pub fn vouch_wait(&self) -> std::time::Duration {
+        self.chosen
+            .wait(crate::poollimits::LimitId::VouchWait)
+            .unwrap_or(crate::pools::VOUCHED_WITHIN)
+    }
+
     /// This pool with its limit `id` set to `value`: what its add was retried with (spec #4275).
     #[must_use]
     pub fn with_limit(mut self, id: crate::poollimits::LimitId, value: u64) -> ClusterPool {
