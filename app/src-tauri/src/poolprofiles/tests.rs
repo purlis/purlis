@@ -836,7 +836,7 @@ fn a_pools_page_says_which_limit_the_file_got_wrong() {
         held: serde_json::json!("lots"),
         why: "Most a profile may send: size is a whole number".to_owned(),
     }];
-    let shown = limits_shown(&Chosen::default(), &refused);
+    let shown = limits_shown(&Chosen::default(), &refused, true, &[]);
     let rows: Vec<&PoolLimitRow> = shown
         .groups
         .iter()
