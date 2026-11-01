@@ -568,7 +568,9 @@ this device is the harness's own answer: how `claude auth status` or `codex logi
 exits, or whether opencode's `auth.json` is there, by its name. A chat on a made profile its
 harness says is signed out is refused before it starts and leaves one Ask, Sign in <profile>,
 in the Inbox, which goes once the harness says it is signed in; where the harness cannot say,
-the chat starts. What the harness says is remembered for a minute. `purlis profile sign-in <name> --check` says which. A
+the chat starts. What the harness says is remembered for a minute. `purlis profile sign-in <name> --check` says which,
+and exits 0 if signed in, 3 if not, 4 if the harness cannot tell, 5 while it is being fetched, 6 for no
+such profile, and 1 if it could not ask. A
 profile adopted from the harness's own folder is signed in by your own sign-in and never asked.
 
 A persona names the profile it prefers (`profile: qa-bot`), and a profile is the person's, so a

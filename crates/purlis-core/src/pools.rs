@@ -1394,15 +1394,15 @@ pub fn cluster_runner_still_yours(
 
 /// **Whether the cluster pool `name`'s runner says `profile` is signed in** (#4164), by its own
 /// `purlis profile sign-in --check` in the vouched pod ([`cluster_sign_in`]), for a sign-in with
-/// no link to the runner to ask over. Refused where the check every link makes fails, or the
-/// runner says neither, as for a profile it does not keep.
+/// no link to the runner to ask over. `None` where it keeps no profile of that name; refused
+/// where the check every link makes fails, or the runner could not say.
 pub fn cluster_standing(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     name: &str,
     judged: &runners::ClusterKept,
     profile: &str,
-) -> Result<crate::profilestore::sign_in::Standing, String> {
+) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
     let login = cluster_sign_in(
         config_root,
         kubectl,

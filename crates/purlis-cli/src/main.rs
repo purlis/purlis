@@ -1481,7 +1481,9 @@ enum ProfileCommand {
     Authenticate {
         /// The profile's name.
         name: String,
-        /// Only say whether its harness says it is signed in on this device.
+        /// Only say whether its harness says it is signed in on this device. Exits 0 if it is,
+        /// 3 if it is not, 4 if its harness cannot tell, 5 while its harness is being fetched,
+        /// 6 if this device has no such profile, and 1 if purlis could not ask.
         #[arg(long)]
         check: bool,
         /// For an opencode profile, the plan it signs in to: openai (ChatGPT) or
@@ -4303,10 +4305,15 @@ fn profile_sign_in(
         Err(why) => return refused(&why),
     };
     let Some(record) = record else {
-        return refused(&format!(
+        let said = refused(&format!(
             "this machine has no profile named '{}'. purlis profile list names the ones it has.",
             shown::short(name)
         ));
+        return if check {
+            ExitCode::from(sign_in::check_exit::NOT_KEPT)
+        } else {
+            said
+        };
     };
     // Only a desktop drives a sign-in held to its input, on a runner that keeps the profile.
     if !matches!(held, Held::No) && record.kept_for.is_none() {
@@ -4322,15 +4329,17 @@ fn profile_sign_in(
     let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
         Ok(pinned) => pinned,
         Err(why) if check => {
-            return refused(&format!(
+            refused(&format!(
                 "{why}. purlis cannot tell whether '{}' is signed in on {here}.",
                 record.name
             ));
+            return ExitCode::from(sign_in::check_exit::CANNOT_TELL);
         }
         Err(why) => return refused(&format!("{why}. Nothing was signed in.")),
     };
     if check {
-        let said = match sign_in::standing_of(&record, &sign_in::ThisMachine) {
+        let standing = sign_in::standing_of(&record, &sign_in::ThisMachine);
+        let said = match standing {
             None => format!(
                 "'{}' is signed in by {}'s own sign-in on {here}",
                 record.name, record.title
@@ -4338,13 +4347,10 @@ fn profile_sign_in(
             Some(sign_in::Standing::SignedIn) => {
                 format!("'{}' is signed in on {here}", record.name)
             }
-            Some(sign_in::Standing::SignedOut) => {
-                eprintln!(
-                    "'{}' is not signed in on {here}: purlis profile sign-in {} signs it in",
-                    record.name, record.name
-                );
-                return ExitCode::FAILURE;
-            }
+            Some(sign_in::Standing::SignedOut) => format!(
+                "'{}' is not signed in on {here}: purlis profile sign-in {} signs it in",
+                record.name, record.name
+            ),
             Some(sign_in::Standing::Fetching) => format!(
                 "its harness is still being fetched on {here}, so it cannot yet say whether '{}' \
                  is signed in; purlis profile sign-in {} signs it in",
@@ -4357,7 +4363,7 @@ fn profile_sign_in(
             ),
         };
         eprintln!("{said}");
-        return ExitCode::SUCCESS;
+        return ExitCode::from(standing.map_or(0, sign_in::Standing::check_exit));
     }
     let login = match sign_in::login_by(&record, provider, pinned.as_deref(), way) {
         Ok(login) => login,
@@ -4482,7 +4488,8 @@ fn pool_sign_in(
     eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
     docker
         .standing_on_runner(&runner.made, &engine, name)
-        .map_err(|why| not_asked(pool, name, &why))?;
+        .map_err(|why| not_asked(pool, name, &why))?
+        .ok_or_else(|| not_kept(pool, name))?;
     let login = docker.driven_sign_in(&runner.made, &engine, name, provider)?;
     let check = {
         let (docker, made, engine, name) = (
@@ -4494,6 +4501,8 @@ fn pool_sign_in(
         move || {
             docker
                 .standing_on_runner(&made, &engine, &name)
+                .ok()
+                .flatten()
                 .unwrap_or(sign_in::Standing::CannotTell)
         }
     };
@@ -4550,6 +4559,14 @@ fn not_asked(pool: &str, name: &str, why: &str) -> String {
     )
 }
 
+/// What the person is told where pool `pool`'s runner keeps no profile `name`.
+fn not_kept(pool: &str, name: &str) -> String {
+    format!(
+        "pool {pool}'s runner does not keep '{name}', so nothing was started. A profile goes on \
+         a pool from its row in Settings › Pools."
+    )
+}
+
 /// [`pool_sign_in`] on the cluster pool `pool`, kept as `cluster` with its runner `kept` (#4164):
 /// behind the gate the window's strip passes ([`purlis_core::pools::cluster_runner_yours`]), over
 /// `kubectl exec -i` into the pod the gate judged. Each `kubectl exec` makes the check every link
@@ -4576,7 +4593,8 @@ fn cluster_pool_sign_in(
     )?;
     eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
     pools::cluster_standing(config, &kubectl, pool, &judged, name)
-        .map_err(|why| not_asked(pool, name, &why))?;
+        .map_err(|why| not_asked(pool, name, &why))?
+        .ok_or_else(|| not_kept(pool, name))?;
     // The standing may have taken a while, as long as the runner chose: the whole gate again.
     let (cluster, kept) = pools::cluster_runner_still_yours(config, pool, &judged)?;
     pools::cluster_runner_yours(config, pool, &cluster, &kept, &pools::vouched_now)?;
@@ -4603,6 +4621,8 @@ fn cluster_pool_sign_in(
                 return sign_in::Standing::CannotTell;
             }
             pools::cluster_standing(&config, &kubectl, &pool, &judged, &name)
+                .ok()
+                .flatten()
                 .unwrap_or(sign_in::Standing::CannotTell)
         }
     };
