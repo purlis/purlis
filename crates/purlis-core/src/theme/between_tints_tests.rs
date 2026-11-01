@@ -473,6 +473,7 @@ fn what_stands_apart_has_a_coarse_reading_within_its_margin_of_the_lowest_at_any
         .map(|(_, _, theme)| theme)
         .chain([selected, way]);
     let (mut steps, mut oklab): (f64, f64) = (0.0, 0.0);
+    let mut card_moved = false;
     for theme in widest().into_iter().chain(near_floors) {
         let card = parts::card_on_side(&theme);
         let ways = parts::notice_ways(&theme);
@@ -490,12 +491,19 @@ fn what_stands_apart_has_a_coarse_reading_within_its_margin_of_the_lowest_at_any
             let gap = lowest(COARSE_DEGREES) - lowest(1);
             if format!("{:?}", reads[0][at].what).starts_with("Card") {
                 steps = steps.max(gap);
+                let highest = reads
+                    .iter()
+                    .map(|one| one[at].value)
+                    .fold(f64::NEG_INFINITY, f64::max);
+                card_moved |= highest > lowest(1);
             } else {
                 oklab = oklab.max(gap);
             }
         }
     }
-    assert!(steps > 0.0 && oklab > 0.0, "{steps} {oklab}");
+    // A step is read to two places, so its coarse reading can find its lowest exactly. What keeps
+    // this from passing on nothing is that a card's step does move with the hue.
+    assert!(card_moved && oklab > 0.0, "{card_moved} {oklab}");
     assert!(steps < NEAR_A_STEP, "{steps}");
     assert!(oklab < NEAR_IN_OKLAB, "{oklab}");
 }
