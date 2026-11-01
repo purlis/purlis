@@ -79,7 +79,18 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     {/* Every menu's row says the key the key registry holds for its act (#2921, N25). */}
     <MenuShortcuts.Provider value={rowKey}>
-      <App />
+      <React.Profiler
+        id="App"
+        onRender={(_id, phase, actual, base, start, commit) => {
+          // DEBUG-4351
+          const g = globalThis as unknown as { __calls?: string[]; __t0?: number };
+          g.__calls?.push(
+            `COMMIT ${phase} react=${Math.round(actual)} at+${Math.round(start - (g.__t0 ?? 0))} base=${Math.round(base)} done+${Math.round(commit - (g.__t0 ?? 0))}`,
+          );
+        }}
+      >
+        <App />
+      </React.Profiler>
     </MenuShortcuts.Provider>
   </React.StrictMode>,
 );
