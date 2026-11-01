@@ -795,6 +795,40 @@ describe("a chat in a branch folder (#4326)", () => {
     });
   });
 
+  it("opens a branch folder's own copy when its row is pressed, never the studio (#4376)", async () => {
+    branchCore();
+    const hands = view({ chat });
+    await list();
+    await waitFor(() => expect(rowOf("on-the-branch")).toBeInTheDocument());
+
+    await userEvent.click(rowOf("on-the-branch"));
+
+    expect(hands.onOpenView).toHaveBeenCalledTimes(1);
+    expect(hands.onOpenView).toHaveBeenCalledWith(
+      pieceFileView(
+        { workspace: "ops", repo: "svc", piece: "fix" },
+        ".claude/skills/on-the-branch/SKILL.md",
+      ),
+      "SKILL.md · on-the-branch",
+    );
+  });
+
+  it("says why Open in Skill studio cannot show a branch folder's copy (#4376)", async () => {
+    branchCore();
+    view({ chat });
+    await list();
+    await waitFor(() => expect(rowOf("on-the-branch")).toBeInTheDocument());
+
+    fireEvent.contextMenu(rowOf("on-the-branch"));
+    const menu = await screen.findByRole("menu", { name: "on-the-branch" });
+    const studio = within(menu).getByRole("menuitem", { name: "Open in Skill studio" });
+
+    expect(studio).toHaveAttribute("aria-disabled", "true");
+    expect(studio).toHaveAccessibleDescription(
+      "The Skill studio lists each clone's own folder, not branch fix. Open the file shows this copy.",
+    );
+  });
+
   it("asks nothing of a branch folder with no chat in front", async () => {
     const asked = branchCore();
     view();

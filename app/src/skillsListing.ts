@@ -475,6 +475,13 @@ function inACheckout(
 /** The folder of a workspace that holds its branch folders (the core's `worktree::DIR_NAME`). */
 const BRANCH_FOLDERS = ".worktrees";
 
+/** **The branch folder a repo skill's row is a copy in** (#4376), or `undefined` for any other
+ *  row. The Skill studio lists each clone's own folder, so it cannot describe such a copy: its
+ *  row opens the file instead, and its Open in Skill studio says why not. */
+export function branchFolderOf(skill: StudioSkill): string | undefined {
+  return skill.level === "repo" ? inACheckout(skill.folder)?.piece : undefined;
+}
+
 /**
  * **Where Explorer can show a skill's folder**, from the workspace it shows (`shown`, the title
  * bar's): a project, workspace or persona skill's folder in the project's own files, which
@@ -539,6 +546,9 @@ export function filePlaceOf(skill: StudioSkill): FilePlace | { reason: string } 
 
 /** Why a built-in skill's file is not opened: it ships with purlis. */
 const BUILT_IN_FILE = "It ships with purlis: Make my own copy in the Skill studio to edit one.";
+/** Why Open in Skill studio cannot show a branch folder's copy (#4376). */
+const NOT_IN_THE_STUDIO = (piece: string) =>
+  `The Skill studio lists each clone's own folder, not branch ${piece}. Open the file shows this copy.`;
 /** Why Use in this chat waits while no chat is in front. */
 const NO_CHAT = "No chat is in front to use it in.";
 
@@ -558,6 +568,7 @@ export function menuRowsOf(row: ListedSkill, at: MenuAt): SkillMenuRow[] {
   const mark = markOf(row);
   const usable = mark !== "left-out" && mark !== "off" && mark !== "needs-review";
   const useWhy = !at.chat ? NO_CHAT : usable ? "" : NOT_THIS_CHATS;
+  const piece = branchFolderOf(skill);
   return [
     { act: "use", title: "Use in this chat", available: useWhy === "", reason: useWhy },
     changeRow("turn", turn, skill.on ? "Turn off" : "Turn on"),
@@ -574,6 +585,11 @@ export function menuRowsOf(row: ListedSkill, at: MenuAt): SkillMenuRow[] {
       available: !("reason" in file),
       reason: "reason" in file ? file.reason : "",
     },
-    { act: "studio", title: "Open in Skill studio", available: true, reason: "" },
+    {
+      act: "studio",
+      title: "Open in Skill studio",
+      available: piece === undefined,
+      reason: piece === undefined ? "" : NOT_IN_THE_STUDIO(piece),
+    },
   ];
 }

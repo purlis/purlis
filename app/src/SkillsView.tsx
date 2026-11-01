@@ -28,6 +28,7 @@ import {
 } from "./skillStudio";
 import { SkillMenu, SkillsList } from "./SkillsList";
 import {
+  branchFolderOf,
   branchFolderRowsOf,
   explorerPlaceOf,
   filePlaceOf,
@@ -296,9 +297,24 @@ export function SkillsView({
     onOpenView(skillStudioAt(scope, page, { skill, newTab }), SKILL_STUDIO_TITLE);
   /** The studio on this view's scope, at its Library (#3681); a tab of its own on ⌘-click. */
   const openStudio = (newTab = false) => studioAt("library", undefined, newTab);
+  /** **Its `SKILL.md`** in a tab: Open the file, and the press of a branch folder's copy. */
+  const openFile = (row: ListedSkill) => {
+    const at = filePlaceOf(row.skill);
+    if ("reason" in at) return;
+    const of =
+      at.repo === ""
+        ? PLANE_ROOT
+        : { workspace: at.workspace, repo: at.repo, piece: at.piece ?? null };
+    onOpenView(pieceFileView(of, at.path), `SKILL.md · ${row.skill.name}`);
+  };
   /** A card in the studio, at Library › it, for the view's scope (S7); a program's own or a
-   *  repo's skill, which the Library does not list, on the Harness skills page. */
-  const openRow = (row: ListedSkill) =>
+   *  repo's skill, which the Library does not list, on the Harness skills page. A branch folder's
+   *  copy is on neither (#4376), so it opens as its file. */
+  const openRow = (row: ListedSkill) => {
+    if (branchFolderOf(row.skill) !== undefined) {
+      openFile(row);
+      return;
+    }
     onOpenView(
       row.skill.level === "installed" || row.skill.level === "repo"
         ? skillStudioAt(scope, "harness")
@@ -307,6 +323,7 @@ export function SkillsView({
           }),
       SKILL_STUDIO_TITLE,
     );
+  };
   /** **New skill…** (#3684): the studio's own dialog, which asks how; the studio goes to its
    *  Library first, and the dialog opens there. */
   const newSkill = () => {
@@ -342,15 +359,8 @@ export function SkillsView({
       // Explorer shows the title bar's workspace, whichever chat is in front.
       const at = explorerPlaceOf(row.skill, workspace);
       if (!("reason" in at)) onShowInExplorer(at);
-    } else if (what === "file") {
-      const at = filePlaceOf(row.skill);
-      if ("reason" in at) return;
-      const of =
-        at.repo === ""
-          ? PLANE_ROOT
-          : { workspace: at.workspace, repo: at.repo, piece: at.piece ?? null };
-      onOpenView(pieceFileView(of, at.path), `SKILL.md · ${row.skill.name}`);
-    } else change(row, what);
+    } else if (what === "file") openFile(row);
+    else change(row, what);
   };
   const fix = (row: ListedSkill, one: SkillFix) => {
     if (one.act === "turn") change(row, "turn");
