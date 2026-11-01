@@ -1097,3 +1097,15 @@ fn an_evals_files_are_staged_and_what_its_chat_left_reaches_its_judge_alone() {
         assert!(end_try_at(root, &laid.piece).unwrap());
     }
 }
+
+/// SK-55: a path a chat's answer names in its piece is where its judge finds it.
+#[test]
+fn a_chats_answer_names_its_files_where_its_judge_finds_them() {
+    assert_eq!(
+        answer_as_its_judge_reads(
+            "I wrote /plane/piece-1/out.md.",
+            Path::new("/plane/piece-1")
+        ),
+        "I wrote outcome/out.md."
+    );
+}

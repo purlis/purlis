@@ -740,6 +740,13 @@ pub fn instruction_file(path: &str) -> bool {
     .contains(&leaf.as_str())
 }
 
+/// **A chat's final answer `answer`, as its judge reads it** (SK-55): a path into its piece `piece`
+/// named as `outcome/`, where the judge finds it.
+pub fn answer_as_its_judge_reads(answer: &str, piece: &Path) -> String {
+    let outcome = purlis_skills::grade::outcomes::JUDGE_OUTCOME_DIR;
+    answer.replace(&piece.display().to_string(), outcome)
+}
+
 /// **Lays out a judge's piece** (SK-55, #3235): a grade's arm with no skill, marked as a judge's
 /// ([`judge_piece`]), holding `task` (the task it grades), the judged chat's final answer
 /// `answer` where it handed one, and `outcome`, what that chat left, under its own folder; and

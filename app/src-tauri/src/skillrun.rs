@@ -75,9 +75,12 @@ pub enum Watched {
     /// handed it (#1981), heard just before the turn's end. What an outcome eval's judge reads,
     /// and what a judge answers with.
     Said(String),
-    /// **A guard refused a call of it** (SK-55): in a judge, which holds only the tools its read
-    /// guard answers for, a reach past what it may read. Told as it happens.
+    /// **Its read guard refused a call of it** (SK-55): in a judge, a reach past what it may read.
+    /// Told as it happens.
     ReadPast,
+    /// **A call of it was refused by anything else**: in a judge, a fault of purlis's, such as a
+    /// guard that crashed or did not answer, which says nothing of the judge.
+    RefusedOtherwise,
 }
 
 /// The open skill runs of one project's chats.
@@ -189,7 +192,15 @@ impl SkillRuns {
             self.tell_watching(call.chat, Watched::Asked);
         }
         if call.decision == purlis_core::hookwire::Decision::Deny {
-            self.tell_watching(call.chat, Watched::ReadPast);
+            let judges_own = call.rule.as_deref() == Some(purlis_core::toolhooks::JUDGE_READ_RULE);
+            self.tell_watching(
+                call.chat,
+                if judges_own {
+                    Watched::ReadPast
+                } else {
+                    Watched::RefusedOtherwise
+                },
+            );
         }
         let key = call.chat.to_string();
         let (told, opened) = {

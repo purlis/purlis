@@ -235,14 +235,31 @@ fn a_grade_watching_a_chat_is_told_when_it_asks_the_person() {
 fn a_grade_watching_a_chat_is_told_of_a_refused_call_at_once() {
     let (runs, _told) = listening();
     let watched = runs.watch(4);
-    let mut refused = call(4, "toolu_1", None);
-    refused.tool_hook = "pretooluse-read".to_owned();
-    refused.decision = Decision::Deny;
-    runs.heard(&refused);
+    let refused = |rule: Option<&str>| {
+        let mut refused = call(4, "toolu_1", None);
+        refused.tool_hook = "pretooluse-read".to_owned();
+        refused.decision = Decision::Deny;
+        refused.rule = rule.map(str::to_owned);
+        refused
+    };
+    runs.heard(&refused(Some(purlis_core::toolhooks::JUDGE_READ_RULE)));
     assert_eq!(
         watched.try_iter().collect::<Vec<_>>(),
         vec![Watched::ReadPast]
     );
+    for fault in [
+        Some("guard-crashed"),
+        Some("guard-unanswered"),
+        Some("unknown-hook"),
+        None,
+    ] {
+        runs.heard(&refused(fault));
+        assert_eq!(
+            watched.try_iter().collect::<Vec<_>>(),
+            vec![Watched::RefusedOtherwise],
+            "{fault:?}"
+        );
+    }
 }
 
 /// SK-15e (#3233): a skill the chat loaded from the index through purlis's `skill_load` is a

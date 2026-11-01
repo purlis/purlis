@@ -94,12 +94,17 @@ impl HarnessAdapter for ClaudeCode {
         if let Some(linked) = crate::skills::linked(&skills, kit) {
             args.extend(words(["--plugin-dir", &linked.display().to_string()]));
         }
-        args.extend(
-            screened
-                .as_ref()
-                .map(project::Screened::setting_sources)
-                .unwrap_or_default(),
-        );
+        // An outcome eval's chat loads no settings file at all: what it may do is its `--settings`.
+        if kit.writes_its_piece {
+            args.extend(words(["--setting-sources", ""]));
+        } else {
+            args.extend(
+                screened
+                    .as_ref()
+                    .map(project::Screened::setting_sources)
+                    .unwrap_or_default(),
+            );
+        }
         StateHooks::ThisSessionOnly {
             args: [
                 args,
@@ -113,6 +118,8 @@ impl HarnessAdapter for ClaudeCode {
                 // A judge's chat has these tools and no other, whatever a release adds (SK-55).
                 if kit.judging {
                     words(["--tools", JUDGE_TOOLS])
+                } else if kit.writes_its_piece {
+                    words(["--tools", OUTCOME_TOOLS])
                 } else {
                     Vec::new()
                 },
@@ -904,6 +911,10 @@ fn denied_tools(kit: Kit<'_>) -> Vec<String> {
 
 /// **The only tools a judge's chat has** (SK-55): the two the read guard holds to its folder.
 const JUDGE_TOOLS: &str = "Read,Grep";
+
+/// **The only tools an outcome eval's chat has** (SK-55): what a task reads and writes with, and
+/// the skill under test. The shell is on the list so that a call asks, and so ends the run (#4476).
+const OUTCOME_TOOLS: &str = "Read,Grep,Glob,Write,Edit,MultiEdit,Skill,Bash";
 
 /// **Claude Code's tools a judge's chat is denied**, beside [`JUDGE_TOOLS`] (SK-55, #3235): every one that writes a file,
 /// runs a command or reaches the network, every way to read past the read guard that holds `Read`

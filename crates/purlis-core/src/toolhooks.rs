@@ -300,6 +300,10 @@ pub fn pretooluse_read(hook: &Hook) -> Answer {
     if let Some(why) = judge_reads_outside(hook, &named) {
         return deny(why);
     }
+    // All a judge holds is what purlis copied in, whatever a file of it is called.
+    if (hook.env)(JUDGE_FOLDER_ENV).is_some() {
+        return Answer::Nothing;
+    }
     // `_names_a_vault_path` and nothing else — the Bash route's predicate, with no private
     // half of the answer here (#462).
     if named.iter().any(|t| leakguard::names_a_vault_path(t)) {
@@ -341,6 +345,11 @@ pub fn pretooluse_read(hook: &Hook) -> Answer {
     ))
 }
 
+/// **What a judge's read guard refuses by, and the rule a call it refused is recorded under**
+/// (SK-55): a grade tells a judge's own reach from a fault of purlis's by this word. Within what a
+/// refusal's reason keeps.
+pub const JUDGE_READ_RULE: &str = "a judge reads only the folder purlis laid out for it";
+
 /// **Set on a judge's chat alone** (SK-55, #3235): the folder it may read, its own piece. Its
 /// adapter sets it, and a judge has no tool that could change it.
 pub const JUDGE_FOLDER_ENV: &str = "PURLIS_JUDGE_FOLDER";
@@ -350,13 +359,7 @@ pub const JUDGE_FOLDER_ENV: &str = "PURLIS_JUDGE_FOLDER";
 /// not resolve is refused, and a search that names none stands where the harness says it does.
 fn judge_reads_outside(hook: &Hook, named: &[String]) -> Option<String> {
     let folder = (hook.env)(JUDGE_FOLDER_ENV)?;
-    let refused = || {
-        Some(
-            "a judge reads only the folder purlis laid out for it: nothing outside it is part \
-             of what it grades"
-                .to_owned(),
-        )
-    };
+    let refused = || Some(JUDGE_READ_RULE.to_owned());
     let Ok(folder) = std::fs::canonicalize(&folder) else {
         return refused();
     };
@@ -405,26 +408,30 @@ fn inside(folder: &Path, base: &Path, named: &[String]) -> bool {
         .all(|path| !path.starts_with('~') && lands_inside(folder, &base.join(path)))
 }
 
-/// **Whether `path` lands inside `folder`**, a resolved folder: the deepest part of it that exists,
-/// links followed, has to be inside, and what does not exist yet below that is plain names. A link
-/// that leads nowhere does not land anywhere.
+/// **Whether `path` lands inside `folder`** ([`landed_in`]).
 fn lands_inside(folder: &Path, path: &Path) -> bool {
+    landed_in(folder, path).is_some()
+}
+
+/// **Where `path` lands in `folder`**, a resolved folder, relative to it: the deepest part of it
+/// that exists, links followed, has to be inside, and what does not exist yet below that is plain
+/// names. A link that leads nowhere does not land anywhere.
+fn landed_in(folder: &Path, path: &Path) -> Option<PathBuf> {
     let mut at = path;
+    let mut below: Vec<&std::ffi::OsStr> = Vec::new();
     loop {
         match std::fs::symlink_metadata(at) {
             Ok(_) => {
-                return std::fs::canonicalize(at).is_ok_and(|real| real.starts_with(folder));
+                let real = std::fs::canonicalize(at).ok()?;
+                let mut landed = real.strip_prefix(folder).ok()?.to_path_buf();
+                landed.extend(below.iter().rev());
+                return Some(landed);
             }
             Err(why) if why.kind() == std::io::ErrorKind::NotFound => {
-                if at.file_name().is_none() {
-                    return false;
-                }
-                let Some(above) = at.parent() else {
-                    return false;
-                };
-                at = above;
+                below.push(at.file_name()?);
+                at = at.parent()?;
             }
-            Err(_) => return false,
+            Err(_) => return None,
         }
     }
 }
@@ -448,17 +455,18 @@ fn outcome_write(hook: &Hook) -> Option<Answer> {
         "" => folder.clone(),
         cwd => Path::new(cwd).to_path_buf(),
     };
-    let settings_of_a_chat = |path: &String| {
-        let folded = path.to_lowercase();
-        folded
-            .split('/')
-            .any(|part| part == ".claude" || part == ".mcp.json")
+    // Compared where it lands in the piece, so a piece that itself lies below such a folder is fine.
+    let held_back = |path: &String| {
+        !path.starts_with('~')
+            && landed_in(&folder, &base.join(path)).is_some_and(|landed| {
+                landed.components().any(|part| {
+                    let part = part.as_os_str().to_string_lossy().to_lowercase();
+                    [".claude", ".mcp.json", ".git"].contains(&part.as_str())
+                })
+            })
     };
     Some(
-        if named.is_empty()
-            || named.iter().any(settings_of_a_chat)
-            || !inside(&folder, &base, &named)
-        {
+        if named.is_empty() || named.iter().any(held_back) || !inside(&folder, &base, &named) {
             refused()
         } else {
             say("PreToolUse", &[("permissionDecision", "allow".to_owned())])
@@ -489,7 +497,11 @@ pub fn outcome_guard_answers(binary: &Path, folder: &Path) -> bool {
             Some(JUDGE_CHECK_TIME),
         )
     };
-    asked("new.txt").is_ok_and(|ran| String::from_utf8_lossy(&ran.printed).contains("\"allow\""))
+    let allowed = |path: &str| {
+        asked(path).is_ok_and(|ran| String::from_utf8_lossy(&ran.printed).contains("\"allow\""))
+    };
+    allowed("new.txt")
+        && allowed(&folder.join("new.txt").display().to_string())
         && asked("../outside.txt").is_ok_and(|ran| {
             ran.status.code() == Some(2)
                 || String::from_utf8_lossy(&ran.printed).contains("\"deny\"")

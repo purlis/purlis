@@ -1399,6 +1399,8 @@ fn an_outcome_chats_writes_land_in_its_own_piece() {
         ".CLAUDE/settings.json",
         "deep/.claude/settings.json",
         ".mcp.json",
+        ".git/config",
+        ".GIT/hooks/pre-commit",
     ]
     .map(str::to_owned)
     .to_vec();
@@ -1408,6 +1410,64 @@ fn an_outcome_chats_writes_land_in_its_own_piece() {
     for path in &outside {
         assert!(matches!(ask(write(path)), Answer::Deny(_)), "{path}");
     }
+    let by_all_of_it = format!("{cwd}/.git/config");
+    assert!(matches!(ask(write(&by_all_of_it)), Answer::Deny(_)));
     let unnamed = serde_json::json!({"tool_name": "Write", "cwd": cwd, "tool_input": {}});
     assert!(matches!(ask(unnamed), Answer::Deny(_)));
+}
+
+/// SK-55: what a piece holds is compared where it lands in the piece, so one lying below a folder of
+/// such a name writes as any other.
+#[test]
+fn a_piece_below_a_folder_of_a_held_back_name_writes_as_any_other() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let folder = root.join(".claude/projects/piece");
+    std::fs::create_dir_all(&folder).unwrap();
+    let cwd = folder.to_str().unwrap().to_owned();
+    let lookup = |name: &str| (name == OUTCOME_FOLDER_ENV).then(|| cwd.clone());
+    for path in ["new.md".to_owned(), format!("{cwd}/new.md")] {
+        let payload = serde_json::json!({"tool_name": "Write", "cwd": cwd, "tool_input": {"file_path": path}});
+        let answer = pretooluse_edit(&Hook {
+            root: &root,
+            in_plane: false,
+            payload: &payload,
+            env: &lookup,
+            cwd: &root,
+            now: now(),
+            host: "box",
+        });
+        assert!(matches!(answer, Answer::Say(_)), "{path}");
+    }
+}
+
+/// SK-55: a judge's guard refuses by its own word, and a file purlis copied in is read whatever it
+/// is called.
+#[test]
+fn a_judge_reads_what_was_copied_in_whatever_its_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let folder = root.join("judge");
+    std::fs::create_dir_all(folder.join("outcome")).unwrap();
+    std::fs::write(folder.join("outcome/mix.edm"), "done").unwrap();
+    let cwd = folder.to_str().unwrap().to_owned();
+    let lookup = |name: &str| (name == JUDGE_FOLDER_ENV).then(|| cwd.clone());
+    let read = |path: &str| {
+        let payload =
+            serde_json::json!({"tool_name": "Read", "cwd": cwd, "tool_input": {"file_path": path}});
+        pretooluse_read(&Hook {
+            root: &root,
+            in_plane: false,
+            payload: &payload,
+            env: &lookup,
+            cwd: &root,
+            now: now(),
+            host: "box",
+        })
+    };
+    assert!(matches!(read("outcome/mix.edm"), Answer::Nothing));
+    let Answer::Deny(refused) = read("../away") else {
+        panic!("refused");
+    };
+    assert_eq!(refused.reason, JUDGE_READ_RULE);
 }

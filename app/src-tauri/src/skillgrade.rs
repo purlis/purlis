@@ -2163,22 +2163,6 @@ impl InChats<'_> {
         let mut end = match &told {
             None => ChatEnd::TimedOut,
             Some((_, heard)) => loop {
-                if self.cancelled() {
-                    break ChatEnd::Cancelled;
-                }
-                if began.elapsed() >= CHAT_TIME {
-                    break ChatEnd::TimedOut;
-                }
-                if let (Some(left), Some(now)) = (tokens_left, spent_now())
-                    && now > left
-                {
-                    break ChatEnd::OverCap;
-                }
-                if let (Some(left), Some(now)) = (self.cost_left, cost_now())
-                    && now > left
-                {
-                    break ChatEnd::OverLimit;
-                }
                 match heard.recv_timeout(LOOK_EVERY) {
                     Ok(Watched::Started(name)) => {
                         let this = purlis_core::skills::leaf_name(&name) == self.skill;
@@ -2191,7 +2175,12 @@ impl InChats<'_> {
                     Ok(Watched::Said(text)) => answer = Some(text),
                     // A judge is ended at once: nothing more of its turn is needed to fail it.
                     Ok(Watched::ReadPast) if judge => break ChatEnd::ReadPast,
-                    Ok(Watched::ReadPast) => {}
+                    Ok(Watched::RefusedOtherwise) if judge => {
+                        break ChatEnd::ClosedEarly {
+                            why: "purlis could not answer for what the judge read".to_owned(),
+                        };
+                    }
+                    Ok(Watched::ReadPast | Watched::RefusedOtherwise) => {}
                     Ok(Watched::TurnEnded) => break ChatEnd::Turn,
                     // A grade's chat waits on nobody: ended at its first ask, with that end.
                     Ok(Watched::Asked) => break ChatEnd::Asked,
@@ -2209,6 +2198,23 @@ impl InChats<'_> {
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 }
+                // After what was heard: a refusal queued as spend crosses a limit still counts.
+                if self.cancelled() {
+                    break ChatEnd::Cancelled;
+                }
+                if began.elapsed() >= CHAT_TIME {
+                    break ChatEnd::TimedOut;
+                }
+                if let (Some(left), Some(now)) = (tokens_left, spent_now())
+                    && now > left
+                {
+                    break ChatEnd::OverCap;
+                }
+                if let (Some(left), Some(now)) = (self.cost_left, cost_now())
+                    && now > left
+                {
+                    break ChatEnd::OverLimit;
+                }
             },
         };
         // What the turn ended saying, where it is heard just after the turn's end.
@@ -2225,7 +2231,7 @@ impl InChats<'_> {
                         answer = Some(text);
                         break;
                     }
-                    Ok(Watched::ReadPast) => {
+                    Ok(Watched::ReadPast) if judge => {
                         read_past = true;
                         break;
                     }
@@ -2254,7 +2260,12 @@ impl InChats<'_> {
             self.left = id.clone().map(|chat| Left {
                 chat,
                 files: purlis_core::skills::verbs::drafts::outcome_of(&root, &laid.piece),
-                answer: answer.clone(),
+                answer: answer.as_deref().map(|answer| {
+                    purlis_core::skills::verbs::drafts::answer_as_its_judge_reads(
+                        answer,
+                        &laid.piece,
+                    )
+                }),
             });
         }
         let spent = id

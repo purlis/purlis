@@ -1472,3 +1472,55 @@ fn an_outcome_chat_has_no_shell() {
     assert!(shell_rules(&other) > 0);
     assert!(other["sandbox"].get("autoAllowBashIfSandboxed").is_none());
 }
+
+/// SK-55: an outcome eval's chat starts with its own list of tools and no settings file, and no
+/// other chat does.
+#[test]
+fn an_outcome_chat_starts_with_its_own_tools_and_no_settings_file() {
+    let empty = tempfile::tempdir().expect("a directory");
+    let armed = |writes_its_piece: bool| {
+        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+            Kit {
+                skills: None,
+                laid_out: None,
+                binary: std::path::Path::new("/bin/charter"),
+                plugin: Some(std::path::Path::new("/app/plugin")),
+                persona: None,
+                graded: true,
+                judging: false,
+                writes_its_piece,
+            },
+            Some(empty.path()),
+            &crate::harness_plugin::Chosen::new(),
+            None,
+        ) else {
+            panic!("armed per session");
+        };
+        args
+    };
+    let args = armed(true);
+    let after = |flag: &str| {
+        let at = args.iter().position(|arg| arg == flag).expect(flag);
+        args[at + 1].clone()
+    };
+    let tools = after("--tools");
+    let mut tools: Vec<&str> = tools.split(',').collect();
+    tools.sort_unstable();
+    assert_eq!(
+        tools,
+        [
+            "Bash",
+            "Edit",
+            "Glob",
+            "Grep",
+            "MultiEdit",
+            "Read",
+            "Skill",
+            "Write"
+        ]
+    );
+    assert_eq!(after("--setting-sources"), "");
+    let other = armed(false);
+    assert!(!other.contains(&"--tools".to_owned()));
+    assert!(!other.contains(&"--setting-sources".to_owned()));
+}
