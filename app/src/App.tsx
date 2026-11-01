@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { Profiler4351 } from "./profiler4351";
 import { saidOfLate, useLateAnswers } from "./answerWatch";
 import {
   useCallback,
@@ -2741,6 +2742,7 @@ function App() {
           What it lists is the project in front's own catalogue, which travels up with the
           rest of that project's report, and the window's own when there is none — whose
           refusals are #111's. */}
+<Profiler4351 id="Palette">
       <Palette
         offers={paletteOffers ?? openerOffers}
         projects={{ rows: switcherRows, asked: switcherAsk }}
@@ -2750,6 +2752,7 @@ function App() {
         onRun={saying?.run ?? run}
         onOpened={setPaletteOpen}
       />
+</Profiler4351>
 
       {/* What has contributed what to this window (ADR 0041 item 5). Mounted only
           while it is asked for: it reads every installed extension's files to re-take its
