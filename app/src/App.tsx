@@ -963,7 +963,7 @@ function App() {
    * take it up as they take up a repo opened there.
    *
    * **It lives only on this Mac, so nothing asks which forge** (#1810 story 8): with no repo to read
-   * one from, the project is written with the first run's default, which publishing it replaces.
+   * one from, the project is written with the first run's default (publishing leaves it: #4627).
    */
   const firstRunMake = useCallback((folder: string, template: string | null, forge: ForgeWord) => {
     setRepoTrouble(undefined);

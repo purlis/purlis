@@ -396,9 +396,8 @@ export const LauncherRows: Story = { render: () => launcherRowsAt("18rem") };
 export const LauncherRowsNarrow: Story = {
   render: () => launcherRowsAt("13rem"),
   play: async ({ canvasElement }) => {
-    const heights = [...canvasElement.querySelectorAll("button")].map(
-      (row) => row.getBoundingClientRect().height,
-    );
+    const rows = canvasElement.querySelectorAll('[data-scope="card-button"][data-part="root"]');
+    const heights = [...rows].map((row) => row.getBoundingClientRect().height);
     await expect(new Set(heights).size).toBe(1);
   },
 };
