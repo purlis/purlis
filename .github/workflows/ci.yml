@@ -2048,3 +2048,11 @@ jobs:
         with:
           name: windows-check
           path: windows-check.txt
+
+  # Demo for #4471, never to merge: a job that runs on a push and has chosen nothing.
+  new-unchosen-job:
+    name: a new job nothing requires
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - run: "false"
