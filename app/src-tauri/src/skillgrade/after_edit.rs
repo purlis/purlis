@@ -106,6 +106,8 @@ pub(crate) async fn skill_grade_after_edit(
 /// holds (`consent`). What it keeps as accepted is that plan's chats, cap and dollar limit.
 #[tauri::command]
 #[specta::specta]
+// A command's arguments are the window's call, named one by one, as the other commands' are.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn skill_grade_after_edit_on(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
@@ -113,6 +115,7 @@ pub(crate) async fn skill_grade_after_edit_on(
     skill: String,
     profile: Option<String>,
     model: Option<String>,
+    evals: Vec<String>,
     consent: String,
 ) -> Result<SkillGradeAfterEdit, String> {
     let held = planes.held(&plane)?;
@@ -121,7 +124,13 @@ pub(crate) async fn skill_grade_after_edit_on(
         let level: Level = (&level).into();
         let root = held.root();
         let on = chats_on(root, profile, model);
-        let planned = grades::planned(root, &level, &skill, on.profile.as_deref())?;
+        let planned = grades::planned_with(
+            root,
+            &level,
+            &skill,
+            on.profile.as_deref(),
+            &super::ticked(&evals),
+        )?;
         let accepted = accepted_of(&planned, on, &consent, &skill)?;
         after_edit::turn_on(root, &level, &skill, accepted.clone())?;
         Ok(accepted.into())
@@ -156,6 +165,7 @@ fn accepted_of(
             "{skill} has no trigger tests to grade, so grading after each edit was not turned on."
         ));
     };
+    super::evals_can_run(planned, on.evals_refused.as_ref())?;
     on.checked?;
     let profile = on
         .profile
@@ -173,6 +183,8 @@ fn accepted_of(
         token_cap: planned.cap.tokens,
         limit_usd: planned.cap.cost_usd(&on.priced),
         tests: after_edit::tests_of(request),
+        outcomes: after_edit::outcomes_of(planned),
+        evals: request.outcomes.iter().map(|eval| eval.id).collect(),
         previous: planned.previous.as_ref().map(|one| one.commit.clone()),
         runs_on,
         at: purlis_core::dispatch::stamp(chrono::Utc::now()),
@@ -434,7 +446,13 @@ fn grade_after(
         Some(accepted.profile.clone()),
         accepted.model.clone(),
     );
-    let planned = match grades::planned(&root, &level, &skill, Some(&accepted.profile)) {
+    let planned = match grades::planned_with(
+        &root,
+        &level,
+        &skill,
+        Some(&accepted.profile),
+        &accepted.evals,
+    ) {
         Ok(planned) => planned,
         Err(why) => return not_graded(why),
     };
@@ -451,6 +469,9 @@ fn grade_after(
             "No grade can run on {} now, so your edit was not graded: {why}",
             accepted.profile
         ));
+    }
+    if let Err(why) = super::evals_can_run(&planned, on.evals_refused.as_ref()) {
+        return waits(format!("Your edit was not graded: {why}"));
     }
     let Some(now) = after_edit::Now::of(&planned, &super::terms_of(&planned, &on)) else {
         return not_graded(format!("{skill} has no trigger tests to grade."));

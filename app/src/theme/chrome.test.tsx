@@ -72,6 +72,7 @@ import { NewWorkspace } from "../NewWorkspace";
 import { Palette } from "../Palette";
 import { PanelList } from "../PanelList";
 import { PersonaProfile } from "../PersonaProfile";
+import { PoolSignInConfirm } from "../PoolSignInConfirm";
 import { MidTurn, QuitWarning, type Ending } from "../QuitWarning";
 import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
@@ -81,6 +82,7 @@ import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
 import { NewSkillDialog } from "../NewSkillDialog";
 import { DeleteDialog, MoveDialog, RenameDialog } from "../SkillChangeDialogs";
+import { ExportDialog } from "../SkillPublish";
 import { LeaveQuestion } from "../UnsavedWorkQuestion";
 import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
@@ -422,6 +424,8 @@ const SKILL: StudioSkill = {
 function dialogCore() {
   mockIPC((cmd) => {
     switch (cmd) {
+      case "pool_sign_in_asked":
+        return { id: 1, profile: "work", pool: "team", code: "A1B2C3" };
       case "installed_extensions":
         return {
           extensions: [
@@ -1176,6 +1180,11 @@ const DIALOGS: Opened[] = [
       ),
   },
   {
+    name: "a pool sign-in to confirm",
+    file: "PoolSignInConfirm.tsx",
+    open: async () => render(<PoolSignInConfirm />),
+  },
+  {
     name: "the quit warning",
     file: "QuitWarning.tsx",
     open: async () => render(<QuitWarning chats={[ENDING]} onQuit={nothing} onCancel={nothing} />),
@@ -1362,6 +1371,20 @@ const DIALOGS: Opened[] = [
           busy={false}
           onDelete={nothing}
           onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "exporting a skill (#2781)",
+    file: "SkillPublish.tsx",
+    open: async () =>
+      render(
+        <ExportDialog
+          plane="p"
+          name="deploy"
+          level={{ at: "project", local: false }}
+          onClose={nothing}
+          onExported={nothing}
         />,
       ),
   },

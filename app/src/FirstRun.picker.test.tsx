@@ -30,7 +30,7 @@ function firstRun(trouble?: string) {
     <FirstRun
       onOpenRepo={onOpenRepo}
       onBack={vi.fn()}
-      onNewProject={vi.fn()}
+      onMake={vi.fn()}
       opening={false}
       trouble={trouble}
     />,
@@ -86,7 +86,7 @@ describe("the first run's Open a repo…", () => {
     const props = {
       onOpenRepo: vi.fn(),
       onBack: vi.fn(),
-      onNewProject: vi.fn(),
+      onMake: vi.fn(),
       opening: false,
     };
     const { rerender } = render(<FirstRun {...props} />);

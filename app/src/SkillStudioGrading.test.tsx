@@ -84,6 +84,7 @@ function core(root: StudioSkill[], ops: StudioSkill[], level: SkillLevel) {
             grades: [],
             said: null,
             tests: 2,
+            evals: 0,
             tests_refused: null,
             running: {
               plane: "p",

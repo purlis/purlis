@@ -97,7 +97,7 @@ pub struct SkillSource {
 }
 
 impl SkillSource {
-    fn core(&self) -> Source {
+    pub(crate) fn core(&self) -> Source {
         Source {
             remote: self.remote.core(),
             folder: self.folder.clone().filter(|f| !f.trim().is_empty()),

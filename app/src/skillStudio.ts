@@ -7,6 +7,7 @@ import {
   PERSONA_SCOPE_KEY,
   SKILL_NEEDS_IN,
   SKILL_STUDIO_IN,
+  type SkillLevel,
   type SkillPinner,
   type SkillPinsRefused,
 } from "./bindings";
@@ -182,6 +183,8 @@ export interface StudioPlace {
   grading?: GradingAt;
   /** On Sources, the page inside it: a source's own, or a review (#3687). */
   sources?: SourcesAt;
+  /** On a skill, its publish review (#2781), of its copy at this level. */
+  publishing?: SkillLevel;
 }
 
 /**
@@ -240,6 +243,7 @@ export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
     one.skill === other.skill &&
     one.item === other.item &&
     sameSourcesAt(one.sources, other.sources) &&
+    JSON.stringify(one.publishing) === JSON.stringify(other.publishing) &&
     JSON.stringify(one.grading) === JSON.stringify(other.grading)
   );
 }

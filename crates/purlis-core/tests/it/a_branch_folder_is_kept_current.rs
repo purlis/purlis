@@ -1290,3 +1290,115 @@ fn an_update_onto_another_base_carries_only_the_pieces_commits_and_records_it() 
         "main"
     );
 }
+
+/// A piece cut from a branch of the clone's own, with a commit that will conflict with `main`.
+fn a_piece_on_feature_that_conflicts_with_main(w: &World) -> PathBuf {
+    git(&w.clone, &["checkout", "-q", "-b", "feature"]);
+    commit_in(&w.clone, "feature.txt", "feature.txt\n");
+    git(&w.clone, &["checkout", "-q", "main"]);
+    let (code, cut) = add(w, "p1", Some("feature"));
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    write(&piece, "shared.txt", "a\nmine\nc\n");
+    git(&piece, &["commit", "-q", "-am", "mine"]);
+    w.they_commit("shared.txt", "a\ntheirs\nc\n");
+    piece
+}
+
+/// #4436: `--continue` runs with HEAD detached, so the branch git names is empty; the base was
+/// written as `[branch ""]`, which stops every chat on the clone.
+#[test]
+fn a_new_base_that_stopped_on_a_conflict_is_recorded_on_the_branch_when_it_goes_on() {
+    purlis_core::unsteered!();
+    let w = world();
+    let piece = a_piece_on_feature_that_conflicts_with_main(&w);
+
+    let (code, said) = update(&w, "p1", &start(Some("main")), &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    write(&piece, "shared.txt", "a\nboth\nc\n");
+    let (code, said) = update(&w, "p1", &UpdateStep::Continue, &Reach::default());
+    assert_eq!(code, 0, "{said}");
+
+    let config = std::fs::read_to_string(w.clone.join(".git/config")).unwrap();
+    assert!(!config.contains(r#"[branch ""]"#), "{config}");
+    assert_eq!(
+        out(&w.clone, &["config", "--get", "branch.p1.charterBase"]),
+        "main"
+    );
+}
+
+/// The section #4436 found at the end of a shared clone's config.
+fn a_nameless_base_in(w: &World) {
+    let config = w.clone.join(".git/config");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str("[branch \"\"]\n\tcharterBase = main\n");
+    std::fs::write(&config, text).unwrap();
+    assert!(
+        !brokered(|| git::run(&w.clone, &["fetch", "origin"], git::READ))
+            .unwrap()
+            .ok(),
+        "git fetches past the section, so this no longer shows what stopped the chats"
+    );
+}
+
+#[test]
+fn a_base_is_never_recorded_under_no_branch() {
+    purlis_core::unsteered!();
+    let w = world();
+    let refused = brokered(|| purlis_core::worktree::record_base(&w.clone, "", "main"));
+    assert!(refused.is_err(), "{refused:?}");
+    let config = std::fs::read_to_string(w.clone.join(".git/config")).unwrap();
+    assert!(!config.contains(r#"[branch ""]"#), "{config}");
+}
+
+#[test]
+fn a_clone_with_a_base_recorded_under_no_branch_recovers_on_the_next_cut_and_says_so() {
+    purlis_core::unsteered!();
+    let w = world();
+    a_nameless_base_in(&w);
+
+    let (code, said) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("recorded under no branch"), "{said}");
+    let config = std::fs::read_to_string(w.clone.join(".git/config")).unwrap();
+    assert!(!config.contains(r#"[branch ""]"#), "{config}");
+    assert!(config.contains(r#"[branch "main"]"#), "{config}");
+    assert_eq!(
+        out(&w.clone, &["config", "--get", "branch.p1.charterBase"]),
+        "main"
+    );
+}
+
+#[test]
+fn a_clone_with_a_base_recorded_under_no_branch_recovers_on_the_next_push() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    commit_in(&w.piece("p1"), "mine.txt", "mine.txt\n");
+    a_nameless_base_in(&w);
+
+    let (code, said) = push(&w, "p1");
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("recorded under no branch"), "{said}");
+    assert!(!said.contains("no remote"), "{said}");
+}
+
+#[test]
+fn a_push_on_a_config_git_will_not_read_says_so_rather_than_no_remote() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    commit_in(&w.piece("p1"), "mine.txt", "mine.txt\n");
+    let config = w.clone.join(".git/config");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str("[branch \"other\"]\n\tremote\n");
+    std::fs::write(&config, text).unwrap();
+
+    let (code, said) = push(&w, "p1");
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("could not read widget's config"), "{said}");
+    assert!(said.contains("branch.other.remote"), "{said}");
+    assert!(!said.contains("no remote"), "{said}");
+}

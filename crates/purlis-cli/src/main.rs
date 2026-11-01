@@ -2526,7 +2526,7 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
     if event == Event::Stop
         && let Some(report) = &report
         && report.agent.is_none()
-        && let Some(turn_output) = hookwire::Output::of_stop(&text)
+        && let Some(turn_output) = turn_output_of(&text)
     {
         let _ = hookwire::tell_turn_output(
             std::path::Path::new(&socket),
@@ -4418,7 +4418,9 @@ fn profile_sign_in(
 /// or its `kubectl` on a cluster pool (#4164), and followed here ([`sign_in::terminal`]). A profile
 /// the runner does not keep yet is kept there first by the running window, which alone holds a
 /// link's key (#4112). Only a pool shown to be the person's own is signed in on, as
-/// the window's is. Nothing of this machine's sign-in goes to the runner (ADR 0095).
+/// the window's is, and the person confirms it in the running window before a runner or its engine
+/// is reached; with no window this refuses. Nothing of this machine's sign-in goes to the runner
+/// (ADR 0095).
 ///
 /// [`sign_in::driven`]: purlis_core::profilestore::sign_in::driven
 /// [`sign_in::terminal`]: purlis_core::profilestore::sign_in::terminal
@@ -4486,6 +4488,7 @@ fn pool_sign_in(
             record.name
         ));
     }
+    confirmed_in_the_window(config, pool, name)?;
     if let Some((cluster, kept)) =
         runners::cluster_runner_for(config, pool).map_err(|why| why.to_string())?
     {
@@ -4551,6 +4554,33 @@ fn pool_sign_in(
         }
         Ok(())
     })
+}
+
+/// The person's yes, in their running window, to signing `name` in on pool `pool` from here.
+#[cfg(unix)]
+fn confirmed_in_the_window(config: &std::path::Path, pool: &str, name: &str) -> Result<(), String> {
+    let code = purlis_core::windowline::a_new_code();
+    purlis_core::windowline::approved(config, pool, name, &code, |asked| {
+        eprintln!(
+            "confirm signing '{name}' in on pool {pool} in the purlis window, if it shows the \
+             code {code}…"
+        );
+        purlis_core::windowline::ask(asked)
+    })
+}
+
+/// A runner is never Windows, and no window line reaches one from there.
+#[cfg(not(unix))]
+fn confirmed_in_the_window(
+    _config: &std::path::Path,
+    pool: &str,
+    name: &str,
+) -> Result<(), String> {
+    Err(format!(
+        "signing '{name}' in on pool {pool} from here is confirmed in the purlis window, which \
+         this command cannot reach on this system, so nothing was started. Sign it in from its \
+         row in Settings › Pools."
+    ))
 }
 
 /// Refused where a pool's runner, whose `purlis --version` said `theirs`, runs another version
@@ -5872,3 +5902,15 @@ mod core_word_tests;
 #[cfg(test)]
 #[path = "main/tests/serve.rs"]
 mod serve_tests;
+
+/// **What a turn's end tells the app it said**, from its `Stop` hook's `payload`: its last message,
+/// and for a judge of a grade its answer, which has to come back whole (SK-55).
+fn turn_output_of(payload: &str) -> Option<hookwire::Output> {
+    if purlis_core::envvar::var(purlis_core::toolhooks::JUDGE_FOLDER_ENV).is_none() {
+        return hookwire::Output::of_stop(payload);
+    }
+    hookwire::Output::of_stop_within(
+        payload,
+        purlis_core::skills::grade::outcomes::MOST_ANSWER_BYTES,
+    )
+}

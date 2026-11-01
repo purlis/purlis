@@ -5323,3 +5323,20 @@ fn a_prompt_for_a_router_names_its_chat_and_says_nothing_of_the_prompt_in_a_dump
         }
     );
 }
+
+/// SK-55: a judge's answer of what JSON escapes still makes a line the app reads.
+#[test]
+fn a_last_message_of_escapes_stays_a_line_the_app_reads() {
+    let most = 48 * 1024;
+    let Some(Output::Final { text }) = Output::last_message_within(&"\u{1}x".repeat(most), most)
+    else {
+        panic!("a message");
+    };
+    let line = serde_json::to_string(&text).unwrap();
+    assert!((line.len() as u64) < A_LINE_IS_AT_MOST, "{}", line.len());
+    assert!(!text.is_empty());
+    let Some(Output::Final { text }) = Output::last_message_within(&"é".repeat(most), most) else {
+        panic!("a message");
+    };
+    assert_eq!(text.len(), most, "plain text is cut at the most alone");
+}

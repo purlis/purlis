@@ -40,7 +40,9 @@ export function GitMissing({ gate }: { gate: GitGate }) {
       <div className="doing">
         {install?.kind === "developer-tools" && !gate.installing && (
           // `tabIndex={0}` on every button, per `docs/ui-primitives.md` (#189).
-          <Button onPress={() => void gate.startInstall()}>Install</Button>
+          <Button variant="primary" onPress={() => void gate.startInstall()}>
+            Install
+          </Button>
         )}
         <Button isDisabled={gate.checking} onPress={() => void gate.checkAgain()}>
           Check again

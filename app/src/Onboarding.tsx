@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
-import clsx from "clsx";
-import { DoorPage } from "./DoorPage";
+import { DoorPage, Launcher } from "./DoorPage";
 import { GitMissing } from "./GitMissing";
 import type { GitGate } from "./gitPresence";
 import { HarnessSetupTab } from "./HarnessSetupTab";
@@ -137,45 +136,42 @@ export function Onboarding({
   // plain welcome, still behind the git gate, with no step drawn and no door kept.
   if (!guiding) return <Welcome {...welcome} onOpenRepo={openRepoWithGit} withGit={withGit} />;
 
+  // Where the person has got to: one line, on a first run only. Someone back on a machine that has
+  // been through the steps has nothing to be counted through (the harness step still counts).
+  const stepSaid = (!progress.finished_once || step === "harness") && (
+    <nav className="onboarding-steps" aria-label="Setting up">
+      <p className="onboarding-count">
+        Step {counted.at + 1} of {counted.steps.length}: {STEP_NAMES[counted.steps[counted.at]]}
+      </p>
+    </nav>
+  );
+
   return (
     <div className="onboarding">
-      <nav className="onboarding-steps" aria-label="Setting up">
-        <p className="onboarding-count">
-          Step {counted.at + 1} of {counted.steps.length}: {STEP_NAMES[counted.steps[counted.at]]}
-        </p>
-        <ol>
-          {counted.steps.map((one, index) => (
-            <li
-              key={one}
-              aria-current={index === counted.at ? "step" : undefined}
-              className={clsx(index < counted.at && "done")}
-            >
-              {STEP_NAMES[one]}
-            </li>
-          ))}
-        </ol>
-      </nav>
-
       {steps.trouble !== undefined && (
         <p className="came-back">{steps.trouble}. The steps still work until purlis quits.</p>
       )}
 
       {step === "harness" && progress.made ? (
-        <HarnessStep
-          made={progress.made}
-          here={holdsMade}
-          trouble={welcome.trouble}
-          reopen={reopen}
-          onOn={() => dispatch({ kind: "finish" })}
-          onSkip={() => dispatch({ kind: "skip" })}
-          onStartOver={() => dispatch({ kind: "start-over" })}
-        />
+        <Launcher side={stepSaid}>
+          <HarnessStep
+            made={progress.made}
+            here={holdsMade}
+            trouble={welcome.trouble}
+            reopen={reopen}
+            onOn={() => dispatch({ kind: "finish" })}
+            onSkip={() => dispatch({ kind: "skip" })}
+            onStartOver={() => dispatch({ kind: "start-over" })}
+          />
+        </Launcher>
       ) : (
         <>
           {step === "git" && (
-            <GitStep gate={gate} onSettled={() => dispatch({ kind: "git-settled" })} />
+            <Launcher side={stepSaid}>
+              <GitStep gate={gate} onSettled={() => dispatch({ kind: "git-settled" })} />
+            </Launcher>
           )}
-          <div ref={page} hidden={step === "git"}>
+          <div ref={page} className="onboarding-page" hidden={step === "git"}>
             <Welcome
               {...welcome}
               onOpenRepo={openRepoWithGit}
@@ -183,15 +179,21 @@ export function Onboarding({
               onChose={chose}
               withGit={withGit}
               onSignedIn={() => setSignedIn(true)}
+              stepSaid={stepSaid}
+              signInEnd={
+                step === "sign-in" && (
+                  <div className="doing">
+                    <Button
+                      variant={signedIn ? "primary" : "secondary"}
+                      onPress={() => dispatch({ kind: "skip" })}
+                    >
+                      {signedIn ? "Continue" : "Skip for now"}
+                    </Button>
+                  </div>
+                )
+              }
             />
           </div>
-          {step === "sign-in" && (
-            <div className="doing onboarding-on">
-              <Button onPress={() => dispatch({ kind: "skip" })}>
-                {signedIn ? "Continue" : "Skip for now"}
-              </Button>
-            </div>
-          )}
         </>
       )}
     </div>
@@ -272,11 +274,7 @@ function HarnessStep({
 
   return (
     <DoorPage title="Pick your harness" className="harness-step">
-      <p className="welcome-lede">
-        Your project is ready. A chat in it runs a coding harness: pick the one you use, or install
-        one with its own installer. Each harness asks for its own sign-in when its first chat
-        starts.
-      </p>
+      <p className="welcome-lede">Your project is ready. A chat in it runs a coding harness.</p>
       {here ? (
         <HarnessSetupTab
           plane={made.plane}
@@ -300,7 +298,7 @@ function HarnessStep({
           )}
         </>
       )}
-      <div className="doing onboarding-on">
+      <div className="doing">
         <Button isDisabled={!here} onPress={onSkip}>
           Skip for now
         </Button>

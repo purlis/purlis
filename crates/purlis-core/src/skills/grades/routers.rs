@@ -155,7 +155,7 @@ pub fn planned(
     let mut requests = Vec::new();
     for (level, name) in library_of(root, workspace, persona)? {
         // A copy that cannot be read is left out of every chat, and the plan names it.
-        let read = copy_of(root, &level, &name)
+        let read = copy_of(root, &level, &name, &[])
             .and_then(|copy| Ok((copy, crate::skills::verbs::find(root, &level, &name)?)));
         let (copy, folder) = match read {
             Ok(read) => read,

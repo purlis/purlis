@@ -199,11 +199,11 @@ describe("the guided steps", function () {
     const repo = aRepo("onboarded");
     const before = await ask<string[]>("open_planes");
     await drawTheSteps();
-    expect(await stepSaid()).toContain("Step 1 of 4: Welcome");
+    expect(await stepSaid()).toContain("Step 1 of 2: Pick a project");
 
     await press(DOORS, "Create a project");
     await untilTheStep("Create a project");
-    expect(await stepSaid()).toContain("Step 2 of 4: Create, get or open a project");
+    expect(await stepSaid()).toContain("Step 1 of 2: Pick a project");
 
     // This runner has git: the window's next look finds none, once.
     theNextLookForGitFindsNone();
@@ -216,7 +216,7 @@ describe("the guided steps", function () {
     await untilTheStep("Install git");
     if (aGitAnswerIsWaiting()) throw new Error("the window never looked for git");
     await untilSays(WELCOME, "Git is not installed");
-    expect(await stepSaid()).toContain("Step 3 of 5: Install git");
+    expect(await stepSaid()).toContain("Step 2 of 3: Install git");
     expect((await ask<string[]>("open_planes")).length).toBe(before.length);
     await press(WELCOME, "Check again");
 
@@ -226,7 +226,7 @@ describe("the guided steps", function () {
       `the harness step never came; the page says ${await pageHeading()}`,
     );
     await untilTheStep("Pick your harness");
-    expect(await stepSaid()).toContain("Step 4 of 5: Pick your harness");
+    expect(await stepSaid()).toContain("Step 3 of 3: Pick your harness");
     local = (await ask<string[]>("open_planes")).find((one) => !before.includes(one)) ?? "";
     if (local === "") throw new Error("the steps opened no project");
     expect(await inFront()).toBeNull();
@@ -286,7 +286,7 @@ describe("the guided steps", function () {
     });
     await drawTheSteps();
     await untilTheStep("Sign in to GitHub or GitLab");
-    expect(await stepSaid()).toContain("Step 2 of 5: Sign in");
+    expect(await stepSaid()).toContain("Step 1 of 3: Sign in");
     await press(WELCOME, "Back");
     await $(DOORS).waitForExist({ timeout: 20_000, timeoutMsg: "Back never drew the welcome" });
   });

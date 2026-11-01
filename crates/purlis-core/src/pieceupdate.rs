@@ -90,6 +90,7 @@ const REBASE: [&str; 14] = [
 
 /// `purlis worktree update`: one step of it in `piece`, its exit status, its lines said.
 pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
+    mended(piece.root, piece.ws, piece.repo, say);
     // A stopped rebase leaves the folder on no branch: going on or back needs none.
     let on_a_branch = matches!(step, UpdateStep::Start { .. });
     let ran = Here::of(piece, on_a_branch).and_then(|here| {
@@ -125,6 +126,7 @@ pub fn update_clone(
     reach: &Reach,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
+    mended(at.root, at.ws, at.repo, say);
     let on_a_branch = matches!(step, UpdateStep::Start { .. });
     let ran = Here::of_clone(at, on_a_branch).and_then(|here| {
         let lock = broker::lock_of(&here.git_dir);
@@ -146,6 +148,7 @@ pub fn update_clone(
 /// `purlis worktree push`: the branch of `piece` pushed to its remote, over the remote's copy
 /// where purlis's own update rewrote it (#3895).
 pub fn push(piece: &Piece, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
+    mended(piece.root, piece.ws, piece.repo, say);
     let ran = Here::of(piece, true).and_then(|here| {
         let lock = broker::lock_of(&here.git_dir);
         let _held = lock
@@ -157,6 +160,33 @@ pub fn push(piece: &Piece, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
         say(Say::Fail(why.into()));
         1
     })
+}
+
+/// The clone's config freed of a base recorded under no branch ([`worktree::mend_nameless_base`]),
+/// before a verb asks git anything that reads it, and said either way.
+pub(crate) fn mended(root: &Path, ws: &str, repo: &str, say: &mut dyn FnMut(Say)) {
+    let Ok(clone) = worktree::clone_dir(root, ws, repo) else {
+        return;
+    };
+    match worktree::mend_nameless_base(&clone) {
+        Ok(false) => {}
+        Ok(true) => say(Say::Warn(
+            format!(
+                "{repo}'s git config held a base recorded under no branch, which stops git. \
+                 purlis removed that entry; a branch that lost its base to it still counts from \
+                 the one recorded before"
+            )
+            .into(),
+        )),
+        Err(why) => say(Say::Warn(
+            format!(
+                "{repo}'s git config holds a base recorded under no branch, which stops git, and \
+                 purlis could not remove it ({why}). Remove it from your own terminal: git -C \
+                 <clone> config --remove-section branch."
+            )
+            .into(),
+        )),
+    }
 }
 
 /// The folder, its clone, its git directory and its branch.
@@ -300,6 +330,23 @@ pub(crate) fn remote_of(clone: &Path, branch: &str) -> Option<String> {
     origin.ok().then(|| "origin".to_owned())
 }
 
+/// [`remote_of`], or why there is none: a clone with no such remote, or a config git would not
+/// read (#4436), which is not the same trouble and has a different repair.
+fn remote_or_why(clone: &Path, repo: &str, branch: &str, none: String) -> Result<String, String> {
+    if let Some(remote) = remote_of(clone, branch) {
+        return Ok(remote);
+    }
+    // git answers 2 for a remote that is not there, and 128 for one it could not look for.
+    match git::run(clone, &["remote", "get-url", "origin"], git::READ) {
+        Ok(asked) if !asked.ok() && asked.code != Some(2) => Err(format!(
+            "git could not read {repo}'s config, so purlis cannot tell which remote {branch} \
+             goes to: {}",
+            first_line(&asked.err)
+        )),
+        _ => Err(none),
+    }
+}
+
 /// What git has stopped in the folder, as [`gitstate::stopped`] reads it, less a rebase git
 /// no longer has under way: one is in progress only while its own folder is there
 /// (`rebase-merge` or `rebase-apply`), whatever other marker it left.
@@ -399,7 +446,7 @@ fn start(
     match rebased(piece.root, here, &onto, Leased::Piece, own, reach, say)? {
         Moved::Already => {
             if let Some(base) = &new_base {
-                rerecord(here, base, say);
+                rerecord(here, &here.branch, base, say);
             }
             say(Say::Done(format!("{label} is already on {base}").into()));
         }
@@ -437,8 +484,8 @@ fn start_clone(
     }
     unstopped_and_clean(here)?;
     let branch = &here.branch;
-    let remote = remote_of(&here.clone, branch)
-        .ok_or_else(|| format!("{label} has no remote to update {branch} from"))?;
+    let none = format!("{label} has no remote to update {branch} from");
+    let remote = remote_or_why(&here.clone, at.repo, branch, none)?;
     crate::repocmd::sync::fetch_remote(at.root, &here.clone, &remote, reach.hosts)
         .map_err(|why| format!("{why}. Nothing was moved"))?;
     let up = upstream_of(&here.clone, branch, &remote);
@@ -621,7 +668,7 @@ fn rebased(
         return Ok(Moved::Stopped(stopped_said(here, &went.err, say)));
     }
     finish(here, &record)?;
-    NewBase::recorded(here, say);
+    NewBase::recorded(here, &record.branch, say);
     Ok(if forward {
         Moved::Forward
     } else {
@@ -631,13 +678,12 @@ fn rebased(
 
 /// `base` recorded as the branch the folder's branch was cut from, now that it is on it
 /// (#3836); said where git did not write it, since the branch is moved either way.
-fn rerecord(here: &Here, base: &str, say: &mut dyn FnMut(Say)) {
-    if let Err(why) = worktree::record_base(&here.clone, &here.branch, base) {
+fn rerecord(here: &Here, branch: &str, base: &str, say: &mut dyn FnMut(Say)) {
+    if let Err(why) = worktree::record_base(&here.clone, branch, base) {
         say(Say::Warn(
             format!(
-                "{} is on {base}, and purlis could not record that as its base ({why}): its \
-                 Changes and merge still count from the base recorded before",
-                here.branch
+                "{branch} is on {base}, and purlis could not record that as its base ({why}): its \
+                 Changes and merge still count from the base recorded before"
             )
             .into(),
         ));
@@ -805,7 +851,8 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
         return Ok(stopped_said(here, &went.err, say));
     }
     finish(here, &record)?;
-    NewBase::recorded(here, say);
+    // From the record: a rebase that stopped had the folder on no branch when `here` was read.
+    NewBase::recorded(here, &record.branch, say);
     say(Say::Done(format!("{label} is rebased").into()));
     Ok(0)
 }
@@ -867,7 +914,7 @@ impl NewBase {
     }
 
     /// The noted base recorded, now that the rebase is done, and the note removed.
-    fn recorded(here: &Here, say: &mut dyn FnMut(Say)) {
+    fn recorded(here: &Here, branch: &str, say: &mut dyn FnMut(Say)) {
         let path = here.git_dir.join(NEW_BASE);
         let noted = std::fs::read_to_string(&path).ok();
         let _ = std::fs::remove_file(&path);
@@ -876,7 +923,7 @@ impl NewBase {
             .map(str::trim)
             .filter(|base| name::branch_name_ok(base).is_ok())
         {
-            rerecord(here, base, say);
+            rerecord(here, branch, base, say);
         }
     }
 }
@@ -1266,8 +1313,8 @@ fn pushed(
              --continue`) or abort it before pushing"
         ));
     }
-    let remote = remote_of(&here.clone, branch)
-        .ok_or_else(|| format!("{repo} has no remote to push {branch} to"))?;
+    let none = format!("{repo} has no remote to push {branch} to");
+    let remote = remote_or_why(&here.clone, repo, branch, none)?;
     // Asked of the remote itself, never read from the clone.
     let default = worktree::fresh::remote_default(piece.root, &here.clone, &remote, reach.hosts)
         .ok_or_else(|| {

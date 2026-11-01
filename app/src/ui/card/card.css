@@ -229,6 +229,40 @@
   background-color: var(--surface-hover);
 }
 
+/* **A way in, in a launcher's column**: its mark beside its title and line, no edge of its own, on
+   the column's ground until the pointer or its page is on it. */
+[data-scope="card-button"][data-part="root"][data-variant="row"] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-5);
+  row-gap: var(--space-1);
+  align-items: start;
+  padding: var(--space-4);
+  border-color: transparent;
+}
+
+[data-scope="card-button"][data-part="root"][data-variant="row"] [data-part="mark"] {
+  align-self: center;
+  block-size: 24px;
+  display: inline-flex;
+  align-items: center;
+}
+
+[data-scope="card-button"][data-part="root"][data-variant="row"] [data-part="line"] {
+  grid-column: 2;
+}
+
+[data-scope="card-button"][data-part="root"][data-variant="row"]:is(
+    [data-hovered],
+    [data-pressed]
+  ):not([data-disabled]) {
+  background-color: var(--surface-hover);
+}
+
+[data-scope="card-button"][data-part="root"][data-variant="row"][data-current] {
+  background-color: var(--list-selected);
+}
+
 /* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves, and
    what follows the title (a badge, which draws its own colours) dimmed with them. Its line steps
    down to the quiet tier, not faint: it stands beside the button, not in it, so it is words a

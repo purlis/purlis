@@ -89,6 +89,7 @@ mod skillchange;
 mod skilldrafts;
 mod skillgrade;
 mod skillhistory;
+mod skillpublish;
 mod skillrun;
 mod skillsources;
 mod skillstudio;
@@ -132,6 +133,7 @@ mod planes;
 mod planewatch;
 mod poolfollow;
 mod poolprofiles;
+mod poolsignin_confirm;
 mod pooltools;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;

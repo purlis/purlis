@@ -227,7 +227,7 @@ function checkedOf(checked: readonly SourceChecked[], source: SkillSource) {
 
 /** **A read in place**: rows held while it is asked, why it failed with Try again, or what it
  *  read, without hiding the rest of the page. */
-function Held<T>({
+export function Held<T>({
   read,
   what,
   again,
@@ -1005,7 +1005,7 @@ function SourcePage({
 // --- The reviews -------------------------------------------------------------------------------
 
 /** **A read for a page**: asked each time its `key` is another, or when asked again. */
-function useRead<T>(
+export function useRead<T>(
   key: string | undefined,
   run: () => Promise<{ status: "ok"; data: T } | { status: "error"; error: string }>,
 ) {

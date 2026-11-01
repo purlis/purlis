@@ -678,6 +678,8 @@ export const commands = {
 	/**  **This project's chat moves** (#2048), as the window draws them when it is drawn anew. */
 	chatMoves: (plane: PlaneId) => typedError<ChatMove[], string>(__TAURI_INVOKE("chat_moves", { plane })),
 	chatMoveSignedIn: __WINDOW_ONLY_RESULT,
+	poolSignInAsked: __WINDOW_ONLY,
+	answerPoolSignIn: __WINDOW_ONLY,
 	/**
 	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
 	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
@@ -1070,7 +1072,7 @@ export const commands = {
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillLevelsConfirm: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, grader: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model, grader })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[], grader: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model, evals, grader })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	/**  **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it. */
@@ -1161,6 +1163,10 @@ export const commands = {
 	skillInstallSetReview: __WINDOW_ONLY_RESULT,
 	skillInstallWidenings: __WINDOW_ONLY_RESULT,
 	skillInstall: __WINDOW_ONLY_RESULT,
+	skillPublishReview: __WINDOW_ONLY_RESULT,
+	skillPublish: __WINDOW_ONLY_RESULT,
+	skillExportReview: __WINDOW_ONLY_RESULT,
+	skillExport: __WINDOW_ONLY_RESULT,
 	skillUpdates: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,
 	skillUpdate: __WINDOW_ONLY_RESULT,
@@ -2870,6 +2876,12 @@ export type AwayRefusal = {
 	 *  for an item that reads differently now grants nothing ([`CHANGED_AWAY`]).
 	 */
 	shown: string,
+};
+
+/**  One file that stays behind. */
+export type BehindFile = {
+	path: string,
+	why: string,
 };
 
 /**  One socket or service the person may choose. */
@@ -4809,6 +4821,14 @@ export type ExpectedShown = {
 	named: string | null,
 };
 
+/**  **What the export dialog says.** */
+export type ExportReview = {
+	skills: string[],
+	behind: BehindFile[],
+	broken: string[],
+	stops: OutgoingStop[],
+};
+
 /**
  *  The question charter asks before an extension contributes anything.
  * 
@@ -5640,6 +5660,28 @@ export type GradeEstimate = {
 	same_profile: boolean | null,
 	/**  Whether that grade was interrupted before it was scored (#3602): the plan says so. */
 	interrupted: boolean,
+};
+
+/**
+ *  **One outcome eval, as the plan shows it before anything runs** (SK-55): its id, its first
+ *  message as the chat will read it, each character no reader would see marked, its input files,
+ *  and how many expectations its judge checks.
+ */
+export type GradeEval = {
+	id: string,
+	prompt: string,
+	hides: boolean,
+	files: string[],
+	expectations: number,
+	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
+	on: boolean,
+	chats: number,
+};
+
+/**  **An outcome eval a grade leaves out** (`grades::LeftOutEval`): its id, and why. */
+export type GradeEvalLeftOut = {
+	id: string,
+	why: string,
 };
 
 /**
@@ -7322,6 +7364,22 @@ export type OpenedRepo = {
 	forge_said?: string | null,
 };
 
+/**  One file that goes. */
+export type OutgoingFile = {
+	/**  Its path, under its skill's folder. */
+	path: string,
+	bytes: number,
+	runs: boolean,
+	/**  Whether it is of a skill the named one refers to. */
+	comes_along: boolean,
+};
+
+/**  One thing that stops it, as `where` and what it holds, never the value itself. */
+export type OutgoingStop = {
+	place: string,
+	said: string,
+};
+
 /**  A task's own branch, as its Changes tab says it. */
 export type OwnBranch = {
 	repo: string,
@@ -8401,6 +8459,15 @@ export type PoolRow = {
 	suspend_after: string,
 };
 
+/**  What the person is asked. */
+export type PoolSignInAsk = {
+	id: number,
+	profile: string,
+	pool: string,
+	/**  What the terminal of the command that asks shows. */
+	code: string,
+};
+
 /**
  *  **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
  *  the window's sign-in strip shows it ([`driven::Event`]).
@@ -8879,6 +8946,35 @@ export type ProposedWhole = {
 	why: string | null,
 };
 
+/**  What a yes hands back. */
+export type PublishAccepted = {
+	base: string,
+	commit: string,
+	digest: string,
+};
+
+/**  **How a publish ended.** */
+export type PublishDone = { kind: "opened"; url: string } | { kind: "already"; url: string } | { kind: "cannot-push"; why: string };
+
+/**  One grade the description holds. */
+export type PublishGrade = {
+	skill: string,
+	when: string,
+	version: string,
+	harness: string,
+	grader: string,
+	with_it: string,
+	without_it: string,
+	runs: number,
+	ended: string,
+};
+
+/**  One folder of the source that takes a skill. */
+export type PublishLand = {
+	folder: string,
+	replaces: boolean,
+};
+
 /**
  *  What the person asked to publish: #1819's form, less the template and the folder, which the
  *  project already has.
@@ -8889,6 +8985,31 @@ export type PublishOnForge = {
 	name: string,
 	/**  Private unless the person said public. */
 	private: boolean,
+};
+
+/**  **What the publish review page draws.** */
+export type PublishReviewView = {
+	/**  "pull request" or "merge request". */
+	request: string,
+	forge: string,
+	base: string,
+	commit_short: string,
+	branch: string,
+	title: string,
+	author: string,
+	files: OutgoingFile[],
+	behind: BehindFile[],
+	stops: OutgoingStop[],
+	/**  Each skill that is this machine's alone, by name. */
+	local: string[],
+	/**  Each folder of the source that takes a skill, and whether it replaces what is there. */
+	lands: PublishLand[],
+	/**  References to a skill that is not there, by name. */
+	broken: string[],
+	grades: PublishGrade[],
+	/**  The request's description, whole. */
+	body: string,
+	accepted: PublishAccepted,
 };
 
 /**  One member's destination, as the question names it and the yes hands it back. */
@@ -11013,8 +11134,15 @@ export type SkillGradePlan = {
 	tests_refused: string | null,
 	/**  The trigger tests left out, each with why: a query no chat can be started on. */
 	left_out: GradeLeftOut[],
-	/**  The outcome evals the skill has, shown and not run (#3235 grades them). */
+	/**
+	 *  **The outcome evals it runs** (SK-55), each in each arm and run, and the judge chats that
+	 *  grade them, counted in [`Self::chats`]; the ones it leaves out, each with why; and why the
+	 *  file could not be read, where it was not.
+	 */
+	evals: GradeEval[],
 	outcome_evals: number,
+	judge_chats: number,
+	outcomes_left_out: GradeEvalLeftOut[],
 	outcomes_refused: string | null,
 	estimate: GradeEstimate | null,
 	/**  What the grade record left out as it was read: rows skipped, files not read. */
@@ -11113,6 +11241,8 @@ export type SkillGrades = {
 	grades: GradeRow[],
 	said: string | null,
 	tests: number,
+	/**  The outcome evals a grade would run too (SK-55): a skill with these alone is graded. */
+	evals: number,
 	tests_refused: string | null,
 	running: SkillGradeStep | null,
 };
