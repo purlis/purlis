@@ -51,6 +51,15 @@ pub const EVENT: &str = "skill-grade";
 /// The longest one grade's chat runs before purlis ends it.
 pub const CHAT_TIME: Duration = Duration::from_secs(5 * 60);
 
+/// **How long a grade's chat has to get as far as its session's start** before purlis takes it for
+/// one that waits on something no hook tells of, such as Claude Code asking whether to trust its
+/// folder. It has spent nothing by then.
+const A_CHAT_BEGINS_WITHIN: Duration = Duration::from_secs(120);
+
+/// What a chat that never began is told in the grade.
+const NEVER_BEGAN: &str = "its chat did not get as far as starting: Claude Code may be waiting for \
+     you to trust this project's folder, so open a chat here once and accept it";
+
 /// How often a chat being watched is asked whether the person stopped the grade.
 const LOOK_EVERY: Duration = Duration::from_millis(500);
 
@@ -224,6 +233,8 @@ pub(crate) struct On {
     /// The models its harness offers for a grade, and the one picked (SK-60, #3240).
     pub(crate) models: Vec<String>,
     pub(crate) model: Option<String>,
+    /// Why outcome evals cannot run there, where they cannot (`grades::outcome_refused`).
+    pub(crate) evals_refused: Option<String>,
 }
 
 /// **Whether a grade's chats can run on `profile`** (the project's default where none) and on
@@ -247,6 +258,7 @@ pub(crate) fn chats_on(
                     priced: grades::price::of_model(None),
                     models: Vec::new(),
                     model,
+                    evals_refused: None,
                 };
             }
         },
@@ -274,6 +286,7 @@ pub(crate) fn chats_on(
         None => own,
         Some(picked) => grades::ready_to_grade_on(&start, root, Some(picked)),
     };
+    let evals_refused = ready.as_ref().ok().and_then(grades::outcome_refused);
     let priced = ready
         .as_ref()
         .map_or_else(|_| grades::price::of_model(None), grades::priced);
@@ -294,6 +307,7 @@ pub(crate) fn chats_on(
         priced,
         models,
         model,
+        evals_refused,
     }
 }
 
@@ -402,6 +416,7 @@ fn plan_by(
         Ok(grader) => consent_by(planned, &on, grader.as_ref()),
         Err(_) => None,
     };
+    let evals_refused = on.evals_refused.clone();
     let mut plan = SkillGradePlan::of(planned, running, on);
     plan.consent = consent;
     plan.graders = offered;
@@ -413,7 +428,23 @@ fn plan_by(
         plan.consent = None;
         plan.grader_refused = Some(why);
     }
+    if let Err(why) = evals_can_run(planned, evals_refused.as_ref()) {
+        plan.consent = None;
+        plan.refused = Some(why);
+    }
     plan
+}
+
+/// **Whether `planned`'s ticked outcome evals can run**, given why they cannot where they cannot.
+pub(crate) fn evals_can_run(planned: &Planned, refused: Option<&String>) -> Result<(), String> {
+    let ticked = planned
+        .request
+        .as_ref()
+        .is_some_and(|request| !request.outcomes.is_empty());
+    match refused {
+        Some(why) if ticked => Err(why.clone()),
+        _ => Ok(()),
+    }
 }
 
 /// **Whether a grade of `planned` can run with a Grader, where one is picked**: a Grader scores
@@ -499,6 +530,7 @@ impl SkillGradePlan {
             priced,
             models,
             model,
+            ..
         } = on;
         SkillGradePlan {
             tests,
@@ -819,6 +851,7 @@ pub(crate) async fn skill_grade_start(
         // And on the Grader it named: one no longer on offer starts nothing.
         let picked = grader_picked(&graders_here(&executor, held.root()), grader.as_deref())?;
         grader_takes(&planned, picked.is_some())?;
+        evals_can_run(&planned, on.evals_refused.as_ref())?;
         plan_holds(
             &planned,
             &on,
@@ -2159,11 +2192,13 @@ impl InChats<'_> {
         let mut skills: Vec<String> = Vec::new();
         let mut answer: Option<String> = None;
         let mut read_past = false;
+        let mut has_begun = false;
         let judge = matches!(chat.kind, ChatKind::Judge { .. });
         let mut end = match &told {
             None => ChatEnd::TimedOut,
             Some((_, heard)) => loop {
                 match heard.recv_timeout(LOOK_EVERY) {
+                    Ok(Watched::Began) => has_begun = true,
                     Ok(Watched::Started(name)) => {
                         let this = purlis_core::skills::leaf_name(&name) == self.skill;
                         skills.push(name);
@@ -2197,6 +2232,21 @@ impl InChats<'_> {
                         break ChatEnd::Turn;
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                }
+                if !has_begun && began.elapsed() >= A_CHAT_BEGINS_WITHIN {
+                    break ChatEnd::NotStarted {
+                        why: NEVER_BEGAN.to_owned(),
+                    };
+                }
+                // A program that ended with no hook to say so (signed out, say) tells nothing more.
+                if !self.held.chats().sessions().running().contains(&session) {
+                    break if whole_turn {
+                        ChatEnd::ClosedEarly {
+                            why: "its chat's program ended before its turn did".to_owned(),
+                        }
+                    } else {
+                        ChatEnd::Turn
+                    };
                 }
                 // After what was heard: a refusal queued as spend crosses a limit still counts.
                 if self.cancelled() {

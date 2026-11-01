@@ -23,7 +23,11 @@ of 2026-10-31 and 2026-11-01, adding to §3), still under the sandbox. Outcome c
 to their piece by a guard, and a write goes ahead only on its answer. A run whose guard did not
 answer fails, with the reason in the record, and so does one whose chat asks for anything else.
 Outcome chats have no shell in v1: a shell call asks, and so fails the run (#4476). No other chat of a
-grade gains this.
+grade gains this. These chats and judges' load none of the person's settings files, so a profile that signs in through
+them is refused for ticked evals, in the plan and at start. A skill that runs a command as it loads is
+left out with why, as its chat has no shell. The copy of a skill laid out for these chats declares no
+`allowed-tools`. A grade's chat that does not get as far as its session's start within two minutes
+counts as not started, and says it may be waiting on the folder's trust.
 
 **An outcome eval's chat runs its whole turn** (§3), in a throwaway piece laid out as the arm's
 is, with the eval's input files staged into it at the paths the eval names. Each file is read as

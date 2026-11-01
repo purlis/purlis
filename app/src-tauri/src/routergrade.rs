@@ -134,6 +134,7 @@ impl RouterGradePlan {
             priced,
             models,
             model,
+            ..
         } = on;
         RouterGradePlan {
             router: planned.router.clone(),

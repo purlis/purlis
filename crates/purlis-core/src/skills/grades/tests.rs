@@ -1683,3 +1683,23 @@ fn the_record_reads_back_a_grader_at_the_longest_id_a_grader_may_declare() {
     assert!(report_holds_together(&by("g".repeat(most)), 3));
     assert!(!report_holds_together(&by("g".repeat(most + 1)), 3));
 }
+
+/// SK-55: a skill that runs a command as it loads has its evals left out, with why.
+#[test]
+fn a_skill_that_runs_a_command_as_it_loads_has_its_evals_left_out() {
+    let plane = plane();
+    let root = plane.path();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Ships.\n---\n\nNow: !`date`\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [{"id": 1, "prompt": "ship v2", "expectations": ["It ships"]}]}"#,
+    )
+    .unwrap();
+    let planned = planned_with(root, &Level::project(), "deploy", None, &[1]).unwrap();
+    assert!(planned.offered.is_empty());
+    assert!(planned.outcomes_left_out[0].why.contains("as it loads"));
+}

@@ -66,6 +66,7 @@ fn on(checked: Result<String, String>, priced: grading::Priced) -> On {
         priced,
         models: ["opus", "sonnet", "haiku"].map(str::to_owned).to_vec(),
         model: None,
+        evals_refused: None,
     }
 }
 
@@ -960,4 +961,27 @@ fn a_grader_is_refused_beside_ticked_outcome_evals() {
     assert!(grader_takes(&ticked, true).is_err());
     assert!(grader_takes(&ticked, false).is_ok());
     assert!(grader_takes(&planned("ship it"), true).is_ok());
+}
+
+/// SK-55: ticked outcome evals on a profile they cannot run on start nothing; left off, they cost
+/// that profile nothing.
+#[test]
+fn ticked_evals_are_refused_on_a_profile_they_cannot_run_on() {
+    let why = "it signs in another way".to_owned();
+    let mut ticked = planned("ship it");
+    assert!(evals_can_run(&ticked, Some(&why)).is_ok());
+    ticked
+        .request
+        .as_mut()
+        .unwrap()
+        .outcomes
+        .push(purlis_core::skills::grade::OutcomeEval {
+            id: 4,
+            prompt: "fill it".into(),
+            expected_output: None,
+            files: Vec::new(),
+            expectations: vec!["It is filled".into()],
+        });
+    assert_eq!(evals_can_run(&ticked, Some(&why)), Err(why));
+    assert!(evals_can_run(&ticked, None).is_ok());
 }

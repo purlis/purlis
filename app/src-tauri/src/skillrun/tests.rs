@@ -229,6 +229,16 @@ fn a_grade_watching_a_chat_is_told_when_it_asks_the_person() {
     );
 }
 
+/// SK-55: a grade hears a chat's program get as far as its session's start: what tells a chat that
+/// waits on something before any hook from one that runs.
+#[test]
+fn a_grade_watching_a_chat_is_told_when_its_session_starts() {
+    let (runs, _told) = listening();
+    let watched = runs.watch(4);
+    runs.reported(&report(4, Event::SessionStart));
+    assert_eq!(watched.try_iter().collect::<Vec<_>>(), vec![Watched::Began]);
+}
+
 /// SK-55, the operator's ruling of 2026-11-01: a call a guard refused is told to the grade watching
 /// the chat as it happens, needing nothing of the chat's turn's end.
 #[test]

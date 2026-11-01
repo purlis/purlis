@@ -69,6 +69,8 @@ pub enum Watched {
     TurnEnded,
     /// It asked the person something: a permission, or a notice that it waits on them.
     Asked,
+    /// Its program got as far as its session's start.
+    Began,
     /// It closed, or its session ended.
     Closed,
     /// **What its turn ended saying** (SK-55): the harness's last message, as its `Stop` hook
@@ -237,6 +239,9 @@ impl SkillRuns {
                 match report.event {
                     purlis_core::state::Event::Stop => {
                         self.tell_watching(report.chat, Watched::TurnEnded);
+                    }
+                    purlis_core::state::Event::SessionStart => {
+                        self.tell_watching(report.chat, Watched::Began);
                     }
                     purlis_core::state::Event::SessionEnd => {
                         self.tell_watching(report.chat, Watched::Closed);

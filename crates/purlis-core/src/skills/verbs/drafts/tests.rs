@@ -1109,3 +1109,41 @@ fn a_chats_answer_names_its_files_where_its_judge_finds_them() {
         "I wrote outcome/out.md."
     );
 }
+
+/// SK-55: an outcome eval's copy of a skill declares no tools of its own, in any spelling YAML
+/// takes, and keeps the rest of the file.
+#[test]
+fn an_outcome_chats_copy_of_a_skill_grants_no_tools() {
+    for declared in [
+        "allowed-tools: Bash\n",
+        "\"allowed-tools\": Bash\n",
+        "allowed-tools:\n  - Bash\n  - Read\n",
+        "allowed-tools:\n- Bash\n",
+    ] {
+        let text = format!("---\nname: x\n{declared}description: y\n---\n\nallowed-tools: body\n");
+        assert_eq!(
+            without_allowed_tools(&text),
+            "---\nname: x\ndescription: y\n---\n\nallowed-tools: body\n",
+            "{declared}"
+        );
+    }
+    let plain = "---\nname: x\n---\n\nBody.\n";
+    assert_eq!(without_allowed_tools(plain), plain);
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    let copy = Snapshot {
+        name: "deploy".to_owned(),
+        files: BTreeMap::from([(
+            "SKILL.md".to_owned(),
+            "---\nname: deploy\nallowed-tools: Bash\n---\n\nStep.\n".to_owned(),
+        )]),
+    };
+    let arm = lay_out_arm(root, Some(&copy)).unwrap();
+    stage(root, &arm, &[], &BTreeMap::new()).unwrap();
+    let from = tried(root, &arm.piece).expect("the piece is a try's");
+    let laid = std::fs::read_to_string(from.join("skills/deploy/SKILL.md")).unwrap();
+    assert!(!laid.contains("allowed-tools"), "{laid}");
+    assert!(end_try_at(root, &arm.piece).unwrap());
+}

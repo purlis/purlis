@@ -165,6 +165,7 @@ fn accepted_of(
             "{skill} has no trigger tests to grade, so grading after each edit was not turned on."
         ));
     };
+    super::evals_can_run(planned, on.evals_refused.as_ref())?;
     on.checked?;
     let profile = on
         .profile
@@ -468,6 +469,9 @@ fn grade_after(
             "No grade can run on {} now, so your edit was not graded: {why}",
             accepted.profile
         ));
+    }
+    if let Err(why) = super::evals_can_run(&planned, on.evals_refused.as_ref()) {
+        return waits(format!("Your edit was not graded: {why}"));
     }
     let Some(now) = after_edit::Now::of(&planned, &super::terms_of(&planned, &on)) else {
         return not_graded(format!("{skill} has no trigger tests to grade."));

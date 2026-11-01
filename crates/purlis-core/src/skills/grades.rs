@@ -1580,6 +1580,31 @@ pub fn planned_with(
             }
         });
     }
+    // A skill that runs a command as it loads needs the shell its eval's chat does not have (#4476):
+    // the call fails with no sign, and the chat would be judged as though it had loaded.
+    if let Some(copy) = &copy {
+        let runs_one = |snapshot: &Snapshot| {
+            snapshot
+                .files
+                .get("SKILL.md")
+                .is_some_and(|text| purlis_skills::review::runs_commands_as_it_loads(text))
+        };
+        if runs_one(&copy.snapshot)
+            || copy
+                .previous
+                .as_ref()
+                .is_some_and(|previous| runs_one(&previous.snapshot))
+        {
+            for eval in evals.drain(..) {
+                outcomes_left_out.push(LeftOutEval {
+                    id: eval.id,
+                    why: "its skill runs a command as it loads, and an outcome eval's chat has no \
+                          shell yet"
+                        .to_owned(),
+                });
+            }
+        }
+    }
     let offered = evals;
     let mut evals: Vec<grade::OutcomeEval> = offered
         .iter()
@@ -1831,6 +1856,15 @@ pub fn consent_on(consent: &str, terms: &Terms<'_>) -> String {
 }
 
 use super::verbs::drafts::Snapshot;
+
+/// **Why an outcome eval's chats cannot run as `ready` would start them**, or `None` (SK-55): its
+/// harness's adapter's word ([`crate::harness::HarnessAdapter::outcome_refused`]).
+pub fn outcome_refused(ready: &crate::start::Ready) -> Option<String> {
+    ready
+        .harness?
+        .adapter()
+        .outcome_refused(&crate::harness_plugin::Env::of(&ready.env))
+}
 
 /// **How a grade's chat would start as `start`** in the project at `root` (the operator's
 /// rulings of 2026-10-26 on #3229), or why it may not: decided keeping none of the person's own

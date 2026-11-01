@@ -1524,3 +1524,57 @@ fn an_outcome_chat_starts_with_its_own_tools_and_no_settings_file() {
     assert!(!other.contains(&"--tools".to_owned()));
     assert!(!other.contains(&"--setting-sources".to_owned()));
 }
+
+/// SK-55: what signs Claude Code in through a person's settings is known by its keys.
+#[test]
+fn settings_that_sign_in_are_told_from_those_that_do_not() {
+    for signs in [
+        r#"{"apiKeyHelper": "/bin/key"}"#,
+        r#"{"awsAuthRefresh": "x"}"#,
+        r#"{"env": {"ANTHROPIC_API_KEY": "x"}}"#,
+        r#"{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}"#,
+    ] {
+        assert!(settings_sign_in(signs), "{signs}");
+    }
+    for not in [
+        r#"{"model": "opus"}"#,
+        r#"{"env": {"EDITOR": "vi"}}"#,
+        "not json",
+    ] {
+        assert!(!settings_sign_in(not), "{not}");
+    }
+}
+
+/// SK-55: an outcome eval's chat holds no tool of purlis's server, as a judge does not.
+#[test]
+fn an_outcome_chat_holds_no_tool_of_a_server() {
+    let empty = tempfile::tempdir().expect("a directory");
+    let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+        Kit {
+            skills: None,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/charter"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: None,
+            graded: true,
+            judging: false,
+            writes_its_piece: true,
+        },
+        Some(empty.path()),
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    ) else {
+        panic!("armed per session");
+    };
+    let at = args
+        .iter()
+        .position(|arg| arg == "--settings")
+        .expect("--settings");
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    assert!(
+        settings["permissions"]["deny"]
+            .as_array()
+            .is_some_and(|rules| rules.contains(&serde_json::json!("mcp__purlis"))),
+        "{settings}"
+    );
+}
