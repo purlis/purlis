@@ -37,7 +37,7 @@
 //! | `record`, a write in the event log the host holds (1.8) | yes | | | | | |
 //! | `board_moved`, `board` (1.10) | yes | | | | | |
 //! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | relayed (1.38) |
-//! | `programs_of` (1.13), a project's browsers among them | yes | | | | | relayed (1.66), its own window's alone |
+//! | `programs_of` (1.13), a project's browsers among them | yes | | | | | relayed (1.67), its own window's alone |
 //! | `note_program` and a start's `note` (1.39) | yes | | | | | |
 //! | `quit` (1.13) | yes | | | | | |
 //! | `take_back`, a relaying host naming the window a link is for, named again the confinements of the chats that window started (1.22) | | | | | | yes |

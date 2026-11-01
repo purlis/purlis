@@ -555,7 +555,7 @@ fn over_a_link_of(b: Hosting, minor: u16) -> Dial {
 }
 
 #[tokio::test]
-async fn host_a_asks_a_runner_its_programs_from_1_66_and_not_before() {
+async fn host_a_asks_a_runner_its_programs_from_1_67_and_not_before() {
     let runner = a_runner();
     let project = tempfile::tempdir().unwrap();
     let at = project.path().to_str().unwrap();
@@ -567,7 +567,7 @@ async fn host_a_asks_a_runner_its_programs_from_1_66_and_not_before() {
         .expect("the runner's own window's browser");
 
     // Each link here is admitted as `local-ui`, so the runner answers whichever it is asked.
-    for (minor, answered) in [(65, 0), (66, 1)] {
+    for (minor, answered) in [(66, 0), (67, 1)] {
         let relay = Relay::new(over_a_link_of(runner.hosting.clone(), minor));
         let (client, _views, _events) = Client::new(as_scope(Scope::LocalUi, relay).await);
         client.hold_project(PROJECT, at).await.unwrap();

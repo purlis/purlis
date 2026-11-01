@@ -946,7 +946,7 @@ impl Upstream {
                 ),
             });
         }
-        // A runner before 1.66 refuses this, which would say nothing of what runs there: it is not
+        // A runner before 1.67 refuses this, which would say nothing of what runs there: it is not
         // asked, and the window takes nothing back from it (#4271).
         if matches!(command, Command::ProgramsOf { .. })
             && self.client.version() < session::KNOWS_PROGRAMS_RELAYED
