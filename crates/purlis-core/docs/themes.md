@@ -476,6 +476,12 @@ surfaces and the strips' layers, and a Notice's danger surface and wash among th
 read laid over the surface under it. `app/src/theme/grounds.test.ts` finds them from the components, and fails until the
 manifest lists a new one.
 
+**A see-through surface is read in the tints too.** A surface's see-through fill (`popover.root.fill`
+with alpha) shows the turned colour under it, so what another family draws on it (a button or a
+menu in a popover, the title bar's switcher rows) is held to the reading floors in every workspace
+tint as well as written. Words that fall only in a tint make the surface draw its family default,
+said as `what a button draws on it`. An opaque fill is read as written alone.
+
 **States that hold at once are held as one.** A button can be hovered and pressed, or focused and
 selected, at the same time, and the stylesheet's order decides which state's colour each property
 takes. Every such set is resolved that way and held to the same floors, the consent floors too.
