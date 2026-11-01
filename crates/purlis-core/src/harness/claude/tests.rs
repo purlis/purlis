@@ -77,6 +77,8 @@ fn a_sandbox_compiled_for_another_harness_arms_no_claude_code_chat() {
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
             graded: false,
+            judging: false,
+            writes_its_piece: false,
         },
         Some(plane.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -101,6 +103,8 @@ fn the_claude_code_adapter_arms_a_chat_with_the_bundled_plugin_for_that_chat_alo
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
             graded: false,
+            judging: false,
+            writes_its_piece: false,
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -137,6 +141,8 @@ fn a_grades_chat_loads_purlis_s_server_alone_with_its_read_tools() {
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
                 graded,
+                judging: false,
+                writes_its_piece: false,
             },
             Some(empty.path()),
             &crate::harness_plugin::Chosen::new(),
@@ -177,32 +183,7 @@ fn a_grades_chat_loads_purlis_s_server_alone_with_its_read_tools() {
 #[test]
 fn a_grades_chat_is_denied_the_tools_that_start_a_sub_agent() {
     let empty = tempfile::tempdir().expect("a directory");
-    let denied = |graded: bool| {
-        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
-            Kit {
-                skills: None,
-                laid_out: None,
-                binary: std::path::Path::new("/bin/charter"),
-                plugin: Some(std::path::Path::new("/app/plugin")),
-                persona: None,
-                graded,
-            },
-            Some(empty.path()),
-            &crate::harness_plugin::Chosen::new(),
-            None,
-        ) else {
-            panic!("armed per session");
-        };
-        let at = args
-            .iter()
-            .position(|arg| arg == "--settings")
-            .expect("--settings");
-        let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
-        settings["permissions"]["deny"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-    };
+    let denied = |graded: bool| denied_in(empty.path(), graded, false);
     let graded = denied(true);
     for tool in ["Task", "Agent"] {
         assert!(
@@ -217,6 +198,73 @@ fn a_grades_chat_is_denied_the_tools_that_start_a_sub_agent() {
     );
 }
 
+/// SK-55 (#3235): a judge's chat is held to reading: every tool that writes, runs a command or
+/// reaches the network is denied it, beside a grade's own denials, and it keeps the reads.
+#[test]
+fn a_judges_chat_is_denied_every_tool_but_those_that_read() {
+    let empty = tempfile::tempdir().expect("a directory");
+    let judge = denied_in(empty.path(), true, true);
+    for tool in [
+        "Bash",
+        "Edit",
+        "MultiEdit",
+        "Write",
+        "NotebookEdit",
+        "WebFetch",
+        "WebSearch",
+        "Task",
+    ] {
+        assert!(
+            judge.contains(&serde_json::json!(tool)),
+            "{tool}: {judge:?}"
+        );
+    }
+    for tool in ["Glob", "LS", "Skill", "mcp__purlis"] {
+        assert!(
+            judge.contains(&serde_json::json!(tool)),
+            "{tool}: {judge:?}"
+        );
+    }
+    for tool in ["Read", "Grep"] {
+        assert!(
+            !judge.contains(&serde_json::json!(tool)),
+            "{tool}: {judge:?}"
+        );
+    }
+    let graded = denied_in(empty.path(), true, false);
+    assert!(!graded.contains(&serde_json::json!("Write")), "{graded:?}");
+}
+
+/// The tools a Claude Code chat in `cwd` is denied, as its `--settings` say.
+fn denied_in(cwd: &std::path::Path, graded: bool, judging: bool) -> Vec<serde_json::Value> {
+    let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+        Kit {
+            skills: None,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/charter"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: None,
+            graded,
+            judging,
+            writes_its_piece: false,
+        },
+        Some(cwd),
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    ) else {
+        panic!("armed per session");
+    };
+    let at = args
+        .iter()
+        .position(|arg| arg == "--settings")
+        .expect("--settings");
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    settings["permissions"]["deny"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+}
+
 #[test]
 fn a_claude_code_chat_is_handed_charter_s_mcp_server_for_that_chat_alone() {
     // HP-7: `--mcp-config` loads a server for this session and writes nothing.
@@ -228,6 +276,8 @@ fn a_claude_code_chat_is_handed_charter_s_mcp_server_for_that_chat_alone() {
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
             graded: false,
+            judging: false,
+            writes_its_piece: false,
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -266,6 +316,8 @@ fn armed_as(
                 persona,
             }),
             graded: false,
+            judging: false,
+            writes_its_piece: false,
         },
         Some(plane.root()),
         &crate::harness_plugin::Chosen::new(),
@@ -426,6 +478,8 @@ fn a_task_chat_runs_the_read_only_purlis_commands_its_brief_runs_without_asking(
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
             graded: false,
+            judging: false,
+            writes_its_piece: false,
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -512,6 +566,8 @@ fn allowed_to(graded: bool) -> Vec<serde_json::Value> {
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
             graded,
+            judging: false,
+            writes_its_piece: false,
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -694,6 +750,8 @@ fn a_persona_chat_in_a_workspace_is_handed_the_rules_that_name_them() {
                 persona: "steward",
             }),
             graded: false,
+            judging: false,
+            writes_its_piece: false,
         },
         Some(&folder),
         &crate::harness_plugin::Chosen::new(),
@@ -794,6 +852,8 @@ fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
             graded: false,
+            judging: false,
+            writes_its_piece: false,
         },
         Some(&root),
         &crate::harness_plugin::Chosen::new(),
@@ -1277,4 +1337,244 @@ fn claude_code_s_reports_are_read_and_the_other_harnesses_are_not() {
             "{other:?}"
         );
     }
+}
+
+/// SK-55: a judge's chat is started with its two tools alone, and no other chat is.
+#[test]
+fn a_judges_chat_starts_with_the_tools_that_read_and_no_other() {
+    let empty = tempfile::tempdir().expect("a directory");
+    let armed = |judging: bool| {
+        let StateHooks::ThisSessionOnly { args, env, .. } = adapter().arm(
+            Kit {
+                skills: None,
+                laid_out: None,
+                binary: std::path::Path::new("/bin/charter"),
+                plugin: Some(std::path::Path::new("/app/plugin")),
+                persona: None,
+                graded: true,
+                judging,
+                writes_its_piece: false,
+            },
+            Some(empty.path()),
+            &crate::harness_plugin::Chosen::new(),
+            None,
+        ) else {
+            panic!("armed per session");
+        };
+        (args, env)
+    };
+    let (args, env) = armed(true);
+    let at = args
+        .iter()
+        .position(|arg| arg == "--tools")
+        .expect("--tools");
+    assert_eq!(args[at + 1], "Read,Grep");
+    assert!(
+        env.iter()
+            .any(|(name, _)| name == crate::toolhooks::JUDGE_FOLDER_ENV)
+    );
+    let (args, env) = armed(false);
+    assert!(!args.contains(&"--tools".to_owned()));
+    assert!(
+        !env.iter()
+            .any(|(name, _)| name == crate::toolhooks::JUDGE_FOLDER_ENV)
+    );
+}
+
+/// SK-55, the operator's rulings of 2026-10-31 and 2026-11-01: an outcome eval's chat's writes are
+/// allowed by its guard's answer alone: no rule of its settings allows one, so where the guard does
+/// not answer the write asks, and the run ends.
+#[test]
+fn an_outcome_chats_writes_are_allowed_by_its_guard_alone() {
+    let empty = tempfile::tempdir().expect("a directory");
+    let StateHooks::ThisSessionOnly { args, env, .. } = adapter().arm(
+        Kit {
+            skills: None,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/charter"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: None,
+            graded: true,
+            judging: false,
+            writes_its_piece: true,
+        },
+        Some(empty.path()),
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    ) else {
+        panic!("armed per session");
+    };
+    assert!(
+        env.iter()
+            .any(|(name, _)| name == crate::toolhooks::OUTCOME_FOLDER_ENV)
+    );
+    let at = args
+        .iter()
+        .position(|arg| arg == "--settings")
+        .expect("--settings");
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    let allow = settings["permissions"]["allow"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(!allow.iter().any(|one| {
+        one.as_str().is_some_and(|one| {
+            ["Write", "Edit", "MultiEdit"]
+                .iter()
+                .any(|tool| one.starts_with(tool))
+        })
+    }));
+}
+
+/// SK-55: an outcome eval's chat has no shell in v1: every shell call asks, and an ask ends the run.
+#[test]
+fn an_outcome_chat_has_no_shell() {
+    let armed = |no_shell: bool, enabled: bool| {
+        let sandbox = crate::sandbox::claude::Settings {
+            sandbox: serde_json::json!({"enabled": enabled}),
+            deny: Vec::new(),
+            made_empty: Vec::new(),
+        };
+        let text = settings(
+            std::path::Path::new("/bin/purlis"),
+            None,
+            false,
+            &crate::harness_plugin::Chosen::new(),
+            Some(&sandbox),
+            &[],
+            None,
+            true,
+            no_shell,
+            &(None, None),
+        );
+        serde_json::from_str::<serde_json::Value>(&text).expect("JSON")
+    };
+    let shell_rules = |settings: &serde_json::Value| {
+        settings["permissions"]["allow"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|rule| rule.as_str().is_some_and(|rule| rule.starts_with("Bash")))
+            .count()
+    };
+    for enabled in [true, false] {
+        let settings = armed(true, enabled);
+        assert_eq!(shell_rules(&settings), 0, "{settings}");
+        assert_eq!(settings["sandbox"]["autoAllowBashIfSandboxed"], false);
+        assert!(
+            settings["permissions"]["ask"]
+                .as_array()
+                .is_some_and(|rules| rules.contains(&serde_json::json!("Bash"))),
+            "{settings}"
+        );
+    }
+    let other = armed(false, true);
+    assert!(shell_rules(&other) > 0);
+    assert!(other["sandbox"].get("autoAllowBashIfSandboxed").is_none());
+}
+
+/// SK-55: an outcome eval's chat starts with its own list of tools and no settings file, and no
+/// other chat does.
+#[test]
+fn an_outcome_chat_starts_with_its_own_tools_and_no_settings_file() {
+    let empty = tempfile::tempdir().expect("a directory");
+    let armed = |writes_its_piece: bool| {
+        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+            Kit {
+                skills: None,
+                laid_out: None,
+                binary: std::path::Path::new("/bin/charter"),
+                plugin: Some(std::path::Path::new("/app/plugin")),
+                persona: None,
+                graded: true,
+                judging: false,
+                writes_its_piece,
+            },
+            Some(empty.path()),
+            &crate::harness_plugin::Chosen::new(),
+            None,
+        ) else {
+            panic!("armed per session");
+        };
+        args
+    };
+    let args = armed(true);
+    let after = |flag: &str| {
+        let at = args.iter().position(|arg| arg == flag).expect(flag);
+        args[at + 1].clone()
+    };
+    let tools = after("--tools");
+    let mut tools: Vec<&str> = tools.split(',').collect();
+    tools.sort_unstable();
+    assert_eq!(
+        tools,
+        [
+            "Bash",
+            "Edit",
+            "Glob",
+            "Grep",
+            "MultiEdit",
+            "Read",
+            "Skill",
+            "Write"
+        ]
+    );
+    assert_eq!(after("--setting-sources"), "");
+    let other = armed(false);
+    assert!(!other.contains(&"--tools".to_owned()));
+    assert!(!other.contains(&"--setting-sources".to_owned()));
+}
+
+/// SK-55: what signs Claude Code in through a person's settings is known by its keys.
+#[test]
+fn settings_that_sign_in_are_told_from_those_that_do_not() {
+    for signs in [
+        r#"{"apiKeyHelper": "/bin/key"}"#,
+        r#"{"awsAuthRefresh": "x"}"#,
+        r#"{"env": {"ANTHROPIC_API_KEY": "x"}}"#,
+        r#"{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}"#,
+    ] {
+        assert!(settings_sign_in(signs), "{signs}");
+    }
+    for not in [
+        r#"{"model": "opus"}"#,
+        r#"{"env": {"EDITOR": "vi"}}"#,
+        "not json",
+    ] {
+        assert!(!settings_sign_in(not), "{not}");
+    }
+}
+
+/// SK-55: an outcome eval's chat holds no tool of purlis's server, as a judge does not.
+#[test]
+fn an_outcome_chat_holds_no_tool_of_a_server() {
+    let empty = tempfile::tempdir().expect("a directory");
+    let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+        Kit {
+            skills: None,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/charter"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: None,
+            graded: true,
+            judging: false,
+            writes_its_piece: true,
+        },
+        Some(empty.path()),
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    ) else {
+        panic!("armed per session");
+    };
+    let at = args
+        .iter()
+        .position(|arg| arg == "--settings")
+        .expect("--settings");
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    assert!(
+        settings["permissions"]["deny"]
+            .as_array()
+            .is_some_and(|rules| rules.contains(&serde_json::json!("mcp__purlis"))),
+        "{settings}"
+    );
 }

@@ -469,6 +469,11 @@ fn script_runs(path: &str, executable: bool, text: &str) -> Option<String> {
     executable.then(|| "an executable file".to_owned())
 }
 
+/// **Whether a harness would run a command of `text` before the model reads it** ([`bang_commands`]).
+pub fn runs_commands_as_it_loads(text: &str) -> bool {
+    !bang_commands(text).is_empty()
+}
+
 /// Each `` !`cmd` `` in `text` with its line, and each line of a ```` ```! ```` block: what some
 /// harnesses run before the model reads the skill.
 fn bang_commands(text: &str) -> Vec<(usize, String)> {

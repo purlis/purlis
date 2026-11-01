@@ -94,12 +94,17 @@ impl HarnessAdapter for ClaudeCode {
         if let Some(linked) = crate::skills::linked(&skills, kit) {
             args.extend(words(["--plugin-dir", &linked.display().to_string()]));
         }
-        args.extend(
-            screened
-                .as_ref()
-                .map(project::Screened::setting_sources)
-                .unwrap_or_default(),
-        );
+        // An outcome eval's chat loads no settings file at all: what it may do is its `--settings`.
+        if kit.writes_its_piece || kit.judging {
+            args.extend(words(["--setting-sources", ""]));
+        } else {
+            args.extend(
+                screened
+                    .as_ref()
+                    .map(project::Screened::setting_sources)
+                    .unwrap_or_default(),
+            );
+        }
         StateHooks::ThisSessionOnly {
             args: [
                 args,
@@ -107,6 +112,14 @@ impl HarnessAdapter for ClaudeCode {
                 // own, nor a project's, nor a connector.
                 if kit.graded {
                     words(["--strict-mcp-config"])
+                } else {
+                    Vec::new()
+                },
+                // A judge's chat has these tools and no other, whatever a release adds (SK-55).
+                if kit.judging {
+                    words(["--tools", JUDGE_TOOLS])
+                } else if kit.writes_its_piece {
+                    words(["--tools", OUTCOME_TOOLS])
                 } else {
                     Vec::new()
                 },
@@ -125,15 +138,30 @@ impl HarnessAdapter for ClaudeCode {
                         &denied_tools(kit),
                         screened.as_ref(),
                         kit.graded,
+                        kit.writes_its_piece,
                         &own_of(kit, cwd),
                     ),
                 ]),
             ]
             .concat(),
-            env: vec![(
+            env: std::iter::once((
                 crate::plugin::BINARY_ENV.to_owned(),
                 kit.binary.display().to_string(),
-            )],
+            ))
+            // A judge's reads are held to its folder by the read guard (SK-55).
+            .chain(cwd.filter(|_| kit.judging).map(|cwd| {
+                (
+                    crate::toolhooks::JUDGE_FOLDER_ENV.to_owned(),
+                    cwd.display().to_string(),
+                )
+            }))
+            .chain(cwd.filter(|_| kit.writes_its_piece).map(|cwd| {
+                (
+                    crate::toolhooks::OUTCOME_FOLDER_ENV.to_owned(),
+                    cwd.display().to_string(),
+                )
+            }))
+            .collect(),
             cannot_report: Vec::new(),
         }
     }
@@ -370,6 +398,17 @@ impl HarnessAdapter for ClaudeCode {
     /// cannot read; a command that turns them off ([`crate::dispatchunattended::bypass_in`]);
     /// and a command that starts the chat in any mode but the two that ask (#3352), as the
     /// command's `--permission-mode` outranks the one a grade's session settings pin.
+    fn outcome_refused(&self, env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+        let dir = env.dir("CLAUDE_CONFIG_DIR", ".claude")?;
+        let text = std::fs::read_to_string(dir.join("settings.json")).ok()?;
+        settings_sign_in(&text).then(|| {
+            "Outcome evals cannot run on this profile: it signs in through your Claude Code \
+             settings, which their chats do not load. Untick them, or pick a profile that signs \
+             in another way."
+                .to_owned()
+        })
+    }
+
     fn grade_refused(
         &self,
         command: &[String],
@@ -591,6 +630,7 @@ fn settings(
     denied_tools: &[String],
     screened: Option<&project::Screened>,
     graded: bool,
+    no_shell: bool,
     own: &(Option<String>, Option<String>),
 ) -> String {
     let mut settings = serde_json::Map::new();
@@ -735,6 +775,11 @@ fn settings(
     if sandbox.is_some_and(crate::sandbox::claude::Settings::is_off) {
         allow.push("Bash".to_owned());
     }
+    // **An outcome eval's chat has no shell in v1** (SK-55, #4476): no rule allows one, and below
+    // every call asks, which ends the run.
+    if no_shell {
+        allow.retain(|rule| !rule.starts_with("Bash"));
+    }
     let mut permissions = serde_json::json!({ "allow": allow });
     // **The sandbox, where the plane turned it on** (ADR 0067), and the deny rules that keep
     // Claude Code's own Read and Edit tools out of what its sandbox denies a command
@@ -742,7 +787,11 @@ fn settings(
     // things. Absent otherwise, never `enabled: false`: an unsandboxed chat is left to the
     // operator's own settings, as it was.
     if let Some(sandbox) = sandbox {
-        settings.insert("sandbox".to_owned(), sandbox.sandbox.clone());
+        let mut object = sandbox.sandbox.clone();
+        if no_shell {
+            object["autoAllowBashIfSandboxed"] = false.into();
+        }
+        settings.insert("sandbox".to_owned(), object);
         permissions["deny"] = serde_json::json!(sandbox.deny);
     }
     // **The tools the chat's persona denies it** (#1451, D-1451-18): its `disallowed-tools:`,
@@ -793,6 +842,15 @@ fn settings(
         rules.extend(twins.into_iter().map(serde_json::Value::String));
         permissions[bucket] = serde_json::Value::Array(rules);
     }
+    if no_shell {
+        let mut had: Vec<serde_json::Value> = permissions
+            .get("ask")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        had.push("Bash".into());
+        permissions["ask"] = serde_json::Value::Array(had);
+    }
     // **A grade's chat keeps its permission prompts** (SK-16): its mode is the default one
     // whatever the person's own settings set, as a session's settings outrank theirs.
     if graded {
@@ -814,6 +872,7 @@ pub(super) fn armed_settings_for_tests(sandbox: &crate::sandbox::claude::Setting
         Some(sandbox),
         &[],
         None,
+        false,
         false,
         &(None, None),
     )
@@ -853,8 +912,43 @@ fn denied_tools(kit: Kit<'_>) -> Vec<String> {
     if kit.graded {
         denied.extend(SUB_AGENT_TOOLS.map(str::to_owned));
     }
+    // A judge's chat reads what the chat it judges left, and changes nothing (SK-55): no tool
+    // that writes a file, runs a command or reaches past its folder.
+    if kit.judging {
+        denied.extend(JUDGE_DENIED.map(str::to_owned));
+    }
+    if kit.writes_its_piece {
+        denied.push(format!("mcp__{}", crate::chattools::SERVER));
+    }
     denied
 }
+
+/// **The only tools a judge's chat has** (SK-55): the two the read guard holds to its folder.
+const JUDGE_TOOLS: &str = "Read,Grep";
+
+/// **The only built-in tools an outcome eval's chat has** (SK-55): what a task reads and writes
+/// with, and the skill under test. This names no server's tools, so [`denied_tools`] answers for
+/// those. The shell is on the list so that a call asks, and so ends the run (#4476).
+const OUTCOME_TOOLS: &str = "Read,Grep,Glob,Write,Edit,MultiEdit,Skill,Bash";
+
+/// **Claude Code's tools a judge's chat is denied**, beside [`JUDGE_TOOLS`] (SK-55, #3235): every one that writes a file,
+/// runs a command or reaches the network, every way to read past the read guard that holds `Read`
+/// and `Grep` to its folder (`toolhooks::JUDGE_FOLDER_ENV`), and purlis's own read tools, which
+/// answer from the plane. It keeps `Read` and `Grep`.
+const JUDGE_DENIED: [&str; 12] = [
+    "Glob",
+    "LS",
+    "Skill",
+    "mcp__purlis",
+    "Bash",
+    "Edit",
+    "MultiEdit",
+    "Write",
+    "NotebookEdit",
+    "WebFetch",
+    "WebSearch",
+    "BashOutput",
+];
 
 /// Claude Code's permission mode that asks before each tool its rules do not allow.
 const DEFAULT_MODE: &str = "default";
@@ -1025,6 +1119,31 @@ fn settings_keep_a_grade_from_running(env: &crate::harness_plugin::Env<'_>) -> O
         ),
         None => unreadable(),
     }
+}
+
+/// **Whether a person's own Claude Code settings, `text`, are how Claude Code signs in**: a helper
+/// that hands it a key or refreshes a cloud's, or a variable that names a key or a provider. Text
+/// that does not read says nothing of it: [`settings_keep_a_grade_from_running`] answers for that.
+fn settings_sign_in(text: &str) -> bool {
+    let Ok(settings) = serde_json::from_str::<serde_json::Value>(text) else {
+        return false;
+    };
+    let helper = [
+        "apiKeyHelper",
+        "awsAuthRefresh",
+        "awsCredentialExport",
+        "gcpAuthRefresh",
+    ]
+    .iter()
+    .any(|key| settings.get(key).is_some());
+    let variable = settings
+        .get("env")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|env| {
+            env.keys()
+                .any(|name| name.starts_with("ANTHROPIC_") || name.starts_with("CLAUDE_CODE_USE_"))
+        });
+    helper || variable
 }
 
 /// **Claude Code's tools that start a sub-agent**: `Task`, by the name it has had, and `Agent`,

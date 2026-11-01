@@ -23,12 +23,15 @@
 //! it, and below it for one that should not.
 
 mod fixtures;
+pub mod outcomes;
 pub mod routers;
 
 pub use fixtures::{
-    EVALS_DIR, FixtureFile, Fixtures, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OutcomeEval, Read,
-    Refused, TriggerTest, Wrong, fixtures_of, outcomes_path, triggers_path, triggers_template,
+    EVALS_DIR, FixtureFile, Fixtures, MOST_EXPECTATION_BYTES, MOST_EXPECTATIONS,
+    MOST_OUTCOME_EVALS, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OutcomeEval, Read, Refused,
+    TriggerTest, Wrong, fixtures_of, outcomes_path, triggers_path, triggers_template,
 };
+pub use outcomes::{Check, OutcomeRun, OutcomeScore};
 
 /// How many times each fixture runs in each arm: skill-creator's and `claude plugin eval`'s
 /// default.
@@ -110,13 +113,41 @@ impl GradeRequest {
     }
 }
 
-/// **The run-chat request**: one chat for the host to run, in one arm, started on `prompt`. A
-/// Grader's is read against this closed shape: a key it does not know refuses it (#3236).
+/// **The run-chat request**: one chat for the host to run, in one arm, started on `prompt`, for
+/// what `kind` says. A Grader's is read against this closed shape: a key it does not know refuses
+/// it (#3236), and only a trigger test's chat is one it may ask for ([`Held::ask`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunChat {
     pub arm: Arm,
     pub prompt: String,
+    /// What the chat is for: a trigger test's where it is not written.
+    #[serde(default, skip_serializing_if = "ChatKind::is_trigger")]
+    pub kind: ChatKind,
+}
+
+/// **What a run-chat request's chat is for** (SK-55, #3235).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "is", rename_all = "kebab-case")]
+pub enum ChatKind {
+    /// A trigger test's: the host ends it once the skill under test starts, or at its turn's end.
+    #[default]
+    Trigger,
+    /// An outcome eval's: it runs its turn to the end, with `files` (paths in the skill's folder,
+    /// as the eval names them) staged into its piece first, and the host keeps what it left for
+    /// its judge.
+    Outcome { files: Vec<String> },
+    /// A judge's, of the outcome eval chat `of` (its id, as its [`ChatRan`] said it): its piece
+    /// holds only what that chat left, as purlis kept it, and `task`, the task it grades
+    /// ([`outcomes::judge_task`]). It changes nothing: the host holds it to reading.
+    Judge { of: String, task: String },
+}
+
+impl ChatKind {
+    /// Whether it is a trigger test's: the kind not written on the wire.
+    pub fn is_trigger(&self) -> bool {
+        matches!(self, Self::Trigger)
+    }
 }
 
 /// How a chat the host ran came to its end.
@@ -141,6 +172,16 @@ pub enum ChatEnd {
     /// What the grade's chats cost passed its dollar limit while it ran, and the host ended it
     /// (#3469). It is no run, as at the cap.
     OverLimit,
+    /// An outcome eval's or a judge's chat closed before its turn ended (a crash, say): no run,
+    /// and nothing left to judge. It spent as any chat does, so one that does not say what stops
+    /// a capped grade, as a chat that never started does not (SK-55).
+    ClosedEarly { why: String },
+    /// An outcome eval's chat was not started, as purlis could not hold it to its limits: it spent
+    /// nothing, and it fails that run with `why` (the operator's ruling of 2026-11-01).
+    NotHeld { why: String },
+    /// A judge reached past what purlis laid out for it, as its turn's end found: it fails that
+    /// run of its eval, the operator's ruling of 2026-11-01.
+    ReadPast,
 }
 
 /// **The run-chat result**: what one chat did.
@@ -157,6 +198,10 @@ pub struct ChatRan {
     pub ms: u64,
     #[serde(flatten)]
     pub end: ChatEnd,
+    /// **What its turn ended saying**, where its harness handed its last message back (SK-55):
+    /// what a judge's answer is read from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer: Option<String>,
 }
 
 impl ChatRan {
@@ -186,25 +231,45 @@ pub trait Chats {
 /// **What a grade will run, before it runs**: the cost shown first (decision 22).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct Plan {
-    /// The chats it runs in all, each one turn.
+    /// The chats it runs in all, each one turn: judges' chats among them.
     pub chats: u32,
     /// Of those, the chats of each arm.
     pub per_arm: u32,
     pub trigger_tests: u32,
-    /// Outcome evals the skill has, which this runner shows and does not run (#3235 grades them).
-    pub outcome_evals_waiting: u32,
+    /// The outcome evals it runs (SK-55), each in each arm and run, and the judge chats that
+    /// grade them: one for each of their chats, at most.
+    pub outcome_evals: u32,
+    pub judge_chats: u32,
 }
 
-/// **The plan of `request`**: one chat per trigger test, arm and run.
+/// **The plan of `request`**: one chat per trigger test, arm and run; and per outcome eval with
+/// expectations, arm and run, two: its own and its judge's. An eval with no expectations has
+/// nothing to judge, so it runs no chat.
 pub fn plan(request: &GradeRequest) -> Plan {
-    let tests = u32::try_from(request.triggers.len()).unwrap_or(u32::MAX);
-    let per_arm = tests.saturating_mul(u32::from(request.runs));
+    let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    let runs = u32::from(request.runs);
+    let tests = count(request.triggers.len());
+    let evals = count(judged_evals(request).count());
+    let judges_per_arm = evals.saturating_mul(runs);
+    let per_arm = tests
+        .saturating_mul(runs)
+        .saturating_add(judges_per_arm.saturating_mul(2));
+    let arms = count(request.arms.len());
     Plan {
-        chats: per_arm.saturating_mul(u32::try_from(request.arms.len()).unwrap_or(u32::MAX)),
+        chats: per_arm.saturating_mul(arms),
         per_arm,
         trigger_tests: tests,
-        outcome_evals_waiting: u32::try_from(request.outcomes.len()).unwrap_or(u32::MAX),
+        outcome_evals: evals,
+        judge_chats: judges_per_arm.saturating_mul(arms),
     }
+}
+
+/// The outcome evals of `request` a grade runs: those with an expectation to judge.
+fn judged_evals(request: &GradeRequest) -> impl Iterator<Item = &OutcomeEval> {
+    request
+        .outcomes
+        .iter()
+        .filter(|eval| !eval.expectations.is_empty())
 }
 
 /// A mean, its standard deviation, and the least and the most, of some numbers.
@@ -282,6 +347,15 @@ pub struct ArmScore {
     /// The chats it ran, and the ones that did not run.
     pub chats: u32,
     pub not_run: u32,
+    /// **Its outcome evals** (SK-55): the share of an eval's expectations that passed in each
+    /// judged run, over every eval's runs (skill-creator's benchmark); and the chats they asked
+    /// for, the judges' among them, that ran and that did not. Absent in a grade with none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome_pass_rate: Option<Stat>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub outcome_chats: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub outcome_not_run: u32,
 }
 
 /// How a grade came to its end.
@@ -343,6 +417,20 @@ pub struct GradeReport {
     /// The price the dollar limit was worked out at ([`Limits::priced`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priced: Option<Priced>,
+    /// **Each outcome eval in each arm** (SK-55), and the difference its pass rate made, as
+    /// [`Self::delta`] is of the trigger tests'. Absent in a grade with none, and in a row
+    /// written before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outcomes: Vec<OutcomeScore>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome_delta: Option<f64>,
+    /// **What its outcome chats spent, judges' among them**, of [`Self::spent_tokens`] and
+    /// [`Self::spent_usd`], where they said (SK-55): an eval's whole turn spends unlike a trigger
+    /// test's, so an estimate shares each over its own chats.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome_usd: Option<f64>,
     /// Why a Grader's question ended the grade, where it did ([`GradeEnd::GraderFailed`]): a
     /// sentence. Absent in every other report, and in a row written before #3236.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -395,9 +483,17 @@ impl GradeReport {
 
     /// How many of its chats asked the person something and were ended there (SK-59, #3239).
     pub fn asked(&self) -> u32 {
+        let evals = self
+            .outcomes
+            .iter()
+            .flat_map(|eval| &eval.results)
+            .filter(|run| run.asked)
+            .count();
         self.triggers
             .iter()
-            .fold(0u32, |all, score| all.saturating_add(score.asked))
+            .fold(u32::try_from(evals).unwrap_or(u32::MAX), |all, score| {
+                all.saturating_add(score.asked)
+            })
     }
 
     /// How many trigger tests passed with the skill, of those that ran: the grade a skill's
@@ -422,12 +518,12 @@ impl GradeReport {
 }
 
 /// **Grades `request` with purlis's built-in runner**, asking `chats` for every chat: each run in
-/// turn, every trigger test in it, every arm for each, so a grade the person stops has scored
-/// every arm alike so far. Held to `limits` where they are given ([`Held`]): each chat is told the
+/// turn, every trigger test in it and then every outcome eval, every arm for each, so a grade the
+/// person stops has scored every arm alike so far. An outcome eval's chat is followed by its
+/// judge's, which grades what it left ([`outcomes`]) and is held like any chat. Held to `limits` where they are given ([`Held`]): each chat is told the
 /// tokens left, the grade stops at the cap or at the dollar limit, whichever comes first, and a
 /// chat that started and did not say what it spent stops it too, however it ended, as the cap
-/// could not be held after it. Outcome evals are shown and not run by this runner (#3235):
-/// [`Plan`] says how many wait.
+/// could not be held after it.
 pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limits>) -> GradeReport {
     let mut held = Held::new(request, chats, limits);
     'runs: for _run in 0..request.runs {
@@ -436,9 +532,18 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                 let chat = RunChat {
                     arm: *arm,
                     prompt: test.query.clone(),
+                    kind: ChatKind::Trigger,
                 };
                 // Asked in the plan's own order, so no chat is past it.
                 if held.ask(&chat).is_err() || held.ended().is_some() {
+                    break 'runs;
+                }
+            }
+        }
+        for e in 0..held.evals.len() {
+            for a in 0..request.arms.len() {
+                held.run_eval(e, a);
+                if held.ended().is_some() {
                     break 'runs;
                 }
             }
@@ -454,7 +559,8 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
 ///
 /// - **The plan**: a chat is of one of the grade's arms, on one of its trigger tests' queries, and
 ///   each test runs at most [`GradeRequest::runs`] times in each arm. A chat past that is refused
-///   ([`Self::ask`]'s `Err`), and is never run.
+///   ([`Self::ask`]'s `Err`), and is never run. An outcome eval's chats are the built-in runner's
+///   alone ([`Self::run_eval`]): a Grader never names a judge or what one reads.
 /// - **The limits**: each chat is told the tokens left; the grade ends at its cap, at its dollar
 ///   limit, at the person's Stop, after [`NOT_STARTED_IN_A_ROW`] chats that did not start, or
 ///   after a chat that did not say what it spent where the grade is capped. Once it has ended no
@@ -471,6 +577,16 @@ pub struct Held<'a> {
     priced: Option<Priced>,
     /// ran[test][arm] = each run's result, in run order.
     ran: Vec<Vec<Vec<ChatRan>>>,
+    /// The outcome evals it runs; judged[eval][arm] = each run, in run order; and each arm's
+    /// outcome chats, judges' among them, asked for and of those run.
+    evals: Vec<&'a OutcomeEval>,
+    judged: Vec<Vec<Vec<OutcomeRun>>>,
+    outcome_asked: Vec<(u32, u32)>,
+    // The judges' alone (SK-55): the eval chats between them start, and a judge that does not
+    // start leaves every eval chat before it spent for nothing.
+    judges_not_started_in_a_row: u32,
+    outcome_tokens: Option<u64>,
+    outcome_usd: Option<f64>,
     ended: Option<GradeEnd>,
     // Counted in all, and per arm: arms take turns, so a chat of one arm that starts says
     // nothing of another arm whose chats do not (a router that never answers, SK-15e).
@@ -503,6 +619,12 @@ impl<'a> Held<'a> {
     ) -> Self {
         Self {
             ran: vec![vec![Vec::new(); request.arms.len()]; request.triggers.len()],
+            evals: judged_evals(request).collect(),
+            judged: vec![vec![Vec::new(); request.arms.len()]; judged_evals(request).count()],
+            outcome_asked: vec![(0, 0); request.arms.len()],
+            judges_not_started_in_a_row: 0,
+            outcome_tokens: None,
+            outcome_usd: None,
             not_started_in_its_arm: vec![0; request.arms.len()],
             request,
             chats,
@@ -596,25 +718,121 @@ impl<'a> Held<'a> {
     /// not run; [`Asked::Ended`] where the grade has ended, before or as it was asked; else what
     /// it did.
     pub fn ask(&mut self, chat: &RunChat) -> Result<Asked, String> {
+        if !chat.kind.is_trigger() {
+            return Err(
+                "it asked for an outcome eval's or a judge's chat, which purlis's own runner \
+                 alone asks for"
+                    .to_owned(),
+            );
+        }
         let (t, a) = self.slot(chat)?;
+        let asked = self.run(chat, a);
+        if let Asked::Ran(result) = &asked {
+            self.ran[t][a].push(result.clone());
+        }
+        Ok(asked)
+    }
+
+    /// **One run of the outcome eval at `e` in the arm at `a`**: its chat, then, where that left
+    /// an outcome, its judge's, each counted and held as any chat is.
+    fn run_eval(&mut self, e: usize, a: usize) {
+        let eval = self.evals[e];
+        let arm = self.request.arms[a];
+        let chat = RunChat {
+            arm,
+            prompt: outcomes::outcome_prompt(eval),
+            kind: ChatKind::Outcome {
+                files: eval.files.clone(),
+            },
+        };
+        let Asked::Ran(done) = self.run(&chat, a) else {
+            return;
+        };
+        self.count_outcome(a, &done);
+        let mut run = OutcomeRun {
+            chat: done.chat.clone(),
+            judge: None,
+            passed: None,
+            checks: Vec::new(),
+            failed: None,
+            asked: done.end == ChatEnd::Asked,
+        };
+        // A chat that asked, a write its guard did not answer for among what asks, or one that
+        // could not be held fails the run, and says why (the operator's ruling of 2026-11-01).
+        match &done.end {
+            ChatEnd::Asked => {
+                run.passed = Some(0);
+                run.failed = Some(
+                    "Its chat asked for something a grade's chat may not do on its own, so it was \
+                     ended and the eval failed."
+                        .to_owned(),
+                );
+            }
+            ChatEnd::NotHeld { why } => {
+                run.passed = Some(0);
+                run.failed = Some(why.clone());
+            }
+            _ => {}
+        }
+        // Only a chat that ran its turn, or past its time, left an outcome to judge.
+        let of = done.chat.clone().filter(|_| done.ran());
+        if let (Some(of), None) = (of, self.ended) {
+            let judge = RunChat {
+                arm,
+                prompt: outcomes::judge_prompt(),
+                kind: ChatKind::Judge {
+                    of,
+                    task: outcomes::judge_task(eval),
+                },
+            };
+            if let Asked::Ran(verdict) = self.run(&judge, a) {
+                self.count_outcome(a, &verdict);
+                verdict_of(&mut run, &verdict, &eval.expectations);
+            }
+        }
+        self.judged[e][a].push(run);
+    }
+
+    /// Counts the outcome eval's or judge's chat `one` in the arm at `a`.
+    fn count_outcome(&mut self, a: usize, one: &ChatRan) {
+        let counted = &mut self.outcome_asked[a];
+        counted.0 = counted.0.saturating_add(1);
+        if one.ran() {
+            counted.1 = counted.1.saturating_add(1);
+        }
+    }
+
+    /// **Runs `chat`, of the arm at `a`, held to the limits**: [`Asked::Ended`] where the grade
+    /// has ended, before or as it was asked; else what it did.
+    fn run(&mut self, chat: &RunChat, a: usize) -> Asked {
         if let Some(ended) = self.ended {
-            return Ok(Asked::Ended(ended));
+            return Asked::Ended(ended);
         }
         if self.chats.cancelled() {
-            return Ok(Asked::Ended(*self.ended.insert(GradeEnd::Cancelled)));
+            return Asked::Ended(*self.ended.insert(GradeEnd::Cancelled));
         }
         let left = self
             .cap
             .map(|cap| cap.saturating_sub(self.spent.unwrap_or(0)));
         if left == Some(0) {
-            return Ok(Asked::Ended(*self.ended.insert(GradeEnd::OverCap)));
+            return Asked::Ended(*self.ended.insert(GradeEnd::OverCap));
         }
         if self.over_the_limit() {
-            return Ok(Asked::Ended(*self.ended.insert(GradeEnd::OverLimit)));
+            return Asked::Ended(*self.ended.insert(GradeEnd::OverLimit));
         }
         let result = self.chats.run(chat, left);
         if let Some(tokens) = result.tokens {
             self.spent = Some(self.spent.unwrap_or(0).saturating_add(tokens));
+            if !chat.kind.is_trigger() {
+                self.outcome_tokens = Some(self.outcome_tokens.unwrap_or(0).saturating_add(tokens));
+            }
+        }
+        if !chat.kind.is_trigger()
+            && let Some(cost) = result
+                .cost_usd
+                .filter(|cost| cost.is_finite() && *cost >= 0.0)
+        {
+            self.outcome_usd = Some(self.outcome_usd.unwrap_or(0.0) + cost);
         }
         match result
             .cost_usd
@@ -635,10 +853,23 @@ impl<'a> Held<'a> {
         // ended: an ask, a Stop or the cap itself spends as a turn does, and the cap cannot be
         // held after a chat whose spend is unknown.
         let unreported = self.cap.is_some()
-            && !matches!(result.end, ChatEnd::NotStarted { .. })
+            && !matches!(
+                result.end,
+                ChatEnd::NotStarted { .. } | ChatEnd::NotHeld { .. }
+            )
             && result.tokens.is_none();
+        if matches!(chat.kind, ChatKind::Judge { .. }) {
+            self.judges_not_started_in_a_row = match result.end {
+                ChatEnd::NotStarted { .. } | ChatEnd::ClosedEarly { .. } => {
+                    self.judges_not_started_in_a_row + 1
+                }
+                _ => 0,
+            };
+        }
         let stop = match &result.end {
-            ChatEnd::NotStarted { why } => {
+            ChatEnd::NotStarted { why }
+            | ChatEnd::ClosedEarly { why }
+            | ChatEnd::NotHeld { why } => {
                 self.not_started_in_a_row += 1;
                 self.not_started_in_its_arm[a] += 1;
                 self.not_started = Some(why.clone());
@@ -647,13 +878,12 @@ impl<'a> Held<'a> {
             ChatEnd::Cancelled => Some(GradeEnd::Cancelled),
             ChatEnd::OverCap => Some(GradeEnd::OverCap),
             ChatEnd::OverLimit => Some(GradeEnd::OverLimit),
-            ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked => {
+            ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked | ChatEnd::ReadPast => {
                 self.not_started_in_a_row = 0;
                 self.not_started_in_its_arm[a] = 0;
                 None
             }
         };
-        self.ran[t][a].push(result.clone());
         self.ended = if unreported {
             Some(GradeEnd::SpendNotReported)
         } else if stop.is_some() {
@@ -665,13 +895,14 @@ impl<'a> Held<'a> {
         } else if self
             .not_started_in_a_row
             .max(self.not_started_in_its_arm[a])
+            .max(self.judges_not_started_in_a_row)
             >= NOT_STARTED_IN_A_ROW
         {
             Some(GradeEnd::ChatsDidNotStart)
         } else {
             None
         };
-        Ok(Asked::Ran(result))
+        Asked::Ran(result)
     }
 
     /// Whether what the chats cost, as the limit counts it, has reached the dollar limit.
@@ -715,11 +946,43 @@ impl<'a> Held<'a> {
             }
         }
 
+        let mut outcome_scores = Vec::new();
+        for (e, eval) in self.evals.iter().enumerate() {
+            for (a, arm) in request.arms.iter().enumerate() {
+                let results = self.judged[e][a].clone();
+                let shares: Vec<f64> = results
+                    .iter()
+                    .filter_map(|run| run.share(eval.expectations.len()))
+                    .collect();
+                outcome_scores.push(OutcomeScore {
+                    eval: eval.id,
+                    arm: *arm,
+                    expectations: eval.expectations.clone(),
+                    runs: u32::try_from(shares.len()).unwrap_or(u32::MAX),
+                    pass_rate: Stat::of(&shares),
+                    results,
+                });
+            }
+        }
+
         let arms: Vec<ArmScore> = request
             .arms
             .iter()
             .enumerate()
             .map(|(a, arm)| {
+                // Every judged run of every eval in this arm, as skill-creator's benchmark pools
+                // them.
+                let outcome_shares: Vec<f64> = self
+                    .evals
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(e, eval)| {
+                        self.judged[e][a]
+                            .iter()
+                            .filter_map(|run| run.share(eval.expectations.len()))
+                    })
+                    .collect();
+                let (outcome_all, outcome_ran) = self.outcome_asked[a];
                 // Each run's share of the tests that passed in it, over the tests it ran.
                 let per_run: Vec<f64> = (0..usize::from(request.runs))
                     .filter_map(|r| {
@@ -757,19 +1020,31 @@ impl<'a> Held<'a> {
                     seconds: Stat::of(&seconds),
                     chats: u32::try_from(chats).unwrap_or(u32::MAX),
                     not_run: u32::try_from(all.len() - chats).unwrap_or(u32::MAX),
+                    outcome_pass_rate: Stat::of(&outcome_shares),
+                    outcome_chats: outcome_ran,
+                    outcome_not_run: outcome_all - outcome_ran,
                 }
             })
             .collect();
 
-        let mean_of = |arm: Option<Arm>| {
-            arm.and_then(|arm| arms.iter().find(|one| one.arm == arm))
-                .and_then(|one| one.pass_rate)
-                .map(|stat| stat.mean)
+        let difference = |of: fn(&ArmScore) -> Option<Stat>| {
+            let mean_of = |arm: Option<Arm>| {
+                arm.and_then(|arm| arms.iter().find(|one| one.arm == arm))
+                    .and_then(of)
+                    .map(|stat| stat.mean)
+            };
+            mean_of(request.graded())
+                .zip(mean_of(request.baseline()))
+                .map(|(with, base)| with - base)
         };
-        let delta = mean_of(request.graded())
-            .zip(mean_of(request.baseline()))
-            .map(|(with, base)| with - base);
-        self.closed(grader, triggers, arms, delta, failed)
+        let delta = difference(|arm| arm.pass_rate);
+        let outcome_delta = difference(|arm| arm.outcome_pass_rate);
+        let mut report = self.closed(grader, triggers, arms, delta, failed);
+        report.outcomes = outcome_scores;
+        report.outcome_delta = outcome_delta;
+        report.outcome_tokens = self.outcome_tokens;
+        report.outcome_usd = self.outcome_usd;
+        report
     }
 
     /// **The report of these scores, graded by `grader`**, with purlis's own count of what the
@@ -804,6 +1079,10 @@ impl<'a> Held<'a> {
             counted_usd: (self.cost_cap.is_some() && self.counted_unpriced)
                 .then_some(self.counted_usd),
             priced: self.priced.clone(),
+            outcomes: Vec::new(),
+            outcome_delta: None,
+            outcome_tokens: None,
+            outcome_usd: None,
             failed,
         }
     }
@@ -955,6 +1234,9 @@ impl From<ReportedArm> for ArmScore {
             seconds: arm.seconds.map(Into::into),
             chats: arm.chats,
             not_run: arm.not_run,
+            outcome_pass_rate: None,
+            outcome_chats: 0,
+            outcome_not_run: 0,
         }
     }
 }
@@ -977,6 +1259,46 @@ impl From<ReportedStat> for Stat {
             min: stat.min,
             max: stat.max,
         }
+    }
+}
+
+/// **What the judge's chat `verdict` made of `run`**, graded on `expectations`: its answer taken
+/// whole ([`outcomes::judged`]), or the eval failed there with why; a judge that never ran (not
+/// started, stopped, ended at a cap, or handed back no answer) judged nothing, so the run is no
+/// run. A judge that asked the person something failed it.
+fn verdict_of(run: &mut OutcomeRun, verdict: &ChatRan, expectations: &[String]) {
+    run.judge = verdict.chat.clone();
+    let failed = |run: &mut OutcomeRun, why: String| {
+        run.passed = Some(0);
+        run.failed = Some(why);
+    };
+    match &verdict.end {
+        ChatEnd::Turn | ChatEnd::TimedOut => match verdict.answer.as_deref() {
+            None => {}
+            Some(answer) => match outcomes::judged(answer, expectations) {
+                Ok(checks) => {
+                    let passed = checks.iter().filter(|check| check.passed).count();
+                    run.passed = Some(u32::try_from(passed).unwrap_or(u32::MAX));
+                    run.checks = checks;
+                }
+                Err(why) => failed(run, format!("{why} So the eval failed.")),
+            },
+        },
+        ChatEnd::Asked => failed(
+            run,
+            "The judge asked the person something, which a judge may not, so the eval failed."
+                .to_owned(),
+        ),
+        ChatEnd::ReadPast => failed(
+            run,
+            "The judge reached past what it was given to read, so the eval failed.".to_owned(),
+        ),
+        ChatEnd::NotStarted { .. }
+        | ChatEnd::NotHeld { .. }
+        | ChatEnd::ClosedEarly { .. }
+        | ChatEnd::Cancelled
+        | ChatEnd::OverCap
+        | ChatEnd::OverLimit => {}
     }
 }
 

@@ -3090,6 +3090,10 @@ impl Planes {
             let held = Arc::downgrade(&held);
             Arc::new(move |output| {
                 if let Some(held) = held.upgrade() {
+                    // A grade watching the chat hears what its turn ended saying (SK-55).
+                    if let purlis_core::hookwire::Output::Final { text } = &output.turn_output {
+                        held.hooks.skill_runs().said(output.chat, text.clone());
+                    }
                     crate::dispatched::said(&held, output);
                 }
             })

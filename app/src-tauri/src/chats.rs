@@ -3488,6 +3488,11 @@ impl Chats {
 
     /// What this app arms a chat of `harness` with ([`purlis_core::hoststart::Kit`]): its own
     /// binary, its plugin, and its git hooks for a chat running a harness.
+    /// purlis's own binary, where it was found.
+    pub(crate) fn binary(&self) -> Option<&std::path::Path> {
+        self.shipped.binary.as_deref()
+    }
+
     fn kit(&self, harness: Option<Harness>) -> purlis_core::hoststart::Kit {
         purlis_core::hoststart::Kit {
             binary: self.shipped.binary.clone(),

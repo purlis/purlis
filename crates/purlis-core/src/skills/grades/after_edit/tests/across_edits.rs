@@ -46,6 +46,8 @@ fn turned_on(now: &Now, previous: Option<String>, chats: u32) -> Accepted {
         token_cap: now.token_cap,
         limit_usd: now.limit_usd,
         tests: now.tests.clone(),
+        outcomes: None,
+        evals: Vec::new(),
         previous,
         runs_on: now.runs_on.clone(),
         at: "2026-10-30T10:00:00+00:00".into(),
