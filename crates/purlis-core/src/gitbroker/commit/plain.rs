@@ -59,6 +59,9 @@ pub fn placed(
 pub fn commit(placed: &Placed, message: &str) -> Result<Vec<Say>, String> {
     let top = &placed.top;
     super::trailers_ok(message)?;
+    // Before any git is chosen: on a Mac without developer tools `/usr/bin/git` is a stub that
+    // opens the system's install dialog (#1813).
+    git::presence::require().map_err(|why| why.to_string())?;
     let branch = read(top, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok_or(
         "this folder is not on a branch (a detached HEAD), so there is no branch to commit on",
     )?;
@@ -119,7 +122,7 @@ fn at(top: &Path) -> Command {
 
 /// What git printed for `args`, trimmed, where it succeeded with something to say.
 fn read(top: &Path, args: &[&str]) -> Option<String> {
-    let out = at(top).args(args).stderr(Stdio::null()).output().ok()?;
+    let out = crate::forklock::output(at(top).args(args).stderr(Stdio::null())).ok()?;
     let said = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     (out.status.success() && !said.is_empty()).then_some(said)
 }
@@ -133,7 +136,7 @@ fn ran(top: &Path, args: &[&str], input: Option<Vec<u8>>) -> Result<bool, String
         Stdio::null()
     });
     let could_not = |e: std::io::Error| format!("git could not run: {e}");
-    let mut child = git.spawn().map_err(could_not)?;
+    let mut child = crate::forklock::spawn(&mut git).map_err(could_not)?;
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         stdin.write_all(&input).map_err(could_not)?;
     }
