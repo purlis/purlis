@@ -877,6 +877,7 @@ fn keeping_a_profile_has_the_time_its_limit_could_take() {
         settings_in: None,
         limits: Chosen::default().with(ProfileSize, mib),
         highest: Chosen::default(),
+        mcp_state: None,
     };
     let ten_minutes = std::time::Duration::from_secs(600);
     assert_eq!(all_kept_within(&[kept(None)]), ten_minutes);
