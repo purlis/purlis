@@ -406,8 +406,8 @@ fn the_per_person_quota_reaches_the_operator_as_set() {
     assert_eq!(
         defaults,
         json!({
-            "claims": 5, "cpu": "4", "memory": "8Gi", "memoryLimit": "24Gi",
-            "ephemeralStorage": "10Gi", "storage": "50Gi",
+            "claims": 5, "cpu": "4", "memory": "8Gi", "memoryLimit": "64Gi",
+            "ephemeralStorage": "16Gi", "storage": "50Gi",
         })
     );
     let quota = purlis_cluster_operator::person::Quota::from_var(Some(&defaults.to_string()))
@@ -421,8 +421,8 @@ fn the_per_person_quota_reaches_the_operator_as_set() {
     assert_eq!(
         set,
         json!({
-            "claims": 2, "cpu": "1500m", "memory": "8Gi", "memoryLimit": "24Gi",
-            "ephemeralStorage": "10Gi",
+            "claims": 2, "cpu": "1500m", "memory": "8Gi", "memoryLimit": "64Gi",
+            "ephemeralStorage": "16Gi",
         })
     );
     for value in ["perPerson.quota.disks=2", "perPerson.quota.cpu=lots"] {

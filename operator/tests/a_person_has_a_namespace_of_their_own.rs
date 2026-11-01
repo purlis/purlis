@@ -141,8 +141,8 @@ fn the_default_quota_is_five_claims_and_what_five_runners_ask_for() {
                 "count/sandboxclaims.extensions.agents.x-k8s.io": "5",
                 "requests.cpu": "4",
                 "requests.memory": "8Gi",
-                "limits.memory": "24Gi",
-                "requests.ephemeral-storage": "10Gi",
+                "limits.memory": "64Gi",
+                "requests.ephemeral-storage": "16Gi",
                 "requests.storage": "50Gi",
             } },
         })

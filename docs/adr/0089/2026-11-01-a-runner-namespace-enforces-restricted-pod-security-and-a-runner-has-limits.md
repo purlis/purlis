@@ -5,7 +5,7 @@ implementation* on #3844. It grants the operator no right.
 
 1. **A runner namespace the operator makes enforces the restricted Pod Security Standard**, by the
    label `pod-security.kubernetes.io/enforce: restricted`, and the policy on runner namespaces
-   refuses the operator one without it. It holds a runner's pod to what the template already says.
+   refuses the operator one without it or with an older version of the Standard. It holds a runner's pod to what the template already says.
 2. **What this means for a browser pod (#2059).** The Standard admits a `Localhost` seccomp profile,
    so the profile spec #2041 ships fits. It refuses seccomp off, with pod user namespaces or without,
    and adding the capabilities to start another user. So spec #2041's per-pool setting for seccomp

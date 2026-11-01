@@ -311,16 +311,17 @@ where
 }
 
 impl Default for Quota {
-    /// 5 claims, 4 CPUs, 8Gi of memory asked for and 24Gi at most, 10Gi of ephemeral storage and
+    /// 5 claims, 4 CPUs, 8Gi of memory asked for and 64Gi at most, 16Gi of ephemeral storage and
     /// 50Gi of storage: five runners of the template and five kept volumes of the default 10Gi
-    /// fit, with room for a warm one.
+    /// fit, and the CPU, memory, limit and ephemeral storage each hold the same 16 runners, warm
+    /// ones among them.
     fn default() -> Self {
         Quota {
             claims: Some(5),
             cpu: Some("4".to_owned()),
             memory: Some("8Gi".to_owned()),
-            memory_limit: Some("24Gi".to_owned()),
-            ephemeral_storage: Some("10Gi".to_owned()),
+            memory_limit: Some("64Gi".to_owned()),
+            ephemeral_storage: Some("16Gi".to_owned()),
             storage: Some("50Gi".to_owned()),
         }
     }

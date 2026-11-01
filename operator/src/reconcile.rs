@@ -1031,8 +1031,8 @@ async fn sandbox_of(
 }
 
 /// **A suspended kept runner's sandbox brought to its pool's image** (#3982, ruled 2026-11-01), so
-/// it next starts on it: its pod template read as the cluster holds it, and only the images
-/// changed, by the sandbox's uid. The cluster's policy lets this through only on a Sandbox already
+/// it next starts on it: its pod template read as the cluster holds it, and only its images and
+/// resources changed, by the sandbox's uid. The cluster's policy lets this through only on a Sandbox already
 /// `Suspended`, in a runner namespace.
 async fn renew_image(client: &Client, sandbox: &Sandbox, pool: &Pool) -> Result<(), Error> {
     if sandbox.spec.operating_mode.as_deref() != Some(upstream::SUSPENDED) {

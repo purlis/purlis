@@ -171,7 +171,7 @@ The chart's values, all in its
 | `imagePullSecrets` | secrets in the release's namespace that pull the image | none |
 | `resources` | the operator's CPU and memory | requests 10m CPU and 32Mi, limit 256Mi |
 | `forge.keySecretNames` | the Secrets in the release's namespace holding a GitHub App's key, which the Role `purlis-forge-key-reader` lets the operator `get` ([below](#minting-github-app-tokens-in-the-cluster)); empty, there is no such Role and it may read no Secret. The one value that changes what the operator may do, and never its own signing key | `[]` |
-| `perPerson.quota` | what each person's runners may hold at once, in their namespace's quota `purlis-person` ([below](#each-persons-namespace)): `claims` (a count), `cpu`, `memory` and `ephemeralStorage` (what their runners' pods ask for), `memoryLimit` (the most those pods may use), `storage` (what their kept runners' volumes ask for); a key left out is not limited | `claims: 5`, `cpu: "4"`, `memory: 8Gi`, `memoryLimit: 24Gi`, `ephemeralStorage: 10Gi`, `storage: 50Gi` |
+| `perPerson.quota` | what each person's runners may hold at once, in their namespace's quota `purlis-person` ([below](#each-persons-namespace)): `claims` (a count), `cpu`, `memory` and `ephemeralStorage` (what their runners' pods ask for), `memoryLimit` (the most those pods may use), `storage` (what their kept runners' volumes ask for); a key left out is not limited | `claims: 5`, `cpu: "4"`, `memory: 8Gi`, `memoryLimit: 64Gi`, `ephemeralStorage: 16Gi`, `storage: 50Gi` |
 
 No value but `forge.keySecretNames` changes what the operator may do, and none changes how its pod
 is confined.

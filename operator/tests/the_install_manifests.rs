@@ -676,7 +676,9 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
         "request.resource.resource!='namespaces'||!variables.operator||\
          request.operation!='CREATE'||\
          has(object.metadata.labels)&&'pod-security.kubernetes.io/enforce'inobject.metadata.labels&&\
-         object.metadata.labels['pod-security.kubernetes.io/enforce']=='restricted'"
+         object.metadata.labels['pod-security.kubernetes.io/enforce']=='restricted'&&\
+         (!('pod-security.kubernetes.io/enforce-version'inobject.metadata.labels)||\
+         object.metadata.labels['pod-security.kubernetes.io/enforce-version']=='latest')"
     );
     // Its mark opens the mint port, so no one else marks another namespace (#4206).
     assert_eq!(

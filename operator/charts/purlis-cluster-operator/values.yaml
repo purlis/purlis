@@ -34,8 +34,8 @@ perPerson:
     claims: 5
     cpu: "4"
     memory: 8Gi
-    memoryLimit: 24Gi
-    ephemeralStorage: 10Gi
+    memoryLimit: 64Gi
+    ephemeralStorage: 16Gi
     storage: 50Gi
 
 metrics:
