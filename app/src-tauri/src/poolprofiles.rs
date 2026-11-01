@@ -1791,7 +1791,15 @@ pub async fn pool_sign_in_next(
         if let Some(over) = over
             && matches!(event, driven::Event::Failed { why } if why == driven::TOOK_TOO_LONG)
         {
-            said_over = Some(sign_in_ran_out(&over.pool, over.wait));
+            said_over = Some({
+                let chosen = config_root()
+                    .ok()
+                    .and_then(|config| {
+                        purlis_core::runners::chosen_limits_of(&config, &over.pool).ok()
+                    })
+                    .unwrap_or_default();
+                sign_in_ran_out(&over.pool, over.wait, &chosen)
+            });
         }
     }
     Ok(event.map(|event| match (said_over, event) {
@@ -1803,11 +1811,7 @@ pub async fn pool_sign_in_next(
 
 /// A sign-in on `pool` ended at the pool's limit of `wait` minutes, in words the window can ask
 /// of for what to raise it to (spec #4275).
-fn sign_in_ran_out(pool: &str, wait: u64) -> String {
-    let chosen = config_root()
-        .ok()
-        .and_then(|config| purlis_core::runners::chosen_limits_of(&config, pool).ok())
-        .unwrap_or_default();
+fn sign_in_ran_out(pool: &str, wait: u64, chosen: &purlis_core::poollimits::Chosen) -> String {
     let hit = chosen.waited(LimitId::SignInWait, wait, None);
     format!(
         "{}: {}",

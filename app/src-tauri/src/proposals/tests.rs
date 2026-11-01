@@ -623,7 +623,7 @@ mod limit {
         let Now::Made { before: was, after } = limit_now(&change) else {
             panic!("it is shown");
         };
-        assert!(was.contains("15 minutes (purlis's default)"), "{was}");
+        assert!(was.contains("15 minutes (the default)"), "{was}");
         assert!(after.contains("30 minutes"), "{after}");
         assert!(one.path.contains("builds"), "{}", one.path);
 
