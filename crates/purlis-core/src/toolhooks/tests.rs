@@ -1312,7 +1312,19 @@ fn a_judge_reads_only_the_folder_laid_out_for_it() {
         read("Grep", serde_json::json!({"pattern": "x"})),
         Answer::Nothing
     ));
-    for outside in ["../secret.md", "missing.md", "/etc/hosts"] {
+    assert!(
+        matches!(
+            read("Read", serde_json::json!({"file_path": "missing.md"})),
+            Answer::Nothing
+        ),
+        "a file that is not there is inside, and only says so"
+    );
+    for outside in [
+        "../secret.md",
+        "../missing.md",
+        "gone/../../secret.md",
+        "/etc/hosts",
+    ] {
         assert!(
             matches!(
                 read("Read", serde_json::json!({"file_path": outside})),
@@ -1350,15 +1362,65 @@ fn a_judges_answer_is_taken_only_from_a_turn_that_read_its_folder_alone() {
         ]}})
         .to_string()
     };
-    assert!(!judge_may_answer(&stop, &lookup), "no transcript");
+    assert_eq!(
+        judge_turn(&stop, &lookup),
+        JudgeTurn::NotKnown,
+        "no transcript"
+    );
     let wrote = |text: String| std::fs::write(&transcript, text).unwrap();
     wrote(call("Read", serde_json::json!({"file_path": "task.json"})));
-    assert!(judge_may_answer(&stop, &lookup));
+    assert_eq!(judge_turn(&stop, &lookup), JudgeTurn::Held);
     wrote(call("Read", serde_json::json!({"file_path": "../t.jsonl"})));
-    assert!(!judge_may_answer(&stop, &lookup));
+    assert_eq!(judge_turn(&stop, &lookup), JudgeTurn::ReadPast);
     wrote(call("Bash", serde_json::json!({"command": "ls"})));
-    assert!(!judge_may_answer(&stop, &lookup));
+    assert_eq!(judge_turn(&stop, &lookup), JudgeTurn::ReadPast);
     wrote("not json".to_owned());
-    assert!(!judge_may_answer(&stop, &lookup));
-    assert!(judge_may_answer("nothing", &|_| None), "any other chat");
+    assert_eq!(judge_turn(&stop, &lookup), JudgeTurn::NotKnown);
+    assert_eq!(
+        judge_turn("nothing", &|_| None),
+        JudgeTurn::Held,
+        "any other chat"
+    );
+}
+
+/// SK-55: an outcome chat's writes land in its own piece: a new file below it, never a link out of
+/// it, a path past it, or a link that leads nowhere. No other chat is held so.
+#[test]
+fn an_outcome_chats_writes_land_in_its_own_piece() {
+    let plane = Plane::new();
+    let folder = plane.root.join("piece");
+    std::fs::create_dir_all(&folder).unwrap();
+    let away = plane.root.join("away");
+    std::fs::create_dir_all(&away).unwrap();
+    std::fs::write(plane.root.join("kept.md"), "no").unwrap();
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&away, folder.join("out")).unwrap();
+        std::os::unix::fs::symlink(plane.root.join("kept.md"), folder.join("file.md")).unwrap();
+        std::os::unix::fs::symlink(plane.root.join("gone"), folder.join("dangling")).unwrap();
+    }
+    let cwd = folder.to_str().unwrap().to_owned();
+    let write = |path: &str| serde_json::json!({"tool_name": "Write", "cwd": cwd, "tool_input": {"file_path": path}});
+    let held = plane.with_env(OUTCOME_FOLDER_ENV, &cwd);
+    for inside in ["new.md", "deep/er/new.md"] {
+        assert!(
+            matches!(held.ask(write(inside), pretooluse_edit), Answer::Nothing),
+            "{inside}"
+        );
+    }
+    let mut outside = vec!["../new.md".to_owned(), "/etc/x".to_owned()];
+    if cfg!(unix) {
+        outside.extend(["out/new.md", "file.md", "dangling"].map(str::to_owned));
+    }
+    for path in &outside {
+        assert!(
+            matches!(held.ask(write(path), pretooluse_edit), Answer::Deny(_)),
+            "{path}"
+        );
+    }
+    let unnamed = serde_json::json!({"tool_name": "Write", "cwd": cwd, "tool_input": {}});
+    assert!(matches!(
+        held.ask(unnamed, pretooluse_edit),
+        Answer::Deny(_)
+    ));
 }

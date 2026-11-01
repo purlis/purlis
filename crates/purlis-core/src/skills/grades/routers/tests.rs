@@ -155,6 +155,8 @@ fn part(skill: &str, router_passes: bool) -> SkillPart {
             counted_usd: None,
             priced: None,
             outcome_delta: None,
+            outcome_tokens: None,
+            outcome_usd: None,
             outcomes: Vec::new(),
             failed: None,
         },

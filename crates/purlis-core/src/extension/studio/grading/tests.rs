@@ -424,3 +424,18 @@ fn a_grader_is_not_told_why_a_chat_did_not_start() {
         }
     );
 }
+
+/// SK-55: a Grader is told what a chat did, never what it said.
+#[test]
+fn a_grader_is_not_told_what_a_chat_said() {
+    let told = told_to_the_grader(ChatRan {
+        chat: Some("01A".into()),
+        started: Vec::new(),
+        tokens: None,
+        cost_usd: None,
+        ms: 0,
+        end: ChatEnd::Turn,
+        answer: Some("what it said".into()),
+    });
+    assert_eq!(told.answer, None);
+}

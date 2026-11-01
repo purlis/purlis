@@ -2515,8 +2515,7 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
     if event == Event::Stop
         && let Some(report) = &report
         && report.agent.is_none()
-        && purlis_core::toolhooks::judge_may_answer(&text, &purlis_core::envvar::var)
-        && let Some(turn_output) = hookwire::Output::of_stop(&text)
+        && let Some(turn_output) = turn_output_of(&text)
     {
         let _ = hookwire::tell_turn_output(
             std::path::Path::new(&socket),
@@ -5801,3 +5800,22 @@ mod core_word_tests;
 #[cfg(test)]
 #[path = "main/tests/serve.rs"]
 mod serve_tests;
+
+/// **What a turn's end tells the app it said**, from its `Stop` hook's `payload`: its last message;
+/// for a judge of a grade, its answer whole where it read only what it may, that it read past
+/// that, or nothing where that is not known (SK-55).
+fn turn_output_of(payload: &str) -> Option<hookwire::Output> {
+    use purlis_core::toolhooks::{JUDGE_FOLDER_ENV, JudgeTurn, judge_turn};
+    let env = &purlis_core::envvar::var;
+    if env(JUDGE_FOLDER_ENV).is_none() {
+        return hookwire::Output::of_stop(payload);
+    }
+    match judge_turn(payload, env) {
+        JudgeTurn::Held => hookwire::Output::of_stop_within(
+            payload,
+            purlis_core::skills::grade::outcomes::MOST_ANSWER_BYTES,
+        ),
+        JudgeTurn::ReadPast => Some(hookwire::Output::ReadPast),
+        JudgeTurn::NotKnown => None,
+    }
+}

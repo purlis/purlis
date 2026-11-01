@@ -20,7 +20,8 @@ the task it grades (`task`). The run-chat result says what the chat's turn ended
 
 **An outcome eval's chat may write and edit inside its own throwaway piece** (the operator's ruling
 of 2026-10-31, adding to §3), still under the sandbox, by permission rules for that folder alone.
-Anything else still asks, and an ask still ends it. No other chat of a grade gains this.
+Outcome chats' writes are held to their piece by a guard. Anything else still asks, and an ask still
+ends it. No other chat of a grade gains this.
 
 **An outcome eval's chat runs its whole turn** (§3), in a throwaway piece laid out as the arm's
 is, with the eval's input files staged into it at the paths the eval names. Each file is read as
@@ -63,7 +64,8 @@ order, each `text` the one asked about, each `passed` true or false, each `evide
 most 512 bytes with every control character a space; every other key is left out, and an answer
 past 64 KiB is not read. An answer that is not whole and a judge that asks the person something
 **fail that run of the eval** (none of its expectations
-passed), with a sentence saying why. A judge that never ran (not started, stopped, or ended at a
+passed), with a sentence saying why. A judge that reached past what it may read **fails that run too, with the reason in the record**
+(the operator's ruling of 2026-11-01). A judge that never ran (not started, stopped, or ended at a
 cap) or handed back no answer judged nothing, so the run is no run. Two judges in a row that do not start end the grade, as
 two chats do.
 

@@ -1904,7 +1904,8 @@ impl InChats<'_> {
         };
         let mut skills: Vec<String> = Vec::new();
         let mut answer: Option<String> = None;
-        let end = match &told {
+        let mut read_past = false;
+        let mut end = match &told {
             None => ChatEnd::TimedOut,
             Some((_, heard)) => loop {
                 if self.cancelled() {
@@ -1933,6 +1934,7 @@ impl InChats<'_> {
                         }
                     }
                     Ok(Watched::Said(text)) => answer = Some(text),
+                    Ok(Watched::ReadPast) => read_past = true,
                     Ok(Watched::TurnEnded) => break ChatEnd::Turn,
                     // A grade's chat waits on nobody: ended at its first ask, with that end.
                     Ok(Watched::Asked) => break ChatEnd::Asked,
@@ -1941,7 +1943,7 @@ impl InChats<'_> {
                     Ok(Watched::Closed) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
                         if whole_turn =>
                     {
-                        break ChatEnd::NotStarted {
+                        break ChatEnd::ClosedEarly {
                             why: "its chat closed before its turn ended".to_owned(),
                         };
                     }
@@ -1955,6 +1957,7 @@ impl InChats<'_> {
         // What the turn ended saying, where it is heard just after the turn's end.
         if whole_turn
             && answer.is_none()
+            && !read_past
             && matches!(end, ChatEnd::Turn)
             && let Some((_, heard)) = &told
         {
@@ -1965,10 +1968,18 @@ impl InChats<'_> {
                         answer = Some(text);
                         break;
                     }
+                    Ok(Watched::ReadPast) => {
+                        read_past = true;
+                        break;
+                    }
                     Ok(_) => {}
                     Err(_) => break,
                 }
             }
+        }
+        if read_past && matches!(chat.kind, ChatKind::Judge { .. }) {
+            end = ChatEnd::ReadPast;
+            answer = None;
         }
         // What an outcome eval's chat left, kept for its judge, read before its close takes
         // its piece (SK-55).

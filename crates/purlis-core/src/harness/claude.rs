@@ -148,6 +148,12 @@ impl HarnessAdapter for ClaudeCode {
                     cwd.display().to_string(),
                 )
             }))
+            .chain(cwd.filter(|_| kit.writes_its_piece).map(|cwd| {
+                (
+                    crate::toolhooks::OUTCOME_FOLDER_ENV.to_owned(),
+                    cwd.display().to_string(),
+                )
+            }))
             .collect(),
             cannot_report: Vec::new(),
         }

@@ -172,6 +172,13 @@ pub enum ChatEnd {
     /// What the grade's chats cost passed its dollar limit while it ran, and the host ended it
     /// (#3469). It is no run, as at the cap.
     OverLimit,
+    /// An outcome eval's or a judge's chat closed before its turn ended (a crash, say): no run,
+    /// and nothing left to judge. It spent as any chat does, so one that does not say what stops
+    /// a capped grade, as a chat that never started does not (SK-55).
+    ClosedEarly { why: String },
+    /// A judge reached past what purlis laid out for it, as its turn's end found: it fails that
+    /// run of its eval, the operator's ruling of 2026-11-01.
+    ReadPast,
 }
 
 /// **The run-chat result**: what one chat did.
@@ -414,6 +421,13 @@ pub struct GradeReport {
     pub outcomes: Vec<OutcomeScore>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome_delta: Option<f64>,
+    /// **What its outcome chats spent, judges' among them**, of [`Self::spent_tokens`] and
+    /// [`Self::spent_usd`], where they said (SK-55): an eval's whole turn spends unlike a trigger
+    /// test's, so an estimate shares each over its own chats.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome_usd: Option<f64>,
     /// Why a Grader's question ended the grade, where it did ([`GradeEnd::GraderFailed`]): a
     /// sentence. Absent in every other report, and in a row written before #3236.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -568,6 +582,8 @@ pub struct Held<'a> {
     // The judges' alone (SK-55): the eval chats between them start, and a judge that does not
     // start leaves every eval chat before it spent for nothing.
     judges_not_started_in_a_row: u32,
+    outcome_tokens: Option<u64>,
+    outcome_usd: Option<f64>,
     ended: Option<GradeEnd>,
     // Counted in all, and per arm: arms take turns, so a chat of one arm that starts says
     // nothing of another arm whose chats do not (a router that never answers, SK-15e).
@@ -604,6 +620,8 @@ impl<'a> Held<'a> {
             judged: vec![vec![Vec::new(); request.arms.len()]; judged_evals(request).count()],
             outcome_asked: vec![(0, 0); request.arms.len()],
             judges_not_started_in_a_row: 0,
+            outcome_tokens: None,
+            outcome_usd: None,
             not_started_in_its_arm: vec![0; request.arms.len()],
             request,
             chats,
@@ -785,6 +803,16 @@ impl<'a> Held<'a> {
         let result = self.chats.run(chat, left);
         if let Some(tokens) = result.tokens {
             self.spent = Some(self.spent.unwrap_or(0).saturating_add(tokens));
+            if !chat.kind.is_trigger() {
+                self.outcome_tokens = Some(self.outcome_tokens.unwrap_or(0).saturating_add(tokens));
+            }
+        }
+        if !chat.kind.is_trigger()
+            && let Some(cost) = result
+                .cost_usd
+                .filter(|cost| cost.is_finite() && *cost >= 0.0)
+        {
+            self.outcome_usd = Some(self.outcome_usd.unwrap_or(0.0) + cost);
         }
         match result
             .cost_usd
@@ -809,12 +837,14 @@ impl<'a> Held<'a> {
             && result.tokens.is_none();
         if matches!(chat.kind, ChatKind::Judge { .. }) {
             self.judges_not_started_in_a_row = match result.end {
-                ChatEnd::NotStarted { .. } => self.judges_not_started_in_a_row + 1,
+                ChatEnd::NotStarted { .. } | ChatEnd::ClosedEarly { .. } => {
+                    self.judges_not_started_in_a_row + 1
+                }
                 _ => 0,
             };
         }
         let stop = match &result.end {
-            ChatEnd::NotStarted { why } => {
+            ChatEnd::NotStarted { why } | ChatEnd::ClosedEarly { why } => {
                 self.not_started_in_a_row += 1;
                 self.not_started_in_its_arm[a] += 1;
                 self.not_started = Some(why.clone());
@@ -823,7 +853,7 @@ impl<'a> Held<'a> {
             ChatEnd::Cancelled => Some(GradeEnd::Cancelled),
             ChatEnd::OverCap => Some(GradeEnd::OverCap),
             ChatEnd::OverLimit => Some(GradeEnd::OverLimit),
-            ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked => {
+            ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked | ChatEnd::ReadPast => {
                 self.not_started_in_a_row = 0;
                 self.not_started_in_its_arm[a] = 0;
                 None
@@ -987,6 +1017,8 @@ impl<'a> Held<'a> {
         let mut report = self.closed(grader, triggers, arms, delta, failed);
         report.outcomes = outcome_scores;
         report.outcome_delta = outcome_delta;
+        report.outcome_tokens = self.outcome_tokens;
+        report.outcome_usd = self.outcome_usd;
         report
     }
 
@@ -1024,6 +1056,8 @@ impl<'a> Held<'a> {
             priced: self.priced.clone(),
             outcomes: Vec::new(),
             outcome_delta: None,
+            outcome_tokens: None,
+            outcome_usd: None,
             failed,
         }
     }
@@ -1230,8 +1264,15 @@ fn verdict_of(run: &mut OutcomeRun, verdict: &ChatRan, expectations: &[String]) 
             "The judge asked the person something, which a judge may not, so the eval failed."
                 .to_owned(),
         ),
-        ChatEnd::NotStarted { .. } | ChatEnd::Cancelled | ChatEnd::OverCap | ChatEnd::OverLimit => {
-        }
+        ChatEnd::ReadPast => failed(
+            run,
+            "The judge reached past what it was given to read, so the eval failed.".to_owned(),
+        ),
+        ChatEnd::NotStarted { .. }
+        | ChatEnd::ClosedEarly { .. }
+        | ChatEnd::Cancelled
+        | ChatEnd::OverCap
+        | ChatEnd::OverLimit => {}
     }
 }
 

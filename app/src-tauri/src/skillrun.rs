@@ -75,6 +75,8 @@ pub enum Watched {
     /// handed it (#1981), heard just before the turn's end. What an outcome eval's judge reads,
     /// and what a judge answers with.
     Said(String),
+    /// A judge reached past what it may read, as its turn's end found (SK-55).
+    ReadPast,
 }
 
 /// The open skill runs of one project's chats.
@@ -136,6 +138,11 @@ impl SkillRuns {
     /// where one does: no other chat's last message goes anywhere from here.
     pub fn said(&self, chat: u32, text: String) {
         self.tell_watching(chat, Watched::Said(text));
+    }
+
+    /// **Judge `chat` reached past what it may read** (SK-55), told to the grade watching it.
+    pub fn read_past(&self, chat: u32) {
+        self.tell_watching(chat, Watched::ReadPast);
     }
 
     /// Who is told each change from now on.

@@ -220,6 +220,11 @@ const DID_NOT_START: &str = "the chat did not start";
 /// **`ran` as a Grader is told it**: why a chat did not start is purlis's own sentence about this
 /// machine, kept in the grade's end for the person, so the Grader is told only that it did not.
 fn told_to_the_grader(ran: ChatRan) -> ChatRan {
+    // A Grader never reads what a chat said.
+    let ran = ChatRan {
+        answer: None,
+        ..ran
+    };
     match ran.end {
         ChatEnd::NotStarted { .. } => ChatRan {
             end: ChatEnd::NotStarted {

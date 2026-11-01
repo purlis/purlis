@@ -283,6 +283,74 @@ fn a_judges_spend_counts_toward_the_cap() {
     assert_eq!(report.spent_tokens, Some(300));
 }
 
+/// A chat that closed mid-turn and said no spend stops a capped grade, as the cap could not be
+/// held after it, however many such chats alternate with ones that ran.
+#[test]
+fn a_chat_that_closed_early_without_saying_its_spend_stops_a_capped_grade() {
+    struct Crashes;
+    impl Chats for Crashes {
+        fn run(&mut self, _: &RunChat, _: Option<u64>) -> ChatRan {
+            ChatRan {
+                chat: Some("01A".into()),
+                started: Vec::new(),
+                tokens: None,
+                cost_usd: None,
+                ms: 10,
+                end: ChatEnd::ClosedEarly {
+                    why: "closed".into(),
+                },
+                answer: None,
+            }
+        }
+        fn cancelled(&self) -> bool {
+            false
+        }
+    }
+    let limits = Limits {
+        tokens: 1000,
+        cost_usd: None,
+        priced: None,
+        unpriced_usd_per_million: None,
+    };
+    let report = grade(&request(), &mut Crashes, Some(limits));
+    assert_eq!(report.ended, GradeEnd::SpendNotReported);
+    assert_eq!(report.outcomes[0].results[0].passed, None, "no run");
+}
+
+/// The operator's ruling of 2026-11-01: a judge that reached past its limit fails that run, and
+/// the record says why.
+#[test]
+fn a_judge_that_read_past_its_limit_fails_the_run_with_why() {
+    let mut host = Judged {
+        asked: Vec::new(),
+        eval_end: turns,
+        judge: |_| (ChatEnd::ReadPast, None),
+    };
+    let report = grade(&request(), &mut host, None);
+    let run = &report.outcomes[0].results[0];
+    assert_eq!(run.passed, Some(0));
+    assert!(run.failed.as_deref().unwrap().contains("reached past"));
+    assert_eq!(report.outcomes[0].runs, 3, "a failure is a run");
+}
+
+/// An estimate shares what evals spent over their own chats.
+#[test]
+fn a_report_says_what_its_outcome_chats_spent_of_the_whole() {
+    let mut asked = request();
+    asked.triggers.push(TriggerTest {
+        query: "fill a form".into(),
+        should_trigger: true,
+    });
+    let mut host = Judged {
+        asked: Vec::new(),
+        eval_end: turns,
+        judge: fair_judge,
+    };
+    let report = grade(&asked, &mut host, None);
+    assert_eq!(report.spent_tokens, Some(1800));
+    assert_eq!(report.outcome_tokens, Some(1200));
+}
+
 #[test]
 fn the_judges_answer_is_taken_whole_through_the_allow_list() {
     let asked = eval().expectations;
@@ -355,12 +423,17 @@ fn the_judges_answer_is_taken_whole_through_the_allow_list() {
 #[test]
 fn evidence_is_kept_plain_and_bounded() {
     assert_eq!(kept_evidence("  a\u{1b}[31mb\nc  "), "a [31mb c");
+    assert!(plain_evidence(&"e".repeat(MOST_EVIDENCE_BYTES * 2)).len() > MOST_EVIDENCE_BYTES);
     let long = kept_evidence(&"é".repeat(MOST_EVIDENCE_BYTES));
     assert!(long.len() <= MOST_EVIDENCE_BYTES && long.chars().all(|ch| ch == 'é'));
 }
 
 #[test]
 fn the_kinds_are_spelled_on_the_wire() {
+    assert_eq!(
+        serde_json::to_value(ChatEnd::ReadPast).unwrap(),
+        serde_json::json!({"end": "read-past"})
+    );
     let judge = RunChat {
         arm: Arm::With,
         prompt: "p".into(),

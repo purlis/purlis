@@ -199,7 +199,10 @@ function startRefused(
   afterEdit: boolean,
 ): string | undefined {
   if (newer) return "The plan changed: read the new one first.";
-  if (plan.tests.length === 0) return `${name} has no trigger tests to run yet.`;
+  if (plan.tests.length === 0 && !plan.evals.some((one) => one.on))
+    return plan.evals.length > 0
+      ? `${name} has no trigger tests, so tick an outcome eval to run.`
+      : `${name} has no trigger tests to run yet.`;
   if (plan.refused !== null) return `No grade can run on ${plan.profile ?? "this profile"}.`;
   if (!afterEdit && plan.running !== null) return `A grade of ${name} is running already.`;
   if (plan.consent === null) return "purlis could not say what this grade would run.";
@@ -261,7 +264,11 @@ export function GradePlanPage({
   const [model, setModel] = useState(DEFAULT);
   const [again, setAgain] = useState(0);
   // The outcome evals the person ticked: none until they do, and the consent covers these.
-  const [ticked, setTicked] = useState<string[]>([]);
+  // Kept with the copy they were ticked on: another skill or level starts with none.
+  const copy = JSON.stringify([plane, level, name]);
+  const [tickedOn, setTickedOn] = useState<{ copy: string; evals: string[] }>({ copy, evals: [] });
+  const ticked = tickedOn.copy === copy ? tickedOn.evals : [];
+  const setTicked = (evals: string[]) => setTickedOn({ copy, evals });
   const picked = profile === DEFAULT ? null : profile;
   const pickedModel = model === DEFAULT ? null : model;
   // The level as a value: a page drawn again with an equal level reads nothing anew.

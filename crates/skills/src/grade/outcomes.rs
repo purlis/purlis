@@ -29,11 +29,11 @@ pub const JUDGE_OUTCOME_DIR: &str = "outcome";
 pub const JUDGE_FILES_FILE: &str = "files.txt";
 
 /// The most bytes of a judge's answer read: past skill-creator's largest `grading.json` for 32
-/// expectations with their evidence, and past what a harness hands back of a turn.
-pub const MOST_ANSWER_BYTES: usize = 64 * 1024;
+/// expectations with their evidence, and what a judge's hook hands the app whole on one line.
+pub const MOST_ANSWER_BYTES: usize = 48 * 1024;
 
-/// The most bytes of one expectation's evidence kept: what the scorecard shows and the record
-/// holds, cut on a character.
+/// The most bytes of one expectation's evidence kept in the record: what the scorecard shows, cut
+/// on a character, once what looks like a credential is masked in it whole.
 pub const MOST_EVIDENCE_BYTES: usize = 512;
 
 /// **The first message of an outcome eval's chat**: its prompt as the fixture writes it, and,
@@ -86,7 +86,8 @@ pub fn judge_task(eval: &OutcomeEval) -> String {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Check {
     pub passed: bool,
-    /// What the judge found, cut to [`MOST_EVIDENCE_BYTES`], each control character a space.
+    /// What the judge found, each control character a space; cut to [`MOST_EVIDENCE_BYTES`] as
+    /// the record keeps it ([`kept_evidence`]).
     pub evidence: String,
 }
 
@@ -147,7 +148,7 @@ pub fn judged(answer: &str, expectations: &[String]) -> Result<Vec<Check>, Strin
                 .ok_or_else(|| format!("The judge gave no evidence for expectation {n}."))?;
             Ok(Check {
                 passed,
-                evidence: kept_evidence(evidence),
+                evidence: plain_evidence(evidence),
             })
         })
         .collect()
@@ -165,15 +166,22 @@ fn unfenced(text: &str) -> &str {
     body.trim_end().strip_suffix("```").unwrap_or(text).trim()
 }
 
-/// `evidence` as it is kept: each control character a space, the ends trimmed, cut on a character
-/// to [`MOST_EVIDENCE_BYTES`].
-pub fn kept_evidence(evidence: &str) -> String {
-    let plain: String = evidence
+/// `evidence` as a judge's answer is read: each control character a space, nothing no reader
+/// would see, the ends trimmed.
+pub fn plain_evidence(evidence: &str) -> String {
+    evidence
         .trim()
         .chars()
         .map(|ch| if ch.is_control() { ' ' } else { ch })
         .filter(|ch| !purlis_unicode::invisible(*ch))
-        .collect();
+        .collect()
+}
+
+/// `evidence` as the record keeps it: [`plain_evidence`], cut on a character to
+/// [`MOST_EVIDENCE_BYTES`]. Masked before this, by whoever records it, or a cut could leave part
+/// of a credential no mask knows.
+pub fn kept_evidence(evidence: &str) -> String {
+    let plain = plain_evidence(evidence);
     let mut end = plain.len().min(MOST_EVIDENCE_BYTES);
     while !plain.is_char_boundary(end) {
         end -= 1;

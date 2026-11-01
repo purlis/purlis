@@ -398,12 +398,22 @@ pub fn judge_guard_answers(binary: &Path, folder: &Path) -> bool {
 /// The most of a judge's transcript read: past what a turn of a grade's chat writes.
 const MOST_TRANSCRIPT_BYTES: u64 = 64 * 1024 * 1024;
 
-/// **Whether a judge's turn may hand back its answer**, from its `Stop` hook's `payload`: `true`
-/// for every other chat. For a judge, every tool call its transcript holds has to be `Read` or
-/// `Grep` inside its folder; a transcript that does not read whole answers `false`.
-pub fn judge_may_answer(payload: &str, env: &dyn Fn(&str) -> Option<String>) -> bool {
+/// **What a judge's turn did with what it may read**, as its transcript says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JudgeTurn {
+    /// It is no judge, or every tool call it made was `Read` or `Grep` inside its folder.
+    Held,
+    /// A tool call of it was another tool's, or reached outside its folder.
+    ReadPast,
+    /// Its transcript could not be read whole, so what it did is not known: no verdict.
+    NotKnown,
+}
+
+/// **What a judge's turn did**, from its `Stop` hook's `payload` ([`JudgeTurn`]): [`JudgeTurn::Held`]
+/// for every other chat.
+pub fn judge_turn(payload: &str, env: &dyn Fn(&str) -> Option<String>) -> JudgeTurn {
     let Some(folder) = env(JUDGE_FOLDER_ENV) else {
-        return true;
+        return JudgeTurn::Held;
     };
     (|| {
         let stop: Value = serde_json::from_str(payload).ok()?;
@@ -427,23 +437,69 @@ pub fn judge_may_answer(payload: &str, env: &dyn Fn(&str) -> Option<String>) -> 
                 let named = targets(call.get("input")?);
                 let tool = call.get("name")?.as_str()?;
                 if !matches!(tool, "Read" | "Grep") || !inside(&folder, cwd, &named) {
-                    return Some(false);
+                    return Some(JudgeTurn::ReadPast);
                 }
             }
         }
-        Some(true)
+        Some(JudgeTurn::Held)
     })()
-    .unwrap_or(false)
+    .unwrap_or(JudgeTurn::NotKnown)
 }
 
-/// Whether each of `named`, from `base`, or `base` itself where none is named, resolves inside
-/// `folder`, links followed.
+/// Whether each of `named`, from `base`, or `base` itself where none is named, lands inside
+/// `folder` ([`lands_inside`]).
 fn inside(folder: &Path, base: &Path, named: &[String]) -> bool {
     let here = [".".to_owned()];
     let paths = if named.is_empty() { &here[..] } else { named };
-    paths.iter().all(|path| {
-        std::fs::canonicalize(base.join(path)).is_ok_and(|real| real.starts_with(folder))
-    })
+    paths
+        .iter()
+        .all(|path| lands_inside(folder, &base.join(path)))
+}
+
+/// **Whether `path` lands inside `folder`**, a resolved folder: the deepest part of it that exists,
+/// links followed, has to be inside, and what does not exist yet below that is plain names. A link
+/// that leads nowhere does not land anywhere.
+fn lands_inside(folder: &Path, path: &Path) -> bool {
+    let mut at = path;
+    loop {
+        match std::fs::symlink_metadata(at) {
+            Ok(_) => {
+                return std::fs::canonicalize(at).is_ok_and(|real| real.starts_with(folder));
+            }
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => {
+                if at.file_name().is_none() {
+                    return false;
+                }
+                let Some(above) = at.parent() else {
+                    return false;
+                };
+                at = above;
+            }
+            Err(_) => return false,
+        }
+    }
+}
+
+/// **Set on an outcome eval's chat alone** (SK-55): the folder its writes are held to, its own
+/// piece. Its adapter sets it.
+pub const OUTCOME_FOLDER_ENV: &str = "PURLIS_OUTCOME_FOLDER";
+
+/// **Why an outcome eval's chat may not make this write**, or `None`: it writes in its own piece.
+fn outcome_writes_outside(hook: &Hook) -> Option<String> {
+    let folder = (hook.env)(OUTCOME_FOLDER_ENV)?;
+    let refused =
+        || Some("a grade's chat writes inside the folder purlis laid out for it alone".to_owned());
+    let Ok(folder) = std::fs::canonicalize(&folder) else {
+        return refused();
+    };
+    let named = targets(hook.tool_input());
+    let base = match hook.text("cwd") {
+        "" => folder.clone(),
+        cwd => Path::new(cwd).to_path_buf(),
+    };
+    (named.is_empty() || !inside(&folder, &base, &named))
+        .then(refused)
+        .flatten()
 }
 
 /// `_state_write_reason`'s sentence.
@@ -455,6 +511,9 @@ pub const STATE_WRITE_REASON: &str = "writes purlis's own state directly (that d
 /// `pretooluse_edit`: refuse a `Write`/`Edit` into charter's own state directory, which holds
 /// the tool-gate ceiling, the persona pointers and the vault registry.
 pub fn pretooluse_edit(hook: &Hook) -> Answer {
+    if let Some(why) = outcome_writes_outside(hook) {
+        return deny(why);
+    }
     if !hook.in_plane {
         return Answer::Nothing;
     }
@@ -497,6 +556,9 @@ pub fn pretooluse_edit_proposing(
     hook: &Hook,
     hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool,
 ) -> Answer {
+    if let Some(why) = outcome_writes_outside(hook) {
+        return deny(why);
+    }
     drafting(hook, hand)
         .or_else(|| proposing(hook, hand))
         .unwrap_or_else(|| pretooluse_edit(hook))

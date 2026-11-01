@@ -213,6 +213,8 @@ fn a_grade() -> super::super::grades::Graded {
             counted_usd: None,
             priced: None,
             outcome_delta: None,
+            outcome_tokens: None,
+            outcome_usd: None,
             outcomes: Vec::new(),
             failed: None,
         },

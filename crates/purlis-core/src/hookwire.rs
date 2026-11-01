@@ -2806,6 +2806,8 @@ pub enum Output {
         /// The message, cut to [`Output::MOST_BYTES`] by the hook.
         text: String,
     },
+    /// A judge of a grade reached past what it may read, as its turn's end found (SK-55).
+    ReadPast,
     /// A shell command the turn ran, as its tool's hook heard it come back (#1981): what
     /// `purlis dispatch read` lists of a task.
     Ran {
@@ -2899,8 +2901,23 @@ impl Output {
     /// The last message a `Stop` hook's `payload` hands it, where the harness hands one: Claude
     /// Code's and Codex's `last_assistant_message`, which purlis's opencode plugin sends too.
     pub fn of_stop(payload: &str) -> Option<Self> {
+        Self::of_stop_within(payload, Self::MOST_BYTES)
+    }
+
+    /// [`Self::of_stop`], cut to `most` bytes: a judge's answer has to come back whole (SK-55).
+    pub fn of_stop_within(payload: &str, most: usize) -> Option<Self> {
         let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
-        Self::last_message(read.get("last_assistant_message")?.as_str()?)
+        let text = read.get("last_assistant_message")?.as_str()?.trim();
+        if text.is_empty() {
+            return None;
+        }
+        let mut end = text.len().min(most);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        Some(Self::Final {
+            text: text[..end].to_owned(),
+        })
     }
 }
 

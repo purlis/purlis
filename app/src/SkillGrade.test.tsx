@@ -403,6 +403,87 @@ describe("Grade, cost first", () => {
     expect(start(24)).toBeTruthy();
   });
 
+  it("starts a skill with ticked outcome evals alone", async () => {
+    const asked: Array<{ cmd: string; args: unknown }> = [];
+    const eval4 = {
+      id: "4",
+      prompt: "Fill in the form",
+      hides: false,
+      files: [],
+      expectations: 2,
+      chats: 12,
+    };
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "skill_grade_plan") {
+        const on = ((args as { evals: string[] }).evals ?? []).includes("4");
+        return plan({
+          tests: [],
+          chats: on ? 12 : 0,
+          consent: on ? "by-eval" : null,
+          evals: [{ ...eval4, on }],
+          outcome_evals: on ? 1 : 0,
+          judge_chats: on ? 6 : 0,
+          outcomes_left_out: [],
+        });
+      }
+      if (cmd === "start_options") return { profiles: [{ name: "work" }] };
+      if (cmd === "skill_grade_start") return "01GRADE";
+      return null;
+    });
+    renderPlan();
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Fill in the form/ }));
+    await waitFor(() => expect(unavailable(start(12))).toBe(false));
+    await userEvent.click(start(12));
+    await waitFor(() => expect(asked.some((one) => one.cmd === "skill_grade_start")).toBe(true));
+    const started = asked.find((one) => one.cmd === "skill_grade_start");
+    expect((started?.args as { evals: string[] }).evals).toEqual(["4"]);
+  });
+
+  it("never carries a tick to another skill", async () => {
+    const asked: Array<{ skill: string; evals: string[] }> = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "skill_grade_plan") {
+        const { skill, evals } = args as { skill: string; evals: string[] };
+        asked.push({ skill, evals });
+        return plan({
+          evals: [
+            {
+              id: "4",
+              prompt: "Fill in the form",
+              hides: false,
+              files: [],
+              expectations: 2,
+              chats: 12,
+              on: evals.includes("4"),
+            },
+          ],
+          outcomes_left_out: [],
+        });
+      }
+      if (cmd === "start_options") return { profiles: [] };
+      return null;
+    });
+    const page = (name: string) => (
+      <GradePlanPage
+        plane="p"
+        name={name}
+        level={LEVEL}
+        changed={0}
+        onStarted={vi.fn()}
+        onAfterEdit={vi.fn()}
+        onRunning={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    const { rerender } = render(page("deploy"));
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Fill in the form/ }));
+    await waitFor(() => expect(asked.at(-1)?.evals).toEqual(["4"]));
+    rerender(page("other"));
+    await waitFor(() => expect(asked.at(-1)?.skill).toBe("other"));
+    expect(asked.at(-1)?.evals).toEqual([]);
+  });
+
   it("says a skill with no trigger tests has none, and starts nothing", async () => {
     mockIPC((cmd) => {
       if (cmd === "skill_grade_plan") return plan({ tests: [], chats: 0 });

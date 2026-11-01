@@ -96,6 +96,8 @@ fn report(passed_with: bool) -> GradeReport {
         counted_usd: None,
         priced: None,
         outcome_delta: None,
+        outcome_tokens: None,
+        outcome_usd: None,
         outcomes: Vec::new(),
         failed: None,
     }
@@ -780,7 +782,7 @@ fn a_row(id: &str, ts: &str, profile: &str, tokens: Option<u64>, ran: bool) -> G
 #[test]
 fn a_grade_whose_chats_said_no_spend_gives_an_estimate_whose_cost_is_not_known() {
     let rows = [a_row("g1", "2026-10-25T10:00:00+00:00", "work", None, true)];
-    let estimate = estimate_of(&rows, 12, Some("work"), false).expect("it was graded");
+    let estimate = estimate_of(&rows, 12, Some("work"), 0).expect("it was graded");
     assert_eq!((estimate.tokens, estimate.cost_usd), (None, None));
     assert_eq!(estimate.ts, "2026-10-25T10:00:00+00:00");
     assert_eq!(estimate.profile.as_deref(), Some("work"));
@@ -789,18 +791,14 @@ fn a_grade_whose_chats_said_no_spend_gives_an_estimate_whose_cost_is_not_known()
     let mut on_haiku = rows[0].clone();
     on_haiku.model = Some("claude-haiku-4-5".into());
     assert_eq!(
-        estimate_of(&[on_haiku], 12, Some("work"), false)
+        estimate_of(&[on_haiku], 12, Some("work"), 0)
             .unwrap()
             .model
             .as_deref(),
         Some("claude-haiku-4-5"),
         "SK-60: the estimate names the model its grade ran on"
     );
-    assert_eq!(
-        estimate_of(&[], 12, Some("work"), false),
-        None,
-        "never graded"
-    );
+    assert_eq!(estimate_of(&[], 12, Some("work"), 0), None, "never graded");
 }
 
 /// #3273: the estimate comes from the closest grade, and says which: the newest on the profile
@@ -831,22 +829,22 @@ fn the_estimate_is_the_closest_grades_and_names_it() {
         ),
     ];
 
-    let on_work = estimate_of(&rows, 12, Some("work"), false).unwrap();
+    let on_work = estimate_of(&rows, 12, Some("work"), 0).unwrap();
     assert_eq!(on_work.tokens, Some(12_000));
     assert_eq!(on_work.profile.as_deref(), Some("work"));
     assert_eq!(on_work.same_profile, Some(true));
 
-    let on_new = estimate_of(&rows, 12, Some("new"), false).unwrap();
+    let on_new = estimate_of(&rows, 12, Some("new"), 0).unwrap();
     assert_eq!(on_new.tokens, Some(36_000), "the newest whose chats ran");
     assert_eq!(on_new.profile.as_deref(), Some("home"));
     assert_eq!(on_new.same_profile, Some(false));
     assert_eq!(
-        estimate_of(&rows, 12, None, false).unwrap().same_profile,
+        estimate_of(&rows, 12, None, 0).unwrap().same_profile,
         None,
         "this grade's profile is not known"
     );
 
-    let only_interrupted = estimate_of(&rows[..1], 12, None, false).unwrap();
+    let only_interrupted = estimate_of(&rows[..1], 12, None, 0).unwrap();
     assert_eq!(only_interrupted.chats_then, 0);
     assert_eq!(only_interrupted.tokens, None, "nothing ran: not known");
 }
@@ -1216,8 +1214,7 @@ fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
     // Two chats ran, two more were ended at an ask or never started: four spent 4,000 tokens.
     let four = stopped(Some(4), 2);
 
-    let estimate =
-        estimate_of(&[four.clone(), scored_on("home")], 12, Some("work"), false).unwrap();
+    let estimate = estimate_of(&[four.clone(), scored_on("home")], 12, Some("work"), 0).unwrap();
     assert_eq!(estimate.ts, "2026-10-27T10:00:00+00:00", "on this profile");
     assert_eq!(estimate.chats_then, 4, "every chat it asked for");
     assert_eq!(estimate.tokens, Some(12_000), "a thousand a chat, not two");
@@ -1227,8 +1224,7 @@ fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
     );
     assert!(estimate.interrupted, "the plan says it was interrupted");
 
-    let estimate =
-        estimate_of(&[four.clone(), scored_on("work")], 12, Some("work"), false).unwrap();
+    let estimate = estimate_of(&[four.clone(), scored_on("work")], 12, Some("work"), 0).unwrap();
     assert_eq!(
         estimate.ts, "2026-10-25T10:00:00+00:00",
         "a scored grade on this profile goes first"
@@ -1236,7 +1232,7 @@ fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
     assert!(!estimate.interrupted);
 
     let one_arm = stopped(Some(1), 1);
-    let estimate = estimate_of(&[one_arm], 12, Some("work"), false).unwrap();
+    let estimate = estimate_of(&[one_arm], 12, Some("work"), 0).unwrap();
     assert_eq!(
         (estimate.chats_then, estimate.tokens, estimate.interrupted),
         (0, None, false),
@@ -1244,7 +1240,7 @@ fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
     );
 
     let uncounted = stopped(None, 2);
-    let estimate = estimate_of(&[uncounted, scored_on("home")], 12, Some("work"), false).unwrap();
+    let estimate = estimate_of(&[uncounted, scored_on("home")], 12, Some("work"), 0).unwrap();
     assert_eq!(estimate.ts, "2026-10-25T10:00:00+00:00", "passed over");
     assert!(!estimate.interrupted);
 }
@@ -1271,7 +1267,7 @@ fn the_estimate_shares_the_spend_over_the_chats_that_asked_too_3584() {
         asked_for: None,
     };
     assert!(row.sound(chrono::Utc::now()), "{row:?}");
-    let estimate = estimate_of(&[row], 12, Some("work"), false).unwrap();
+    let estimate = estimate_of(&[row], 12, Some("work"), 0).unwrap();
     assert_eq!(
         estimate.chats_then, 3,
         "every chat it asked for, the asked ones too"
@@ -1481,13 +1477,27 @@ fn a_row_too_long_for_the_record_drops_the_evidence_first() {
 fn a_plan_with_outcome_evals_is_estimated_only_from_a_grade_that_ran_some() {
     let triggers_only = uncommitted_row();
     assert_eq!(
-        estimate_of(std::slice::from_ref(&triggers_only), 12, Some("work"), true),
+        estimate_of(std::slice::from_ref(&triggers_only), 12, Some("work"), 12),
         None
     );
     let both = outcome_row();
-    let estimate = estimate_of(&[triggers_only, both], 24, Some("work"), true).unwrap();
+    let estimate = estimate_of(&[triggers_only, both.clone()], 24, Some("work"), 24).unwrap();
     assert_eq!(estimate.chats_then, 12, "each eval's chat and its judge's");
     assert_eq!(estimate.tokens, Some(2400));
+    assert_eq!(
+        estimate_of(&[both.clone()], 36, Some("work"), 24).map(|one| one.tokens),
+        Some(None),
+        "it ran no trigger test, so what they spend is not known"
+    );
+    // 12 eval chats spent 1,200 and 6 trigger chats 60: an eval-heavy plan is not quoted low.
+    let mut mixed = both;
+    mixed.report.arms[0].chats = 6;
+    mixed.report.outcome_tokens = Some(1200);
+    mixed.spent.tokens = Some(1260);
+    let estimate = estimate_of(&[mixed.clone()], 30, Some("work"), 24).unwrap();
+    assert_eq!(estimate.tokens, Some(60 + 2400));
+    let triggers = estimate_of(&[mixed], 6, Some("work"), 0).unwrap();
+    assert_eq!(triggers.tokens, Some(60), "a trigger test's chats alone");
 }
 
 /// SK-55: an eval a judge has nothing to check, or that names a fixture as its file, is left
@@ -1513,7 +1523,7 @@ fn an_eval_with_nothing_to_judge_or_that_hands_its_chat_its_fixtures_is_left_out
         );
     }
     let long = "x".repeat(2 * 1024);
-    let many: Vec<&str> = (0..16).map(|_| long.as_str()).collect();
+    let many: Vec<&str> = (0..32).map(|_| long.as_str()).collect();
     assert!(
         eval_left_out_why(&eval(many, Vec::new()))
             .unwrap()
@@ -1582,4 +1592,38 @@ fn outcome_evals_are_off_until_ticked_and_the_consent_covers_what_was() {
         after_edit::outcomes_of(&one),
         after_edit::outcomes_of(&changed)
     );
+}
+
+/// A paid grade is always recorded: what a row cannot drop is counted as JSON writes it, for what
+/// was ticked alone.
+#[test]
+fn only_what_a_row_can_hold_is_ticked_and_an_eval_left_off_takes_nothing() {
+    let eval = |id: u64, text: &str| grade::OutcomeEval {
+        id,
+        prompt: "ship".into(),
+        expected_output: None,
+        files: Vec::new(),
+        expectations: vec![text.repeat(2 * 1024); 32],
+    };
+    // Each byte is six as JSON writes it, so this fits as text and not as a row.
+    let escaped = eval(1, "\u{1}");
+    assert!(!row_fits(&[], &[escaped.clone(), escaped.clone()], 3, 3));
+    let plain = eval(2, "x");
+    assert!(row_fits(&[], &[plain], 3, 3));
+    assert!(row_fits(&[], &[], 3, 3));
+}
+
+/// Evidence is masked whole before it is cut, so a cut leaves no part of a credential.
+#[test]
+fn evidence_is_masked_before_it_is_cut() {
+    let secret = format!("ghp_{}", "a1B2c3D4".repeat(5));
+    let mut row = outcome_row();
+    row.report.outcomes[0].results[0].checks[0].evidence = format!(
+        "{}{secret}",
+        "x".repeat(grade::outcomes::MOST_EVIDENCE_BYTES - 8)
+    );
+    let kept = masked(&row);
+    let evidence = &kept.report.outcomes[0].results[0].checks[0].evidence;
+    assert!(evidence.len() <= grade::outcomes::MOST_EVIDENCE_BYTES);
+    assert!(!evidence.contains("ghp_"), "{evidence}");
 }

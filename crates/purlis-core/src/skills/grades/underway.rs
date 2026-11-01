@@ -262,6 +262,8 @@ pub fn interrupted_report(
         counted_usd: None,
         priced,
         outcome_delta: None,
+        outcome_tokens: None,
+        outcome_usd: None,
         outcomes: Vec::new(),
         failed: None,
     }

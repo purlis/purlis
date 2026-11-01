@@ -2587,6 +2587,8 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
             let kept = purlis_core::handback::last_message_summary(Some(&text));
             held.tasks().ledger().said_last(output.chat, kept);
         }
+        // A grade's judge alone, which is no task.
+        purlis_core::hookwire::Output::ReadPast => {}
         purlis_core::hookwire::Output::Ran {
             command,
             exit,

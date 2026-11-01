@@ -418,6 +418,14 @@ pub(crate) fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
             .into_iter()
             .flatten()
             .all(|delta| (-1.0..=1.0).contains(&delta))
+        && report
+            .outcome_tokens
+            .is_none_or(|part| report.spent_tokens.is_some_and(|all| part <= all))
+        && report.outcome_usd.is_none_or(|part| {
+            report
+                .spent_usd
+                .is_some_and(|all| part <= all * (1.0 + 1e-9))
+        })
         && [report.cost_cap_usd, report.spent_usd, report.counted_usd]
             .into_iter()
             .flatten()
@@ -1067,24 +1075,61 @@ pub struct Estimate {
 /// arm. It is gone by only where no scored grade on the same profile is, as its chats are fewer
 /// and stopped where they were; one from before its marker counted them says none.
 ///
-/// **A plan that runs outcome evals is estimated only from a grade that ran some** (SK-55): an
-/// outcome eval's chat runs its whole turn and a judge reads what it left, so a trigger test's
-/// chat, which ends once the skill starts, says nothing of what they spend.
+/// **A plan that runs `outcome_chats` of outcome evals' chats is estimated only from a grade that
+/// ran some, each kind's spend shared over its own chats** (SK-55): an outcome eval's chat runs its
+/// whole turn and a judge reads what it left, so a trigger test's chat, which ends once the skill
+/// starts, says nothing of what they spend. A kind the plan runs and that grade did not leaves the
+/// figure not known.
 fn estimate_of(
     grades: &[Graded],
     chats: u32,
     profile: Option<&str>,
-    with_outcomes: bool,
+    outcome_chats: u32,
 ) -> Option<Estimate> {
-    if with_outcomes {
+    let (mut estimate, row) = if outcome_chats > 0 {
         let ran: Vec<Graded> = grades
             .iter()
             .filter(|row| !row.report.outcomes.is_empty())
             .cloned()
             .collect();
-        return estimate_from(&ran, chats, profile).map(|(estimate, _)| estimate);
+        let (estimate, row) = estimate_from(&ran, chats, profile)?;
+        (estimate, row.clone())
+    } else {
+        let (estimate, row) = estimate_from(grades, chats, profile)?;
+        (estimate, row.clone())
+    };
+    if row.report.outcomes.is_empty() {
+        return Some(estimate);
     }
-    estimate_from(grades, chats, profile).map(|(estimate, _)| estimate)
+    // Shared each over its own: an eval's whole turn spends unlike a trigger test's.
+    let of_evals: u64 = row
+        .report
+        .arms
+        .iter()
+        .map(|arm| u64::from(arm.outcome_chats) + u64::from(arm.outcome_not_run))
+        .sum();
+    let of_tests = row.asked().saturating_sub(of_evals);
+    let tests_now = chats.saturating_sub(outcome_chats);
+    let share = |spent: f64, then: u64, now: u32| match (now, then) {
+        (0, _) => Some(0.0),
+        (_, 0) => None,
+        (now, then) => Some(spent / then as f64 * f64::from(now)),
+    };
+    let split = |all: f64, evals: f64| {
+        Some(
+            share((all - evals).max(0.0), of_tests, tests_now)?
+                + share(evals, of_evals, outcome_chats)?,
+        )
+    };
+    estimate.tokens = row.spent.tokens.and_then(|all| {
+        let evals = row.report.outcome_tokens.unwrap_or(0) as f64;
+        split(all as f64, evals).map(|tokens| tokens.ceil() as u64)
+    });
+    estimate.cost_usd = row
+        .spent
+        .cost_usd
+        .and_then(|all| split(all, row.report.outcome_usd.unwrap_or(0.0)));
+    Some(estimate)
 }
 
 /// **A grade's row an estimate is worked out from** ([`estimate_from`]): a skill's, or a
@@ -1274,7 +1319,7 @@ pub fn eval_left_out_why(eval: &grade::OutcomeEval) -> Option<String> {
         .iter()
         .map(|text| text.len() + ANSWER_BYTES_AN_EXPECTATION)
         .sum();
-    if answer > crate::hookwire::Output::MOST_BYTES {
+    if answer > grade::outcomes::MOST_ANSWER_BYTES {
         return Some(
             "its expectations are too long for a judge's answer to hold them whole".to_owned(),
         );
@@ -1283,12 +1328,10 @@ pub fn eval_left_out_why(eval: &grade::OutcomeEval) -> Option<String> {
     // without it the skill, and a fixture file, in any case on a folder that folds it, or a file
     // a chat loads as its instructions would hand it what it is graded by.
     let fixture = [grade::triggers_path(), grade::outcomes_path()];
-    let instructions = ["claude.md", "claude.local.md", "agents.md", "skill.md"];
     if let Some(path) = eval.files.iter().find(|path| {
         let folded = path.to_lowercase();
-        let leaf = folded.rsplit('/').next().unwrap_or_default();
         fixture.iter().any(|one| one.to_lowercase() == folded)
-            || instructions.contains(&leaf)
+            || super::verbs::drafts::instruction_file(&folded)
             || !folded.starts_with(&format!("{}/", grade::EVALS_DIR))
     }) {
         return Some(format!(
@@ -1304,9 +1347,31 @@ pub fn eval_left_out_why(eval: &grade::OutcomeEval) -> Option<String> {
 /// What a judge's answer takes for one expectation beside its text: its keys and its evidence.
 const ANSWER_BYTES_AN_EXPECTATION: usize = 256;
 
-/// The most bytes of expectations a grade runs in all: each is kept once per arm in the row of
-/// the record, which is at most [`MOST_LINE_BYTES`] whatever else it drops ([`fitted`]).
-const MOST_EXPECTATIONS_BYTES: usize = 200 * 1024;
+/// What one run takes of a row at most beside its text: its keys and its chats' ids.
+const ROW_BYTES_A_RUN: usize = 384;
+
+/// What a row takes at most beside its tests and evals.
+const ROW_BYTES_BESIDES: usize = 16 * 1024;
+
+/// **Whether a grade of `tests` and `evals` is one a row of the record can hold** once it has
+/// dropped all it can ([`fitted`]): each test's query and each eval's expectations, as JSON writes
+/// them, once per arm, and each run. What is not run takes nothing.
+fn row_fits(
+    tests: &[grade::TriggerTest],
+    evals: &[grade::OutcomeEval],
+    arms: usize,
+    runs: u8,
+) -> bool {
+    let written = |text: &str| serde_json::to_string(text).map_or(usize::MAX / 8, |one| one.len());
+    let texts: usize = tests.iter().map(|test| written(&test.query)).sum::<usize>()
+        + evals
+            .iter()
+            .flat_map(|eval| &eval.expectations)
+            .map(|text| written(text))
+            .sum::<usize>();
+    let cells = (tests.len() + evals.len()) * arms;
+    texts * arms + cells * usize::from(runs) * ROW_BYTES_A_RUN + ROW_BYTES_BESIDES < MOST_LINE_BYTES
+}
 
 /// **A trigger test a grade leaves out**: its place in the file, from 0, and why
 /// ([`left_out_why`]).
@@ -1509,21 +1574,8 @@ pub fn planned_with(
             }
         });
     }
-    let mut held = 0usize;
-    evals.retain(|eval| {
-        held += eval.expectations.iter().map(String::len).sum::<usize>();
-        if held <= MOST_EXPECTATIONS_BYTES {
-            return true;
-        }
-        outcomes_left_out.push(LeftOutEval {
-            id: eval.id,
-            why: "the evals before it hold as many expectations as a grade's record can keep"
-                .to_owned(),
-        });
-        false
-    });
     let offered = evals;
-    let evals: Vec<grade::OutcomeEval> = offered
+    let mut evals: Vec<grade::OutcomeEval> = offered
         .iter()
         .filter(|eval| ticked.contains(&eval.id))
         .cloned()
@@ -1534,6 +1586,15 @@ pub fn planned_with(
         Some(_) => ARMS_WITH_PREVIOUS.to_vec(),
         None => ARMS.to_vec(),
     };
+    // A paid grade is always recorded: what its row cannot drop has to fit a line.
+    while !evals.is_empty() && !row_fits(&sendable, &evals, arms.len(), RUNS) {
+        if let Some(eval) = evals.pop() {
+            outcomes_left_out.push(LeftOutEval {
+                id: eval.id,
+                why: "a grade's record cannot hold it beside the others ticked".to_owned(),
+            });
+        }
+    }
     // What ticking one adds: its chat and its judge's, in each arm and run.
     let eval_chats = u32::from(RUNS) * u32::try_from(arms.len()).unwrap_or(u32::MAX) * 2;
     let request = (!sendable.is_empty() || !evals.is_empty()).then(|| GradeRequest {

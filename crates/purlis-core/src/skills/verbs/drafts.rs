@@ -726,6 +726,20 @@ pub fn outcome_of(root: &Path, piece: &Path) -> Vec<(String, String)> {
     files_below(root, piece)
 }
 
+/// **Whether `path` names a file a chat program loads as its instructions**, in any case: never
+/// staged into a chat's piece, and what a graded chat left of one never reaches its judge.
+pub fn instruction_file(path: &str) -> bool {
+    let leaf = path.rsplit('/').next().unwrap_or(path).to_lowercase();
+    [
+        "claude.md",
+        "claude.local.md",
+        "agents.md",
+        "gemini.md",
+        "skill.md",
+    ]
+    .contains(&leaf.as_str())
+}
+
 /// **Lays out a judge's piece** (SK-55, #3235): a grade's arm with no skill, marked as a judge's
 /// ([`judge_piece`]), holding `task` (the task it grades), the judged chat's final answer
 /// `answer` where it handed one, and `outcome`, what that chat left, under its own folder; and
@@ -749,6 +763,10 @@ pub fn lay_out_judge(
             usize::MAX,
         )
         .map_err(|why| super::not_written("the grade's record of its folder", why))?;
+        let outcome: Vec<&(String, String)> = outcome
+            .iter()
+            .filter(|(path, _)| !instruction_file(path))
+            .collect();
         let listed: String = outcome
             .iter()
             .map(|(path, _)| format!("{JUDGE_OUTCOME_DIR}/{path}\n"))
