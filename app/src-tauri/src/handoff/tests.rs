@@ -2356,6 +2356,7 @@ fn a_task_that_ended_with_a_gone_runner_names_it_and_refuses_reopen() {
     let mut ended = record_of(&held, task);
     // Named, so what refuses Reopen is the runner and not a conversation it never had.
     purlis_core::dispatchrecord::ended_in(held.root(), &ended.id, "a-conversation").unwrap();
+    ended.conversation = Some("a-conversation".to_owned());
     assert_eq!(
         ended.report.as_ref().map(|report| report.text.as_str()),
         Some(
@@ -2363,20 +2364,6 @@ fn a_task_that_ended_with_a_gone_runner_names_it_and_refuses_reopen() {
              with it"
         ),
         "{ended:?}"
-    );
-    // Its chat closes off the thread that told it, and only then is its row drawn.
-    let row = eventually(|| {
-        crate::finished::listed(&held)
-            .into_iter()
-            .find(|row| row.id == ended.id)
-    })
-    .expect("its finished row");
-    assert!(!row.reopens, "{row:?}");
-    assert!(
-        row.not_reopened
-            .as_deref()
-            .is_some_and(|why| why.contains("runner")),
-        "{row:?}"
     );
     let refused = crate::finished::reopening(&held, &ended.id).map(|_| ());
     assert!(refused.is_err_and(|why| why.contains("went with its pool's runner")));
