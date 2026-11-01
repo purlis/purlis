@@ -529,3 +529,10 @@ fn without_docker_the_next_action_names_the_official_page() {
         "{next:?}"
     );
 }
+
+#[test]
+fn a_name_no_pool_could_have_is_refused_and_not_kept() {
+    let config = tempfile::tempdir().unwrap();
+    assert!(choose_name(config.path(), Some(&"x".repeat(70_000))).is_err());
+    assert_eq!(read_choices(config.path()).unwrap().name, None);
+}

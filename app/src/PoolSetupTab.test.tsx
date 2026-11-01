@@ -172,6 +172,41 @@ describe("PoolSetupTab", () => {
     expect(calls.filter((call) => call.cmd === "add_docker_pool")).toHaveLength(1);
   });
 
+  it("says when the image is a newer version's, and why it couldn't name one", async () => {
+    core(() => CHOSEN, {
+      runner_image_of_this_version: () => ({
+        state: "newer",
+        image: "new@sha256:b",
+        version: "9.9",
+      }),
+    });
+    const { unmount } = render(<PoolSetupTab plane="p" />);
+    expect(await screen.findByText(/new@sha256:b, from purlis 9\.9/)).toBeTruthy();
+    unmount();
+    core(() => CHOSEN, {
+      runner_image_of_this_version: () => ({ state: "none_named" }),
+    });
+    render(<PoolSetupTab plane="p" />);
+    expect(await screen.findByRole("textbox", { name: /Runner image/ })).toBeTruthy();
+  });
+
+  it("makes nothing where Docker changed since the step was read", async () => {
+    let now = CHOSEN;
+    const calls = core(() => now);
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.type(await screen.findByRole("textbox", { name: /Name/ }), "dev-box");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create the pool" })).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+    now = MISSING;
+    await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
+    expect(await screen.findByRole("button", { name: "Open Docker's install page" })).toBeTruthy();
+    expect(calls.some((call) => call.cmd === "add_docker_pool")).toBe(false);
+  });
+
   it("resumes with the name given", async () => {
     core(() => ({ ...CHOSEN, name: "kept-name" }));
     render(<PoolSetupTab plane="p" />);

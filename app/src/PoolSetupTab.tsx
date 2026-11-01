@@ -154,11 +154,13 @@ function Where({
   step,
   onNext,
   onChose,
+  onRecheck,
   said,
 }: {
   step: PoolSetupStep;
   onNext: () => void;
   onChose: () => void;
+  onRecheck: () => void;
   said: (trouble: string) => void;
 }) {
   const next = step.next;
@@ -169,7 +171,10 @@ function Where({
         if (answer.status === "error") said(answer.error);
       });
     } else if (action.id === "use-docker") onChose();
+    else onRecheck();
   };
+  // Nothing here can do it for the person: the words say what to do, and the recheck notices.
+  const onlySaid = next?.id === "use-local-docker";
   return (
     <>
       <StepHead title={WHERE_TITLE} lead={WHERE_LEAD} />
@@ -200,7 +205,9 @@ function Where({
           </p>
         </>
       )}
-      {next ? (
+      {next && onlySaid ? (
+        <Action does={next.does} />
+      ) : next ? (
         <Action
           does={next.does}
           main={next.label}
@@ -220,11 +227,13 @@ const IMAGE_NOT_NAMED = "This build of purlis names no runner image, so give one
 function PoolStep({
   step,
   shown,
+  plane,
   changed,
   onNext,
 }: {
   step: PoolSetupStep;
   shown: PoolSetupShown;
+  plane: PlaneId;
   changed: () => void;
   onNext: () => void;
 }) {
@@ -280,6 +289,8 @@ function PoolStep({
               });
             }}
           />
+        ) : action?.id === "check-again" ? (
+          <Action does={action.does} main={action.label} onMain={changed} />
         ) : action ? (
           <Action does={action.does} />
         ) : (
@@ -291,13 +302,24 @@ function PoolStep({
 
   const named = offered && "image" in offered ? offered.image : undefined;
   const reading = offered === undefined;
+  const newer = offered?.state === "newer" ? offered : undefined;
+  const trouble = offered?.state === "trouble" ? offered.trouble : undefined;
   const create = async () => {
     const kept = name.trim();
-    const using = named ?? image.trim();
+    const using = image.trim() || named || "";
     if (kept === "") return setRefused("Give the pool a name first.");
     if (using === "") return setRefused(IMAGE_NOT_NAMED);
     setMaking(true);
     setRefused(undefined);
+    // Docker may have changed since this step was read: what is made is held to now.
+    const now = await commands.poolSetup(plane);
+    const where =
+      now.status === "ok" ? now.data.steps.find((one) => one.id === "where") : undefined;
+    if (where?.state !== "done") {
+      setMaking(false);
+      changed();
+      return;
+    }
     await commands.poolSetupName(kept);
     const adding: PoolAdding = {
       name: kept,
@@ -340,8 +362,14 @@ function PoolStep({
               label="Runner image"
               value={image}
               onChange={setImage}
-              help={IMAGE_NOT_NAMED}
+              help={trouble ?? IMAGE_NOT_NAMED}
             />
+          )}
+          {named && (
+            <p className="pool-setup-does">
+              Runner image: {named}
+              {newer && `, from purlis ${newer.version}. An update to it is waiting.`}
+            </p>
           )}
           {refused && (
             <Say tone="trouble" title="The pool wasn't made">
@@ -471,6 +499,7 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
               step={step}
               said={setTrouble}
               onNext={() => after("where")}
+              onRecheck={reread}
               onChose={() => {
                 setTrouble(undefined);
                 setShowing(undefined);
@@ -484,6 +513,7 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
             <PoolStep
               step={step}
               shown={setup}
+              plane={plane}
               onNext={() => after("pool")}
               changed={() => {
                 setShowing(undefined);

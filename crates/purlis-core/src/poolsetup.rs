@@ -904,7 +904,12 @@ pub fn choose_kind(config: &Path, kind: Kind) -> Result<(), Refused> {
 }
 
 /// **Keeps the name given on the Pool step**, or none, so a person who comes back finds it.
+///
+/// Refused for a name no pool could have, so the file stays small and what it holds stays a name.
 pub fn choose_name(config: &Path, name: Option<&str>) -> Result<(), Refused> {
+    if let Some(name) = name {
+        runners::usable_pool_name(name).map_err(Refused::Other)?;
+    }
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
     choices.name = name.map(str::to_owned);
