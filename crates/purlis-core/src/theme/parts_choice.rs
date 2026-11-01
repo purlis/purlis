@@ -530,7 +530,7 @@ pub(super) const OPTION_CARD: Family = Family {
     defaults: option_card_look,
     states: CHOSEN,
     focused: "[data-focus-visible]",
-    words: &[("detail", "text.quiet"), ("check", "accent.base")],
+    words: &[("detail", "text.quiet"), ("check", "accent.text")],
     corner_most: None,
     around: &[],
     fills: &[],

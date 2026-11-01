@@ -65,10 +65,10 @@ fn a_pinned_pin_under_the_pointer_is_measured_on_the_hover_fill() {
     assert_eq!(fell(&theme), ["titlebar.pin.hover+selected"]);
     let sheet = parts::stylesheet(&theme);
     // The pair draws its own look back, keyed on both states: a pinned pin under the pointer
-    // keeps the card's fill with the accent, as `titlebar.css` draws it.
+    // keeps the card's fill with the accent's words, as `titlebar.css` draws it.
     assert!(
         sheet.contains(&format!(
-            ":where({PIN}{HOVER}[data-selected]) {{ background-color: var(--surface-overlay); color: var(--accent-base); }}"
+            ":where({PIN}{HOVER}[data-selected]) {{ background-color: var(--surface-overlay); color: var(--accent-text); }}"
         )),
         "{sheet}"
     );

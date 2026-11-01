@@ -40,7 +40,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use super::floors::{ALLOW_APART, DANGER_APART, WAITING_APART};
-use super::vocabulary::{TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour};
+use super::vocabulary::{ACCENT_WORDS, TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour};
 use super::{Complaint, ResolvedTheme, stringify};
 
 /// The palette a workspace names its colour from, as OKLCH hues in degrees, in
@@ -163,9 +163,13 @@ impl Tint {
             .collect()
     }
 
-    /// The recipe without `tokens`: a workspace's colour leaves them as the theme draws them.
+    /// The recipe without `tokens`: a workspace's colour leaves them as the theme draws them. The
+    /// accent's words go where the accent goes (#3100), so a chosen item's are never turned away
+    /// from the accent beside them.
     pub(super) fn leave(&mut self, tokens: &[&str]) {
-        self.tokens.retain(|token| !tokens.contains(token));
+        let accent_left = tokens.contains(&"accent.base");
+        self.tokens
+            .retain(|token| !tokens.contains(token) && !(accent_left && *token == ACCENT_WORDS));
     }
 
     /// The hue a workspace's colour gives in this theme: a [`PALETTE`] name's hue here, or the
@@ -197,7 +201,7 @@ pub struct Apart {
 /// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]); and the
 /// accent from the waiting colour (waiting is distinguishable from the accent, #3130), so a
 /// yellow or orange workspace's accent never reads as the waiting signal.
-pub const APART: [Apart; 15] = [
+pub const APART: [Apart; 17] = [
     danger_apart("accent.base"),
     // Keep blocked's edge is a plain control's (#3177).
     Apart {
@@ -215,20 +219,24 @@ pub const APART: [Apart; 15] = [
     danger_apart(ACCENT_KIN[6]),
     danger_apart(ACCENT_KIN[7]),
     danger_apart(ACCENT_KIN[8]),
+    danger_apart(ACCENT_KIN[9]),
     // The waiting edge of an ask or a Notice never draws in the accent, nor in the edges drawn
     // in it (#3130): each gives way alone, and the accent's washes keep their colour.
     waiting_apart(WAITING_KIN[0]),
     waiting_apart(WAITING_KIN[1]),
     waiting_apart(WAITING_KIN[2]),
     waiting_apart(WAITING_KIN[3]),
+    waiting_apart(WAITING_KIN[4]),
 ];
 
 /// **The accent and the edges drawn in it** (#3130): the accent, the focus ring, the selected
 /// row's edge and the primary's edge, each a line or a word in the accent's colour that the
-/// waiting edge must not be taken for. The accent's washes (its surface, the primary's fill, the
-/// active tab) are not marks, and keep their colour.
-pub const WAITING_KIN: [&str; 4] = [
+/// waiting edge must not be taken for, and the accent's words on a chosen item (#3100). The
+/// accent's washes (its surface, the primary's fill, the active tab) are not marks, and keep their
+/// colour.
+pub const WAITING_KIN: [&str; 5] = [
     "accent.base",
+    "accent.text",
     "focus.ring",
     "list.selected-edge",
     "accent.fill-edge",
@@ -248,9 +256,10 @@ const fn waiting_apart(token: &'static str) -> Apart {
 /// ring, the selected row's edge, the accent's surface and the active tab (#2526), and the
 /// primary's fill at rest and under the pointer and its edge (#3177), which stand beside a danger
 /// answer; and a link and the first chart colour, which a person reads as the accent (#3049), so a
-/// red, orange or pink workspace never draws a link that looks like danger.
+/// red, orange or pink workspace never draws a link that looks like danger; and the accent's words
+/// on a chosen item (#3100).
 /// Each is kept apart from danger as the accent is, by the tint and by the floors.
-pub const ACCENT_KIN: [&str; 9] = [
+pub const ACCENT_KIN: [&str; 10] = [
     "focus.ring",
     "list.selected-edge",
     "accent.surface",
@@ -260,6 +269,7 @@ pub const ACCENT_KIN: [&str; 9] = [
     "accent.fill-edge",
     "markdown.link",
     "chart.1",
+    "accent.text",
 ];
 
 /// `token` held [`DANGER_APART`] from `danger.base`.
@@ -370,6 +380,11 @@ fn tokens(
     }
     if complaints.len() != before {
         return None;
+    }
+    // A recipe that turns the accent turns its words (#3100), named or not: what a chosen item
+    // says was the accent before it was a token of its own.
+    if named.contains(&"accent.base") {
+        named.push(ACCENT_WORDS);
     }
     Some(
         TOKENS

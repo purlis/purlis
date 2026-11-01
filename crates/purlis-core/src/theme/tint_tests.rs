@@ -71,6 +71,7 @@ fn purlis_classic_tints_what_it_tinted_before_a_theme_could_say() {
             [
                 "accent.base",
                 "accent.surface",
+                "accent.text",
                 "accent.fill",
                 "accent.fill-hover",
                 "accent.fill-edge",
@@ -1387,6 +1388,44 @@ fn a_link_and_the_first_chart_colour_stay_apart_from_danger_at_every_hue() {
                     theme.name
                 );
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// The accent's words (#3100)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_recipe_that_turns_the_accent_turns_its_words() {
+    let theme = drawn(&json!({
+        "name": "Own", "extends": "purlis-classic", "tint": { "tokens": ["accent.base"] }
+    }));
+    assert_eq!(theme.tint.tabs(), ["accent.base", "accent.text"]);
+    let theme = drawn(&json!({
+        "name": "Own", "extends": "purlis-classic", "tint": { "tokens": ["focus.ring"] }
+    }));
+    assert_eq!(theme.tint.tabs(), ["focus.ring"]);
+}
+
+#[test]
+fn accent_words_are_left_when_the_accent_is() {
+    let mut recipe = Tint::default();
+    recipe.leave(&["accent.base"]);
+    assert!(!recipe.tabs().contains(&"accent.text"));
+    assert!(recipe.tabs().contains(&"accent.surface"));
+}
+
+#[test]
+fn accent_words_stay_apart_from_danger_and_waiting_in_every_built_in_tint() {
+    for theme in built_ins() {
+        for one in &theme.tint.hues {
+            let turned = tinted(theme, one.name);
+            let from = |other: &str| {
+                super::floors::apart_of(turned.value("accent.text"), turned.value(other))
+            };
+            assert!(from("danger.base") >= DANGER_APART, "{}", one.name);
+            assert!(from("state.waiting") >= WAITING_APART, "{}", one.name);
         }
     }
 }

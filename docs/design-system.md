@@ -272,7 +272,7 @@ resolves and hands the window with the theme (`purlis_core::theme::Tint`, `theme
 window keeps no list of its own (#2393). Purlis Classic's recipe, the one a theme starts from:
 
 - on the whole window, from the workspace in front: `accent.base`, `accent.surface`,
-  `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
+  `accent.text` (which a recipe turning the accent always turns, #3100), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
   `drawTint`);
 - on that workspace's own tab and on the chat strip, which holds its chats, the same and
   `layer.workspace`, `layer.chat`, `layer.selected` (`tint.tabs`), set on the element as
@@ -294,8 +294,9 @@ recipe, and holds two pairs the tint adds — the mark (`accent.base`) and a tab
 `layer.workspace`. **Every tint holds the consent floors that keep colours apart itself, at every
 hue, custom colours included** (`tint::APART`, OKLab 0.1 each): the accent and the accent-hued
 tokens drawn beside danger (`focus.ring`, `list.selected-edge`, `accent.surface`, `tab.active`, and
-the primary's `accent.fill` and `accent.fill-hover` and its edge `accent.fill-edge`, and what a
-person reads as the accent, `markdown.link` and `chart.1`, `tint::ACCENT_KIN`) stay apart from the danger colour, and Allow and Keep blocked stay apart
+the primary's `accent.fill` and `accent.fill-hover` and its edge `accent.fill-edge`, what a
+person reads as the accent, `markdown.link` and `chart.1`, and the accent's words `accent.text`,
+`tint::ACCENT_KIN`) stay apart from the danger colour, and Allow and Keep blocked stay apart
 (`accent.base` from `border.control`, as the tint draws it); every rule holds whichever side a theme
 tints. At a hue that would bring a pair nearer, the tint keeps the hue and gives less colour, in
 steps of 0.005 chroma, so a red workspace stays red, and a grey accent keeps as much of its small
@@ -447,7 +448,9 @@ asked for), whatever the system's appearance. Where its values come from:
   the button would have its consent floors measured at every hue at every launch); Allow, on the control's ground behind the
   accent's edge, stands farther from it than before. **A chosen activity button** is the
   record's .14 wash (`accent.wash`) with its icon in the lighter lavender (`accent.text`,
-  `#c3baf5`), and the update pill's words take `accent.text` too. **The chosen title-bar chip**
+  `#c3baf5`), and the update pill's words take `accent.text` too, as does what else says chosen
+  in the accent (#3100): a chosen option card's check and icon, a chosen chip's check, a pinned
+  switcher row's pin and the current explorer row's icon. **The chosen title-bar chip**
   takes the same wash with the primary words, and `accent.wash-hover` (the record's .23
   lavender) under the pointer, while any other chip under the pointer takes the card's fill, so
   chosen never reads as hovered (R101 as amended by #3345). Section labels are tracked at

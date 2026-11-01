@@ -625,3 +625,66 @@ fn more_contrast_raises_a_count_a_theme_names_on_its_own() {
     );
     assert_ne!(raised.value("needs-you.count"), "#a06020");
 }
+
+// ---------------------------------------------------------------------------------------
+// The accent's words (#3100)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_person_s_accent_reaches_chosen_words_over_every_theme() {
+    let layer = layer_of(json!({ "colours": { "accent.base": "#2bb3a3" } }));
+    for theme in [classic_dark(), purlis_dark()] {
+        let (drawn, said) = layer.over(theme);
+        assert!(said.is_empty(), "{}: {said:?}", theme.name);
+        assert_eq!(drawn.value("accent.text"), "#2bb3a3", "{}", theme.name);
+    }
+}
+
+#[test]
+fn a_person_s_accent_left_out_takes_chosen_words_with_it() {
+    let layer = layer_of(json!({ "colours": { "accent.base": "#17171b" } }));
+    let (drawn, said) = layer.over(purlis_dark());
+    assert_eq!(
+        drawn.value("accent.text"),
+        purlis_dark().value("accent.text")
+    );
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(
+        said[0].said.starts_with("your colour for accent.base,"),
+        "{said:?}"
+    );
+    assert!(
+        !said[0].said.contains("your colour for accent.text"),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn more_contrast_keeps_chosen_words_on_an_accent_they_follow_and_above_their_floor() {
+    let mut pale = classic_dark().clone();
+    for token in ["accent.base", "accent.text"] {
+        pale.values.insert(token, "#3f6f62".to_owned());
+    }
+    let raised = least::raise(&pale);
+    assert_eq!(raised.value("accent.text"), raised.value("accent.base"));
+    assert_ne!(raised.value("accent.text"), "#3f6f62");
+    for pair in PAIRS.iter().filter(|pair| pair.front == "accent.text") {
+        let at = measure::ratio(&raised, pair).expect("measured");
+        assert!(at >= Least::More.floor(pair.floor) - 0.05, "{pair:?}: {at}");
+    }
+}
+
+#[test]
+fn more_contrast_leaves_purlis_s_words_their_own() {
+    for built in built_ins() {
+        if built.value("accent.text") != built.value("accent.base") {
+            let raised = least::raise(built);
+            assert_ne!(
+                raised.value("accent.text"),
+                raised.value("accent.base"),
+                "{}",
+                built.name
+            );
+        }
+    }
+}

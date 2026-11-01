@@ -496,6 +496,7 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -509,6 +510,7 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -1164,6 +1166,7 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -1177,6 +1180,7 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -1832,6 +1836,7 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -1845,6 +1850,7 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -2334,6 +2340,7 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -2347,6 +2354,7 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -2852,6 +2860,7 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -2865,6 +2874,7 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
