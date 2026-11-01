@@ -272,6 +272,30 @@ impl Relay {
 }
 
 impl Relay {
+    /// **Waits, for at most `patience`, for the link `peer`'s commands go over to come up** (#4403):
+    /// for a runner on its way back, which refuses each link until it is vouched for. It ends at
+    /// once on what waiting cannot mend, a changed key or a runner gone for good, and whatever it
+    /// ends on, the command that waited goes on to say so as it would have.
+    pub(crate) async fn waits_for_its_runner(&self, peer: &Peer, patience: std::time::Duration) {
+        // Only the watch is held: a link that ends lets its relayed link go, and that ends this.
+        let Ok(mut standing) = self.relayed(peer).map(|relayed| relayed.standing.clone()) else {
+            return;
+        };
+        let _ = tokio::time::timeout(patience, async {
+            loop {
+                let waits = match &*standing.borrow_and_update() {
+                    Standing::Linking => true,
+                    Standing::Down(down) => !down.key_changed && !down.gone,
+                    Standing::Up(_) | Standing::Over(_) => false,
+                };
+                if !waits || standing.changed().await.is_err() {
+                    return;
+                }
+            }
+        })
+        .await;
+    }
+
     /// **`peer`'s link is the window that keeps `name` for it** (#2623): every link to the other
     /// host made for it names the window there by [`taken_back_as`] `name`. Refused on a link
     /// that sent anything before, and while another client link holds the name.

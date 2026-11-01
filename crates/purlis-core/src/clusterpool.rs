@@ -1418,20 +1418,17 @@ impl Kubectl {
     /// **Asks the operator to run the Claim `namespace`/`name`'s idle runner again** (#3980), where
     /// its `Idle` condition says it is suspended: the condition's own time is the word, so this
     /// says nothing of any later suspension. Nothing is written otherwise.
-    pub fn run_again_if_idle(&self, namespace: &str, name: &str) -> Result<(), Refused> {
+    ///
+    /// Answers whether its runner is on its way back now (#4403, [`coming_back`]).
+    pub fn run_again_if_idle(&self, namespace: &str, name: &str) -> Result<bool, Refused> {
         let Some(held) = self.claim_json(namespace, name)? else {
-            return Ok(());
+            return Ok(false);
         };
         let Some(since) = idle_since(&held) else {
-            return Ok(());
+            return Ok(coming_back(&held));
         };
-        if held
-            .pointer("/metadata/annotations")
-            .and_then(|marks| marks.get(RUN_AGAIN_ANNOTATION))
-            .and_then(serde_json::Value::as_str)
-            == Some(since)
-        {
-            return Ok(());
+        if run_again_word(&held) == Some(since) {
+            return Ok(true);
         }
         let patch = serde_json::json!({
             "metadata": { "annotations": { RUN_AGAIN_ANNOTATION: since } },
@@ -1451,7 +1448,7 @@ impl Kubectl {
             None,
             MOST_PRINTED,
         )
-        .map(|_| ())
+        .map(|_| true)
     }
 
     /// **What the Claim `namespace`/`name` says of its deletion** (#3981), where its operator gave
@@ -2061,6 +2058,51 @@ pub fn idle_since(held: &serde_json::Value) -> Option<&str> {
         })?
         .get("lastTransitionTime")?
         .as_str()
+}
+
+/// The word its desktop wrote on the Claim `held` to run its idle runner again, where it did.
+fn run_again_word(held: &serde_json::Value) -> Option<&str> {
+    held.pointer("/metadata/annotations")?
+        .get(RUN_AGAIN_ANNOTATION)?
+        .as_str()
+}
+
+/// **Whether the Claim `held` says its idle runner is on its way back** (#4403), so a start waits for
+/// it: its desktop's word for this suspension is on it and not acted on yet, or was and the runner
+/// is starting. A runner that is vouched for is back, one its Claim calls stuck has stopped coming,
+/// and a stopped or never idle one was not asked for. Only ever a reason to wait a bounded time.
+pub fn coming_back(held: &serde_json::Value) -> bool {
+    let Some(word) = run_again_word(held) else {
+        return false;
+    };
+    let conditions = held
+        .pointer("/status/conditions")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    let said = |kind: &str| {
+        conditions
+            .iter()
+            .find(|one| one.get("type").and_then(serde_json::Value::as_str) == Some(kind))
+    };
+    let field = |condition: &'_ serde_json::Value, key: &str| {
+        condition
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    };
+    let status = |kind: &str| said(kind).and_then(|one| field(one, "status"));
+    if let Some(idle) = said("Idle").filter(|_| status("Idle").as_deref() != Some("False")) {
+        return status("Idle").as_deref() == Some("True")
+            && field(idle, "lastTransitionTime").as_deref() == Some(word);
+    }
+    if status("Stuck").as_deref() == Some("True")
+        || status("KeyPublished").as_deref() == Some("True")
+    {
+        return false;
+    }
+    said("Ready")
+        .and_then(|ready| field(ready, "reason"))
+        .is_some_and(|reason| matches!(reason.as_str(), "Starting" | "Scheduling" | "Pulling"))
 }
 
 /// What the Claim `held`'s `DeletionNotice` condition says, where it is `True` (#3981).

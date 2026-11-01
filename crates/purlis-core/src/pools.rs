@@ -1113,19 +1113,27 @@ pub fn cluster_deletion_notices(config_root: &Path) -> Vec<(String, String)> {
 /// check, view, redial or kill switch asks this: they never wake a runner (ADR 0089, amended
 /// 2026-10-27, item 5). A word that cannot be written refuses nothing: the check every
 /// link makes says why the runner is not there.
+///
+/// **Answers how long the start waits for it** (#4403), where its Claim says it is on its way back:
+/// the pool's own wait for a runner to be vouched for, which the person can raise.
 pub fn run_cluster_runner_again(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     name: &str,
-) {
-    let Ok(Some((pool, kept))) = runners::cluster_runner_for(config_root, name) else {
-        return;
-    };
-    if let Err(why) = pool
+) -> Option<std::time::Duration> {
+    let (pool, kept) = runners::cluster_runner_for(config_root, name).ok()??;
+    match pool
         .kubectl(kubectl)
         .run_again_if_idle(&kept.claimed.namespace, &kept.claimed.name)
     {
-        tracing::warn!("purlis: pool {name}'s idle runner could not be asked to run again: {why}");
+        Ok(true) => Some(pool.vouch_wait()),
+        Ok(false) => None,
+        Err(why) => {
+            tracing::warn!(
+                "purlis: pool {name}'s idle runner could not be asked to run again: {why}"
+            );
+            None
+        }
     }
 }
 
