@@ -154,8 +154,10 @@ call site.
   leave each file as its pointer (`GIT_LFS_SKIP_SMUDGE`, what `git lfs install --skip-smudge`
   asks for), and a call off the network also empties `credential.helper`. A file git checks out
   there, an updated or a new branch folder's included, is its pointer until `git lfs pull`.
-  A git-lfs outside the runner's `PATH` is not found, and a filter marked `required` then fails
-  the call rather than store a file whole.
+  A symbolic link in the repo's LFS store turns the filter off, as a planted program does.
+  A git-lfs outside the runner's `PATH` is not found: where the filter is marked `required`, an
+  `add` fails rather than store a file whole, and a `status` still reads the file as changed.
+  A push through purlis's git runs no hook, so it does not upload the objects of its commits.
 
   Keys that cannot run, or that the runner already holds another way, are not turned off:
   `core.pager` and `pager.<verb>` (git's output is never a terminal), `alias.<verb>` (never

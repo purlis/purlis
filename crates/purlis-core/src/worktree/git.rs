@@ -770,7 +770,8 @@ const LFS_SKIP_SMUDGE: &str = "GIT_LFS_SKIP_SMUDGE";
 /// ([`LFS_SKIP_SMUDGE`]), so no credential is asked for and no `.netrc` read, and a call off the
 /// network also resets every helper on the command line, which git-lfs's own `git credential`
 /// inherits. A call on the network has only the one helper [`NETWORK_RULE`] names, and still
-/// downloads nothing. So a download in such a clone is `git lfs pull`, under that rule.
+/// downloads nothing. So a download in such a clone is `git lfs pull`, under that rule. A store
+/// that is not the repository's own holds the filter instead ([`lfs_store_is_its_own`]).
 fn lfs_filter_offline(listing: &str) -> bool {
     let mut wired = false;
     for (scope, key, value) in listed_entries(listing) {
@@ -790,6 +791,74 @@ fn lfs_filter_offline(listing: &str) -> bool {
         wired |= section == "credential" && sub.is_none() && variable == "helper";
     }
     wired
+}
+
+/// What holds the whole of the LFS filter, the person's own included.
+const LFS_HELD: [&str; 4] = [
+    "filter.lfs.clean=",
+    "filter.lfs.smudge=",
+    "filter.lfs.process=",
+    "filter.lfs.required=false",
+];
+
+/// Whether the store `git-lfs` would write to here is the repository's own: no symbolic link at
+/// `.git/lfs`, among what it holds, or in `objects/<xx>/<yy>`, the deepest folder it writes in.
+/// A chat's sandbox lets it write there, and this git runs outside that sandbox, so a link would
+/// have the filter write the chat's bytes where the chat chose (#4380). Where it cannot tell
+/// (git is told of another directory, or a folder cannot be read) the answer is no, and the
+/// filter is held. **Not a closed race**, like the listing: a link made after this is followed.
+fn lfs_store_is_its_own(
+    dir: &Path,
+    before_verb: &[&str],
+    link: Option<&(PathBuf, PathBuf)>,
+) -> bool {
+    if !before_verb.iter().all(|word| {
+        !matches!(*word, "-C" | "--git-dir" | "--work-tree")
+            && !word.starts_with("--git-dir=")
+            && !word.starts_with("--work-tree=")
+    }) {
+        return false;
+    }
+    let Some(common) = common_git_dir(dir, link) else {
+        return false;
+    };
+    let store = common.join("lfs");
+    match store.symlink_metadata() {
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        Ok(found) => found.is_dir() && holds_no_link(&store, 3),
+    }
+}
+
+/// The git directory whose `lfs` folder serves `dir`: the one its top's `.git` folder is, or for
+/// a linked worktree the one the checked git directory's `commondir` names.
+fn common_git_dir(dir: &Path, link: Option<&(PathBuf, PathBuf)>) -> Option<PathBuf> {
+    if let Some((_, git_dir)) = link {
+        let Ok(named) = std::fs::read_to_string(git_dir.join("commondir")) else {
+            return Some(git_dir.clone());
+        };
+        return Some(git_dir.join(named.trim()));
+    }
+    dir.ancestors()
+        .map(|folder| folder.join(".git"))
+        .find(|git| git.symlink_metadata().is_ok())
+        .filter(|git| git.symlink_metadata().is_ok_and(|found| found.is_dir()))
+}
+
+/// Whether `folder`, down `depth` folders, holds no symbolic link and can all be read.
+fn holds_no_link(folder: &Path, depth: u8) -> bool {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return false;
+    };
+    entries.into_iter().all(|entry| {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        let Ok(kind) = entry.file_type() else {
+            return false;
+        };
+        !kind.is_symlink()
+            && (!kind.is_dir() || depth == 0 || holds_no_link(&entry.path(), depth - 1))
+    })
 }
 
 /// `extra` with the programs the repository's own config names held ([`held_programs`]) for a
@@ -853,9 +922,13 @@ fn programs_held(
             extra.config.extend(settings);
             // `git lfs` itself is no filter: it is how such a clone downloads, under the rule.
             if args[at] != "lfs" && lfs_filter_offline(&said) {
-                extra.pass.push((LFS_SKIP_SMUDGE.to_owned(), "1".into()));
-                if !extra.network {
-                    extra.config.push("credential.helper=".to_owned());
+                if lfs_store_is_its_own(dir, &args[..at], extra.link.as_ref()) {
+                    extra.pass.push((LFS_SKIP_SMUDGE.to_owned(), "1".into()));
+                    if !extra.network {
+                        extra.config.push("credential.helper=".to_owned());
+                    }
+                } else {
+                    extra.config.extend(LFS_HELD.map(str::to_owned));
                 }
             }
             Ok(Ok(extra))

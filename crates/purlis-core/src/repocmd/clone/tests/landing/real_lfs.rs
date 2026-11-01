@@ -602,6 +602,26 @@ fn real_git_lfs_pull_in_a_wired_clone_downloads_under_the_one_credential() {
 
 #[test]
 #[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_writes_nothing_through_a_link_in_a_wired_clones_store() {
+    if !real_git_lfs() {
+        return;
+    }
+    let (world, _server, _, dest) = landed("widget");
+    let elsewhere = world.home.path().join("chosen-by-the-chat");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::fs::remove_dir_all(dest.join(".git/lfs")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, dest.join(".git/lfs")).unwrap();
+    std::fs::write(dest.join("file0.bin"), Object::of(1, 16).bytes).unwrap();
+
+    let read = git::run_untimed(&dest, &["diff", "--stat"]).unwrap();
+    let added = git::run_untimed(&dest, &["add", "--", "file0.bin"]).unwrap();
+
+    assert!(read.ok() && added.ok(), "{read:?} {added:?}");
+    assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
 fn real_git_lfs_a_helper_the_repository_wrote_still_holds_the_filter() {
     if !real_git_lfs() {
         return;

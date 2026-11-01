@@ -839,6 +839,48 @@ fn a_wired_clones_filter_is_left_no_helper_off_the_network() {
 }
 
 #[test]
+fn a_link_in_the_lfs_store_holds_the_filter_of_a_wired_clone() {
+    let elsewhere = tempfile::tempdir().unwrap();
+    let held = |dir: &Path| {
+        let said = run(dir, &["var", "-l"], READ).expect("git runs");
+        said.out.contains("filter.lfs.process=\n")
+    };
+    let wired = || {
+        let repo = repo();
+        assert!(
+            crate::testgit::run(
+                repo.path(),
+                &["config", "credential.helper", "!gh auth git-credential"],
+            )
+            .ok()
+        );
+        repo
+    };
+
+    // No store yet, and a store of real folders: the filter stays.
+    let plain = wired();
+    assert!(!held(plain.path()));
+    let lfs = plain.path().join(".git/lfs");
+    std::fs::create_dir_all(lfs.join("objects/ab/cd")).unwrap();
+    std::fs::write(lfs.join("objects/ab/cd/an-object"), "bytes").unwrap();
+    assert!(!held(plain.path()));
+
+    // A link at each level the filter writes in.
+    for at in [
+        ".git/lfs",
+        ".git/lfs/objects",
+        ".git/lfs/tmp",
+        ".git/lfs/objects/ab/cd",
+    ] {
+        let repo = wired();
+        let link = repo.path().join(at);
+        std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), &link).unwrap();
+        assert!(held(repo.path()), "{at}");
+    }
+}
+
+#[test]
 fn a_repository_with_no_wired_helper_is_given_no_reset_of_the_persons_helpers() {
     let repo = repo();
     let run = run(repo.path(), &["var", "-l"], READ).expect("git runs");
