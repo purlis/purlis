@@ -73,7 +73,11 @@ function ChangeWaits({
         {`Waiting for this runner to be replaced: ${waiting.join(", ")}. Until then it runs as it was made.`}
       </Notice>
       {why !== undefined && (
-        <Notice cause={`pool-replace-failed:${pool}`} tone="trouble">
+        <Notice
+          cause={`pool-replace-failed:${pool}`}
+          tone="trouble"
+          onDismiss={() => setWhy(undefined)}
+        >
           {`The runner was not replaced, and nothing changed for its chats: ${why}`}
         </Notice>
       )}
