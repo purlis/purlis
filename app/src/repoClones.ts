@@ -325,16 +325,16 @@ export function useRepoClones(plane: PlaneId, workspace: string): Clones {
 }
 
 /**
- * Forget what this window knows about repos that are no longer missing from `workspace` — the
- * ones `absent` no longer names and that finished. A `cloned` repo stays busy until the list
- * read from disk drops it; forgetting it then means a folder deleted later can be cloned again.
+ * Forget a clone that landed once `clones`, what the panels list as cloned here, names its repo.
+ * Until then it stays busy, and has a row even in a workspace that did not name it. Forgetting it
+ * then means a folder deleted later can be cloned again, and a repo dropped later leaves no row.
  */
-export function settleRepoClones(plane: PlaneId, workspace: string, absent: readonly string[]) {
+export function settleRepoClones(plane: PlaneId, workspace: string, clones: readonly string[]) {
   const key = keyOf(plane, workspace);
   const held = byWorkspace.get(key);
   if (held === undefined) return;
   const next = new Map(
-    [...held].filter(([repo, one]) => one.state !== "cloned" || absent.includes(repo)),
+    [...held].filter(([repo, one]) => one.state !== "cloned" || !clones.includes(repo)),
   );
   if (next.size === held.size) return;
   byWorkspace.set(key, next);

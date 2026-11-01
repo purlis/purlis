@@ -548,6 +548,17 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
       expect(new Set(seen).size).toBeGreaterThanOrEqual(5);
       expect(seen.at(-1)).toBeGreaterThanOrEqual(70);
     }
+    // Its folder deleted by hand: the window has forgotten the clone, so the row offers it again.
+    // Not before the clone has answered, or the window reads the deletion as a clone that failed.
+    await browser.waitUntil(async () => (await percentOf(cardMeterOf("long-clone"))) === null, {
+      timeout: 30_000,
+      timeoutMsg: "the landed clone's notice never stopped climbing",
+    });
+    rmSync(landed, { recursive: true, force: true });
+    await $(`${rowOf("long-repo")} button[aria-label^="Clone"]`).waitForExist({
+      timeout: 60_000,
+      timeoutMsg: "a landed repo whose folder was deleted was not offered to clone again",
+    });
   });
 
   it("several repos cloned together all land, each with the one sign-in", async () => {
