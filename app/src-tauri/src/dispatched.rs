@@ -424,6 +424,7 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
             | What::TellAll { .. }
             | What::Note { .. }
             | What::Question { .. }
+            | What::Route { .. }
             | What::Answer { .. }
             | What::List
             | What::Output { .. }
@@ -465,6 +466,7 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
             deliver_queued(held, asker, Some(id)).unwrap_or_else(|| what_became_of(held, asker, id))
         }
         What::Question { text } => send_up(held, asker, Kind::Question, text).unwrap_or_else(no),
+        What::Route { text } => route(held, asker, text),
         What::Answer { to, text } => answer_it(held, asker, *to, text).unwrap_or_else(no),
         What::PassOn { to, note } => pass_on(held, asker, *to, note.as_deref()).unwrap_or_else(no),
         What::GotAnswer => {
@@ -1486,11 +1488,7 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         // questions sent at once one is asked and the other refused with nothing left behind.
         let mut ledger = ledger(held);
         if kind == Kind::Question && ledger.talk.asks(sender).is_some() {
-            return Err(
-                "this chat already has a question waiting for its asking chat's answer, and is \
-                 paused on it. Nothing was sent."
-                    .to_owned(),
-            );
+            return Err(dispatchtalk::ALREADY_ASKING.to_owned());
         }
         ledger.talk.count(asker, sender, &limits, Instant::now())?;
         let file = dispatchtalk::leave(held.root(), asker, &message).map_err(kept)?;
@@ -1609,6 +1607,29 @@ fn answer_it(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, Str
         to: name,
         instruction: None,
     }))
+}
+
+/// **Where a question chat `chat`'s harness would ask the person goes** (#4555, ADR 0107), by
+/// the app's own record of that chat and never by anything it says: to its asking chat as any
+/// task's question does, or back to the person where there is none to answer. A handoff, a
+/// task the person started from a tab and their own chats all have none ([`dispatchtalk::up`]).
+///
+/// A refusal is answered as one, and the harness's prompt asks in the pane and the Inbox: a
+/// failed redirect drops nothing.
+fn route(held: &Held, chat: u32, text: &str) -> Answer {
+    let record = held.chats().handed_from(chat);
+    let Ok(from) = dispatchtalk::up(record.as_ref()) else {
+        return task(Answered::ToThePerson);
+    };
+    if !talks(held, chat, from) || seen(held, from.chat).ended {
+        return task(Answered::ToThePerson);
+    }
+    if held.tasks().ledger().talk.asks(chat).is_some() {
+        return task(Answered::AlreadyAsking {
+            why: dispatchtalk::ALREADY_ASKING.to_owned(),
+        });
+    }
+    send_up(held, chat, Kind::Question, text).unwrap_or_else(no)
 }
 
 /// **Chat `asker` passes the question task `to` asked it on to the person** (#4554, ADR 0107).
