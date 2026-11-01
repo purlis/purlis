@@ -1888,6 +1888,19 @@ fn a_listed_title_is_scrubbed_before_it_is_cut() {
 }
 
 #[test]
+fn a_title_as_long_as_the_engine_cuts_one_to_lists_no_part_of_a_kept_text() {
+    let (browser, engine) = browser();
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    browser.blank(&secret).unwrap();
+    let title = format!("{}OPEN SES", "t".repeat(super::MOST_TITLE_CHARS - 8));
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-1".into(), title);
+    let listed = pages_of(&browser, 2).remove(0).title;
+    assert!(!listed.contains("OPEN"), "{listed}");
+}
+
+#[test]
 fn a_huge_title_the_tree_names_is_cut() {
     let (browser, engine) = browser();
     {

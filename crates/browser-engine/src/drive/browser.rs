@@ -338,8 +338,13 @@ impl Page {
         Scrub::of(&self.scrubbed).text(text)
     }
 
-    /// This page's title as it is listed: [`Page::shown`], then cut.
+    /// This page's title as it is listed: [`Page::shown`], then cut. Where this page keeps a text
+    /// and the title is as long as the engine cuts one to, nothing: what it cut may have left part
+    /// of the text at the end, which no scrub knows.
     fn shown_title(&self) -> String {
+        if !self.scrubbed.is_empty() && self.title.chars().count() >= MOST_TITLE_CHARS {
+            return String::new();
+        }
         kept_title(&self.shown(&self.title))
     }
 

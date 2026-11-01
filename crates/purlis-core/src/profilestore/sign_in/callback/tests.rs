@@ -238,6 +238,51 @@ fn a_login_found_on_one_address_is_answered_there_alone() {
     assert!(other.accept().is_err(), "the other address heard nothing");
 }
 
+/// **A login's answer follows the socket's owner, not who answers** (Linux, where owners can be
+/// read): a listener of another process group gets nothing, wherever the login was found.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_listener_of_another_group_is_never_answered() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let stat = std::fs::read_to_string("/proc/self/stat").unwrap();
+    let ours: u32 = stat
+        .rsplit_once(')')
+        .unwrap()
+        .1
+        .split_whitespace()
+        .nth(2)
+        .unwrap()
+        .parse()
+        .unwrap();
+    let here = IpAddr::from(Ipv4Addr::LOCALHOST);
+
+    let of_group = |group| {
+        answered_at(
+            waiting::Taken {
+                at: Some(here),
+                group: Some(group),
+            },
+            port,
+        )
+    };
+    assert_eq!(of_group(ours), vec![here]);
+    // Process group 1 is init's: never this test's.
+    assert_eq!(of_group(1), Vec::<IpAddr>::new());
+    // Nothing recorded of a group: where it was found.
+    assert_eq!(
+        answered_at(
+            waiting::Taken {
+                at: Some(here),
+                group: None
+            },
+            port
+        ),
+        vec![here]
+    );
+    drop(listener);
+}
+
 /// **It listens on the loopback alone**.
 #[test]
 fn it_listens_on_the_loopback_alone() {

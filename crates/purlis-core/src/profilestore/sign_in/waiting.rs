@@ -49,13 +49,23 @@ impl Waiting {
 
     /// [`Self::record`], of a login found listening on `at`.
     pub fn record_at(dir: &Path, state: &str, at: Option<IpAddr>) -> io::Result<Self> {
+        Self::record_of_group(dir, state, at, None)
+    }
+
+    /// [`Self::record_at`], of a login in the process group `group`.
+    pub fn record_of_group(
+        dir: &Path,
+        state: &str,
+        at: Option<IpAddr>,
+        group: Option<u32>,
+    ) -> io::Result<Self> {
         private_folder(dir)?;
         let path = record_of(dir, state);
         let mut held = File::create(&path)?;
         held.try_lock()?;
-        if let Some(at) = at {
-            write!(held, "{at}")?;
-        }
+        let at = at.map(|at| at.to_string()).unwrap_or_default();
+        let group = group.map(|group| group.to_string()).unwrap_or_default();
+        write!(held, "{at}\n{group}")?;
         Ok(Self { path, _held: held })
     }
 }
@@ -66,10 +76,12 @@ impl Drop for Waiting {
     }
 }
 
-/// A record taken: the login's loopback address, where it was found listening.
+/// A record taken: the login's loopback address, where it was found listening, and its process
+/// group, where it was recorded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Taken {
     pub at: Option<IpAddr>,
+    pub group: Option<u32>,
 }
 
 /// **Whether a login is waiting with `state`, which takes its record**: `None` with no record, one
@@ -78,12 +90,12 @@ pub fn take(dir: &Path, state: &str) -> Option<Taken> {
     let path = record_of(dir, state);
     let mut record = File::open(&path).ok()?;
     let held = matches!(record.try_lock(), Err(std::fs::TryLockError::WouldBlock));
-    let at = io::read_to_string(&mut record)
-        .ok()
-        .and_then(|text| text.parse::<IpAddr>().ok())
-        .filter(IpAddr::is_loopback);
+    let text = io::read_to_string(&mut record).unwrap_or_default();
+    let (at, group) = text.split_once('\n').unwrap_or((&text, ""));
+    let at = at.parse::<IpAddr>().ok().filter(IpAddr::is_loopback);
+    let group = group.parse().ok();
     // Removed whoever held it: of two asking, one removes it.
-    (std::fs::remove_file(&path).is_ok() && held).then_some(Taken { at })
+    (std::fs::remove_file(&path).is_ok() && held).then_some(Taken { at, group })
 }
 
 /// `dir`, made private.
@@ -117,8 +129,27 @@ mod tests {
         let _waiting = Waiting::record(dir.path(), STATE).unwrap();
 
         assert!(take(dir.path(), "another-sign-ins-state").is_none());
-        assert_eq!(take(dir.path(), STATE), Some(Taken { at: None }));
+        assert_eq!(
+            take(dir.path(), STATE),
+            Some(Taken {
+                at: None,
+                group: None
+            })
+        );
         assert!(take(dir.path(), STATE).is_none());
+    }
+
+    #[test]
+    fn a_record_says_its_logins_process_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let _waiting = Waiting::record_of_group(dir.path(), STATE, None, Some(77)).unwrap();
+        assert_eq!(
+            take(dir.path(), STATE),
+            Some(Taken {
+                at: None,
+                group: Some(77)
+            })
+        );
     }
 
     #[test]
@@ -134,11 +165,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let at = IpAddr::from(std::net::Ipv6Addr::LOCALHOST);
         let _waiting = Waiting::record_at(dir.path(), STATE, Some(at)).unwrap();
-        assert_eq!(take(dir.path(), STATE), Some(Taken { at: Some(at) }));
+        assert_eq!(
+            take(dir.path(), STATE),
+            Some(Taken {
+                at: Some(at),
+                group: None
+            })
+        );
 
         let other = IpAddr::from([192, 0, 2, 1]);
         let _waiting = Waiting::record_at(dir.path(), STATE, Some(other)).unwrap();
-        assert_eq!(take(dir.path(), STATE), Some(Taken { at: None }));
+        assert_eq!(
+            take(dir.path(), STATE),
+            Some(Taken {
+                at: None,
+                group: None
+            })
+        );
     }
 
     /// A holder that was killed left its record, and no lock on it.
