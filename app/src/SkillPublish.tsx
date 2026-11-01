@@ -25,20 +25,22 @@ import { Held, useRead } from "./SkillSources";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { Choice, SettingRow } from "./settings/components";
 import { Badge } from "./ui/badge/Badge";
+import { Fact, Facts } from "./ui/card/Facts";
 import { Dialog } from "./ui/dialog/Dialog";
+import { Disclosure } from "./ui/disclosure/Disclosure";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Button } from "./ui/button/Button";
 import { ReviewPage } from "./ui/review-page/ReviewPage";
 import { Select } from "./ui/select/Select";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 
-/** Only a source on a forge takes a request: a folder on this machine is no place to publish. */
 /** A file's size, as a review row says it. */
 function sizeSaid(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
+/** Only a source on a forge takes a request: a folder on this machine is no place to publish. */
 const onAForge = (source: SkillSource) => source.remote.url.startsWith("https://");
 
 /** **The publish review page**: see the module. */
@@ -110,13 +112,13 @@ export function SkillPublishPage({
           onDismiss={onCancel}
         >
           {done.kind === "opened"
-            ? `Mark it ready on ${review?.forge ?? "the forge"} when you want it reviewed.`
-            : "Nothing new was sent."}
+            ? `Draft ${request} opened. Mark it ready on ${review?.forge ?? "the forge"} when you want it reviewed.`
+            : `These files already have a ${request}. Nothing new was sent.`}
         </Notice>
       </div>
     );
 
-  const stopped = review !== undefined && (review.local || review.stops.length > 0);
+  const stopped = review !== undefined && (review.local.length > 0 || review.stops.length > 0);
   const why = sending
     ? "The request is being opened."
     : source === undefined
@@ -127,9 +129,7 @@ export function SkillPublishPage({
           ? "The review could not be read."
           : stopped
             ? "Fix what stops it first."
-            : done !== undefined
-              ? "You can't push to this source."
-              : undefined;
+            : undefined;
   const main = `Open draft ${request}`;
 
   return (
@@ -139,6 +139,7 @@ export function SkillPublishPage({
       summary={stopped ? "Fix what stops it first." : "Opens a draft. You mark it ready."}
       summaryReserve={["Fix what stops it first.", "Opens a draft. You mark it ready."]}
       onCancel={onCancel}
+      cancel={{ children: "Cancel", isDisabled: sending }}
       main={{
         children: sending ? "Opening…" : main,
         reserve: [main, "Opening…", "Open draft merge request", "Open draft pull request"],
@@ -159,10 +160,13 @@ export function SkillPublishPage({
         <Notice
           cause="skill-publish-cannot-push"
           tone="trouble"
-          label="You can't push to this source"
-          fixes={[{ label: "Export…", onPress: onExport }]}
+          label="git could not push to this source"
+          fixes={[
+            { label: "Try again", onPress: () => setDone(undefined) },
+            { label: "Export…", onPress: onExport },
+          ]}
         >
-          Nothing was sent. Ask for write access, or export the skill and send it to them.
+          {`Nothing was sent. It takes write access to the source: ask for it, or export the skill and send it to them. git said: ${done.why}`}
         </Notice>
       )}
       {refused !== undefined && (
@@ -183,14 +187,18 @@ export function SkillPublishPage({
           {refused}
         </Notice>
       )}
-      {review?.local === true && (
+      {review !== undefined && review.local.length > 0 && (
         <Notice
           cause="skill-publish-local"
           tone="trouble"
-          label={`${name} is kept on this machine, so it can't be published`}
-          fixes={[{ label: "Move…", onPress: onMove }]}
+          label={`${review.local.join(", ")} ${review.local.length === 1 ? "is" : "are"} kept on this machine, so nothing can be published`}
+          fixes={
+            review.local.includes(name)
+              ? [{ label: "Move…", onPress: onMove }]
+              : [{ label: "Review again", onPress: again }]
+          }
         >
-          Move it to a shared level first.
+          {`${review.local.join(", ")} ${review.local.length === 1 ? "is" : "are"} kept on this machine, so nothing can be published. Move ${review.local.length === 1 ? "it" : "them"} to a shared level first.`}
         </Notice>
       )}
       <Held read={sources.read} what="this project's skill sources" again={sources.again}>
@@ -251,7 +259,7 @@ function Reviewed({ review, onAgain }: { review: PublishReviewView; onAgain: () 
             label={`${counted(review.stops.length, "thing stops", "things stop")} this publish`}
             fixes={[{ label: "Review again", onPress: onAgain }]}
           >
-            Fix them in the skill, then review again. There is no way to send it past them.
+            {`${counted(review.stops.length, "thing stops", "things stop")} this publish. Fix them in the skill, then review again. There is no way to send it past them.`}
           </Notice>
           <ul className="skill-publish-rows">
             {review.stops.map((stop) => (
@@ -263,20 +271,24 @@ function Reviewed({ review, onAgain }: { review: PublishReviewView; onAgain: () 
           </ul>
         </section>
       )}
-      <dl className="skill-publish-facts">
-        <dt>Goes into</dt>
-        <dd>
+      <Facts aria-label="Where it goes">
+        <Fact label="Goes into">
           <code>{review.base}</code>, reviewed at <code>{review.commit_short}</code>
-        </dd>
-        <dt>New branch</dt>
-        <dd>
+        </Fact>
+        <Fact label="New branch">
           <code>{review.branch}</code>
-        </dd>
-        <dt>Title</dt>
-        <dd>{review.title}</dd>
-        <dt>Commit names</dt>
-        <dd>{review.author}</dd>
-      </dl>
+        </Fact>
+        <Fact label="Lands in">
+          {review.lands.map((land) => (
+            <span key={land.folder} className="skill-publish-path">
+              <code>{land.folder}/</code>
+              {land.replaces && <Badge variant="waiting">Replaces what is there</Badge>}
+            </span>
+          ))}
+        </Fact>
+        <Fact label="Title">{review.title}</Fact>
+        <Fact label="Commit names">{review.author}</Fact>
+      </Facts>
       <section aria-label="Files that go">
         <h3 className="ui-text-small ui-text-strong">Files that go ({review.files.length})</h3>
         <ul className="skill-publish-rows">
@@ -305,6 +317,12 @@ function Reviewed({ review, onAgain }: { review: PublishReviewView; onAgain: () 
           </ul>
         </section>
       )}
+      {review.broken.length > 0 && (
+        <p className="honest" data-testid="publish-broken">
+          It refers to {review.broken.join(", ")}, which {review.broken.length === 1 ? "is" : "are"}{" "}
+          not there.
+        </p>
+      )}
       <section aria-label="Grades in the description">
         <h3 className="ui-text-small ui-text-strong">Grades in the description</h3>
         {review.grades.length === 0 ? (
@@ -312,9 +330,11 @@ function Reviewed({ review, onAgain }: { review: PublishReviewView; onAgain: () 
         ) : (
           <Table aria-label="Grades in the description" data-testid="publish-grades">
             <TableHeader>
-              <TableColumn isRowHeader>When</TableColumn>
+              <TableColumn isRowHeader>Skill</TableColumn>
+              <TableColumn>When</TableColumn>
               <TableColumn>Version</TableColumn>
               <TableColumn>Harness</TableColumn>
+              <TableColumn>Grader</TableColumn>
               <TableColumn align="end">With the skill</TableColumn>
               <TableColumn align="end">Without</TableColumn>
               <TableColumn align="end">Runs</TableColumn>
@@ -323,9 +343,11 @@ function Reviewed({ review, onAgain }: { review: PublishReviewView; onAgain: () 
             <TableBody>
               {review.grades.map((one, at) => (
                 <TableRow key={at} id={at} textValue={one.when}>
+                  <TableCell>{one.skill}</TableCell>
                   <TableCell>{one.when}</TableCell>
                   <TableCell>{one.version}</TableCell>
                   <TableCell>{one.harness}</TableCell>
+                  <TableCell>{one.grader}</TableCell>
                   <TableCell>{one.with_it}</TableCell>
                   <TableCell>{one.without_it}</TableCell>
                   <TableCell>{one.runs}</TableCell>
@@ -337,6 +359,11 @@ function Reviewed({ review, onAgain }: { review: PublishReviewView; onAgain: () 
         )}
         <p className="honest">No chat text, paths, costs or device names go with them.</p>
       </section>
+      <Disclosure size="sm" label="The request's description, whole">
+        <pre className="skill-review-file" data-testid="publish-body">
+          {review.body}
+        </pre>
+      </Disclosure>
     </>
   );
 }
@@ -348,7 +375,7 @@ function writes(name: string, review: ExportReview | undefined): string {
     along.length === 0
       ? ""
       : `, and ${along.join(", ")}, ${along.length === 1 ? "the skill" : "the skills"} it refers to`;
-  return `Writes a copy of ${name}${also} that works outside purlis. Links, credential files and files git ignores stay behind.`;
+  return `Writes a copy of ${name}${also} that works outside purlis.`;
 }
 
 /** **The export dialog**: a zip or a folder, then where. */
@@ -414,6 +441,16 @@ export function ExportDialog({
         )}
       />
       {read?.refused !== undefined && <p className="honest">{read.refused}</p>}
+      {(read?.data?.behind ?? []).map((file) => (
+        <p key={file.path} className="honest">
+          Stays behind: <code>{file.path}</code>, {file.why}
+        </p>
+      ))}
+      {(read?.data?.broken ?? []).map((one) => (
+        <p key={one} className="honest">
+          It refers to {one}, which is not there.
+        </p>
+      ))}
       {stops.map((stop) => (
         <p key={`${stop.place}${stop.said}`} className="honest">
           <code>{stop.place}</code> {stop.said}

@@ -87,15 +87,34 @@ describe("the publish review", () => {
     expect(asked.some((one) => one.cmd === "skill_publish")).toBe(false);
   });
 
-  it("offers Export when the source refuses the push", async () => {
+  it("says what git said when the push fails, and offers Export and another try", async () => {
     core(REVIEW, { kind: "cannot-push", why: "denied" });
     const onExport = vi.fn();
     page({ onExport });
 
     await userEvent.click(await opener());
-    await userEvent.click(await screen.findByRole("button", { name: "Export…" }));
-
+    await screen.findByText(/git said: denied/);
+    await userEvent.click(screen.getByRole("button", { name: "Export…" }));
     expect(onExport).toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await opener()).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("names a skill it refers to that is kept here, and offers no move of the wrong one", async () => {
+    core({ ...REVIEW, local: ["notify"] });
+    page();
+
+    await screen.findByText(/notify is kept on this machine/);
+    expect(screen.queryByRole("button", { name: "Move…" })).toBeNull();
+  });
+
+  it("says a folder is replaced, and a reference that is not there", async () => {
+    core(REVIEW);
+    page();
+
+    await screen.findByText("Replaces what is there");
+    expect(screen.getByTestId("publish-broken")).toHaveTextContent("gone");
   });
 });
 

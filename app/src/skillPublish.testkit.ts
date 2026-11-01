@@ -35,13 +35,20 @@ export const REVIEW: PublishReviewView = {
     { path: "deploy/hosts", why: "it is a link or not a plain file" },
   ],
   stops: [],
-  local: false,
+  local: [],
+  lands: [
+    { folder: "deploy", replaces: true },
+    { folder: "notify", replaces: false },
+  ],
+  broken: ["gone"],
+  body: "Published with purlis.",
   grades: [
     {
       skill: "deploy",
       when: "2026-10-30",
       version: "this one",
       harness: "claude-code",
+      grader: "built-in",
       with_it: "90%",
       without_it: "50%",
       runs: 3,
@@ -61,10 +68,11 @@ export const STOPPED: PublishReviewView = {
   ],
 };
 
-export const LOCAL: PublishReviewView = { ...REVIEW, local: true };
+export const LOCAL: PublishReviewView = { ...REVIEW, local: ["deploy"] };
 
 export const EXPORT: ExportReview = {
   skills: ["deploy", "notify"],
   behind: REVIEW.behind,
+  broken: [],
   stops: [],
 };

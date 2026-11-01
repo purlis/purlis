@@ -243,6 +243,7 @@ export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
     one.skill === other.skill &&
     one.item === other.item &&
     sameSourcesAt(one.sources, other.sources) &&
+    JSON.stringify(one.publishing) === JSON.stringify(other.publishing) &&
     JSON.stringify(one.grading) === JSON.stringify(other.grading)
   );
 }

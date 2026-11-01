@@ -81,6 +81,7 @@ import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
 import { NewSkillDialog } from "../NewSkillDialog";
 import { DeleteDialog, MoveDialog, RenameDialog } from "../SkillChangeDialogs";
+import { ExportDialog } from "../SkillPublish";
 import { LeaveQuestion } from "../UnsavedWorkQuestion";
 import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
@@ -1362,6 +1363,20 @@ const DIALOGS: Opened[] = [
           busy={false}
           onDelete={nothing}
           onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "exporting a skill (#2781)",
+    file: "SkillPublish.tsx",
+    open: async () =>
+      render(
+        <ExportDialog
+          plane="p"
+          name="deploy"
+          level={{ at: "project", local: false }}
+          onClose={nothing}
+          onExported={nothing}
         />,
       ),
   },

@@ -57,10 +57,18 @@ pub struct PublishGrade {
     pub when: String,
     pub version: String,
     pub harness: String,
+    pub grader: String,
     pub with_it: String,
     pub without_it: String,
     pub runs: u32,
     pub ended: String,
+}
+
+/// One folder of the source that takes a skill.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct PublishLand {
+    pub folder: String,
+    pub replaces: bool,
 }
 
 /// **What the publish review page draws.**
@@ -77,9 +85,15 @@ pub struct PublishReviewView {
     pub files: Vec<OutgoingFile>,
     pub behind: Vec<BehindFile>,
     pub stops: Vec<OutgoingStop>,
-    /// Where the skill named is this machine's alone, the level that says so.
-    pub local: bool,
+    /// Each skill that is this machine's alone, by name.
+    pub local: Vec<String>,
+    /// Each folder of the source that takes a skill, and whether it replaces what is there.
+    pub lands: Vec<PublishLand>,
+    /// References to a skill that is not there, by name.
+    pub broken: Vec<String>,
     pub grades: Vec<PublishGrade>,
+    /// The request's description, whole.
+    pub body: String,
     pub accepted: PublishAccepted,
 }
 
@@ -105,6 +119,7 @@ pub enum PublishDone {
 pub struct ExportReview {
     pub skills: Vec<String>,
     pub behind: Vec<BehindFile>,
+    pub broken: Vec<String>,
     pub stops: Vec<OutgoingStop>,
 }
 
@@ -172,7 +187,21 @@ fn view_of(review: &PublishReview, forge: &OnTheForge) -> PublishReviewView {
             .outgoing
             .stops
             .iter()
-            .any(|stop| matches!(stop, Stop::Local { .. })),
+            .filter_map(|stop| match stop {
+                Stop::Local { skill, .. } => Some(esc(skill)),
+                Stop::Found { .. } => None,
+            })
+            .collect(),
+        lands: review
+            .lands
+            .iter()
+            .map(|(folder, replaces)| PublishLand {
+                folder: esc(folder),
+                replaces: *replaces,
+            })
+            .collect(),
+        broken: review.outgoing.broken.iter().map(|one| esc(one)).collect(),
+        body: esc(&review.body),
         grades: review
             .grades
             .iter()
@@ -181,6 +210,7 @@ fn view_of(review: &PublishReview, forge: &OnTheForge) -> PublishReviewView {
                 when: one.when.clone(),
                 version: one.version.to_owned(),
                 harness: one.harness.clone(),
+                grader: one.grader.clone(),
                 with_it: one.with_it.clone(),
                 without_it: one.without_it.clone(),
                 runs: u32::from(one.runs),
@@ -292,13 +322,14 @@ pub(crate) async fn skill_export_review(
         Ok(ExportReview {
             skills: out.skills.iter().map(|skill| esc(&skill.name)).collect(),
             behind: behind_of(&out),
+            broken: out.broken.iter().map(|one| esc(one)).collect(),
             stops: stops_of(&out),
         })
     })
     .await
 }
 
-/// Where to write it, as the person picks in the system's save dialog: `None` where they did not.
+/// Where to write a zip, as the person picks in the system's save dialog: `None` where they did not.
 async fn save_to(app: &tauri::AppHandle, suggested: String) -> Result<Option<PathBuf>, String> {
     let (chose, chosen) = std::sync::mpsc::channel();
     app.dialog()
@@ -356,12 +387,14 @@ pub(crate) async fn skill_export(
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
     flag_on()?;
-    let suggested = if zip {
-        format!("{name}.zip")
+    let to = if zip {
+        save_to(&app, format!("{name}.zip")).await?
     } else {
-        name.clone()
+        crate::opener::pick_folder(&app)
+            .await?
+            .map(|folder| PathBuf::from(folder).join(&name))
     };
-    let Some(to) = save_to(&app, suggested).await? else {
+    let Some(to) = to else {
         return Ok(None);
     };
     crate::off_the_window("exporting the skill", move || {

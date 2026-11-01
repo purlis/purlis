@@ -7075,6 +7075,7 @@ export type ExpectedShown = {
 export type ExportReview = {
 	skills: string[],
 	behind: BehindFile[],
+	broken: string[],
 	stops: OutgoingStop[],
 };
 
@@ -11178,10 +11179,17 @@ export type PublishGrade = {
 	when: string,
 	version: string,
 	harness: string,
+	grader: string,
 	with_it: string,
 	without_it: string,
 	runs: number,
 	ended: string,
+};
+
+/**  One folder of the source that takes a skill. */
+export type PublishLand = {
+	folder: string,
+	replaces: boolean,
 };
 
 /**
@@ -11209,9 +11217,15 @@ export type PublishReviewView = {
 	files: OutgoingFile[],
 	behind: BehindFile[],
 	stops: OutgoingStop[],
-	/**  Where the skill named is this machine's alone, the level that says so. */
-	local: boolean,
+	/**  Each skill that is this machine's alone, by name. */
+	local: string[],
+	/**  Each folder of the source that takes a skill, and whether it replaces what is there. */
+	lands: PublishLand[],
+	/**  References to a skill that is not there, by name. */
+	broken: string[],
 	grades: PublishGrade[],
+	/**  The request's description, whole. */
+	body: string,
 	accepted: PublishAccepted,
 };
 

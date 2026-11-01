@@ -997,6 +997,7 @@ export function SkillStudioTab({
           else if (crumb.id === "tab") {
             setDoing(undefined);
             edits.stop();
+            if (at.publishing !== undefined) go({ ...at, publishing: undefined });
             if (at.grading !== undefined) grading(undefined, "go");
           } else if ((crumb.id === "source" || crumb.id === "choose") && inSources !== undefined)
             go({
@@ -1241,9 +1242,12 @@ export function SkillStudioTab({
             if (at.publishing !== undefined)
               setDoing({ what: "export", skill: chosen, level: at.publishing });
           }}
+          // The move ends this review: its level is another, so publishing starts again from there.
           onMove={() => {
-            if (at.publishing !== undefined)
-              setDoing({ what: "move", skill: chosen, from: at.publishing });
+            const from = at.publishing;
+            if (from === undefined) return;
+            go({ ...at, publishing: undefined });
+            setDoing({ what: "move", skill: chosen, from });
           }}
           onSources={() => go({ page: "sources", scope })}
         />
