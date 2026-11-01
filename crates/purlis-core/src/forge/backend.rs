@@ -517,6 +517,19 @@ pub trait Requests {
         body: &str,
     ) -> Result<Opened, ForgeError>;
 
+    /// Open a new draft request from `head` into `base` in the repo at `path`: never adopting one,
+    /// and never setting it to merge. A person marks it ready (`purlis skill publish`, #2781).
+    /// GitHub takes the draft as a field, GitLab by the title's `Draft:`, its documented way.
+    fn open_draft(
+        &self,
+        caller: &Caller,
+        path: &str,
+        head: &str,
+        base: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<Pr, ForgeError>;
+
     /// Where `pr` stands: open, merged or closed.
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError>;
 

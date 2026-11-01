@@ -72,6 +72,11 @@ pub fn triggers_path() -> String {
     FixtureFile::Triggers.path()
 }
 
+/// The outcome evals file's path in a skill's folder, `/` between the parts.
+pub fn outcomes_path() -> String {
+    FixtureFile::Outcomes.path()
+}
+
 /// One trigger test: a prompt, and whether the skill should start on it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TriggerTest {

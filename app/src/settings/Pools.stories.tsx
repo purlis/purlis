@@ -170,6 +170,21 @@ export const RunnerRemoved: Story = {
   },
 };
 
+/** **A pool whose runner was made on another engine** (#4166): it is not said to be removed, and
+ *  nothing offers to make it again. */
+export const RunnerOnAnotherEngine: Story = {
+  parameters: { pools: [BUILDS], link: { state: "on_another_engine" } },
+  play: async ({ canvas }) => {
+    const group = await canvas.findByRole("region", { name: "Pools" });
+    await within(group).findByText("on another Docker engine");
+    await within(group).findByText(/Point Docker back at that engine/);
+    await expect(within(group).queryByRole("button", { name: "Make the runner again" })).toBeNull();
+    await waitFor(() => expect(within(group).queryByText(/Asking the runner about/)).toBeNull(), {
+      timeout: 5000,
+    });
+  },
+};
+
 /** **Add a pool, its Image filled**: Kind first, and the Image box showing the runner image
  *  this version's release names, the default when it is left empty. Pictured open; Esc closes
  *  it. */

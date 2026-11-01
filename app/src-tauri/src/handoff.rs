@@ -150,7 +150,12 @@ fn task_dispatched(
         }
         Ok(Dispatched::Held {
             from, to, waiting, ..
-        }) => Answer::NeedsGrant { from, to, waiting },
+        }) => Answer::NeedsGrant {
+            from,
+            to,
+            waiting,
+            held_by: None,
+        },
         Ok(Dispatched::WaitsOnMemory { to }) => match waits_on_memory(held, wanted) {
             Ok(()) => Answer::WaitingOnMemory { to },
             Err(why) => no(why),
@@ -220,7 +225,12 @@ pub fn answer(
                 }
                 Ok(Dispatched::Held {
                     from, to, waiting, ..
-                }) => Answer::NeedsGrant { from, to, waiting },
+                }) => Answer::NeedsGrant {
+                    from,
+                    to,
+                    waiting,
+                    held_by: None,
+                },
                 // Waits on memory, as a task does (#1467): opened once memory frees.
                 Ok(Dispatched::WaitsOnMemory { to }) => match waits_on_memory(held, &wanted) {
                     Ok(()) => Answer::WaitingOnMemory { to },
@@ -292,6 +302,12 @@ pub fn answer(
         // and a change; the app writes nothing for it, and holds it for the person on the tab
         // of the chat whose token the line carries.
         Ask::Propose(proposal) => crate::proposals::asked(held, &proposal),
+        // A prompt for the asking chat's router (SK-15c): no ticket, for the record's reason.
+        // Its router and the skills its list leaves out are this app's record of the chat whose
+        // token the line carries, never anything the line names.
+        Ask::Prompt(asked) => Answer::Pointed {
+            pointer: held.chats().pointed(asked.chat, &asked.prompt),
+        },
         // Where the asking chat is working (#1450): no ticket, for the record's reason. The
         // line names only the chat whose token it carries, and the picture is this app's own
         // record of its open chats.

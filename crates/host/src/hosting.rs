@@ -545,6 +545,8 @@ struct Inner {
     most_bundle: OnceLock<u64>,
     /// Which runner it relays to drains (#2865): the binary's, or nothing.
     drains: OnceLock<crate::routing::DrainsTo>,
+    /// What asks for a suspended runner it relays to to run again, as a chat starts there (#3980).
+    runs_again: OnceLock<crate::routing::RunsAgain>,
     /// The runners this machine keeps, which the kill switch reaches (#2051).
     runners: Arc<crate::reach::Runners>,
     /// The desktop's links to this host, which a runner's suspends itself without (#2051).
@@ -570,6 +572,10 @@ struct State {
     /// Each held place's highest number dealt: it only rises, so a number names one chat of
     /// that clone, as the clone's own record keeps them.
     dealt: HashMap<HeldAt, u32>,
+    /// The profile and harness of each start under way (#4142).
+    starting: Vec<(Option<String>, Option<String>)>,
+    /// Each profile being forgotten now, and the harness whose own folders that deletes (#4142).
+    forgetting: Vec<(String, Option<String>)>,
     /// Who is told what the host pushes ([`Subscriber`]).
     subscribers: Vec<Subscriber>,
     /// The chats' confinements (#1999), by the id the window gave each.
@@ -579,6 +585,9 @@ struct State {
     relayed_for: HashMap<u64, String>,
     /// Each question to the window waiting for its answer, by its number.
     questions: HashMap<u64, std::sync::mpsc::Sender<Option<Vec<String>>>>,
+    /// The grades terminals asked of a window that it has not answered yet, and the grades it
+    /// runs for one, by the question (SK-61, #3241).
+    grades: crate::grading::GradeAsks,
     /// The last question's number.
     asked: u64,
     /// The window that started this host, if one did.
@@ -613,6 +622,8 @@ struct Subscriber {
     told: mpsc::Sender<Pushed>,
     confines: bool,
     saves: bool,
+    /// Whether its link may run a grade a terminal asks for: the window, of 1.63 or later.
+    runs_grades: bool,
     /// Whether its link knows a browser engine's download (1.37, #2207) and may start a
     /// browser ([`Power::Browser`]): only such a link is pushed one.
     downloads: bool,
@@ -773,6 +784,16 @@ struct HeldAt {
     path: PathBuf,
 }
 
+/// Tells `pushed` to `link` alone, on each subscription it has, a stale one among them: whether
+/// one had room.
+fn tell_link(state: &mut State, link: u64, pushed: Pushed) -> bool {
+    let mut told = false;
+    for one in state.subscribers.iter().filter(|one| one.link == link) {
+        told |= one.told.try_send(pushed.clone()).is_ok();
+    }
+    told
+}
+
 /// The place `link` holds `project` at, if it holds it.
 fn held_by<'a>(state: &'a State, project: &str, link: u64) -> Option<&'a HeldAt> {
     state
@@ -871,6 +892,9 @@ struct Hosted {
     /// The profile it runs on, as its start named it: what a profile's forgetting on a runner
     /// waits for (#4047).
     profile: Option<String>,
+    /// The harness its start named, none for the project's default: whose own folders a chat
+    /// with no profile uses (#4142).
+    harness: Option<String>,
     /// Whether it ends with its window (1.42, #3274): once no window is linked to this host and
     /// the last went without a quit, it is ended at once rather than kept for the grace period.
     /// Taken from this machine's window alone.
@@ -897,15 +921,121 @@ fn stopping_by(stopping: &Mutex<Option<Stopped>>, by: Stopped) {
     *stopping = (*stopping).max(Some(by));
 }
 
+/// Whether a program on `profile` and `harness` uses the profile `name`, or, on no profile, the
+/// harness `own_folders`'s own folders. One that named no harness may be on any.
+fn uses_it(
+    profile: Option<&str>,
+    harness: Option<&str>,
+    name: &str,
+    own_folders: Option<&str>,
+) -> bool {
+    match profile.filter(|profile| !profile.is_empty()) {
+        Some(profile) => profile == name,
+        None => own_folders.is_some_and(|own| harness.is_none_or(|one| one == own)),
+    }
+}
+
+/// A profile held for forgetting ([`Hosting::hold_to_forget`]), until it drops.
+pub struct HeldToForget {
+    hosting: Hosting,
+    held: (String, Option<String>),
+}
+
+impl Drop for HeldToForget {
+    fn drop(&mut self) {
+        let mut state = self.hosting.state();
+        if let Some(at) = state.forgetting.iter().position(|one| *one == self.held) {
+            state.forgetting.remove(at);
+        }
+    }
+}
+
+/// A start under way ([`Hosting::hold_to_forget`] counts it), until it drops.
+struct Starting {
+    hosting: Hosting,
+    start: (Option<String>, Option<String>),
+}
+
+impl Drop for Starting {
+    fn drop(&mut self) {
+        let mut state = self.hosting.state();
+        if let Some(at) = state.starting.iter().position(|one| *one == self.start) {
+            state.starting.remove(at);
+        }
+    }
+}
+
 impl Hosting {
-    /// **Whether a chat this host runs now is on profile `name`** (#4047): a profile is not
-    /// forgotten under a running chat, whose folder and sign-in it is.
-    pub fn runs_on_profile(&self, name: &str) -> bool {
-        self.state().programs.values().any(|hosted| {
-            !hosted.ended
-                && hosted.kind != ProgramKind::Browser
-                && hosted.profile.as_deref() == Some(name)
+    /// **Holds the profile `name` for forgetting** (#4047, #4142), or says in words what runs on
+    /// it. `own_folders` is the harness whose own folders forgetting it deletes, where it does:
+    /// a program on no profile uses those too, a shell because the person may run any harness
+    /// in it, and one that named no harness because it runs on the project's default. Starts
+    /// under way count, and a start on what is held is refused until the hold drops, so nothing
+    /// begins on what is being deleted.
+    pub fn hold_to_forget(
+        &self,
+        name: &str,
+        own_folders: Option<&str>,
+    ) -> Result<HeldToForget, &'static str> {
+        let mut state = self.state();
+        let listed = state
+            .programs
+            .values()
+            .filter(|hosted| !hosted.ended && hosted.kind != ProgramKind::Browser)
+            .map(|hosted| (hosted.profile.as_deref(), hosted.harness.as_deref()));
+        let starting = state
+            .starting
+            .iter()
+            .map(|(profile, harness)| (profile.as_deref(), harness.as_deref()));
+        let running: Vec<_> = listed.chain(starting).collect();
+        if running.iter().any(|(profile, _)| *profile == Some(name)) {
+            return Err(
+                "a chat on that profile runs on this runner, so it was not forgotten; end \
+                        the chat first",
+            );
+        }
+        if running
+            .iter()
+            .any(|(profile, harness)| uses_it(*profile, *harness, "", own_folders))
+        {
+            return Err(
+                "a chat with no profile runs on this runner and uses the folders \
+                        forgetting this profile deletes, so it was not forgotten; end the chat \
+                        first",
+            );
+        }
+        let held = (name.to_owned(), own_folders.map(str::to_owned));
+        state.forgetting.push(held.clone());
+        Ok(HeldToForget {
+            hosting: self.clone(),
+            held,
         })
+    }
+
+    /// A start, counted from here until its guard drops, by when it is listed; or its refusal,
+    /// while what it runs on is being forgotten (#4142).
+    fn starting(&self, start: &StartProgram) -> Result<Option<Starting>, Refusal> {
+        if start.kind == ProgramKind::Browser {
+            return Ok(None);
+        }
+        let (profile, harness) = (start.profile.as_deref(), start.harness.as_deref());
+        let mut state = self.state();
+        if state
+            .forgetting
+            .iter()
+            .any(|(name, own)| uses_it(profile, harness, name, own.as_deref()))
+        {
+            return Err(not_started(
+                "what it runs on is being deleted on this runner; start it again in a moment"
+                    .to_owned(),
+            ));
+        }
+        let start = (start.profile.clone(), start.harness.clone());
+        state.starting.push(start.clone());
+        Ok(Some(Starting {
+            hosting: self.clone(),
+            start,
+        }))
     }
 
     /// A host whose starts `compose` composes, each run in a terminal of its own, its kill
@@ -1008,6 +1138,7 @@ impl Hosting {
                 projects: OnceLock::new(),
                 most_bundle: OnceLock::new(),
                 drains: OnceLock::new(),
+                runs_again: OnceLock::new(),
                 runners,
                 unattended: crate::unattended::Links::default(),
                 seen_elsewhere: Mutex::new(None),
@@ -1222,6 +1353,18 @@ impl Hosting {
     pub fn draining_with(self, drains: crate::routing::DrainsTo) -> Hosting {
         let _ = self.inner.drains.set(drains);
         self
+    }
+
+    /// This host, asking `runs_again` to run a suspended runner again as a chat starts on a link
+    /// relayed to it (#3980).
+    pub fn running_again_with(self, runs_again: crate::routing::RunsAgain) -> Hosting {
+        let _ = self.inner.runs_again.set(runs_again);
+        self
+    }
+
+    /// What asks for a suspended runner to run again, where it is told.
+    pub(crate) fn runs_again(&self) -> Option<crate::routing::RunsAgain> {
+        self.inner.runs_again.get().cloned()
     }
 
     /// Which runner it relays to drains, where it is told.
@@ -1474,6 +1617,142 @@ impl Hosting {
         let said = answer.recv_timeout(within).ok().flatten();
         self.state().questions.remove(&question);
         said
+    }
+
+    /// **Asks the window that holds `project` at `project_path` for a grade, for a terminal**
+    /// (SK-61, #3241), and waits for its answer. One window is asked, however many hold it: the
+    /// first that linked and hears, on this host. A hold relayed over a link never is: only
+    /// `local-ui` runs a grade.
+    async fn ask_grade(
+        &self,
+        project: String,
+        project_path: String,
+        ask: session::GradeAsk,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let not_open = || Refusal {
+            code: session::NO_SUCH_PROJECT.into(),
+            why: "no purlis window has this project open, and a grade runs in the window: open \
+                  the project in purlis, then run this again"
+                .to_owned(),
+        };
+        let path = std::fs::canonicalize(&project_path).map_err(|_| not_open())?;
+        let starts = matches!(ask, session::GradeAsk::Start { .. });
+        let (question, answered) = {
+            let mut state = self.state();
+            // Under the hold its going takes too: a link that went before this is refused, and one
+            // that goes after it finds this ask to let go of.
+            if peer.has_ended() {
+                return Err(not_open());
+            }
+            let at = HeldAt {
+                project: project.clone(),
+                path,
+            };
+            let holders: Vec<u64> = state
+                .projects
+                .get(&at)
+                .map(|held| held.links.keys().copied().collect())
+                .unwrap_or_default();
+            let Some(index) = state
+                .subscribers
+                .iter()
+                .enumerate()
+                .filter(|(_, one)| one.runs_grades && holders.contains(&one.link))
+                .min_by_key(|(_, one)| one.link)
+                .map(|(index, _)| index)
+            else {
+                return Err(not_open());
+            };
+            state.asked += 1;
+            let question = state.asked;
+            let pushed = Pushed::GradeAsked {
+                question,
+                project,
+                project_path: at.path.display().to_string(),
+                ask,
+            };
+            let window = state.subscribers[index].link;
+            if state.subscribers[index].told.try_send(pushed).is_err() {
+                return Err(not_open());
+            }
+            let answered = state.grades.asked(question, link_of(peer), window, starts);
+            (question, answered)
+        };
+        let answer = tokio::time::timeout(crate::grading::ANSWERED_WITHIN, answered).await;
+        match answer {
+            Ok(Ok(answer)) => Ok(Answer::GradeAnswered(answer)),
+            Ok(Err(_)) | Err(_) => {
+                self.state().grades.not_answered(question);
+                Err(Refusal {
+                    code: session::NOT_STARTED.into(),
+                    why: "the purlis window did not answer, so nothing was started".to_owned(),
+                })
+            }
+        }
+    }
+
+    /// The window's answer to a grade it was asked for, from the link that was asked. A grade
+    /// that started for a terminal gone by now is stopped at once.
+    fn answer_grade(
+        &self,
+        question: u64,
+        answer: session::GradeAnswer,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let mut state = self.state();
+        let stop = state.grades.answered(question, link_of(peer), answer);
+        if let Some(grade) = stop {
+            tell_link(&mut state, link_of(peer), Pushed::StopGrade { grade });
+        }
+        Ok(Answer::Done)
+    }
+
+    /// One step of a grade the window runs for a terminal, pushed to that terminal's link alone.
+    fn grade_step(
+        &self,
+        question: u64,
+        step: session::GradeStepTold,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let mut state = self.state();
+        let asker = state
+            .grades
+            .step(question, link_of(peer), step.ended.is_some());
+        let told =
+            asker.is_some_and(|asker| tell_link(&mut state, asker, Pushed::GradeStep { step }));
+        if told {
+            return Ok(Answer::Done);
+        }
+        // The window stops the grade on this: nothing spends with nobody following it.
+        state.grades.not_answered(question);
+        Err(Refusal {
+            code: session::NO_SUCH_PROJECT.into(),
+            why: "nobody follows this grade any more".to_owned(),
+        })
+    }
+
+    /// `link` has gone: each grade it asked for stops, so nothing spends with nobody following
+    /// it, and each terminal following a grade it ran is told it ended there.
+    fn grades_of_a_link_gone(&self, link: u64) {
+        let mut state = self.state();
+        let gone = state.grades.link_gone(link);
+        for (window, grade) in gone.to_stop {
+            tell_link(&mut state, window, Pushed::StopGrade { grade });
+        }
+        for (asker, grade) in gone.to_tell {
+            let step = session::GradeStepTold {
+                grade,
+                ran: 0,
+                of: 0,
+                tokens: None,
+                cost_micro_usd: None,
+                asked: 0,
+                ended: Some(session::GradeEndTold::WindowGone),
+                said: Some("The purlis window running this grade closed, so it ended.".to_owned()),
+            };
+            tell_link(&mut state, asker, Pushed::GradeStep { step });
+        }
     }
 
     /// Push line `id` that the hooks of the project held `at` wrote to every subscriber whose
@@ -1780,6 +2059,7 @@ impl Hosting {
         self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
         a_note_that_fits(start.note.as_ref())?;
+        let _starting = self.starting(&start)?;
         let start = ids_of(start, peer.scope());
         let size = Size {
             columns: start.cols.unwrap_or(80),
@@ -2030,6 +2310,7 @@ impl Hosting {
                     logins: Arc::default(),
                     opened_by: OpenedBy::ThisHost,
                     profile: start.profile.clone(),
+                    harness: start.harness.clone(),
                     ends_with_its_window,
                     prompt_key: prompt_key.clone(),
                 },
@@ -2258,6 +2539,7 @@ impl Hosting {
                 )),
                 opened_by,
                 profile: None,
+                harness: None,
                 // A browser lives as its chat's window keeps it (#2025), never by this word.
                 ends_with_its_window: false,
                 // A browser has no prompts of a chat's to digest.
@@ -3391,11 +3673,13 @@ impl session::Host for Hosting {
                 refs,
                 checkout,
                 moving,
+                held,
             } => {
                 let way = crate::code::Way::In {
                     refs,
                     checkout,
                     moving,
+                    held,
                 };
                 self.move_code(&project, repo, transfer, way, peer).await
             }
@@ -3486,6 +3770,13 @@ impl session::Host for Hosting {
             Command::StartSaving { project } => self.start_saving(&project, peer).await,
             Command::StopSaving { project } => self.stop_saving(&project, peer).await,
             Command::FetchProject { project } => self.fetch(&project, peer),
+            Command::AskGrade {
+                project,
+                project_path,
+                ask,
+            } => self.ask_grade(project, project_path, ask, peer).await,
+            Command::AnswerGrade { question, answer } => self.answer_grade(question, answer, peer),
+            Command::GradeStep { question, step } => self.grade_step(question, step, peer),
             Command::MidTurn { question, chats } => {
                 // An answer nobody waits for any more (it came late) is done all the same.
                 if let Some(waiting) = self.state().questions.remove(&question) {
@@ -3695,6 +3986,7 @@ impl session::Host for Hosting {
 
     async fn link_ended(&self, peer: &Peer) {
         self.inner.unattended.ended(peer);
+        self.grades_of_a_link_gone(link_of(peer));
         // The last window going: what ends with its window ends first, and is gone before its
         // holds are let go of, so a project it alone kept is let go of as any other.
         // Under the one hold a start's check takes too: a program started as this goes is
@@ -3748,6 +4040,8 @@ impl session::Host for Hosting {
                 told,
                 confines: peer.scope().may(Power::Confine),
                 saves: peer.scope().may(Power::Save),
+                runs_grades: peer.scope().may(Power::RunGrade)
+                    && peer.version() >= session::KNOWS_GRADE_ASKS,
                 downloads: peer.version() >= session::KNOWS_ENGINE_DOWNLOADS
                     && peer.scope().may(Power::Browser),
             });
@@ -3991,6 +4285,19 @@ impl Hosting {
         if state.windows.is_empty() && state.windowless_since.is_none() {
             state.windowless_since = Some(Instant::now());
         }
+    }
+
+    /// **Whether nothing keeps this runner's host from being idle** (ADR 0089 §9, as amended on
+    /// 2026-10-27; #3980): no program that has not ended, a chat waiting on the person between
+    /// turns and any browser, one holding an Ask among them, no start or saving under way, and no
+    /// link holding a project.
+    pub(crate) fn nothing_running(&self) -> bool {
+        let state = self.state();
+        state.programs.values().all(|hosted| hosted.ended)
+            && state.starting.is_empty()
+            && state.browsers_starting == 0
+            && state.saving.is_empty()
+            && state.projects.values().all(|held| held.links.is_empty())
     }
 
     /// Whether this host has nothing more to wait for at `now`: no window is linked since one

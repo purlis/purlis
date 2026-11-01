@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
+import { hearAnimations } from "../animations.js";
 
 /**
  * **The four corners, in the real window** (#2917, spec #2897 R116–R128; #3144): the left bar is
  * a 44px column beside the project rail, as the right bar is at the window's edge; a top icon switches its
  * side's panel and a bottom one opens its half of the bottom panel; only the part that opened
  * moves, and closing has no motion. Measured where jsdom lays nothing out: the boxes, the
- * animations the page is running, and that nothing beside a chosen icon moves.
+ * animations heard starting, and that nothing beside a chosen icon moves.
  */
 
 const NAVIGATION = '[role="tablist"][aria-label="Navigation"]';
@@ -25,46 +26,6 @@ async function boxOf(css: string): Promise<Box | null> {
     const { left, top, width, height } = it.getBoundingClientRect();
     return { left, top, width, height };
   }, css);
-}
-
-/** The animations running on what `css` names, by their keyframes' or effect's name. */
-async function moving(css: string): Promise<string[]> {
-  return browser.execute((selector: string) => {
-    const it = document.querySelector(selector);
-    if (it === null) return [];
-    return it
-      .getAnimations()
-      .map((one) => (one as CSSAnimation).animationName ?? one.constructor.name);
-  }, css);
-}
-
-/**
- * **Starts recording the animations that start on what `css` names**, by their keyframes' name.
- * An arrival's mark comes off when its animation ends (D-2917-20), so a spec that polled for the
- * mark could miss it; the event is heard as it happens, from the page. {@link started} reads what
- * was heard since.
- */
-async function hear(css: string): Promise<void> {
-  await browser.execute((selector: string) => {
-    const kept = window as unknown as { heard2917?: Record<string, string[]> };
-    const heard = (kept.heard2917 ??= {});
-    heard[selector] = [];
-    const listen = (e: AnimationEvent) => {
-      if (e.target instanceof Element && e.target.matches(selector)) {
-        heard[selector]?.push(e.animationName);
-      }
-    };
-    document.addEventListener("animationstart", listen, true);
-  }, css);
-}
-
-/** The animations heard starting on what `css` names since {@link hear} was called for it. */
-async function started(css: string): Promise<string[]> {
-  return browser.execute(
-    (selector: string) =>
-      (window as unknown as { heard2917?: Record<string, string[]> }).heard2917?.[selector] ?? [],
-    css,
-  );
 }
 
 async function press(css: string): Promise<void> {
@@ -128,35 +89,33 @@ describe("the four corners", function () {
   });
 
   it("brings the right panel in only when it opens, and takes it away with no motion", async () => {
+    const panel = ".slot-right";
     // Whichever right view a spec before this one left open, closed by the panel's ×.
+    const closing = await hearAnimations(panel);
     if (await $(`${ATTENTION} [role="tab"][aria-selected="true"]`).isExisting())
       await press(".slot-right .side-close");
-    await browser.waitUntil(async () => ((await boxOf(".slot-right"))?.width ?? 0) <= 1, {
+    await browser.waitUntil(async () => ((await boxOf(panel))?.width ?? 0) <= 1, {
       timeout: 10_000,
       timeoutMsg: "the right panel never closed",
     });
-    expect(await moving(".slot-right")).toEqual([]);
+    expect(await closing.on(panel)).toEqual([]);
 
-    await hear(".slot-right");
+    const opening = await hearAnimations(panel);
     await press(tab(ATTENTION, "Inbox"));
     // 300px where the row of regions has room, else its 20% of that row (R124): the row is the
     // window less the project rail, the bars and the gutters.
     const row = (await boxOf(".region-row"))?.width ?? 0;
     await browser.waitUntil(
-      async () => ((await boxOf(".slot-right"))?.width ?? 0) >= Math.min(300, row * 0.2) - 24,
+      async () => ((await boxOf(panel))?.width ?? 0) >= Math.min(300, row * 0.2) - 24,
       { timeout: 10_000, timeoutMsg: "the right panel never opened" },
     );
-    await browser.waitUntil(async () => (await started(".slot-right")).includes("purlis-open"), {
-      timeout: 10_000,
-      timeoutMsg: "the right panel never arrived",
-    });
+    await opening.until(panel, "purlis-open");
 
     // Another view of the right panel: the panel does not arrive again.
-    await hear(".slot-right");
+    const switching = await hearAnimations(panel);
     await press(tab(ATTENTION, "Personas"));
     await browser.pause(400);
-    expect(await started(".slot-right")).toEqual([]);
-    expect(await moving(".slot-right")).toEqual([]);
+    expect(await switching.on(panel)).toEqual([]);
     await press(tab(ATTENTION, "Inbox"));
   });
 
@@ -171,14 +130,11 @@ describe("the four corners", function () {
         { timeout: 10_000, timeoutMsg: "the right half never closed" },
       );
     }
-    await hear('.panel-half[data-side="right"]');
-    await hear('.panel-half[data-side="left"]');
+    const right = '.panel-half[data-side="right"]';
+    const left = '.panel-half[data-side="left"]';
+    const opening = await hearAnimations(right, left);
     await press(todos);
-    await browser.waitUntil(
-      async () => (await started('.panel-half[data-side="right"]')).includes("purlis-reveal"),
-      { timeout: 10_000, timeoutMsg: "the right half never arrived" },
-    );
-    expect(await started('.panel-half[data-side="left"]')).toEqual([]);
-    expect(await moving('.panel-half[data-side="left"]')).toEqual([]);
+    await opening.until(right, "purlis-reveal");
+    expect(await opening.on(left)).toEqual([]);
   });
 });

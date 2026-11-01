@@ -2471,6 +2471,155 @@ fn a_chat_works_in_the_clone_its_folder_is_in_and_in_none_at_its_workspaces_fold
     assert!(names(&plane.join("workspaces/alpha")).is_empty());
 }
 
+/// A branch folder of clone `repo` of workspace `alpha`, as git leaves a linked worktree: its
+/// `.git` is a file.
+fn branch_folder(plane: &Path, repo: &str, piece: &str) -> std::path::PathBuf {
+    let folder = plane
+        .join("workspaces/alpha/.worktrees")
+        .join(repo)
+        .join(piece);
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join(".git"), "gitdir: elsewhere\n").unwrap();
+    folder
+}
+
+fn a_repo_skill(checkout: &Path, name: &str) {
+    let dir = checkout.join(".agents/skills").join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: {name}.\n---\n"),
+    )
+    .unwrap();
+}
+
+/// #4238: a chat in a branch folder works in the clone the folder was cut from, and its harness
+/// reads the folder's checkout: a skill only that branch holds counts, and one only the clone's
+/// own branch holds does not.
+#[test]
+fn a_chat_in_a_branch_folder_counts_the_repo_skills_of_that_folder_under_its_clones_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let clone = plane.join("workspaces/alpha/api");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    std::fs::create_dir_all(plane.join("workspaces/alpha/web/.git")).unwrap();
+    a_repo_skill(&clone, "on-main");
+    a_repo_skill(&clone, "on-both");
+    let folder = branch_folder(&plane, "api", "fix");
+    a_repo_skill(&folder, "on-the-branch");
+    a_repo_skill(&folder, "on-both");
+    std::fs::create_dir_all(folder.join("src")).unwrap();
+
+    for cwd in [folder.clone(), folder.join("src")] {
+        let mine = checkouts_of_chat(&plane, "alpha", &cwd);
+        assert_eq!(
+            mine.iter()
+                .map(|repo| repo.name.as_str())
+                .collect::<Vec<_>>(),
+            ["api"]
+        );
+        let mut read: Vec<(String, std::path::PathBuf, Owner)> =
+            repo_skills_of_chat(Harness::Codex, &plane, "alpha", &cwd)
+                .into_iter()
+                .map(|one| {
+                    let at = one.skill.path.canonicalize().unwrap();
+                    (one.id, at, one.owner)
+                })
+                .collect();
+        read.sort_by(|a, b| a.0.cmp(&b.0));
+        let at = folder.canonicalize().unwrap();
+        let owner = Owner::Repo("api".to_owned());
+        assert_eq!(
+            read,
+            [
+                (
+                    "on-both".to_owned(),
+                    at.join(".agents/skills/on-both/SKILL.md"),
+                    owner.clone()
+                ),
+                (
+                    "on-the-branch".to_owned(),
+                    at.join(".agents/skills/on-the-branch/SKILL.md"),
+                    owner.clone()
+                ),
+            ]
+        );
+    }
+    // What a start reads for its budget and its set is the same.
+    let started =
+        crate::hoststart::ChatSkills::read(true, &plane, Some(Harness::Codex), Some(&folder), None);
+    let mut ids: Vec<&str> = started.repo.iter().map(|one| one.id.as_str()).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, ["on-both", "on-the-branch"]);
+    // The Skills view's rows are read from the clone's folder, so they do not speak for this chat.
+    assert!(clones_of_chat(&plane, "alpha", &folder).is_empty());
+    // The clone's own chat still reads the clone.
+    let own: Vec<String> = repo_skills_of_chat(Harness::Codex, &plane, "alpha", &clone)
+        .into_iter()
+        .map(|one| one.id)
+        .collect();
+    assert!(own.contains(&"on-main".to_owned()), "{own:?}");
+}
+
+/// #4238: only a checkout purlis's layout names is a branch folder. Each of these leaves the chat
+/// in no clone, as it was.
+#[test]
+fn a_chat_is_in_no_clone_in_what_is_not_a_branch_folder_of_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(plane.join("workspaces/alpha/api/.git")).unwrap();
+    let names = |cwd: &Path| -> Vec<String> {
+        checkouts_of_chat(&plane, "alpha", cwd)
+            .into_iter()
+            .map(|repo| repo.name)
+            .collect()
+    };
+    // The folders above a branch folder.
+    let folder = branch_folder(&plane, "api", "fix");
+    assert_eq!(names(&folder), ["api"]);
+    assert!(names(&plane.join("workspaces/alpha/.worktrees")).is_empty());
+    assert!(names(&plane.join("workspaces/alpha/.worktrees/api")).is_empty());
+    // A branch folder of a clone this workspace does not hold.
+    assert!(names(&branch_folder(&plane, "gone", "fix")).is_empty());
+    // A folder that is no checkout: nothing marks it a repo's top to its harness.
+    let plain = plane.join("workspaces/alpha/.worktrees/api/copied");
+    std::fs::create_dir_all(&plain).unwrap();
+    assert!(names(&plain).is_empty());
+    // A folder with a `.git` directory is a clone of its own, not one cut from `api`.
+    let nested = plane.join("workspaces/alpha/.worktrees/api/nested");
+    std::fs::create_dir_all(nested.join(".git")).unwrap();
+    assert!(names(&nested).is_empty());
+}
+
+/// #4238: a link where a branch folder would be is not one: the chat's folder resolves to where
+/// the link leads, and purlis reads no skills through it.
+#[cfg(unix)]
+#[test]
+fn a_link_in_the_branch_folders_layout_puts_a_chat_in_no_clone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(plane.join("workspaces/alpha/api/.git")).unwrap();
+    let away = tmp.path().join("away");
+    std::fs::create_dir_all(&away).unwrap();
+    std::fs::write(away.join(".git"), "gitdir: elsewhere\n").unwrap();
+    a_repo_skill(&away, "from-away");
+
+    let parent = plane.join("workspaces/alpha/.worktrees/api");
+    std::fs::create_dir_all(&parent).unwrap();
+    let at_the_piece = parent.join("linked");
+    std::os::unix::fs::symlink(&away, &at_the_piece).unwrap();
+    assert!(checkouts_of_chat(&plane, "alpha", &at_the_piece).is_empty());
+
+    // The same, one level up: `.worktrees` itself leads elsewhere.
+    let other = tmp.path().join("other");
+    std::fs::create_dir_all(plane.join("workspaces/beta/api/.git")).unwrap();
+    std::fs::create_dir_all(other.join("api/fix")).unwrap();
+    std::fs::write(other.join("api/fix/.git"), "gitdir: elsewhere\n").unwrap();
+    std::os::unix::fs::symlink(&other, plane.join("workspaces/beta/.worktrees")).unwrap();
+    let through = plane.join("workspaces/beta/.worktrees/api/fix");
+    assert!(checkouts_of_chat(&plane, "beta", &through).is_empty());
+}
+
 /// The harnesses purlis ships and `goose`, a harness a project declares, taking MCP servers or
 /// not.
 fn with_goose(mcp: bool) -> crate::harness_declaration::Declarations {

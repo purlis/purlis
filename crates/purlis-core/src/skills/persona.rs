@@ -76,6 +76,12 @@ pub(crate) fn unresolved(
         {
             continue;
         }
+        if super::harnesses_used(plane)
+            .into_iter()
+            .any(|harness| super::unmoved_skills_read_by(harness, plane).contains(&written))
+        {
+            continue;
+        }
         let reason = left.reason.clone();
         out.push((reference, reason));
     }

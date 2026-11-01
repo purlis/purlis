@@ -1111,6 +1111,58 @@ pub struct Resolved {
     pub folder: PathBuf,
     pub ready: Vec<Ready>,
     pub left: Vec<String>,
+    /// The tools whose program is nowhere on this machine, by name.
+    pub absent: Vec<String>,
+    /// On a runner, each tool of [`Resolved::absent`] and what its name says in the chat (#4354).
+    pub refusing: Vec<(String, String)>,
+}
+
+/// **The variable a pool's runner is made with, naming the image it runs** (#4354):
+/// [`crate::dockerpool::Runner::create_args`], and `operator/src/upstream.rs` for a cluster's. It
+/// is read by the runner's own host and never inherited by a chat
+/// ([`crate::hookwire::NOT_INHERITED`]); a chat sees the name only in [`not_in_the_image`]. A
+/// runner made before it is told "this pool's image".
+pub const POOL_IMAGE_VAR: &str = "PURLIS_POOL_IMAGE";
+
+/// **What a persona's declared tool says on a runner whose image has no such program** (#4354),
+/// naming the program and, where this runner was told it, the pool's image.
+pub fn not_in_the_image(persona: &str, name: &str, image: Option<&str>) -> String {
+    let image = image.map_or_else(
+        || "this pool's image".to_owned(),
+        |image| format!("this pool's image, {image},"),
+    );
+    let or_own = if matches!(name, "gh" | "glab") {
+        ", or run the pool on purlis's own runner image, which carries it"
+    } else {
+        ""
+    };
+    format!(
+        "{name} is {persona}'s tool, and {image} has no {name}, so nothing ran. Add {name} to the \
+         pool's image{or_own} (docs/runner-image.md)."
+    )
+}
+
+/// The image this runner was told it runs ([`POOL_IMAGE_VAR`]).
+fn pool_image() -> Option<String> {
+    crate::envvar::var(POOL_IMAGE_VAR).filter(|image| !image.is_empty())
+}
+
+/// **Why `program`, as a runner chat asked for it, is refused for want of it in the image**
+/// (#4354): where it is a tool `listed` for `persona`, not armed, with no such program anywhere
+/// on this machine. `None` for anything else, which [`declared`] judges.
+pub fn absent_from_the_image(
+    armed: &[Ready],
+    listed: &[Tool],
+    persona: &str,
+    program: &str,
+) -> Option<String> {
+    let named = Path::new(program).file_name()?.to_string_lossy();
+    let declared = listed
+        .iter()
+        .find(|tool| tool.name == named && tool.login.is_none())?;
+    let is_absent = !armed.iter().any(|ready| names(ready, program))
+        && found_in(&declared.name, &search_dirs(), &[]).is_none();
+    is_absent.then(|| not_in_the_image(persona, &declared.name, pool_image().as_deref()))
 }
 
 /// **`persona`'s tools for a chat in the project at `root`**: each found on `search` where no
@@ -1185,7 +1237,13 @@ pub(crate) fn for_chat_beside(
              Allow of {persona}'s hosts and tools"
         );
     }
-    resolve_beside(root, persona, &allowed, locks, search, writable, temps)
+    let mut resolved = resolve_beside(root, persona, &allowed, locks, search, writable, temps)?;
+    // Only a start from a runner's desktop says this, and only there is a program's absence the
+    // image's: on the person's own machine the log says why, as it does for any tool left out.
+    if from_desktop.is_some() {
+        resolved.refuse_what_is_absent(pool_image().as_deref());
+    }
+    Some(resolved)
 }
 
 /// [`resolve`], with `temps` as the temporary folders.
@@ -1207,6 +1265,7 @@ pub(crate) fn resolve_beside(
     written.extend(any_chat_writes(root));
     let mut ready = Vec::new();
     let mut left = Vec::new();
+    let mut absent = Vec::new();
     for tool in tools {
         if let Some(why) = locks.refuses_tool(persona, &tool.name) {
             left.push(why);
@@ -1239,11 +1298,17 @@ pub(crate) fn resolve_beside(
                 tool: tool.clone(),
                 program,
             }),
-            None => left.push(format!(
-                "{persona}'s tool {} runs nothing: no {wanted} was found outside the folders a \
-                 chat may write",
-                tool.name
-            )),
+            None => {
+                // Nowhere at all, as distinct from only where a chat could have put it.
+                if found_in(wanted, search, &[]).is_none() {
+                    absent.push(tool.name.clone());
+                }
+                left.push(format!(
+                    "{persona}'s tool {} runs nothing: no {wanted} was found outside the folders \
+                     a chat may write",
+                    tool.name
+                ));
+            }
         }
     }
     Some(Resolved {
@@ -1251,6 +1316,8 @@ pub(crate) fn resolve_beside(
         folder: folder(root, persona),
         ready,
         left,
+        absent,
+        refusing: Vec::new(),
     })
 }
 
@@ -1725,6 +1792,17 @@ fn quoted(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 
+/// **The shim of a tool whose program is not in the runner's image** (#4354): its name in the chat
+/// says why, and fails as a missing program does.
+pub fn refusing_shim(persona: &str, name: &str, said: &str) -> String {
+    format!(
+        "#!/bin/sh\n# Written by purlis as a chat of {persona} starts on a runner (#4354). `{name}` \
+         is not in\n# this pool's image. Edits here are overwritten.\n\
+         echo {said} >&2\nexit 127\n",
+        said = quoted(&format!("purlis: {said}")),
+    )
+}
+
 /// The shim for `ready`, run by `purlis`.
 pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
     if ready.tool.login.is_some() {
@@ -1799,8 +1877,20 @@ pub fn claude_env(bin: &Path) -> String {
 }
 
 impl Resolved {
+    /// On a runner of `image`: each tool whose program is absent says so under its name (#4354).
+    fn refuse_what_is_absent(&mut self, image: Option<&str>) {
+        self.refusing = self
+            .absent
+            .iter()
+            .map(|name| {
+                let said = not_in_the_image(&self.persona, name, image);
+                (name.clone(), said)
+            })
+            .collect();
+    }
+
     /// **Writes the shims**, each running `purlis`, and Claude Code's env file, replacing every
-    /// shim of an earlier start: none where no tool is ready.
+    /// shim of an earlier start: none where no tool is ready and none refuses.
     #[cfg(unix)]
     pub fn write(&self, purlis: &Path) -> std::io::Result<Option<Written>> {
         use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -1824,12 +1914,14 @@ impl Resolved {
             let current = self
                 .ready
                 .iter()
-                .any(|one| std::ffi::OsStr::new(&one.tool.name) == name);
+                .map(|one| &one.tool.name)
+                .chain(self.refusing.iter().map(|(tool, _)| tool))
+                .any(|tool| std::ffi::OsStr::new(tool) == name);
             if !current {
                 std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
             }
         }
-        if self.ready.is_empty() {
+        if self.ready.is_empty() && self.refusing.is_empty() {
             return Ok(None);
         }
         let put = |path: &Path, text: &str, mode: u32| -> std::io::Result<()> {
@@ -1847,6 +1939,13 @@ impl Resolved {
             put(
                 &bin.join(&ready.tool.name),
                 &shim(purlis, &self.persona, ready),
+                0o700,
+            )?;
+        }
+        for (name, said) in &self.refusing {
+            put(
+                &bin.join(name),
+                &refusing_shim(&self.persona, name, said),
                 0o700,
             )?;
         }

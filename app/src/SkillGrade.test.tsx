@@ -56,6 +56,9 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     consent: "c0ffee",
     previous: null,
     previous_refused: null,
+    graders: [],
+    grader: null,
+    grader_refused: null,
     ...over,
   };
 }
@@ -316,6 +319,83 @@ describe("Grade, cost first", () => {
     expect(asked.find((one) => one.cmd === "skill_grade_start")?.args).toMatchObject({
       model: "sonnet",
       consent: "c0ffee",
+    });
+  });
+
+  describe("a Grader extension (#3236)", () => {
+    const ACME = { id: "acme.grader", title: "Acme", hosts: ["acme.example"] };
+
+    it("lists each Grader, names the one picked plainly, and starts on it", async () => {
+      const asked: Array<{ cmd: string; args: Record<string, unknown> }> = [];
+      mockIPC((cmd, args) => {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "skill_grade_plan") {
+          const by = (args as { grader: string | null }).grader;
+          return by === null
+            ? plan({ graders: [ACME] })
+            : plan({ graders: [ACME], grader: ACME, consent: "by-acme" });
+        }
+        if (cmd === "start_options") return { profiles: [] };
+        if (cmd === "skill_grade_start") return "01GRADE";
+        return null;
+      });
+      renderPlan();
+      await screen.findByTestId("skill-grade-cost");
+      expect(screen.queryByTestId("skill-grade-grader")).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: /Who scores deploy's grade/ }));
+      expect(await screen.findByRole("option", { name: "purlis's own runner" })).toBeTruthy();
+      await userEvent.click(screen.getByRole("option", { name: "Acme (acme.grader)" }));
+      const named = await screen.findByTestId("skill-grade-grader");
+      expect(named).toHaveTextContent("Acme (acme.grader) is an extension you installed");
+      expect(named).toHaveTextContent("not part of purlis");
+      expect(named).toHaveTextContent("up to 12 chats");
+      expect(named).toHaveTextContent("It can send what it is handed to acme.example");
+      fireEvent.click(start());
+      await waitFor(() => expect(asked.some((one) => one.cmd === "skill_grade_start")).toBe(true));
+      expect(asked.find((one) => one.cmd === "skill_grade_start")?.args).toMatchObject({
+        grader: "acme.grader",
+        consent: "by-acme",
+      });
+    });
+
+    it("offers no choice where no Grader is installed", async () => {
+      mockIPC((cmd) => {
+        if (cmd === "skill_grade_plan") return plan();
+        if (cmd === "start_options") return { profiles: [] };
+        return null;
+      });
+      renderPlan();
+      await screen.findByTestId("skill-grade-cost");
+      expect(screen.queryByRole("button", { name: /Who scores deploy's grade/ })).toBeNull();
+    });
+
+    it("holds Start on a pick no longer on offer, and says why", async () => {
+      mockIPC((cmd) => {
+        if (cmd === "skill_grade_plan")
+          return plan({ consent: null, grader_refused: "The Grader 'acme.grader' cannot grade." });
+        if (cmd === "start_options") return { profiles: [] };
+        return null;
+      });
+      renderPlan();
+      expect(await screen.findByTestId("skill-grade-grader-refused")).toHaveTextContent(
+        "cannot grade",
+      );
+      expect(unavailable(start())).toBe(true);
+    });
+
+    it("runs purlis's own after each edit, and says so", async () => {
+      const asked: Array<{ cmd: string; args: Record<string, unknown> }> = [];
+      mockIPC((cmd, args) => {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "skill_grade_plan") return plan({ graders: [ACME] });
+        if (cmd === "start_options") return { profiles: [] };
+        return null;
+      });
+      renderPlan({ afterEdit: true });
+      expect(await screen.findByTestId("skill-grade-after-edit-grader")).toHaveTextContent(
+        "purlis's own runner",
+      );
+      expect(screen.queryByRole("button", { name: /Who scores deploy's grade/ })).toBeNull();
     });
   });
 
@@ -657,7 +737,9 @@ describe("a grade running (S6)", () => {
     expect(totals).toHaveTextContent("Tokens36,000of 200,000 tokens");
     // Another skill's grade, or another grade, moves nothing here.
     await emit("skill-grade", step({ grade: "01OTHER", ran: 9 }));
+    await emit("skill-grade", step({ skill: "other", ended: "stopped" }));
     expect(totals).toHaveTextContent("Chats4 of 12");
+    expect(onEnded).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() =>

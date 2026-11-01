@@ -148,6 +148,19 @@ $exchange" "$s/swap" "$s/.git" || :
   rm -f "$p/config-link" 2>/dev/null || :
 }
 
+# The default sign-ins of the other harnesses, for a Claude Code chat: not read, and their folders
+# not moved. Each is written to as well, and the test holds the file unchanged after the run: a
+# sandbox may mask a denied path, so that a write here succeeds and reaches nothing. The test puts
+# them in `$HOME`.
+others_held() {
+  expect "$(here "cat '$HOME/.codex/auth.json'")" no "$1: Codex's sign-in read"
+  here "echo x >> '$HOME/.codex/auth.json'" >/dev/null
+  expect "$(here "mv '$HOME/.codex' '$HOME/.codex.moved'")" no "$1: Codex's folder moved"
+  expect "$(here "cat '$HOME/.local/share/opencode/auth.json'")" no "$1: opencode's sign-in read"
+  here "echo x >> '$HOME/.local/share/opencode/auth.json'" >/dev/null
+  expect "$(here "mv '$HOME/.local/share/opencode' '$HOME/.local/share/opencode.moved'")" no "$1: opencode's folder moved"
+}
+
 # `--repositories-here <project> <what>`: the repositories' probes alone, for a sandbox whose
 # other holds are not the case-folding ones `held_in` asks about (Claude Code's on Linux).
 if [ "${1-}" = --repositories-here ]; then
@@ -156,6 +169,7 @@ if [ "${1-}" = --repositories-here ]; then
     exit 2
   fi
   git_held_in "$2" "$3" here
+  others_held "$3"
   echo "seatbelt-case: $3: $checks checks, $wrong wrong"
   exit "$failed"
 fi
@@ -167,6 +181,7 @@ if [ "${1-}" = --here ]; then
   fi
   held_in "$2" "$3" here
   git_held_in "$2" "$3" here
+  others_held "$3"
   echo "seatbelt-case: $3: $checks checks, $wrong wrong"
   exit "$failed"
 fi

@@ -6,6 +6,7 @@ import type { ClusterPoolRow, PoolLink, PoolRow, PoolVersion, ProjectNotHeld } f
 import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
 import {
+  anotherEngineSaid,
   askLink,
   askVersion,
   markPoolOwned,
@@ -21,6 +22,7 @@ import { Tooltip } from "../ui/tooltip/Tooltip";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Badge } from "../ui/badge/Badge";
 import { Switch } from "../ui/choice/Switch";
+import { PoolLimits } from "./PoolLimits";
 import { PoolProfiles } from "./PoolProfiles";
 
 /**
@@ -56,6 +58,8 @@ import { PoolProfiles } from "./PoolProfiles";
  * context and namespace, the cluster operator key pinned as it was added, and Remove, which
  * deletes its claim. A changed runner key and a changed cluster operator key get the same Notice
  * with Remove ({@link KeyChangedNotice}): either refuses every link to its runner.
+ *
+ * **Each pool's limits fold under its row** ({@link PoolLimits}, #4285).
  *
  * **A runner removed outside purlis says so** ({@link RemovedNotice}, #4149): Docker has no
  * container of its id, so purlis no longer links to it, and its row offers Make the runner
@@ -97,6 +101,7 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link.state === "key_changed" || link.state === "operator_key_changed") return "key changed";
   if (link.state === "suspended") return "suspended";
   if (link.state === "removed") return "removed outside purlis";
+  if (link.state === "on_another_engine") return "on another Docker engine";
   return "not linked";
 }
 
@@ -240,6 +245,9 @@ function PoolEntry({
           onMakeAgain={onMakeAgain}
         />
       )}
+      {typeof link === "object" && link.state === "on_another_engine" && (
+        <p className="ui-setting-help">{anotherEngineSaid(pool.name)}</p>
+      )}
       {remade !== undefined && <p className="ui-setting-help">{remade}</p>}
       {typeof link === "object" && link.state === "down" && (
         <p className="ui-setting-help">{link.why}</p>
@@ -249,6 +257,7 @@ function PoolEntry({
       )}
       {notHeld}
       {profiles}
+      <PoolLimits pool={pool.name} />
     </li>
   );
 }
@@ -380,6 +389,7 @@ function ClusterPoolEntry({
       )}
       {pool.owned ? profiles : <p className="ui-setting-help">{notMarkedSaid(pool.name)}</p>}
       {notHeld}
+      <PoolLimits pool={pool.name} />
     </li>
   );
 }

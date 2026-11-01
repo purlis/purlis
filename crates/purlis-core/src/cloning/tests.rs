@@ -222,3 +222,36 @@ fn git_lfs_fetching_large_files_is_the_last_stage_and_never_moves_the_percent_ba
     assert_eq!(climb.now(), (Stage::LargeFiles, 100));
     assert_eq!(Stage::LargeFiles.words(), "Downloading large files");
 }
+
+#[test]
+fn what_a_program_says_on_stdout_is_life_and_progress_as_on_stderr() {
+    // `git lfs pull` draws its meter on stdout: a healthy download reads as silent otherwise.
+    let child = {
+        let mut command = std::process::Command::new("/bin/sh");
+        command
+            .args([
+                "-c",
+                "for i in 1 2 3 4 5 6; do \
+                 printf 'Downloading LFS objects:   0%% (0/1), %d KB | 1 MB/s\\r' $i; \
+                 sleep 0.2; done",
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        git::lead(&mut command);
+        crate::forklock::spawn(&mut command).unwrap()
+    };
+    let mut heard = Vec::new();
+    let followed = follow(
+        child,
+        &AtomicBool::new(false),
+        Some(Duration::from_millis(700)),
+        &mut |now| heard.push(now.stage),
+    )
+    .unwrap();
+    assert!(
+        matches!(followed, Followed::Ended { ok: true, .. }),
+        "{followed:?}"
+    );
+    assert_eq!(heard, [Stage::LargeFiles]);
+}

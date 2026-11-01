@@ -419,6 +419,41 @@ async fn a_link_that_ends_while_it_is_relayed_lets_go_of_its_name() {
         .expect("the name the ended link gave is free");
 }
 
+/// **A suspended runner is asked to run again by the window's steps towards a chat, and by nothing
+/// else** (#3980): a redial or a check is not a command of the window's, and a list is not a step.
+#[tokio::test]
+async fn the_windows_steps_towards_a_chat_ask_a_runner_to_run_again() {
+    let (a, _b) = a_desktop(Kept::pinned);
+    let asked = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let a = a.running_again_with({
+        let asked = Arc::clone(&asked);
+        Arc::new(move |name: &str| asked.lock().unwrap().push(name.to_owned()))
+    });
+    let window = routed(Scope::LocalUi, a).await;
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    assert_eq!(asked.lock().unwrap().len(), 1, "relaying the link asks");
+    window.list().await.expect("its chats are listed");
+    assert_eq!(asked.lock().unwrap().len(), 1, "a list does not");
+    let _ = window.hold_project("01J9PRJCT00000000000000000", "").await;
+    assert_eq!(asked.lock().unwrap().len(), 2, "a hold does, up or down");
+    let start =
+        session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell);
+    let _ = window.start_program(start).await;
+    assert_eq!(asked.lock().unwrap().len(), 3, "a start does");
+    // Named as the link reached it, `<pool>/<runner>`, as a draining runner is.
+    assert!(
+        asked
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|name| name.starts_with("builds")),
+        "{asked:?}"
+    );
+}
+
 /// **A link relayed to a draining runner keeps its chats and starts no new one** (#2865): the
 /// window answers and watches what runs there, and a start is refused in words that say where
 /// new chats start. Asked at each start: a link relayed by its pool's name before the runner was
@@ -545,4 +580,40 @@ async fn a_runner_removed_outside_purlis_is_refused_in_plain_words_and_not_tried
     // Seen red: with the Down that ended the links not kept, the commands looped on the check.
     let asked = checks.load(std::sync::atomic::Ordering::SeqCst);
     assert!(asked <= 7, "the check was asked {asked} times");
+}
+
+/// **A window's name is held once on each runner** (#4248): its link to a draining runner and its
+/// link to the pool's runner now share the one name it keeps, and a second link to either runner
+/// under that name is refused while the first holds it.
+#[tokio::test]
+async fn one_name_is_held_once_on_each_runner() {
+    let (a, _b) = a_desktop(Kept::pinned);
+    let name = purlis_session_protocol::browsing::Secret::new("ef".repeat(16));
+    let named_to = |runner: &'static str| {
+        let (a, name) = (a.clone(), name.clone());
+        async move {
+            let link = routed(Scope::LocalUi, a).await;
+            link.call(Command::NameWindow { name }).await.unwrap();
+            let relayed = tokio::time::timeout(PATIENCE, link.relay_to(runner))
+                .await
+                .unwrap();
+            (link, relayed)
+        }
+    };
+    let held = |relayed: &Result<Option<String>, CallError>| {
+        relayed
+            .as_ref()
+            .err()
+            .is_some_and(|why| code(why) == Some(session::NOT_ALLOWED))
+    };
+
+    let (_old, relayed) = named_to("builds/old").await;
+    relayed.expect("the draining runner takes the name");
+    let (_now, relayed) = named_to("builds").await;
+    relayed.expect("the pool's runner takes it too");
+
+    let (_again, relayed) = named_to("builds").await;
+    assert!(held(&relayed), "{relayed:?}");
+    let (_again, relayed) = named_to("builds/old").await;
+    assert!(held(&relayed), "{relayed:?}");
 }

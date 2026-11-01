@@ -414,22 +414,56 @@ fn a_confined_program_reads_its_own_folder_and_the_system_and_nothing_a_person_k
 }
 
 #[test]
-fn a_confined_program_starts_programs_from_what_it_reads_on_linux() {
-    let profile = held(Path::new(EXT), Path::new(STATE), Path::new(TMP));
+fn a_confined_program_starts_programs_only_from_what_it_cannot_write_on_linux() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let base = crate::sandbox::real(dir.path());
+    let ext = base.join("studio-x");
+    let (state, tmp) = (ext.join("state"), base.join("purlis-extension-1"));
+    for folder in [
+        ext.join("bin"),
+        state.clone(),
+        tmp.clone(),
+        ext.join("tools/.purlis/vaults"),
+        ext.join("tools/.PURLIS/Vaults"),
+        ext.join("tools/inner"),
+    ] {
+        std::fs::create_dir_all(folder).expect("a folder");
+    }
+    std::fs::write(ext.join("purlis-extension.json"), "{}").expect("a file");
+    std::fs::write(ext.join("tools/.purlis/fingerprint.key"), "k").expect("a file");
+    std::fs::write(ext.join("tools/.purlis/other"), "o").expect("a file");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&state, ext.join("pointed")).expect("a link");
+    let profile = held(&ext, &state, &tmp);
     let roots = profile.starts_from();
-    for root in [EXT, STATE, TMP, "/usr/bin", "/usr/lib"] {
-        assert!(roots.contains(&PathBuf::from(root)), "{root}: {roots:?}");
+    for root in [
+        ext.join("bin"),
+        ext.join("purlis-extension.json"),
+        ext.join("tools/inner"),
+        ext.join("tools/.purlis/other"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/usr/lib"),
+    ] {
+        assert!(roots.contains(&root), "{}: {roots:?}", root.display());
     }
     assert!(!roots.contains(&PathBuf::from("/")), "{roots:?}");
-    // Every root is one it reads, and nothing a person keeps is beneath one.
-    for root in &roots {
+    for held in [
+        state.join("program"),
+        tmp.join("program"),
+        ext.join("tools/.purlis/vaults/program"),
+        ext.join("tools/.PURLIS/Vaults/program"),
+        ext.join("tools/.purlis/fingerprint.key"),
+        ext.join("pointed"),
+    ] {
         assert!(
-            reads(&profile, &root.join("program").display().to_string())
-                || reads(&profile, &root.display().to_string()),
-            "{}",
-            root.display()
+            !roots.iter().any(|root| held.starts_with(root)),
+            "{}: {roots:?}",
+            held.display()
         );
     }
+    // What it may not start, it still reads and writes where it did.
+    assert!(reads(&profile, &state.join("data").display().to_string()));
+    assert!(writes(&profile, &tmp.join("data").display().to_string()));
     for kept in [
         "/home",
         "/root",
@@ -445,7 +479,42 @@ fn a_confined_program_starts_programs_from_what_it_reads_on_linux() {
 }
 
 #[test]
-fn a_confined_program_starts_programs_from_what_it_reads_on_macos() {
+fn a_confined_program_with_nothing_to_write_reads_no_more_for_it() {
+    for os in [Os::MacOs, Os::Linux] {
+        let text = crate::sandbox::confined::profile(os, &[PathBuf::from(EXT)], &[], &[])
+            .expect("a profile");
+        assert!(!text.contains("(allow file-read*\n)"), "{text}");
+    }
+    let text = crate::sandbox::confined::profile(Os::Linux, &[], &[PathBuf::from(TMP)], &[])
+        .expect("a profile");
+    assert!(!text.contains("(allow file-read*\n)"), "{text}");
+}
+
+#[test]
+fn a_name_no_profile_can_spell_leaves_the_rest_of_the_folder_startable_on_linux() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let base = crate::sandbox::real(dir.path());
+    let (ext, tmp) = (base.join("studio-x"), base.join("purlis-extension-1"));
+    let state = ext.join("state");
+    std::fs::create_dir_all(ext.join("bin")).expect("a folder");
+    std::fs::write(ext.join("Icon\r"), "").expect("a file");
+    let roots = held(&ext, &state, &tmp).starts_from();
+    assert!(roots.contains(&ext.join("bin")), "{roots:?}");
+    assert!(!roots.contains(&ext.join("Icon\r")), "{roots:?}");
+}
+
+#[test]
+fn a_folder_that_holds_nothing_held_is_named_whole_on_linux() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let base = crate::sandbox::real(dir.path());
+    let (ext, tmp) = (base.join("studio-x"), base.join("purlis-extension-1"));
+    std::fs::create_dir_all(ext.join("bin")).expect("a folder");
+    let roots = held(&ext, &tmp.join("state"), &tmp).starts_from();
+    assert!(roots.contains(&ext), "{roots:?}");
+}
+
+#[test]
+fn a_confined_program_starts_programs_only_from_what_it_cannot_write_on_macos() {
     let text = crate::sandbox::confined::profile(
         Os::MacOs,
         &[PathBuf::from("/Users/ada/ext/studio-x")],
@@ -465,6 +534,11 @@ fn a_confined_program_starts_programs_from_what_it_reads_on_macos() {
         "{text}"
     );
     assert!(text.contains("(deny process-exec (regex "), "{text}");
+    let tmp = "(subpath \"/private/var/folders/x/T/purlis-extension-1\")";
+    assert!(
+        text.contains(&format!("(deny file-map-executable process-exec {tmp})")),
+        "{text}"
+    );
 }
 
 #[test]
@@ -1528,4 +1602,106 @@ fn findings_of_many_are_one_per_skill_asked_in_order_failing_closed() {
         assert!(said[0].is_err(), "{bad} was taken");
         assert_eq!(said[1], Ok(vec!["fine".to_owned()]));
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// A router that reads prompts (SK-15c, #3231; ADR 0102 §3)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_router_that_reads_prompts_is_asked_the_prompt_and_the_skills_not_in_the_list() {
+    let skills = [PromptSkill {
+        name: "deploy".to_owned(),
+        line: "Deploys.".to_owned(),
+    }];
+    let ask = Ask::Prompt {
+        prompt: HandedPrompt::of("ship it"),
+        skills: &skills,
+    };
+    assert!(
+        !format!("{ask:?}").contains("ship it"),
+        "a debug dump says nothing of the prompt"
+    );
+    assert_eq!(ask.capability(), Capability::SkillRouter);
+    assert_eq!(
+        ask.line(),
+        serde_json::json!({
+            "ask": "prompt",
+            "prompt": "ship it",
+            "skills": [{ "name": "deploy", "line": "Deploys." }],
+        })
+    );
+    let reads = |reads_prompts: bool| Declared {
+        router: Some(DeclaredRouter {
+            title: "R".to_owned(),
+            reads_prompts,
+        }),
+        ..Declared::default()
+    };
+    assert_eq!(ask.unoffered("r", &reads(true)), None);
+    let refused = ask
+        .unoffered("r", &reads(false))
+        .expect("never handed a prompt");
+    assert!(refused.contains("does not read prompts"), "{refused}");
+    assert!(
+        Ask::Route {
+            skills: &[],
+            budget: RouteBudget {
+                skills: 1,
+                chars: 1
+            },
+            besides: RouteBudget {
+                skills: 0,
+                chars: 0
+            },
+        }
+        .unoffered("r", &reads(false))
+        .is_none(),
+        "a router that reads no prompt is still asked at a chat's start"
+    );
+}
+
+#[test]
+fn a_prompt_is_handed_cut_to_its_bound_on_a_character() {
+    let long = "é".repeat(MOST_PROMPT_BYTES);
+    let handed = prompt_handed(&long);
+    assert!(handed.len() <= MOST_PROMPT_BYTES);
+    assert!(handed.chars().all(|c| c == 'é'));
+    assert_eq!(prompt_handed("short"), "short");
+}
+
+#[test]
+fn a_routers_pointers_are_read_failing_closed() {
+    let asked = ["deploy", "lint"];
+    assert_eq!(
+        pointed_of(
+            "r",
+            &asked,
+            &doc(serde_json::json!({ "pointed": ["lint"] }))
+        ),
+        Ok(vec!["lint".to_owned()])
+    );
+    assert_eq!(
+        pointed_of("r", &asked, &doc(serde_json::json!({ "pointed": [] }))),
+        Ok(Vec::new())
+    );
+    for bad in [
+        serde_json::json!({}),
+        serde_json::json!({ "pointed": ["release"] }),
+        serde_json::json!({ "pointed": ["lint", "lint"] }),
+        serde_json::json!({ "pointed": [{ "skill": "lint" }] }),
+        serde_json::json!({ "pointed": ["lint"], "why": "x" }),
+    ] {
+        assert!(
+            pointed_of("r", &asked, &doc(bad.clone())).is_err(),
+            "{bad} was taken"
+        );
+    }
+    let many: Vec<String> = (0..=MOST_POINTED).map(|at| format!("s-{at}")).collect();
+    let names: Vec<&str> = many.iter().map(String::as_str).collect();
+    assert!(
+        pointed_of("r", &names, &doc(serde_json::json!({ "pointed": many })))
+            .expect_err("too many")
+            .contains(&format!("more than {MOST_POINTED}"))
+    );
 }

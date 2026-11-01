@@ -9,6 +9,7 @@ import {
   type ClusterPoolKey,
   type PoolAdding,
   type PoolLink,
+  type PoolLimitsPage,
   type PoolProfiles as PoolProfilesAnswered,
   type PoolRemoved,
   type PoolVersion,
@@ -66,6 +67,8 @@ export type Held = {
   /** This machine's profiles as each pool's runner keeps them, by the pool's name (#2049): the
    *  rows, that they are being asked, or why they could not be. */
   profiles: Readonly<Record<string, PoolProfiles>>;
+  /** Each pool's limits, by the pool's name, once read, or why they could not be (#4285). */
+  limits: Readonly<Record<string, PoolLimitsPage | { trouble: string }>>;
   /** The pool just added, whose profiles the dialog offers to sign in there, until Done. */
   added: string | undefined;
   /** The pool being removed, while it is. */
@@ -88,6 +91,7 @@ const START: Held = {
   links: {},
   versions: {},
   profiles: {},
+  limits: {},
   added: undefined,
   removing: undefined,
   remaking: undefined,
@@ -275,6 +279,57 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
 }
 
+/** The newest read of each pool's limits out: an answer to an older one is dropped. */
+const readingLimits = new Map<string, number>();
+
+/**
+ * Reads pool `name`'s limits (#4285). What is shown stays until the answer comes, and stays if the
+ * read fails, so a box being typed in isn't lost: the trouble is said only with nothing to show.
+ */
+export async function askLimits(name: string) {
+  const mine = (readingLimits.get(name) ?? 0) + 1;
+  readingLimits.set(name, mine);
+  const said = await caught(commands.poolLimits(name));
+  if (readingLimits.get(name) !== mine) return;
+  const limits =
+    said.status === "error"
+      ? { trouble: said.error }
+      : typeof said.data === "object" && said.data !== null && Array.isArray(said.data.groups)
+        ? said.data
+        : { trouble: "purlis did not say what this pool's limits are." };
+  set((was) => {
+    const shown = was.limits[name];
+    if ("trouble" in limits && shown !== undefined && "groups" in shown) return was;
+    return { ...was, limits: { ...was.limits, [name]: limits } };
+  });
+}
+
+/** **The value in the words `typed` for limit `key`**, or why they aren't one: the core's check. */
+export function checkLimit(key: string, typed: string) {
+  return caught(commands.poolLimitCheck(key, typed));
+}
+
+/**
+ * **Saves `values` to pool `name`'s limits**, a `null` returning that one to purlis's default
+ * (#4285), then reads them again, so an open page shows them. Why not, in the core's words: those
+ * before it stay saved.
+ */
+export async function saveLimits(
+  name: string,
+  values: ReadonlyArray<readonly [string, number | null]>,
+): Promise<string | undefined> {
+  let refused: string | undefined;
+  for (const [key, value] of values) {
+    const saved = await caught(commands.poolLimitSet(name, key, value));
+    if (saved.status === "error") {
+      refused = saved.error;
+      break;
+    }
+  }
+  await askLimits(name);
+  return refused;
+}
+
 /** Pool `name`'s profiles as last asked, outside React (#4048). */
 export function profilesHeld(name: string): PoolProfiles | undefined {
   return held.profiles[name];
@@ -359,12 +414,15 @@ export async function removePool(name: string): Promise<string | undefined> {
     Reflect.deleteProperty(versions, name);
     const profiles = { ...was.profiles };
     Reflect.deleteProperty(profiles, name);
+    const limits = { ...was.limits };
+    Reflect.deleteProperty(limits, name);
     return {
       ...was,
       removing: undefined,
       links,
       versions,
       profiles,
+      limits,
       said: left,
     };
   });
@@ -385,6 +443,11 @@ export function removedSaid(name: string, homeKept: boolean): string {
   return homeKept
     ? `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home is still there: Make the runner again makes a runner from the pool's image and limits, with the sign-ins kept there.`
     : `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home went too, and with it the sign-ins kept there: Make the runner again makes a runner from the pool's image and limits, whose profiles you sign in again.`;
+}
+
+/** What a row says of a runner made on another engine than Docker reaches now (#4166). */
+export function anotherEngineSaid(name: string): string {
+  return `Docker points at another engine than the one pool ${name}'s runner was made on. Point Docker back at that engine and its chats come back. If that engine is gone for good, remove the pool and add it again; anything still on that engine stays there.`;
 }
 
 /** What a row says once its runner was made again, by whether its sign-ins were carried. */

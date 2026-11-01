@@ -1669,9 +1669,16 @@ pub fn armed_as(asker: &Asker, wanted: &Wanted) -> Result<String, String> {
         .find(|word| *word != "--")
         .cloned()
         .unwrap_or_default();
+    let listed = declared_now(&asker.root, persona);
+    // A tool this runner's image has no program for says so, before anything is asked (#4354).
+    if let Some(why) =
+        crate::sandbox::tools::absent_from_the_image(&confines.tools, &listed, persona, &program)
+    {
+        return Err(why);
+    }
     let ready = crate::sandbox::tools::declared(
         &confines.tools,
-        &declared_now(&asker.root, persona),
+        &listed,
         persona,
         &crate::sandbox::tools::Asked {
             vault: &wanted.vault,
@@ -1724,6 +1731,9 @@ pub struct Handed {
     pub tool: String,
     pub run: String,
     values: Vec<(String, zeroize::Zeroizing<String>)>,
+    /// A token this runner's own host had from the cluster's operator (#4332). Never read off the
+    /// link, so nothing a desktop sends is recorded as the cluster's.
+    from_the_cluster: bool,
 }
 
 /// [`Handed`] as it crosses the link.
@@ -1758,6 +1768,7 @@ impl<'de> serde::Deserialize<'de> for Handed {
             chat: line.chat,
             tool: line.tool,
             run: line.run,
+            from_the_cluster: false,
             values: line
                 .values
                 .into_iter()
@@ -1795,6 +1806,21 @@ impl Handed {
                 .into_iter()
                 .map(|(key, value)| (key, value.into()))
                 .collect(),
+            from_the_cluster: false,
+        }
+    }
+
+    /// [`Handed::of`], for a token the cluster's operator minted for this host (#4332): its record
+    /// says so, and names no request, since no desktop sent it.
+    pub fn from_the_cluster<V: Into<zeroize::Zeroizing<String>>>(
+        chat: u32,
+        tool: &str,
+        run: &str,
+        values: impl IntoIterator<Item = (String, V)>,
+    ) -> Handed {
+        Handed {
+            from_the_cluster: true,
+            ..Handed::of(chat, tool, run, values)
         }
     }
 
@@ -2480,14 +2506,26 @@ pub(crate) fn serve_recorded(
                 Value::String(asker.persona.clone().unwrap_or_default()),
             ),
             // Values its desktop sent (#3406): said so, with the request its desktop's
-            // `secret.forwarded` names.
+            // `secret.forwarded` names. A token from the cluster's operator (#4332) is said so,
+            // and no desktop's record answers it.
             (
                 "from",
-                handed.map_or(Value::Null, |_| Value::String("desktop".to_owned())),
+                handed.map_or(Value::Null, |handed| {
+                    Value::String(
+                        if handed.from_the_cluster {
+                            "cluster"
+                        } else {
+                            "desktop"
+                        }
+                        .to_owned(),
+                    )
+                }),
             ),
             (
                 "request",
-                handed.map_or(Value::Null, |handed| Value::String(request_of(&handed.run))),
+                handed
+                    .filter(|handed| !handed.from_the_cluster)
+                    .map_or(Value::Null, |handed| Value::String(request_of(&handed.run))),
             ),
         ],
     );

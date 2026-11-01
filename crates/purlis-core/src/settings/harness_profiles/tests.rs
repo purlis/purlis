@@ -652,3 +652,12 @@ fn a_persona_whose_model_names_the_profile_refuses_every_rename_and_the_remove_n
         );
     }
 }
+
+#[test]
+fn the_icon_each_profile_names_is_read_by_its_name() {
+    let text = "[harness.work]\nkind = \"claude\"\nicon = \"mine.svg\"\n\n[harness.alt]\nkind = \"codex\"\n";
+    let icons = icons(text);
+    assert_eq!(icons.get("work").map(String::as_str), Some("mine.svg"));
+    assert_eq!(icons.get("alt"), None);
+    assert!(super::icons("not toml [").is_empty());
+}

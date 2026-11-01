@@ -200,6 +200,9 @@ pub use cli::CliCommand;
 /// The registry, inside [`crate::machine::DIR`] and beside [`crate::machine::FILE`].
 pub const RECORD: &str = "extensions.json";
 
+/// The record's key for [`Registry::reads_prompts`].
+const READS_PROMPTS: &str = "reads-prompts";
+
 /// The one file that makes a directory an extension, under its purlis name. The old name is
 /// still read, and only when nothing at all is at this one ([`manifest_in`], #1802).
 pub const MANIFEST: &str = crate::names::EXTENSION_MANIFEST.write;
@@ -953,6 +956,11 @@ pub struct Registry {
     /// The built-in extensions the operator turned off on this machine, by id. Kept whether or
     /// not this app ships them, so that a charter which does not know one keeps the choice.
     pub off: BTreeSet<String>,
+    /// **The routers the person turned on to read prompts on this machine**, by id (ADR 0102 as
+    /// amended 2026-10-31). Off by default: an id absent here reads no prompt, whatever its
+    /// manifest declares. Its own list, so an approval rewriting an extension's row leaves it,
+    /// and a purlis that does not know the key rewrites the record with every router off.
+    pub reads_prompts: BTreeSet<String>,
 }
 
 /// The record, and what reading it cost.
@@ -2459,6 +2467,15 @@ fn read_record(config_root: &Path) -> Loaded {
             Err(why) => dropped.push(format!("{id}: {why}")),
         }
     }
+    registry.reads_prompts = doc
+        .get(READS_PROMPTS)
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|id| an_id(id))
+        .map(str::to_owned)
+        .collect();
     Loaded {
         registry,
         unreadable: None,
@@ -2547,6 +2564,12 @@ fn as_json(registry: &Registry) -> serde_json::Value {
     let mut doc = serde_json::Map::new();
     doc.insert("version".into(), serde_json::Value::from(VERSION));
     doc.insert("extensions".into(), serde_json::Value::Object(rows));
+    if !registry.reads_prompts.is_empty() {
+        doc.insert(
+            READS_PROMPTS.into(),
+            serde_json::json!(registry.reads_prompts),
+        );
+    }
     serde_json::Value::Object(doc)
 }
 
@@ -2632,6 +2655,7 @@ pub fn install(config_root: &Path, built_in: &BuiltIn, dir: &Path) -> io::Result
     let id = found.id().to_owned();
     let path = found.path.clone();
     update(config_root, |registry| {
+        moved_clears_reading(registry, &id, &path);
         registry
             .entries
             .insert(id, Entry::installed(path, approved));
@@ -2663,8 +2687,21 @@ pub fn approve(config_root: &Path, id: &str, at: &Path, fingerprint: &str) -> io
     }
     let entry = Entry::installed(at.to_path_buf(), Some(fingerprint.to_owned()));
     update(config_root, |registry| {
+        moved_clears_reading(registry, id, at);
         registry.entries.insert(id.to_owned(), entry);
     })
+}
+
+/// **An extension under `id` from another folder is another program**: the person's switch for
+/// reading prompts was pressed for the one it replaces, so it goes off.
+fn moved_clears_reading(registry: &mut Registry, id: &str, path: &Path) {
+    if registry
+        .entries
+        .get(id)
+        .is_some_and(|entry| entry.path != path)
+    {
+        registry.reads_prompts.remove(id);
+    }
 }
 
 /// Turn a built-in extension on or off on this machine.
@@ -2715,6 +2752,26 @@ pub fn forget(config_root: &Path, id: &str) -> io::Result<()> {
     studio::close_proxy(id);
     update(config_root, |registry| {
         registry.entries.remove(id);
+        registry.reads_prompts.remove(id);
+    })
+}
+
+/// **Turns a router's reading of prompts on or off on this machine** (ADR 0102 as amended
+/// 2026-10-31), the person's own choice from the Routing page. It grants nothing else, and the
+/// router must still be approved, on in the project and declare that it reads prompts.
+pub fn set_reads_prompts(config_root: &Path, id: &str, on: bool) -> io::Result<()> {
+    if !an_id(id) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{id:?} is not an extension id"),
+        ));
+    }
+    update(config_root, |registry| {
+        if on {
+            registry.reads_prompts.insert(id.to_owned());
+        } else {
+            registry.reads_prompts.remove(id);
+        }
     })
 }
 

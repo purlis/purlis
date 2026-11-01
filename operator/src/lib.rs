@@ -50,6 +50,7 @@ mod admission;
 pub mod doctor;
 pub mod forge;
 pub mod github;
+pub mod lifecycle;
 pub mod metrics;
 pub mod mint;
 pub mod person;
@@ -72,6 +73,6 @@ pub use reconcile::{
     status_withdrawn, suspending_again, warm_wanted,
 };
 pub use resources::{
-    Claim, ClaimForge, ClaimSpec, ClaimStatus, KeptVolume, LinkKey, NextSigningKeyVouch, Pool,
-    PoolForge, PoolSpec, PoolStatus, SecretRef,
+    Claim, ClaimForge, ClaimMint, ClaimSpec, ClaimStatus, KeptVolume, LinkKey, NextSigningKeyVouch,
+    Pool, PoolForge, PoolSpec, PoolStatus, SecretRef,
 };

@@ -262,6 +262,8 @@ fn a_chat_on_a_made_profile_its_harness_says_is_signed_out_is_refused_with_sign_
     assert!(why.contains("Sign in"), "{why}");
     assert!(why.contains("purlis profile sign-in work"), "{why}");
     assert!(why.contains("Nothing was started"), "{why}");
+    assert!(is_refusal(&why), "{why}");
+    assert!(!is_refusal("the runner is out of disk"));
 }
 
 #[test]

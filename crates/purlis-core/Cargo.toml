@@ -165,6 +165,11 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 # store (a GHES behind a company CA verifies as the browser does); both are already in this
 # workspace's lockfile through the app.
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
+# A cluster runner holds the operator's mint port to a pinned key, so it speaks TLS itself (#4207),
+# and proves its X25519 link key, which `snow` keeps to its handshake. Both are already in this
+# workspace's lockfile, through `ureq` and `snow`.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+curve25519-dalek = { version = "4", default-features = false }
 # The request and response types `ureq` speaks, and the URL a token may be sent to is parsed with.
 http = "1"
 # GraphQL queries checked at build time against the forge's published schema, so a field the
@@ -240,10 +245,6 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread", "time"] }
 # The token-leak test records every `log` line `ureq` and rustls write at trace level, which the
 # diagnostic log does not carry. Already in this workspace's lockfile through both.
 log = { version = "0.4", features = ["std"] }
-# A private skill source's credential tested against a real https server on this machine
-# (SK-10, #2773): a 401 and a redirect to another host. The rustls and ring `ureq` already
-# brings into this workspace's lockfile.
-rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
 # Every integration test but one, as modules of one binary (#3613): each `tests/*.rs` was a binary
 # of its own that linked the whole graph, 160 of them. `tests/it/main.rs` fails on a `.rs` left

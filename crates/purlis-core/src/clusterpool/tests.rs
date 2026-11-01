@@ -1250,3 +1250,144 @@ fn only_a_pool_whose_spec_says_so_whole_mints_in_the_cluster() {
         assert!(!mints_in_cluster(&not), "{not}");
     }
 }
+
+/// A cluster that says the same of a Pool and a Claim (#4207): the Pool opting in, or not, and
+/// the Claim's status saying where to ask with `key`.
+#[cfg(unix)]
+fn says_where_to_ask(dir: &std::path::Path, opted_in: bool, key: &str) -> Kubectl {
+    let answer = serde_json::json!({
+        "spec": {"forge": {
+            "appKeySecretRef": {"name": "org-app"},
+            "repos": ["acme/*"],
+            "mintInCluster": opted_in,
+        }},
+        "status": {
+            "signingKey": operator_key().spelled(),
+            "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+            "mint": {"address": "10.96.0.5:8443", "operatorKey": key},
+        },
+    });
+    kubectl_answering(dir, &answer.to_string())
+}
+
+#[cfg(unix)]
+fn a_paired_runner() -> Paired {
+    let key = LinkKey::generate().unwrap().public();
+    Paired {
+        claimed: claimed(),
+        vouched: vouched(key),
+        pinned: Pinned {
+            device: "01JB0RUNNER000000000000000".into(),
+            key,
+        },
+    }
+}
+
+fn the_pin() -> PoolPin {
+    PoolPin {
+        key: operator_key(),
+        cluster: "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b".into(),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_runner_is_told_of_the_port_only_on_a_pool_that_opts_in() {
+    let last_run = |dir: &std::path::Path| std::fs::read_to_string(dir.join("args")).unwrap();
+    let every = std::time::Duration::from_millis(1);
+    let pinned = operator_key().spelled();
+
+    let dir = tempfile::tempdir().unwrap();
+    let kubectl = says_where_to_ask(dir.path(), true, &pinned);
+    tell_the_mint_port(&kubectl, &the_pin(), "pool", &a_paired_runner(), every).unwrap();
+    assert!(last_run(dir.path()).contains("--mint-port"));
+
+    let dir = tempfile::tempdir().unwrap();
+    let kubectl = says_where_to_ask(dir.path(), false, &pinned);
+    tell_the_mint_port(&kubectl, &the_pin(), "pool", &a_paired_runner(), every).unwrap();
+    assert!(!last_run(dir.path()).contains("--mint-port"));
+}
+
+#[cfg(unix)]
+#[test]
+fn at_a_link_a_runner_is_told_again_only_on_a_pool_that_opts_in_and_by_the_pinned_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let kubectl = says_where_to_ask(dir.path(), true, "ed25519:a-status-says-anything");
+    let paired = a_paired_runner();
+    let seen = kubectl.pool("pool").unwrap();
+    let told = to_tell_at_a_link(&seen, &kubectl, &the_pin(), &paired.claimed)
+        .unwrap()
+        .expect("the status says where");
+    assert_eq!(told.keys, [operator_key().spelled()]);
+    tell_again(&kubectl, "ns", "pod", &told).unwrap();
+    let ran = std::fs::read_to_string(dir.path().join("args")).unwrap();
+    assert!(ran.contains("--mint-port\n--again"), "{ran}");
+
+    let dir = tempfile::tempdir().unwrap();
+    let kubectl = says_where_to_ask(dir.path(), false, &operator_key().spelled());
+    let seen = kubectl.pool("pool").unwrap();
+    assert_eq!(
+        to_tell_at_a_link(&seen, &kubectl, &the_pin(), &paired.claimed).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn a_runner_is_told_the_pinned_key_alone_whatever_a_status_says() {
+    let told = told_of_the_port(&claimed(), &the_pin(), "10.96.0.5:8443".to_owned());
+    assert_eq!(told.keys, [operator_key().spelled()]);
+    assert_eq!(told.address, "10.96.0.5:8443");
+}
+
+#[test]
+fn a_claims_repos_only_grow_each_once_ignoring_case() {
+    let named = vec!["acme/app".to_owned()];
+    assert_eq!(repos_with(&named, &["ACME/App".to_owned()]), None);
+    assert_eq!(repos_with(&named, &[]), None);
+    assert_eq!(
+        repos_with(&named, &["acme/web".to_owned(), "acme/web".to_owned()]).unwrap(),
+        ["acme/app", "acme/web"]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn repos_are_written_over_the_claim_as_it_was_read_and_only_where_they_add_something() {
+    let dir = tempfile::tempdir().unwrap();
+    let answer = serde_json::json!({
+        "metadata": {"resourceVersion": "41"},
+        "spec": {"forge": {"repos": ["acme/app"]}},
+    });
+    let kubectl = kubectl_answering(dir.path(), &answer.to_string());
+    let last_run = || std::fs::read_to_string(dir.path().join("args")).unwrap();
+    kubectl
+        .add_claim_repos("team", "ada-1", &["acme/app".to_owned()])
+        .unwrap();
+    assert!(!last_run().contains("patch"), "nothing new is written");
+    kubectl
+        .add_claim_repos("team", "ada-1", &["acme/web".to_owned()])
+        .unwrap();
+    let run = last_run();
+    assert!(run.contains("patch"), "{run}");
+    assert!(run.contains("\"resourceVersion\":\"41\""), "{run}");
+    assert!(
+        run.contains("acme/app") && run.contains("acme/web"),
+        "{run}"
+    );
+}
+
+#[test]
+fn a_claims_deletion_notice_is_read_only_where_it_is_true() {
+    let with = |status: &str| {
+        serde_json::json!({ "status": { "conditions": [
+            { "type": "Ready", "status": "False", "message": "not this" },
+            { "type": "DeletionNotice", "status": status, "message": "deleted at noon" },
+        ] } })
+    };
+    assert_eq!(
+        deletion_notice_of(&with("True")).as_deref(),
+        Some("deleted at noon")
+    );
+    assert_eq!(deletion_notice_of(&with("False")), None);
+    assert_eq!(deletion_notice_of(&serde_json::json!({})), None);
+}

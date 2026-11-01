@@ -724,3 +724,55 @@ fn only_a_clone_purlis_cloned_or_the_window_saved_names_the_chat_s_repos() {
         Vec::<String>::new()
     );
 }
+
+/// A token the operator minted (#4207): kept for its chat's next runs, for no other chat, and gone
+/// as the chat ends.
+#[cfg(unix)]
+#[test]
+fn a_token_from_the_cluster_is_kept_for_its_chat_alone_till_its_chat_ends() {
+    use crate::forge::mintport::Minted;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    let gh = crate::sandbox::tools::Tool {
+        mint: Some(crate::sandbox::tools::mint::Mint {
+            app: "Iv23liExample".to_owned(),
+        }),
+        ..crate::sandbox::tools::Tool::one(
+            "gh",
+            "forge",
+            "GH_TOKEN",
+            crate::sandbox::tools::Handed::Env,
+            "app-key",
+        )
+    };
+    let mints = AtomicU32::new(0);
+    let mint = |app: &str| {
+        assert_eq!(app, "Iv23liExample");
+        let made = mints.fetch_add(1, Ordering::SeqCst);
+        Ok(Some(Minted {
+            token: zeroize::Zeroizing::new(format!("minted-{made}")),
+            expires_at: None,
+            owner: "acme".to_owned(),
+            repos: vec!["app".to_owned()],
+            operator: "ed25519:ab".to_owned(),
+        }))
+    };
+    let token = |chat| {
+        super::token_in_cluster(root, chat, &gh, &mint)
+            .unwrap()
+            .unwrap()
+    };
+    assert_eq!(*token(1), "minted-0");
+    assert_eq!(*token(1), "minted-0", "kept for its next run");
+    assert_eq!(*token(2), "minted-1", "no other chat's");
+    assert_eq!(taken_at_end(root, Some(1)).len(), 1);
+    assert_eq!(*token(1), "minted-2", "gone as its chat ended");
+    // Told of no port, there is nothing to keep, and the run goes to the desktop.
+    assert!(
+        super::token_in_cluster(root, 3, &gh, &|_| Ok(None))
+            .unwrap()
+            .is_none()
+    );
+    let _ = taken_at_end(root, None);
+}

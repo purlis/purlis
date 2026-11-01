@@ -183,6 +183,10 @@ async fn hosting_keeping(
             unpairing: unpairing(paired),
             keeping: keeping(kept, desktop.clone()),
             forgetting: forgetting(kept, desktop.clone()),
+            deleting_own_folders: Arc::new(|_, name| match name {
+                "unreadable" => Err("this runner's profiles could not be read".to_owned()),
+                _ => Ok(None),
+            }),
             listing: listing(kept, desktop),
             holding: Arc::new(|_, profile, after| {
                 let held = purlis_session_protocol::session::HeldSetting {
@@ -547,6 +551,12 @@ async fn the_paired_desktop_has_the_runner_forget_its_profile() {
     let refused = client.forget_profile("work").await.unwrap_err();
     assert!(
         refused.to_string().contains("no profile named work"),
+        "{refused}"
+    );
+    // Whose own folders it deletes cannot be told: nothing is deleted on a guess (#4142).
+    let refused = client.forget_profile("unreadable").await.unwrap_err();
+    assert!(
+        refused.to_string().contains("could not be read"),
         "{refused}"
     );
 }

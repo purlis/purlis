@@ -276,10 +276,12 @@ function AwayPart({
         aria-haspopup="menu"
         aria-expanded={open !== false}
         // Opened on the press itself, as the title bar's list is (`NeedsYou.tsx`): a link in a
-        // sentence is pressed, never opened by a pointer going down on it. A press by a key
-        // lands on its first row.
+        // sentence is pressed, never opened by a pointer going down on it. A press by a key, or
+        // a screen reader's (a virtual press), lands on its first row.
         onPress={(event) =>
-          setOpen((up) => (up ? false : event.pointerType === "keyboard" ? "first" : true))
+          setOpen((up) =>
+            up ? false : ["keyboard", "virtual"].includes(event.pointerType) ? "first" : true,
+          )
         }
         onKeyDown={opensOnTheArrows(open !== false, setOpen)}
         className="away-part"

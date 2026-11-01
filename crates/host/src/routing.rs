@@ -31,6 +31,12 @@ use crate::relay::{Keep, Relay};
 /// there is none. Called off the runtime, as each `relay_to` is taken.
 pub type RelaysTo = Arc<dyn Fn(&str) -> Result<(Keep, String), String> + Send + Sync>;
 
+/// **Asks for the named runner to run again, where it is suspended for being idle** (#3980): only
+/// for the window's own steps towards a chat there: relaying a link, holding a project and starting
+/// a program. A link that redials, a check or a view never does, so a runner's own link does not
+/// undo its suspension.
+pub type RunsAgain = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// **The `<pool>/<runner>` a link's `relay_to` answer names** (#4071): a cluster runner's answer
 /// goes on to name the link key it was pinned with, `<pool>/<runner>@<key>`, for the window alone.
 /// Everything here goes by the name.
@@ -139,7 +145,7 @@ impl Routed {
                 let named = runner_named(&resolved).to_owned();
                 *lock(&self.runner) = Some(named.clone());
                 let relay = Relay::kept(keep)
-                    .claiming(self.hosting.claimed())
+                    .claiming(self.hosting.claimed(), &named)
                     .stopping_first(self.hosting.stop_first(named));
                 (relay, resolved)
             }
@@ -163,6 +169,9 @@ impl Routed {
             return Err(refused);
         }
         *lock(&self.route) = Route::There(relay.clone());
+        // The window relays a link as a chat starts or is taken back there, and a link to a
+        // suspended runner gets no further without it (#3980).
+        self.run_again().await;
         // A link that ended while this was taken was ended as this host's: its relay is told
         // too, so the name it holds there goes with it.
         if peer.has_ended() {
@@ -189,6 +198,16 @@ impl Routed {
         tokio::task::spawn_blocking(move || drains(&runner))
             .await
             .unwrap_or(true)
+    }
+
+    /// Asks for the runner this link is relayed to to run again, off the runtime.
+    async fn run_again(&self) {
+        let (Some(runs_again), Some(runner)) =
+            (self.hosting.runs_again(), lock(&self.runner).clone())
+        else {
+            return;
+        };
+        let _ = tokio::task::spawn_blocking(move || runs_again(&runner)).await;
     }
 
     /// The window's name, kept while the link was undecided, handed to this host now that the
@@ -241,10 +260,15 @@ impl session::Host for Routed {
                 // A runner that drains keeps its chats, and starts no new one (#2865): asked at
                 // each start, so a link relayed before its runner was replaced drains with it.
                 if matches!(command, Command::StartProgram(_)) && self.drains().await {
-                    return Err(not_allowed(
-                        "this runner is being replaced by one of this desktop's version: it keeps \
-                         its chats until they end, and new chats start on its pool's runner",
-                    ));
+                    return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
+                }
+                // Before anything that needs the runner: a start holds its project first, and a
+                // relay that is down refuses that hold (#3980).
+                if matches!(
+                    command,
+                    Command::HoldProject { .. } | Command::StartProgram(_)
+                ) {
+                    self.run_again().await;
                 }
                 session::Host::call(&relay, command, peer).await
             }

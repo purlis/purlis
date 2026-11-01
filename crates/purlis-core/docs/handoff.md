@@ -324,6 +324,9 @@ BRIEF
   grant. Another persona needs a **dispatch grant**, which only you give where the project's
   chats are sandboxed: a chat that runs without the sandbox runs as you, and can write the
   files a grant is kept in.
+- **A chat on a pool's runner waits for your Approve, whatever the persona.** The command says
+  `held for the person` and names the pool, and exits 0; you approve or refuse it in the window.
+  Approve decides it then as any dispatch is decided, so it may still wait on a grant or a limit.
 - **Where there is no grant, you are asked once, and the task waits for your answer.** Nothing
   starts. A Notice on the asking chat's tab says who wants to dispatch to whom and shows the
   brief, and the command says `held for the person` and exits 0: the dispatch is accepted and

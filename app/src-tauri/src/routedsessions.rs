@@ -27,7 +27,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -67,10 +67,28 @@ pub struct RoutedSessions {
     every_start_on: Option<String>,
 }
 
+/// A host left with chats that stayed on a draining runner.
+struct Left {
+    pool: String,
+    made: u64,
+    host: Arc<dyn SessionHost>,
+}
+
 /// What every pool's chats share with the router: what is told to each as it is made.
 #[derive(Default)]
 struct Shared {
     pools: Mutex<BTreeMap<String, Arc<dyn SessionHost>>>,
+    /// Each pool's host left with the chats that stayed on a draining runner (#4248): its pool's
+    /// next chats start on a host of their own, on the pool's runner now.
+    left: Mutex<Vec<Left>>,
+    /// The chats that stayed on a draining runner, and how they are found in `left`.
+    stayed: Mutex<HashMap<u32, u64>>,
+    /// Held while a pool's host is replaced for a start: two starts make one host between them.
+    replacing: Mutex<()>,
+    /// How many hosts were made, which names each one.
+    made: AtomicU64,
+    /// Which made host each pool's now is.
+    current: Mutex<BTreeMap<String, u64>>,
     /// The pool each chat that runs on one runs on, by its number.
     chats: Mutex<HashMap<u32, String>>,
     switch: Mutex<Option<Arc<crate::killswitch::KillSwitch>>>,
@@ -163,13 +181,14 @@ impl RoutedSessions {
         wanted: Option<u32>,
         start: impl FnOnce(&dyn SessionHost, u32) -> Result<T, String>,
     ) -> Result<T, String> {
-        let host = self.pool(pool)?;
+        let host = self.pool_for_a_start(pool)?;
         self.here.hold_here();
         let number = wanted
             .filter(|wanted| *wanted > 0)
             .unwrap_or_else(|| self.here.deal());
         self.shared.dealt.fetch_max(number, Ordering::Relaxed);
         lock(&self.shared.chats).insert(number, pool.to_owned());
+        lock(&self.shared.stayed).remove(&number);
         match start(host.as_ref(), number) {
             Ok(started) if started.number() == number => Ok(started),
             Ok(started) => {
@@ -183,7 +202,19 @@ impl RoutedSessions {
             }
             Err(why) => {
                 lock(&self.shared.chats).remove(&number);
-                Err(why)
+                // The runner the link reached began to drain as this start went out, between the
+                // window's look and the host's: nothing started, and the next start goes to the
+                // pool's runner now (#4248).
+                Err(
+                    if why == purlis_session_protocol::session::A_DRAINING_RUNNER_STARTS_NONE {
+                        format!(
+                            "pool {pool}'s runner was replaced just as this chat started, so \
+                             nothing was started: start it again, and it runs on the new runner"
+                        )
+                    } else {
+                        why
+                    },
+                )
             }
         }
     }
@@ -194,15 +225,64 @@ impl RoutedSessions {
         pool_of(&self.shared, &self.to_a_pool, pool)
     }
 
+    /// **The host a new chat on `pool` starts on** (#4248): one whose runner drains now stays with
+    /// its chats, and a host of its own is made for the pool's runner now.
+    fn pool_for_a_start(&self, pool: &str) -> Result<Arc<dyn SessionHost>, String> {
+        let _one_at_a_time = lock(&self.shared.replacing);
+        let host = self.pool(pool)?;
+        if !host.stays_on_a_draining_runner() {
+            return Ok(host);
+        }
+        let shared = &self.shared;
+        let made = lock(&shared.current).get(pool).copied().unwrap_or_default();
+        {
+            let mut stayed = lock(&shared.stayed);
+            for (chat, on) in lock(&shared.chats).iter() {
+                if on == pool {
+                    stayed.entry(*chat).or_insert(made);
+                }
+            }
+        }
+        lock(&shared.pools).remove(pool);
+        lock(&shared.left).push(Left {
+            pool: pool.to_owned(),
+            made,
+            host,
+        });
+        self.pool(pool)
+    }
+
     /// The host chat `id` runs on: a pool's, where it was started there, else this machine's.
     fn host_of(&self, id: u32) -> Option<Arc<dyn SessionHost>> {
+        if let Some(made) = lock(&self.shared.stayed).get(&id).copied() {
+            return lock(&self.shared.left)
+                .iter()
+                .find(|left| left.made == made)
+                .map(|left| Arc::clone(&left.host));
+        }
         let pool = lock(&self.shared.chats).get(&id).cloned()?;
         lock(&self.shared.pools).get(&pool).cloned()
     }
 
-    /// Every pool's chats made so far.
+    /// Every pool's chats made so far, those left on a draining runner among them.
     fn pools(&self) -> Vec<Arc<dyn SessionHost>> {
-        lock(&self.shared.pools).values().cloned().collect()
+        lock(&self.shared.pools)
+            .values()
+            .cloned()
+            .chain(
+                lock(&self.shared.left)
+                    .iter()
+                    .map(|left| Arc::clone(&left.host)),
+            )
+            .collect()
+    }
+
+    /// Every pool's host by its pool, those left on a draining runner among them.
+    fn named_pools(&self) -> Vec<(String, Arc<dyn SessionHost>)> {
+        every_host(&self.shared)
+            .into_iter()
+            .map(|(pool, _, host)| (pool, host))
+            .collect()
     }
 
     /// The pool `workspace` runs its chats on, where it runs them on one.
@@ -226,11 +306,12 @@ fn pool_of(
         return Ok(Arc::clone(made));
     }
     let mut made = to_a_pool(pool)?;
+    let number = shared.made.fetch_add(1, Ordering::Relaxed);
     if let Some(switch) = lock(&shared.switch).clone() {
         made.stopped_by(switch);
     }
     if let Some(relayed) = lock(&shared.relayed).clone() {
-        made.hear_through(relayed.for_a_pool(pool, routes_of(shared)));
+        made.hear_through(relayed.for_a_pool(pool, routes_of_host(shared, pool, number)));
     }
     if let Some(ends) = lock(&shared.ends).clone() {
         made.when_one_ends(ends);
@@ -246,15 +327,54 @@ fn pool_of(
         made.already_dealt(dealt);
     }
     let made: Arc<dyn SessionHost> = Arc::from(made);
-    Ok(Arc::clone(
-        lock(&shared.pools).entry(pool.to_owned()).or_insert(made),
-    ))
+    let mut pools = lock(&shared.pools);
+    if let Some(already) = pools.get(pool) {
+        return Ok(Arc::clone(already));
+    }
+    lock(&shared.current).insert(pool.to_owned(), number);
+    Ok(Arc::clone(pools.entry(pool.to_owned()).or_insert(made)))
+}
+
+/// Every host of every pool, as its pool, its number and itself: each pool's now first, so what a
+/// draining runner has comes back beside what the pool's runner has ([`fetch_back_all`]).
+fn every_host(shared: &Shared) -> Vec<(String, u64, Arc<dyn SessionHost>)> {
+    let current = lock(&shared.current).clone();
+    let mut hosts: Vec<_> = lock(&shared.pools)
+        .iter()
+        .map(|(pool, host)| {
+            let made = current.get(pool).copied().unwrap_or_default();
+            (pool.clone(), made, Arc::clone(host))
+        })
+        .collect();
+    hosts.extend(
+        lock(&shared.left)
+            .iter()
+            .map(|left| (left.pool.clone(), left.made, Arc::clone(&left.host))),
+    );
+    hosts
 }
 
 /// `tell`, told each skill run as one of `pool`'s runner's (#3084).
 fn of_the_pool(pool: &str, tell: crate::host::SkillRunsHeard) -> crate::host::SkillRunsHeard {
     let pool = pool.to_owned();
     Arc::new(move |_, run| tell(Some(&pool), run))
+}
+
+/// [`routes_of`], as host `made` of `pool` hears its lines: a chat that runs on another host of the
+/// pool is not one of its own, so a draining runner speaks for no chat on the pool's runner now, nor
+/// that one for a chat that stayed (#4248).
+fn routes_of_host(shared: &Arc<Shared>, pool: &str, made: u64) -> crate::hooks::Routes {
+    let shared = Arc::downgrade(shared);
+    let pool = pool.to_owned();
+    Arc::new(move |chat| {
+        let shared = shared.upgrade()?;
+        let on = lock(&shared.chats).get(&chat).cloned()?;
+        let host = match lock(&shared.stayed).get(&chat) {
+            Some(stayed) => *stayed,
+            None => lock(&shared.current).get(&pool).copied()?,
+        };
+        (host == made).then_some(on)
+    })
 }
 
 /// Which pool each chat runs on, as the router has it now: `None` for this machine's.
@@ -270,15 +390,48 @@ fn routes_of(shared: &Arc<Shared>) -> crate::hooks::Routes {
 fn fetch_back_all(shared: &Arc<Shared>, on_pools: &OnPools, to_a_pool: &ToAPool) -> Vec<String> {
     let mut failed = Vec::new();
     for (pool, workspaces) in on_pools() {
-        let host = match pool_of(shared, to_a_pool, &pool) {
-            Ok(host) => host,
-            Err(why) => {
-                failed.push(why);
-                continue;
-            }
-        };
+        failed.extend(fetch_back_pool(shared, to_a_pool, &pool, &workspaces));
+    }
+    failed
+}
+
+/// The branches of `workspaces` back from each runner of `pool`, each draining one's beside its
+/// runner's now (#4248).
+fn fetch_back_pool(
+    shared: &Arc<Shared>,
+    to_a_pool: &ToAPool,
+    pool: &str,
+    workspaces: &[String],
+) -> Vec<String> {
+    let mut failed = Vec::new();
+    let host = match pool_of(shared, to_a_pool, pool) {
+        Ok(host) => Some(host),
+        Err(why) => {
+            failed.push(why);
+            None
+        }
+    };
+    // Those whose runner went are let go of first, with their chats.
+    let gone: Vec<u64> = lock(&shared.left)
+        .iter()
+        .filter(|left| left.pool == pool)
+        .map(|left| (left.made, Arc::clone(&left.host)))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .filter(|(_, host)| host.runner_is_gone())
+        .map(|(made, _)| made)
+        .collect();
+    lock(&shared.left).retain(|left| !gone.contains(&left.made));
+    lock(&shared.stayed).retain(|_, made| !gone.contains(made));
+    let left: Vec<Arc<dyn SessionHost>> = lock(&shared.left)
+        .iter()
+        .filter(|left| left.pool == pool)
+        .map(|left| Arc::clone(&left.host))
+        .collect();
+    // The pool's runner last: where both have a branch, its commit is the one kept.
+    for host in left.into_iter().chain(host) {
         for workspace in workspaces {
-            failed.extend(host.fetch_back(&workspace, &pool));
+            failed.extend(host.fetch_back(workspace, pool));
         }
     }
     failed
@@ -391,6 +544,7 @@ impl SessionHost for RoutedSessions {
         };
         if closed.is_ok() {
             lock(&self.shared.chats).remove(&id);
+            lock(&self.shared.stayed).remove(&id);
         }
         closed
     }
@@ -453,13 +607,8 @@ impl SessionHost for RoutedSessions {
                             let _one_at_a_time = lock(&shared.fetching);
                             lock(&shared.ending).remove(&pool);
                             let workspaces = on_pools().remove(&pool).unwrap_or_default();
-                            let Ok(host) = pool_of(&shared, &to_a_pool, &pool) else {
-                                return;
-                            };
-                            for workspace in workspaces {
-                                for why in host.fetch_back(&workspace, &pool) {
-                                    tracing::warn!("purlis: in {}: {why}", root.display());
-                                }
+                            for why in fetch_back_pool(&shared, &to_a_pool, &pool, &workspaces) {
+                                tracing::warn!("purlis: in {}: {why}", root.display());
                             }
                         }
                     });
@@ -487,11 +636,7 @@ impl SessionHost for RoutedSessions {
     /// Each pool's runner tells its own, as the pool's (#3084); this machine's host tells none.
     fn when_skill_runs_heard(&self, tell: crate::host::SkillRunsHeard) {
         *lock(&self.shared.skill_runs) = Some(Arc::clone(&tell));
-        let pools: Vec<(String, Arc<dyn SessionHost>)> = lock(&self.shared.pools)
-            .iter()
-            .map(|(name, pool)| (name.clone(), Arc::clone(pool)))
-            .collect();
-        for (name, pool) in pools {
+        for (name, pool) in self.named_pools() {
             pool.when_skill_runs_heard(of_the_pool(&name, Arc::clone(&tell)));
         }
     }
@@ -589,12 +734,8 @@ impl SessionHost for RoutedSessions {
     fn hear_through(&self, relayed: Arc<crate::hooks::Relayed>) {
         relayed.routed(routes_of(&self.shared));
         *lock(&self.shared.relayed) = Some(Arc::clone(&relayed));
-        let pools: Vec<(String, Arc<dyn SessionHost>)> = lock(&self.shared.pools)
-            .iter()
-            .map(|(name, pool)| (name.clone(), Arc::clone(pool)))
-            .collect();
-        for (name, pool) in pools {
-            pool.hear_through(relayed.for_a_pool(&name, routes_of(&self.shared)));
+        for (name, made, pool) in every_host(&self.shared) {
+            pool.hear_through(relayed.for_a_pool(&name, routes_of_host(&self.shared, &name, made)));
         }
         self.here.hear_through(relayed);
     }
@@ -606,13 +747,13 @@ impl SessionHost for RoutedSessions {
     /// On the runner of `pool`: this machine's host keeps the board, so it holds the project
     /// first.
     fn move_ahead(&self, pool: &str, workspace: &str) -> Result<(), String> {
-        let host = self.pool(pool)?;
+        let host = self.pool_for_a_start(pool)?;
         self.here.hold_here();
         host.move_ahead(pool, workspace)
     }
 
     fn move_in(&self, pool: &str, chats: &[crate::host::Moving]) -> Result<(), String> {
-        self.pool(pool)?.move_in(pool, chats)
+        self.pool_for_a_start(pool)?.move_in(pool, chats)
     }
 
     fn move_out(
@@ -620,20 +761,52 @@ impl SessionHost for RoutedSessions {
         pool: &str,
         chats: &[crate::host::Moving],
     ) -> Result<crate::host::CameBack, String> {
-        self.pool(pool)?.move_out(pool, chats)
+        let left: Vec<Arc<dyn SessionHost>> = lock(&self.shared.left)
+            .iter()
+            .filter(|left| left.pool == pool)
+            .map(|left| Arc::clone(&left.host))
+            .collect();
+        let current = self.pool(pool)?;
+        if left.is_empty() {
+            return current.move_out(pool, chats);
+        }
+        // During a drain they come back whole from the one runner that has them all, the pool's
+        // first: a chat moved there has left an older copy on the draining one (#4248). Chats on
+        // two runners are not mixed into one work tree.
+        let mut asked = current.move_out(pool, chats);
+        for host in &left {
+            if asked.is_ok() {
+                break;
+            }
+            asked = host.move_out(pool, chats);
+        }
+        asked.map_err(|why| {
+            format!(
+                "pool {pool}'s runner is being replaced, and no one runner has all of these chats, \
+                 so nothing moved. Close the chats on the older runner, or move them once it has \
+                 gone: {why}"
+            )
+        })
     }
 
     fn pool_of(&self, id: u32) -> Option<String> {
         lock(&self.shared.chats).get(&id).cloned()
     }
 
+    /// Each pool's own host answers this, to the router: the router itself drains with nothing.
+    fn stays_on_a_draining_runner(&self) -> bool {
+        false
+    }
+
+    /// As [`Self::stays_on_a_draining_runner`].
+    fn runner_is_gone(&self) -> bool {
+        false
+    }
+
     /// Asked of the host of the pool it runs on, where there is one already: never made for it.
     fn clones_come_back(&self, id: u32) -> bool {
-        let Some(pool) = self.pool_of(id) else {
-            return false;
-        };
-        let host = lock(&self.shared.pools).get(&pool).map(Arc::clone);
-        host.is_some_and(|host| host.clones_come_back(id))
+        self.host_of(id)
+            .is_some_and(|host| host.clones_come_back(id))
     }
 
     /// None for the project as a whole: each pool's is said by [`Self::runner_logs`] (#3393).
@@ -643,14 +816,18 @@ impl SessionHost for RoutedSessions {
 
     /// Each pool's runner log this project's chats read (#3393).
     fn runner_logs(&self) -> Vec<(String, crate::runnerlog::RunnerLogNow)> {
-        let pools: Vec<(String, Arc<dyn SessionHost>)> = lock(&self.shared.pools)
-            .iter()
-            .map(|(pool, host)| (pool.clone(), Arc::clone(host)))
-            .collect();
-        pools
-            .into_iter()
-            .filter_map(|(pool, host)| host.runner_log().map(|log| (pool, log)))
-            .collect()
+        // Each link still open for the project, a draining runner's beside its pool's (#4271).
+        let mut logs = BTreeMap::<String, crate::runnerlog::RunnerLogNow>::new();
+        for (pool, host) in self.named_pools() {
+            if let Some(log) = host.runner_log() {
+                let joined = match logs.remove(&pool) {
+                    Some(held) => held.beside(log),
+                    None => log,
+                };
+                logs.insert(pool, joined);
+            }
+        }
+        logs.into_iter().collect()
     }
 
     /// Asked of this machine's host, then of each pool a workspace of the project runs its

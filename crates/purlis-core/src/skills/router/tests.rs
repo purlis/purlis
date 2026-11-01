@@ -319,7 +319,7 @@ fn what_a_router_hides_is_hidden_wherever_the_chat_s_set_is_routed_with_its_line
             plane: root,
             workspace: Some("smart-ide"),
             repo: &[],
-            routed: skills.routed.as_ref(),
+            routed: skills.routed.as_deref(),
         }),
         None,
         Some(&bundle),
@@ -453,7 +453,7 @@ fn a_start_that_asks_no_router_falls_back_and_says_so() {
     )
     .routed_by(Some(&bundle), Some(Harness::ClaudeCode), None);
 
-    let record = skills.routed.expect("a record").record;
+    let record = skills.routed.expect("a record").record.clone();
     assert_eq!(record.fell_back, Some(FellBack::Failed));
     assert!(
         record.error.unwrap_or_default().contains("asks no router"),
@@ -555,7 +555,7 @@ fn a_reattached_chat_routes_as_its_start_did_and_its_router_is_not_asked_again_3
     let skills = started(root, &bundle, None, &as_asker(&first));
 
     // Kept in the reopen record, as text, and read back at the reattach.
-    let kept = Kept::of(skills.routed.as_ref());
+    let kept = Kept::of(skills.routed.as_deref());
     let text = serde_json::to_string(&kept).unwrap();
     let kept: Kept = serde_json::from_str(&text).unwrap();
     let again = reattached(root, None, kept);
@@ -584,7 +584,7 @@ fn a_chat_that_started_on_the_built_in_router_reattaches_on_it_whatever_was_chos
     let fake = Fake::hiding(&["skill-02"]);
     let skills = started(root, &bundle, None, &as_asker(&fake));
     assert_eq!(skills.routed, None);
-    let kept = Kept::of(skills.routed.as_ref());
+    let kept = Kept::of(skills.routed.as_deref());
 
     workspace_skills(root, serde_json::json!({ "router": "relevance" }));
     let again = reattached(root, None, kept);
@@ -613,6 +613,8 @@ fn a_kept_answer_hides_only_what_a_router_may_hide_3578() {
             fell_back: None,
             error: None,
             hidden: Vec::new(),
+            prompt: false,
+            pointed: Vec::new(),
         },
         answer: Some(
             ["skill-00", "handoff", "elsewhere", "skill-01"]
@@ -620,6 +622,8 @@ fn a_kept_answer_hides_only_what_a_router_may_hide_3578() {
                 .map(|name| (name.to_owned(), line()))
                 .collect(),
         ),
+        left_out: Vec::new(),
+        reads_prompts: false,
     });
 
     let again = reattached(root, None, kept);
@@ -644,8 +648,12 @@ fn nothing_kept_is_applied_where_the_plane_s_skills_do_not_reach_the_reattached_
             fell_back: None,
             error: None,
             hidden: Vec::new(),
+            prompt: false,
+            pointed: Vec::new(),
         },
         answer: Some(Vec::new()),
+        left_out: Vec::new(),
+        reads_prompts: false,
     });
     let off = ChatSkills::read(
         false,
@@ -850,6 +858,158 @@ fn choosing_a_router_is_refused_for_what_the_project_does_not_have_or_no_id_3692
     }
 }
 
+// ---------------------------------------------------------------------------------------
+// On each prompt, a router that reads prompts (SK-15c, #3231; ADR 0102 §3)
+// ---------------------------------------------------------------------------------------
+
+/// `fake`, as a router whose approval said it reads prompts.
+struct Reading(Arc<Fake>);
+
+impl AskRouter for Reading {
+    fn ask(
+        &self,
+        extension: &str,
+        ask: &Ask<'_>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        self.0.ask(extension, ask)
+    }
+
+    fn reads_prompts(&self, _: &str) -> bool {
+        true
+    }
+}
+
+fn reading(fake: &Arc<Fake>) -> Arc<dyn AskRouter> {
+    Arc::new(Reading(Arc::clone(fake)))
+}
+
+fn left_out() -> Vec<(String, String)> {
+    vec![
+        ("deploy".to_owned(), "Deploys the service.".to_owned()),
+        ("release".to_owned(), "Cuts a release.".to_owned()),
+    ]
+}
+
+fn relevance() -> Result<Chosen, String> {
+    Ok(Chosen::Extension("relevance".to_owned()))
+}
+
+#[test]
+fn a_router_s_pick_reaches_the_prompt_as_a_pointer_in_purlis_s_own_words() {
+    let fake = Fake::answering(serde_json::json!({ "pointed": ["release"] }));
+
+    let prompted = on_prompt(
+        relevance(),
+        &left_out(),
+        "cut the 1.2 release",
+        &reading(&fake),
+        ROUTER_DEADLINE,
+    )
+    .expect("asked");
+
+    let pointer = prompted.pointer.expect("a pointer");
+    assert!(
+        pointer.contains("- `release`: Cuts a release."),
+        "{pointer}"
+    );
+    assert!(pointer.contains("skill_load"), "{pointer}");
+    assert!(!pointer.contains("deploy"), "{pointer}");
+    assert_eq!(prompted.record.fell_back, None);
+    assert!(prompted.record.prompt);
+    assert_eq!(prompted.record.pointed, ["release"]);
+    let body = serde_json::to_string(&prompted.record).unwrap();
+    assert!(
+        !body.contains("1.2"),
+        "the record holds nothing of the prompt: {body}"
+    );
+
+    let asked = fake.asked();
+    assert_eq!(asked.len(), 1);
+    let line = &asked[0].1;
+    assert_eq!(line["ask"], "prompt");
+    assert_eq!(line["prompt"], "cut the 1.2 release");
+    assert_eq!(line["skills"][1]["line"], "Cuts a release.");
+    let mut keys: Vec<&String> = line.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        ["ask", "prompt", "skills"],
+        "nothing else of the chat"
+    );
+}
+
+#[test]
+fn a_slow_router_adds_no_pointer_and_marks_the_record() {
+    let slow = Arc::new(Fake {
+        wait: Duration::from_secs(2),
+        answer: Ok(serde_json::json!({ "pointed": ["release"] })),
+        asked: Mutex::default(),
+    });
+
+    let began = Instant::now();
+    let prompted = on_prompt(
+        relevance(),
+        &left_out(),
+        "go",
+        &reading(&slow),
+        ROUTER_DEADLINE,
+    )
+    .expect("asked");
+    let took = began.elapsed();
+
+    assert!(
+        took < ROUTER_DEADLINE + Duration::from_millis(400),
+        "{took:?}"
+    );
+    assert_eq!(prompted.pointer, None);
+    assert_eq!(prompted.record.fell_back, Some(FellBack::Slow));
+    assert!(prompted.record.prompt);
+}
+
+#[test]
+fn a_router_pointing_at_a_skill_the_list_has_is_not_taken() {
+    let fake = Fake::answering(serde_json::json!({ "pointed": ["handoff"] }));
+
+    let prompted = on_prompt(
+        relevance(),
+        &left_out(),
+        "go",
+        &reading(&fake),
+        ROUTER_DEADLINE,
+    )
+    .expect("asked");
+
+    assert_eq!(prompted.pointer, None);
+    assert_eq!(prompted.record.fell_back, Some(FellBack::Wrong));
+}
+
+#[test]
+fn nothing_is_asked_where_the_list_leaves_nothing_out_or_the_router_is_the_built_in_one() {
+    let fake = Fake::answering(serde_json::json!({ "pointed": ["release"] }));
+    assert_eq!(
+        on_prompt(relevance(), &[], "go", &reading(&fake), ROUTER_DEADLINE),
+        None
+    );
+    assert_eq!(
+        on_prompt(
+            Ok(Chosen::BuiltIn),
+            &left_out(),
+            "go",
+            &reading(&fake),
+            ROUTER_DEADLINE
+        ),
+        None
+    );
+    assert!(fake.asked().is_empty());
+}
+
+#[test]
+fn every_harness_purlis_ships_has_a_prompt_hook_for_a_router_s_pointer() {
+    for harness in Harness::ALL {
+        assert!(harness.prompt_hook(), "{harness:?}");
+    }
+}
+
 #[test]
 fn a_workspace_s_built_in_router_written_out_is_already_the_built_in_router_3692() {
     let (tmp, _bundle) = a_plane_of(1);
@@ -858,4 +1018,233 @@ fn a_workspace_s_built_in_router_written_out_is_already_the_built_in_router_3692
     let ws = PinnedBy::Workspace("smart-ide".to_owned());
     assert_eq!(choose(root, &ws, Some(&Chosen::BuiltIn)), Ok(false));
     assert_eq!(choose(root, &ws, None), Ok(false));
+}
+
+#[test]
+fn a_start_routed_by_a_router_that_reads_prompts_keeps_what_its_list_leaves_out() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let fake = Fake::hiding(&["skill-02"]);
+
+    let read = |asker: &Arc<dyn AskRouter>| started(root, &bundle, None, asker);
+    let not_reading = read(&as_asker(&fake)).routed.expect("routed");
+    assert!(
+        !not_reading.points(),
+        "a router that reads no prompts is never handed one"
+    );
+    let reads = read(&reading(&fake)).routed.expect("routed");
+    assert!(reads.points());
+    assert_eq!(
+        reads.left_out,
+        [("skill-02".to_owned(), "Does thing 2.".to_owned())]
+    );
+
+    // On a prompt: asked about exactly those, and its pick reaches the pointer.
+    let pick = Fake::answering(serde_json::json!({ "pointed": ["skill-02"] }));
+    let prompted = reads
+        .on_prompt("do thing two", &reading(&pick))
+        .expect("asked");
+    assert_eq!(
+        prompted
+            .pointer
+            .as_deref()
+            .map(|text| text.contains("- `skill-02`: Does thing 2.")),
+        Some(true)
+    );
+    let asked = pick.asked();
+    assert_eq!(asked[0].1["skills"].as_array().map(Vec::len), Some(1));
+}
+
+#[test]
+fn a_router_slow_at_the_chat_s_start_still_routes_its_prompts() {
+    let (tmp, bundle) = a_plane_of(MOST + 2);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let slow = Arc::new(Fake {
+        wait: Duration::from_secs(2),
+        answer: Ok(serde_json::json!({ "hidden": [] })),
+        asked: Mutex::default(),
+    });
+
+    let routed = started(root, &bundle, None, &reading(&slow))
+        .routed
+        .expect("routed");
+
+    assert_eq!(routed.record.fell_back, Some(FellBack::Slow));
+    assert!(
+        routed.points(),
+        "what the built-in router left out is pointed at"
+    );
+    assert_eq!(routed.left_out.len(), MOST + 2);
+}
+
+// ---------------------------------------------------------------------------------------
+// The person's switch, and what a record may hold (ADR 0102 as amended 2026-10-31)
+// ---------------------------------------------------------------------------------------
+
+/// A router answering as `fake`, whose switch is `on`.
+struct Switched {
+    fake: Arc<Fake>,
+    on: std::sync::atomic::AtomicBool,
+}
+
+impl AskRouter for Switched {
+    fn ask(
+        &self,
+        extension: &str,
+        ask: &Ask<'_>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        self.fake.ask(extension, ask)
+    }
+
+    fn reads_prompts(&self, _: &str) -> bool {
+        self.on.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[test]
+fn a_router_turned_off_reads_no_further_prompt_of_a_chat_already_open() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let start = Fake::hiding(&["skill-02"]);
+    let routed = started(root, &bundle, None, &reading(&start))
+        .routed
+        .expect("routed");
+    let fake = Fake::answering(serde_json::json!({ "pointed": ["skill-02"] }));
+    let switched = Arc::new(Switched {
+        fake: Arc::clone(&fake),
+        on: true.into(),
+    });
+    let asker: Arc<dyn AskRouter> = switched.clone();
+
+    assert!(routed.on_prompt("first", &asker).is_some());
+    assert_eq!(fake.asked().len(), 1);
+
+    switched
+        .on
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(routed.on_prompt("second", &asker), None, "no record either");
+    assert_eq!(fake.asked().len(), 1, "the router saw no second prompt");
+}
+
+#[test]
+fn a_prompt_s_record_holds_none_of_what_the_router_said_back() {
+    // A router could echo the prompt in an error or in an answer purlis does not take. The
+    // record's reason is purlis's own, so neither reaches the event log.
+    const PROMPT: &str = "the-private-words";
+    let left = left_out();
+    for answer in [
+        serde_json::json!({ "pointed": [PROMPT] }),
+        serde_json::json!({ "pointed": PROMPT }),
+        serde_json::json!({ "said": PROMPT }),
+    ] {
+        let prompted = on_prompt(
+            Ok(Chosen::Extension("relevance".to_owned())),
+            &left,
+            PROMPT,
+            &reading(&Fake::answering(answer)),
+            ROUTER_DEADLINE,
+        )
+        .expect("asked");
+        assert_eq!(prompted.record.fell_back, Some(FellBack::Wrong));
+        let written = serde_json::to_string(&prompted.record).unwrap();
+        assert!(!written.contains(PROMPT), "{written}");
+    }
+    let failing = on_prompt(
+        Ok(Chosen::Extension("relevance".to_owned())),
+        &left,
+        PROMPT,
+        &(Arc::new(Echoes) as Arc<dyn AskRouter>),
+        ROUTER_DEADLINE,
+    )
+    .expect("asked");
+    assert_eq!(failing.record.fell_back, Some(FellBack::Failed));
+    let written = serde_json::to_string(&failing.record).unwrap();
+    assert!(!written.contains(PROMPT), "{written}");
+}
+
+/// A router whose error quotes the prompt it was handed.
+struct Echoes;
+
+impl AskRouter for Echoes {
+    fn ask(
+        &self,
+        _: &str,
+        ask: &Ask<'_>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        Err(serde_json::to_string(ask).unwrap_or_default())
+    }
+
+    fn reads_prompts(&self, _: &str) -> bool {
+        true
+    }
+}
+
+#[test]
+fn a_reattached_chat_keeps_what_its_list_leaves_out_for_its_prompts() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let fake = Fake::hiding(&["skill-02"]);
+    let routed = started(root, &bundle, None, &reading(&fake))
+        .routed
+        .expect("routed");
+    let kept = Kept::of(Some(&routed));
+    let text = serde_json::to_string(&kept).unwrap();
+    let back: Kept = serde_json::from_str(&text).expect("reads back");
+    let back = back.routed().expect("asked");
+    assert!(back.points());
+    assert_eq!(back.left_out, routed.left_out);
+
+    // An index line may run past a router's reason's 120 characters, and the record still reads.
+    let Kept::Asked(mut long) = Kept::of(Some(&routed)) else {
+        panic!("asked");
+    };
+    long.left_out[0].1 = "x".repeat(121) + "…";
+    let text = serde_json::to_string(&Kept::Asked(long)).unwrap();
+    assert!(serde_json::from_str::<Kept>(&text).is_ok(), "{text}");
+    // A line of two lines does not.
+    let bad = text.replace(&("x".repeat(121)), "a\\nb");
+    assert!(serde_json::from_str::<Kept>(&bad).is_err(), "{bad}");
+
+    // A router that may not read prompts keeps none of it.
+    let plain = started(root, &bundle, None, &as_asker(&fake))
+        .routed
+        .expect("routed");
+    assert!(plain.left_out.is_empty());
+}
+
+// ---------------------------------------------------------------------------------------
+// A router's grade, with its pointer (SK-15k, #3619)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_router_s_arm_that_reads_prompts_points_its_trigger_test_s_prompt_as_a_real_chat_s_3619() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    let fake = Fake::hiding(&["skill-02"]);
+
+    let graded = arm(root, &bundle, Some("relevance"), &reading(&fake));
+    let routed = graded.routed.as_ref().expect("asked");
+    assert!(routed.points(), "its chat's hook is armed");
+
+    let pick = Fake::answering(serde_json::json!({ "pointed": ["skill-02"] }));
+    let prompted = routed
+        .on_prompt("a trigger test's prompt", &reading(&pick))
+        .expect("asked");
+    assert!(
+        prompted
+            .pointer
+            .is_some_and(|pointer| pointer.contains("- `skill-02`:"))
+    );
+
+    // Off for this router, its arm is graded on its start's answer alone.
+    let off = arm(root, &bundle, Some("relevance"), &as_asker(&fake));
+    assert!(!off.routed.as_ref().expect("asked").points());
+
+    // The built-in router's arm asks nothing, whatever the router under grade reads.
+    let baseline = arm(root, &bundle, None, &reading(&fake));
+    assert!(baseline.routed.is_none());
 }

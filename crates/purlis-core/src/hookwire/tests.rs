@@ -467,6 +467,40 @@ fn the_largest_proposed_change_fits_on_one_line_of_the_socket() {
     );
 }
 
+/// **The pool a dispatch is held on is added to the line and to nothing else** (#4148): it is
+/// absent where there is none, and a line of an older app without it still reads.
+#[test]
+fn a_held_answer_names_its_pool_only_where_it_has_one() {
+    let on_a_pool = Answer::NeedsGrant {
+        from: None,
+        to: "devops".to_owned(),
+        waiting: None,
+        held_by: Some("builds".to_owned()),
+    };
+    let line = serde_json::to_string(&on_a_pool).expect("written");
+    assert_eq!(
+        line,
+        r#"{"needs_grant":{"to":"devops","held_by":"builds"}}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<Answer>(&line).expect("read"),
+        on_a_pool
+    );
+
+    let older = r#"{"needs_grant":{"to":"devops"}}"#;
+    let read = serde_json::from_str::<Answer>(older).expect("an older app's line");
+    assert_eq!(
+        read,
+        Answer::NeedsGrant {
+            from: None,
+            to: "devops".to_owned(),
+            waiting: None,
+            held_by: None,
+        }
+    );
+    assert_eq!(serde_json::to_string(&read).expect("written"), older);
+}
+
 #[test]
 fn a_written_answer_reads_back_as_written() {
     let answer = Answer::Written {
@@ -2771,7 +2805,8 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Propose(_)
                 | Ask::Browse(_)
                 | Ask::ThemePreview(_)
-                | Ask::ThemeDraft(_) => Answer::No {
+                | Ask::ThemeDraft(_)
+                | Ask::Prompt(_) => Answer::No {
                     why: "not here".to_owned(),
                 },
             }
@@ -5260,4 +5295,30 @@ fn an_armed_key_is_read_off_a_report_and_on_no_other_kind() {
     let mut forged = serde_json::to_value(a_stop(7)).unwrap();
     forged[ARMED] = serde_json::json!(7);
     assert!(read_delivered(&forged.to_string()).is_none());
+}
+
+#[test]
+fn a_prompt_for_a_router_names_its_chat_and_says_nothing_of_the_prompt_in_a_dump() {
+    // SK-15c: the prompt crosses to the app on the chat's own line, and no further than the
+    // router; a debug dump of the ask says nothing of it, as a prompt's marks do not (SK-38).
+    let ask = Ask::Prompt(Box::new(PromptAsk {
+        chat: 7,
+        prompt: "deploy the secret plan".to_owned(),
+    }));
+    assert_eq!(ask.chat(), 7);
+    let dumped = format!("{ask:?}");
+    assert!(!dumped.contains("secret"), "{dumped}");
+    let line = serde_json::to_value(&ask).unwrap();
+    let back: Ask = serde_json::from_value(line).unwrap();
+    assert_eq!(back, ask);
+    let answer: Answer = serde_json::from_value(serde_json::json!({
+        "pointed": { "pointer": "- `deploy`: Deploys." }
+    }))
+    .unwrap();
+    assert_eq!(
+        answer,
+        Answer::Pointed {
+            pointer: Some("- `deploy`: Deploys.".to_owned())
+        }
+    );
 }

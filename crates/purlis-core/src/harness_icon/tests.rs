@@ -225,7 +225,7 @@ fn an_icon_file_past_the_cap_is_not_read() {
     let dir = home(&[("big.svg", &big)]);
     assert_eq!(
         read_file(dir.path(), "big.svg").expect_err("too big").0,
-        UNREAD
+        TOO_LARGE
     );
 }
 
@@ -343,4 +343,46 @@ fn an_answer_reads_a_file_once_in_any_case_and_no_more_than_it_may() {
     };
     let row = answer.drawn("w", "codex", Some("Mine.svg"), Some(dir.path()));
     assert_eq!((row.own, answer.asked.len()), (None, 0));
+}
+
+/// **Why it fell back, in a fixed sentence** (#3137): the file missing, too large, not a plain
+/// file, its contents refused, or a name purlis draws nothing for.
+#[test]
+fn an_icon_that_fell_back_says_why() {
+    let big = format!(
+        "<svg viewBox=\"0 0 1 1\"><path d=\"M0 0\"/>{}</svg>",
+        " ".repeat(safesvg::MOST_BYTES as usize)
+    );
+    let dir = home(&[("big.svg", &big), ("refused.svg", "<svg>not closed")]);
+    std::fs::create_dir(folder(dir.path()).join("dir.svg")).unwrap();
+    let root = Some(dir.path());
+    assert_eq!(
+        fell_back(Some("missing.svg"), root),
+        Some("the icon file is not there")
+    );
+    assert_eq!(fell_back(Some("big.svg"), root), Some(TOO_LARGE));
+    assert_eq!(fell_back(Some("dir.svg"), root), Some(UNREAD));
+    assert_eq!(
+        fell_back(Some("refused.svg"), root),
+        Some("the SVG has no view box")
+    );
+    assert_eq!(fell_back(Some("no-such-glyph"), root), Some(NO_SUCH_ICON));
+    assert_eq!(fell_back(Some("mine.svg"), None), Some(NO_CONFIG_HOME));
+}
+
+#[test]
+fn an_icon_that_draws_or_is_not_named_has_nothing_to_say() {
+    let dir = home(&[("mine.svg", PLAIN)]);
+    let root = Some(dir.path());
+    assert_eq!(fell_back(None, root), None);
+    assert_eq!(fell_back(Some("spark"), None), None);
+    assert_eq!(fell_back(Some("mine.svg"), root), None);
+}
+
+/// Whatever a file holds, what is said is one of the sentences purlis wrote.
+#[test]
+fn why_an_icon_fell_back_never_repeats_the_file() {
+    let dir = home(&[("words.svg", "SECRET-WORDS<svg SECRET-WORDS>")]);
+    let said = fell_back(Some("words.svg"), Some(dir.path())).expect("refused");
+    assert!(!said.contains("SECRET"), "{said}");
 }

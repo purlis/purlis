@@ -3599,3 +3599,56 @@ fn a_graders_id_is_no_longer_than_the_eval_record_reads_back() {
     .expect_err("purlis's own runner's name is no Grader's");
     assert!(why.contains("names purlis's own runner"), "{why}");
 }
+
+// ---------------------------------------------------------------------------------------
+// A router's reading of prompts: the person's own switch (ADR 0102 as amended 2026-10-31)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_router_reads_no_prompt_until_it_is_turned_on_and_an_approval_leaves_the_choice() {
+    let made = Made::new();
+    let config = made.config();
+    let reads = |id: &str| {
+        read(&config, &BuiltIn::none())
+            .registry
+            .reads_prompts
+            .contains(id)
+    };
+    assert!(!reads("relevance"), "off by default");
+
+    set_reads_prompts(&config, "relevance", true).expect("on");
+    assert!(reads("relevance"));
+    assert!(!reads("other"), "per router");
+
+    let fingerprint = "a".repeat(64);
+    approve(&config, "relevance", &made.at(), &fingerprint).expect("approved");
+    assert!(reads("relevance"), "an approval's row is not the choice");
+    approve(&config, "relevance", &made.at(), &"b".repeat(64)).expect("an update approved");
+    assert!(reads("relevance"), "the same folder's update keeps it");
+    approve(&config, "relevance", &made.config(), &fingerprint).expect("elsewhere");
+    assert!(!reads("relevance"), "another folder is another program");
+    set_reads_prompts(&config, "relevance", true).expect("on");
+
+    set_reads_prompts(&config, "relevance", false).expect("off");
+    assert!(!reads("relevance"));
+
+    set_reads_prompts(&config, "relevance", true).expect("on");
+    forget(&config, "relevance").expect("removed");
+    assert!(!reads("relevance"), "a router installed again starts off");
+    assert!(set_reads_prompts(&config, "../up", true).is_err());
+}
+
+#[test]
+fn a_record_s_reading_list_holds_only_ids_and_a_record_without_one_turns_nothing_on() {
+    let made = Made::new();
+    let config = made.config();
+    set_reads_prompts(&config, "relevance", false).expect("written");
+    let path = file(&config);
+    let text = std::fs::read_to_string(&path).expect("the record");
+    assert!(!text.contains("reads-prompts"), "{text}");
+    let mut doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    doc["reads-prompts"] = serde_json::json!(["good", "../bad", 7]);
+    std::fs::write(&path, doc.to_string()).unwrap();
+    let read_back = read(&config, &BuiltIn::none()).registry.reads_prompts;
+    assert_eq!(read_back.into_iter().collect::<Vec<_>>(), ["good"]);
+}

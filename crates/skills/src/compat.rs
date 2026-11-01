@@ -233,6 +233,9 @@ pub struct Compat {
     /// Whether its harness keeps it out of its model's choice itself, by its own key or a file of
     /// its own beside the `SKILL.md` ([`Compat::kept_manual`]), so it runs only when asked for.
     manual: bool,
+    /// Whether its harness has no prompt hook, so a router that reads prompts never points a
+    /// chat there at it (SK-15c, [`Compat::without_a_pointer`]).
+    no_pointer: bool,
     /// Why purlis cannot read it, where it cannot.
     refused: Option<Refusal>,
 }
@@ -263,6 +266,7 @@ impl Compat {
             ignored: Vec::new(),
             unknown: 0,
             manual: false,
+            no_pointer: false,
             refused: Some(why),
         }
     }
@@ -279,6 +283,15 @@ impl Compat {
         self.manual = true;
         self.ignored.retain(|field| *field != Field::ManualOnly);
         self.fit = self.settled();
+        self
+    }
+
+    /// **The badge on a harness with no prompt hook** (SK-15c, ADR 0102 §3): a router that reads
+    /// prompts cannot point a chat there at the skill, so it says the chat finds it by its
+    /// listing, the index skill or `skill_find` alone. How well it fits is not changed.
+    #[must_use]
+    pub fn without_a_pointer(mut self) -> Compat {
+        self.no_pointer = true;
         self
     }
 
@@ -342,6 +355,13 @@ impl Compat {
         if self.unknown > 0 {
             lines.push("Some of what it sets is read by nothing.".to_owned());
         }
+        if self.no_pointer {
+            lines.push(
+                "No router points a prompt at it here: this program has no prompt hook, so the \
+                 chat finds it in its list, the index skill or with skill_find."
+                    .to_owned(),
+            );
+        }
         lines
     }
 }
@@ -371,6 +391,7 @@ pub fn compat(text: &str, origin: Origin, honours: &Honours) -> Compat {
         ignored: Vec::new(),
         unknown: 0,
         manual: false,
+        no_pointer: false,
         refused: None,
     };
     let read = match crate::handed::parse(text) {

@@ -1682,6 +1682,7 @@ async fn start_chat(
     };
     let held = planes.held(&plane)?;
     let config = planes.config().map(std::path::Path::to_path_buf);
+    let cancel = hostedsessions::a_cancellable_start(held.root());
     tauri::async_runtime::spawn_blocking(move || {
         let named = label.clone();
         let show_footer = boxes.show_footer;
@@ -1691,36 +1692,47 @@ async fn start_chat(
                 reason: asked.reason,
             });
         // git is asked once about the local file for the whole start (#2179).
-        let (mut started, said) = purlis_core::profiles::git_asked_once(|| {
-            worktrees::on_a_branch(
-                held.root(),
-                config.as_deref(),
-                cwd.as_deref().map(std::path::Path::new),
-                named.as_deref(),
-                boxes.new_branch,
-                |cwd| {
-                    start_chat_in(
-                        &held,
-                        profile,
-                        persona,
-                        cwd,
-                        name,
-                        label,
-                        Picked {
-                            show_footer,
-                            without_sandbox,
-                        },
-                        columns,
-                        rows,
-                    )
-                },
-            )
+        let (mut started, said) = hostedsessions::cancelled_by(cancel, || {
+            purlis_core::profiles::git_asked_once(|| {
+                worktrees::on_a_branch(
+                    held.root(),
+                    config.as_deref(),
+                    cwd.as_deref().map(std::path::Path::new),
+                    named.as_deref(),
+                    boxes.new_branch,
+                    |cwd| {
+                        start_chat_in(
+                            &held,
+                            profile,
+                            persona,
+                            cwd,
+                            name,
+                            label,
+                            Picked {
+                                show_footer,
+                                without_sandbox,
+                            },
+                            columns,
+                            rows,
+                        )
+                    },
+                )
+            })
         })?;
         started.notices.splice(0..0, said);
         Ok(started)
     })
     .await
     .map_err(|err| format!("purlis could not start the chat: {err}"))?
+}
+
+/// **The person pressed Cancel while a chat started in this project** (#4264): it stops waiting
+/// for the session host, and a chat that comes up after is closed.
+#[tauri::command]
+#[specta::specta]
+async fn cancel_chat_start(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<(), String> {
+    hostedsessions::cancel_starts(planes.held(&plane)?.root());
+    Ok(())
 }
 
 /// The picker's two boxes, as the start reads them.
@@ -3334,6 +3346,7 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
                 .relaying_with(runnerlinks::relays_to(config.clone()))
                 // The kill switch reaches every runner this machine keeps (#2051).
                 .stopping_runners_with(runnerlinks::every_runner(config.clone()))
+                .running_again_with(runnerlinks::runs_again(config.clone()))
                 .draining_with(runnerlinks::drains_to(config)),
             None => hosting,
         };
@@ -3668,6 +3681,12 @@ pub fn run() {
                 }
                 Err(why) => tracing::warn!("purlis: no harness folder was adopted: {why}"),
             }
+            // Waits let go on a pool are told to the windows (#4228), and `purlis profile
+            // remove` in the person's own terminal reaches the pools' runners through this
+            // window (#4141): after the adoption, so a folder adopted now counts as a profile.
+            poolprofiles::tells_through(app.handle().clone());
+            #[cfg(unix)]
+            poolprofiles::listen_for_the_command_line();
             // From here on this app holds the config home: no rename-local of a later launch,
             // or of a terminal, moves it while the app runs.
             let mut holds_the_config_home = false;
@@ -3746,6 +3765,8 @@ pub fn run() {
             // No session host to fail where none runs.
             #[cfg(not(unix))]
             app.manage(std::sync::Arc::new(hostfailing::HostFailing::default()));
+            // A grade a person asks for at a terminal runs here (SK-61, #3241).
+            skillgrade::hears_terminals(app.handle().clone());
             // The person's forge sign-ins, for the window's own forge calls (#1816).
             forgeaccounts::hand_over_sign_ins();
             // And the window is told when a forge ends one of them (#729).

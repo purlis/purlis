@@ -43,15 +43,21 @@ pub const PATH: &str = "/metrics";
 pub enum Cause {
     /// The Claim or its Pool was set `stopped` (#2058).
     Stopped,
+    /// Nothing ran on the runner for its pool's `idleAfter` (#3980).
+    Idle,
     /// Someone deleted the Claim.
     Requested,
+    /// Its retention ended (#3981).
+    Retention,
 }
 
 impl Cause {
     fn label(self) -> &'static str {
         match self {
             Cause::Stopped => "stopped",
+            Cause::Idle => "idle",
             Cause::Requested => "requested",
+            Cause::Retention => "retention",
         }
     }
 }

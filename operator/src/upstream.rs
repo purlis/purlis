@@ -93,6 +93,21 @@ pub const VOLUME_GROUP: i64 = 10001;
 /// The variable [`KEY_STEP`] reads its upstream claim's uid from (`purlis_core::runnerlink::CLAIM_VAR`).
 pub const CLAIM_VAR: &str = "PURLIS_CLAIM_UID";
 
+/// **The variable that marks a runner made to refuse any start outside the sandbox but a shell**
+/// (#4207, the person's ruling of 2026-10-31), set from the pod's birth on a Pool naming an App's key
+/// (`purlis_core::forge::mintport::MARK_VAR`). A pod's containers never change, so the operator can
+/// read that it has held since its first moment; nothing a runner says could tell it that.
+pub const MINTING_MARK: &str = "PURLIS_MINTING_POOL";
+
+/// What a runner's host is told its pool's `idleAfter` in (#3980): an environment variable, which
+/// a runner image from before it ignores, where a word on its command line would end it. The same
+/// name as `crates/purlis-core/src/clusterpool/idle.rs`.
+pub const IDLE_AFTER_VAR: &str = "PURLIS_IDLE_AFTER";
+
+/// **The variable naming the image a runner runs** (`purlis_core::sandbox::tools::POOL_IMAGE_VAR`,
+/// #4354): said back to the person if a declared tool's program is not in the image.
+pub const POOL_IMAGE_VAR: &str = "PURLIS_POOL_IMAGE";
+
 /// What [`KEY_STEP`] runs, after the image's own entrypoint (`purlis`).
 pub fn key_step_args() -> Vec<String> {
     [
@@ -225,6 +240,11 @@ pub fn operating_mode_for(
     // stays so, since nothing is left to set the pool running again (#2058).
     pool?;
     (mode == SUSPENDED && suspended_by_the_operator(&sandbox.metadata)).then_some(RUNNING)
+}
+
+/// The mode the operator puts an idle runner's `sandbox` in, if it changes it (#3980).
+pub fn operating_mode_while_idle(sandbox: &Sandbox) -> Option<&'static str> {
+    (sandbox.spec.operating_mode.as_deref() != Some(SUSPENDED)).then_some(SUSPENDED)
 }
 
 /// Whether the operator's own server-side apply owns `sandbox`'s operating mode.
@@ -470,11 +490,29 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
         name: RUNNER_CONTAINER.to_owned(),
         image: Some(pool.spec.image.clone()),
         // Its home is on the kept volume (#2057); the first step made it from the image's.
-        env: Some(vec![EnvVar {
-            name: "HOME".to_owned(),
-            value: Some(RUNNER_HOME.to_owned()),
-            ..EnvVar::default()
-        }]),
+        env: Some(
+            std::iter::once(EnvVar {
+                name: "HOME".to_owned(),
+                value: Some(RUNNER_HOME.to_owned()),
+                ..EnvVar::default()
+            })
+            .chain(std::iter::once(EnvVar {
+                name: IDLE_AFTER_VAR.to_owned(),
+                value: Some(pool.spec.idle_after.clone()),
+                ..EnvVar::default()
+            }))
+            .chain(std::iter::once(EnvVar {
+                name: POOL_IMAGE_VAR.to_owned(),
+                value: Some(pool.spec.image.clone()),
+                ..EnvVar::default()
+            }))
+            .chain(pool.spec.forge.is_some().then(|| EnvVar {
+                name: MINTING_MARK.to_owned(),
+                value: Some("1".to_owned()),
+                ..EnvVar::default()
+            }))
+            .collect(),
+        ),
         volume_mounts: mounts(),
         resources: Some(requests(RUNNER_REQUESTS)),
         security_context: Some(confined()),

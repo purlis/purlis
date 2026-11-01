@@ -643,12 +643,18 @@ impl purlis_host::Channel for HookChannel {
     }
 
     fn ended(&self, number: u32, pid: u32) {
-        self.tokens.program_ended(number, pid);
+        // A token the operator minted for it goes as it ends, window or no window (#4207, #3808):
+        // not where the chat has started again under this number since.
+        if self.tokens.program_ended(number, pid) {
+            crate::forge::apptoken::chat_ended(&self.root, number);
+        }
     }
 
     fn forget(&self, number: u32) {
         self.tokens.forget(number);
         crate::hostedchats::forget(&self.root, number);
+        // And where its window closed it before it ended.
+        crate::forge::apptoken::chat_ended(&self.root, number);
         // What it spooled is recorded and its keys dropped, off the host's runtime: a drain
         // makes each line durable (V99i, #2003).
         let (socket, root, log) = (self.socket.clone(), self.root.clone(), self.log.clone());

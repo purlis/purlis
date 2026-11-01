@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::cell::RefCell;
 
 fn work() -> onrunner::Kept {
     onrunner::Kept {
@@ -10,7 +11,47 @@ fn work() -> onrunner::Kept {
         sandbox_only: false,
         pinned: None,
         settings_in: None,
+        limits: Default::default(),
+        highest: Default::default(),
     }
+}
+
+/// **A wait let go everywhere tells each project whose wait went** (#4228), and nothing is told
+/// where none did.
+#[test]
+fn a_wait_let_go_everywhere_tells_each_project_it_went_from() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    let store = profilestore::Homes::at(&config, &dir.path().join("data"));
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let env = |_: &str| -> Option<String> { None };
+    profilestore::create(
+        &store,
+        "work",
+        "claude",
+        &profilestore::MachineSettings {
+            home: &home,
+            env: &env,
+        },
+        1,
+    )
+    .expect("made");
+    let (one, two) = (dir.path().join("one"), dir.path().join("two"));
+    for root in [&one, &two] {
+        onrunner::ready_on(&config, root, "tells", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    }
+
+    let told = RefCell::new(Vec::new());
+    let_go_telling("tells", "work", |went| told.borrow_mut().extend(went));
+    let mut told = told.into_inner();
+    told.sort();
+    assert_eq!(told, [one, two]);
+
+    let_go_telling("tells", "work", |_| panic!("none was left to tell"));
 }
 
 /// **A pool not shown to be the person's own is sent nothing** (#2049, D-2049-5): keeping a
@@ -26,7 +67,6 @@ fn a_pool_not_shown_to_be_owned_is_sent_nothing_and_is_its_own_to_say() {
         "builds",
         &work(),
         Waking::No,
-        &Default::default(),
     );
 
     assert_eq!(said, Ok(None));
@@ -56,7 +96,6 @@ fn a_pool_not_shown_to_be_owned_is_sent_no_setting_and_none_is_read() {
         "builds",
         &kept,
         Waking::Yes,
-        &Default::default(),
     );
 
     assert_eq!(said, Ok(None));
@@ -74,7 +113,6 @@ fn on_an_owned_pool_it_goes_on_to_the_pool() {
         "builds",
         &work(),
         Waking::No,
-        &Default::default(),
     );
 
     assert!(said.is_err(), "{said:?}");
@@ -433,14 +471,7 @@ fn a_cluster_pool_keeps_a_profile_only_marked_and_vouched_for_now() {
     assert!(why.contains("This is my own"), "{why}");
     assert_eq!(asked.get(), 0, "an unmarked pool's cluster is never asked");
     assert_eq!(
-        keep_on_as(
-            unmarked,
-            config.path(),
-            "team",
-            &work(),
-            Waking::No,
-            &RefCell::default()
-        ),
+        keep_on_as(unmarked, config.path(), "team", &work(), Waking::No,),
         Ok(None),
         "nothing is sent"
     );
@@ -566,8 +597,11 @@ fn a_runner_in(container: char, device: &str) -> purlis_core::runners::Kept {
         of: None,
         draining: false,
         carried: false,
+        carry_failed: false,
         unpaired: false,
         signed_out: Vec::new(),
+        engine: None,
+        home_created: None,
     }
 }
 
@@ -619,4 +653,185 @@ fn a_carry_goes_on_only_while_the_kept_runner_is_the_one_it_started_on() {
     let other = a_runner_in('b', "01JB0RUNNER0000000000000000");
     let why = still_the_runner(config.path(), "builds", &other).unwrap_err();
     assert!(why.contains("made again"), "{why}");
+}
+
+/// **A cluster runner keeps only what is chosen for its pool** (#4183): what it keeps beyond the
+/// pool's choice is forgotten, as on a Docker pool.
+#[cfg(unix)]
+#[test]
+fn a_cluster_runner_forgets_what_is_no_longer_chosen() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool(config.path());
+    purlis_core::runners::add_pool_profile(config.path(), "team", "work", None).unwrap();
+    let records = vec![record("work", "claude"), record("home", "claude")];
+
+    let tidied = tidy(
+        config.path(),
+        "team",
+        &records,
+        Some("work"),
+        a_runner_keeping(&["work", "home", "gone"], &[]),
+    )
+    .unwrap();
+
+    assert_eq!(
+        tidied,
+        Tidied::Done {
+            forgotten: names(&["home", "gone"]),
+            refused: false
+        }
+    );
+    assert_eq!(
+        purlis_core::runners::profiles_of(config.path(), "team").unwrap(),
+        Some(names(&["work"]))
+    );
+}
+
+/// **A cluster runner's word never widens what goes to it** (#4183): a pool that names none comes
+/// to name the project's default, not what its runner says it keeps, and the rest is forgotten.
+#[cfg(unix)]
+#[test]
+fn a_cluster_pool_that_names_none_names_its_default_and_not_what_its_runner_says_it_keeps() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool(config.path());
+    let records = vec![record("work", "claude"), record("private", "claude")];
+
+    let tidied = tidy(
+        config.path(),
+        "team",
+        &records,
+        Some("work"),
+        a_runner_keeping(&["work", "private"], &[]),
+    )
+    .unwrap();
+
+    assert_eq!(
+        tidied,
+        Tidied::Done {
+            forgotten: names(&["private"]),
+            refused: false
+        }
+    );
+    assert_eq!(
+        purlis_core::runners::profiles_of(config.path(), "team").unwrap(),
+        Some(names(&["work"]))
+    );
+}
+
+/// **An unmarked cluster pool is asked nothing** (#4183): not by a chat's start's tidy, nor when
+/// a profile is removed on this Mac, and neither reaches for its cluster.
+#[cfg(unix)]
+#[test]
+fn an_unmarked_cluster_pool_is_asked_nothing_by_a_tidy_or_a_removal() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool(config.path());
+
+    let refused = forget_on(config.path(), "team", "work").unwrap_err();
+    assert!(refused.contains("not marked as your own"), "{refused}");
+
+    let not_yours = yours(config.path(), "team");
+    assert!(not_yours.is_err());
+    tidy_once(&not_yours, config.path(), Path::new("/nowhere"), "team");
+    assert!(
+        !TIDIED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .any(|one| one == "team"),
+        "a tidy that asked nothing is not counted as done"
+    );
+}
+
+/// **A profile removed on this Mac goes off each pool whose runner forgot it, of either kind**
+/// (#4183); a pool whose runner was not shown to be yours keeps its name, to be asked again.
+#[cfg(unix)]
+#[test]
+fn a_removed_profile_leaves_a_cluster_pool_only_where_its_runner_forgot_it() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool(config.path());
+    purlis_core::runners::add_pool_profile(config.path(), "team", "work", None).unwrap();
+    let pools = names(&["team"]);
+
+    let note = forget_off(config.path(), &pools, "work", &|_| {
+        Err("not vouched for now".to_owned())
+    });
+    assert_eq!(note, None);
+    assert_eq!(
+        purlis_core::runners::profiles_of(config.path(), "team").unwrap(),
+        Some(names(&["work"]))
+    );
+
+    let asked = std::sync::Mutex::new(Vec::new());
+    let note = forget_off(config.path(), &pools, "work", &|pool| {
+        asked.lock().unwrap().push(pool.to_owned());
+        Ok(Some(()))
+    });
+    assert_eq!(note, None);
+    assert_eq!(*asked.lock().unwrap(), names(&["team"]));
+    assert_eq!(
+        purlis_core::runners::profiles_of(config.path(), "team").unwrap(),
+        Some(Vec::new())
+    );
+}
+
+/// The page draws whatever the core's list holds, so a limit added there reaches it (#4285).
+#[test]
+fn a_pools_page_lists_every_limit_once_with_what_the_person_set() {
+    use purlis_core::poollimits::{Chosen, LimitId, all};
+    let chosen = Chosen::default().with(LimitId::ProfileFiles, Some(9000));
+    let shown = limits_shown(&chosen);
+    let rows: Vec<&PoolLimitRow> = shown
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .chain(&shown.advanced)
+        .collect();
+    // All but what an add alone waits on, which would change nothing here.
+    let listed: Vec<_> = all().iter().filter(|limit| !limit.clusters_only).collect();
+    assert_eq!(rows.len(), listed.len());
+    for limit in listed {
+        let row = rows.iter().find(|row| row.key == limit.key).unwrap();
+        assert_eq!(row.plain, limit.plain);
+        assert_eq!(u64::from(row.default), limit.default);
+        assert_eq!(row.default_said, limit.unit.said(limit.default));
+        assert_eq!(row.set.map(u64::from), chosen.get(limit.id));
+    }
+    for group in &shown.groups {
+        assert!(!group.limits.is_empty(), "{} is empty", group.label);
+        // Said once for the group, or on each of its rows.
+        for row in &group.limits {
+            assert_ne!(
+                group.applies.is_some(),
+                row.applies.is_some(),
+                "{}",
+                row.key
+            );
+        }
+    }
+    assert!(shown.advanced.iter().all(|row| row.applies.is_some()));
+}
+
+/// **A sign-in out of its wait offers double it, on its pool** (spec #4275), and the page never
+/// lists a value that would change nothing.
+#[test]
+fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait() {
+    use purlis_core::poollimits::{Chosen, LimitId, hits_said_in};
+    let said = sign_in_ran_out("ran-out-signing-in", 15);
+    assert!(said.starts_with(driven::TOOK_TOO_LONG), "{said}");
+    assert!(said.contains("raise it to 30 minutes"), "{said}");
+    let hits = hits_said_in("ran-out-signing-in", &said);
+    assert_eq!(hits[0].limit, LimitId::SignInWait);
+
+    let page = limits_shown(&Chosen::default());
+    let keys: Vec<&str> = page
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .chain(&page.advanced)
+        .map(|row| row.key.as_str())
+        .collect();
+    assert!(keys.contains(&"signInWait"), "{keys:?}");
+    assert!(keys.contains(&"answerWait"), "{keys:?}");
+    assert!(!keys.contains(&"vouchWait"), "{keys:?}");
+    assert_eq!(page.advanced.len(), 1);
 }

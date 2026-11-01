@@ -14,7 +14,8 @@
 //! - **"Ask a chat to draft a skill"** ([`skill_draft_chat`]) opens a chat where the level's skills
 //!   are reached from, with the core's prompt typed and never sent, as a curation chat is opened.
 //!   **"Ask a chat to write them"** ([`skill_trigger_tests_chat`]) opens one the same way, asked
-//!   for a skill's trigger tests (#3925).
+//!   for a skill's trigger tests (#3925); [`skill_outcome_evals_chat`] for its outcome evals, and
+//!   [`skill_improve_chat`] for an edit from its recent runs and grades (#2780).
 //! - **Try it** opens a scratch chat in a throwaway piece, armed with the built-in skills and the
 //!   draft alone, on the profile the person picked or the project's default; the piece goes when
 //!   the chat closes (`Chats::close`).
@@ -301,26 +302,103 @@ pub(crate) async fn skill_trigger_tests_chat(
     let held = planes.held(&plane)?;
     crate::curation::off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
-        let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
-        let prompt = drafts::asking_for_trigger_tests(&root, &level, &name)?;
-        let cwd = where_level_is_reached(&root, &level)?;
-        let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
-        open(
+        let prompt = drafts::asking_for_trigger_tests(held.root(), &level, &name)?;
+        open_on_a_skill(
             &held,
-            ChatTyped {
-                profile,
-                persona: None,
-                cwd,
-                label: format!("Trigger tests of {name}"),
-                prompt,
-                then_a_space: false,
-                starts_runs: None,
-            },
+            &level,
+            format!("Trigger tests of {name}"),
+            prompt,
             purlis_core::engine::Size { columns, rows },
         )
     })
     .await
+}
+
+/// **"Ask a chat to write outcome evals"** (#2780; decision 43): a chat where `level`'s skills are
+/// reached from, with the core's prompt for the outcome evals of the skill `name` typed and never
+/// sent ([`drafts::asking_for_outcome_evals`]). Its write comes back as a draft.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_outcome_evals_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    level: SkillLevel,
+    name: String,
+    columns: u16,
+    rows: u16,
+) -> Result<Curating, StartRefused> {
+    let held = planes.held(&plane)?;
+    crate::curation::off_the_window_refused("starting the chat", move || {
+        crate::skillchange::flag_on()?;
+        let level: purlis_core::skills::verbs::Level = (&level).into();
+        let prompt = drafts::asking_for_outcome_evals(held.root(), &level, &name)?;
+        open_on_a_skill(
+            &held,
+            &level,
+            format!("Outcome evals of {name}"),
+            prompt,
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
+}
+
+/// **"Improve from runs"** (#2780; decision 59): a chat where `level`'s skills are reached from,
+/// with the core's prompt to read the recent runs and grades of the skill `name` and draft an edit
+/// typed and never sent ([`drafts::improving_from_runs`]). It never edits the skill: its write
+/// comes back as a draft.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_improve_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    level: SkillLevel,
+    name: String,
+    columns: u16,
+    rows: u16,
+) -> Result<Curating, StartRefused> {
+    let held = planes.held(&plane)?;
+    crate::curation::off_the_window_refused("starting the chat", move || {
+        crate::skillchange::flag_on()?;
+        let level: purlis_core::skills::verbs::Level = (&level).into();
+        let prompt = drafts::improving_from_runs(held.root(), &level, &name)?;
+        open_on_a_skill(
+            &held,
+            &level,
+            format!("Improve {name}"),
+            prompt,
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
+}
+
+/// A chat where `level`'s skills are reached from, on the project's default profile, with `prompt`
+/// typed and never sent.
+fn open_on_a_skill(
+    held: &Arc<Held>,
+    level: &purlis_core::skills::verbs::Level,
+    label: String,
+    prompt: String,
+    size: purlis_core::engine::Size,
+) -> Result<Curating, StartRefused> {
+    let root = held.root();
+    let cwd = where_level_is_reached(root, level)?;
+    let (profile, _) = crate::curation::default_profile(root, "no chat was opened")?;
+    open(
+        held,
+        ChatTyped {
+            profile,
+            persona: None,
+            cwd,
+            label,
+            prompt,
+            then_a_space: false,
+            starts_runs: None,
+        },
+        size,
+    )
 }
 
 /// **Try it** (decision 50): a scratch chat in a throwaway piece, armed with the built-in skills

@@ -3,7 +3,7 @@
 
 import { answerRowOf, answersOf } from "./ui/dialog/dialog.testkit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { userEvent } from "@testing-library/user-event";
 import type { StartOptions } from "./bindings";
@@ -405,6 +405,31 @@ describe("a start already running (GL-1)", () => {
     expect(start).not.toHaveAttribute("aria-keyshortcuts");
     await userEvent.setup().click(start);
     expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it("says it starts the session host once a start takes a moment, with Cancel to hand", () => {
+    vi.useFakeTimers();
+    try {
+      const onCancel = vi.fn();
+      render(
+        <StartChat
+          options={options()}
+          starting
+          onStart={vi.fn()}
+          onApprove={vi.fn()}
+          onCancel={onCancel}
+        />,
+      );
+      expect(screen.queryByText("Starting the session host…")).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("Starting the session host…");
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(onCancel).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -1917,3 +1942,48 @@ const MANY_PERSONAS = [
   "security-reviewer",
   "ui-designer",
 ];
+
+describe("raising a limit a start was refused on (#4285)", () => {
+  const offer = {
+    pool: "builds",
+    hits: [
+      {
+        key: "profileSize",
+        plain: "Most a profile may send: size",
+        unit: "MiB",
+        in_force: 128,
+        needed: 150,
+        suggested: 192,
+      },
+    ],
+  };
+  const draw = (limitProfile: string, over: Partial<StartOptions> = {}) =>
+    render(
+      <StartChat
+        options={options(over)}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile={limitProfile}
+        onRaiseLimit={vi.fn()}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+  const press = () => screen.queryByRole("button", { name: "Save to the pool and start" });
+
+  it("is offered on the profile it was refused on", () => {
+    draw("claude");
+    expect(press()).not.toBeNull();
+  });
+
+  it("isn't offered once another profile is picked", () => {
+    draw("another");
+    expect(press()).toBeNull();
+  });
+
+  it("isn't offered where the start would be an approval", () => {
+    draw("claude", { profiles: [{ ...ONE.profiles[0], approval: "new" }] });
+    expect(press()).toBeNull();
+  });
+});

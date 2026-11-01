@@ -263,35 +263,12 @@ pub fn follow(
     progress: &mut dyn FnMut(Progress),
 ) -> std::io::Result<Followed> {
     let (lines, heard) = mpsc::channel::<String>();
-    if let Some(mut stdout) = child.stdout.take() {
-        std::thread::spawn(move || {
-            let _ = std::io::copy(&mut stdout, &mut std::io::sink());
-        });
+    // git says its progress on stderr, and `git lfs pull` its own on stdout (#4162).
+    if let Some(stdout) = child.stdout.take() {
+        hear_lines(stdout, lines.clone());
     }
     if let Some(stderr) = child.stderr.take() {
-        std::thread::spawn(move || {
-            // git rewrites a progress line in place with `\r`, so either ends a line.
-            let mut line = Vec::new();
-            for byte in std::io::BufReader::new(stderr).bytes() {
-                let Ok(byte) = byte else { break };
-                if byte != b'\r' && byte != b'\n' {
-                    line.push(byte);
-                    continue;
-                }
-                if !line.is_empty() {
-                    if lines
-                        .send(String::from_utf8_lossy(&line).into_owned())
-                        .is_err()
-                    {
-                        return;
-                    }
-                    line.clear();
-                }
-            }
-            if !line.is_empty() {
-                let _ = lines.send(String::from_utf8_lossy(&line).into_owned());
-            }
-        });
+        hear_lines(stderr, lines);
     }
     let mut said: Vec<String> = Vec::new();
     let mut last: Option<Progress> = None;
@@ -347,6 +324,33 @@ pub fn follow(
         ok: status.success(),
         said,
     })
+}
+
+/// Hands on each line `from` says, on a thread of its own, until it ends. A progress line is
+/// rewritten in place with `\r`, so either ends a line.
+fn hear_lines(from: impl std::io::Read + Send + 'static, lines: mpsc::Sender<String>) {
+    std::thread::spawn(move || {
+        let mut line = Vec::new();
+        for byte in std::io::BufReader::new(from).bytes() {
+            let Ok(byte) = byte else { break };
+            if byte != b'\r' && byte != b'\n' {
+                line.push(byte);
+                continue;
+            }
+            if !line.is_empty() {
+                if lines
+                    .send(String::from_utf8_lossy(&line).into_owned())
+                    .is_err()
+                {
+                    return;
+                }
+                line.clear();
+            }
+        }
+        if !line.is_empty() {
+            let _ = lines.send(String::from_utf8_lossy(&line).into_owned());
+        }
+    });
 }
 
 #[cfg(test)]

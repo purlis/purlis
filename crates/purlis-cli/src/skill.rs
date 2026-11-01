@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis skill list | show | new | edit | mv | rm | restore | grant | share | install | update |
+//! export | publish |
 //! runs | history | revert | deprecate | archive | owners | uses | pin` (SK-2, #2765; SK-4, #2767;
 //! SK-3, #2766; SK-7, #2770; SK-19, #2782; SK-15, #2778): the skills a chat in this project gets,
 //! and why each other one is left out or hidden, as the Skill studio shows them; making, editing,
@@ -28,7 +29,9 @@ use serde_json::{Value, json};
 
 use purlis_core::counts::counted;
 use purlis_core::tui::Markup;
+use purlis_session_protocol::session::GradeLevel;
 
+use crate::gradelink;
 use crate::memory::Code;
 use crate::voice;
 
@@ -232,6 +235,47 @@ pub enum SkillCommand {
         #[command(flatten)]
         at: LevelArgs,
     },
+    /// Write a skill, and the project's skills it refers to, to a new folder or zip that works
+    /// outside purlis, each in a folder of its own. Links, credential files and what git ignores
+    /// stay behind and are said; anything credential-shaped writes nothing.
+    Export {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// Where: a path that is not there yet.
+        #[arg(long)]
+        to: std::path::PathBuf,
+        /// Write a zip there instead of a folder.
+        #[arg(long)]
+        zip: bool,
+        #[command(flatten)]
+        at: LevelArgs,
+    },
+    /// Open a draft pull or merge request on a skill source with a skill, the project's skills it
+    /// refers to, and a summary of their grades: prints the review of everything that would go,
+    /// and asks. Takes a yes from a person at a terminal, and has no flag to skip it: refused with
+    /// no terminal and inside a chat. Anything secret or personal, or a skill kept on this
+    /// machine, sends nothing.
+    Publish {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// The source: an https:// URL on GitHub or GitLab, which you can push to.
+        #[arg(long)]
+        to: String,
+        /// The source's branch the request goes into (default: its own default branch).
+        #[arg(long)]
+        branch: Option<String>,
+        /// The folder inside the source its skills are in (default: its top).
+        #[arg(long)]
+        folder: Option<String>,
+        /// The vault a private source is read with, through `purlis secret exec`.
+        #[arg(long, requires = "key")]
+        vault: Option<String>,
+        /// The entry in that vault that holds the token.
+        #[arg(long, requires = "vault")]
+        key: Option<String>,
+        #[command(flatten)]
+        at: LevelArgs,
+    },
     /// Check each installed skill's source for a newer commit (its refs only: nothing is
     /// fetched or written). With a name, print that skill's update as a diff of its review and
     /// its files, and ask before it is applied. Nothing is ever updated by itself.
@@ -348,15 +392,34 @@ pub enum SkillCommand {
     /// chats a grade runs (each test three times with the skill and three without it, one turn
     /// each) and what its last grade spent per chat; then each grade the project's eval record
     /// holds, newest first, with each arm's pass rate and the difference the skill made. A
-    /// grade runs from the skill's tab in the Skill studio, which shows this plan first.
+    /// grade runs from the skill's tab in the Skill studio, which shows this plan first, or with
+    /// `--run` from a terminal, on the same plan and caps, once you answer yes.
     Grade {
         /// The skill's name, as `purlis skill list` prints it.
         name: String,
         #[command(flatten)]
         at: LevelArgs,
         /// Answer as JSON, for a chat or a script.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "run")]
         json: bool,
+        /// Run the grade: in the purlis window that has this project open, which spends your
+        /// account on real chats. Asks first. Refused inside a chat.
+        #[arg(long)]
+        run: bool,
+        /// The profile its chats run on (default: the project's).
+        #[arg(long, requires = "run")]
+        profile: Option<String>,
+        /// The model its chats run on (default: the profile's own).
+        #[arg(long, requires = "run")]
+        model: Option<String>,
+        /// An outcome eval to run too, by its id; repeat for each. None run unless named, and a
+        /// named one is refused until outcome evals run from a terminal (#3235).
+        #[arg(long = "eval", value_name = "ID", requires = "run")]
+        evals: Vec<String>,
+        /// Do not ask: for a script that has read the plan. It still runs only what the plan
+        /// printed.
+        #[arg(long, requires = "run")]
+        yes: bool,
     },
 }
 
@@ -382,6 +445,22 @@ impl LevelArgs {
             (None, None) => Level::project(),
         }
         .local(self.local)
+    }
+
+    /// The level as a terminal names it to the window.
+    fn wire_level(&self) -> GradeLevel {
+        let local = self.local;
+        match (&self.workspace, &self.persona) {
+            (Some(name), _) => GradeLevel::Workspace {
+                name: name.clone(),
+                local,
+            },
+            (None, Some(name)) => GradeLevel::Persona {
+                name: name.clone(),
+                local,
+            },
+            (None, None) => GradeLevel::Project { local },
+        }
     }
 }
 
@@ -434,6 +513,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 | SkillCommand::Grade { .. }
                 | SkillCommand::History { .. }
                 | SkillCommand::Uses { .. }
+                | SkillCommand::Export { .. }
         );
     if writes
         && purlis_core::envvar::var(purlis_core::active::SESSION_ID_ENV)
@@ -909,6 +989,29 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
             Ok(0)
         }
+        SkillCommand::Export { name, to, zip, at } => {
+            export(root, built_in.as_deref(), &name, &to, zip, &at.level())
+        }
+        SkillCommand::Publish {
+            name,
+            to,
+            branch,
+            folder,
+            vault,
+            key,
+            at,
+        } => {
+            let source = Source {
+                remote: Remote { url: to, branch },
+                folder,
+                sign_in: vault.zip(key).map(|(vault, key)| VaultEntry {
+                    vault,
+                    key,
+                    user: None,
+                }),
+            };
+            publish(root, built_in.as_deref(), &name, &source, &at.level())
+        }
         SkillCommand::Update {
             name: Some(name),
             yes,
@@ -979,7 +1082,28 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 Ok(1)
             }
         },
-        SkillCommand::Grade { name, at, json } => {
+        SkillCommand::Grade {
+            name,
+            at,
+            run: true,
+            profile,
+            model,
+            evals,
+            yes,
+            ..
+        } => Ok(gradelink::run(
+            root,
+            &gradelink::Asked {
+                wire: at.wire_level(),
+                level: at.level(),
+                name,
+                profile,
+                model,
+                evals,
+                yes,
+            },
+        )),
+        SkillCommand::Grade { name, at, json, .. } => {
             let level = at.level();
             // The terminal knows no profile: the estimate is the newest grade's whose chats ran.
             match purlis_core::skills::grades::planned(root, &level, &name, None) {
@@ -1323,93 +1447,22 @@ fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> St
     )
 }
 
+/// **What grading runs, cost first**: the part of [`grade_said`] above the grades, which
+/// `purlis skill grade --run` prints before it asks.
+pub(crate) fn plan_said(planned: &purlis_core::skills::grades::Planned, root: &Path) -> String {
+    let local_file = purlis_core::settings::Which::Local.file_at(root);
+    grade_plan_said(planned, local_file, false)
+}
+
 /// **`purlis skill grade`'s text**: the plan, cost first, then each grade, newest first.
 fn grade_said(
     planned: &purlis_core::skills::grades::Planned,
     graded: &[purlis_core::skills::grades::Graded],
     local_file: &str,
 ) -> String {
-    use purlis_core::skills::grade::{Arm, Read};
+    use purlis_core::skills::grade::Arm;
     let name = &planned.skill;
-    let mut text = String::new();
-    if let Read::Refused(why) = &planned.fixtures.triggers {
-        text.push_str(&format!(
-            "Its trigger tests could not be read: {}\n",
-            why.terminal()
-        ));
-    }
-    match (&planned.request, planned.plan) {
-        (Some(request), Some(plan)) => {
-            let times = counted(u32::from(request.runs), "time", "times");
-            // The version it compares with too, where the skill has one (SK-57).
-            let previous = match &planned.previous {
-                Some(previous) => format!(
-                    ", and {times} with its previous version, {} ({})",
-                    history::short(&previous.commit),
-                    previous.subject
-                ),
-                None => String::new(),
-            };
-            text.push_str(&format!(
-                "Grading {name} runs {}, one turn each: each of {} {times} with the skill and \
-                 {times} without it{previous}.\n",
-                counted(plan.chats, "chat", "chats"),
-                counted(plan.trigger_tests, "trigger test", "trigger tests"),
-            ));
-            if let Some(why) = &planned.previous_refused {
-                text.push_str(&format!("Its previous version is not compared: {why}.\n"));
-            }
-            text.push_str(&estimate_said(planned.estimate.as_ref()));
-            for (at, test) in request.triggers.iter().enumerate() {
-                text.push_str(&format!(
-                    "  {}. {}  ({})\n",
-                    at + 1,
-                    purlis_core::skills::review::escaped_line(&test.query),
-                    if test.should_trigger {
-                        "should start it"
-                    } else {
-                        "should leave it alone"
-                    }
-                ));
-            }
-            for left in &planned.left_out {
-                text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
-            }
-            // The terminal knows no profile, so its limit is at the dearest known price: the
-            // Skill studio's plan prices it from the model its profile's chats run on (#3469).
-            let dearest = purlis_core::skills::grades::price::of_model(None);
-            text.push_str(&format!(
-                "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
-                 sets it), or once they cost ${:.2}, its tokens at the dearest known price of \
-                 ${:.2} a million; the Skill studio's plan prices it from the model the chats \
-                 run on.\n",
-                counted(planned.cap.tokens, "token", "tokens"),
-                match planned.cap.from {
-                    purlis_core::skills::grades::cap::From::Default => "the default",
-                    purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
-                },
-                local_file,
-                planned.cap.cost_usd(&dearest),
-                dearest.usd_per_million,
-            ));
-            text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
-        }
-        _ => text.push_str(&format!(
-            "{name} has no trigger tests to grade: the queries it should start on and the near \
-             misses it should leave alone, in its evals/triggers.json.\n"
-        )),
-    }
-    if let Some(evals) = planned
-        .fixtures
-        .outcomes
-        .read()
-        .filter(|evals| !evals.is_empty())
-    {
-        text.push_str(&format!(
-            "{} for a later purlis: grades run the trigger tests alone.\n",
-            counted(evals.len(), "outcome eval waits", "outcome evals wait"),
-        ));
-    }
+    let mut text = grade_plan_said(planned, local_file, true);
     if graded.is_empty() {
         text.push_str(&format!("No grades of {name} yet.\n"));
         return text;
@@ -1466,6 +1519,101 @@ fn grade_said(
             } else {
                 ""
             },
+        ));
+    }
+    text
+}
+
+/// The plan's part of [`grade_said`]. `with_limits` says the limits as this terminal can work them
+/// out, and where to grade from: `--run` prints the window's own instead, the ones that bind.
+fn grade_plan_said(
+    planned: &purlis_core::skills::grades::Planned,
+    local_file: &str,
+    with_limits: bool,
+) -> String {
+    use purlis_core::skills::grade::Read;
+    let name = &planned.skill;
+    let mut text = String::new();
+    if let Read::Refused(why) = &planned.fixtures.triggers {
+        text.push_str(&format!(
+            "Its trigger tests could not be read: {}\n",
+            why.terminal()
+        ));
+    }
+    match (&planned.request, planned.plan) {
+        (Some(request), Some(plan)) => {
+            let times = counted(u32::from(request.runs), "time", "times");
+            // The version it compares with too, where the skill has one (SK-57).
+            let previous = match &planned.previous {
+                Some(previous) => format!(
+                    ", and {times} with its previous version, {} ({})",
+                    history::short(&previous.commit),
+                    previous.subject
+                ),
+                None => String::new(),
+            };
+            text.push_str(&format!(
+                "Grading {name} runs {}, one turn each: each of {} {times} with the skill and \
+                 {times} without it{previous}.\n",
+                counted(plan.chats, "chat", "chats"),
+                counted(plan.trigger_tests, "trigger test", "trigger tests"),
+            ));
+            if let Some(why) = &planned.previous_refused {
+                text.push_str(&format!("Its previous version is not compared: {why}.\n"));
+            }
+            text.push_str(&estimate_said(planned.estimate.as_ref()));
+            for (at, test) in request.triggers.iter().enumerate() {
+                text.push_str(&format!(
+                    "  {}. {}  ({})\n",
+                    at + 1,
+                    purlis_core::skills::review::escaped_line(&test.query),
+                    if test.should_trigger {
+                        "should start it"
+                    } else {
+                        "should leave it alone"
+                    }
+                ));
+            }
+            for left in &planned.left_out {
+                text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
+            }
+            if with_limits {
+                // The terminal knows no profile, so its limit is at the dearest known price: the
+                // Skill studio's plan prices it from the model its profile's chats run on (#3469).
+                let dearest = purlis_core::skills::grades::price::of_model(None);
+                text.push_str(&format!(
+                "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
+                 sets it), or once they cost ${:.2}, its tokens at the dearest known price of \
+                 ${:.2} a million; the Skill studio's plan prices it from the model the chats \
+                 run on.\n",
+                counted(planned.cap.tokens, "token", "tokens"),
+                match planned.cap.from {
+                    purlis_core::skills::grades::cap::From::Default => "the default",
+                    purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
+                },
+                local_file,
+                planned.cap.cost_usd(&dearest),
+                dearest.usd_per_million,
+            ));
+                text.push_str(
+                    "Grade it from its tab in the Skill studio, which shows this first.\n",
+                );
+            }
+        }
+        _ => text.push_str(&format!(
+            "{name} has no trigger tests to grade: the queries it should start on and the near \
+             misses it should leave alone, in its evals/triggers.json.\n"
+        )),
+    }
+    if let Some(evals) = planned
+        .fixtures
+        .outcomes
+        .read()
+        .filter(|evals| !evals.is_empty())
+    {
+        text.push_str(&format!(
+            "{} for a later purlis: grades run the trigger tests alone.\n",
+            counted(evals.len(), "outcome eval waits", "outcome evals wait"),
         ));
     }
     text
@@ -1707,6 +1855,143 @@ fn install(
         &review.accepted(),
         grant.as_ref(),
     ))
+}
+
+/// What stays behind, each with why, as a review prints it.
+fn behind_text(out: &source::Outgoing) -> String {
+    let mut text = String::new();
+    for skill in &out.skills {
+        for left in &skill.left {
+            text.push_str(&format!(
+                "  stays behind: {}/{} ({})\n",
+                esc(&skill.name),
+                esc(&left.path),
+                left.why
+            ));
+        }
+    }
+    for name in &out.broken {
+        text.push_str(&format!("  refers to {}, which is not there\n", esc(name)));
+    }
+    text
+}
+
+/// `purlis skill export`.
+fn export(
+    root: &Path,
+    built_in: Option<&Path>,
+    name: &str,
+    to: &Path,
+    zip: bool,
+    level: &Level,
+) -> Result<Code, String> {
+    let out = source::gather(root, built_in, level, name, source::Purpose::Export)?;
+    print!("{}", behind_text(&out));
+    if zip {
+        source::export_zip(&out, to)?;
+    } else {
+        source::export_folder(&out, to)?;
+    }
+    voice::info(
+        esc(&format!(
+            "Exported {} to {}.",
+            counted(out.skills.len(), "skill", "skills"),
+            to.display()
+        ))
+        .to_string(),
+    );
+    Ok(0)
+}
+
+/// What a person reads before a publish.
+fn publish_text(review: &source::publish::PublishReview, source: &Source) -> String {
+    let mut text = format!(
+        "Publish to {}\n  a draft request into {}, from the new branch {}\n  title: {}\n\nFiles          that go:\n",
+        esc(&source.to_string()),
+        esc(&review.base),
+        esc(&review.branch),
+        esc(&review.title)
+    );
+    text.insert_str(
+        text.find("\n\nFiles").unwrap_or(text.len()),
+        &format!(
+            "\n  the commit names: {} <{}>",
+            esc(&review.author.0),
+            esc(&review.author.1)
+        ),
+    );
+    for (skill, (folder, replaces)) in review.outgoing.skills.iter().zip(&review.lands) {
+        if *replaces {
+            text.push_str(&format!("  {} replaces what is there\n", esc(folder)));
+        }
+        for file in &skill.files {
+            let mark = if file.executable { " (runs)" } else { "" };
+            text.push_str(&format!(
+                "  {}/{}{mark}, {} bytes\n",
+                esc(folder),
+                esc(&file.path()),
+                file.bytes.len()
+            ));
+        }
+    }
+    text.push_str(&behind_text(&review.outgoing));
+    text.push_str("\nThe request's description, whole:\n");
+    for line in review.body.lines() {
+        text.push_str(&format!("  {}\n", esc(line)));
+    }
+    text
+}
+
+/// `purlis skill publish`: refused outright from a chat or with no person at a terminal, before
+/// the source is asked anything. No flag skips the question.
+fn publish(
+    root: &Path,
+    built_in: Option<&Path>,
+    name: &str,
+    source: &Source,
+    level: &Level,
+) -> Result<Code, String> {
+    use std::io::IsTerminal as _;
+    if !may_publish(
+        gradelink::in_a_chat(&purlis_core::envvar::var),
+        std::io::stdin().is_terminal() && std::io::stderr().is_terminal(),
+    ) {
+        voice::err(PUBLISH_NEEDS_A_PERSON);
+        return Ok(1);
+    }
+    let forge = source::publish::OnTheForge::of(root, source)?;
+    let review = source::publish::review(root, built_in, level, name, source)?;
+    print!("{}", publish_text(&review, source));
+    if review.stopped() {
+        voice::err("Nothing can be sent until these are fixed:");
+        for stop in &review.outgoing.stops {
+            voice::err(esc(&stop.to_string()).to_string());
+        }
+        return Ok(1);
+    }
+    if !asked("Open this draft request, under your own account?") {
+        voice::info("Nothing was sent.");
+        return Ok(1);
+    }
+    match source::publish::publish(root, built_in, level, name, source, &review, &forge)? {
+        source::publish::Published::Opened { url, .. } => {
+            voice::info(esc(&format!("Opened {url}")).to_string());
+        }
+        source::publish::Published::Already { url } => {
+            voice::info(esc(&format!("These files already have a request: {url}")).to_string());
+        }
+    }
+    Ok(0)
+}
+
+/// What a publish says with no person to ask.
+const PUBLISH_NEEDS_A_PERSON: &str = "Publishing takes a yes from a person at a terminal, so \
+                                      nothing was sent. Run `purlis skill publish` in your own \
+                                      terminal, outside any chat.";
+
+/// Whether a publish may ask at all.
+fn may_publish(in_a_chat: bool, at_a_terminal: bool) -> bool {
+    !in_a_chat && at_a_terminal
 }
 
 /// What `--all` says where its review is more than one read of the source may take: why, and the

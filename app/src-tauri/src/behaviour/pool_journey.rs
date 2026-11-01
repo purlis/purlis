@@ -17,9 +17,7 @@
 //! is the real one, told the job's registry wherever a command names purlis's, and naming
 //! purlis's again in what it answers. The digests are real.
 
-use std::cell::RefCell;
-
-use purlis_core::profilestore::onrunner::{self, Kept, LeftBehind};
+use purlis_core::profilestore::onrunner::{self, Kept};
 use purlis_core::profilestore::sign_in::Standing;
 use purlis_core::profilestore::{self, Folders, MachineProfile};
 
@@ -43,6 +41,9 @@ const LONG: Duration = Duration::from_secs(300);
 
 const PROFILE: &str = "work";
 const WORKSPACE: &str = "app";
+
+/// The most files a profile sends by default, which the journey goes over.
+const MOST_DEFAULT_FILES: usize = 8192;
 
 /// How many skills the profile's settings hold, each of three files, and how large each one's
 /// data is: about 40 MiB in 4,500 files, as a person's folder of skills is.
@@ -185,13 +186,8 @@ fn the_runner(machine: &Machine, pool: &str) -> OnTheRunner {
 
 /// Keeps `kept` on pool `pool`'s runner over a link of its own, as a start and a pool's row do
 /// (`crate::poolprofiles::Linked`, whose machine has this build's keyring): how its harness
-/// stands there, and what of its settings stayed behind.
-fn keep(
-    machine: &Machine,
-    pool: &str,
-    kept: &Kept,
-    behind: &RefCell<Vec<LeftBehind>>,
-) -> Result<Option<Standing>, String> {
+/// stands there.
+fn keep(machine: &Machine, pool: &str, kept: &Kept) -> Result<Option<Standing>, String> {
     let runner =
         purlis_core::runners::runner_for(&machine.config, pool).map_err(|why| why.to_string())?;
     let to = ToARunner::of_kept_waking(machine, &runner)?;
@@ -201,22 +197,19 @@ fn keep(
     said.into_iter()
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
-        .map(|kept| {
-            behind.replace(kept.left_behind);
-            Some(onrunner::standing_on_the_wire(kept.standing))
-        })
+        .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
 }
 
 /// What a start on the pool asks first (`Chats`'s start, through `Linked`).
 fn ready_to_start(machine: &Machine, root: &Path, pool: &str) -> Result<(), String> {
     onrunner::ready_on(&machine.config, root, pool, PROFILE, &|kept| {
-        keep(machine, pool, kept, &RefCell::default())
+        keep(machine, pool, kept)
     })
 }
 
 /// Waits until the pool's row says `wanted` of the profile, as the window asks again while the
-/// runner fetches its harness (#4008). What stayed behind of its settings is `behind`.
-fn the_row_says(machine: &Machine, pool: &str, wanted: &Standing) -> Vec<LeftBehind> {
+/// runner fetches its harness (#4008).
+fn the_row_says(machine: &Machine, pool: &str, wanted: &Standing) {
     let record = profilestore::list(&machine.config)
         .expect("the store reads")
         .into_iter()
@@ -227,12 +220,11 @@ fn the_row_says(machine: &Machine, pool: &str, wanted: &Standing) -> Vec<LeftBeh
         .with_settings_of(&record);
     let deadline = Instant::now() + LONG;
     loop {
-        let behind = RefCell::default();
-        let said = keep(machine, pool, &kept, &behind)
+        let said = keep(machine, pool, &kept)
             .unwrap_or_else(|why| panic!("the runner did not keep the profile: {why}"))
             .expect("this runner keeps profiles");
         if said == *wanted {
-            return behind.into_inner();
+            return;
         }
         assert!(
             Instant::now() < deadline,
@@ -338,6 +330,10 @@ fn a_chat_runs(target: &Target, machine: &Machine, pool: &str, chat: &Named) -> 
         .number;
     let pane = Pane::on(target, id);
     pane.shows_within("Claude Code", LONG);
+    assert!(
+        !purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool),
+        "a chat in the sandbox leaves its runner trusted"
+    );
     (id, pane)
 }
 
@@ -346,6 +342,7 @@ fn in_the_journey(
     machine: &Machine,
     pool: &str,
     next: &purlis_core::dockerpool::Image,
+    first: &purlis_core::dockerpool::Image,
 ) {
     // How far it got and how long each step took, read where it fails or runs out of time.
     let began = Instant::now();
@@ -353,8 +350,9 @@ fn in_the_journey(
         use std::io::Write as _;
         let _ = writeln!(
             std::io::stderr(),
-            "[{:>4}s] {what}",
-            began.elapsed().as_secs()
+            "[{:>4}s] {what} (marked: {})",
+            began.elapsed().as_secs(),
+            purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool)
         );
     };
     step("the pool is added");
@@ -377,7 +375,7 @@ fn in_the_journey(
     );
 
     step("a profile with a large settings folder");
-    // Keep a profile with a large settings folder: all of it travels, and nothing is left behind.
+    // Keep a profile with a large settings folder: all of it travels.
     let settings = tempfile::tempdir().expect("the profile's folder");
     let settings = settings.path().canonicalize().expect("its folder");
     a_large_settings_folder(&settings);
@@ -390,8 +388,7 @@ fn in_the_journey(
     step("the runner fetches the harness");
     // Fetch the harness: asked of its row, the runner fetches it from the vendor's release, and
     // Claude Code itself then says it is signed out there.
-    let behind = the_row_says(machine, pool, &Standing::SignedOut);
-    assert_eq!(behind, Vec::new(), "nothing of the settings stays behind");
+    the_row_says(machine, pool, &Standing::SignedOut);
     the_settings_went_whole_to(&runner, &settings);
 
     step("a start while signed out");
@@ -409,6 +406,87 @@ fn in_the_journey(
     pane.shows_within("Say hello.", LONG);
     let conversation = a_conversation_on(&runner);
     target.sessions.close(id).expect("it closes");
+
+    step("a profile over its pool's limit");
+    // Over the limit a start says what is needed and what to raise it to; the suggestion, applied
+    // to the pool, takes it past what a runner stages by default, and the chat starts.
+    let many = settings.join("skills/many");
+    std::fs::create_dir_all(&many).expect("its folder");
+    for one in 0..=MOST_DEFAULT_FILES {
+        std::fs::write(many.join(format!("{one}.md")), "x").expect("it is written");
+    }
+    let refused = ready_to_start(machine, &target.root, pool).expect_err("it is over the limit");
+    let over = onrunner::over_limit(PROFILE, &refused).expect("a limit said it");
+    assert_eq!(over.pool.as_deref(), Some(pool));
+    let hit = over.hits[0];
+    let raised = hit.suggested.expect("a value to raise it to");
+    assert!(hit.needed > hit.in_force && raised >= hit.needed, "{hit:?}");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, hit.limit, Some(raised))
+        .expect("it is saved to the pool");
+    assert_eq!(
+        purlis_core::runners::chosen_limits_of(&machine.config, pool)
+            .expect("the pool reads")
+            .get(hit.limit),
+        Some(raised),
+        "the value is the person's own"
+    );
+    ready_to_start(machine, &target.root, pool).expect("the raised limit holds it");
+    assert_eq!(
+        runner
+            .prints(&format!(
+                "find '{}/skills/many' -type f | wc -l",
+                the_settings_on(&runner)
+            ))
+            .trim(),
+        (MOST_DEFAULT_FILES + 1).to_string(),
+        "all of it reached the runner"
+    );
+    let (id, pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
+        &a_chat(Some("Past the limit."), None),
+    );
+    pane.shows_within("Past the limit.", LONG);
+    target.sessions.close(id).expect("it closes");
+    std::fs::remove_dir_all(&many).expect("the extra files go");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, hit.limit, None)
+        .expect("back to the default");
+
+    step("code over its pool's limit");
+    // Over the limit on code nothing goes, and the suggestion, applied, starts the chat.
+    use purlis_core::poollimits::{self, LimitId};
+    let clone = target.root.join("workspaces").join(WORKSPACE).join("web");
+    std::fs::write(clone.join("large.bin"), data(7, 3 << 20)).expect("its file");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(1))
+        .expect("the limit is lowered");
+    let refused = target
+        .sessions
+        .open_named(
+            None,
+            &a_chat(Some("Past the code limit."), None),
+            Hearing::default(),
+            &|_| {},
+        )
+        .map(|_| ())
+        .expect_err("the code is over the limit");
+    let hits = poollimits::hits_said_in(pool, &refused);
+    assert!(!hits.is_empty(), "a limit said it: {refused}");
+    let raised = hits[0].suggested.expect("a value to raise it to");
+    assert_eq!(hits[0].limit, LimitId::CodeSize, "{refused}");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(raised))
+        .expect("it is saved to the pool");
+    let (id, pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
+        &a_chat(Some("Past the code limit."), None),
+    );
+    pane.shows_within("Past the code limit.", LONG);
+    target.sessions.close(id).expect("it closes");
+    std::fs::remove_file(clone.join("large.bin")).expect("the file goes");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, None)
+        .expect("back to the default");
 
     step("the chat moves back");
     // Move it back here: its conversation and the work done there come with it.
@@ -445,7 +523,7 @@ fn in_the_journey(
     // And there again: what was done here goes with it, and the chat goes on where it was.
     std::fs::write(clone.join("here.txt"), "made here\n").expect("its file");
     onrunner::ready_to_move_on(&machine.config, pool, PROFILE, &|kept| {
-        keep(machine, pool, kept, &RefCell::default())
+        keep(machine, pool, kept)
     })
     .unwrap_or_else(|why| panic!("the profile is ready for the move: {}", why.said()));
     target
@@ -488,11 +566,12 @@ fn in_the_journey(
         ready_to_start(machine, &target.root, pool).expect_err("nothing starts on it now");
     assert!(refused.contains("removed outside purlis"), "{refused}");
 
+    let marked = purlis_core::runnertaint::pool_ran_unsandboxed(&machine.config, pool);
     let again = crate::dockerpools::make_again_on(machine, pool)
         .unwrap_or_else(|why| panic!("the runner is made again: {why}"));
     assert!(
         again.sign_ins_kept,
-        "its home was there, so its sign-ins came"
+        "its home was there, so its sign-ins came (marked before the make: {marked})"
     );
     assert!(
         crate::dockerpools::removed_on(machine)
@@ -502,7 +581,7 @@ fn in_the_journey(
     let runner = the_runner(machine, pool);
     the_row_says(machine, pool, &Standing::SignedIn);
     the_settings_went_whole_to(&runner, &settings);
-    let (old_chat, _old_pane) =
+    let (old_chat, old_pane) =
         a_chat_runs(target, machine, pool, &a_chat(Some("Hello again."), None));
     a_conversation_on(&runner);
 
@@ -531,17 +610,47 @@ fn in_the_journey(
     let refused = ready_to_start(machine, &target.root, pool)
         .expect_err("a sign-in follows only once the old runner has drained");
     assert!(refused.contains("is not signed in on pool"), "{refused}");
-    // The window still uses the project's link while the old runner drains. Whatever that start
-    // comes to, what it does must not cost the new runner the project once the old one is gone.
-    if let Ok(started) = target.sessions.open_named(
-        None,
+    // Signed in there too, a start while the old runner drains just works: it runs on the pool's
+    // runner, and the chat that stayed on the old one stays reachable (#4248).
+    signed_in_on(&followed);
+    the_row_says(machine, pool, &Standing::SignedIn);
+    let conversations_on_the_old = || {
+        runner.prints(&format!(
+            "find '{}/projects' -name '*.jsonl' | wc -l",
+            the_settings_on(&runner)
+        ))
+    };
+    let before = conversations_on_the_old();
+    let (during, during_pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
         &a_chat(Some("While it drains."), None),
-        Hearing::default(),
-        &|_| {},
-    ) {
-        target.sessions.close(started.number).expect("it closes");
-    }
-
+    );
+    during_pane.shows_within("While it drains.", LONG);
+    // Each runner lists its own chat, as a look at it does: the new chat is on the pool's runner.
+    let on_the_new = purlis_core::runners::runner_for(&machine.config, pool).expect("its runner");
+    let chats_there = |kept: &purlis_core::runners::Kept| {
+        crate::runnerlinks::chats_on(&ToARunner::of_kept(machine, kept).expect("a link to it"))
+            .expect("it lists its chats")
+    };
+    let draining = purlis_core::runners::draining(&machine.config).expect("read");
+    let (there_new, there_old) = (chats_there(&on_the_new), chats_there(&draining[0]));
+    assert_eq!(
+        (there_new, there_old),
+        (1, 1),
+        "the new chat runs on the pool's runner, and the draining one keeps its one chat"
+    );
+    assert_eq!(
+        conversations_on_the_old(),
+        before,
+        "the draining runner starts no chat"
+    );
+    old_pane.shows_within("Hello again.", LONG);
+    target
+        .sessions
+        .input(old_chat, b"\x1b")
+        .expect("the chat on the draining runner is reached");
     target.sessions.close(old_chat).expect("it closes");
     let deadline = Instant::now() + LONG;
     let said = loop {
@@ -557,6 +666,16 @@ fn in_the_journey(
         0,
         "{said:?}"
     );
+    assert_eq!(
+        target.sessions.reconnecting(),
+        Vec::<u32>::new(),
+        "the old runner's going dims no chat on the new one"
+    );
+    target
+        .sessions
+        .input(during, b"\x1b")
+        .expect("the chat on the new runner goes on");
+    target.sessions.close(during).expect("it closes");
     assert_eq!(
         crate::dockerpools::removed_on(machine)
             .expect("asked")
@@ -583,6 +702,72 @@ fn in_the_journey(
     );
     a_conversation_on(&followed);
     target.sessions.close(id).expect("it closes");
+
+    step("an update with no chat running");
+    // The plain way (#4248): nothing runs, and the project's link is still on the old runner. The
+    // update replaces it at once, its sign-ins follow, and a new chat just starts on the new one.
+    let said = crate::poolfollow::follow_and_drain(machine, Some(first), &chats_on);
+    assert!(
+        said.iter().any(|line| line.contains("had no chat left")),
+        "{said:?}"
+    );
+    assert_eq!(crate::poolfollow::waiting_on(&machine.config, pool), 0);
+    let updated = the_runner(machine, pool);
+    assert_ne!(updated.container, followed.container, "a runner of its own");
+    the_row_says(machine, pool, &Standing::SignedIn);
+    let (id, pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
+        &a_chat(Some("After a plain update."), None),
+    );
+    pane.shows_within("After a plain update.", LONG);
+    let on_it = purlis_core::runners::runner_for(&machine.config, pool).expect("its runner");
+    assert_eq!(
+        crate::runnerlinks::chats_on(&ToARunner::of_kept(machine, &on_it).expect("a link to it"))
+            .expect("it lists its chats"),
+        1,
+        "the chat runs on the new runner"
+    );
+    target.sessions.close(id).expect("it closes");
+
+    step("a runner with only its home left");
+    // A drain began and took its container, and not its home volume (#4298). Nothing is left to
+    // ask, so a look only removes what is left.
+    crate::poolfollow::follow_and_drain(machine, Some(next), &|_| Ok(1));
+    let draining = purlis_core::runners::draining(&machine.config).expect("read");
+    let old = draining.first().expect("the old runner drains");
+    let locked = purlis_core::runners::lock(&machine.config);
+    purlis_core::runners::note_locked(
+        &machine.config,
+        old.name(),
+        |kept| kept.carried = true,
+        &locked,
+    )
+    .expect("noted");
+    drop(locked);
+    let removed =
+        purlis_core::forklock::output(std::process::Command::new(machine.docker.program()).args([
+            "container",
+            "rm",
+            "--force",
+            old.made.container.as_str(),
+        ]))
+        .expect("docker runs");
+    assert!(removed.status.success(), "{removed:?}");
+    let said =
+        crate::poolfollow::follow_and_drain(machine, None, &|_| panic!("nothing is left to ask"));
+    assert!(
+        said.iter().any(|line| line.contains("had no chat left")),
+        "{said:?}"
+    );
+    assert_eq!(
+        purlis_core::runners::draining(&machine.config)
+            .expect("read")
+            .len(),
+        0,
+        "{said:?}"
+    );
 }
 
 /// Whether `file` is anywhere under `folder`.
@@ -612,5 +797,6 @@ fn in_a_docker_pool() {
     let (target, machine, pool) =
         a_window_on_a_pool_of(&format!("{PURLIS_RUNNER_IMAGE}@{image}"), docker);
     let next = Image::pinned(&format!("{PURLIS_RUNNER_IMAGE}@{next}")).expect("named by digest");
-    in_the_journey(&target, &machine, &pool, &next);
+    let first = Image::pinned(&format!("{PURLIS_RUNNER_IMAGE}@{image}")).expect("named by digest");
+    in_the_journey(&target, &machine, &pool, &next, &first);
 }
