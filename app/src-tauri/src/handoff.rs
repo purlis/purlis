@@ -985,6 +985,12 @@ pub type Deciding<'a> = std::sync::MutexGuard<'a, ()>;
 /// those chats are kept, and report when they run again. And not for a chat the person closed
 /// or stopped: that is [`operator_stopped`]'s to say.
 pub fn unreported(held: &Held, chat: u32, _deciding: &Deciding<'_>) {
+    let with_its_runner = held.chats().sessions().lost_with_its_runner(chat);
+    unreported_as(held, chat, with_its_runner);
+}
+
+/// [`unreported`], saying whether its runner went for good (#4420).
+fn unreported_as(held: &Held, chat: u32, with_its_runner: bool) {
     use purlis_core::handback;
 
     let Some(from) = held.chats().owed_task_report(chat) else {
@@ -992,12 +998,6 @@ pub fn unreported(held: &Held, chat: u32, _deciding: &Deciding<'_>) {
     };
     let record = crate::restored::its_session_record(held, chat)
         .and_then(|path| handback::record_path(&path));
-    // The window's own note first: the host that marked it may be let go of by now.
-    let with_its_runner = held
-        .lost_with_the_host()
-        .of(chat)
-        .is_some_and(|lost| lost.with_the_runner)
-        || held.chats().sessions().lost_with_its_runner(chat);
     let text = if with_its_runner {
         handback::ENDED_WITH_ITS_RUNNER
     } else {
@@ -1211,6 +1211,17 @@ pub(crate) fn operator_stopped(
 /// so the end of a program that a close is ending finds nothing owed and returns at once,
 /// and never waits on the close that is waiting on it.
 pub fn its_program_ended(held: &Held, chat: u32) {
+    ended_owing(held, chat, None);
+}
+
+/// **The runner of chat `chat`, whose program ended earlier, went for good** (#4421): the caller
+/// knows that itself, and the host that marked it may be let go of by now.
+pub fn its_runner_went(held: &Held, chat: u32) {
+    ended_owing(held, chat, Some(true));
+}
+
+/// Reports for chat `chat`, its runner's going as `with_its_runner` says, or as its host says.
+fn ended_owing(held: &Held, chat: u32, with_its_runner: Option<bool>) {
     // **A task being cancelled is reported for by its cancel** (#1459): its program's end ends
     // the cancel's turn, which writes its report as `cancelled` (`stopping::exited`).
     if held.stopping().is_cancelling(chat) {
@@ -1222,7 +1233,10 @@ pub fn its_program_ended(held: &Held, chat: u32) {
         }
         if let Some(deciding) = held.chats().try_deciding() {
             let asker = held.chats().owed_task_report(chat).map(|from| from.chat);
-            unreported(held, chat, &deciding);
+            match with_its_runner {
+                Some(with_its_runner) => unreported_as(held, chat, with_its_runner),
+                None => unreported(held, chat, &deciding),
+            }
             // Typed only once the lock is let go, as a chat's own report is (#1441).
             drop(deciding);
             if let Some(asker) = asker {

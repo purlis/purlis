@@ -4277,7 +4277,7 @@ impl Planes {
                         if let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
                             && !held.stopping().is_stopping(session)
                         {
-                            crate::handoff::its_program_ended(&held, session);
+                            crate::handoff::its_runner_went(&held, session);
                             crate::dispatched::moved(&held, session);
                         }
                         return;

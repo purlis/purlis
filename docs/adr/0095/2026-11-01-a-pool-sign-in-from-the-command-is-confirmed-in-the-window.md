@@ -1,6 +1,6 @@
 # A pool sign-in from the command is confirmed in the window
 
-Amends ADR 0095, by the person's ruling of 2026-11-01.
+Amends ADR 0095, by the person's rulings of 2026-11-01 and 2026-11-02.
 
 `purlis profile sign-in <profile> --pool <pool>` asks the running window before it reaches a
 runner or its engine. With no window running, or on any answer but yes, it starts nothing. This

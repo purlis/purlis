@@ -2356,7 +2356,6 @@ fn a_task_that_ended_with_a_gone_runner_names_it_and_refuses_reopen() {
     let mut ended = record_of(&held, task);
     // Named, so what refuses Reopen is the runner and not a conversation it never had.
     purlis_core::dispatchrecord::ended_in(held.root(), &ended.id, "a-conversation").unwrap();
-    ended.conversation = Some("a-conversation".to_owned());
     assert_eq!(
         ended.report.as_ref().map(|report| report.text.as_str()),
         Some(
