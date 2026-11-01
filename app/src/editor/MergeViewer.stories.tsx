@@ -11,6 +11,7 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor } from "storybook/test";
+import { untilFocused } from "../stories.testkit";
 import { MergeViewer } from "./LightEditor";
 
 const BASE = `// The wash marks a word.
@@ -56,18 +57,16 @@ export const WordsChanged: Story = {
       const code = canvasElement.querySelector<HTMLElement>(".cm-merge-b .cm-content");
       const spans = canvasElement.querySelectorAll<HTMLElement>(".cm-merge-b .cm-line span");
       const word = [...spans].filter((span) => span.textContent?.includes("changed")).at(-1);
-      expect(code && word).toBeTruthy();
-      expect(getComputedStyle(word!).color).not.toBe(getComputedStyle(code!).color);
+      if (!code || !word) throw new Error("the merge view has not drawn its changed comment");
+      expect(getComputedStyle(word).color).not.toBe(getComputedStyle(code).color);
     });
     expect(canvasElement.querySelector(".cm-changedText")).not.toBeNull();
     // Each side is reached from the keyboard.
+    const side = (name: string) => () =>
+      canvasElement.querySelector<HTMLElement>(`[aria-label="${name}"]`);
     await userEvent.tab();
-    await waitFor(() =>
-      expect(document.activeElement).toHaveAttribute("aria-label", "wash.ts, before"),
-    );
+    await untilFocused(side("wash.ts, before"), "the side before the change");
     await userEvent.tab();
-    await waitFor(() =>
-      expect(document.activeElement).toHaveAttribute("aria-label", "wash.ts, after"),
-    );
+    await untilFocused(side("wash.ts, after"), "the side after the change");
   },
 };
