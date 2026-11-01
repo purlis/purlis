@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793505926301,
+  "lastUpdate": 1793510217487,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34650,6 +34650,48 @@ window.BENCHMARK_DATA = {
             "value": 101.375581,
             "unit": "ms",
             "extra": "median of 5 runs: 100.990, 101.142, 101.376, 102.104, 102.331 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "abcb79de316715f73fd62ddaf048b904775b1f3e",
+          "message": "Grade plan: lists each Grader, the pick is in the consent, a grade runs through it (#4241) (#4318)\n\n* Grade plan: lists each Grader, the pick is in the consent, a grade runs through it (#4241)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grade plan tests: the press names its Grader\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grade plan: a Grader is handed the trigger tests alone, its hosts are said and consented to\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Regenerate the UI's clients\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Story baselines: a plan a Grader scores\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T04:52:34Z",
+          "tree_id": "99d9f0ace2634140f5a84c5dd4d5e1a110ae4bf1",
+          "url": "https://github.com/purlis/purlis/commit/abcb79de316715f73fd62ddaf048b904775b1f3e"
+        },
+        "date": 1793510210990,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.334414,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.331, 0.334, 0.334, 0.335, 0.338 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4409505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.400, 16.412, 16.441, 16.469, 16.638 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.35048950000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.498, 100.870, 101.350, 101.420, 101.512 ms"
           }
         ]
       }
