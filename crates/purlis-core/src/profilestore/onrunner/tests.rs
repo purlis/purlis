@@ -138,6 +138,36 @@ fn a_runner_keeps_a_desktops_profile_in_a_folder_of_its_own_with_nothing_of_the_
     );
 }
 
+/// **What a harness loads from its folder but no desktop sends does not stay on a runner**,
+/// and what a desktop sends, and a sign-in, are left alone.
+#[test]
+fn a_keep_clears_what_a_harness_loads_that_no_desktop_sent() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+    let config = &kept.folders.config;
+    std::fs::create_dir_all(config.join("rules")).unwrap();
+    std::fs::write(config.join("rules/left.md"), "left").unwrap();
+    std::fs::write(config.join("CLAUDE.md"), "sent").unwrap();
+    std::fs::write(config.join(".credentials.json"), "{}").unwrap();
+
+    super::super::made::loaded_unsent_cleared(&kept).expect("cleared");
+
+    assert!(!config.join("rules").exists());
+    assert!(config.join("CLAUDE.md").exists());
+    assert!(config.join(".credentials.json").exists());
+    // With nothing there, there is nothing to clear.
+    super::super::made::loaded_unsent_cleared(&kept).expect("cleared again");
+}
+
 /// A desktop's Claude Code folder, adopted in place there as `claude` and pinned.
 fn the_desktops_adopted_folder(dir: &Path) -> MachineProfile {
     MachineProfile {

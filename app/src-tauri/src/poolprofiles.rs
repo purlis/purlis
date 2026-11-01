@@ -352,7 +352,7 @@ fn readying(pool: &str, name: &str) -> bool {
         .any(|(p, n)| p == pool && n == name)
 }
 
-/// The pools whose runner was asked this run to keep only what is chosen ([`tidy`]): a chat's
+/// The runners ([`tidied_as`]) asked this run to keep only what is chosen ([`tidy`]): a chat's
 /// start asks only the first time, and asks again where it could not be told, nothing could be
 /// judged, or the runner refused a forget.
 static TIDIED: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -364,12 +364,13 @@ fn tidy_once(yours: &Result<Yours, String>, config: &Path, root: &Path, pool: &s
     let Ok(yours) = yours else {
         return;
     };
+    let runner = tidied_as(pool, yours);
     {
         let mut tidied = TIDIED.lock().unwrap_or_else(PoisonError::into_inner);
-        if tidied.iter().any(|one| one == pool) {
+        if tidied.contains(&runner) {
             return;
         }
-        tidied.push(pool.to_owned());
+        tidied.push(runner.clone());
     }
     let tidied = profilestore::list(config).and_then(|records| {
         let default = default_in(Some(root), &records);
@@ -380,9 +381,9 @@ fn tidy_once(yours: &Result<Yours, String>, config: &Path, root: &Path, pool: &s
     });
     match tidied {
         Ok(Tidied::Older | Tidied::Done { refused: false, .. }) => {}
-        Ok(Tidied::NothingToJudge | Tidied::Done { refused: true, .. }) => untidied(pool),
+        Ok(Tidied::NothingToJudge | Tidied::Done { refused: true, .. }) => untidied(&runner),
         Err(why) => {
-            untidied(pool);
+            untidied(&runner);
             tracing::warn!(
                 "purlis: pool {pool}'s runner was not told what it no longer keeps: {why}"
             );
@@ -390,12 +391,30 @@ fn tidy_once(yours: &Result<Yours, String>, config: &Path, root: &Path, pool: &s
     }
 }
 
-/// Pool `pool`'s runner is asked again, at the next chat's start there, what it keeps.
-fn untidied(pool: &str) {
+/// What [`TIDIED`] knows pool `pool`'s runner by: on a cluster pool, the claim it was made by, so
+/// a claim made again is asked again.
+fn tidied_as(pool: &str, yours: &Yours) -> String {
+    match yours {
+        Yours::Docker(_) => pool.to_owned(),
+        Yours::Cluster(judged) => format!("{pool}/{}", judged.claimed.uid),
+    }
+}
+
+/// Pool `pool`'s runner, whichever claim it was made by, is asked again at the next chat's start.
+fn untidied_on(pool: &str) {
+    let of_a_claim = format!("{pool}/");
     TIDIED
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .retain(|one| one != pool);
+        .retain(|one| one != pool && !one.starts_with(&of_a_claim));
+}
+
+/// `runner` ([`tidied_as`]) is asked again, at the next chat's start there, what it keeps.
+fn untidied(runner: &str) {
+    TIDIED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|one| one != runner);
 }
 
 /// **Has each pool's runner forget profile `name`, just removed on this machine** (#3849), its
@@ -478,7 +497,7 @@ fn forget_off(
             }
             Err(why) => {
                 // Still named, so its row offers Remove until a tidy finds it gone there.
-                untidied(pool_name);
+                untidied_on(pool_name);
                 tracing::info!(
                     "purlis: pool {pool_name}'s runner is asked again to forget the profile \
                      {name}: {why}"
@@ -1313,6 +1332,7 @@ pub fn sign_in_line(
 ) -> Result<String, String> {
     let config = config_root()?;
     let yours = yours(&config, pool)?;
+    may_sign_in_on(&config, pool)?;
     let record = profilestore::list(&config)?
         .into_iter()
         .find(|p| p.name == name)
@@ -1357,7 +1377,14 @@ pub fn sign_out_line(pool: &str, name: &str) -> Result<String, String> {
     onrunner::Kept::of(&record)?;
     let runner = this_desktops_runner(&config, pool)?;
     let line = crate::runnerlinks::docker()?.sign_out_line(&runner.made, &engine, name)?;
-    purlis_core::runners::hold_from_carrying(&config, pool, name).map_err(|why| why.to_string())?;
+    // A sign-in open on it would say signed in over this sign-out, so it ends first.
+    for one in let_go(|one| one.pool == pool && one.name == name) {
+        one.driving
+            .stop("the sign-in was stopped, as a sign-out of this profile started.");
+    }
+    // The running runner too: a follow while the line waits makes it one that drains.
+    purlis_core::runners::hold_every_runner_from_carrying(&config, pool, name)
+        .map_err(|why| why.to_string())?;
     Ok(line)
 }
 
@@ -1516,6 +1543,7 @@ pub async fn pool_sign_in_start(
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         let yours = yours(&config, &pool)?;
+        may_sign_in_on(&config, &pool)?;
         let record = record_named(&config, &name)?;
         profilestore::sign_in::plan_named(&record.harness, provider.as_deref())?;
         let kept = onrunner::Kept::of(&record)?;
@@ -1558,6 +1586,7 @@ pub async fn pool_sign_in_start(
         let carry: callback::Carry = {
             let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
             Arc::new(move |target: &str| {
+                may_sign_in_on(&config, &pool)?;
                 let to = match &started {
                     Some(started) => ToARunner::of_kept(
                         &Machine::here(&config)?,
@@ -1649,6 +1678,11 @@ pub async fn pool_sign_in_next(
         if let Some(over) = over.as_ref()
             && *event == driven::Event::SignedIn
         {
+            let (pool, name) = (over.pool.clone(), over.name.clone());
+            // Off this worker: a carry holds the runners' lock for minutes.
+            tauri::async_runtime::spawn_blocking(move || {
+                carries_again_after_a_sign_in(&pool, &name);
+            });
             // Told with no lock held; every project whose wait went has an Ask to stop drawing.
             let went = onrunner::let_go(None, &over.pool, &over.name);
             crate::machineprofiles::tell_asks_at(&app, &went);
@@ -1687,12 +1721,31 @@ pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
         .map_err(|why| format!("the code was not passed on: {why}"))?
 }
 
+/// `name` is signed in on pool `pool`'s runner, as its harness says: a drain carries it again.
+fn carries_again_after_a_sign_in(pool: &str, name: &str) {
+    let carries = config_root().and_then(|config| {
+        purlis_core::runners::carries_again(&config, pool, name).map_err(|why| why.to_string())
+    });
+    if let Err(why) = carries {
+        tracing::warn!("purlis: a drain of pool {pool} will not carry {name}: {why}");
+    }
+}
+
+/// Pool `pool`'s runner may be signed in on, or why not: no chat ran there without the sandbox,
+/// on a pool of either kind.
+fn may_sign_in_on(config: &Path, pool: &str) -> Result<(), String> {
+    if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+        return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
+    }
+    Ok(())
+}
+
 /// **What drives sign-in `flow`, where what it was opened on still holds** (#3819): on a
-/// cluster pool, the runner the gate judged, still marked and run without the sandbox by no
-/// chat ([`still_yours`]); else the sign-in is stopped, saying why (#4277), and nothing goes to
+/// cluster pool, the runner the gate judged, still marked ([`still_yours`]); on either kind, run
+/// without the sandbox by no chat ([`may_sign_in_on`]); else the sign-in is stopped, saying why (#4277), and nothing goes to
 /// it. A sign-in no longer held is refused.
 fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
-    let (driving, judged) = SIGN_INS
+    let (driving, pool, judged) = SIGN_INS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .iter()
@@ -1700,22 +1753,26 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
         .map(|one| {
             (
                 Arc::clone(&one.driving),
-                one.judged.clone().map(|judged| (one.pool.clone(), judged)),
+                one.pool.clone(),
+                one.judged.clone(),
             )
         })
         .ok_or_else(|| "that sign-in is over".to_owned())?;
-    if let Some((pool, judged)) = judged {
-        let held = config_root().and_then(|config| still_yours(&config, &pool, &judged));
-        if held.is_err() {
-            // Not the start's words: by now something of it may have reached the runner.
-            let why = format!(
-                "the sign-in was stopped, as pool {pool} or its runner changed. Try again."
-            );
-            for one in let_go(|one| one.flow == flow) {
-                one.driving.stop(&why);
-            }
-            return Err(why);
+    let held = config_root().and_then(|config| {
+        may_sign_in_on(&config, &pool)?;
+        match &judged {
+            Some(judged) => still_yours(&config, &pool, judged).map(|_| ()),
+            None => Ok(()),
         }
+    });
+    if held.is_err() {
+        // Not the start's words: by now something of it may have reached the runner.
+        let why =
+            format!("the sign-in was stopped, as pool {pool} or its runner changed. Try again.");
+        for one in let_go(|one| one.flow == flow) {
+            one.driving.stop(&why);
+        }
+        return Err(why);
     }
     Ok(driving)
 }

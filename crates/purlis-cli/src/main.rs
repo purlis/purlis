@@ -4253,7 +4253,15 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
         } => {
             if let Some(pool) = pool {
                 return match pool_sign_in(&store, name, pool, provider.as_deref()) {
-                    Ok(()) => ExitCode::SUCCESS,
+                    Ok(()) => {
+                        // Signed in there, as its harness said: a drain carries it again.
+                        let carries =
+                            purlis_core::runners::carries_again(store.config_root(), pool, name);
+                        if let Err(why) = carries {
+                            eprintln!("a drain of pool {pool} will not carry '{name}': {why}");
+                        }
+                        ExitCode::SUCCESS
+                    }
                     Err(why) => refused(&why),
                 };
             }
@@ -4415,6 +4423,9 @@ fn pool_sign_in(
     use purlis_core::profilestore::{self, sign_in};
     use purlis_core::runners;
     let config = store.config_root();
+    if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+        return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
+    }
     let record = profilestore::list(config)?
         .into_iter()
         .find(|p| p.name == name)
@@ -4525,7 +4536,12 @@ fn pool_sign_in(
             }
         }
     });
-    sign_in::terminal::follow(&driving, &lines, &mut ThisTerminal, name, pool)
+    sign_in::terminal::follow_while(&driving, &lines, &mut ThisTerminal, name, pool, &|| {
+        if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+            return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
+        }
+        Ok(())
+    })
 }
 
 /// Refused where a pool's runner, whose `purlis --version` said `theirs`, runs another version

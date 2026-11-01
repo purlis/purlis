@@ -138,7 +138,13 @@ impl ToARunner {
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
-                let checked = if resumes {
+                // One whose sign-ins were carried off, or kept no more, is not started again.
+                let wakes = resumes
+                    && purlis_core::runners::named(&config, of.name())
+                        .ok()
+                        .flatten()
+                        .is_some_and(|now| !now.carried);
+                let checked = if wakes {
                     // When it ran, as read before it was started, then its start (#3492).
                     checking.resumed(&made).map(|resumed| {
                         hours_seen(&config, &of, resumed.before);
@@ -348,24 +354,10 @@ pub fn relaying(
         }
         let resolved = format!("{}/{}", kept.pool(), kept.name());
         let to = ToARunner::of_kept_waking(&machine, &kept)?;
-        Ok((
-            Arc::new(move || {
-                // A runner removed outside purlis and made again (#4149) is kept no more: the
-                // pool's runner made in its place is linked to. A runner still kept, a draining
-                // one too, is kept to, so a pool moved after an update leaves its chats where
-                // they run.
-                let forgotten = matches!(
-                    purlis_core::runners::named(&machine.config, kept.name()),
-                    Ok(None)
-                );
-                let again = (forgotten && !kept.draining)
-                    .then(|| purlis_core::runners::runner_for(&machine.config, kept.pool()).ok())
-                    .flatten()
-                    .and_then(|now| ToARunner::of_kept_waking(&machine, &now).ok());
-                again.as_ref().unwrap_or(&to).keep()
-            }) as purlis_host::Keep,
-            resolved,
-        ))
+        // Only ever this runner: a pool moved after an update, or a runner made again, leaves this
+        // link where it was until it ends (#4168), and what comes next is relayed anew to the
+        // runner kept then.
+        Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
     })
 }
 

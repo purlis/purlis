@@ -216,6 +216,28 @@ fn a_taken_port_is_said() {
     }
 }
 
+/// **A login found on one address is answered there alone**: a listener on the other hears
+/// nothing, and the answer is said not to have reached a login.
+#[test]
+fn a_login_found_on_one_address_is_answered_there_alone() {
+    let Ok(other) = TcpListener::bind("[::1]:0") else {
+        return;
+    };
+    other.set_nonblocking(true).unwrap();
+    let port = other.local_addr().unwrap().port();
+    assert_eq!(listening_on(port), Some(IpAddr::from(Ipv6Addr::LOCALHOST)));
+    // The look's own connection.
+    while other.accept().is_err() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    assert!(
+        asked(&addresses(Some(Ipv4Addr::LOCALHOST.into())), port, PATH).is_err(),
+        "nothing listens on the address the login was found on"
+    );
+    assert!(other.accept().is_err(), "the other address heard nothing");
+}
+
 /// **It listens on the loopback alone**.
 #[test]
 fn it_listens_on_the_loopback_alone() {

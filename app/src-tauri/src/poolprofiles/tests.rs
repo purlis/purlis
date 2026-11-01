@@ -451,6 +451,58 @@ fn a_cluster_pool(
         .unwrap()
 }
 
+/// **A runner a chat may have run on without the sandbox is signed in on by neither kind of
+/// pool**: a record that cannot be read counts as one, and the words say what to do.
+#[test]
+fn a_pool_whose_chats_ran_without_the_sandbox_is_not_signed_in_on() {
+    let config = tempfile::tempdir().unwrap();
+    assert_eq!(may_sign_in_on(config.path(), "builds"), Ok(()));
+
+    let machine = purlis_core::machine::dir(config.path());
+    std::fs::create_dir_all(&machine).unwrap();
+    std::fs::write(machine.join(purlis_core::runnertaint::FILE), "not this").unwrap();
+
+    let refused = may_sign_in_on(config.path(), "builds").unwrap_err();
+    assert!(refused.contains("Remove the pool"), "{refused}");
+}
+
+/// **A forget refused asks a pool's runner again, whichever claim it was made by**.
+#[test]
+fn a_pool_untidied_is_asked_again_by_any_of_its_claims() {
+    let remembered = ["forgets/uid-1", "forgets", "forgets-not/uid-1"];
+    TIDIED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .extend(remembered.map(str::to_owned));
+    untidied_on("forgets");
+    let left = TIDIED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    assert!(left.iter().any(|one| one == "forgets-not/uid-1"));
+    assert!(
+        !left
+            .iter()
+            .any(|one| one == "forgets" || one == "forgets/uid-1")
+    );
+}
+
+/// **A claim made again is a runner not yet tidied**: a tidy is remembered by the claim, and a
+/// Docker pool's by its name.
+#[cfg(unix)]
+#[test]
+fn a_tidy_is_remembered_by_the_claim_a_runner_was_made_by() {
+    let config = tempfile::tempdir().unwrap();
+    let (_, kept) = a_cluster_pool(config.path());
+    let mut remade = kept.clone();
+    remade.claimed.uid = format!("{}-again", kept.claimed.uid);
+    assert_ne!(
+        tidied_as("team", &Yours::Cluster(Box::new(kept))),
+        tidied_as("team", &Yours::Cluster(Box::new(remade)))
+    );
+    assert_eq!(tidied_as("team", &Yours::Docker("/s".into())), "team");
+}
+
 /// **A cluster pool's runner keeps a profile only where the person marked the pool and its
 /// claim is vouched for now** (#3819, the gate of #4071): unmarked, nothing asks its cluster and
 /// nothing is sent; marked, the cluster is asked, and a refusal there sends nothing and tells
