@@ -146,6 +146,7 @@ describe("a pool's limits page", () => {
             },
           ],
           advanced: [],
+          waiting: [],
         } satisfies PoolLimitsPage;
       }
       if (cmd === "pool_limit_set") {
