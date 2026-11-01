@@ -174,6 +174,11 @@ test("Dependabot's playwright group moves the packages and the pin together", ()
     .find((block) => /groups:\s+web:/.test(block));
   for (const name of names) {
     assert.ok(npm.includes(`"${name}"`), `the group names ${name}`);
-    assert.match(web, new RegExp(`dependency-name: "?${name.replace("*", "\\*")}"?\\n`), `web ignores ${name}`);
+    assert.ok(
+      [`dependency-name: ${name}\n`, `dependency-name: "${name}"\n`].some((line) =>
+        web.includes(line),
+      ),
+      `web ignores ${name}`,
+    );
   }
 });
