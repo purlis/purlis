@@ -246,3 +246,35 @@ fn the_case_measurement_applies_the_rules_purlis_writes() {
     }
     assert_eq!(checked, 5, "every cased rule of the script is checked");
 }
+
+/// One folder goes past its own name's rule alone: other copies of the name, and every other
+/// name, stay held.
+#[test]
+fn a_lifted_folder_is_written_past_its_own_names_rule_alone() {
+    use crate::sandbox::seatbelt::{floor_planted_rules, floor_planted_rules_but};
+    let lifted = [std::path::PathBuf::from("/Users/a/.config/gh")];
+    let held = floor_planted_rules().expect("rules");
+    let some = floor_planted_rules_but(&lifted).expect("rules");
+    assert_eq!(held.len(), some.len());
+    let changed: Vec<_> = held.iter().zip(&some).filter(|(a, b)| a != b).collect();
+    assert_eq!(changed.len(), 1);
+    assert!(
+        changed[0]
+            .1
+            .contains("(require-not (subpath \"/Users/a/.config/gh\"))"),
+        "{}",
+        changed[0].1
+    );
+}
+
+/// What a person lifted reaches the floor's profile.
+#[test]
+fn a_lifted_folder_reaches_the_floors_profile() {
+    let own = crate::sandbox::seatbelt::Own {
+        lifted: vec![std::path::PathBuf::from("/Users/a/.config/gh")],
+        ..Default::default()
+    };
+    let profile =
+        crate::sandbox::seatbelt::floor_profile(&[], &[], &own, &[], None).expect("a profile");
+    assert!(profile.contains("(require-not (subpath \"/Users/a/.config/gh\"))"));
+}

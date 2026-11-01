@@ -1114,6 +1114,7 @@ pub(crate) fn blocked_on(
 ) -> ChatBlocked {
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
     let offered = kept_in_place(harness, plane.root(), block, target)
+        .or_else(|| lifted_here(harness, plane.root(), block, target))
         .unwrap_or_else(|| offered_to(plane.root(), block, target, has_check));
     let (first, named, why) = for_its_harness(harness, offered);
     // Chosen by the person where nothing was named (#1884): said in place of "nothing to
@@ -1556,10 +1557,15 @@ fn held(
         }
         BlockOffer::Write => {
             let mut why = locks.write_grants_refused();
+            // A held folder is this chat's alone ([`lifted_here`]).
+            let held = target.as_deref().is_some_and(|path| {
+                purlis_core::sandbox::names_what_may_be_lifted(Path::new(path))
+            });
             // At the scopes policy leaves open alone (#1927): one it removed was drawn here
             // and then refused at the press.
             let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
                 .into_iter()
+                .filter(|level| !held || *level == GrantLevel::Chat)
                 .filter(|level| {
                     let refused = locks.scope_removed((*level).into());
                     if refused.is_some() && why.is_none() {
@@ -1652,6 +1658,36 @@ fn kept_in_place(
             Some(grant::GIT_FOLDER_KEPT.to_owned()),
         )
     })
+}
+
+/// **A refused write of a held folder a person may lift** ([`purlis_core::sandbox::grant::lift`]):
+/// Allow, naming the folder whole, for this chat alone, where purlis can write that into the
+/// chat's sandbox. `None` for any other block, and where a wrap on Linux holds the chat.
+fn lifted_here(
+    harness: Option<purlis_core::harness::Harness>,
+    root: &Path,
+    block: &purlis_core::sandboxblock::Block,
+    target: Option<&str>,
+) -> Option<(BlockOffer, Option<String>, Option<String>)> {
+    use purlis_core::sandbox::{Machine, grant};
+    use purlis_core::sandboxblock::{Kind, Operation};
+    let harness = harness?;
+    let machine = Machine::this();
+    if block.ours
+        || block.kind != Kind::ProtectedFile
+        || !matches!(block.operation, Operation::Write | Operation::File)
+        || machine.purlis_wraps(harness)
+    {
+        return None;
+    }
+    let ground = grant::Ground::of(root, root, &machine);
+    let folder = grant::liftable(Path::new(target?), &ground.place())?;
+    let folder = grant::lift(&folder.display().to_string(), &ground).ok()?;
+    Some((
+        BlockOffer::Write,
+        Some(folder.display().to_string()),
+        Some(grant::LIFT_SAID.to_owned()),
+    ))
 }
 
 /// [`offered`] to a chat whose sandbox was compiled with the system's certificate check
