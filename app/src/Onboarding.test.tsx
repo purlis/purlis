@@ -3,7 +3,7 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render as renderBare, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -134,8 +134,7 @@ function machine({
 async function stepSays(said: string) {
   const steps = await screen.findByRole("navigation", { name: "Setting up" });
   await waitFor(() => expect(steps).toHaveTextContent(said));
-  const current = within(steps).getByRole("listitem", { current: "step" });
-  return current;
+  return steps;
 }
 
 async function openRepoByPath(path: string) {
@@ -155,15 +154,15 @@ describe("a fresh machine", () => {
     const { calls, lastKept } = machine();
     render(<App />);
 
-    expect(await stepSays("Step 1 of 4: Welcome")).toHaveTextContent("Welcome");
+    await stepSays("Step 1 of 2: Pick a project");
     const person = userEvent.setup();
     await person.click(await screen.findByRole("button", { name: "Create a project" }));
-    await stepSays("Step 2 of 4: Create, get or open a project");
+    await stepSays("Step 1 of 2: Pick a project");
     expect(screen.getByRole("heading", { level: 1, name: "Create a project" })).toHaveFocus();
 
     await openRepoByPath(REPO);
     const harness = await screen.findByRole("heading", { level: 1, name: "Pick your harness" });
-    await stepSays("Step 3 of 4: Pick your harness");
+    await stepSays("Step 2 of 2: Pick your harness");
     expect(harness).toHaveFocus();
     // The project is made and held behind the step, not drawn.
     expect(projectDrawn()).toBe(false);
@@ -206,13 +205,13 @@ describe("a fresh machine", () => {
     render(<App />);
     const person = userEvent.setup();
     await person.click(await screen.findByRole("button", { name: "Sign in to GitHub or GitLab" }));
-    await stepSays("Step 2 of 5: Sign in");
+    await stepSays("Step 1 of 3: Sign in");
     expect(
       screen.getByRole("heading", { level: 1, name: "Sign in to GitHub or GitLab" }),
     ).toHaveFocus();
 
     await person.click(screen.getByRole("button", { name: "Skip for now" }));
-    await stepSays("Step 3 of 5: Create, get or open a project");
+    await stepSays("Step 2 of 3: Pick a project");
     // The doors again, for the project.
     expect(screen.getByRole("button", { name: "Get a project from your forge" })).toBeVisible();
     await waitFor(() =>
@@ -229,12 +228,12 @@ describe("a fresh machine", () => {
     render(<App />);
     const person = userEvent.setup();
     await person.click(await screen.findByRole("button", { name: "Create a project" }));
-    await stepSays("Step 2 of 4: Create, get or open a project");
+    await stepSays("Step 1 of 2: Pick a project");
     await person.click(screen.getByRole("radio", { name: "GitHub" }));
 
     await person.click(await screen.findByRole("button", { name: "Sign in to GitHub" }));
     await screen.findByRole("heading", { level: 1, name: "Sign in to GitHub or GitLab" });
-    await stepSays("Step 2 of 5: Sign in");
+    await stepSays("Step 1 of 3: Sign in");
     await waitFor(() =>
       expect(lastKept()).toMatchObject({ step: "sign-in", door: "create", signing_in: true }),
     );
@@ -242,7 +241,7 @@ describe("a fresh machine", () => {
     // Skip for now (or Continue once signed in) is Create again, with GitHub still picked.
     await person.click(screen.getByRole("button", { name: "Skip for now" }));
     await screen.findByRole("heading", { level: 1, name: "Create a project" });
-    await stepSays("Step 3 of 5: Create, get or open a project");
+    await stepSays("Step 2 of 3: Pick a project");
     expect(screen.getByRole("radio", { name: "GitHub" })).toBeChecked();
   });
 
@@ -277,7 +276,7 @@ describe("a machine with no git (#1813's guided screen, mounted)", () => {
     await openRepoByPath(REPO);
 
     await screen.findByRole("heading", { level: 1, name: "Install git" });
-    await stepSays("Step 3 of 5: Install git");
+    await stepSays("Step 2 of 3: Install git");
     expect(screen.getByRole("heading", { name: "Git is not installed" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Install" })).toBeInTheDocument();
     // Nothing that needs git ran.
@@ -288,7 +287,7 @@ describe("a machine with no git (#1813's guided screen, mounted)", () => {
     await screen.findByRole("heading", { level: 1, name: "Pick your harness" });
     expect(calls("open_repo")).toHaveLength(1);
     // The git check happened, so it stays counted.
-    await stepSays("Step 4 of 5: Pick your harness");
+    await stepSays("Step 3 of 3: Pick your harness");
   });
 
   it("holds Get's clone behind the git check, and clones in its own page once git is there", async () => {
@@ -348,14 +347,14 @@ describe("a relaunch", () => {
     machine({ kept: { ...FRESH, step: "project", door: "get" } });
     render(<App />);
     await screen.findByRole("heading", { level: 1, name: "Get a project from your forge" });
-    await stepSays("Step 2 of 4: Create, get or open a project");
+    await stepSays("Step 1 of 2: Pick a project");
   });
 
   it("picks up at the sign-in it was quit on", async () => {
     machine({ kept: { ...FRESH, step: "sign-in", signing_in: true } });
     render(<App />);
     await screen.findByRole("heading", { level: 1, name: "Sign in to GitHub or GitLab" });
-    await stepSays("Step 2 of 5: Sign in");
+    await stepSays("Step 1 of 3: Sign in");
   });
 
   it("picks up at the git check, and looks for git again", async () => {
@@ -366,14 +365,14 @@ describe("a relaunch", () => {
     render(<App />);
     await screen.findByRole("heading", { level: 1, name: "Install git" });
     await screen.findByRole("heading", { name: "Git is not installed" });
-    await stepSays("Step 3 of 5: Install git");
+    await stepSays("Step 2 of 3: Install git");
   });
 
   it("goes on from the git check to the project's page when git is there now", async () => {
     machine({ kept: { ...FRESH, step: "git", door: "create", git_missing: true } });
     render(<App />);
     await screen.findByRole("heading", { level: 1, name: "Create a project" });
-    await stepSays("Step 2 of 5: Create, get or open a project");
+    await stepSays("Step 1 of 3: Pick a project");
   });
 
   it("picks up at the harness step, opening its project again and holding it", async () => {
@@ -390,7 +389,7 @@ describe("a relaunch", () => {
     await waitFor(() => expect(calls("open_plane").map((one) => one.args.path)).toContain(TEAM));
     await screen.findByRole("button", { name: "Install Claude Code" });
     expect(projectDrawn()).toBe(false);
-    await stepSays("Step 3 of 4: Pick your harness");
+    await stepSays("Step 2 of 2: Pick your harness");
   });
 
   it("shows no harness step after the first time through while a harness is installed", async () => {
@@ -402,7 +401,9 @@ describe("a relaunch", () => {
           : undefined,
     });
     render(<App />);
-    await stepSays("Step 1 of 3: Welcome");
+    // Someone back on a machine that has been through the steps is counted through nothing.
+    await screen.findByRole("button", { name: "Create a project" });
+    expect(screen.queryByRole("navigation", { name: "Setting up" })).not.toBeInTheDocument();
     const person = userEvent.setup();
     await person.click(await screen.findByRole("button", { name: "Create a project" }));
     await openRepoByPath(REPO);
@@ -435,7 +436,7 @@ describe("the place it keeps", () => {
       },
     });
     render(<App />);
-    await stepSays("Step 1 of 4: Welcome");
+    await stepSays("Step 1 of 2: Pick a project");
     await waitFor(() => expect(writes).toBe(1));
 
     const person = userEvent.setup();
@@ -509,13 +510,13 @@ describe("the kept place, read before a door can be pressed (#2400)", () => {
   it("guides a window with no project at once, without waiting on the read", async () => {
     const read = aSlowRead({ kept: FRESH });
     render(<App />);
-    await stepSays("Step 1 of 4: Welcome");
+    await stepSays("Step 1 of 2: Pick a project");
     const person = userEvent.setup();
     await person.click(await screen.findByRole("button", { name: "Create a project" }));
     await screen.findByRole("heading", { level: 1, name: "Create a project" });
 
     read.answer();
-    await stepSays("Step 2 of 4: Create, get or open a project");
+    await stepSays("Step 1 of 2: Pick a project");
     expect(screen.getByRole("radiogroup", { name: "Where it lives" })).toBeInTheDocument();
   });
 });

@@ -10,7 +10,7 @@ import type { Channel } from "@tauri-apps/api/core";
 import type { CreateProgress, ForgeOwners, TemplateRow } from "./bindings";
 import { CreateOnForge } from "./CreateOnForge";
 import { REMEMBERED_PARENT } from "./GetProject";
-import { offeredIn, pickIn } from "./ui/select/select.testkit";
+import { offeredIn, pickIn, selectNamed } from "./ui/select/select.testkit";
 
 /**
  * **Create a project on a forge, as the page draws it** (#1819): the owner picker from the
@@ -111,7 +111,7 @@ describe("create a project on a forge (#1819)", () => {
     await person.type(screen.getByLabelText("Name"), "garden");
     expect(await screen.findByText(FOLDER)).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Private/ })).toBeChecked();
-    await person.click(screen.getByRole("radio", { name: /Rust/ }));
+    await pickIn(selectNamed("Project template"), "Rust");
 
     await person.click(screen.getByRole("button", { name: "Create project" }));
     await vi.waitFor(() =>

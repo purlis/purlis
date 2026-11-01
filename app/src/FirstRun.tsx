@@ -14,9 +14,9 @@ function choiceOf(value: string): TemplateChoice {
   return { kind: "named", id: value };
 }
 import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
+import { rememberedParent, rememberParent } from "./CreateOnForge";
 import { DoorPage } from "./DoorPage";
 import { useNewerTrouble } from "./pickTrouble";
-import { harnessSays } from "./harnessSays";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Form } from "./ui/field/Field";
@@ -49,8 +49,8 @@ import { Form } from "./ui/field/Field";
  */
 export function FirstRun({
   onOpenRepo,
+  onMake,
   onBack,
-  onNewProject,
   opening,
   trouble,
   forgeAsk,
@@ -61,8 +61,8 @@ export function FirstRun({
   onOpenRepo: (path: string, template: TemplateChoice) => void;
   /** Comes back to the welcome. */
   onBack: () => void;
-  /** Opens the New project dialog, for a project in a folder of its own. */
-  onNewProject: () => void;
+  /** Makes a project with no repo in this folder, and opens it. */
+  onMake: (folder: string) => void;
   /** Whether the core is cloning it right now, so it is not asked twice. */
   opening: boolean;
   /** Why the last attempt opened nothing — the core's words, all of them. */
@@ -142,11 +142,10 @@ export function FirstRun({
         elsewhere(found?.templates)
       ) : (
         <>
-          <p className="welcome-lede">
-            A project is where purlis keeps your workspaces, personas and memory. purlis keeps this
-            one on this machine and opens your repo in a workspace of its own. Nothing is written
-            into your repo.
-          </p>
+          {/* Nothing but a name is needed: a project with no repo yet, on this Mac (#1810 story 8). */}
+          <OnThisMac onMake={onMake} making={opening} />
+
+          <h2>Or start from a repo you already have</h2>
 
           {/* **The template first** (#1719): both acts below open the repo with it, so it is seen
           before either is pressed. Until the machine is read, a line stands where it will be,
@@ -165,14 +164,15 @@ export function FirstRun({
             <SettingRow
               label="Project template"
               help={
-                "Personas, a review checklist and the commands purlis asks you about before a chat " +
-                "runs them, for the stack you work in. Nothing is written into your repo."
+                template === FITS
+                  ? fitsSays(fits, found.templates)
+                  : "Personas, a review checklist and the commands purlis asks you about before a " +
+                    "chat runs them, for the stack you work in. Nothing is written into your repo."
               }
-              grouped
               control={(ids) => (
                 <Choice
                   ids={ids}
-                  kind="radio"
+                  kind="select"
                   options={[
                     { value: FITS, label: "Fits the repo", says: fitsSays(fits, found.templates) },
                     ...found.templates.map((one) => ({
@@ -241,33 +241,6 @@ export function FirstRun({
               {said}
             </p>
           )}
-
-          {found && (
-            <>
-              <h2 id="first-run-found">On this machine</h2>
-              {found.harnesses.every((row) => !row.installed) && (
-                <p className="came-back">
-                  No harness is installed on this machine. Once your repo is open, purlis lists each
-                  one with its own installer, which runs in a shell tab when you press Install.
-                </p>
-              )}
-              <ul className="first-run-found" aria-labelledby="first-run-found">
-                {found.harnesses.map((row) => (
-                  <li key={row.name}>
-                    <span className="tab-name">{row.title}</span>: {harnessSays(row)}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          {/* The other way to make one, in the catalogue's words for it (`project.create`). */}
-          <p className="welcome-elsewhere">
-            To keep the project in a folder you choose, use{" "}
-            <Button variant="link" onPress={onNewProject} className="welcome-link">
-              New project…
-            </Button>
-          </p>
         </>
       )}
     </DoorPage>
@@ -280,4 +253,94 @@ function fitsSays(fits: string | null | undefined, templates: TemplateRow[]): st
   if (fits === null) return "None fits this repo, so it opens with no template.";
   const title = templates.find((one) => one.id === fits)?.title ?? fits;
   return `${title}, by the files at the repo's top level.`;
+}
+
+/**
+ * **A new project on this Mac, from its name**: no account and no repo. Its folder follows the
+ * name, under the place picked last, as a project made on a forge does; a name that cannot be
+ * one says why.
+ */
+function OnThisMac({ onMake, making }: { onMake: (folder: string) => void; making: boolean }) {
+  const [name, setName] = useState("");
+  const [parent, setParent] = useState(rememberedParent);
+  const [answered, setAnswered] = useState<{ name: string; folder?: string; why?: string }>();
+  const [unpicked, setUnpicked] = useState<string>();
+  const typed = name.trim();
+  const here = answered?.name === typed ? answered : undefined;
+
+  useEffect(() => {
+    if (!typed) return;
+    let gone = false;
+    void commands
+      .newProjectFolder(typed, parent ?? null)
+      .then((answer) => {
+        if (gone) return;
+        setAnswered(
+          answer.status === "ok"
+            ? { name: typed, folder: answer.data }
+            : { name: typed, why: answer.error },
+        );
+      })
+      .catch((err: unknown) => {
+        if (!gone) setAnswered({ name: typed, why: String(err) });
+      });
+    return () => {
+      gone = true;
+    };
+  }, [typed, parent]);
+
+  const choose = useCallback(() => {
+    setUnpicked(undefined);
+    void commands
+      .pickProject()
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+      .then((answer) => {
+        if (answer.status === "error") setUnpicked(answer.error);
+        else if (answer.data) {
+          rememberParent(answer.data);
+          setParent(answer.data);
+        }
+      });
+  }, []);
+
+  const folder = here?.folder;
+  const ready = folder !== undefined && !making;
+  return (
+    <Form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (ready) onMake(folder);
+      }}
+    >
+      <SettingRow
+        label="Name"
+        setting="create-project-name"
+        help="Letters, digits, dots, dashes and underscores, like my-project."
+        control={(ids) => (
+          <Field ids={ids} kind="text" value={name} placeholder="my-project" onChange={setName} />
+        )}
+      />
+      {here?.why && (
+        <p className="trouble" role="alert">
+          {here.why}
+        </p>
+      )}
+      <div className="get-project-end">
+        <p className="get-project-folder">
+          Goes into <code className="where">{folder ?? parent ?? "—"}</code>
+        </p>
+        <Button variant="ghost" isDisabled={making} onPress={choose}>
+          Choose a folder…
+        </Button>
+        <Button variant={ready ? "primary" : "secondary"} type="submit" isDisabled={!ready}>
+          Create project
+        </Button>
+      </div>
+      {unpicked && (
+        <p className="trouble" role="alert">
+          {unpicked}
+        </p>
+      )}
+    </Form>
+  );
 }

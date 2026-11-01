@@ -130,22 +130,27 @@ export function HarnessSetupTab({
 
       <ul className="harness-setup-rows" aria-label="Harnesses">
         {harnesses.map((row) => (
-          <li key={row.name}>
-            <span className="tab-name">{row.title}</span>: {harnessSays(row)}
+          <li key={row.name} className="harness-row">
+            <span className="harness-row-says">
+              <span className="tab-name">{row.title}</span>
+              <span className="harness-row-state">{harnessSays(row)}</span>
+            </span>
             {!row.installed && (
-              <>
+              // `tabIndex={0}` on every button, per `docs/ui-primitives.md` (#189).
+              <Button
+                onPress={() => {
+                  setPressed(row.name);
+                  askHarnessSetup({ plane, harness: row.name, way: "install", workspace });
+                }}
+              >
+                Install {row.title}
+              </Button>
+            )}
+            {!row.installed && (
+              <span className="harness-row-how">
                 <code className="harness-installer">{row.installer}</code>
-                <span className="came-back">from {row.installer_page}</span>
-                {/* `tabIndex={0}` on every button, per `docs/ui-primitives.md` (#189). */}
-                <Button
-                  onPress={() => {
-                    setPressed(row.name);
-                    askHarnessSetup({ plane, harness: row.name, way: "install", workspace });
-                  }}
-                >
-                  Install {row.title}
-                </Button>
-              </>
+                <span>from {row.installer_page}</span>
+              </span>
             )}
           </li>
         ))}
@@ -185,6 +190,7 @@ export function HarnessSetupTab({
         </Button>
         {startOn && (
           <Button
+            variant="primary"
             onPress={() => askHarnessSetup({ plane, harness: startOn.name, way: "chat", cwd })}
           >
             Start a chat

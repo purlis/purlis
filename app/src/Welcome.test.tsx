@@ -689,7 +689,7 @@ describe("the welcome's doors (#1812)", () => {
     expect(screen.getByRole("button", { name: SIGN_IN })).toHaveAttribute("tabindex", "0");
   });
 
-  it("is reached from the keyboard: Tab walks the doors, then the sign-in, then the path box", async () => {
+  it("is reached from the keyboard: Tab walks the doors, the sign-in, the recents, then the path box", async () => {
     core(() => undefined);
     render(<App />);
     const person = userEvent.setup();
@@ -702,15 +702,17 @@ describe("the welcome's doors (#1812)", () => {
     }
     await person.tab();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: SIGN_IN }));
+    // Then the page beside them: its recent projects, a stop of their own, and the path box.
+    await person.tab();
     await person.tab();
     expect(document.activeElement).toBe(screen.getByLabelText("Or type a path"));
   });
 
-  it("says the recent list is empty, and how it fills, on a machine that remembers nothing", async () => {
+  it("says what comes next, rather than what is missing, on a machine that remembers nothing", async () => {
     core((cmd) => (cmd === "recent_planes" ? MACHINES["a fresh machine"] : undefined));
     render(<App />);
 
-    expect(await screen.findByText("No recent projects yet")).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "What comes next" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Recent projects" })).not.toBeInTheDocument();
   });
 
@@ -721,7 +723,7 @@ describe("the welcome's doors (#1812)", () => {
     const recents = await screen.findByRole("region", { name: "Recent projects" });
     // The region is drawn before the list it holds is read: wait for the row itself.
     expect(await within(recents).findByRole("row", { name: /elsewhere/ })).toBeInTheDocument();
-    expect(screen.queryByText("No recent projects yet")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "What comes next" })).not.toBeInTheDocument();
   });
 
   it("opens the folder the Open door's dialog picks", async () => {
@@ -756,17 +758,6 @@ describe("the welcome's doors (#1812)", () => {
     await person.click(screen.getByRole("button", { name: "Back" }));
     await screen.findByRole("heading", { level: 1, name: "Welcome to purlis" });
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Create a project" }));
-  });
-
-  it("offers New project… from Create a project, for a project in a folder of its own", async () => {
-    core(() => undefined);
-    render(<App />);
-    const person = userEvent.setup();
-
-    await person.click(await screen.findByRole("button", { name: "Create a project" }));
-    await person.click(await screen.findByRole("button", { name: "New project…" }));
-
-    expect(await screen.findByRole("dialog", { name: "New project" })).toBeInTheDocument();
   });
 
   it("asks for a project's URL behind its door, and still offers the folder way", async () => {
