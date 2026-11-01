@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793549000342,
+  "lastUpdate": 1793550830434,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35112,6 +35112,48 @@ window.BENCHMARK_DATA = {
             "value": 101.356683,
             "unit": "ms",
             "extra": "median of 5 runs: 99.589, 101.333, 101.357, 102.288, 102.560 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "82b6ae0cab5e493f63e39b4babe6b56722aa8da1",
+          "message": "Clones: a wired clone's LFS files read as unchanged, and its filter stays off the network (#4392)\n\n* Clones: real git-lfs says what purlis's git does in a wired clone (#4380)\n\nRed first: status, commit, update and the repo-written helper, against the real filter.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A78BA2YMWSVHQVC1X84G9E\nPurlis-Persona: steward\n\n* Clones: a wired clone's LFS files read as unchanged, and its filter stays off the network (#4380)\n\nThe exact helper purlis's git policy writes no longer holds the LFS filter. Where that is\nall that would, the filter is told never to download and, off the network, has no helper.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A78BA2YMWSVHQVC1X84G9E\nPurlis-Persona: steward\n\n* Clones: lfs.storage holds the filter; git lfs pull in a wired clone proved (#4380)\n\nAnswers the adversarial review of 75a8bafef.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A78BA2YMWSVHQVC1X84G9E\nPurlis-Persona: steward\n\n* Clones: a link in a wired clone's LFS store holds the filter (#4380)\n\nAnswers the adversarial review of 30424dca0: a chat's sandbox can write .git/lfs, and this\ngit runs outside it. The changelog and policy say what a push and a missing git-lfs do.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A78BA2YMWSVHQVC1X84G9E\nPurlis-Persona: steward\n\n* Clones: the LFS store checked is the one git finds, and any lfs.storage holds (#4380)\n\nAnswers the adversarial review of 36b1c699a.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A78BA2YMWSVHQVC1X84G9E\nPurlis-Persona: steward\n\n* Clones: the test's LFS server answers only the objects asked for (#4380)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A78BA2YMWSVHQVC1X84G9E\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T14:58:38Z",
+          "tree_id": "978222a0bde2d33bbf84d79440948c1f4ef70ee5",
+          "url": "https://github.com/purlis/purlis/commit/82b6ae0cab5e493f63e39b4babe6b56722aa8da1"
+        },
+        "date": 1793550824853,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.520134,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.508, 0.519, 0.520, 0.526, 0.526 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.358282000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.274, 16.340, 16.358, 16.429, 16.491 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.522487,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.922, 101.462, 101.522, 102.070, 102.132 ms"
           }
         ]
       }
