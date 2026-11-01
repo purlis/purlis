@@ -1179,7 +1179,7 @@ fn a_head_that_names_no_commit_is_not_pushed_and_its_remote_branch_stays() {
         ],
     );
     let url = format!("file://{}", bare.display());
-    let pushed = push_head_by_id(&repo, None, &[], &url, "refs/heads/main").unwrap();
+    let pushed = push_commit(&repo, None, &[], &url, "HEAD", "refs/heads/main").unwrap();
     assert!(pushed.ok(), "{pushed:?}");
     let there = ran(&bare, &["rev-parse", "refs/heads/main"]);
     let id = ran(&repo, &["rev-parse", "HEAD"]);
@@ -1194,7 +1194,7 @@ fn a_head_that_names_no_commit_is_not_pushed_and_its_remote_branch_stays() {
     // A ref named after the commit, which a bare id would have been read as.
     let planted = repo.join(".git/refs/heads").join(id.trim());
     std::fs::write(&planted, format!("{}\n", "0".repeat(40))).unwrap();
-    let pushed = push_head_by_id(&repo, None, &[], &url, "refs/heads/main").unwrap();
+    let pushed = push_commit(&repo, None, &[], &url, "HEAD", "refs/heads/main").unwrap();
     assert!(pushed.ok(), "{pushed:?}");
     assert_eq!(ran(&bare, &["rev-parse", "refs/heads/main"]), there);
     std::fs::remove_file(&planted).unwrap();
@@ -1202,7 +1202,7 @@ fn a_head_that_names_no_commit_is_not_pushed_and_its_remote_branch_stays() {
     for spoiled in ["0".repeat(40), "garbage".to_owned()] {
         std::fs::write(repo.join(".git/refs/heads/main"), format!("{spoiled}\n")).unwrap();
 
-        let pushed = push_head_by_id(&repo, None, &[], &url, "refs/heads/main").unwrap();
+        let pushed = push_commit(&repo, None, &[], &url, "HEAD", "refs/heads/main").unwrap();
 
         assert!(!pushed.ok(), "{spoiled}: {pushed:?}");
         assert_eq!(ran(&bare, &["rev-parse", "refs/heads/main"]), there);

@@ -863,6 +863,17 @@ fn a_project_whose_files_each_have_one_name_is_published() {
     assert_eq!(files.lines().collect::<Vec<_>>(), ["notes.md", "staged.md"]);
 }
 
+#[test]
+fn a_tag_called_as_the_branch_leaves_the_branch_its_own_name() {
+    // `symbolic-ref --short HEAD` answers `heads/main` here.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("notebook");
+    a_repository_with_a_commit(&root);
+    assert!(crate::testgit::run(&root, &["tag", BRANCH]).ok());
+
+    assert_eq!(branch_of(&root).as_deref(), Ok(BRANCH));
+}
+
 /// #4515: a first push names its commit, and the branch still follows `origin`, as
 /// `--set-upstream` left it.
 #[test]

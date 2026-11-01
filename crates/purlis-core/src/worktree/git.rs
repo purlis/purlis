@@ -2368,21 +2368,22 @@ pub(crate) fn is_a_ref_name(dir: &Path, name: &str) -> bool {
     run(dir, &["check-ref-format", name], READ).is_ok_and(|run| run.ok())
 }
 
-/// What a push of a `HEAD` that names no commit answers.
-const HEAD_NAMES_NO_COMMIT: &str = "HEAD names no commit here, so nothing was pushed";
+/// What a push of something that names no commit answers.
+const NAMES_NO_COMMIT: &str = "what would be pushed names no commit here, so nothing was pushed";
 
-/// `git push <options> <url> <commit>:<to>` ([`run_network`]), of the commit `HEAD` is at by its
-/// id ([`commit_at`]), so that a `HEAD` gone bad as git starts cannot read as a push of nothing.
-/// `to` is a full ref: git cannot tell what an id would make a short name on a remote without it.
-pub(crate) fn push_head_by_id(
+/// `git push <options> <url>` ([`run_network`]) of `commit`, the one a caller scanned, to `to`
+/// ([`push_refspec`]). `to` is a full ref: git cannot tell what an id makes of a short name a
+/// remote does not have.
+pub(crate) fn push_commit(
     dir: &Path,
     helper: Option<&str>,
     options: &[&str],
     url: &str,
+    commit: &str,
     to: &str,
 ) -> Result<Run, GitUnavailable> {
-    let Some(commit) = commit_at(dir, "HEAD") else {
-        return Ok(refused(HEAD_NAMES_NO_COMMIT));
+    let Some(commit) = commit_at(dir, commit) else {
+        return Ok(refused(NAMES_NO_COMMIT));
     };
     let refspec = push_refspec(&commit, to);
     let mut args = vec!["push"];

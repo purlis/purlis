@@ -537,7 +537,12 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
             &head,
         );
     }
-    if let Err(res) = push_save_branch(root, &https, &helper, &save, &target, &kept, say) {
+    let reach = Reach {
+        https: &https,
+        helper: &helper,
+        head: &head,
+    };
+    if let Err(res) = push_save_branch(reach, root, &save, &target, &kept, say) {
         return record_push(root, *res, &head);
     }
     kept.pushed = Some(head.clone());
@@ -647,7 +652,16 @@ fn fetch_after_merge(
     Ok(Some((https, helper)))
 }
 
-/// Push HEAD to `save`, leased against the commit this clone last pushed there (`kept`).
+/// Where a save branch's push goes, what signs it, and the commit it sends.
+#[derive(Clone, Copy)]
+struct Reach<'a> {
+    https: &'a str,
+    helper: &'a str,
+    head: &'a str,
+}
+
+/// Push `reach`'s commit to `save`, leased against the commit this clone last pushed there
+/// (`kept`).
 ///
 /// - **Nothing kept** — the first push from this clone — leases the branch as absent. A
 ///   branch that is there anyway is pushed over only when HEAD already has every commit on
@@ -659,9 +673,8 @@ fn fetch_after_merge(
 /// - **A branch that is gone** — deleted after its PR merged, even between a first push and
 ///   the listing after it — is leased again as absent.
 fn push_save_branch(
+    reach: Reach,
     root: &Path,
-    https: &str,
-    helper: &str,
     save: &str,
     target: &str,
     kept: &Kept,
@@ -680,12 +693,18 @@ fn push_save_branch(
             ..PushResult::of(Outcome::Failed, target)
         })
     };
+    let Reach {
+        https,
+        helper,
+        head,
+    } = reach;
     let push = |expected: &str| {
-        git::push_head_by_id(
+        git::push_commit(
             root,
             Some(helper),
             &[&format!("--force-with-lease=refs/heads/{save}:{expected}")],
             https,
+            head,
             &format!("refs/heads/{save}"),
         )
     };

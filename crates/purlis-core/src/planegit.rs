@@ -1484,6 +1484,7 @@ fn land_via_branch(
     root: &Path,
     https: &str,
     helper: Option<&str>,
+    head: &str,
     default_branch: &str,
     say: Sink,
 ) -> PushResult {
@@ -1503,11 +1504,12 @@ fn land_via_branch(
     // that went wrong would send the reader after a problem they do not have.
     let mut attempt: Option<(String, git::Run)> = None;
     for candidate in reuse.into_iter().chain(std::iter::once(fresh.clone())) {
-        let pushed = git::push_head_by_id(
+        let pushed = git::push_commit(
             root,
             helper,
             &[],
             https,
+            head,
             &crate::worktree::name::as_ref(&candidate),
         );
         if let Ok(run) = pushed {
@@ -1891,12 +1893,15 @@ fn push_head_within(
         Some(target) => crate::worktree::name::as_ref(target),
         None => git::run(root, &["symbolic-ref", "--quiet", "HEAD"], git::READ)
             .ok()
-            .filter(git::Run::ok)
+            .filter(|run| run.ok() && run.line().starts_with("refs/heads/"))
             .map_or_else(|| "HEAD".to_owned(), |run| run.line().trim().to_owned()),
     };
-    let push = |root: &Path| git::push_head_by_id(root, Some(helper.as_str()), &[], &https, &to);
+    // The commit scanned, by its id: one landing since sends nothing unscanned.
+    let push = |root: &Path, head: &str| {
+        git::push_commit(root, Some(helper.as_str()), &[], &https, head, &to)
+    };
 
-    let mut run = match push(root) {
+    let mut run = match push(root, &head) {
         Ok(run) => run,
         Err(unavailable) => {
             say(Say::Warn(
@@ -1932,7 +1937,7 @@ fn push_head_within(
         // exist.
         return record_push(
             root,
-            land_via_branch(root, &https, Some(helper.as_str()), &branch, say),
+            land_via_branch(root, &https, Some(helper.as_str()), &head, &branch, say),
             &head,
         );
     }
@@ -2049,7 +2054,7 @@ fn push_head_within(
             head = git::run(root, &["rev-parse", "HEAD"], git::READ)
                 .map(|r| r.line().trim().to_string())
                 .unwrap_or_default();
-            match push(root) {
+            match push(root, &head) {
                 Ok(again) => run = again,
                 Err(_) => {
                     return record_push(root, PushResult::of(Outcome::Failed, &branch), &head);
@@ -2079,7 +2084,7 @@ fn push_head_within(
         // the protected branch refuses. Same policy, reached from the other side.
         return record_push(
             root,
-            land_via_branch(root, &https, Some(helper.as_str()), &branch, say),
+            land_via_branch(root, &https, Some(helper.as_str()), &head, &branch, say),
             &head,
         );
     }

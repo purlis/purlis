@@ -397,13 +397,10 @@ impl OnThisMachine {
 
 /// The branch the project is on, or why it cannot be pushed.
 fn branch_of(root: &Path) -> Result<String, String> {
-    let run = git::run(
-        root,
-        &["symbolic-ref", "--quiet", "--short", "HEAD"],
-        git::READ,
-    )
-    .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;
-    let branch = run.line().trim().to_string();
+    // The full ref, not `--short`: that answers `heads/main` where a tag is called `main`.
+    let run = git::run(root, &["symbolic-ref", "--quiet", "HEAD"], git::READ)
+        .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;
+    let branch = run.line().trim().strip_prefix("refs/heads/").unwrap_or("");
     if !run.ok() || branch.is_empty() {
         return Err(
             "The project is on no branch (a detached HEAD), so purlis cannot tell which history \
@@ -411,7 +408,7 @@ fn branch_of(root: &Path) -> Result<String, String> {
                 .to_string(),
         );
     }
-    Ok(branch)
+    Ok(branch.to_string())
 }
 
 /// **What the push would publish, scanned before it is sent**: the whole history of `branch`,
