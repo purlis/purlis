@@ -4006,6 +4006,20 @@ impl Chats {
             }
             _ => hooks,
         };
+        // Whether it loads its folder's settings, as the two paths above just decided (#4477): what
+        // it has of its harness's plugins hangs on it.
+        let reads_project = sandbox.is_none()
+            || (!limited
+                && !matches!(settings_watched, Some(Err(_)))
+                && purlis_core::harness::claude::project::screen(chat.cwd.as_deref())
+                    .loads_the_project());
+        let skills_read = if armed_by_its_runner {
+            (*skills).clone()
+        } else {
+            (*skills)
+                .clone()
+                .plugins_read(harness, chat.cwd.as_deref(), reads_project, &env)
+        };
         // What the run this start begins is, for its `run.started` (ADR 0066, #868), its model
         // source its profile's sign-in kind (ADR 0087 as amended, #2036).
         let mut attributes = run_attributes(
@@ -4553,7 +4567,7 @@ impl Chats {
                 composed_by_its_host: on_the_runner,
                 grants_as: grants_persona_of(chat, &self.project),
                 skills: stamp,
-                skills_read: (*skills).clone(),
+                skills_read,
                 last_prompt: None,
                 plane_skills,
                 clones_at_start: clones_at_start.take(),

@@ -738,3 +738,48 @@ fn a_grade_is_refused_on_a_harness_that_cannot_turn_a_plugin_off_for_one_chat() 
     let why = only_purlis_on(&OPENCODE, &Env::of(&env)).expect_err("refused");
     assert!(why.contains("cannot turn a plugin off"), "{why}");
 }
+
+#[test]
+fn a_plugin_claude_code_has_installed_but_turned_off_brings_no_skills_to_its_chats() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = tmp.path().join("claude-config");
+    let plugin = tmp.path().join("cache/market/superpowers/1.0.0");
+    std::fs::create_dir_all(config.join("plugins")).unwrap();
+    std::fs::create_dir_all(plugin.join("skills/brainstorming")).unwrap();
+    std::fs::write(
+        plugin.join("skills/brainstorming/SKILL.md"),
+        "---\nname: brainstorming\ndescription: Think first.\n---\nBody.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        config.join("plugins/installed_plugins.json"),
+        serde_json::json!({
+            "version": 2,
+            "plugins": {"superpowers@market": [{"scope": "user", "installPath": plugin}]},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    // Measured on 2.1.316: with this, the chat's `init` event names neither plugin nor skill.
+    std::fs::write(
+        config.join("settings.json"),
+        r#"{"enabledPlugins":{"superpowers@market":false}}"#,
+    )
+    .unwrap();
+    let chat = [("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
+    let env = Env {
+        chat: &chat,
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let listed = harness_skills(
+        &CLAUDE_CODE,
+        &env,
+        &Choices::from_text(None, None),
+        &ChatFolder::default(),
+    );
+
+    let ids: Vec<&str> = listed.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, Vec::<&str>::new());
+}

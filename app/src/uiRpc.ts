@@ -3671,6 +3671,15 @@ export type ChatSkills = {
 	known: boolean,
 	/**  Every skill of its set, by name. */
 	skills: ChatSkill[],
+	/**
+	 *  The skills its program finds itself and it has (#4477): the Skills view's Use types them,
+	 *  and the picker's list and the budget hold none.
+	 */
+	program: ChatSkill[],
+	/**  The plugins on this machine it does not have. */
+	plugins_off: PluginOffShown[],
+	/**  What its program's own skills hold, in the core's words: the header's count. */
+	own: string | null,
 	/**  Its budget, where it is known. */
 	budget: SkillBudget | null,
 	/**
@@ -8249,6 +8258,18 @@ export type PlaneUpdated = {
 	skills_edited: string[],
 };
 
+/**  **A plugin on this machine a chat does not have** (#4477), as Left out says it. */
+export type PluginOffShown = {
+	/**  The name its skills are prefixed with. */
+	name: string,
+	/**  Why, in full: what closes its skills' run. */
+	said: string,
+	/**  Why, in the few words its folded line has room for. */
+	line: string,
+	/**  The command that puts it right, where one does. */
+	command: string | null,
+};
+
 /**  A pool as the person typed it: each limit left empty takes the default. */
 export type PoolAdding = {
 	name: string,
@@ -12001,6 +12022,8 @@ export type StudioHarness = {
 	 *  for a count of its needs.
 	 */
 	own: string | null,
+	/**  The plugins on this machine a new chat here would not have (#4477). */
+	plugins_off: PluginOffShown[],
 };
 
 /**  A level a skill can be moved to or made at, and its words. */

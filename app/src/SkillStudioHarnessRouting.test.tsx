@@ -37,6 +37,7 @@ function harnesses(offLangfuse = false): StudioHarness[] {
       harness: "claude",
       title: "Claude Code",
       repo_left_out: [],
+      plugins_off: [],
       own: null,
       skills: [
         skill("langfuse", {
@@ -76,7 +77,14 @@ function harnesses(offLangfuse = false): StudioHarness[] {
         }),
       ],
     },
-    { harness: "opencode", title: "opencode", repo_left_out: [], own: null, skills: [] },
+    {
+      harness: "opencode",
+      title: "opencode",
+      repo_left_out: [],
+      plugins_off: [],
+      own: null,
+      skills: [],
+    },
   ];
 }
 

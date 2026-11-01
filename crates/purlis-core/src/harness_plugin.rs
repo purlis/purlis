@@ -145,6 +145,13 @@ impl<'a> Env<'a> {
 
 /// One harness, as far as its plugins and its own skills go.
 pub trait Adapter: Sync {
+    /// **Which of its installed plugins a chat in `at` really has** (#4477), or `None` where it
+    /// cannot tell. A harness that does not read this says nothing, and every skill its record
+    /// names is listed.
+    fn plugins_here(&self, _env: &Env<'_>, _at: &ChatFolder) -> Option<Plugins> {
+        None
+    }
+
     /// The plane's word for it: a profile's `kind`, and the key under [`SKILLS_TABLE`].
     fn harness(&self) -> &'static str;
     /// What a person calls it: its built-in declaration's `title`
@@ -345,6 +352,10 @@ impl Adapter for ClaudeCode {
 
     fn skills_at(&self, env: &Env<'_>) -> Vec<SkillsAt> {
         skills::claude(self, env)
+    }
+
+    fn plugins_here(&self, env: &Env<'_>, at: &ChatFolder) -> Option<Plugins> {
+        on_here::claude(self, env, at)
     }
 
     /// A repo's `.claude/skills`, which Claude Code reads as the project's own (its skills docs,
@@ -714,6 +725,20 @@ fn purlis_s_own(adapter: &dyn Adapter, id: &str) -> bool {
         || crate::plugin::FORMERLY.iter().any(|(_, new)| *new == id)
 }
 
+/// **The variables of `env` that say where a harness keeps its config** (#4477): all a chat's held
+/// plugin answer needs of its environment, which may hold secrets.
+pub fn config_dirs_in(env: &[(String, String)]) -> Vec<(String, String)> {
+    env.iter()
+        .filter(|(name, _)| {
+            matches!(
+                name.as_str(),
+                "CLAUDE_CONFIG_DIR" | "CODEX_HOME" | "OPENCODE_CONFIG_DIR"
+            )
+        })
+        .cloned()
+        .collect()
+}
+
 /// **Whether the plugin a harness names `name` is purlis's own, under any id it has had**
 /// ([`purlis_s_own`]), matched on the name before the `@`: its skills are purlis's built-in
 /// skills, or ones a chat is handed with that plugin pinned off, so they are no part of the
@@ -982,8 +1007,12 @@ pub fn switch_in_the_studio(
     }
 }
 
+mod on_here;
 mod outside;
-pub use outside::{harness_skills, moves_a_repo_skill, repo_skills};
+pub use on_here::{ChatFolder, OffWhy, PluginOff, Plugins};
+pub use outside::{
+    harness_skills, harness_skills_but, harness_skills_split, moves_a_repo_skill, repo_skills,
+};
 
 pub mod old;
 

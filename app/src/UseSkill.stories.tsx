@@ -35,6 +35,9 @@ function skill(name: string, description: string, more: Partial<ChatSkill> = {})
 const SKILLS: ChatSkills = {
   on: true,
   known: true,
+  program: [],
+  plugins_off: [],
+  own: null,
   skills: [
     skill("secrets", "Uses a vault's secret without its value entering the chat.", {
       level: "built-in",
