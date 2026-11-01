@@ -599,6 +599,7 @@ fn every_named_limit_on_a_runners_path_has_a_group() {
 /// What the person is asked to rule on: nothing becomes a limit by being listed.
 #[test]
 fn the_candidates_are_the_ones_brought_to_the_person() {
+    purlis_core::unsteered!();
     let candidates: Vec<&str> = SORTED
         .iter()
         .filter(|one| one.2 == Candidate)
