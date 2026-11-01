@@ -3052,11 +3052,11 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Removal(_) => 11,
             Ask::Keys { .. } => 12,
             Ask::Propose(_) => 13,
-            Ask::Browse(_) => 14,
-            Ask::ThemePreview(_) => 15,
-            Ask::ThemeDraft(_) => 16,
-            Ask::Prompt(_) => 17,
-            Ask::ProposeLimit(_) => 18,
+            Ask::ProposeLimit(_) => 14,
+            Ask::Browse(_) => 15,
+            Ask::ThemePreview(_) => 16,
+            Ask::ThemeDraft(_) => 17,
+            Ask::Prompt(_) => 18,
         }
     }
     let asks = vec![
@@ -3167,7 +3167,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=17).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=18).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
