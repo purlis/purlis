@@ -795,7 +795,6 @@ pub(crate) async fn skill_grade_plan(
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn skill_grade_start(
     app: tauri::AppHandle,
-    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     level: SkillLevel,
@@ -807,7 +806,7 @@ pub(crate) async fn skill_grade_start(
     consent: String,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
-    let executor = views.executor();
+    let executor = app.state::<crate::views::Views>().executor();
     crate::off_the_window("starting a grade", move || {
         flag_on()?;
         let level: Level = (&level).into();
@@ -1996,6 +1995,7 @@ impl InChats<'_> {
             answer: None,
         };
         let root = self.held.root().to_path_buf();
+        let mut guard_down = false;
         let laid = match &chat.kind {
             // A judge's piece holds what the chat it judges left, as purlis kept it, and its
             // task: nothing of the skill, and nothing else (SK-55).
@@ -2015,6 +2015,15 @@ impl InChats<'_> {
             }
             ChatKind::Outcome { files } => (self.lay_out)(chat.arm).and_then(|laid| {
                 match purlis_core::skills::verbs::drafts::stage(&root, &laid, files, self.inputs) {
+                    Ok(())
+                        if !self.held.chats().binary().is_some_and(|binary| {
+                            purlis_core::toolhooks::outcome_guard_answers(binary, &laid.piece)
+                        }) =>
+                    {
+                        let _ = purlis_core::skills::verbs::drafts::end_try(&root, &laid.id);
+                        guard_down = true;
+                        Err(String::new())
+                    }
                     Ok(()) => Ok(laid),
                     Err(why) => {
                         let _ = purlis_core::skills::verbs::drafts::end_try(&root, &laid.id);
@@ -2024,6 +2033,16 @@ impl InChats<'_> {
             }),
             ChatKind::Trigger => (self.lay_out)(chat.arm),
         };
+        if guard_down {
+            return ChatRan {
+                end: ChatEnd::NotHeld {
+                    why: "purlis could not hold this chat's writes to its folder, so it did not \
+                          run and the eval failed."
+                        .to_owned(),
+                },
+                ..not_started(String::new())
+            };
+        }
         let laid = match laid {
             Ok(laid) => laid,
             Err(why) => return not_started(why),

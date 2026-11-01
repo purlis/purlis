@@ -28,17 +28,27 @@
 //! pair with one of them in it is held again at every hue. The tint keeps each shade's luminance to make that hold by construction; this is the
 //! check that the construction did.
 //!
+//! **A workspace's own colour can be any hue** (#4308), so each pair a tint can move
+//! ([`super::floors::moves_with_hue`]) is read at every whole degree too. A pair that falls only
+//! between the named tints is said once, at the degree it is lowest
+//! ([`Finding::ContrastBetweenTints`]).
+//!
 //! `app/src/theme/contrast.test.ts` reads [`PAIRS`] out of this file and fails when a stylesheet
 //! draws a pair of tokens that is not in it.
 
 use super::fonts::{Style, without_a_face};
 use super::geometry::Geometry;
+use super::parts::{COARSE_DEGREES, NEAR_A_FLOOR};
 use super::vocabulary::{TOKENS, is_platform};
-use super::{Density, ResolvedTheme, tint};
+use super::{Density, ResolvedTheme, floors, tint};
 
 #[cfg(test)]
 #[path = "check_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "between_tints_tests.rs"]
+mod between_tints_tests;
 
 #[cfg(test)]
 #[path = "tiers_tests.rs"]
@@ -51,6 +61,10 @@ mod card_ground_tests;
 #[cfg(test)]
 #[path = "notice_ways_tests.rs"]
 mod notice_ways_tests;
+
+#[cfg(test)]
+#[path = "scrim_cursor_diff_tests.rs"]
+mod scrim_cursor_diff_tests;
 
 /// What a token of [`super::vocabulary::PLATFORM_DRAWN`] left to the platform is measured as
 /// when it is drawn on something: selected text the theme leaves alone keeps the words' own
@@ -756,6 +770,22 @@ pub const PAIRS: &[Pair] = &[
     .over("terminal.background"),
     // - The terminal's scrollbar, a hairline on the terminal.
     p("terminal.scrollbar", "terminal.background", 1.2),
+    // - The terminal's cursor (#2987), and the editor's caret, which is drawn in it: a mark on
+    //   the terminal's ground. A block cursor is drawn over its whole cell, so the cell's word is
+    //   the accent on the cursor: words, at the window's text size.
+    p("terminal.cursor", "terminal.background", 3.0),
+    p("terminal.cursor-accent", "terminal.cursor", TEXT),
+    // - The editor's words on the diff's washes (#2987, `editor/look.ts`): a changed line's wash
+    //   on the editor's ground, and a changed word's laid on its line's. The syntax roles are
+    //   drawn there too, and are not held here: see #2987's pull request for what they measure.
+    p("terminal.foreground", "diff.inserted", TEXT).over("terminal.background"),
+    p("terminal.foreground", "diff.deleted", TEXT).over("terminal.background"),
+    p("terminal.foreground", "diff.inserted-text", TEXT)
+        .over("diff.inserted")
+        .over("terminal.background"),
+    p("terminal.foreground", "diff.deleted-text", TEXT)
+        .over("diff.deleted")
+        .over("terminal.background"),
     // **Every grey tier on every ground a part draws it on** (#2902, ruling #2803): the four text
     // tiers at the window's text size, faint at the mark floor, on each of `TIER_GROUNDS`. The
     // pairs above already hold the rest of them.
@@ -880,6 +910,26 @@ pub const CARD_STEP: f64 = 1.05;
 /// window's are, so a theme can draw its cards on the panel's own ground inside an edge.
 pub const CARD_EDGE: f64 = 1.2;
 
+/// **How far the modal scrim has to move the window it lies over** (#2987), so a modal ask reads
+/// as modal. A scrim is neither words nor a mark: it is a change to the whole window, read at
+/// less than a mark's 3:1 as a card's step is read at less than a hairline's. It is not raised by
+/// more contrast, as no floor under a mark's is ([`super::least::Least::floor`]).
+pub const SCRIM_DIM: f64 = 2.0;
+
+/// **How far the scrim moves the window** ([`SCRIM_DIM`]): the further it moves the window's
+/// ground or its words, each against itself with the scrim laid on it. A contrast against the
+/// ground alone cannot hold both ways: black over a dark window is about 1.1:1 at any alpha, and
+/// what dims there is the words; over a light window the words are already near black, and what
+/// dims is the ground.
+pub(super) fn scrim_dim(theme: &ResolvedTheme) -> f64 {
+    let scrim = theme.value("overlay.scrim");
+    let moved = |token: &str| {
+        let under = solid(theme.value(token));
+        contrast(&under, &onto(scrim, &under))
+    };
+    two_places(moved("surface.base").max(moved("text.primary")))
+}
+
 /// What [`check`] found: nothing, for a theme whose words can be read.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Report {
@@ -910,6 +960,10 @@ pub enum Finding {
         pair: Pair,
         ratio: f64,
     },
+    /// A pair of [`PAIRS`] that clears its floor as it is and in every named tint and falls under
+    /// it at a hue between them (#4308): a workspace's own colour can be any hue. `degree` is the
+    /// hue it is lowest at, and `ratio` its contrast there (to two places).
+    ContrastBetweenTints { degree: u16, pair: Pair, ratio: f64 },
     /// An ANSI colour too close to the terminal's background.
     Ansi {
         tint: Option<&'static str>,
@@ -941,6 +995,13 @@ pub enum Finding {
         ground: &'static str,
         pointed: bool,
         distance: f64,
+        floor: f64,
+    },
+    /// A modal scrim that hardly moves the window it lies over (#2987): `ratio` is
+    /// [`scrim_dim`], under [`SCRIM_DIM`], so a modal ask does not read as modal.
+    ScrimTooThin {
+        tint: Option<&'static str>,
+        ratio: f64,
         floor: f64,
     },
     /// A colour for selected text with the selection left to the platform (#2327): the window
@@ -1043,8 +1104,63 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
             card_apart(&tinted, Some(one.name), card, &mut findings);
             notice_ways_apart(&tinted, Some(one.name), ways, &mut findings);
         }
+        between_named_tints(theme, &mut findings);
     }
     Report { findings }
+}
+
+/// **Each pair that falls only between the named tints** (#4308), said at its lowest whole degree.
+/// A pair already found is not said again, and a pair a tint cannot move is not read: what the
+/// rounding of a turned shade does to it only raises its contrast. The check runs while a person
+/// edits a draft, so a pair is read every [`COARSE_DEGREES`] first, and at every degree only when
+/// that comes within [`NEAR_A_FLOOR`] of its floor.
+fn between_named_tints(theme: &ResolvedTheme, findings: &mut Vec<Finding>) {
+    let found = |pair: &Pair| {
+        findings
+            .iter()
+            .any(|one| matches!(one, Finding::Contrast { pair: said, .. } if said == pair))
+    };
+    let mut near: Vec<&'static Pair> = PAIRS
+        .iter()
+        .filter(|pair| !found(pair))
+        .filter(|pair| floors::moves_with_hue(theme, pair))
+        .collect();
+    if near.is_empty() {
+        return;
+    }
+    let coarse: Vec<ResolvedTheme> = (0..360_u16)
+        .step_by(COARSE_DEGREES)
+        .map(|degree| tint::tinted_at(theme, f64::from(degree)))
+        .collect();
+    near.retain(|pair| {
+        coarse
+            .iter()
+            .filter_map(|drawn| ratio(drawn, pair))
+            .any(|ratio| ratio < pair.floor + NEAR_A_FLOOR)
+    });
+    if near.is_empty() {
+        return;
+    }
+    let mut lowest: Vec<(&'static Pair, Option<(u16, f64)>)> =
+        near.into_iter().map(|pair| (pair, None)).collect();
+    for degree in 0..360_u16 {
+        let drawn = tint::tinted_at(theme, f64::from(degree));
+        for (pair, low) in &mut lowest {
+            let Some(ratio) = ratio(&drawn, pair) else {
+                continue;
+            };
+            if ratio < pair.floor && low.is_none_or(|(_, least)| ratio < least) {
+                *low = Some((degree, ratio));
+            }
+        }
+    }
+    findings.extend(lowest.into_iter().filter_map(|(pair, low)| {
+        low.map(|(degree, ratio)| Finding::ContrastBetweenTints {
+            degree,
+            pair: *pair,
+            ratio,
+        })
+    }));
 }
 
 /// **Whether a notice card's secondary way stands apart from each card ground** (#4210): the
@@ -1172,6 +1288,14 @@ fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut V
                 floor,
             });
         }
+    }
+    let dim = scrim_dim(theme);
+    if dim < SCRIM_DIM {
+        findings.push(Finding::ScrimTooThin {
+            tint,
+            ratio: dim,
+            floor: SCRIM_DIM,
+        });
     }
     let selected = theme.value("list.selected").to_lowercase();
     for other in SELECTED_APART_FROM {

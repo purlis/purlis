@@ -131,7 +131,6 @@ impl HarnessAdapter for ClaudeCode {
                         &denied_tools(kit),
                         screened.as_ref(),
                         kit.graded,
-                        cwd.filter(|_| kit.writes_its_piece),
                         &own_of(kit, cwd),
                     ),
                 ]),
@@ -612,7 +611,6 @@ fn settings(
     denied_tools: &[String],
     screened: Option<&project::Screened>,
     graded: bool,
-    writes_in: Option<&std::path::Path>,
     own: &(Option<String>, Option<String>),
 ) -> String {
     let mut settings = serde_json::Map::new();
@@ -757,14 +755,6 @@ fn settings(
     if sandbox.is_some_and(crate::sandbox::claude::Settings::is_off) {
         allow.push("Bash".to_owned());
     }
-    // **An outcome eval's chat writes in its own piece, and nowhere else** (SK-55, the operator's
-    // ruling of 2026-10-31): `//` starts an absolute path in a permission rule. Any other write
-    // still asks, and a grade's chat is ended at its first ask.
-    if let Some(piece) = writes_in {
-        for tool in ["Edit", "Write", "MultiEdit"] {
-            allow.push(format!("{tool}(/{}/**)", piece.display()));
-        }
-    }
     let mut permissions = serde_json::json!({ "allow": allow });
     // **The sandbox, where the plane turned it on** (ADR 0067), and the deny rules that keep
     // Claude Code's own Read and Edit tools out of what its sandbox denies a command
@@ -845,7 +835,6 @@ pub(super) fn armed_settings_for_tests(sandbox: &crate::sandbox::claude::Setting
         &[],
         None,
         false,
-        None,
         &(None, None),
     )
 }

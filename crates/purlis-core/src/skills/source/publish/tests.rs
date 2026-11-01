@@ -338,6 +338,9 @@ fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
         seconds: None,
         chats: 3,
         not_run: 0,
+        outcome_pass_rate: None,
+        outcome_chats: 0,
+        outcome_not_run: 0,
     };
     let report = GradeReport {
         grader: "built-in".to_owned(),
@@ -352,6 +355,10 @@ fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
         spent_usd: Some(7.77),
         counted_usd: None,
         priced: None,
+        outcomes: Vec::new(),
+        outcome_delta: None,
+        outcome_tokens: None,
+        outcome_usd: None,
         failed: None,
     };
     let graded = Graded {

@@ -249,3 +249,66 @@ fn the_macos_profiles_limit_file_link_to_the_folders_a_chat_may_write() {
         }
     }
 }
+
+/// **What a wrapped chat at the floor can make in a home with no `~/.local` or `~/.config`**
+/// (#4357), under each profile, applied for real, once its start has made what it makes: the
+/// shared folders are there for tools to use, and no other harness's folder is made or planted.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
+    purlis_core::unsteered!();
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tools/standard-home-paths.sh"
+    );
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    for (harness, called, others) in [
+        (
+            Harness::Codex,
+            "codex",
+            [".claude", ".local/share/opencode"],
+        ),
+        (Harness::Opencode, "opencode", [".claude", ".codex"]),
+    ] {
+        let at = out.join(called);
+        let home = at.join("home");
+        let bin = at.join("bin");
+        let root = at.join("project");
+        let tmp = at.join("tmp");
+        for folder in [&home, &bin, &tmp] {
+            fs::create_dir_all(folder).expect("a folder");
+        }
+        lay_out(&root, "schema = 1\n");
+        let machine = Machine {
+            env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+            home: Some(home.clone()),
+            os: Os::MacOs,
+        };
+        let decided = sandbox::decide(harness, &root, &machine, &|_| true, None, None)
+            .expect("decided")
+            .expect("a sandbox in force");
+        let Decided::Sandboxed(applied) = decided else {
+            panic!("not sandboxed: {decided:?}");
+        };
+        let (level, profile) = emitted(harness, &root, &tmp, &machine);
+        applied.make_usual_folders();
+        assert_eq!(level, Level::Floor);
+        let done = purlis_core::forklock::output(
+            std::process::Command::new("/usr/bin/sandbox-exec")
+                .args(["-p", &profile, "/bin/sh", script])
+                .arg(&home)
+                .arg(called)
+                .args(others)
+                .current_dir(&root)
+                .env("TMPDIR", &tmp),
+        )
+        .expect("sandbox-exec runs");
+        let said = String::from_utf8_lossy(&done.stdout);
+        assert!(
+            done.status.success() && said.contains(" 0 wrong"),
+            "{called}:\n{said}\n{}",
+            String::from_utf8_lossy(&done.stderr)
+        );
+    }
+}

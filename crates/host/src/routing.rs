@@ -35,7 +35,10 @@ pub type RelaysTo = Arc<dyn Fn(&str) -> Result<(Keep, String), String> + Send + 
 /// for the window's own steps towards a chat there: relaying a link, holding a project and starting
 /// a program. A link that redials, a check or a view never does, so a runner's own link does not
 /// undo its suspension.
-pub type RunsAgain = Arc<dyn Fn(&str) + Send + Sync>;
+///
+/// **Answers how long a start waits for that runner** (#4403), where this word brings it back;
+/// `None` where it does not. A start waits out a wake another link asked for too.
+pub type RunsAgain = Arc<dyn Fn(&str) -> Option<std::time::Duration> + Send + Sync>;
 
 /// **The `<pool>/<runner>` a link's `relay_to` answer names** (#4071): a cluster runner's answer
 /// goes on to name the link key it was pinned with, `<pool>/<runner>@<key>`, for the window alone.
@@ -171,7 +174,7 @@ impl Routed {
         *lock(&self.route) = Route::There(relay.clone());
         // The window relays a link as a chat starts or is taken back there, and a link to a
         // suspended runner gets no further without it (#3980).
-        self.run_again().await;
+        let _ = self.run_again().await;
         // A link that ended while this was taken was ended as this host's: its relay is told
         // too, so the name it holds there goes with it.
         if peer.has_ended() {
@@ -200,14 +203,44 @@ impl Routed {
             .unwrap_or(true)
     }
 
-    /// Asks for the runner this link is relayed to to run again, off the runtime.
-    async fn run_again(&self) {
+    /// Asks for the runner this link is relayed to to run again, off the runtime: how long a
+    /// start waits for it, where it is on its way back. A stopped host wakes nothing.
+    async fn run_again(&self) -> Option<std::time::Duration> {
         let (Some(runs_again), Some(runner)) =
             (self.hosting.runs_again(), lock(&self.runner).clone())
         else {
-            return;
+            return None;
         };
-        let _ = tokio::task::spawn_blocking(move || runs_again(&runner)).await;
+        if self.hosting.is_stopped() {
+            return None;
+        }
+        let asking = runner.clone();
+        let asked = tokio::task::spawn_blocking(move || runs_again(&asking))
+            .await
+            .ok()
+            .flatten();
+        self.hosting.waits_for(&runner, asked)
+    }
+
+    /// Whether the runner this link is relayed to was asked to run again, and is not back yet.
+    fn its_runner_comes_back(&self) -> bool {
+        !self.hosting.is_stopped()
+            && lock(&self.runner)
+                .as_deref()
+                .is_some_and(|runner| self.hosting.waits_for(runner, None).is_some())
+    }
+
+    /// `peer`'s hold or start waits for its runner where that is on its way back (#4403).
+    async fn waits_for_the_runner(&self, relay: &Relay, peer: &Peer) -> bool {
+        let Some(patience) = self.run_again().await else {
+            return false;
+        };
+        if relay.waits_for_its_runner(peer, patience).await
+            && let Some(runner) = lock(&self.runner).clone()
+        {
+            self.hosting.came_back(&runner);
+        }
+        true
     }
 
     /// The window's name, kept while the link was undecided, handed to this host now that the
@@ -263,12 +296,17 @@ impl session::Host for Routed {
                     return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
                 }
                 // Before anything that needs the runner: a start holds its project first, and a
-                // relay that is down refuses that hold (#3980).
+                // relay that is down refuses that hold (#3980), so it waits for a runner on its way
+                // back (#4403).
                 if matches!(
                     command,
                     Command::HoldProject { .. } | Command::StartProgram(_)
-                ) {
-                    self.run_again().await;
+                ) && self.waits_for_the_runner(&relay, peer).await
+                    && matches!(command, Command::StartProgram(_))
+                    && self.drains().await
+                {
+                    // Replaced while it waited: the rule above holds at the end of the wait too.
+                    return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
                 }
                 session::Host::call(&relay, command, peer).await
             }
@@ -301,6 +339,9 @@ impl session::Host for Routed {
             Goes::Here => {
                 self.named_here(peer).await;
                 session::Host::subscribe(&self.hosting, since, peer).await
+            }
+            Goes::There(relay) if self.its_runner_comes_back() => {
+                relay.subscribes_as_its_runner_comes_back(since, peer).await
             }
             Goes::There(relay) => session::Host::subscribe(&relay, since, peer).await,
             Goes::Refused(refusal) => Err(refusal),

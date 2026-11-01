@@ -1403,10 +1403,10 @@ fn an_outcome_chats_writes_land_in_its_own_piece() {
     let write = |path: &str| serde_json::json!({"tool_name": "Write", "cwd": cwd, "tool_input": {"file_path": path}});
     let held = plane.with_env(OUTCOME_FOLDER_ENV, &cwd);
     for inside in ["new.md", "deep/er/new.md"] {
-        assert!(
-            matches!(held.ask(write(inside), pretooluse_edit), Answer::Nothing),
-            "{inside}"
-        );
+        let Answer::Say(said) = held.ask(write(inside), pretooluse_edit) else {
+            panic!("{inside} is not allowed by the guard");
+        };
+        assert!(said.contains("\"allow\""), "{said}");
     }
     let mut outside = vec!["../new.md".to_owned(), "/etc/x".to_owned()];
     if cfg!(unix) {

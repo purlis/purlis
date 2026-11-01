@@ -813,6 +813,67 @@ fn a_runners_sign_in_check_is_read_by_its_own_words() {
     assert!(standing_said("work", "'workshop' is signed in on r\n").is_err());
 }
 
+/// **A runner's check is read by how it exited, whatever its words say** (#4113).
+#[test]
+fn a_runners_sign_in_check_is_read_by_its_status_not_its_words() {
+    use crate::profilestore::sign_in::{Standing, check_exit};
+    let reworded = "reworded in some later purlis\n";
+    for (status, standing) in [
+        (check_exit::SIGNED_OUT, Some(Standing::SignedOut)),
+        (check_exit::CANNOT_TELL, Some(Standing::CannotTell)),
+        (check_exit::FETCHING, Some(Standing::Fetching)),
+        (check_exit::NOT_KEPT, None),
+    ] {
+        assert_eq!(
+            standing_answered("work", Some(i32::from(status)), reworded),
+            Ok(standing),
+            "{status}"
+        );
+    }
+    assert_eq!(
+        standing_answered("work", Some(0), reworded),
+        Ok(Some(Standing::SignedIn))
+    );
+    // A status that is no answer, and nothing said, stay refusals.
+    assert!(standing_answered("work", Some(1), reworded).is_err());
+    assert!(standing_answered("work", Some(125), reworded).is_err());
+    assert!(standing_answered("work", None, reworded).is_err());
+    assert!(standing_answered("work", Some(0), " \n").is_err());
+}
+
+/// **A purlis before those statuses is still read by its words** (#4113): it exits 0 for an
+/// answer that is not signed in, and 1 for signed out and for a refusal alike.
+#[test]
+fn a_runner_too_old_for_the_statuses_is_read_by_its_words() {
+    use crate::profilestore::sign_in::Standing;
+    for (status, printed, standing) in [
+        (0, "'work' is signed in on r\n", Standing::SignedIn),
+        (
+            0,
+            "its harness cannot tell whether 'work' is signed in on r; a chat on it starts\n",
+            Standing::CannotTell,
+        ),
+        (
+            0,
+            "its harness is still being fetched on r, so it cannot yet say whether 'work' is \
+             signed in; purlis profile sign-in work signs it in\n",
+            Standing::Fetching,
+        ),
+        (
+            1,
+            "'work' is not signed in on r: purlis profile sign-in work signs it in\n",
+            Standing::SignedOut,
+        ),
+    ] {
+        assert_eq!(
+            standing_answered("work", Some(status), printed),
+            Ok(Some(standing)),
+            "{printed}"
+        );
+    }
+    assert!(standing_answered("work", Some(1), "purlis: no profile named 'work'.\n").is_err());
+}
+
 /// **A plan's driven sign-in names its browser flow**, which has no list to answer, and the
 /// fallback where the browser's answer cannot reach the runner names its device-code flow in a
 /// terminal the person drives, as does the terminal a login restarts in (#4044).
@@ -3263,7 +3324,7 @@ fn a_standing_is_not_held_to_its_input() {
         args: vec![
             "-c".to_owned(),
             "case \"$*\" in *--until-input-ends*) echo refused;; *--check*) echo \"'work' is not \
-             signed in\" >&2;; esac"
+             signed in\" >&2; exit 3;; esac"
                 .to_owned(),
             "sh".to_owned(),
             "--until-input-ends".to_owned(),
@@ -3273,7 +3334,7 @@ fn a_standing_is_not_held_to_its_input() {
     };
     assert_eq!(
         standing_by_login(&login, "work"),
-        Ok(crate::profilestore::sign_in::Standing::SignedOut)
+        Ok(Some(crate::profilestore::sign_in::Standing::SignedOut))
     );
 }
 

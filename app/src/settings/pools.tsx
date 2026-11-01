@@ -158,6 +158,11 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
   return lines.length === 0 ? undefined : lines.join(" ");
 }
 
+/** Whether a pool's link says its runner is on a Docker engine that Docker no longer reaches. */
+function linkOnAnotherEngine(link: PoolLink | "asking" | undefined): boolean {
+  return typeof link === "object" && link.state === "on_another_engine";
+}
+
 /**
  * **Remove pool {name}?**, asked before any pool is removed: what goes, and that there is no
  * undo. Cancel changes nothing.
@@ -165,12 +170,15 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
 export function RemovePool({
   name,
   cluster = false,
+  elsewhere = false,
   onRemove,
   onCancel,
 }: {
   name: string;
   /** A cluster pool's (#3292): its claim is deleted, and its runner with it. */
   cluster?: boolean;
+  /** Its runner is on a Docker engine that Docker no longer reaches (#4325): nothing there goes. */
+  elsewhere?: boolean;
   onRemove: () => void;
   onCancel: () => void;
 }) {
@@ -180,9 +188,11 @@ export function RemovePool({
       title={`Remove pool ${name}?`}
       description={
         <p className="came-back">
-          {cluster
-            ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
-            : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
+          {elsewhere
+            ? "Its runner is on another Docker engine, which Docker doesn't reach now, so its container and home stay there, with everything chats left in them. purlis forgets the pool, and says what to remove once Docker points back. There is no undo."
+            : cluster
+              ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
+              : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
         </p>
       }
       main={{ children: "Remove pool", variant: "danger", onPress: onRemove }}
@@ -524,10 +534,11 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
             <RemovePool
               name={asking}
               cluster={clusters.some((one) => one.name === asking)}
+              elsewhere={linkOnAnotherEngine(now.links[asking])}
               onCancel={() => setAsking(undefined)}
               onRemove={() => {
                 setAsking(undefined);
-                void removePool(asking);
+                void removePool(asking, linkOnAnotherEngine(now.links[asking]));
               }}
             />
           )}

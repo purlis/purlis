@@ -1381,45 +1381,36 @@ fn a_judges_chat_starts_with_the_tools_that_read_and_no_other() {
     );
 }
 
-/// SK-55, the operator's ruling of 2026-10-31: an outcome eval's chat may write inside its own
-/// piece alone; a grade's other chats keep every prompt.
+/// SK-55, the operator's rulings of 2026-10-31 and 2026-11-01: an outcome eval's chat's writes are
+/// allowed by its guard's answer alone: no rule of its settings allows one, so where the guard does
+/// not answer the write asks, and the run ends.
 #[test]
-fn an_outcome_chat_may_write_in_its_own_piece_alone() {
+fn an_outcome_chats_writes_are_allowed_by_its_guard_alone() {
     let empty = tempfile::tempdir().expect("a directory");
-    let allowed = |writes_its_piece: bool| {
-        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
-            Kit {
-                skills: None,
-                laid_out: None,
-                binary: std::path::Path::new("/bin/charter"),
-                plugin: Some(std::path::Path::new("/app/plugin")),
-                persona: None,
-                graded: true,
-                judging: false,
-                writes_its_piece,
-            },
-            Some(empty.path()),
-            &crate::harness_plugin::Chosen::new(),
-            None,
-        ) else {
-            panic!("armed per session");
-        };
-        let at = args
-            .iter()
-            .position(|arg| arg == "--settings")
-            .expect("--settings");
-        let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
-        settings["permissions"]["allow"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
+    let StateHooks::ThisSessionOnly { args, env, .. } = adapter().arm(
+        Kit {
+            skills: None,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/charter"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: None,
+            graded: true,
+            judging: false,
+            writes_its_piece: true,
+        },
+        Some(empty.path()),
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    ) else {
+        panic!("armed per session");
     };
-    let rule = format!("Write(/{}/**)", empty.path().display());
-    assert!(allowed(true).contains(&serde_json::json!(rule)));
-    let others = allowed(false);
-    assert!(
-        !others
-            .iter()
-            .any(|one| one.as_str().is_some_and(|one| one.starts_with("Write")))
-    );
+    assert!(env.iter().any(|(name, _)| name == crate::toolhooks::OUTCOME_FOLDER_ENV));
+    let at = args.iter().position(|arg| arg == "--settings").expect("--settings");
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    let allow = settings["permissions"]["allow"].as_array().cloned().unwrap_or_default();
+    assert!(!allow.iter().any(|one| {
+        one.as_str().is_some_and(|one| {
+            ["Write", "Edit", "MultiEdit"].iter().any(|tool| one.starts_with(tool))
+        })
+    }));
 }

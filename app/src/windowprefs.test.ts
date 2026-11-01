@@ -34,6 +34,7 @@ const NO_THEME: TheirReading = {
   theme: null,
   complaints: [],
   floors: null,
+  mine: [],
   format_1: false,
   more: null,
 };
@@ -243,6 +244,24 @@ describe("the first frame, the levels resolved once at creation (#2602, #2582)",
     expect(firstFrameOnce()?.theme.name).toBe("Night");
   });
 
+  it("says on the first frame which of the person's colours it left out (#3023)", () => {
+    const yours = () => aboutThisMachine().filter((one) => one.subject === "your colours");
+    const why = "your colour for text.primary is left out: it would put words under their floor";
+    created({
+      follows_system: false,
+      contrast: "standard",
+      frames: [{ ...frame("Team", false, false), mine: [why] }],
+    });
+    expect(firstFrameOnce()?.mine).toEqual([why]);
+    expect(yours().map((one) => one.detail)).toEqual([why]);
+    expect(yours()[0].settings).toBe("you.colours");
+
+    // A frame that left nothing out says nothing, and an old answer is taken back.
+    created({ follows_system: false, contrast: "standard", frames: [frame("Team", false, false)] });
+    expect(firstFrameOnce()?.mine).toEqual([]);
+    expect(yours()).toEqual([]);
+  });
+
   it("is nothing when nothing was handed, or what was handed is not a frame", () => {
     created(undefined);
     expect(firstFrameOnce()).toBeUndefined();
@@ -290,7 +309,7 @@ describe("the operator's own theme, for more contrast (#2328)", () => {
   });
 
   it("is its appearance tagged high contrast while the system asks for more, with its floors", () => {
-    handed({ theme: MINE, more: { theme: SHARP, floors } });
+    handed({ theme: MINE, more: { theme: SHARP, floors, mine: [] } });
     asking(true);
     forgetTheirTheme();
 

@@ -364,6 +364,11 @@ own fills back after it, keeping what the theme sets in a state itself. A switch
 `titlebar.row-count`, in no state, held on its amber wash over the popover and the selected row;
 `titlebar.count` is a chip's.
 
+A part's fill with alpha is measured where it is drawn: over its root's own fill, then the
+family's grounds, so a `rail.badge.fill` wash is read over the button that holds it. A part drawn
+around its root stands on the grounds alone, and a chip's count on the bar's ground, which
+`titlebar.css` draws under its wash whatever the chip's fill.
+
 A card pressed whole (the welcome's doors, the Get page's repo picks) is the `card-button`
 family, not a part of the card's: a theme's `card.title` reaches a card's own title and never a
 pressed card's, even one drawn inside a card, which `card-button.title` reaches.
@@ -666,6 +671,12 @@ warnings (2):
   text.muted on surface.hover, in the red, blue tints: down to 2.07, under 4.5
 ```
 
+A workspace's own colour can be any hue, so each pair a tint can move is read at every whole
+degree too. A pair that clears its floor at every named tint and falls between them is said once,
+at the degree it is lowest (`state.waiting on wash.warning over surface.deep, in a workspace's own
+colour at 121°: 4.49, under 4.5`). In `--json` it is a warning of kind `contrast-between-tints`,
+with the `degree`, the `pair` and the `ratio`.
+
 Then `consent floors:`, what the window draws of the theme. Every combination of appearance
 and option values is checked against the consent floors as the window draws it, with the option
 values layered first, and the line says in how many of them the window holds one (`none held
@@ -755,6 +766,10 @@ row's look or a side panel's fill; the check only reports it and redraws nothing
 only `distance` from the `variant` card's `ground` in OKLab, under the `floor` of 0.02: the
 fill a theme's button parts give it, or else the card's own mix of `control.base` toward
 `text.primary`, 14% at rest and 22% under the pointer; the check only reports it),
+`scrim-too-thin` (a modal scrim, `overlay.scrim`, that moves the window it lies over only `ratio`,
+under the `floor` of 2: the further it moves `surface.base` or `text.primary`, each against
+itself with the scrim laid on it, since black over a dark window hardly moves its ground; a
+person's own scrim under it is left out),
 `selection-text-alone` (a colour for selected text on a selection left to the platform),
 `line-does-not-fit` (a line of words taller than the box it is drawn in:
 its `density`, the `fit` it breaks, a `size`, a `line_height` and a `height` token, and the

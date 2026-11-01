@@ -256,8 +256,18 @@ fn an_eval_chat_that_did_not_run_is_never_judged() {
     );
     let with = report.arm(Arm::With).unwrap();
     assert_eq!((with.outcome_chats, with.outcome_not_run), (0, 3));
-    assert_eq!(with.outcome_pass_rate, None);
-    assert_eq!(report.outcome_delta, None);
+    assert_eq!(
+        with.outcome_pass_rate.unwrap().mean,
+        0.0,
+        "an ask fails the run"
+    );
+    assert!(
+        report.outcomes[0].results[0]
+            .failed
+            .as_deref()
+            .unwrap()
+            .contains("asked")
+    );
 }
 
 #[test]
@@ -315,6 +325,32 @@ fn a_chat_that_closed_early_without_saying_its_spend_stops_a_capped_grade() {
     let report = grade(&request(), &mut Crashes, Some(limits));
     assert_eq!(report.ended, GradeEnd::SpendNotReported);
     assert_eq!(report.outcomes[0].results[0].passed, None, "no run");
+}
+
+/// The operator's ruling of 2026-11-01: a chat that could not be held to its limits fails its run,
+/// with why, spending nothing and judged by nobody; twice in a row ends the grade.
+#[test]
+fn a_chat_that_could_not_be_held_fails_its_run_with_why() {
+    let mut host = Judged {
+        asked: Vec::new(),
+        eval_end: |_| ChatEnd::NotHeld {
+            why: "no guard".into(),
+        },
+        judge: fair_judge,
+    };
+    let report = grade(&request(), &mut host, None);
+    let run = &report.outcomes[0].results[0];
+    assert_eq!(
+        (run.passed, run.failed.as_deref()),
+        (Some(0), Some("no guard"))
+    );
+    assert!(
+        !host
+            .asked
+            .iter()
+            .any(|one| matches!(one.kind, ChatKind::Judge { .. }))
+    );
+    assert_eq!(report.ended, GradeEnd::ChatsDidNotStart);
 }
 
 /// The operator's ruling of 2026-11-01: a judge that reached past its limit fails that run, and

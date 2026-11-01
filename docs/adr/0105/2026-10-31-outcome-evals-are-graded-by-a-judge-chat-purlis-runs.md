@@ -18,10 +18,11 @@ as before; an outcome eval's, with its `files`; or a judge's, naming the chat it
 the task it grades (`task`). The run-chat result says what the chat's turn ended saying
 (`answer`), where its harness handed it back.
 
-**An outcome eval's chat may write and edit inside its own throwaway piece** (the operator's ruling
-of 2026-10-31, adding to §3), still under the sandbox, by permission rules for that folder alone.
-Outcome chats' writes are held to their piece by a guard. Anything else still asks, and an ask still
-ends it. No other chat of a grade gains this.
+**An outcome eval's chat may write and edit inside its own throwaway piece** (the operator's rulings
+of 2026-10-31 and 2026-11-01, adding to §3), still under the sandbox. Outcome chats' writes are held
+to their piece by a guard, and a write goes ahead only on its answer. A run whose guard did not
+answer fails, with the reason in the record, and so does one whose chat asks for anything else.
+No other chat of a grade gains this.
 
 **An outcome eval's chat runs its whole turn** (§3), in a throwaway piece laid out as the arm's
 is, with the eval's input files staged into it at the paths the eval names. Each file is read as

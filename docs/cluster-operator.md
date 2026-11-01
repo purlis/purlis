@@ -274,9 +274,16 @@ spec:
     it, so it is never suspended. The Claim's `Ready` is then `False` with the reason `Idle`, its
     `Idle` condition is `True`, and the next chat its desktop starts there runs it again: the
     desktop writes that condition's time in the annotation `runners.purlis.dev/run-again`, which
-    you can do by hand too. That start may be refused while the runner comes back; start it
-    again a minute later. **A fresh Claim's runner keeps nothing**, so it comes back with a new
-    key, which its desktop refuses as it does after `stopped`: make its Claim again. A Pool or
+    you can do by hand too. **That start waits for the runner** (#4403), with the window at its
+    usual *Starting…* and its Cancel, until the operator vouches for it, for at most the pool's
+    longest wait for that (`vouchWait`, 5 minutes unless raised); past it, it is refused as any
+    start on a runner that is down, and the runner still comes back. A dispatch's first hold of
+    its project waits at most 30 seconds, then is refused while the runner comes back. A runner
+    with anything else on its Claim, an upstream object in the way among it, is not waited for.
+    **A fresh Claim's runner keeps nothing**, so it comes back with a new key, which its desktop
+    refuses as it does after `stopped`: make its Claim again. This reaches no one through purlis
+    today, since a desktop makes only kept Claims, and #4404 settles it as purlis starts making
+    fresh ones (#3709). A Pool or
     Claim set `stopped` and back leaves an idle runner suspended. An idle Claim keeps no runner
     warm. A runner that says it is idle waits up to five minutes, serving nothing, for the
     operator to suspend it, and serves again if it does not. A running runner takes a change to
@@ -287,12 +294,17 @@ spec:
     before it is deleted, with its volume, counted from upstream's `Suspended` condition (#3981).
     A runner that runs again starts the count over. **A Claim or Pool that is `stopped` is never
     deleted, stopped time does not count, and the count and any notice start over when the stop
-    ends.** A fresh Claim is not deleted: it holds no
-    volume.
+    ends**, a stop spent while an upstream object is in the way among it. A fresh Claim is not
+    deleted: it holds no volume. **Two hours is the least it holds at**: a Pool that says less is
+    read as two hours (#4405).
   - `noticeBeforeDelete` (168h, 7 days, shorter than `deleteSuspendedAfter`): how long before
     that deletion its Claim's `DeletionNotice` condition says when, which its desktop makes an
-    Update of. The whole notice is always given, however late the operator looked, and
-    the time it names holds: a Pool's times changed later can only move it later. The `RetentionEnded` condition comes just before the deletion, and the
+    Update of. **An hour is the least it holds at**, as a Pool saying less is read (#4405). The
+    whole notice is always given, however late the operator looked, and the time it names holds:
+    a Pool's times changed later can only move it later. **The notice reaches a person only
+    through a desktop**, as that desktop checks its pools: one not opened during the notice is
+    not told, and the Claim goes all the same. Purlis has no way to reach them while it is closed,
+    so a cluster where that matters sets longer times, or watches the condition. The `RetentionEnded` condition comes just before the deletion, and the
     cluster's policy lets the operator delete no Claim without it.
   - `maxAge` (336h, 14 days): how old a runner may be (#3982). **A chat is never ended for it.**
     Past it, the Claim's `PastMaxAge` condition says the runner waits. The next time it is idle it
@@ -329,9 +341,10 @@ spec:
   - **A fresh Claim** (the default) takes a runner the pool keeps warm, when there is one, and
     keeps nothing past its pod: its home is a folder of the node's, as big as a kept Claim's
     volume.
-  - purlis chooses: kept for a chat a person works in and for any chat of a subscription
-    profile, whose sign-in lives on the volume; fresh for a short dispatched task. The person may
-    turn a chat's "Keep this runner's work" either way.
+  - A desktop makes only kept Claims today. Its choice between them is written and not yet used
+    (#3709): kept for a chat a person works in and for any chat of a subscription profile, whose
+    sign-in lives on the volume; fresh for a short dispatched task, and a chat's "Keep this
+    runner's work" either way.
 - **A Claim** lives in a namespace and names its `pool`, which never changes: another pool is
   another claim. Its `Ready` condition says whether its runner is running, and if not, why:
   `PoolNotFound` when there is no such pool, `PoolDeleted` when it was deleted after the

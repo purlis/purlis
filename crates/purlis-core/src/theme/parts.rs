@@ -2646,6 +2646,35 @@ fn unreadable(
     unreadable_by(0.0, theme, on, rules, family, variant, states, look)
 }
 
+/// **Parts drawn inside their root on an opaque ground of their own**, so the root's fill is not
+/// under them: a chip's count, on the bar's ground in the count's shape (`titlebar.css`, D-3345-3).
+const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count")];
+
+/// **What part `at` is laid on, as drawn** (#3303): the root's own fill over the family's grounds
+/// `on`, so a see-through part fill is measured where it is. A part with no ground of its own
+/// reads the root's fill itself, and one drawn around the root, on a ground of its own or on its
+/// variant's stands on `on` alone.
+fn under_part(
+    theme: &ResolvedTheme,
+    on: &[String],
+    family: &Family,
+    at: usize,
+    variant: &str,
+    look: &Drawn,
+) -> Vec<String> {
+    let name = family.parts[at].name;
+    let ground = look.grounds[at];
+    if at == 0
+        || ground == look.fill
+        || family.around.contains(&name)
+        || ON_A_GROUND_OF_THEIR_OWN.contains(&(family.name, name))
+        || variant_ground(family, at, variant) == Some(ground)
+    {
+        return on.to_vec();
+    }
+    laid_over(theme, look.fill, on)
+}
+
 /// **What a look breaks of the reading floors, or comes within `margin` of breaking**.
 #[allow(clippy::too_many_arguments)]
 fn unreadable_by(
@@ -2665,7 +2694,8 @@ fn unreadable_by(
         }
         // With more contrast asked for, the reading floors are raised (#2925).
         let floor = theme.least.floor(floor_of(family, part));
-        if let Some(ratio) = lowest(theme, on, look.grounds[at], look.words[at])
+        let under = under_part(theme, on, family, at, variant, look);
+        if let Some(ratio) = lowest(theme, &under, look.grounds[at], look.words[at])
             && ratio < floor + margin
         {
             let what = if is_mark(family, part) {
@@ -3063,10 +3093,10 @@ fn singles_of(family: &Family) -> Vec<Vec<State>> {
 /// **How near a floor a coarse reading comes before a look is read at every degree** (#4257): more
 /// than the most a look's lowest reading at every degree was found under its lowest at the coarse
 /// tints (`see_through_tints_tests.rs`).
-const NEAR_A_FLOOR: f64 = 0.1;
+pub(super) const NEAR_A_FLOOR: f64 = 0.1;
 
 /// The degrees between coarse readings.
-const COARSE_DEGREES: usize = 10;
+pub(super) const COARSE_DEGREES: usize = 10;
 
 /// **`theme` in the tints a look is first read in**: each of its own colours, and every
 /// [`COARSE_DEGREES`] degrees.

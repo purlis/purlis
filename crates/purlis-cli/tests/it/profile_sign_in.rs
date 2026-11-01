@@ -247,7 +247,8 @@ fn a_runner_is_read_by_the_words_check_writes() {
 
     let machine = Machine::new(0);
     machine.said(&["profile", "create", "oc", "--harness", "opencode"]);
-    let said = machine.said(&["profile", "sign-in", "oc", "--check"]);
+    let out = machine.purlis(&["profile", "sign-in", "oc", "--check"]);
+    let said = String::from_utf8_lossy(&out.stderr);
     assert_eq!(
         standing_said("oc", &said),
         Ok(Standing::CannotTell),
@@ -257,6 +258,41 @@ fn a_runner_is_read_by_the_words_check_writes() {
     let out = machine.purlis(&["profile", "sign-in", "nobody", "--check"]);
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(standing_said("nobody", &said).is_err(), "{said}");
+}
+
+/// **`--check` answers in a status a desktop reads without its words** (#4113): the runner's own
+/// command, as `standing_answered` reads it.
+#[test]
+fn check_exits_with_a_status_for_each_answer() {
+    use purlis_core::dockerpool::standing_answered;
+    use purlis_core::profilestore::sign_in::Standing;
+    let mut answers = Vec::new();
+    for (status, harness, name) in [
+        (0, "claude", "work"),
+        (1, "claude", "work"),
+        (0, "opencode", "oc"),
+    ] {
+        let machine = Machine::new(status);
+        machine.said(&["profile", "create", name, "--harness", harness]);
+        let out = machine.purlis(&["profile", "sign-in", name, "--check"]);
+        // Read with the words taken away: only the status answers.
+        answers.push(standing_answered(name, out.status.code(), "-").unwrap());
+    }
+    assert_eq!(
+        answers,
+        [
+            Some(Standing::SignedIn),
+            Some(Standing::SignedOut),
+            Some(Standing::CannotTell)
+        ]
+    );
+    let machine = Machine::new(0);
+    let out = machine.purlis(&["profile", "sign-in", "nobody", "--check"]);
+    assert_eq!(
+        standing_answered("nobody", out.status.code(), "-"),
+        Ok(None)
+    );
+    assert!(String::from_utf8_lossy(&out.stderr).contains("purlis profile list"));
 }
 
 /// **`--pool` is in the help**, and asks nothing of whether a profile is signed in here.

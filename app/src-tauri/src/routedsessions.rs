@@ -656,6 +656,13 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn lost_with_its_runner(&self, id: u32) -> bool {
+        match self.host_of(id) {
+            Some(host) => host.lost_with_its_runner(id),
+            None => self.here.lost_with_its_runner(id),
+        }
+    }
+
     fn running(&self) -> Vec<u32> {
         let mut all: BTreeSet<u32> = self.here.running().into_iter().collect();
         for pool in self.pools() {

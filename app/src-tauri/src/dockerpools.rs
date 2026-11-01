@@ -387,12 +387,15 @@ pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
 /// its own while the runner answers, then its container and home volume are removed, and the
 /// pool with them. What could not be removed is answered, with how to remove it; nothing when
 /// all of it is gone. Once it is gone from this machine, the window's links to its runner end, and
-/// the chats on them with them ([`links_end_once_gone`]).
+/// the chats on them with them ([`links_end_once_gone`]). `elsewhere` is what the person was told
+/// before they agreed: that its runner is on an engine Docker no longer reaches, so nothing there
+/// goes. Where that is no longer so, or the other way round, nothing is done (#4325).
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_docker_pool(
     app: tauri::AppHandle,
     name: String,
+    elsewhere: bool,
 ) -> Result<Option<String>, String> {
     #[cfg(unix)]
     {
@@ -402,7 +405,9 @@ pub async fn remove_docker_pool(
             let removed = if is_a_cluster_pool(&config, &name)? {
                 crate::clusterpools::remove_on(&config, &name)
             } else {
-                remove_on(&Machine::here(&config)?, &name)
+                let machine = Machine::here(&config)?;
+                as_the_person_was_told(&machine, &name, elsewhere)?;
+                remove_on(&machine, &name)
             };
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
                 links_end_once_gone(&host.connection(), &config, &name);
@@ -413,9 +418,22 @@ pub async fn remove_docker_pool(
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, name);
+        let _ = (app, name, elsewhere);
         Err(NOT_HERE.to_owned())
     }
+}
+
+/// Refused, with nothing done, where what Remove would do to pool `name` is no longer what the
+/// person agreed to: Docker moved since they were asked, or the row had not said yet (#4325).
+#[cfg(unix)]
+fn as_the_person_was_told(machine: &Machine, name: &str, elsewhere: bool) -> Result<(), String> {
+    if purlis_core::pools::on_another_engine(&machine.config, &machine.docker, name) == elsewhere {
+        return Ok(());
+    }
+    Err(format!(
+        "Docker's engine is not what pool {name}'s row said when you were asked, so nothing was \
+         removed. Look at its row, and remove it again."
+    ))
 }
 
 /// **The pool `name`, as a removal left it**: gone from `config`, the window's links to its runner

@@ -876,6 +876,108 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     expect(asked.some((call) => call.cmd === "theme_in_force")).toBe(false);
   });
 
+  describe("what the window was handed says what the core would (#3023)", () => {
+    const GLOBAL = "__CHARTER_AT_CREATION__";
+    const globals = globalThis as Record<string, unknown>;
+    const given = globals[GLOBAL] as Record<string, unknown>;
+    const yourColours = () => aboutThisMachine().filter((one) => one.subject === "your colours");
+    const WHY = "your colour for text.primary is left out: it would put words under their floor";
+
+    afterEach(() => {
+      globals[GLOBAL] = given;
+      forgetExtensionThemes();
+      sayAboutThisMachine("your colours", undefined);
+      vi.unstubAllGlobals();
+    });
+
+    it("says a built-in pick left out the person's colour, in the frame it draws, asking nothing", () => {
+      globals[GLOBAL] = { ...given, built_in_mine: { "purlis-dark": [WHY] } };
+      const asked = core({});
+      // No `await`: the Notice is up by the time the switch has drawn.
+      void drawThemeFor(new Set(), "purlis-dark");
+      expect(yourColours().map((one) => one.detail)).toEqual([WHY]);
+      expect(yourColours()[0].settings).toBe("you.colours");
+      expect(asked.some((call) => call.cmd === "theme_in_force")).toBe(false);
+    });
+
+    it("takes the Notice back for a handed theme that left nothing out", () => {
+      core({});
+      sayAboutThisMachine("your colours", {
+        severity: "warn",
+        detail: WHY,
+        remedy: "the last theme's",
+      });
+      void drawThemeFor(new Set(), "purlis-dark");
+      expect(yourColours()).toEqual([]);
+    });
+
+    it("says what the person's own theme left out, for the contrast it is drawn in", () => {
+      const more = "your colour for accent.base is left out of its high contrast";
+      const theirs = {
+        path: "/home/op/theme.json",
+        found: true,
+        trouble: null,
+        theme: resolved("Mine"),
+        complaints: [],
+        floors: null,
+        mine: [WHY],
+        format_1: false,
+        more: { theme: resolved("Mine sharp"), floors: null, mine: [more] },
+      };
+      globals[GLOBAL] = { ...given, theme: theirs };
+      forgetExtensionThemes();
+      core({});
+      void drawThemeFor(new Set(), null, { plane: "p-1" as PlaneId });
+      expect(yourColours().map((one) => one.detail)).toEqual([WHY]);
+
+      forgetExtensionThemes();
+      vi.stubGlobal("matchMedia", (media: string) => ({
+        matches: media === "(prefers-contrast: more)",
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      }));
+      void drawThemeFor(new Set(), null, { plane: "p-1" as PlaneId });
+      expect(yourColours().map((one) => one.detail)).toEqual([more]);
+      sayAboutThisMachine("consent floors", undefined);
+    });
+
+    it("says what a draft drawn over the pick left out, once the core names it", async () => {
+      const draft = "your colour for accent.base is left out of the draft";
+      core({
+        inForce: () =>
+          ({
+            ...KEEPS,
+            theme: resolved("Draft"),
+            draft: { folder: "draft", drawn: true, refused: [] },
+            mine: [draft],
+          }) as InForce,
+      });
+      await drawThemeFor(new Set(), "purlis-dark", { plane: "p-1" as PlaneId });
+      await expect.poll(() => yourColours().map((one) => one.detail)).toEqual([draft]);
+    });
+
+    it("draws a built-in pick from the core in a window created with more contrast", async () => {
+      // `theme.ts` reads the person's layer as it loads, so this is a window created with it.
+      globals[GLOBAL] = {
+        ...given,
+        person: { density: "comfortable", fonts: {}, contrast: "more" },
+      };
+      vi.resetModules();
+      const created = await import("./Extensions");
+      const { inForce: drawnThere } = await import("./theme/theme");
+      const asked = core({ inForce: () => ({ ...KEEPS, theme: resolved("Raised") }) });
+      await created.drawThemeFor(new Set(), "purlis-dark");
+      const asks = asked.filter((call) => call.cmd === "theme_in_force");
+      expect(asks.map((call) => call.args.moreContrast)).toEqual([true]);
+      expect(JSON.parse(asks[0].args.person as string)).toEqual({
+        contrast: "more",
+        colours: {},
+      });
+      expect(drawnThere().name).toBe("Raised");
+      created.forgetExtensionThemes();
+    });
+  });
+
   it("draws what the core answered, and keeps the window when it answers no theme", async () => {
     let answer: InForce = {
       ...KEEPS,

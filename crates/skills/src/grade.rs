@@ -176,6 +176,9 @@ pub enum ChatEnd {
     /// and nothing left to judge. It spent as any chat does, so one that does not say what stops
     /// a capped grade, as a chat that never started does not (SK-55).
     ClosedEarly { why: String },
+    /// An outcome eval's chat was not started, as purlis could not hold it to its limits: it spent
+    /// nothing, and it fails that run with `why` (the operator's ruling of 2026-11-01).
+    NotHeld { why: String },
     /// A judge reached past what purlis laid out for it, as its turn's end found: it fails that
     /// run of its eval, the operator's ruling of 2026-11-01.
     ReadPast,
@@ -754,6 +757,23 @@ impl<'a> Held<'a> {
             failed: None,
             asked: done.end == ChatEnd::Asked,
         };
+        // A chat that asked, a write its guard did not answer for among what asks, or one that
+        // could not be held fails the run, and says why (the operator's ruling of 2026-11-01).
+        match &done.end {
+            ChatEnd::Asked => {
+                run.passed = Some(0);
+                run.failed = Some(
+                    "Its chat asked for something a grade's chat may not do on its own, so it was \
+                     ended and the eval failed."
+                        .to_owned(),
+                );
+            }
+            ChatEnd::NotHeld { why } => {
+                run.passed = Some(0);
+                run.failed = Some(why.clone());
+            }
+            _ => {}
+        }
         // Only a chat that ran its turn, or past its time, left an outcome to judge.
         let of = done.chat.clone().filter(|_| done.ran());
         if let (Some(of), None) = (of, self.ended) {
@@ -833,7 +853,10 @@ impl<'a> Held<'a> {
         // ended: an ask, a Stop or the cap itself spends as a turn does, and the cap cannot be
         // held after a chat whose spend is unknown.
         let unreported = self.cap.is_some()
-            && !matches!(result.end, ChatEnd::NotStarted { .. })
+            && !matches!(
+                result.end,
+                ChatEnd::NotStarted { .. } | ChatEnd::NotHeld { .. }
+            )
             && result.tokens.is_none();
         if matches!(chat.kind, ChatKind::Judge { .. }) {
             self.judges_not_started_in_a_row = match result.end {
@@ -844,7 +867,9 @@ impl<'a> Held<'a> {
             };
         }
         let stop = match &result.end {
-            ChatEnd::NotStarted { why } | ChatEnd::ClosedEarly { why } => {
+            ChatEnd::NotStarted { why }
+            | ChatEnd::ClosedEarly { why }
+            | ChatEnd::NotHeld { why } => {
                 self.not_started_in_a_row += 1;
                 self.not_started_in_its_arm[a] += 1;
                 self.not_started = Some(why.clone());
@@ -1269,6 +1294,7 @@ fn verdict_of(run: &mut OutcomeRun, verdict: &ChatRan, expectations: &[String]) 
             "The judge reached past what it was given to read, so the eval failed.".to_owned(),
         ),
         ChatEnd::NotStarted { .. }
+        | ChatEnd::NotHeld { .. }
         | ChatEnd::ClosedEarly { .. }
         | ChatEnd::Cancelled
         | ChatEnd::OverCap

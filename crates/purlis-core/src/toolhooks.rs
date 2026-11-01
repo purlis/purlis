@@ -484,22 +484,50 @@ fn lands_inside(folder: &Path, path: &Path) -> bool {
 /// piece. Its adapter sets it.
 pub const OUTCOME_FOLDER_ENV: &str = "PURLIS_OUTCOME_FOLDER";
 
-/// **Why an outcome eval's chat may not make this write**, or `None`: it writes in its own piece.
-fn outcome_writes_outside(hook: &Hook) -> Option<String> {
+/// **What an outcome eval's chat's write is answered**, or `None` for every other chat: refused
+/// unless it lands in its own piece, and there **allowed by this answer alone**: no rule of the
+/// chat's settings allows a write, so one this hook did not answer for asks, and the run ends.
+fn outcome_write(hook: &Hook) -> Option<Answer> {
     let folder = (hook.env)(OUTCOME_FOLDER_ENV)?;
-    let refused =
-        || Some("a grade's chat writes inside the folder purlis laid out for it alone".to_owned());
+    let refused = || {
+        deny("a grade's chat writes inside the folder purlis laid out for it alone".to_owned())
+    };
     let Ok(folder) = std::fs::canonicalize(&folder) else {
-        return refused();
+        return Some(refused());
     };
     let named = targets(hook.tool_input());
     let base = match hook.text("cwd") {
         "" => folder.clone(),
         cwd => Path::new(cwd).to_path_buf(),
     };
-    (named.is_empty() || !inside(&folder, &base, &named))
-        .then(refused)
-        .flatten()
+    Some(if named.is_empty() || !inside(&folder, &base, &named) {
+        refused()
+    } else {
+        say("PreToolUse", &[("permissionDecision", "allow".to_owned())])
+    })
+}
+
+/// **Whether purlis's `binary` answers an outcome chat in `folder` for a write inside it**, asked
+/// as a chat's harness would. No answer in time, or any other answer, is no.
+pub fn outcome_guard_answers(binary: &Path, folder: &Path) -> bool {
+    let payload = serde_json::json!({
+        "tool_name": "Write",
+        "tool_input": {"file_path": "new.txt"},
+        "cwd": folder,
+    });
+    let mut asking = std::process::Command::new(binary);
+    asking
+        .args(["hook", "pretooluse-edit"])
+        .current_dir(folder)
+        .env(OUTCOME_FOLDER_ENV, folder);
+    crate::boundedrun::run_within(
+        &mut asking,
+        Some(&payload.to_string()),
+        64 * 1024,
+        64 * 1024,
+        Some(JUDGE_CHECK_TIME),
+    )
+    .is_ok_and(|ran| String::from_utf8_lossy(&ran.printed).contains("\"allow\""))
 }
 
 /// `_state_write_reason`'s sentence.
@@ -511,8 +539,8 @@ pub const STATE_WRITE_REASON: &str = "writes purlis's own state directly (that d
 /// `pretooluse_edit`: refuse a `Write`/`Edit` into charter's own state directory, which holds
 /// the tool-gate ceiling, the persona pointers and the vault registry.
 pub fn pretooluse_edit(hook: &Hook) -> Answer {
-    if let Some(why) = outcome_writes_outside(hook) {
-        return deny(why);
+    if let Some(answer) = outcome_write(hook) {
+        return answer;
     }
     if !hook.in_plane {
         return Answer::Nothing;
@@ -556,8 +584,8 @@ pub fn pretooluse_edit_proposing(
     hook: &Hook,
     hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool,
 ) -> Answer {
-    if let Some(why) = outcome_writes_outside(hook) {
-        return deny(why);
+    if let Some(answer) = outcome_write(hook) {
+        return answer;
     }
     drafting(hook, hand)
         .or_else(|| proposing(hook, hand))
