@@ -374,8 +374,8 @@ fn every_checkout_is_the_planned_commit_without_credentials() {
                 .into_iter()
                 .filter(|s| action(s) == Some("actions/checkout"))
                 .collect();
-            // The runner image's SBOM and attestations read the pushed image and run nothing
-            // of the commit's, so they check nothing out (#2191).
+            // The runner image's SBOM and attestations, and the check from outside, read the
+            // pushed image and run nothing of the commit's, so they check nothing out (#2191).
             let checks_out = !matches!(job.name.as_str(), "sbom" | "attest" | "outside");
             assert_eq!(
                 checkouts.len(),
@@ -580,12 +580,50 @@ fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
                 .all(|s| action(s) != Some("docker/login-action")),
             "{file}: it never signs in to the registry"
         );
+        let needs: &[&str] = if image.released {
+            &["plan", "index", "attest"]
+        } else {
+            &["plan", "index"]
+        };
+        assert_eq!(outside.needs(), needs, "{file}");
         let commands = steps.iter().flat_map(|s| run_lines(s)).collect::<Vec<_>>();
+        for line in [
+            "docker pull --platform linux/amd64 \"$LINE\"",
+            "docker pull --platform linux/arm64 \"$LINE\"",
+            "cosign verify \"$LINE\" \\",
+        ] {
+            assert!(commands.iter().any(|l| l == line), "{file}: {line}");
+        }
+        // The same exact signer `index` verifies, never a pattern.
+        let exact = if image.released {
+            "--certificate-identity \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF\" \\"
+        } else {
+            "--certificate-identity \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/operator-image.yml@refs/heads/main\" \\"
+        };
+        assert!(commands.iter().any(|l| l == exact), "{file}: {commands:#?}");
         assert!(
-            commands.iter().any(|l| l == "docker pull \"$LINE\"")
-                && commands.iter().any(|l| l.starts_with("cosign verify \"$LINE\"")),
+            commands.iter().all(|l| !l.contains("regexp")),
             "{file}: {commands:#?}"
         );
+        // Only the step that asks the forge's attestation API holds a token.
+        for step in &steps {
+            let asks_the_forge = run_lines(step)
+                .iter()
+                .any(|l| l.starts_with("gh attestation verify"));
+            assert_eq!(
+                step_value(step, "env", "GH_TOKEN").is_some(),
+                asks_the_forge,
+                "{file}: {step:#?}"
+            );
+        }
+        if image.released {
+            assert!(
+                commands.iter().any(|l| l
+                    == "--cert-identity \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF\" \\")
+                    && commands.iter().any(|l| l == "--deny-self-hosted-runners"),
+                "{file}: the provenance is pinned to the ref: {commands:#?}"
+            );
+        }
         assert!(
             commands.iter().all(|l| !l.contains("docker login")),
             "{file}: {commands:#?}"

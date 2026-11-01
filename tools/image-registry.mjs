@@ -47,7 +47,10 @@ export function visibility({ org, name, api }) {
   try {
     text = api([`orgs/${org}/packages/container/${name}`]);
   } catch (error) {
-    throw new Error(`cannot tell whether ${org}/${name} is public: ${error.message}`);
+    const missing = /HTTP 404/.test(String(error.message))
+      ? " (no such package: push one by hand and make it public in its settings, docs/runner-image.md)"
+      : "";
+    throw new Error(`cannot tell whether ${org}/${name} is public${missing}: ${error.message}`);
   }
   let shown;
   try {
@@ -63,7 +66,7 @@ export function visibility({ org, name, api }) {
 
 /**
  * `served` when the registry serves every one of `digests` of `repository` to a puller who has
- * not signed in. `get(url, headers)` answers `{ status, body }` or throws. Throws when the
+ * not signed in. `get(url, headers)` answers `{ status, digest, body }` or throws. Throws when the
  * registry refuses one, and when its answers do not show that it serves.
  */
 export async function anonymousPull({ repository, digests, get }) {
@@ -104,6 +107,8 @@ export async function anonymousPull({ repository, digests, get }) {
     }
     if ([401, 403, 404].includes(pulled.status)) throw refused(`${digest} answered ${pulled.status}`);
     if (pulled.status !== 200) throw unclear(`${digest} answered ${pulled.status}`);
+    // A 200 from anything but the registry, such as a proxy's page, shows nothing.
+    if (pulled.digest !== digest) throw unclear(`${digest} was answered with ${pulled.digest ?? "no digest"}`);
   }
   return "served";
 }
@@ -161,7 +166,7 @@ function ghApi(args) {
 
 async function httpGet(url, headers) {
   const response = await fetch(url, { headers, signal: AbortSignal.timeout(30_000) });
-  return { status: response.status, body: await response.text() };
+  return { status: response.status, digest: response.headers.get("docker-content-digest"), body: await response.text() };
 }
 
 async function main([command, ...rest]) {

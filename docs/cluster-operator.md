@@ -57,7 +57,8 @@ operator makes for that person alone, within a quota (#2055,
 - **Signed:** keyless with [cosign](https://docs.sigstore.dev/), by the `operator-image.yml`
   workflow on `main`, through GitHub's OIDC identity, as the runner image is: no key is stored
   anywhere, and the signature's entry in Sigstore's public transparency log names the image
-  and its digest (ruled 2026-10-15). Check an image before you install it:
+  and its digest. Check an image before you install it, with no sign-in (cosign 3, the version
+  the workflow uses):
 
   ```bash
   cosign verify ghcr.io/purlis/purlis-cluster-operator@sha256:<digest> \

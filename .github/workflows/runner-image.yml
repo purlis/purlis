@@ -659,9 +659,9 @@ jobs:
 
   # **What someone outside does, done here** (#4498): no registry login and no permission on the
   # package. The release's image is pulled, its signature checked, and its provenance checked, by
-  # the commands docs/runner-image.md gives. Only its token's read of the forge's attestation API
-  # is a credential, and the package never sees it. A failure fails the release's call, so no
-  # release names an image that cannot be pulled and checked from outside.
+  # the commands docs/runner-image.md gives, the SBOMs apart. Only the attestation step holds a
+  # token, for the forge's attestation API, and it has no permission on the package. A failure
+  # fails the release's call, so no release names an image that cannot be pulled and checked.
   outside:
     name: pulled and checked with no sign-in
     needs: [plan, index, attest]
@@ -673,20 +673,27 @@ jobs:
       contents: read
     steps:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      - name: The image is pulled and checked as a newcomer checks it
+      - name: Both architectures pull and the signature verifies, with no token
+        env:
+          LINE: ${{ needs.index.outputs.image }}
+          RELEASED_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 "$LINE"
+          docker pull --platform linux/arm64 "$LINE"
+          cosign verify "$LINE" \
+            --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF" \
+            --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /dev/null
+      - name: The provenance verifies, for this workflow on the ref it releases
         env:
           GH_TOKEN: ${{ github.token }}
           LINE: ${{ needs.index.outputs.image }}
           RELEASED_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          docker pull "$LINE"
-          cosign verify "$LINE" \
-            --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF" \
-            --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            > /dev/null
           gh attestation verify "oci://$LINE" \
             --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/runner-image.yml" \
+            --cert-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF" \
             --deny-self-hosted-runners

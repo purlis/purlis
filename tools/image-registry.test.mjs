@@ -63,7 +63,7 @@ function registry({ token, manifest }) {
 }
 
 test("an image the registry serves to an anonymous puller passes", async () => {
-  const get = registry({ token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 200 } });
+  const get = registry({ token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 200, digest: DIGEST } });
   assert.equal(await anonymousPull({ repository: "purlis/purlis-runner", digests: [DIGEST], get }), "served");
 });
 
@@ -90,7 +90,7 @@ test("one digest refused among several stops the run", async () => {
   const other = `sha256:${"b".repeat(64)}`;
   const get = async (url) => {
     if (url.startsWith("https://ghcr.io/token")) return { status: 200, body: '{"token":"anon"}' };
-    return { status: url.endsWith(other) ? 404 : 200 };
+    return url.endsWith(other) ? { status: 404 } : { status: 200, digest: DIGEST };
   };
   await assert.rejects(
     anonymousPull({ repository: "purlis/purlis-runner", digests: [DIGEST, other], get }),
@@ -105,6 +105,9 @@ test("the anonymous check fails closed when the registry's answer is unclear", a
     { token: { status: 500, body: "" }, manifest: { status: 200 } },
     { token: { status: 429, body: "" }, manifest: { status: 200 } },
     { token: new Error("ECONNRESET"), manifest: { status: 200 } },
+    // A 200 that does not name the digest asked for.
+    { token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 200 } },
+    { token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 200, digest: `sha256:${"c".repeat(64)}` } },
     // A token, and an answer that is neither a pull nor a refusal.
     { token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 500 } },
     { token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 429 } },

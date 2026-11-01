@@ -13,8 +13,11 @@ own, as long as it keeps the contract below.
   packages API that the package is public. Before any tag or signature, it checks again, and
   that the registry serves both images to anyone who has not signed in. If either check cannot
   get a clear answer, the run stops. Once the image is signed and attested, a job with no
-  registry sign-in pulls it and runs the checks below, and a release does not name an image
-  that fails them.
+  registry sign-in pulls both architectures and checks the signature and the provenance, and a
+  release does not name an image that fails. An image that fails its checks after the push
+  stays in the package, untagged and unsigned; pull only a digest a release names. If the
+  package is ever deleted, every run stops until someone pushes a new one by hand and makes it
+  public in its settings.
 - **What:** `linux/amd64` and `linux/arm64` under one index. Each architecture is built on
   a GitHub runner of that architecture, from the `purlis` binary compiled there the way the
   Linux release binary is: the pinned toolchain, `cargo auditable`, the `dev-release`
@@ -45,7 +48,7 @@ own, as long as it keeps the contract below.
   `runner-image.yml` workflow on `main`, through GitHub's OIDC identity. No signing key is
   stored anywhere. Keyless signing writes an entry to Sigstore's public transparency log.
   The entry names the image and its digest. To check an image before you use it, with no
-  sign-in:
+  sign-in (cosign 3, the version the workflow uses):
 
   ```bash
   cosign verify ghcr.io/purlis/purlis-runner@sha256:<digest> \
@@ -72,18 +75,19 @@ own, as long as it keeps the contract below.
   # Provenance: built by runner-image.yml in purlis/purlis, on a GitHub-hosted runner.
   gh attestation verify oci://ghcr.io/purlis/purlis-runner@sha256:<digest> \
     --repo purlis/purlis \
-    --signer-workflow purlis/purlis/.github/workflows/runner-image.yml \
+    --cert-identity https://github.com/purlis/purlis/.github/workflows/runner-image.yml@refs/heads/main \
     --deny-self-hosted-runners
 
   # The SBOM of one architecture's image: its digest is in `docker buildx imagetools inspect`.
   gh attestation verify oci://ghcr.io/purlis/purlis-runner@sha256:<arch digest> \
     --repo purlis/purlis \
-    --signer-workflow purlis/purlis/.github/workflows/runner-image.yml \
+    --cert-identity https://github.com/purlis/purlis/.github/workflows/runner-image.yml@refs/heads/main \
     --predicate-type https://cyclonedx.org/bom \
     --format json | jq '.[0].verificationResult.statement.predicate'
   ```
 
-  Add `--source-digest <commit>` to check that it was built from a given commit.
+  For a stable release's image, end the identity with `@refs/tags/v<version>`. Add
+  `--source-digest <commit>` to check that it was built from a given commit.
 
 - **Checked:** each architecture's image is pushed untagged, by digest, and pulled back.
   The contract below then runs on exactly the bytes that were pushed. Nothing is tagged or
