@@ -1434,3 +1434,14 @@ fn a_check_of_several_runs_answers_within_one_time() {
     }
     assert!(started.elapsed() < std::time::Duration::from_secs(5));
 }
+
+/// **kubectl's own preferences file is off** for a kubectl found on this machine.
+#[test]
+fn a_found_kubectl_runs_with_its_preferences_file_off() {
+    let kubectl = Kubectl {
+        path: Some("/bin".into()),
+        ..Kubectl::at("/bin/kubectl")
+    };
+    let (env, _) = kubectl.environment();
+    assert!(env.contains(&("KUBERC".into(), "off".into())), "{env:?}");
+}

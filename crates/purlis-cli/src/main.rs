@@ -4253,7 +4253,15 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
         } => {
             if let Some(pool) = pool {
                 return match pool_sign_in(&store, name, pool, provider.as_deref()) {
-                    Ok(()) => ExitCode::SUCCESS,
+                    Ok(()) => {
+                        // Signed in there, as its harness said: a drain carries it again.
+                        let carries =
+                            purlis_core::runners::carries_again(store.config_root(), pool, name);
+                        if let Err(why) = carries {
+                            eprintln!("a drain of pool {pool} will not carry '{name}': {why}");
+                        }
+                        ExitCode::SUCCESS
+                    }
                     Err(why) => refused(&why),
                 };
             }
@@ -4418,7 +4426,6 @@ fn pool_sign_in(
     if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
         return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
     }
-    runners::carries_again(config, pool, name).map_err(|why| why.to_string())?;
     let record = profilestore::list(config)?
         .into_iter()
         .find(|p| p.name == name)

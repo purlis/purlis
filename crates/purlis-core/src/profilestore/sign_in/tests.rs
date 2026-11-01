@@ -203,6 +203,22 @@ fn a_status_answering_one_beside_a_sign_in_file_cannot_tell() {
     }
 }
 
+/// A built-in profile names no folder: its harness's default folder is looked in.
+#[test]
+fn a_built_in_profile_answering_one_is_looked_for_in_its_default_folder() {
+    let Some(home) = crate::profiles::home() else {
+        return;
+    };
+    let builtin = crate::profiles::builtins()
+        .into_iter()
+        .find(|one| one.kind == "claude")
+        .expect("a built-in");
+    let mut look = Recorded::answering(Some(1));
+    look.there = vec![home.join(".claude/.credentials.json")];
+
+    assert_eq!(standing(&builtin, &look), Standing::CannotTell);
+}
+
 #[test]
 fn codex_is_asked_its_own_login_status_in_the_profiles_folder() {
     let signed_out = Recorded::answering(Some(1));

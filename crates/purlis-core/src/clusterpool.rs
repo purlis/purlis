@@ -668,8 +668,8 @@ pub struct Kubectl {
 }
 
 /// The variables a run of kubectl is never handed from this process: the kubeconfig is named,
-/// never inherited (#3292), and its own preferences are its default file's, if any.
-pub const CLEARED: [&str; 2] = ["KUBECONFIG", "KUBERC"];
+/// never inherited (#3292).
+pub const CLEARED: [&str; 1] = ["KUBECONFIG"];
 
 /// Where a `kubectl` command is looked for first, before the home's installers and `PATH`:
 /// Homebrew's, `/usr/local`'s, Docker Desktop's own, the system's and snap's.
@@ -858,7 +858,11 @@ impl Kubectl {
             return (Vec::new(), Vec::new());
         };
         (
-            vec![("PATH".into(), path.clone())],
+            // Its own preferences file is off: `off` is kubectl's word for that.
+            vec![
+                ("PATH".into(), path.clone()),
+                ("KUBERC".into(), "off".into()),
+            ],
             CLEARED.iter().map(std::ffi::OsString::from).collect(),
         )
     }

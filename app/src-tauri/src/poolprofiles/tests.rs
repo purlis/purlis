@@ -466,6 +466,27 @@ fn a_pool_whose_chats_ran_without_the_sandbox_is_not_signed_in_on() {
     assert!(refused.contains("Remove the pool"), "{refused}");
 }
 
+/// **A forget refused asks a pool's runner again, whichever claim it was made by**.
+#[test]
+fn a_pool_untidied_is_asked_again_by_any_of_its_claims() {
+    let remembered = ["forgets/uid-1", "forgets", "forgets-not/uid-1"];
+    TIDIED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .extend(remembered.map(str::to_owned));
+    untidied_on("forgets");
+    let left = TIDIED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    assert!(left.iter().any(|one| one == "forgets-not/uid-1"));
+    assert!(
+        !left
+            .iter()
+            .any(|one| one == "forgets" || one == "forgets/uid-1")
+    );
+}
+
 /// **A claim made again is a runner not yet tidied**: a tidy is remembered by the claim, and a
 /// Docker pool's by its name.
 #[cfg(unix)]

@@ -400,6 +400,15 @@ fn tidied_as(pool: &str, yours: &Yours) -> String {
     }
 }
 
+/// Pool `pool`'s runner, whichever claim it was made by, is asked again at the next chat's start.
+fn untidied_on(pool: &str) {
+    let of_a_claim = format!("{pool}/");
+    TIDIED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|one| one != pool && !one.starts_with(&of_a_claim));
+}
+
 /// `runner` ([`tidied_as`]) is asked again, at the next chat's start there, what it keeps.
 fn untidied(runner: &str) {
     TIDIED
@@ -488,7 +497,7 @@ fn forget_off(
             }
             Err(why) => {
                 // Still named, so its row offers Remove until a tidy finds it gone there.
-                untidied(pool_name);
+                untidied_on(pool_name);
                 tracing::info!(
                     "purlis: pool {pool_name}'s runner is asked again to forget the profile \
                      {name}: {why}"
@@ -1323,6 +1332,7 @@ pub fn sign_in_line(
 ) -> Result<String, String> {
     let config = config_root()?;
     let yours = yours(&config, pool)?;
+    may_sign_in_on(&config, pool)?;
     let record = profilestore::list(&config)?
         .into_iter()
         .find(|p| p.name == name)
@@ -1531,8 +1541,6 @@ pub async fn pool_sign_in_start(
         may_sign_in_on(&config, &pool)?;
         let record = record_named(&config, &name)?;
         profilestore::sign_in::plan_named(&record.harness, provider.as_deref())?;
-        purlis_core::runners::carries_again(&config, &pool, &name)
-            .map_err(|why| why.to_string())?;
         let kept = onrunner::Kept::of(&record)?;
         if keep_on_as(Ok(yours.clone()), &config, &pool, &kept, Waking::No)?.is_none() {
             return Err(format!(
@@ -1573,6 +1581,7 @@ pub async fn pool_sign_in_start(
         let carry: callback::Carry = {
             let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
             Arc::new(move |target: &str| {
+                may_sign_in_on(&config, &pool)?;
                 let to = match &started {
                     Some(started) => ToARunner::of_kept(
                         &Machine::here(&config)?,
@@ -1664,6 +1673,7 @@ pub async fn pool_sign_in_next(
         if let Some(over) = over.as_ref()
             && *event == driven::Event::SignedIn
         {
+            carries_again_after_a_sign_in(&over.pool, &over.name);
             // Told with no lock held; every project whose wait went has an Ask to stop drawing.
             let went = onrunner::let_go(None, &over.pool, &over.name);
             crate::machineprofiles::tell_asks_at(&app, &went);
@@ -1700,6 +1710,16 @@ pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || still_driving(flow)?.paste(&code))
         .await
         .map_err(|why| format!("the code was not passed on: {why}"))?
+}
+
+/// `name` is signed in on pool `pool`'s runner, as its harness says: a drain carries it again.
+fn carries_again_after_a_sign_in(pool: &str, name: &str) {
+    let carries = config_root().and_then(|config| {
+        purlis_core::runners::carries_again(&config, pool, name).map_err(|why| why.to_string())
+    });
+    if let Err(why) = carries {
+        tracing::warn!("purlis: a drain of pool {pool} will not carry {name}: {why}");
+    }
 }
 
 /// Pool `pool`'s runner may be signed in on, or why not: no chat ran there without the sandbox,
@@ -2018,7 +2038,13 @@ pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch:
                 &name_there,
             )
         }),
-        signed_in: Box::new(move || says_signed_in(&keep_on(&config, &asked, &kept))),
+        signed_in: Box::new(move || {
+            let signed_in = says_signed_in(&keep_on(&config, &asked, &kept));
+            if signed_in {
+                carries_again_after_a_sign_in(&asked, &kept.name);
+            }
+            signed_in
+        }),
         let_go: Box::new(move |whose| match whose {
             crate::signinwatch::Whose::Everywhere => onrunner::let_go(None, &pool, &name),
             crate::signinwatch::Whose::InTheProject(root, seen) => {

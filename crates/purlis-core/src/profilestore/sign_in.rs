@@ -334,7 +334,11 @@ pub fn standing(profile: &Profile, look: &dyn Look) -> Standing {
                 // with no sign-in of its in its folder.
                 Some(1) => {
                     let config = crate::harness_declaration::builtin(&profile.kind)
-                        .and_then(|d| folder(profile, d.folders.config_env.as_deref()));
+                        .and_then(|d| folder(profile, d.folders.config_env.as_deref()))
+                        .or_else(|| {
+                            let home = crate::profiles::home()?;
+                            super::defaults(&profile.kind, &home).map(|(config, ..)| config)
+                        });
                     if config.is_some_and(|config| look.is_there(&config.join(sign_in))) {
                         Standing::CannotTell
                     } else {

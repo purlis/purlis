@@ -323,8 +323,9 @@ pub struct Kept {
     /// It answered that this desktop is out of its peers (#4146): it cannot be linked to, so it
     /// is not asked how many chats it has, nor unpaired again.
     pub unpaired: bool,
-    /// The profiles signed out of its pool while it drains (#4145): their sign-ins here are
-    /// never carried, even where the sign-out could not reach it.
+    /// The profiles signed out of its pool while it drains (#4145), or being signed out in a
+    /// terminal: their sign-ins here are never carried, even where the sign-out could not reach
+    /// it.
     pub signed_out: Vec<String>,
     /// The engine that made it, as `docker info` prints its id (#4166): only that engine's word
     /// says it was removed. `None` for a runner kept before this, or an engine that prints none.
@@ -1131,6 +1132,12 @@ pub fn hold_every_runner_from_carrying(
     pool: &str,
     profile: &str,
 ) -> Result<(), Refused> {
+    if !crate::profiles::name_ok(profile) {
+        return Err(Refused::Other(format!(
+            "'{}' is not a profile's name",
+            crate::shown::short(profile)
+        )));
+    }
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
     let mut changed = false;
