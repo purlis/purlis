@@ -4852,12 +4852,7 @@ export const PlaneView = memo(function PlaneView({
           failed.length === 0
             ? reposCloned(name, repos, track)
             : refused.length === 0
-              ? reposStopped(
-                  name,
-                  stopped,
-                  () => retry([]),
-                  track,
-                )
+              ? reposStopped(name, stopped, () => retry([]), track)
               : reposNotCloned(name, refused, retry, track),
         );
         setReplan((asked) => asked + 1);
