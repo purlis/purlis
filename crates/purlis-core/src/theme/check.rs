@@ -38,6 +38,7 @@
 
 use super::fonts::{Style, without_a_face};
 use super::geometry::Geometry;
+use super::parts::{COARSE_DEGREES, NEAR_A_FLOOR};
 use super::vocabulary::{TOKENS, is_platform};
 use super::{Density, ResolvedTheme, floors, tint};
 
@@ -916,11 +917,7 @@ pub enum Finding {
     /// A pair of [`PAIRS`] that clears its floor as it is and in every named tint and falls under
     /// it at a hue between them (#4308): a workspace's own colour can be any hue. `degree` is the
     /// hue it is lowest at, and `ratio` its contrast there (to two places).
-    ContrastBetweenTints {
-        degree: u16,
-        pair: Pair,
-        ratio: f64,
-    },
+    ContrastBetweenTints { degree: u16, pair: Pair, ratio: f64 },
     /// An ANSI colour too close to the terminal's background.
     Ansi {
         tint: Option<&'static str>,
@@ -1059,30 +1056,40 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
     Report { findings }
 }
 
-/// **Each pair that falls only between the named tints** (#4308), read at every whole degree and
-/// said at its lowest. A pair already found is not said again, and a pair a tint cannot move is
-/// not read: what the rounding of a turned shade does to it only raises its contrast.
+/// **Each pair that falls only between the named tints** (#4308), said at its lowest whole degree.
+/// A pair already found is not said again, and a pair a tint cannot move is not read: what the
+/// rounding of a turned shade does to it only raises its contrast. The check runs while a person
+/// edits a draft, so a pair is read every [`COARSE_DEGREES`] first, and at every degree only when
+/// that comes within [`NEAR_A_FLOOR`] of its floor.
 fn between_named_tints(theme: &ResolvedTheme, findings: &mut Vec<Finding>) {
-    let turned = theme.tint.tabs();
     let found = |pair: &Pair| {
         findings
             .iter()
             .any(|one| matches!(one, Finding::Contrast { pair: said, .. } if said == pair))
     };
-    let mut lowest: Vec<(&'static Pair, Option<(u16, f64)>)> = PAIRS
+    let mut near: Vec<&'static Pair> = PAIRS
         .iter()
         .filter(|pair| !found(pair))
-        .filter(|pair| {
-            // A front left to the platform is measured as the token that stands in for it.
-            let stands_in = measured(theme, pair)
-                .is_some_and(|(front, _)| front != pair.front && turned.contains(&front));
-            stands_in || floors::moves_with_hue(theme, pair)
-        })
-        .map(|pair| (pair, None))
+        .filter(|pair| floors::moves_with_hue(theme, pair))
         .collect();
-    if lowest.is_empty() {
+    if near.is_empty() {
         return;
     }
+    let coarse: Vec<ResolvedTheme> = (0..360_u16)
+        .step_by(COARSE_DEGREES)
+        .map(|degree| tint::tinted_at(theme, f64::from(degree)))
+        .collect();
+    near.retain(|pair| {
+        coarse
+            .iter()
+            .filter_map(|drawn| ratio(drawn, pair))
+            .any(|ratio| ratio < pair.floor + NEAR_A_FLOOR)
+    });
+    if near.is_empty() {
+        return;
+    }
+    let mut lowest: Vec<(&'static Pair, Option<(u16, f64)>)> =
+        near.into_iter().map(|pair| (pair, None)).collect();
     for degree in 0..360_u16 {
         let drawn = tint::tinted_at(theme, f64::from(degree));
         for (pair, low) in &mut lowest {

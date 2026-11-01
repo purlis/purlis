@@ -3041,10 +3041,10 @@ fn singles_of(family: &Family) -> Vec<Vec<State>> {
 /// **How near a floor a coarse reading comes before a look is read at every degree** (#4257): more
 /// than the most a look's lowest reading at every degree was found under its lowest at the coarse
 /// tints (`see_through_tints_tests.rs`).
-const NEAR_A_FLOOR: f64 = 0.1;
+pub(super) const NEAR_A_FLOOR: f64 = 0.1;
 
 /// The degrees between coarse readings.
-const COARSE_DEGREES: usize = 10;
+pub(super) const COARSE_DEGREES: usize = 10;
 
 /// **`theme` in the tints a look is first read in**: each of its own colours, and every
 /// [`COARSE_DEGREES`] degrees.

@@ -2,13 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A pair that falls only between the named tints** (#4308): a workspace's own colour can be any
-//! hue, so the check reads each pair a tint can move at every whole degree. Each case carries a
-//! control that falls as written, so a sweep that reads nothing cannot pass.
+//! hue, so the check reads each pair a tint can move at every whole degree. A control falls as
+//! written, so a sweep that reads nothing cannot pass.
 
 use serde_json::{Value, json};
 
+use super::super::parts::{COARSE_DEGREES, NEAR_A_FLOOR};
 use super::super::vocabulary::TINTABLE;
-use super::super::{ResolvedTheme, Theme, built_ins, check, check_every, load, tint, warnings_said};
+use super::super::{
+    ResolvedTheme, Theme, built_ins, check, check_every, load, tint, warnings_said,
+};
 use super::{Finding, PAIRS, Pair, floors, ratio};
 
 /// The count's digits on the amber wash, over the title bar.
@@ -75,109 +78,114 @@ fn said_of(theme: &ResolvedTheme, pair: &Pair) -> (bool, Option<f64>) {
     (named, between)
 }
 
-/// The dimmest of `token`'s greys that reads as written and at each named tint and falls at a
-/// degree between them, and the grey dimmer that falls as written.
-fn just_falling(token: &str, also: &Value, recipe: &[&str], pair: &Pair) -> (u8, u8) {
-    let tokens = |grey: u8| {
-        let mut tokens = also.clone();
-        tokens[token] = json!(format!("#{grey:02x}{grey:02x}{grey:02x}"));
-        tokens
-    };
-    let reads = |grey: u8| {
-        let theme = themed(&tokens(grey), recipe);
-        ratio(&theme, pair).unwrap() >= pair.floor && lowest_named(&theme, pair) >= pair.floor
-    };
-    let grey = (0x40..=0xff_u8)
-        .filter(|grey| reads(*grey))
-        .find(|grey| lowest_at_any_degree(&themed(&tokens(*grey), recipe), pair) < pair.floor)
-        .expect("a grey in the band between the named tints and the worst degree");
-    let falls = (0x40..grey)
-        .rev()
-        .find(|grey| ratio(&themed(&tokens(*grey), recipe), pair).unwrap() < pair.floor)
-        .expect("a grey that falls as written");
-    (grey, falls)
+/// The count in `grey`, on a wash found by a search: its pair reads as written and at each named
+/// tint at grey `8e`, and first falls between them.
+fn count_in(grey: &str) -> Value {
+    json!({ "wash.warning": "#d2992224", "state.waiting": grey })
 }
+
+const RECIPE: [&str; 1] = ["surface.deep"];
 
 #[test]
 fn a_default_coloured_pair_that_falls_only_between_named_tints_is_found_at_its_lowest() {
-    let recipe = ["surface.deep"];
-    let also = json!({});
-    let (grey, control) = just_falling("state.waiting", &also, &recipe, count());
-    let tokens = |grey: u8| {
-        let mut tokens = also.clone();
-        tokens["state.waiting"] = json!(format!("#{grey:02x}{grey:02x}{grey:02x}"));
-        tokens
-    };
-
-    let theme = themed(&tokens(grey), &recipe);
+    let theme = themed(&count_in("#8e8e8e"), &RECIPE);
+    assert!(ratio(&theme, count()).unwrap() >= count().floor);
+    assert!(lowest_named(&theme, count()) >= count().floor);
     let (named, between) = said_of(&theme, count());
     assert!(!named);
     assert_eq!(between, Some(lowest_at_any_degree(&theme, count())));
     assert!(between.unwrap() < count().floor);
-    let written = whole(&tokens(grey), &recipe);
+
+    let written = whole(&count_in("#8e8e8e"), &RECIPE);
     let said = warnings_said(&written, &check_every(&written));
     assert!(
-        said.iter()
-            .any(|line| line.contains("in a workspace's own colour at")),
+        said.iter().any(|line| line.contains(
+            "state.waiting on wash.warning over surface.deep, in a workspace's own colour at"
+        )),
         "{said:?}"
     );
-
-    // The control: it falls as written, is said as it always was, and is not said twice.
-    let (named, between) = said_of(&themed(&tokens(control), &recipe), count());
-    assert!(named);
-    assert_eq!(between, None);
 }
 
 #[test]
-fn words_standing_in_for_a_platform_selection_are_read_between_the_named_tints() {
-    let recipe = ["text.primary"];
-    let selection = pair(
-        "selection.text",
-        "selection.background",
-        Some("surface.base"),
-        4.5,
-    );
-    let also = json!({ "selection.text": "platform", "selection.background": "#3a7bd580" });
-    let (grey, _) = just_falling("text.primary", &also, &recipe, selection);
-    let mut tokens = also;
-    tokens["text.primary"] = json!(format!("#{grey:02x}{grey:02x}{grey:02x}"));
-    let (named, between) = said_of(&themed(&tokens, &recipe), selection);
-    assert!(!named);
-    assert!(between.is_some());
+fn a_pair_that_falls_as_written_is_said_as_it_was_and_not_again_between_the_tints() {
+    // The control: without it, a sweep that read nothing could pass the case above's negative.
+    let theme = themed(&count_in("#808080"), &RECIPE);
+    assert!(ratio(&theme, count()).unwrap() < count().floor);
+    assert_eq!(said_of(&theme, count()), (true, None));
+}
+
+#[test]
+fn a_pair_far_from_its_floor_at_every_degree_is_not_said() {
+    let theme = themed(&count_in("#ffffff"), &RECIPE);
+    assert_eq!(said_of(&theme, count()), (false, None));
+}
+
+/// Under the widest recipe, on both families.
+fn widest() -> Vec<ResolvedTheme> {
+    ["purlis-classic", "purlis"]
+        .iter()
+        .flat_map(|id| {
+            load(&json!({ "name": "Widest", "extends": id, "tint": { "tokens": TINTABLE } }))
+                .theme
+                .appearances
+        })
+        .collect()
 }
 
 #[test]
 fn a_pair_the_check_leaves_unread_does_not_fall_at_any_degree() {
-    // What lets the sweep skip them: read here at every degree, under the widest recipe.
-    for id in ["purlis-classic", "purlis"] {
-        let loaded = load(&json!({
-            "name": "Widest", "extends": id, "tint": { "tokens": TINTABLE }
-        }));
-        for theme in &loaded.theme.appearances {
-            let skipped: Vec<&Pair> = PAIRS
-                .iter()
-                .filter(|pair| !floors::moves_with_hue(theme, pair))
-                .filter(|pair| pair.front != "selection.text")
-                .collect();
-            assert!(!skipped.is_empty());
-            let tints: Vec<ResolvedTheme> = (0..360)
-                .map(|degree| tint::tinted_at(theme, f64::from(degree)))
-                .collect();
-            for pair in skipped {
-                let Some(written) = ratio(theme, pair) else {
-                    continue;
-                };
-                for (degree, drawn) in tints.iter().enumerate() {
-                    let at = ratio(drawn, pair).unwrap();
-                    assert!(
-                        at >= written.min(pair.floor),
-                        "{id} {} {pair:?} at {degree}: {at} from {written}",
-                        theme.id
-                    );
-                }
+    // What lets the sweep skip them.
+    for theme in widest() {
+        let skipped: Vec<&Pair> = PAIRS
+            .iter()
+            .filter(|pair| !floors::moves_with_hue(&theme, pair))
+            .collect();
+        assert!(!skipped.is_empty());
+        let tints: Vec<ResolvedTheme> = (0..360)
+            .map(|degree| tint::tinted_at(&theme, f64::from(degree)))
+            .collect();
+        for pair in skipped {
+            let Some(written) = ratio(&theme, pair) else {
+                continue;
+            };
+            for (degree, drawn) in tints.iter().enumerate() {
+                let at = ratio(drawn, pair).unwrap();
+                assert!(
+                    at >= written.min(pair.floor),
+                    "{} {pair:?} at {degree}: {at} from {written}",
+                    theme.id
+                );
             }
         }
     }
+}
+
+#[test]
+fn a_coarse_reading_comes_within_the_margin_of_the_lowest_at_any_degree() {
+    // What lets the sweep leave a pair at its coarse reading: the largest gap measured is 0.05.
+    let mut largest: f64 = 0.0;
+    for theme in widest() {
+        let tints: Vec<ResolvedTheme> = (0..360)
+            .map(|degree| tint::tinted_at(&theme, f64::from(degree)))
+            .collect();
+        for pair in PAIRS
+            .iter()
+            .filter(|pair| floors::moves_with_hue(&theme, pair))
+        {
+            let lowest = |step: usize| {
+                tints
+                    .iter()
+                    .step_by(step)
+                    .filter_map(|drawn| ratio(drawn, pair))
+                    .fold(f64::INFINITY, f64::min)
+            };
+            if lowest(1).is_finite() {
+                largest = largest.max(lowest(COARSE_DEGREES) - lowest(1));
+            }
+        }
+    }
+    assert!(largest > 0.0);
+    assert!(largest < NEAR_A_FLOOR, "{largest}");
 }
 
 #[test]
