@@ -178,6 +178,7 @@ describe("creating a project on a forge", function () {
     await toCreateOn("mac");
     const folder = await nameIt("meadow");
     made.push(folder);
+    await untilSays(WELCOME, "Reading what this machine has…", false);
     await choose(TEMPLATE, "rust");
 
     await press(WELCOME, "Create project");
