@@ -323,8 +323,8 @@ export async function askLimits(name: string) {
 }
 
 /** **The value in the words `typed` for limit `key`**, or why they aren't one: the core's check. */
-export function checkLimit(key: string, typed: string) {
-  return caught(commands.poolLimitCheck(key, typed));
+export function checkLimit(pool: string, key: string, typed: string) {
+  return caught(commands.poolLimitCheck(pool, key, typed));
 }
 
 /** Limit `key` of pool `name` as it was just saved, in what is shown of the pool's limits. */

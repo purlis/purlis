@@ -60,7 +60,7 @@ export function RaiseLimit({
     setChecked((was) => Object.fromEntries(Object.entries(was).filter(([one]) => one !== key)));
     const mine = (asked.current[key] ?? 0) + 1;
     asked.current[key] = mine;
-    void checkLimit(key, to).then((said) => {
+    void checkLimit(offer.pool, key, to).then((said) => {
       if (asked.current[key] !== mine) return;
       setChecked((was) => ({
         ...was,

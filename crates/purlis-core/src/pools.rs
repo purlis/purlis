@@ -1066,7 +1066,8 @@ pub fn add_cluster(
     let pool = &pool
         .kept_at(&runners::kubeconfig_kept_at(config_root, pool.name()))
         .holding(held)?
-        .minting_in_cluster(seen.mints_in_cluster);
+        .minting_in_cluster(seen.mints_in_cluster)
+        .under_team(seen.team_limits.as_ref());
     runners::record_cluster_pool_locked(config_root, pool, &runners::lock(config_root))?;
     if let Err(why) = runners::keep_kubeconfig(config_root, pool.name(), &context) {
         return Err(forgotten_cluster(config_root, pool.name(), why));
@@ -1292,6 +1293,8 @@ fn told_at_a_link(
     };
     let reached = pool.kubectl(&kubectl.clone().within(VOUCHED_NOW_WITHIN));
     let seen = reached.pool(pool.pool()).map_err(|why| why.to_string())?;
+    runners::keep_cluster_team_limits(config_root, name, seen.team_limits.as_ref())
+        .map_err(|why| why.to_string())?;
     let moved = runners::keep_cluster_minting(config_root, name, seen.mints_in_cluster)
         .map_err(|why| why.to_string())?;
     if moved && let Some(tell) = TOLD_OF_MINTING.get() {

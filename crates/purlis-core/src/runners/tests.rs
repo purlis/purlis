@@ -1330,6 +1330,41 @@ fn a_pools_limit_is_saved_marked_as_the_persons_and_makes_no_new_runner() {
     assert_eq!(chosen(config.path()).get(ProfileFiles), None, "a reset");
 }
 
+/// **#4287**: what the team set is kept with the pool, refuses a value above it in the command's
+/// words, keeps the person's own value, and follows the Pool at each link.
+#[test]
+fn a_cluster_pool_holds_to_what_the_team_set_and_follows_its_pool() {
+    use crate::poollimits::LimitId::SignInWait;
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool_in(config.path());
+    let name = "team";
+    let team = serde_json::json!({"signInWait": {"default": 20, "highest": 40}});
+    keep_cluster_team_limits(config.path(), name, Some(&team)).unwrap();
+
+    let chosen = |config: &Path| chosen_limits_of(config, name).unwrap();
+    assert_eq!(
+        chosen(config.path()).in_force(SignInWait),
+        20,
+        "kept in its row"
+    );
+    let refused = set_pool_limit(config.path(), name, SignInWait, Some(41))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("team that defines this pool"), "{refused}");
+    set_pool_limit(config.path(), name, SignInWait, Some(40)).unwrap();
+
+    // The team lowers it: the person's value stays theirs, and holds to it.
+    let lower = serde_json::json!({"signInWait": {"highest": 30}});
+    keep_cluster_team_limits(config.path(), name, Some(&lower)).unwrap();
+    assert_eq!(chosen(config.path()).get(SignInWait), Some(40));
+    assert_eq!(chosen(config.path()).in_force(SignInWait), 30);
+
+    // The team takes it away.
+    keep_cluster_team_limits(config.path(), name, None).unwrap();
+    assert_eq!(chosen(config.path()).in_force(SignInWait), 40);
+    assert_eq!(chosen(config.path()).team_highest(SignInWait), None);
+}
+
 /// **Only a cluster pool waits to be vouched for** (spec #4275): a Docker pool refuses a value,
 /// and keeps what it had.
 #[test]

@@ -777,14 +777,15 @@ fn keep_on_as(
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
         .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
-        .map_err(|why| late_said(pool, kept.limits.in_force(LimitId::AnswerWait), why))
+        .map_err(|why| late_said(pool, &kept.limits, why))
 }
 
-/// `why` a runner kept no profile: where the pool's wait of `secs` ran out, in words the window can
+/// `why` a runner kept no profile: where the pool's wait ran out, in words the window can
 /// ask of for what to raise it to (spec #4275). By purlis's own constant, never a runner's words.
-fn late_said(pool: &str, secs: u64, why: String) -> String {
+fn late_said(pool: &str, limits: &purlis_core::poollimits::Chosen, why: String) -> String {
     if why == crate::runnerlinks::ANSWER_LATE {
-        let hit = LimitId::AnswerWait.limit().waited(secs, None);
+        let secs = limits.in_force(LimitId::AnswerWait);
+        let hit = limits.waited(LimitId::AnswerWait, secs, None);
         format!("{why}: {}", purlis_core::poollimits::hit_on(pool, hit))
     } else {
         why
@@ -901,8 +902,11 @@ pub struct PoolLimitRow {
     pub set: Option<u32>,
     /// When a change applies, where its group doesn't say it for all of its limits.
     pub applies: Option<String>,
-    /// Why the value in the pool's file can't be used, where one can't (#4381).
+    /// Why the value in the pool's file can't be used, where one can't (#4381), or is above what
+    /// the team defining the pool allows (#4287).
     pub refused: Option<String>,
+    /// The highest the team defining the pool allows, in words, where it set one (#4287).
+    pub highest_said: Option<String>,
 }
 
 /// **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced.
@@ -940,14 +944,27 @@ fn limits_shown(
         key: limit.key.to_owned(),
         plain: limit.plain.to_owned(),
         unit: limit.unit.word().to_owned(),
-        default: number(limit.default),
-        default_said: limit.unit.said(limit.default),
+        default: number(chosen.default_of(limit.id)),
+        default_said: limit.unit.said(chosen.default_of(limit.id)),
         set: chosen.get(limit.id).map(number),
         applies: says.then(|| limit.takes_effect.said().to_owned()),
         refused: refused
             .iter()
             .find(|one| one.limit == limit.id)
-            .map(purlis_core::poollimits::RefusedValue::said),
+            .map(purlis_core::poollimits::RefusedValue::said)
+            .or_else(|| {
+                let top = chosen.team_highest(limit.id)?;
+                (chosen.get(limit.id)? > top).then(|| {
+                    format!(
+                        "The team that defines this pool allows at most {}, so that holds. Set a \
+                         value within it or reset this.",
+                        limit.unit.said(top)
+                    )
+                })
+            }),
+        highest_said: chosen
+            .team_highest(limit.id)
+            .map(|top| format!("The team allows up to {}.", limit.unit.said(top))),
     };
     let groups = Group::ALL
         .into_iter()
@@ -1019,10 +1036,17 @@ pub async fn pool_limits(pool: String) -> Result<PoolLimitsPage, String> {
 /// the file's and the command's check, asked as the person types.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_limit_check(key: String, typed: String) -> Result<u32, String> {
-    let limit = limit_named(&key)?;
-    let value = limit.check_typed(&typed, None)?;
-    u32::try_from(value).map_err(|_| format!("{} is too large a number here", limit.plain))
+pub async fn pool_limit_check(pool: String, key: String, typed: String) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let limit = limit_named(&key)?;
+        // What the team defining a cluster pool allows is refused as it is typed (#4287).
+        let chosen = purlis_core::runners::chosen_limits_of(&config_root()?, &pool)
+            .map_err(|why| why.to_string())?;
+        let value = limit.check_typed(&typed, chosen.team_highest(limit.id))?;
+        u32::try_from(value).map_err(|_| format!("{} is too large a number here", limit.plain))
+    })
+    .await
+    .map_err(|why| format!("the value was not checked: {why}"))?
 }
 
 /// **Saves `value` as pool `pool`'s limit `key`, or, `null`, returns it to following purlis's
@@ -1214,7 +1238,7 @@ pub async fn pool_profiles(
                         .next()
                         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
                         .map(|kept| onrunner::standing_on_the_wire(kept.standing))
-                        .map_err(|why| late_said(&pool, limits.in_force(LimitId::AnswerWait), why)),
+                        .map_err(|why| late_said(&pool, &limits, why)),
                 });
                 match record {
                     Ok(record) => row(record, standing),
@@ -1750,7 +1774,11 @@ pub async fn pool_sign_in_next(
 /// A sign-in on `pool` ended at the pool's limit of `wait` minutes, in words the window can ask
 /// of for what to raise it to (spec #4275).
 fn sign_in_ran_out(pool: &str, wait: u64) -> String {
-    let hit = LimitId::SignInWait.limit().waited(wait, None);
+    let chosen = config_root()
+        .ok()
+        .and_then(|config| purlis_core::runners::chosen_limits_of(&config, pool).ok())
+        .unwrap_or_default();
+    let hit = chosen.waited(LimitId::SignInWait, wait, None);
     format!(
         "{}: {}",
         driven::TOOK_TOO_LONG,
