@@ -28,6 +28,16 @@ pub(crate) fn studio_as(persona: &str) -> String {
     format!("{STUDIO_IN}{PERSONA_SCOPE_KEY}{persona}")
 }
 
+/// DEBUG-4351
+pub(crate) fn probe(what: &str, since: std::time::Instant) {
+    use std::io::Write as _;
+    if let Some(path) = std::env::var_os("PURLIS_4351_LOG") {
+        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).create(true).open(path) {
+            let _ = writeln!(file, "{what} {} us", since.elapsed().as_micros());
+        }
+    }
+}
+
 /// The catalogue row that opens the Skill studio's Needs you on one scope's chats is this, then
 /// the scope's key (#3695): a summary line's "need you".
 pub(crate) const NEEDS_IN: &str = "skills.needs:";
@@ -939,6 +949,7 @@ fn studio_read(
             needs: Vec::new(),
         };
     }
+    let t0 = std::time::Instant::now();
     let off = workspace
         .as_deref()
         .map(|ws| purlis_core::skills::turned_off(root, ws))
@@ -949,6 +960,7 @@ fn studio_read(
         .iter()
         .find_map(|(by, _)| crate::skillchange::pins_refused(root, by));
     let pinned_by = |name: &str| pinned_by_of(&pinners, name);
+    probe("pinners", t0); let t0 = std::time::Instant::now();
     let purlis_core::skills::StudioList {
         rows,
         harnesses: all,
@@ -962,7 +974,9 @@ fn studio_read(
         env,
         more,
     );
+    probe("studio_list_for", t0); let t0 = std::time::Instant::now();
     let first = purlis_core::skills::first_open::first_open(root, &rows).into();
+    probe("first_open", t0); let t0 = std::time::Instant::now();
     let skills = rows
         .into_iter()
         .map(|row| {
@@ -970,6 +984,7 @@ fn studio_read(
             plane_shown(root, workspace.as_deref(), &off, by, row)
         })
         .collect();
+    probe("plane_shown", t0); let t0 = std::time::Instant::now();
     // Whether a chat started in a clone counts repo skills a chat at the root does not (#4215).
     let in_a_clone = all.iter().any(|one| {
         one.outside
@@ -977,6 +992,7 @@ fn studio_read(
             .any(|found| found.origin == purlis_core::skills::Origin::Repo && !found.off)
     });
     let (harnesses, clashes) = harnesses(&all);
+    probe("harnesses", t0); let t0 = std::time::Instant::now();
     let workspaces = if whole {
         purlis_core::workspaces::Plane::open(root)
             .workspaces()
@@ -984,8 +1000,10 @@ fn studio_read(
     } else {
         Vec::new()
     };
+    probe("workspaces", t0); let t0 = std::time::Instant::now();
     let router =
         whole.then(|| router_of(root, workspace.as_deref(), persona.as_deref(), in_a_clone));
+    probe("router_of", t0); let t0 = std::time::Instant::now();
     let mut studio = Studio {
         on,
         workspace,
@@ -1011,7 +1029,9 @@ fn studio_read(
         }),
         needs: Vec::new(),
     };
+    probe("rest of Studio", t0); let t0 = std::time::Instant::now();
     studio.needs = needs::of(&studio);
+    probe("needs", t0);
     studio
 }
 
@@ -1495,6 +1515,7 @@ pub(crate) async fn skill_studio(
         let built_in =
             crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
         let on = purlis_core::skills::studio_on_here();
+        let t_all = std::time::Instant::now();
         let read = |more: &[&dyn purlis_core::skills::SkillLint]| {
             studio_linted(
                 held.root(),
@@ -1512,11 +1533,14 @@ pub(crate) async fn skill_studio(
         } else {
             read(&[])
         };
+        probe("skill_studio read", t_all);
+        let t_needs = std::time::Instant::now();
         with_the_projects_needs(
             &mut studio,
             held.root(),
             &held.proposals().paths_of(crate::proposals::BY_PURLIS),
         );
+        probe("with_the_projects_needs", t_needs);
         // How the router did at the start of each chat open here in the studio's scope (SK-15b).
         if let Some(router) = studio.router.as_mut() {
             router.chats = held
@@ -1527,6 +1551,7 @@ pub(crate) async fn skill_studio(
                 .map(|one| StudioRouted::of(one.session, &one.routed, one.last_prompt.as_ref()))
                 .collect();
         }
+        probe("skill_studio whole", t_all);
         Ok(studio)
     })
     .await

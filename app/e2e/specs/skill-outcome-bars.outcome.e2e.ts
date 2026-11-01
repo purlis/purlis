@@ -151,13 +151,40 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         const holder = globalThis as { __openedInMs?: number };
         holder.__openedInMs = undefined;
         const started = performance.now();
+        // DEBUG-4351
+        const probe = globalThis as unknown as Record<string, any>;
+        const calls: string[] = [];
+        probe.__calls = calls;
+        const internals = probe.__TAURI_INTERNALS__;
+        if (internals.__was === undefined) {
+          internals.__was = internals.invoke;
+          internals.invoke = (cmd: string, ...rest: unknown[]) => {
+            const at = performance.now();
+            const answer = internals.__was(cmd, ...rest);
+            void Promise.resolve(answer).finally(() => {
+              probe.__calls?.push(
+                `${cmd} @${Math.round(at - probe.__t0)}+${Math.round(performance.now() - at)}`,
+              );
+            });
+            return answer;
+          };
+        }
+        probe.__t0 = started;
         row.click();
+        calls.push(`clicked +${Math.round(performance.now() - started)}`);
+        let tab = false;
         const look = () => {
+          if (!tab && document.querySelector('[data-testid="skill-studio"]') !== null) {
+            tab = true;
+            calls.push(`tab drawn +${Math.round(performance.now() - started)}`);
+          }
           if (document.querySelector(css) === null) requestAnimationFrame(look);
-          else
+          else {
+            calls.push(`row drawn +${Math.round(performance.now() - started)}`);
             requestAnimationFrame(() => {
               holder.__openedInMs = performance.now() - started;
             });
+          }
         };
         requestAnimationFrame(look);
         return true;
@@ -175,6 +202,10 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       { timeout: 30_000, interval: 100, timeoutMsg: "the studio's Library drew no row in 30 s" },
     );
     samples.push(took as number);
+    console.log(
+      `DEBUG-4351 ${harness.kind} #${n} ${Math.round(took as number)} ms: ` +
+        (await browser.execute(() => (globalThis as any).__calls.join(" | "))),
+    );
   }
   return samples;
 }
