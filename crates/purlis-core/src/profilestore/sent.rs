@@ -38,6 +38,7 @@ fn dropped(kind: &str) -> &'static [&'static str] {
             "otelHeadersHelper",
             "headers",
             "headersHelper",
+            "clientSecret",
         ],
         // Codex's `config.toml`: a server's `env`, a provider's and a server's bearer tokens, the
         // variables that name one, a provider's `env_key` and its command-run `auth`, and the
@@ -73,12 +74,56 @@ fn dropped(kind: &str) -> &'static [&'static str] {
     }
 }
 
+/// **The file a Claude Code profile's user-scope MCP servers travel in** (#3846): Claude Code keeps
+/// them in its state file, among sign-in and project records that never leave, so only they are
+/// sent, in a file of their own, and a runner puts them into its own state file.
+pub const MCP_SERVERS_FILE: &str = "mcp-servers.json";
+
+/// Where Claude Code keeps its state file for the settings folder `config`: beside its default
+/// `.claude` folder, in the home, and in any other folder, as Claude Code reads it.
+#[must_use]
+pub fn claude_state_file(config: &std::path::Path) -> std::path::PathBuf {
+    let in_home = config
+        .file_name()
+        .is_some_and(|name| name == ".claude")
+        .then(|| config.parent())
+        .flatten();
+    in_home
+        .unwrap_or(config)
+        .join(crate::sandbox::claude_wrap::STATE_FILE)
+}
+
+/// The most bytes of a state file read for its MCP servers: well past any.
+const MOST_STATE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// **The file of the user-scope MCP servers of the Claude Code settings folder `config`**, as it
+/// goes through [`filtered`] like any settings file. No servers is a file too, so a server taken
+/// out here goes on the runner. `None` where the state file cannot be read as one, following no
+/// link: the runner's stay as they are.
+#[must_use]
+pub fn mcp_servers_of(config: &std::path::Path) -> Option<Vec<u8>> {
+    let state = claude_state_file(config);
+    let servers = match std::fs::symlink_metadata(&state) {
+        Ok(found) if found.is_file() && found.len() <= MOST_STATE_BYTES => {
+            let text = std::fs::read_to_string(&state).ok()?;
+            let doc: serde_json::Value = serde_json::from_str(&text).ok()?;
+            doc.get("mcpServers")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}))
+        }
+        Ok(_) => return None,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Err(_) => return None,
+    };
+    serde_json::to_vec(&serde_json::json!({ "mcpServers": servers })).ok()
+}
+
 /// Whether `path` is a `kind` harness's own settings file, which [`without_credentials`] parses
 /// and always writes again. A Markdown file is written again only where something goes.
 pub fn rewritten(kind: &str, path: &str) -> bool {
     matches!(
         (kind, path),
-        ("claude", "settings.json")
+        ("claude", "settings.json" | MCP_SERVERS_FILE)
             | ("opencode", "opencode.json" | "opencode.jsonc" | "tui.json")
             | ("codex", "config.toml")
     )
@@ -160,7 +205,7 @@ fn filtered_saying(
         )
     };
     match (kind, path) {
-        ("claude", "settings.json") => {
+        ("claude", "settings.json" | MCP_SERVERS_FILE) => {
             let text = std::str::from_utf8(bytes).map_err(|_| unreadable())?;
             json_without(kind, text, said).ok_or_else(unreadable)
         }

@@ -62,6 +62,8 @@ pub struct Kept {
     pub limits: Chosen,
     /// The highest those can be on the runner it goes to, where that is lower than any pool's.
     pub highest: Chosen,
+    /// Whether the runner it goes to keeps its user-scope MCP servers (1.66, #3846).
+    pub mcp_servers: bool,
 }
 
 /// **The most bytes of settings files sent in one `keep_profile`**, to a runner before 1.56
@@ -122,6 +124,7 @@ impl Kept {
             settings_in: None,
             limits: Chosen::default(),
             highest: Chosen::default(),
+            mcp_servers: true,
         })
     }
 
@@ -138,6 +141,13 @@ impl Kept {
     #[must_use]
     pub fn held_to(mut self, limits: Chosen) -> Self {
         self.limits = limits;
+        self
+    }
+
+    /// This profile, going to a runner before 1.66, which keeps no MCP servers.
+    #[must_use]
+    pub fn with_no_mcp_servers(mut self) -> Self {
+        self.mcp_servers = false;
         self
     }
 
@@ -181,7 +191,8 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
                 return Err(too_large());
             }
             let skipped = read.skipped;
-            let read = read.files;
+            let mut read = read.files;
+            read.retain(|(path, _)| path != super::sent::MCP_SERVERS_FILE);
             if read.len() > MOST_SETTINGS_FILES {
                 return Err(format!(
                     "its settings in {} are more than {MOST_SETTINGS_FILES} files, more than a \
@@ -452,7 +463,7 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
         let chosen = kept.limits.in_force(id);
         kept.highest.get(id).map_or(chosen, |most| most.min(chosen))
     };
-    let read = super::made::settings_read(
+    let mut read = super::made::settings_read(
         &kept.harness,
         folder,
         usize::try_from(in_force(LimitId::ProfileSize).saturating_mul(MIB)).unwrap_or(usize::MAX),
@@ -465,6 +476,16 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
             + read.left_behind.iter().map(|one| one.1).sum::<u64>();
         let files = (read.files.len() + read.left_behind.len()) as u64;
         return Err(refused_over_limit(kept, limits_hit(kept, bytes, files)));
+    }
+    // Only what the state file says: a file of that name in the folder is no server of its.
+    read.files
+        .retain(|(path, _)| path != super::sent::MCP_SERVERS_FILE);
+    if kept.mcp_servers
+        && kept.harness == "claude"
+        && let Some(servers) = super::sent::mcp_servers_of(folder)
+    {
+        read.files
+            .push((super::sent::MCP_SERVERS_FILE.to_owned(), servers));
     }
     let mut sent = Vec::with_capacity(read.files.len());
     let mut left_out = LeftOut::default();
@@ -814,6 +835,7 @@ impl From<&purlis_session_protocol::session::ProfileToKeep> for Kept {
             settings_in: None,
             limits: Chosen::default(),
             highest: Chosen::default(),
+            mcp_servers: false,
         }
     }
 }
@@ -919,9 +941,26 @@ pub fn kept_for_the_desktop(
     let record = keep(homes, home, &Kept::from(sent), desktop, now)?;
     if let Some(files) = &checked {
         super::made::settings_kept(homes, &record, files)?;
+        keep_mcp_servers_of(&record, files);
     }
     super::made::loaded_unsent_cleared(&record)?;
     Ok(standing_for_the_wire(standing(&record, look)))
+}
+
+/// Puts the MCP servers among `files`, kept for `record`, into its state file, where only purlis
+/// writes it (#3846). None sent leaves them as they are.
+fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) {
+    let servers = files
+        .iter()
+        .find(|(path, _)| path == super::sent::MCP_SERVERS_FILE)
+        .filter(|_| record.harness == "claude")
+        .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok());
+    if let Some(servers) = servers.as_ref().and_then(|doc| doc.get("mcpServers")) {
+        crate::sandbox::claude_wrap::keep_mcp_servers(
+            &super::sent::claude_state_file(&record.folders.config),
+            servers,
+        );
+    }
 }
 
 /// **The name of each profile this runner, with `homes` its store, keeps for the desktop

@@ -197,7 +197,7 @@ pub struct Allowed {
 pub const ALLOWED: [Allowed; 3] = [
     Allowed {
         kind: "claude",
-        files: &["settings.json", "CLAUDE.md"],
+        files: &["settings.json", "CLAUDE.md", super::sent::MCP_SERVERS_FILE],
         folders: &["agents", "commands", "output-styles", "skills"],
         loaded_unsent: &["rules"],
     },

@@ -389,6 +389,32 @@ pub fn prepare(wrap: &Wrap, cwd: &Path) {
     super::codex::replace(&state, doc.to_string().as_bytes(), 0o600);
 }
 
+/// **`servers` as the user-scope MCP servers in the state file `state`** (#3846), with what else it
+/// holds as it is. No servers and no file is left as it is, and a link, or a file purlis cannot
+/// read, is left alone, for Claude Code to say so.
+pub fn keep_mcp_servers(state: &Path, servers: &serde_json::Value) {
+    let empty = servers.as_object().is_none_or(serde_json::Map::is_empty);
+    let mut doc = match std::fs::symlink_metadata(state) {
+        Ok(found) if found.is_file() => {
+            match std::fs::read_to_string(state)
+                .ok()
+                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            {
+                Some(doc) if doc.is_object() => doc,
+                _ => return,
+            }
+        }
+        Ok(_) => return,
+        Err(_) if empty => return,
+        Err(_) => serde_json::json!({}),
+    };
+    if doc.get("mcpServers") == Some(servers) || (empty && doc.get("mcpServers").is_none()) {
+        return;
+    }
+    doc["mcpServers"] = servers.clone();
+    super::codex::replace(state, doc.to_string().as_bytes(), 0o600);
+}
+
 /// Below `dir`, without following a link: every link taken out.
 fn no_links_below(dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {

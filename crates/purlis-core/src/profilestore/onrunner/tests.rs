@@ -2458,4 +2458,93 @@ fn what_an_older_runners_copy_left_out_is_said() {
 
     let said = left_out_said("older-runner-left-out").expect("said");
     assert!(said.contains("ANTHROPIC_BASE_URL"), "{said}");
+/// **A profile's user-scope MCP servers reach the runner that keeps it** (#3846), with no sign-in
+/// or credential, and what else either state file holds stays where it is.
+#[test]
+fn a_profiles_mcp_servers_reach_its_runner_with_no_credential() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    fs::write(
+        desktop.folders.config.join(".claude.json"),
+        r#"{"oauthAccount":{"emailAddress":"of-the-desktop"},
+            "mcpServers":{"docs":{"command":"npx","args":["docs"],"env":{"KEY":"of-the-desktop"}},
+                          "bad":{"command":"tool --token of-the-desktop"}}}"#,
+    )
+    .unwrap();
+
+    let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+    let runner = homes(dir.path(), "runner");
+    let record = kept_staged(&runner, dir.path(), sent).expect("it is kept");
+
+    let state = record.folders.config.join(".claude.json");
+    let text = fs::read_to_string(&state).unwrap();
+    assert!(!text.contains("of-the-desktop"), "{text}");
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(doc["mcpServers"]["docs"]["command"], "npx");
+    assert_eq!(doc["mcpServers"].get("bad"), None);
+    assert_eq!(doc.get("oauthAccount"), None);
+}
+
+/// A runner's own state stays beside the servers, and a server taken out on the desktop goes.
+#[test]
+fn a_server_taken_out_on_the_desktop_goes_from_the_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let state = desktop.folders.config.join(".claude.json");
+    fs::write(&state, r#"{"mcpServers":{"docs":{"command":"npx"}}}"#).unwrap();
+    let keep = || in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+    let runner = homes(dir.path(), "runner");
+    let record = kept_staged(&runner, dir.path(), keep()).expect("it is kept");
+    let there = record.folders.config.join(".claude.json");
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+    doc["hasCompletedOnboarding"] = true.into();
+    fs::write(&there, doc.to_string()).unwrap();
+
+    fs::write(&state, "{}").unwrap();
+    kept_staged(&runner, dir.path(), keep()).expect("it is kept again");
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+    assert_eq!(doc["mcpServers"], serde_json::json!({}));
+    assert_eq!(doc["hasCompletedOnboarding"], true);
+}
+
+/// **A runner before 1.66 is sent no such file**, which it would refuse with all the settings.
+#[test]
+fn a_runner_that_keeps_no_servers_is_sent_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    fs::write(
+        desktop.folders.config.join(".claude.json"),
+        r#"{"mcpServers":{"docs":{"command":"npx"}}}"#,
+    )
+    .unwrap();
+    let kept = Kept::of(&desktop)
+        .unwrap()
+        .with_settings_of(&desktop)
+        .with_no_mcp_servers();
+
+    let sent = in_batches(&kept).unwrap();
+
+    assert!(
+        sent.batches
+            .iter()
+            .flat_map(|batch| &batch.pieces)
+            .all(|piece| piece.path != "mcp-servers.json")
+    );
+}
+
+/// Claude Code's default folder keeps its state file in the home, and any other folder in itself.
+#[test]
+fn claude_codes_state_file_is_where_it_reads_it() {
+    use crate::profilestore::sent::claude_state_file;
+    assert_eq!(
+        claude_state_file(Path::new("/h/.claude")),
+        Path::new("/h/.claude.json")
+    );
+    assert_eq!(
+        claude_state_file(Path::new("/p/work")),
+        Path::new("/p/work/.claude.json")
+    );
 }
