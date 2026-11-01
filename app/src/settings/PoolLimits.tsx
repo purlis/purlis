@@ -34,6 +34,26 @@ const REPLACE_SAID =
 const typedOf = (row: PoolLimitRow, value: number): string =>
   String(row.unit === "CPUs" ? value / 1000 : value);
 
+/** **Replace pool {pool}'s runner?**, asked before it is: what happens to its running chats. */
+export function ReplaceRunner({
+  pool,
+  onCancel,
+  onReplace,
+}: {
+  pool: string;
+  onCancel: () => void;
+  onReplace: () => void;
+}) {
+  return (
+    <AlertDialog
+      onClose={onCancel}
+      title={`Replace pool ${pool}'s runner?`}
+      description={<p className="came-back">{REPLACE_SAID}</p>}
+      main={{ children: "Replace the runner", onPress: onReplace }}
+    />
+  );
+}
+
 /**
  * **A change waiting for the runner to be replaced** (#4286): what changed, and Replace, drawn only
  * while one waits. Nothing is interrupted unless the person presses it, and it asks first.
@@ -83,11 +103,10 @@ function ChangeWaits({
         </Notice>
       )}
       {asking && (
-        <AlertDialog
-          onClose={() => setAsking(false)}
-          title={`Replace pool ${pool}'s runner?`}
-          description={<p className="came-back">{REPLACE_SAID}</p>}
-          main={{ children: "Replace the runner", onPress: () => void replace() }}
+        <ReplaceRunner
+          pool={pool}
+          onCancel={() => setAsking(false)}
+          onReplace={() => void replace()}
         />
       )}
     </>

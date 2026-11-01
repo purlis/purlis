@@ -57,6 +57,7 @@ import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { AddDockerPoolHost } from "../AddDockerPool";
 import { startAddingAPool } from "../pools";
+import { ReplaceRunner } from "../settings/PoolLimits";
 import { RemovePool } from "../settings/pools";
 import { RemoveProfile } from "../settings/profiles";
 import { SpecimenDialog } from "../specimen/Specimen";
@@ -972,6 +973,11 @@ const DIALOGS: Opened[] = [
       render(<ForgeGitLabSignIn onSignedIn={nothing} onCancel={nothing} />);
       await screen.findByText(/Waiting for your browser/);
     },
+  },
+  {
+    name: "replacing a pool's runner",
+    file: "settings/PoolLimits.tsx",
+    open: async () => render(<ReplaceRunner pool="builds" onCancel={nothing} onReplace={nothing} />),
   },
   {
     name: "removing a Docker pool",
