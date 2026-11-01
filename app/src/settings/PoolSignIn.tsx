@@ -9,7 +9,7 @@ import {
   type PoolSignInStep,
   type PoolSignInTerminal,
 } from "../bindings";
-import { StartChatLimit } from "../StartChatLimit";
+import { RaiseLimit } from "../RaiseLimit";
 import { Badge } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
 import { Card } from "../ui/card/Card";
@@ -204,7 +204,7 @@ export function PoolSignIn({
         if (now.at === "failed") {
           const why = now.why;
           void commands
-            .poolLimitOffer(profile, why)
+            .poolLimitOfferForMove(pool, why)
             .catch(() => null)
             .then((offer) => {
               if (!left) setLimitOffer(offer ?? undefined);
@@ -518,7 +518,7 @@ function Body(props: SignInStripProps & { who: string }) {
         </p>
       )}
       {props.limitOffer !== undefined && props.onRaiseLimit !== undefined && (
-        <StartChatLimit
+        <RaiseLimit
           offer={props.limitOffer}
           action="Save to the pool and try again"
           onApply={props.onRaiseLimit}

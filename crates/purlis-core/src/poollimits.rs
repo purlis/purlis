@@ -466,23 +466,24 @@ pub fn hit_on(pool: &str, hit: LimitHit) -> String {
     said
 }
 
-/// **The pool, and its limits hit, that the refusal in the words `refused` said**: asked of what
-/// was kept, never read from the words. `None` for any other refusal.
+/// **The limits of pool `pool` that the refusal in the words `refused` said**, taken once: asked
+/// of what was kept, never read from the words. Only the pool acted on is asked of, so words a
+/// runner echoes reach no other pool's value, and only what purlis itself measured there. Empty
+/// for any other refusal.
 #[must_use]
-pub fn hits_said_in(refused: &str) -> Option<(String, Vec<LimitHit>)> {
-    let held = HITS
+pub fn hits_said_in(pool: &str, refused: &str) -> Vec<LimitHit> {
+    let mut held = HITS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let mut said = held
+    let said: Vec<(String, usize)> = held
         .iter()
-        .filter(|(_, (_, words))| refused.contains(words.as_str()));
-    let ((pool, _), (first, _)) = said.next()?;
-    let mut hits = vec![*first];
-    hits.extend(
-        said.filter(|((other, _), _)| other == pool)
-            .map(|(_, (hit, _))| *hit),
-    );
-    Some((pool.clone(), hits))
+        .filter(|((of, _), (_, words))| of == pool && refused.contains(words.as_str()))
+        .map(|(key, _)| key.clone())
+        .collect();
+    said.iter()
+        .filter_map(|key| held.remove(key))
+        .map(|(hit, _)| hit)
+        .collect()
 }
 
 /// **The values the person chose for a pool's limits**, each unset where purlis's default holds.
@@ -494,6 +495,12 @@ impl Chosen {
     #[must_use]
     pub fn get(&self, id: LimitId) -> Option<u64> {
         self.0[id as usize]
+    }
+
+    /// The time that holds for a wait, as [`Self::in_force`] says it; none for a size.
+    #[must_use]
+    pub fn wait(&self, id: LimitId) -> Option<std::time::Duration> {
+        id.limit().unit.as_time(self.in_force(id))
     }
 
     /// The value that holds: what the person set, or purlis's default.
@@ -704,20 +711,29 @@ mod tests {
     fn the_refused_words_find_the_hit_they_said_and_no_other_words_do() {
         let hit = LimitId::CodeSize.limit().hit(1024, 1500, None);
         let said = hit_on("hits-of-a-test", hit);
-        let (pool, hits) =
-            hits_said_in(&format!("the code did not reach the runner: {said}")).expect("said");
-        assert_eq!(pool, "hits-of-a-test");
-        assert_eq!(hits, vec![hit]);
-        assert_eq!(hits_said_in("the code did not reach the runner"), None);
+        let refused = format!("the code did not reach the runner: {said}");
+        assert_eq!(hits_said_in("hits-of-a-test", "other words"), Vec::new());
+        // The same words from another pool's runner reach nothing of this pool's.
+        assert_eq!(hits_said_in("another-pool", &refused), Vec::new());
+        assert_eq!(hits_said_in("hits-of-a-test", &refused), vec![hit]);
+        assert_eq!(
+            hits_said_in("hits-of-a-test", &refused),
+            Vec::new(),
+            "an offer is taken once"
+        );
     }
 
-    /// The times a limit holds are what a wait is held to.
+    /// A wait set and left unset, as what it is held to.
     #[test]
     fn only_a_time_is_a_length_of_time() {
         use std::time::Duration;
         assert_eq!(Unit::Minutes.as_time(2), Some(Duration::from_secs(120)));
         assert_eq!(Unit::Seconds.as_time(2), Some(Duration::from_secs(2)));
         assert_eq!(Unit::Mib.as_time(2), None);
+        let set = Chosen::default().with(LimitId::AnswerWait, Some(45));
+        assert_eq!(set.wait(LimitId::AnswerWait), Some(Duration::from_secs(45)));
+        assert_eq!(set.wait(LimitId::VouchWait), Some(Duration::from_secs(300)));
+        assert_eq!(set.wait(LimitId::CodeSize), None);
     }
 
     /// Only a cluster pool waits to be vouched for, and the answer wait is under Advanced.

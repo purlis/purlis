@@ -644,7 +644,7 @@ async fn keep_one(
     sending: purlis_core::profilestore::onrunner::ToKeep,
     answer: std::time::Duration,
 ) -> Result<ProfileKept, String> {
-    let late = |_| LATE.to_owned();
+    let late = |_| ANSWER_LATE.to_owned();
     for batch in sending.batches {
         tokio::time::timeout(answer, client.stage_profile_settings(batch))
             .await
@@ -659,7 +659,7 @@ async fn keep_one(
     };
     let standing = tokio::time::timeout(within, client.keep_profile(sending.profile))
         .await
-        .map_err(late)?
+        .map_err(|_| if within == answer { ANSWER_LATE } else { LATE }.to_owned())?
         .map_err(|why| refused_by_the_runner(&why))?;
     Ok(ProfileKept { standing })
 }
@@ -684,9 +684,9 @@ async fn held_by(
     let mut after: Option<String> = None;
     for _ in 0..MOST_HELD_PAGES {
         let asked = client.settings_held(&kept.name, after.clone());
-        let Ok((page, more)) = tokio::time::timeout(ANSWER_WITHIN, asked)
+        let Ok((page, more)) = tokio::time::timeout(answer_wait(kept), asked)
             .await
-            .map_err(|_| LATE.to_owned())?
+            .map_err(|_| ANSWER_LATE.to_owned())?
         else {
             return Ok(Vec::new());
         };
@@ -729,14 +729,10 @@ async fn sent_what_differs(
         )?
     };
     let only_changed = sending.profile.settings_changed.is_some();
-    // The pool's limit, as this attempt read it (spec #4275): only the wait changes.
-    let wait = std::time::Duration::from_secs(
-        kept.limits
-            .in_force(purlis_core::poollimits::LimitId::AnswerWait),
-    );
+    let wait = answer_wait(kept);
     let answer = keep_one(client, sending, wait).await;
     match answer {
-        Err(why) if only_changed && why != LATE => {
+        Err(why) if only_changed && !stopped_answering(&why) => {
             tracing::info!("purlis: a runner's keep of what changed was refused: {why}");
             keep_one(client, for_a_runner_of(version, kept)?, wait).await
         }
@@ -761,7 +757,7 @@ pub fn keep_profiles(
             let mut said = Vec::with_capacity(profiles.len());
             for kept in &profiles {
                 let answer = sent_what_differs(&client, version, kept).await;
-                let gone = matches!(&answer, Err(why) if why == LATE);
+                let gone = matches!(&answer, Err(why) if stopped_answering(why));
                 said.push(answer);
                 // A runner that stopped answering is asked nothing more.
                 if gone {
@@ -987,8 +983,24 @@ pub fn listed(
 /// How long one link to a runner waits for it to answer.
 const ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 
-/// What a call a runner did not answer in time says.
-pub(crate) const LATE: &str = "the runner did not answer in time";
+/// What a call a runner did not answer in time says, where the wait is purlis's own.
+const LATE: &str = "the runner did not answer in time";
+
+/// What it says where the wait is the pool's limit: only this one offers to raise it. A runner's
+/// own words are always marked as its ([`said_by_the_runner`]), so none of them is this.
+pub(crate) const ANSWER_LATE: &str = "the runner did not answer within this pool's limit";
+
+/// Whether `why` is a runner that stopped answering, which is asked nothing more.
+fn stopped_answering(why: &str) -> bool {
+    why == LATE || why == ANSWER_LATE
+}
+
+/// The pool's limit on one answer, as this attempt read it (spec #4275): only the wait changes.
+fn answer_wait(kept: &purlis_core::profilestore::onrunner::Kept) -> std::time::Duration {
+    kept.limits
+        .wait(purlis_core::poollimits::LimitId::AnswerWait)
+        .unwrap_or(ANSWER_WITHIN)
+}
 
 /// How long a runner has to keep a profile's staged settings: it writes each of them.
 const KEPT_WITHIN: std::time::Duration = std::time::Duration::from_secs(120);

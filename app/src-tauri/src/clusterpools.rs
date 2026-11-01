@@ -231,7 +231,10 @@ fn vouch_wait_of(adding: &ClusterPoolAdding) -> Result<std::time::Duration, Stri
     let limit = purlis_core::poollimits::LimitId::VouchWait.limit();
     let minutes = adding.vouch_wait.map_or(limit.default, u64::from);
     limit.check(minutes, None)?;
-    Ok(std::time::Duration::from_secs(minutes.saturating_mul(60)))
+    limit
+        .unit
+        .as_time(minutes)
+        .ok_or_else(|| format!("{} is a length of time", limit.plain))
 }
 
 /// [`add_cluster_pool`], on `config` with `kubectl`, waiting at most `within` for the operator.

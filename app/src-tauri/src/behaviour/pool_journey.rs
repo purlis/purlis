@@ -638,8 +638,8 @@ fn in_the_journey(
         )
         .map(|_| ())
         .expect_err("the code is over the limit");
-    let (held_by, hits) = poollimits::hits_said_in(&refused).expect("a limit said it");
-    assert_eq!(held_by, pool);
+    let hits = poollimits::hits_said_in(pool, &refused);
+    assert!(!hits.is_empty(), "a limit said it: {refused}");
     let raised = hits[0].suggested.expect("a value to raise it to");
     assert_eq!(hits[0].limit, LimitId::CodeSize, "{refused}");
     purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(raised))

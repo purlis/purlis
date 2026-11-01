@@ -1354,3 +1354,19 @@ fn a_docker_pool_refuses_the_wait_only_a_cluster_pool_has() {
         Some(20)
     );
 }
+
+/// A hand-edited file is held to the same check as the command (Q15).
+#[test]
+fn a_docker_pools_row_holding_the_vouch_wait_is_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
+    let file = crate::machine::dir(dir.path()).join(crate::machine::RUNNERS_FILE);
+    let edited = std::fs::read_to_string(&file).unwrap().replacen(
+        "\"name\"",
+        "\"vouchWait\":10,\"name\"",
+        1,
+    );
+    std::fs::write(&file, edited).unwrap();
+    std::fs::set_permissions(&file, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+    assert!(chosen_limits_of(dir.path(), "builds").is_err());
+}

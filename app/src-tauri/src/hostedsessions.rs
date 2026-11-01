@@ -1369,18 +1369,17 @@ impl HostLink {
             return self.call_within(command, ANSWER_WITHIN);
         }
         let secs = self.limits().in_force(AnswerWait);
-        self.call_refused_within(command, Duration::from_secs(secs))
-            .map_err(|refused| {
-                if refused.code.is_empty() && refused.why == NOT_IN_TIME {
-                    let hit = AnswerWait.limit().waited(secs, None);
-                    format!(
-                        "the runner did not answer in time: {}",
-                        self.limit_said(hit)
-                    )
-                } else {
-                    refused.why
-                }
-            })
+        // Only this machine's own clock says the wait ran out: no words of a runner can.
+        match self.call_timed(command, Duration::from_secs(secs)) {
+            Some(answered) => answered.map_err(|refused| refused.why),
+            None => {
+                let hit = AnswerWait.limit().waited(secs, None);
+                Err(format!(
+                    "the runner did not answer in time: {}",
+                    self.limit_said(hit)
+                ))
+            }
+        }
     }
 
     /// [`Self::call`], waiting at most `within`.
@@ -1396,6 +1395,20 @@ impl HostLink {
         command: Command,
         within: Duration,
     ) -> Result<Answer, purlis_session_protocol::session::Refusal> {
+        self.call_timed(command, within).unwrap_or_else(|| {
+            Err(purlis_session_protocol::session::Refusal {
+                code: String::new(),
+                why: NOT_IN_TIME.to_owned(),
+            })
+        })
+    }
+
+    /// The host's answer to `command`, or `None` where `within` ran out first.
+    fn call_timed(
+        &self,
+        command: Command,
+        within: Duration,
+    ) -> Option<Result<Answer, purlis_session_protocol::session::Refusal>> {
         let (answered, answer) = std::sync::mpsc::channel();
         let client = Arc::clone(&self.client);
         self.runtime.spawn(async move {
@@ -1405,14 +1418,12 @@ impl HostLink {
             code: String::new(),
             why,
         };
-        match answer.recv_timeout(within) {
-            Ok(Ok(answer)) => Ok(answer),
-            Ok(Err(why)) => Err(why
-                .refusal()
+        let answered = answer.recv_timeout(within).ok()?;
+        Some(answered.map_err(|why| {
+            why.refusal()
                 .cloned()
-                .unwrap_or_else(|| unanswered(why.to_string()))),
-            Err(_) => Err(unanswered(NOT_IN_TIME.to_owned())),
-        }
+                .unwrap_or_else(|| unanswered(why.to_string()))
+        }))
     }
 
     /// [`Self::call`], for a command of a chat's start (#4264): waits until the host answers, its
@@ -1422,7 +1433,8 @@ impl HostLink {
     /// commands wait on, so it keeps a quick command's limit.
     fn call_of_a_start(&self, command: Command) -> Result<Answer, String> {
         if !can_be_cancelled() {
-            return self.call(command);
+            // It may run under a lock window commands wait on: never a pool's raised wait.
+            return self.call_within(command, ANSWER_WITHIN);
         }
         let (answered, answer) = std::sync::mpsc::channel();
         let client = Arc::clone(&self.client);

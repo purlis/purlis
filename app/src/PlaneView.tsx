@@ -588,6 +588,9 @@ const NONE: readonly never[] = [];
  *  tab, opened as a chat instead (ADR 0062). */
 type Where = { tab: true; in?: string; prefer?: string } | { split: Direction };
 
+/** The folder a start in `where` names, if it names one. */
+const cwdOf = (where: Where): string | null => ("in" in where ? (where.in ?? null) : null);
+
 /** What a new shell tab has typed into it: a line spelled out (FR-4's `gh auth login`), a
  *  harness whose compiled-in installer the core types itself (FR-29, V65), or the sandbox's
  *  install command, which the core types and leaves for the person to run (SD-30, V78 c).
@@ -3563,7 +3566,9 @@ export const PlaneView = memo(function PlaneView({
         // cannot see beside the rows is one they cannot act on.
         // Over a pool's limit, what to raise it to: asked of the core, as the sign-in below is.
         // Said together, so a form on screen isn't taken down and drawn again between them.
-        const offer = await commands.poolLimitOffer(profile, refused).catch(() => null);
+        const offer = await commands
+          .poolLimitOffer(profile, refused, root ?? null, cwdOf(picking.where))
+          .catch(() => null);
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
         setPickerLimit(offer === null ? undefined : { offer, refused, profile });
@@ -4365,7 +4370,9 @@ export const PlaneView = memo(function PlaneView({
             return;
           }
           // Over a pool's limit, the picker that comes up offers to raise it (spec #4275).
-          const offer = await commands.poolLimitOffer(only.name, refused).catch(() => null);
+          const offer = await commands
+            .poolLimitOffer(only.name, refused, root ?? null, cwdOf(where))
+            .catch(() => null);
           setPickerTrouble(refused);
           setPickerLimit(offer === null ? undefined : { offer, refused, profile: only.name });
         } else setPickerTrouble(undefined);

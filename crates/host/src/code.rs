@@ -311,9 +311,14 @@ impl Hosting {
         })
         .await
         .map_err(|_| {
+            let secs = within.as_secs();
+            let took = if secs % 60 == 0 {
+                format!("{} minutes", secs / 60)
+            } else {
+                format!("{secs} seconds")
+            };
             not_started(format!(
-                "the transfer took longer than {} seconds, so it was given up",
-                within.as_secs()
+                "the transfer took longer than {took}, so it was given up"
             ))
         })??;
         Ok(moved)

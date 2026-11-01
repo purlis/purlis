@@ -733,9 +733,10 @@ pub fn chosen_limits_of(
 /// purlis's default. Only the wait: every check around a sign-in stands.
 #[must_use]
 pub fn longest_login_of(config_root: &Path, name: &str) -> std::time::Duration {
-    let chosen = chosen_limits_of(config_root, name).unwrap_or_default();
-    let minutes = chosen.in_force(crate::poollimits::LimitId::SignInWait);
-    std::time::Duration::from_secs(minutes.saturating_mul(60))
+    chosen_limits_of(config_root, name)
+        .unwrap_or_default()
+        .wait(crate::poollimits::LimitId::SignInWait)
+        .unwrap_or(crate::profilestore::sign_in::driven::LONGEST)
 }
 
 /// **Sets pool `name`'s limit `id` to `value`**, or, `None`, back to purlis's default (spec
@@ -1488,7 +1489,14 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         },
         frames: count(fields.get("frames"))?,
         width: count(fields.get("width"))?,
-        chosen: crate::poollimits::Chosen::from_row(fields).ok()?,
+        // The same checks as the command's: a limit only a cluster pool has is no Docker pool's.
+        chosen: crate::poollimits::Chosen::from_row(fields)
+            .ok()
+            .filter(|chosen| {
+                !crate::poollimits::all()
+                    .iter()
+                    .any(|limit| limit.clusters_only && chosen.get(limit.id).is_some())
+            })?,
     };
     Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
 }

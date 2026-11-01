@@ -694,7 +694,7 @@ fn keep_on_as(
         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
         .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
         .map_err(|why| {
-            if why == crate::runnerlinks::LATE {
+            if why == crate::runnerlinks::ANSWER_LATE {
                 let secs = kept.limits.in_force(LimitId::AnswerWait);
                 let hit = LimitId::AnswerWait.limit().waited(secs, None);
                 format!("{why}: {}", purlis_core::poollimits::hit_on(pool, hit))
@@ -753,18 +753,38 @@ fn offer_of(over: onrunner::OverLimit) -> Option<PoolLimitOffer> {
 /// Start a chat offers beside that refusal. Asked of the core, never read from the words.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_limit_offer(profile: String, refused: String) -> Option<PoolLimitOffer> {
+pub async fn pool_limit_offer(
+    profile: String,
+    refused: String,
+    root: Option<String>,
+    cwd: Option<String>,
+) -> Option<PoolLimitOffer> {
     onrunner::over_limit(&profile, &refused)
         .and_then(offer_of)
         .or_else(|| {
-            let (pool, hits) = purlis_core::poollimits::hits_said_in(&refused)?;
-            offer_of(onrunner::OverLimit {
-                profile,
-                pool: Some(pool),
-                hits,
-                said: refused,
-            })
+            // The pool this start runs on, by this machine's store: nothing a runner said.
+            let root = PathBuf::from(root?);
+            let workspace =
+                crate::chats::workspace_at_start(Some(&root), cwd.as_deref().map(Path::new));
+            let pool =
+                purlis_core::pools::runs_on(&config_root().ok()?, &root, workspace.as_deref())
+                    .ok()??;
+            offer_of_hits(pool, &refused)
         })
+}
+
+/// The offer of the limits of `pool` that purlis measured and said in the words `refused`.
+fn offer_of_hits(pool: String, refused: &str) -> Option<PoolLimitOffer> {
+    let hits = purlis_core::poollimits::hits_said_in(&pool, refused);
+    if hits.is_empty() {
+        return None;
+    }
+    offer_of(onrunner::OverLimit {
+        profile: String::new(),
+        pool: Some(pool),
+        hits,
+        said: refused.to_owned(),
+    })
 }
 
 /// **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
@@ -772,7 +792,9 @@ pub async fn pool_limit_offer(profile: String, refused: String) -> Option<PoolLi
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_limit_offer_for_move(pool: String, refused: String) -> Option<PoolLimitOffer> {
-    onrunner::over_limit_on(&pool, &refused).and_then(offer_of)
+    onrunner::over_limit_on(&pool, &refused)
+        .and_then(offer_of)
+        .or_else(|| offer_of_hits(pool, &refused))
 }
 
 /// **One of a pool's limits, as its page draws it** (#4285).
@@ -830,7 +852,9 @@ fn limits_shown(chosen: &purlis_core::poollimits::Chosen) -> PoolLimitsPage {
         .filter_map(|group| {
             let held: Vec<&Limit> = all()
                 .iter()
-                .filter(|limit| limit.group == group && !limit.advanced)
+                // The vouch wait is the add's alone: no later attempt waits on it, so a value
+                // here would change nothing.
+                .filter(|limit| limit.group == group && !limit.advanced && !limit.clusters_only)
                 .collect();
             let first = held.first()?;
             let same = held
@@ -1472,10 +1496,8 @@ pub async fn pool_sign_in_start(
             Yours::Cluster(_) => None,
         };
         // The pool's limit as it stands: only the wait changes, and every check above stands.
-        let wait = purlis_core::runners::chosen_limits_of(&config, &pool)
-            .unwrap_or_default()
-            .in_force(LimitId::SignInWait);
-        let longest = Duration::from_secs(wait.saturating_mul(60));
+        let longest = purlis_core::runners::longest_login_of(&config, &pool);
+        let wait = longest.as_secs() / 60;
         let login = login_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
         let carry: callback::Carry = {
             let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
