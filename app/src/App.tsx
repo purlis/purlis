@@ -961,13 +961,16 @@ function App() {
    * Create a project on this Mac: a project with no repo, in the folder its name gave it, with its
    * refusal kept on the page that asked. It comes through the trust gate, and the guided steps
    * take it up as they take up a repo opened there.
+   *
+   * **It lives only on this Mac, so nothing asks which forge** (#1810 story 8): with no repo to read
+   * one from, the project is written with the first run's default, which publishing it replaces.
    */
-  const firstRunMake = useCallback((folder: string, template: string | null) => {
+  const firstRunMake = useCallback((folder: string, template: string | null, forge: ForgeWord) => {
     setRepoTrouble(undefined);
     setRepoForgeAsk(undefined);
     setOpeningRepo(true);
     void commands
-      .createProject(folder, false, null, null, template)
+      .createProject(folder, false, null, forge, template)
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
       .then((answer) => {
         setOpeningRepo(false);
@@ -976,7 +979,13 @@ function App() {
           return;
         }
         const made = answer.data.opened;
-        if (made === null) return;
+        if (made === null) {
+          setRepoForgeAsk({
+            why: answer.data.asks_forge ?? "",
+            answer: (named) => firstRunMake(folder, template, named),
+          });
+          return;
+        }
         if (made.plane === null) {
           const ask = made.ask;
           if (ask)
@@ -2657,7 +2666,7 @@ function App() {
                       // Create a project's act, on every window: a repo into this machine's project
                       // (FR-4), laid out from the template picked beside it (FR-17).
                       onOpenRepo={firstRunRepo}
-                      onMakeProject={firstRunMake}
+                      onMakeProject={(folder, template) => firstRunMake(folder, template, "github")}
                       onSignInToForge={(row) => {
                         setRepoTrouble(undefined);
                         void signInToForge(row).then(setRepoTrouble);

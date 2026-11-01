@@ -335,21 +335,21 @@ function OnThisMac({
           {here.why}
         </p>
       )}
-      {templates && templates.length > 0 && (
+      {/* Drawn with None alone until the machine is read, so Create project does not jump. */}
+      {templates?.length !== 0 && (
         <SettingRow
           label="Template"
-          help="Personas, a review checklist and the commands purlis asks you about before a chat runs them."
+          setting="create-project-template"
+          help={
+            templates?.find((one) => one.id === template)?.summary ?? "Only the steward persona."
+          }
           control={(ids) => (
             <Choice
               ids={ids}
               kind="select"
               options={[
-                { value: NONE, label: "None", says: "Only the steward persona." },
-                ...templates.map((one) => ({
-                  value: one.id,
-                  label: one.title,
-                  says: one.summary,
-                })),
+                ...(templates ?? []).map((one) => ({ value: one.id, label: one.title })),
+                { value: NONE, label: "None" },
               ]}
               value={template}
               onValueChange={setTemplate}

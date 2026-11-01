@@ -4518,6 +4518,10 @@ body {
   list-style: none;
 }
 
+.welcome-doors > li {
+  display: grid;
+}
+
 .welcome-sign-in {
   padding-block-start: var(--space-5);
   border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));

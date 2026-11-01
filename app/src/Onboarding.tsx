@@ -131,7 +131,8 @@ export function Onboarding({
   // the steps guide it is not known yet. A welcome drawn now could be swapped for the other one
   // under a door press, which drops the page the press opened. It is one small local read, waited on
   // for `PLACE_READ_DEADLINE_MS` at most.
-  if (placeRead === undefined && welcome.adding) return null;
+  if (placeRead === undefined && welcome.adding)
+    return linesAt && <div className="window-notices-at" ref={linesAt} />;
 
   // Not guiding (a window full of projects, on a machine that has been through the steps): the
   // plain welcome, still behind the git gate, with no step drawn and no door kept.
