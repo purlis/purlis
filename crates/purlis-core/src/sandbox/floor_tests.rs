@@ -2041,7 +2041,7 @@ fn a_link_on_the_way_to_a_held_path_is_held_by_its_own_name() {
     std::os::unix::fs::symlink(home.join("real"), home.join("second/hop")).expect("a link");
     std::os::unix::fs::symlink(home.join("second/hop"), home.join(".local")).expect("a link");
     let held = home.join(".local/inner/auth.json");
-    let denied = [seatbelt::Denial {
+    let denied = [crate::sandbox::Denial {
         class: Class::Integrity,
         path: held.clone(),
         access: Access::Write,
@@ -2076,7 +2076,7 @@ fn a_link_on_the_way_to_a_held_path_cannot_be_moved_away_at_the_floor() {
     std::fs::create_dir_all(home.join("real/inner")).expect("a folder");
     std::fs::create_dir(home.join("second")).expect("a folder");
     std::os::unix::fs::symlink(home.join("real"), home.join("second/hop")).expect("a link");
-    let denied = [seatbelt::Denial {
+    let denied = [crate::sandbox::Denial {
         class: Class::Integrity,
         path: home.join("second/hop/inner/auth.json"),
         access: Access::Write,
