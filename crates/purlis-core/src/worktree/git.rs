@@ -747,6 +747,8 @@ fn lfs_names_a_program(section: &str, sub: Option<&str>, variable: &str, value: 
         ("lfs", Some(sub), "path") => sub.starts_with("customtransfer."),
         ("lfs", Some(sub), "clean" | "smudge") => sub.starts_with("extension."),
         ("lfs", None, "standalonetransferagent") => true,
+        // Not a program, but where git-lfs writes each file it reads, outside any sandbox.
+        ("lfs", None, "storage") => true,
         ("credential", _, "helper") => true,
         ("core", None, "sshcommand" | "askpass") => true,
         _ => false,
@@ -763,7 +765,8 @@ const LFS_SKIP_SMUDGE: &str = "GIT_LFS_SKIP_SMUDGE";
 /// so has to be kept off the network: a clone purlis wired reads its LFS files through the clean
 /// filter, or git takes their content for a change, and stores it whole in a commit.
 ///
-/// The filter gains nothing by it. [`programs_held`] tells it never to download
+/// The filter gains nothing by it while the wiring stands (a repository with no helper of its
+/// own has the person's filter and helpers, as any clone of theirs does). [`programs_held`] tells it never to download
 /// ([`LFS_SKIP_SMUDGE`]), so no credential is asked for and no `.netrc` read, and a call off the
 /// network also resets every helper on the command line, which git-lfs's own `git credential`
 /// inherits. A call on the network has only the one helper [`NETWORK_RULE`] names, and still

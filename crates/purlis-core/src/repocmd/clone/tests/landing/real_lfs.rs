@@ -520,7 +520,18 @@ fn real_git_lfs_an_update_through_purlis_in_a_wired_clone_leaves_pointers_and_as
     std::fs::write(dest.join("mine.txt"), "mine\n").unwrap();
     plain_git(&dest, &["add", "--", "mine.txt"]);
     plain_git(&dest, &["commit", "-q", "-m", "mine"]);
-    let rebased = git::run_untimed(&dest, &["rebase", "upstream"]).unwrap();
+    let rebased = git::run_untimed(
+        &dest,
+        &[
+            "-c",
+            "user.name=Purlis",
+            "-c",
+            "user.email=purlis@example.invalid",
+            "rebase",
+            "upstream",
+        ],
+    )
+    .unwrap();
     assert!(rebased.ok(), "{rebased:?}");
     assert_reads_clean(&dest);
     assert_eq!(stored(&dest, "HEAD", "new.bin"), new.pointer());
@@ -561,6 +572,32 @@ fn real_git_lfs_an_update_through_purlis_in_a_wired_clone_leaves_pointers_and_as
         before,
         "the filter reached the server"
     );
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_pull_in_a_wired_clone_downloads_under_the_one_credential() {
+    // `git lfs` is not told to skip: it is how a pointer the filter left becomes its content.
+    if !real_git_lfs() {
+        return;
+    }
+    let (_world, server, first, dest) = landed("widget");
+    std::fs::remove_dir_all(dest.join(".git/lfs/objects")).unwrap();
+    std::fs::remove_file(dest.join("file0.bin")).unwrap();
+    let back = git::run_untimed(&dest, &["checkout", "--", "file0.bin"]).unwrap();
+    assert!(back.ok(), "{back:?}");
+    assert_eq!(
+        std::fs::read_to_string(dest.join("file0.bin")).unwrap(),
+        first.pointer()
+    );
+    let signed = server.asked.signed_batches.load(Ordering::SeqCst);
+
+    let pulled = git::run_network(&dest, Some(HELPER), &["lfs", "pull"]).unwrap();
+
+    assert!(pulled.ok(), "{pulled:?}");
+    assert!(std::fs::read(dest.join("file0.bin")).unwrap() == first.bytes);
+    assert!(server.asked.signed_batches.load(Ordering::SeqCst) > signed);
+    assert_reads_clean(&dest);
 }
 
 #[test]

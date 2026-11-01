@@ -689,6 +689,7 @@ fn lfs_is_held_whole_where_the_repository_names_a_program_lfs_would_run() {
         ("lfs.extension.x.clean", "./clean"),
         ("lfs.extension.x.smudge", "./smudge"),
         ("lfs.standalonetransferagent", "x"),
+        ("lfs.storage", "../elsewhere"),
         ("credential.helper", "./helper"),
         ("credential.https://host.helper", "./helper"),
         ("core.sshcommand", "./ssh"),
