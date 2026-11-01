@@ -1179,7 +1179,7 @@ pub fn before_cluster_link(
         now,
     );
     if pin != was
-        && let Err(why) = runners::keep_cluster_pin(config_root, name, &pin)
+        && let Err(why) = runners::keep_cluster_pin(config_root, pool.name(), &pin)
     {
         tracing::warn!("purlis: pool {name}'s cluster operator key moved, and was not kept: {why}");
     }

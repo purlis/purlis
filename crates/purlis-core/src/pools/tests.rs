@@ -1164,6 +1164,41 @@ mod cluster {
         assert_eq!(runners::fresh_runners(config.path()).unwrap().len(), 1);
     }
 
+    /// **A link to a chat's own runner is checked as one to its pool's is** (#3709): named whole, it
+    /// finds that runner, the pool's pin is what vouches for it, and no other pool's name does.
+    #[test]
+    fn a_fresh_runner_is_reached_by_its_own_name_and_no_other() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        let kept = claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        let name = kept.link_name();
+        let (_, found) = runners::cluster_runner_for(config.path(), &name)
+            .unwrap()
+            .unwrap();
+        assert_eq!(found, kept);
+        assert!(runners::cluster_runner_for(config.path(), "team/fresh-other").is_err());
+        assert_eq!(
+            runners::cluster_runner_for(config.path(), "other/fresh-x").unwrap(),
+            None
+        );
+        // A link made for the pool's own runner is not this one's, nor the other way round.
+        let (_, own) = runners::cluster_runner_for(config.path(), "team")
+            .unwrap()
+            .unwrap();
+        assert_ne!(own.reached(), kept.reached());
+    }
+
     #[test]
     fn a_fresh_runner_goes_with_its_chat_and_a_claim_left_keeps_its_record() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());

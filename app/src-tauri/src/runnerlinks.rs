@@ -198,7 +198,7 @@ impl ToARunner {
         let checking = (
             config.to_path_buf(),
             kubectl.clone(),
-            pool.name().to_owned(),
+            kept.link_name(),
             kept.reached(),
         );
         let kubectl = pool.kubectl(kubectl);
@@ -299,6 +299,11 @@ pub fn cluster_reached(
     name: &str,
 ) -> Result<Option<(ClusterPool, ClusterKept)>, String> {
     let (pool, runner) = name.split_once('/').unwrap_or((name, name));
+    // A chat's own fresh runner, named whole (#3709).
+    if runner.starts_with("fresh-") {
+        return purlis_core::runners::cluster_runner_for(config, name)
+            .map_err(|why| why.to_string());
+    }
     match purlis_core::runners::cluster_runner_for(config, pool).map_err(|why| why.to_string())? {
         Some((pool, kept)) if kept.name == runner => Ok(Some((pool, kept))),
         Some(_) => Err(format!(
@@ -471,6 +476,12 @@ fn drains(config_root: &Path, name: &str) -> bool {
         && clusters
             .iter()
             .any(|kept| kept.name == pool && kept.name == runner)
+    {
+        return false;
+    }
+    // Nor does a chat's own runner: it ends with its chat (#3709).
+    if let Ok(fresh) = purlis_core::runners::fresh_runners(config_root)
+        && fresh.iter().any(|kept| kept.link_name() == name)
     {
         return false;
     }

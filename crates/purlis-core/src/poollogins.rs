@@ -165,7 +165,14 @@ impl Bound {
         reached: Option<&str>,
         vouch: &dyn Fn(&Path, &str) -> Result<String, crate::clusterpool::Refused>,
     ) -> Result<Option<Bound>, String> {
-        let read = || crate::runners::cluster_runner_for(config_root, pool);
+        // A link to a chat's own runner of the pool names that runner (#3709). Only its own pool's.
+        let link = reached
+            .and_then(|reached| reached.split_once('@'))
+            .map(|(name, _)| name)
+            .filter(|name| name.split_once('/').is_some_and(|(of, _)| of == pool))
+            .filter(|name| *name != format!("{pool}/{pool}"))
+            .unwrap_or(pool);
+        let read = || crate::runners::cluster_runner_for(config_root, link);
         let Some((held, kept)) = read().map_err(|why| why.to_string())? else {
             return Ok(None);
         };
@@ -182,7 +189,7 @@ impl Bound {
         if crate::runnertaint::pool_ran_unsandboxed(config_root, pool) {
             return Err(crate::runnertaint::sent_nothing_on(pool));
         }
-        let pod = vouch(config_root, pool).map_err(|why| {
+        let pod = vouch(config_root, link).map_err(|why| {
             tracing::info!("purlis: pool {pool}'s runner was not vouched for now: {why}");
             not_vouched_said(pool)
         })?;

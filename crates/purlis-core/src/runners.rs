@@ -2057,6 +2057,15 @@ impl ClusterKept {
         }
     }
 
+    /// **What a link to this runner names it by** (#3709): its pool's name, or `<pool>/<runner>`
+    /// for a chat's fresh runner.
+    pub fn link_name(&self) -> String {
+        match &self.chat {
+            Some(_) => format!("{}/{}", self.name, self.runner_name()),
+            None => self.name.clone(),
+        }
+    }
+
     /// **The name a link to this runner reports** (`relay_to`'s answer, #4071): `<pool>/<runner>`
     /// with the link key it was pinned with, so a link made to a runner since forgotten never
     /// reads as the one kept under its name now.
@@ -2116,11 +2125,31 @@ pub fn fresh_runner_of(
 
 /// The cluster pool `name` and its runner, where both are kept here; `None` where no cluster
 /// pool is called `name`, and refused where one is but its runner is not.
+///
+/// `<pool>/fresh-…` names that pool's fresh runner ([`ClusterKept::link_name`], #3709), so what a
+/// link checks of a runner holds for a chat's own runner just as it does for its pool's.
 pub fn cluster_runner_for(
     config_root: &Path,
     name: &str,
 ) -> Result<Option<(ClusterPool, ClusterKept)>, Refused> {
     let held = load(config_root)?;
+    if let Some((pool_name, _)) = name.split_once('/').filter(|(pool, runner)| pool != runner) {
+        let Some(pool) = held.clusters.iter().find(|pool| pool.name() == pool_name) else {
+            return Ok(None);
+        };
+        pool.pin()?;
+        let kept = held
+            .fresh_runners
+            .iter()
+            .find(|kept| kept.link_name() == name)
+            .ok_or_else(|| {
+                Refused::Other(format!(
+                    "cluster pool {pool_name} has no runner {name} on this machine, so nothing \
+                     was reached"
+                ))
+            })?;
+        return Ok(Some((pool.clone(), kept.clone())));
+    }
     let Some(pool) = held.clusters.into_iter().find(|pool| pool.name() == name) else {
         return Ok(None);
     };
