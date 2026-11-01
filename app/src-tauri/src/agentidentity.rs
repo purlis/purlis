@@ -312,8 +312,8 @@ pub async fn agent_identity_stand(
 /// **The exact lines Finish adds** (Q11), from the one source Finish writes from.
 #[tauri::command]
 #[specta::specta]
-pub fn agent_identity_lines(app: String, personas: Vec<String>) -> String {
-    core::lines_shown(&app, &personas)
+pub async fn agent_identity_lines(app: String, personas: Vec<String>) -> Result<String, String> {
+    Ok(core::lines_shown(&app, &personas))
 }
 
 /// **Finish** (Q11, Q17): proves a real token first, so a failed proof writes nothing, then adds
