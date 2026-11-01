@@ -2986,8 +2986,11 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     {
         // A runner this was held on is kept no more (Make the runner again, a drain's end): the
         // relay holds the project on the one after it, which answers yes and holds none of its
-        // code, so no word comes back that it does not hold it.
-        if !(*kept_on_the_runner && a_runner_is_gone(connection, runners)) {
+        // code, so no word comes back that it does not hold it. While its link is down it is held
+        // again too: a hold is the step that wakes an idle runner and waits for it, and what
+        // comes next on the link would only be refused (#4403).
+        let link_is_down = lock(&link.shared.runner_log).link_is_down();
+        if !(*kept_on_the_runner && (link_is_down || a_runner_is_gone(connection, runners))) {
             return Ok((link, project.clone()));
         }
         crate::runnercode::forget(sent);

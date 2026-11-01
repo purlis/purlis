@@ -1372,7 +1372,8 @@ impl Hosting {
     }
 
     /// **How long a start still waits for `runner`** (#4403), with `asked`, its time, where it was
-    /// just asked to run again. A wake's time is not moved by asking again.
+    /// just asked to run again: that answer means it is suspended now, so any time held for it
+    /// is an earlier wake's.
     pub(crate) fn waits_for(
         &self,
         runner: &str,
@@ -1386,7 +1387,7 @@ impl Hosting {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         waking.retain(|_, until| *until > now);
         if let Some(asked) = asked {
-            waking.entry(runner.to_owned()).or_insert(now + asked);
+            waking.insert(runner.to_owned(), now + asked);
         }
         waking
             .get(runner)

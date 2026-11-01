@@ -322,19 +322,24 @@ impl Relay {
                 return Err(ended());
             }
         }
-        let comes_up = matches!(
-            &*standing.borrow(),
-            Standing::Down(down) if !down.key_changed && !down.gone
-        );
+        let (told, pushed) = mpsc::channel(MOST_PUSHED_QUEUED);
+        let comes_up = {
+            // Counted, so a carry-over that began meanwhile waits for what is kept here.
+            let _changing = Counted::start(&relayed.client.changing);
+            let comes_up = matches!(
+                &*standing.borrow(),
+                Standing::Down(down) if !down.key_changed && !down.gone
+            );
+            if comes_up {
+                let mut kept = relayed.client.kept();
+                kept.subscriber = Some(told);
+                kept.subscriptions += 1;
+                kept.cursor = since.clone();
+            }
+            comes_up
+        };
         if !comes_up {
             return session::Host::subscribe(self, since, peer).await;
-        }
-        let (told, pushed) = mpsc::channel(MOST_PUSHED_QUEUED);
-        {
-            let mut kept = relayed.client.kept();
-            kept.subscriber = Some(told);
-            kept.subscriptions += 1;
-            kept.cursor = since.clone();
         }
         // A link that came up just before that was kept was not carried it: it is told here.
         if matches!(&*standing.borrow(), Standing::Up(_)) {
