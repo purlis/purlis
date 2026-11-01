@@ -2173,8 +2173,13 @@ fn harnesses_in_the_studio(
             // Every adapter is a harness's ([`crate::harness_plugin::adapters`]).
             let harness = Harness::of_kind(adapter.harness())?;
             // What it finds itself, and what every clone holds for it.
+            let t0 = std::time::Instant::now();
             let own = crate::harness_plugin::harness_skills(adapter, env, &choices);
+            probe_4351("    h.own", t0);
+            let t0 = std::time::Instant::now();
             let repo = crate::harness_plugin::repo_skills(adapter, &choices, &clones);
+            probe_4351("    h.repo", t0);
+            let t0 = std::time::Instant::now();
             // Each built-in skill by the name this harness knows it by (`purlis-<name>` on
             // opencode's route), so a copy of that name is the clash, and a bare one is not.
             let route = harness.skills();
@@ -2194,6 +2199,8 @@ fn harnesses_in_the_studio(
                 || pins.to_vec(),
                 None,
             );
+            probe_4351("    h.routed", t0);
+            let t0 = std::time::Instant::now();
             // Every clone's repo skills beside that, for their clashes, their rows and what a
             // repo leaves out: no one chat's set, so no routing.
             let set = SkillSet {
@@ -2217,7 +2224,10 @@ fn harnesses_in_the_studio(
                 outside,
                 rows: Vec::new(),
             };
+            probe_4351("    h.beside", t0);
+            let t0 = std::time::Instant::now();
             one.rows = outside_rows(&one, plane, known, reading);
+            probe_4351("    h.rows", t0);
             Some(one)
         })
         .collect()

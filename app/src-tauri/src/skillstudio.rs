@@ -87,10 +87,14 @@ pub(crate) fn with_list_lints<T>(
     root: &std::path::Path,
     with: impl FnOnce(&[&dyn purlis_core::skills::SkillLint]) -> T,
 ) -> T {
+    let t0 = std::time::Instant::now();
     purlis_core::skills::studio::with_studio(executor, root, |studio| {
+        probe("with_studio", t0);
+        let t0 = std::time::Instant::now();
         let lints = studio
             .map(|studio| studio.list_lints())
             .filter(|lints| !lints.is_empty());
+        probe("list_lints", t0);
         let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
             .iter()
             .map(|lints| lints as &dyn purlis_core::skills::SkillLint)
