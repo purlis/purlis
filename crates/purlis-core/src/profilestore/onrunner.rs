@@ -825,6 +825,7 @@ pub fn kept_for_the_desktop(
     if let Some(files) = &checked {
         super::made::settings_kept(homes, &record, files)?;
     }
+    super::made::loaded_unsent_cleared(&record)?;
     Ok(standing_for_the_wire(standing(&record, look)))
 }
 
