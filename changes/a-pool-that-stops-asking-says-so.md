@@ -10,3 +10,5 @@
 - **A chat's several runs of a refused tool on a cluster runner ask you once.** Runs started at the
   same time now wait for the first one's answer rather than each asking. A chat started again under
   the same number no longer waits on the pace its predecessor left.
+- **A lock on purlis's own files no longer waits for ever.** Most of them now wait at most 30 seconds,
+  then go on, as they do where a lock cannot be had.

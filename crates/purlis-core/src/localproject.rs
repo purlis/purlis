@@ -185,7 +185,7 @@ impl std::fmt::Display for Moved {
 /// started (see the module).
 pub fn run(places: &Places, seams: &Seams<'_>) -> Moved {
     // Held for the whole move: a second launch waits, then finds it moved or finishes it.
-    let _one_at_a_time = crate::machine::Lock::named(&places.config_root, MOVE_LOCK);
+    let _one_at_a_time = crate::machine::Lock::named_until_free(&places.config_root, MOVE_LOCK);
     let moved = moving(places, seams);
     keep_why(places, &moved);
     moved

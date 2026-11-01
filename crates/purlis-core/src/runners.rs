@@ -562,7 +562,11 @@ pub struct Locked(#[expect(dead_code, reason = "held for its drop")] crate::mach
 
 /// Takes [`Locked`].
 pub fn lock(config_root: &Path) -> Locked {
-    Locked(crate::machine::Lock::named(config_root, RUNNERS_LOCK))
+    // Some pool work holds it across a container's making.
+    Locked(crate::machine::Lock::named_until_free(
+        config_root,
+        RUNNERS_LOCK,
+    ))
 }
 
 /// **Records `pool`, once** (#2679): refused where a pool or a runner of its name is kept

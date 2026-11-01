@@ -382,20 +382,6 @@ fn a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it() {
         // Nor is what holds it opened: one holding that lock would stop the runner following.
         assert_eq!(chat.tried(&["read", &lock]), "EACCES", "{name}");
 
-        // Measured for the plane's ticket: printed, not held to anything yet.
-        let store_lock = machine::dir(&config).join("measured.lock");
-        fs::write(&store_lock, "").expect("a file in the store's folder");
-        let measured = chat.said(
-            python.display().to_string(),
-            vec![
-                "-c".to_owned(),
-                "import fcntl, os, sys\nfd = os.open(sys.argv[1], os.O_RDONLY)\nfcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\nprint('ok')".to_owned(),
-                store_lock.display().to_string(),
-            ],
-        );
-        let _ = writeln!(std::io::stderr(), "MEASURED {name}: {measured}");
-        println!("MEASURED {name}: {measured}");
-
         // Nothing is left of the pod's copy to read.
         match &left_there {
             None => assert_eq!(chat.tried(&["read", &handoff]), "ENOENT", "{name}"),

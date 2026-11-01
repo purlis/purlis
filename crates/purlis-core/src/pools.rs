@@ -816,7 +816,7 @@ pub fn claim_name(device: &str, pool: &str) -> String {
 /// that pool takes it first, so it waits for the add to finish rather than meet a pool half
 /// made.
 fn adding(config_root: &Path, name: &str) -> crate::machine::Lock {
-    crate::machine::Lock::named(config_root, &format!("cluster-add-{name}.lock"))
+    crate::machine::Lock::named_until_free(config_root, &format!("cluster-add-{name}.lock"))
 }
 
 /// How long adding a cluster pool waits for the cluster operator to vouch for its runner.

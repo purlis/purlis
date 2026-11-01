@@ -2096,13 +2096,19 @@ const LOCK: &str = "machine.json.lock";
 /// `ENOTSUP`), which trades a rare lost write for a permanent one. What is lost when the lock
 /// is missing is exactly what was lost before it existed, so this can only ever add safety.
 ///
-/// It is taken **blocking**. `flock` is released by the kernel when the descriptor closes,
-/// including on a process that was killed, so there is no holder that outlives a couple of
-/// syscalls and nothing here can wedge on a stale lock.
+/// `flock` is released by the kernel when the descriptor closes, including on a process that was
+/// killed, so nothing here can wedge on a stale lock. **Its wait has a limit**
+/// ([`A_LOCK_WAITS_AT_MOST`]), so no holder stops a writer for good: past it the writer goes on, as
+/// it does where no lock can be had. What holds a lock across long work says so with
+/// [`Lock::named_until_free`] or [`Lock::named_within`].
 ///
 /// [`Lock::named`] takes the same kind of lock on another file beside the store, for another
 /// read-modify-write of a file in this directory (`windowprefs`' layout, NO-2).
 pub(crate) struct Lock(Option<std::fs::File>);
+
+/// How long a lock is waited for, unless its taker says otherwise: its usual holder holds it for a
+/// read and a write, on a machine that may be very busy.
+const A_LOCK_WAITS_AT_MOST: std::time::Duration = std::time::Duration::from_secs(30);
 
 impl Lock {
     fn on(config_root: &Path) -> Self {
@@ -2111,6 +2117,29 @@ impl Lock {
 
     /// Takes the lock whose file is `name`, beside the store.
     pub(crate) fn named(config_root: &Path, name: &str) -> Self {
+        Self::named_within(config_root, name, A_LOCK_WAITS_AT_MOST)
+    }
+
+    /// [`Self::named`], waiting at most `within`: for a holder that may wait on a person.
+    pub(crate) fn named_within(
+        config_root: &Path,
+        name: &str,
+        within: std::time::Duration,
+    ) -> Self {
+        Self::beside_the_store(config_root, name, Some(within))
+    }
+
+    /// [`Self::named`], waiting for as long as it takes: for what holds it across long work, on the
+    /// person's own press or a launch, where going on without it would meet that work half done.
+    pub(crate) fn named_until_free(config_root: &Path, name: &str) -> Self {
+        Self::beside_the_store(config_root, name, None)
+    }
+
+    fn beside_the_store(
+        config_root: &Path,
+        name: &str,
+        within: Option<std::time::Duration>,
+    ) -> Self {
         // A platform charter keeps no store on gets no directory made for one either.
         if supported().is_err() {
             return Self(None);
@@ -2118,27 +2147,59 @@ impl Lock {
         let Ok(dir) = private_dir(config_root) else {
             return Self(None);
         };
-        Self::at(&dir.join(name))
+        Self::taken(&dir.join(name), within)
     }
 
     /// Takes the lock whose file is `path`, in a directory the caller has made: for a
     /// read-modify-write of a file in a folder of its own under this one (`forge-budget`,
     /// #1164). The same best effort as [`Lock::named`].
     pub(crate) fn at(path: &Path) -> Self {
+        Self::taken(path, Some(A_LOCK_WAITS_AT_MOST))
+    }
+
+    /// Whether the lock is held: false where it could not be had, or its wait ran out.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub(crate) fn held(&self) -> bool {
+        self.0.is_some()
+    }
+
+    fn taken(path: &Path, within: Option<std::time::Duration>) -> Self {
         // `create` and not `create_new`: the lock file is the *name* two processes agree on,
         // it holds nothing, and one left behind by a previous run is the ordinary case.
         let Ok(file) = std::fs::File::create(path) else {
             return Self(None);
         };
         #[cfg(unix)]
-        match rustix::fs::flock(&file, rustix::fs::FlockOperation::LockExclusive) {
-            Ok(()) => Self(Some(file)),
-            Err(_) => Self(None),
+        {
+            use rustix::fs::{FlockOperation, flock};
+            let Some(within) = within else {
+                return match flock(&file, FlockOperation::LockExclusive) {
+                    Ok(()) => Self(Some(file)),
+                    Err(_) => Self(None),
+                };
+            };
+            let until = std::time::Instant::now() + within;
+            loop {
+                match flock(&file, FlockOperation::NonBlockingLockExclusive) {
+                    Ok(()) => return Self(Some(file)),
+                    Err(rustix::io::Errno::WOULDBLOCK | rustix::io::Errno::INTR) => {}
+                    Err(_) => return Self(None),
+                }
+                if std::time::Instant::now() >= until {
+                    tracing::warn!(
+                        "purlis: {} stayed locked past its wait; going on without it",
+                        path.display()
+                    );
+                    return Self(None);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
         }
         // Nothing to lock off unix, and nothing to lose: [`supported`] refuses the store
         // outright there (ADR 0031, charter-app#98), so `update` never reaches a write.
         #[cfg(not(unix))]
         {
+            let _ = within;
             drop(file);
             Self(None)
         }
