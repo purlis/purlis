@@ -1255,7 +1255,7 @@ pub const DISPATCH_ALLOW: [&str; 6] = [
 /// to the one chat that dispatched the caller. None starts a chat. `--wait` is the dispatch
 /// itself, waited on: it is matched only where the flag comes first, and asked about
 /// otherwise.
-pub const DISPATCH_TASK_ALLOW: [&str; 11] = [
+pub const DISPATCH_TASK_ALLOW: [&str; 12] = [
     "Bash(purlis dispatch --wait *)",
     "Bash(purlis dispatch wait *)",
     "Bash(purlis dispatch list)",
