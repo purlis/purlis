@@ -156,6 +156,9 @@ pub struct Loaded {
     pub files: Vec<PathBuf>,
     /// What it would narrow.
     pub narrowing: Narrowing,
+    /// Whether it is manual-only, by its own `SKILL.md` read as YAML ([`crate::handed`]), as every
+    /// harness is told it: run only when the person asks.
+    pub manual: bool,
 }
 
 /// **Loads `effective`, a skill of a chat's set, as a harness that reads `honours` is handed
@@ -171,6 +174,7 @@ pub fn load(effective: &Effective, honours: &crate::Honours) -> Result<Loaded, S
     let text = crate::handed_text(&own, honours).map_err(refused)?;
     Ok(Loaded {
         narrowing: narrowing(&text),
+        manual: crate::handed::parse(&own).is_ok_and(|read| read.manual()),
         text,
         files: folder.other_files(),
     })

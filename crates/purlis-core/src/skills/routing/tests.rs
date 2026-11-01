@@ -456,7 +456,8 @@ fn use_skill_asks_a_chat_to_load_a_hidden_skill_and_holds_no_run_for_it() {
         let typing = chat.typed("skill-07", &[], &salt).unwrap();
 
         assert_eq!(
-            typing.text, "Load the skill skill-07 with skill_load and follow it.",
+            typing.text,
+            "Load the skill skill-07 with skill_load, person_asked true, and follow it.",
             "{harness:?}"
         );
         assert_eq!(
