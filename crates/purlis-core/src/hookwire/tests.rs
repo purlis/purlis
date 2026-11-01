@@ -2803,6 +2803,7 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Task(_)
                 | Ask::Removal(_)
                 | Ask::Propose(_)
+                | Ask::ProposeLimit(_)
                 | Ask::Browse(_)
                 | Ask::ThemePreview(_)
                 | Ask::ThemeDraft(_)

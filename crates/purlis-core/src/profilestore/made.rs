@@ -189,6 +189,8 @@ pub struct Allowed {
     /// What else it loads from its settings folder, by name, which is never sent: a runner keeps
     /// none ([`loaded_unsent_cleared`]).
     pub loaded_unsent: &'static [&'static str],
+    /// The files a desktop sends a runner that no import copies: read to send and kept there.
+    pub sent_only: &'static [&'static str],
 }
 
 /// The settings purlis imports, per harness it ships. Anything not named here is not copied:
@@ -200,12 +202,14 @@ pub const ALLOWED: [Allowed; 3] = [
         files: &["settings.json", "CLAUDE.md"],
         folders: &["agents", "commands", "output-styles", "skills"],
         loaded_unsent: &["rules"],
+        sent_only: &[super::sent::MCP_SERVERS_FILE],
     },
     Allowed {
         kind: "codex",
         files: &["config.toml", "AGENTS.md"],
         folders: &["prompts"],
         loaded_unsent: &["AGENTS.override.md", "hooks.json", "rules", "skills"],
+        sent_only: &[],
     },
     Allowed {
         kind: "opencode",
@@ -214,6 +218,7 @@ pub const ALLOWED: [Allowed; 3] = [
             "agent", "agents", "command", "commands", "mode", "modes", "themes",
         ],
         loaded_unsent: &["plugin", "plugins", "skill", "skills", "tool", "tools"],
+        sent_only: &[],
     },
 ];
 
@@ -1151,6 +1156,13 @@ fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<Vec<Stri
             .iter()
             .map(|n| (n, false))
             .chain(allowed.folders.iter().map(|n| (n, true)))
+            .chain(
+                allowed
+                    .sent_only
+                    .iter()
+                    .filter(|_| telling)
+                    .map(|n| (n, false)),
+            )
         {
             entry(
                 &mut place,
@@ -1214,7 +1226,7 @@ fn a_settings_path(allowed: &Allowed, path: &str) -> bool {
         return false;
     }
     if rest.is_empty() {
-        return allowed.files.contains(first);
+        return allowed.files.contains(first) || allowed.sent_only.contains(first);
     }
     allowed.folders.contains(first)
         && rest.len() <= DEEPEST
@@ -1418,6 +1430,7 @@ fn swap_each(
         .files
         .iter()
         .chain(allowed.folders)
+        .chain(allowed.sent_only)
         .try_for_each(|one| {
             let had = there(dir, one)?;
             if had {

@@ -398,3 +398,88 @@ fn a_look_that_falls_only_between_the_coarse_tints_is_read_at_every_degree() {
     assert!(breaks(121));
     assert!(falls(&theme, family), "{:?}", fallen(&theme));
 }
+
+/// A theme whose measure passes over its tints, far longer than no wait at all.
+fn measured_in_its_tints() -> ResolvedTheme {
+    themed(
+        "#ff000040",
+        0xff,
+        &json!({ "button.root.fill": "chart.4", "button.root.text": "chart.3" }),
+    )
+    .expect("a theme")
+}
+
+#[test]
+fn a_first_frame_past_its_wait_goes_on_without_the_parts_and_the_answer_is_the_same() {
+    // #4337: with no wait the creation is told there is no sheet yet; the sheet the window then
+    // asks for is the one a wait would have had.
+    let theme = measured_in_its_tints();
+    let now = std::time::Instant::now();
+    assert_eq!(stylesheet_by(&theme, now), None);
+    let far = now + std::time::Duration::from_secs(3600);
+    let waited = stylesheet_by(&theme, far).expect("written before the deadline");
+    assert!(!waited.is_empty());
+    assert_eq!(stylesheet(&theme), waited);
+}
+
+#[test]
+fn a_measure_that_is_kept_is_answered_past_any_deadline_with_no_second_pass() {
+    // #4337: a cached answer never waits, and never starts a thread to find it.
+    let theme = measured_in_its_tints();
+    let sheet = stylesheet(&theme);
+    let passes = super::passes();
+    assert_eq!(
+        stylesheet_by(&theme, std::time::Instant::now()).as_deref(),
+        Some(sheet.as_str())
+    );
+    assert_eq!(super::passes(), passes);
+}
+
+#[test]
+fn a_theme_with_no_parts_is_answered_at_once() {
+    let mut theme = measured_in_its_tints();
+    theme.parts.clear();
+    assert_eq!(
+        stylesheet_by(&theme, std::time::Instant::now()).as_deref(),
+        Some("")
+    );
+}
+
+#[test]
+fn two_askers_of_one_theme_share_one_pass() {
+    // #4337: the window's ask finds its creation still measuring: it waits, it does not pass again.
+    let theme = measured_in_its_tints();
+    let place = {
+        let mut kept = measured();
+        let place = std::sync::Arc::new(std::sync::OnceLock::new());
+        kept.push_front((theme.clone(), std::sync::Arc::clone(&place)));
+        place
+    };
+    assert!(!measure_is_kept(&theme), "still measuring");
+    let answer = std::sync::Arc::new((Vec::new(), Vec::new()));
+    place.set(std::sync::Arc::clone(&answer)).unwrap();
+    assert!(measure_is_kept(&theme));
+    let passes = super::passes();
+    assert!(std::sync::Arc::ptr_eq(&held_once(&theme), &answer));
+    assert_eq!(super::passes(), passes);
+}
+
+#[test]
+fn two_threads_asking_at_once_make_one_pass_and_hold_the_one_answer() {
+    // #4337: creation's measuring thread and a window's ask, as the app's threads share the place.
+    let theme = measured_in_its_tints();
+    let kept = kept_here();
+    let gate = std::sync::Barrier::new(2);
+    let (one, two) = std::thread::scope(|scope| {
+        let ask = || {
+            keep_in(kept);
+            gate.wait();
+            let held = held_once(&theme);
+            (held, super::passes())
+        };
+        let (one, two) = (scope.spawn(ask), scope.spawn(ask));
+        (one.join().unwrap(), two.join().unwrap())
+    });
+    assert_eq!(one.1 + two.1, 1, "passes made");
+    assert!(std::sync::Arc::ptr_eq(&one.0, &two.0));
+}

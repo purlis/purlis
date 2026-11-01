@@ -27,7 +27,9 @@ import {
   type StudioScope,
 } from "./skillStudio";
 import { SkillMenu, SkillsList } from "./SkillsList";
+import { useRepoSkillsMoved } from "./repoSkillsMoved";
 import {
+  branchFolderOf,
   branchFolderRowsOf,
   explorerPlaceOf,
   filePlaceOf,
@@ -62,6 +64,9 @@ export type FrontChat = {
   persona: string | null;
   /** The program it runs, by the word the project calls it: whose own skills it gets. */
   harness: HarnessKind | undefined;
+  /** The branch folder it works in, where it works in one (`worktree_of_chat`, which the window
+   *  has asked already): the checkout whose skills it gets. */
+  branchFolder?: { repo: string; piece: string };
 };
 
 /** What the view read: its rows, what the studio offers to start from, and the levels a new
@@ -75,6 +80,8 @@ type Read =
       pinsRefused: SkillPinsRefused | null;
       /** What the chat in front's set says as a whole (S8, #3694): none with no chat in front. */
       said?: ChatSkillsSaid;
+      /** The clones whose own folder the chat in front works in (`chat_skills`). */
+      repos?: readonly string[];
     }
   | { refused: string };
 
@@ -156,6 +163,7 @@ async function readSkills(
     levels: base.ok.levels,
     pinsRefused: base.ok.pins_refused,
     said,
+    repos: given.repos,
   };
 }
 
@@ -173,7 +181,8 @@ function scopeOfRow(row: ListedSkill, place: string | undefined, persona: string
  * **The Skills view** (SK-55, #3266; spec #3679 S7): one answer to what a chat gets and why. It
  * follows the chat in front, its workspace, persona and program, and with no chat in front shows
  * what a new chat in the title bar's workspace gets; its header names whose set it is. It reads
- * again whenever the project's skills change on disk, as the studio does.
+ * again whenever the project's skills change on disk, as the studio does, and when the checkout
+ * the chat works in moves its repo skills (#4377).
  *
  * Every act is one the window already has: a card opens the Skill studio at Library › it, the
  * chat keeping its pane; Use types it into the chat through Use skill…; the switch and the pin
@@ -214,6 +223,11 @@ export function SkillsView({
   const instructions = usePlaneChanged([plane], INSTRUCTIONS);
   // Asked again after the chat in front is restarted from here: it then has what changed.
   const [restarted, setRestarted] = useState(0);
+  // Asked again when the checkout the chat works in moves its skills (#4377).
+  const [skillsMoved, setSkillsMoved] = useState(0);
+  // The clones the last read named, kept while another chat's is read: one watch, not a new set
+  // each way, for a move to a chat in the same clone.
+  const [repos, setRepos] = useState<readonly string[]>(NO_REPOS);
   const [read, setRead] = useState<{ of: FrontChat | undefined; read: Read }>();
   const [said, setSaid] = useState<{ label: string; text: string }>();
   const [busy, setBusy] = useState(false);
@@ -231,14 +245,38 @@ export function SkillsView({
     void readSkills(plane, place, of, () => planeUpdatedAt(plane, instructions))
       .catch((err: unknown): Read => ({ refused: String(err) }))
       .then((answer) => {
-        if (live) setRead({ of, read: answer });
+        if (!live) return;
+        setRead({ of, read: answer });
+        // A refused read names no clones, which is no reason to stop listening to them.
+        if ("rows" in answer) setRepos(answer.repos ?? NO_REPOS);
       });
     return () => {
       live = false;
     };
     // The name is not read by: it only says whose set it is.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, place, session, chatWorkspace, persona, harness, changed, instructions, restarted]);
+  }, [
+    plane,
+    place,
+    session,
+    chatWorkspace,
+    persona,
+    harness,
+    changed,
+    instructions,
+    restarted,
+    skillsMoved,
+  ]);
+
+  // Its branch folder, else the clones its read named.
+  const branchFolder = chat?.branchFolder;
+  const checkouts =
+    session === undefined
+      ? []
+      : branchFolder !== undefined
+        ? [branchFolder]
+        : repos.map((repo) => ({ repo, piece: null }));
+  useRepoSkillsMoved(plane, chatWorkspace, checkouts, () => setSkillsMoved((was) => was + 1));
 
   // Its "started without" notice put away is put away in the core: its card goes as the Skills
   // chip's warning does (#3953), with no read again.
@@ -296,9 +334,24 @@ export function SkillsView({
     onOpenView(skillStudioAt(scope, page, { skill, newTab }), SKILL_STUDIO_TITLE);
   /** The studio on this view's scope, at its Library (#3681); a tab of its own on ⌘-click. */
   const openStudio = (newTab = false) => studioAt("library", undefined, newTab);
+  /** **Its `SKILL.md`** in a tab: Open the file, and the press of a branch folder's copy. */
+  const openFile = (row: ListedSkill) => {
+    const at = filePlaceOf(row.skill);
+    if ("reason" in at) return;
+    const of =
+      at.repo === ""
+        ? PLANE_ROOT
+        : { workspace: at.workspace, repo: at.repo, piece: at.piece ?? null };
+    onOpenView(pieceFileView(of, at.path), `SKILL.md · ${row.skill.name}`);
+  };
   /** A card in the studio, at Library › it, for the view's scope (S7); a program's own or a
-   *  repo's skill, which the Library does not list, on the Harness skills page. */
-  const openRow = (row: ListedSkill) =>
+   *  repo's skill, which the Library does not list, on the Harness skills page. A branch folder's
+   *  copy is on neither (#4376), so it opens as its file. */
+  const openRow = (row: ListedSkill) => {
+    if (branchFolderOf(row.skill) !== undefined) {
+      openFile(row);
+      return;
+    }
     onOpenView(
       row.skill.level === "installed" || row.skill.level === "repo"
         ? skillStudioAt(scope, "harness")
@@ -307,6 +360,7 @@ export function SkillsView({
           }),
       SKILL_STUDIO_TITLE,
     );
+  };
   /** **New skill…** (#3684): the studio's own dialog, which asks how; the studio goes to its
    *  Library first, and the dialog opens there. */
   const newSkill = () => {
@@ -342,15 +396,8 @@ export function SkillsView({
       // Explorer shows the title bar's workspace, whichever chat is in front.
       const at = explorerPlaceOf(row.skill, workspace);
       if (!("reason" in at)) onShowInExplorer(at);
-    } else if (what === "file") {
-      const at = filePlaceOf(row.skill);
-      if ("reason" in at) return;
-      const of =
-        at.repo === ""
-          ? PLANE_ROOT
-          : { workspace: at.workspace, repo: at.repo, piece: at.piece ?? null };
-      onOpenView(pieceFileView(of, at.path), `SKILL.md · ${row.skill.name}`);
-    } else change(row, what);
+    } else if (what === "file") openFile(row);
+    else change(row, what);
   };
   const fix = (row: ListedSkill, one: SkillFix) => {
     if (one.act === "turn") change(row, "turn");
@@ -437,3 +484,5 @@ export function SkillsView({
 
 /** No rows yet. */
 const NO_ROWS: ListedSkill[] = [];
+/** No clones yet. */
+const NO_REPOS: readonly string[] = [];

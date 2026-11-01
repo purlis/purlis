@@ -33,6 +33,7 @@ mod a_finder_launch_finds_the_harness;
 mod a_guard_decides_within_its_budget;
 mod a_harness_with_mcp_and_no_skill_format_gets_its_skills_through_purlis_s_tools;
 mod a_permission_prompt_is_answered_from_the_window;
+mod a_pools_limits_at_the_command_line;
 mod a_project_charter_cannot_write_is_read_only;
 mod a_proposed_change_is_handed_to_the_app;
 mod a_refusal_names_the_kind_and_never_the_credential;

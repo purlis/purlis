@@ -101,6 +101,8 @@ pub struct Pool {
     price: Option<Price>,
     /// The profiles chosen for it (`profiles`, #4047), in order; `None` where none were.
     profiles: Option<Vec<String>>,
+    /// Values in its row its limits can't be, kept as they were typed (#4381).
+    refused_limits: Vec<crate::poollimits::RefusedValue>,
 }
 
 /// **What one hour of a pool's runner costs, as the pool declares it** (#3491, the person's
@@ -185,6 +187,7 @@ impl Pool {
             limits,
             price: None,
             profiles: None,
+            refused_limits: Vec::new(),
         })
     }
 
@@ -722,12 +725,82 @@ pub fn chosen_limits_of(
     name: &str,
 ) -> Result<crate::poollimits::Chosen, Refused> {
     let held = load(config_root)?;
+    Ok(limits_in(&held, name)
+        .map(|limits| limits.chosen)
+        .unwrap_or_default())
+}
+
+/// **A kept pool's limits, as its row holds them.**
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoolLimitsHeld {
+    pub chosen: crate::poollimits::Chosen,
+    /// Values in its row its limits can't be, each following purlis's default (#4381).
+    pub refused: Vec<crate::poollimits::RefusedValue>,
+    /// A Docker pool, which has no limit only a cluster pool has.
+    pub docker: bool,
+}
+
+fn limits_in(held: &Held, name: &str) -> Option<PoolLimitsHeld> {
     let docker = held.pools.iter().find(|pool| pool.name() == name);
     let cluster = held.clusters.iter().find(|pool| pool.name() == name);
-    Ok(docker
-        .map(|pool| pool.set.chosen)
-        .or_else(|| cluster.map(|pool| *pool.chosen))
-        .unwrap_or_default())
+    docker
+        .map(|pool| PoolLimitsHeld {
+            chosen: pool.set.chosen,
+            refused: pool.refused_limits.clone(),
+            docker: true,
+        })
+        .or_else(|| {
+            cluster.map(|pool| PoolLimitsHeld {
+                chosen: *pool.chosen,
+                refused: pool.refused_limits.clone(),
+                docker: false,
+            })
+        })
+}
+
+/// **Pool `name`'s limits as its row holds them**, or why not; no such pool is refused.
+pub fn limits_held_of(config_root: &Path, name: &str) -> Result<PoolLimitsHeld, Refused> {
+    limits_in(&load(config_root)?, name).ok_or_else(|| no_such_pool(name))
+}
+
+fn no_such_pool(name: &str) -> Refused {
+    Refused::Other(format!(
+        "there is no pool named {} on this machine",
+        crate::shown::short(name)
+    ))
+}
+
+/// **Why pool `name`'s limit `id` can't be `value`**, or the limits it holds now: one check for
+/// a save and for a chat's proposal of one, so what is offered is what would be saved.
+fn limit_may_be(
+    held: &Held,
+    name: &str,
+    id: crate::poollimits::LimitId,
+    value: Option<u64>,
+) -> Result<PoolLimitsHeld, Refused> {
+    if let Some(value) = value {
+        id.limit().check(value, None).map_err(Refused::Other)?;
+    }
+    let limits = limits_in(held, name).ok_or_else(|| no_such_pool(name))?;
+    // A reset takes a value the file should never have held off the row (#4381).
+    if value.is_some()
+        && limits.docker
+        && let Some(why) = id.limit().not_on_docker(name)
+    {
+        return Err(Refused::Other(why));
+    }
+    Ok(limits)
+}
+
+/// [`limit_may_be`] as the file stands: what a chat's proposal is judged by, and judged by again
+/// at Apply. It writes nothing.
+pub fn limit_may_be_set(
+    config_root: &Path,
+    name: &str,
+    id: crate::poollimits::LimitId,
+    value: Option<u64>,
+) -> Result<PoolLimitsHeld, Refused> {
+    limit_may_be(&load(config_root)?, name, id, value)
 }
 
 /// **How long a sign-in on pool `name` may wait**: its limit as it stands (spec #4275), or
@@ -750,27 +823,50 @@ pub fn set_pool_limit(
     id: crate::poollimits::LimitId,
     value: Option<u64>,
 ) -> Result<(), Refused> {
-    if let Some(value) = value {
-        id.limit().check(value, None).map_err(Refused::Other)?;
-    }
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
+    limit_may_be(&held, name, id, value)?;
+    set_limit_in(config_root, &mut held, name, id, value)
+}
+
+/// [`set_pool_limit`], **only while the person's value is still `was`** and the file still does or
+/// doesn't hold a value it can't use, compared under the file's lock: `Ok(false)`, and nothing
+/// written, where either has changed (PC-8, a chat's proposal).
+pub fn set_pool_limit_if(
+    config_root: &Path,
+    name: &str,
+    id: crate::poollimits::LimitId,
+    value: Option<u64>,
+    was: Option<u64>,
+    was_refused: bool,
+) -> Result<bool, Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let limits = limit_may_be(&held, name, id, value)?;
+    if limits.chosen.get(id) != was
+        || limits.refused.iter().any(|one| one.limit == id) != was_refused
+    {
+        return Ok(false);
+    }
+    set_limit_in(config_root, &mut held, name, id, value).map(|()| true)
+}
+
+fn set_limit_in(
+    config_root: &Path,
+    held: &mut Held,
+    name: &str,
+    id: crate::poollimits::LimitId,
+    value: Option<u64>,
+) -> Result<(), Refused> {
+    // A value set or reset replaces whatever the file held that it couldn't use (#4381).
     if let Some(pool) = held.pools.iter_mut().find(|pool| pool.name == name) {
-        if id.limit().clusters_only {
-            return Err(Refused::Other(format!(
-                "{} is a cluster pool's, and {name} is a Docker pool",
-                id.limit().plain
-            )));
-        }
         pool.set.chosen = pool.set.chosen.with(id, value);
+        pool.refused_limits.retain(|one| one.limit != id);
     } else if let Some(pool) = held.clusters.iter_mut().find(|pool| pool.name == name) {
         *pool.chosen = pool.chosen.with(id, value);
-    } else {
-        return Err(Refused::Other(format!(
-            "there is no pool named {name} on this machine"
-        )));
+        pool.refused_limits.retain(|one| one.limit != id);
     }
-    write(config_root, &held)
+    write(config_root, held)
 }
 
 /// Forget the pool recorded as `name`; nothing where none is. Its runner is [`remove`]d first.
@@ -1474,6 +1570,9 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
         row["profiles"] = profiles.into();
     }
     set.chosen.to_row(&mut row);
+    for refused in &pool.refused_limits {
+        refused.to_row(&mut row);
+    }
     row
 }
 
@@ -1586,6 +1685,9 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
             Some(whole as u32)
         }
     };
+    let name = text("name")?;
+    // The same checks as the command's. A bad value costs that limit alone (#4381).
+    let (chosen, refused_limits) = crate::poollimits::Chosen::read_row(fields, Some(name));
     let set = Set {
         millicpus,
         memory_mib: count(fields.get("memory"))?,
@@ -1600,16 +1702,14 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         },
         frames: count(fields.get("frames"))?,
         width: count(fields.get("width"))?,
-        // The same checks as the command's: a limit only a cluster pool has is no Docker pool's.
-        chosen: crate::poollimits::Chosen::from_row(fields)
-            .ok()
-            .filter(|chosen| {
-                !crate::poollimits::all()
-                    .iter()
-                    .any(|limit| limit.clusters_only && chosen.get(limit.id).is_some())
-            })?,
+        chosen,
     };
-    Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
+    Pool::new(name, Image::pinned(text("image")?).ok()?, set)
+        .ok()
+        .map(|pool| Pool {
+            refused_limits,
+            ..pool
+        })
 }
 
 /// The kind a cluster pool's row, and its runner's, are of (#3292).
@@ -1646,12 +1746,18 @@ pub struct ClusterPool {
     /// the Pool's spec said when it was added: the admin's word, never the person's or a chat's.
     /// The operator holds the Pool itself and refuses by it, so this says only how to ask.
     mint_in_cluster: bool,
+    /// **The Pool went from asking before each token to minting without asking, and the person has
+    /// not put that Notice away** (`mintNoticeDue`, #4442): set only where a recorded `false` turns
+    /// `true` ([`keep_cluster_minting`]), so a pool that minted when it was added never has it.
+    mint_notice_due: bool,
     /// The profiles chosen for it (`profiles`, #3819), in order, as a Docker pool's are;
     /// `None` where none were.
     profiles: Option<Vec<String>>,
     /// The values this person chose for its limits ([`crate::poollimits`], spec #4275).
     /// Held apart, as the list of limits grows and [`Reached`] carries a whole pool.
     chosen: Box<crate::poollimits::Chosen>,
+    /// Values in its row its limits can't be, kept as they were typed (#4381).
+    refused_limits: Vec<crate::poollimits::RefusedValue>,
 }
 
 impl ClusterPool {
@@ -1745,8 +1851,10 @@ impl ClusterPool {
             holds: Vec::new(),
             owned: false,
             mint_in_cluster: false,
+            mint_notice_due: false,
             profiles: None,
             chosen: Box::default(),
+            refused_limits: Vec::new(),
         })
     }
 
@@ -1761,6 +1869,11 @@ impl ClusterPool {
     /// Whether the cluster's Pool opted it in to minting there as it was added (#4204).
     pub fn mints_in_cluster(&self) -> bool {
         self.mint_in_cluster
+    }
+
+    /// Whether the person is still to be told it began minting without asking (#4442).
+    pub fn mint_notice_due(&self) -> bool {
+        self.mint_notice_due
     }
 
     /// This pool, holding `holds`, the programs its kubectl runs as named, every link on the way
@@ -2172,23 +2285,49 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
 /// **Keeps whether the cluster pool `name`'s Pool opts in to minting now** (#4330): a Pool may opt in
 /// after it was added. Read only to say whether a chat's repos are sent to the Claim, so it decides
 /// nothing the cluster's own policy and operator do not.
-pub fn keep_cluster_minting(config_root: &Path, name: &str, opted_in: bool) -> Result<(), Refused> {
+///
+/// **Answers whether that moved its Notice** (#4442): a Pool that began minting without asking leaves
+/// it due, kept here so a window opened later still shows it, and going back to asking takes it
+/// away, so the next change shows it again. It holds and refuses nothing.
+pub fn keep_cluster_minting(
+    config_root: &Path,
+    name: &str,
+    opted_in: bool,
+) -> Result<bool, Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
+        return Ok(false);
+    };
+    if held.clusters[at].mints_in_cluster() == opted_in {
+        return Ok(false);
+    }
+    held.clusters[at] = ClusterPool {
+        mint_notice_due: opted_in,
+        ..held.clusters[at].clone().minting_in_cluster(opted_in)
+    };
+    write(config_root, &held)?;
+    Ok(true)
+}
+
+/// **The person put away the Notice that the cluster pool `name` mints without asking** (#4442).
+pub fn put_away_mint_notice(config_root: &Path, name: &str) -> Result<(), Refused> {
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
     let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
         return Ok(());
     };
-    if held.clusters[at].mints_in_cluster() == opted_in {
+    if !held.clusters[at].mint_notice_due {
         return Ok(());
     }
-    held.clusters[at] = held.clusters[at].clone().minting_in_cluster(opted_in);
+    held.clusters[at].mint_notice_due = false;
     write(config_root, &held)
 }
 
 /// A cluster pool's row (#3292): `{"name", "kind": "cluster", "kubeconfig", "context", "pool",
-/// "namespace", "operatorKey", "cluster", "holds", "owned", "mintInCluster", "profiles"}`,
-/// `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned` and
-/// `mintInCluster` `true` alone, left out otherwise (#4071, #4204), and `profiles` as a Docker
+/// "namespace", "operatorKey", "cluster", "holds", "owned", "mintInCluster", "mintNoticeDue",
+/// "profiles"}`, `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned`,
+/// `mintInCluster` and `mintNoticeDue` `true` alone, left out otherwise (#4071, #4204, #4442), and `profiles` as a Docker
 /// pool's, left out where none were chosen (#3819).
 fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     let mut row = serde_json::json!({
@@ -2214,10 +2353,16 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     if pool.mint_in_cluster {
         row["mintInCluster"] = true.into();
     }
+    if pool.mint_notice_due {
+        row["mintNoticeDue"] = true.into();
+    }
     if let Some(profiles) = pool.profiles() {
         row["profiles"] = profiles.into();
     }
     pool.chosen.to_row(&mut row);
+    for refused in &pool.refused_limits {
+        refused.to_row(&mut row);
+    }
     row
 }
 
@@ -2236,6 +2381,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "holds",
         "owned",
         "mintInCluster",
+        "mintNoticeDue",
         "profiles",
     ];
     if fields
@@ -2244,7 +2390,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
     {
         return None;
     }
-    let chosen = crate::poollimits::Chosen::from_row(fields).ok()?;
+    let (chosen, refused_limits) = crate::poollimits::Chosen::read_row(fields, None);
     let profiles = match fields.get("profiles") {
         None => None,
         Some(profiles) => Some(profiles_from_row(profiles)?),
@@ -2256,6 +2402,11 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         Some(_) => return None,
     };
     let mint_in_cluster = match fields.get("mintInCluster") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let mint_notice_due = match fields.get("mintNoticeDue") {
         None => false,
         Some(serde_json::Value::Bool(true)) => true,
         Some(_) => return None,
@@ -2288,8 +2439,10 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
     .map(|pool| ClusterPool {
         owned,
         mint_in_cluster,
+        mint_notice_due,
         profiles,
         chosen: Box::new(chosen),
+        refused_limits,
         ..pool
     })
     .ok()

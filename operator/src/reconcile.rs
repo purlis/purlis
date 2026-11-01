@@ -28,7 +28,9 @@ use crate::upstream::{
 };
 use crate::vouch::{self, MountedKeys, Vouching};
 use futures::StreamExt;
-use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
+use k8s_openapi::api::admissionregistration::v1::{
+    ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
+};
 use k8s_openapi::api::core::v1::{Namespace, Pod, ResourceQuota};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::api::rbac::v1::RoleBinding;
@@ -334,10 +336,8 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
     // A Claim being deleted has what was made for it removed, whatever the policy now says of
     // it: a Claim made before the policy was in force never had anything made.
     if claim.metadata.deletion_timestamp.is_none() {
-        let binding = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone())
-            .get_opt(POLICY)
-            .await?;
-        let admitted = admission(&claim, binding.as_ref());
+        let since = policy_in_force_since(client, POLICY).await?;
+        let admitted = admission(&claim, since);
         if let Some(refused) = admitted.status() {
             admitted.log(&name, &namespace);
             write_status(client, &claim, &namespace, refused).await?;
@@ -355,6 +355,20 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
     .map_err(Error::of_finalizer)
 }
 
+/// When the policy `name` is in force from, as the cluster holds it and its binding (#3854).
+async fn policy_in_force_since(
+    client: &Client,
+    name: &str,
+) -> Result<Option<k8s_openapi::jiff::Timestamp>, Error> {
+    let policy = Api::<ValidatingAdmissionPolicy>::all(client.clone())
+        .get_opt(name)
+        .await?;
+    let binding = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone())
+        .get_opt(name)
+        .await?;
+    Ok(in_force_since(policy.as_ref(), binding.as_ref(), name))
+}
+
 /// **`requester`'s runner namespace**, as the cluster holds it and as the policy on runner
 /// namespaces lets the operator take it ([`person::runner_namespace_of`]), and when that policy
 /// is in force from.
@@ -362,10 +376,7 @@ async fn runner_namespace_held(
     client: &Client,
     requester: &str,
 ) -> Result<(RunnerNamespace, Option<k8s_openapi::jiff::Timestamp>), Error> {
-    let binding = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone())
-        .get_opt(RUNNER_NAMESPACES_POLICY)
-        .await?;
-    let since = in_force_since(binding.as_ref(), RUNNER_NAMESPACES_POLICY);
+    let since = policy_in_force_since(client, RUNNER_NAMESPACES_POLICY).await?;
     let held = Api::<Namespace>::all(client.clone())
         .get_opt(&person::runner_namespace(requester))
         .await?;
@@ -1020,8 +1031,8 @@ async fn sandbox_of(
 }
 
 /// **A suspended kept runner's sandbox brought to its pool's image** (#3982, ruled 2026-11-01), so
-/// it next starts on it: its pod template read as the cluster holds it, and only the images
-/// changed, by the sandbox's uid. The cluster's policy lets this through only on a Sandbox already
+/// it next starts on it: its pod template read as the cluster holds it, and only its images and
+/// resources changed, by the sandbox's uid. The cluster's policy lets this through only on a Sandbox already
 /// `Suspended`, in a runner namespace.
 async fn renew_image(client: &Client, sandbox: &Sandbox, pool: &Pool) -> Result<(), Error> {
     if sandbox.spec.operating_mode.as_deref() != Some(upstream::SUSPENDED) {
@@ -1037,10 +1048,17 @@ async fn renew_image(client: &Client, sandbox: &Sandbox, pool: &Pool) -> Result<
     let Some(mut spec) = held.data.pointer("/spec/podTemplate/spec").cloned() else {
         return Ok(());
     };
-    if !lifecycle::with_image(&mut spec, &pool.spec.image) {
+    let image_changed = lifecycle::with_image(&mut spec, &pool.spec.image);
+    let wanted = upstream::template_for(pool, &sandbox.namespace().unwrap_or_default(), Vec::new())
+        .spec
+        .pod_template
+        .spec
+        .unwrap_or_default();
+    let resources_changed = lifecycle::with_resources(&mut spec, &wanted);
+    if !image_changed && !resources_changed {
         return Ok(());
     }
-    tracing::info!(sandbox = %name, "a suspended kept runner brought to its pool's image");
+    tracing::info!(sandbox = %name, "a suspended kept runner brought to its pool's image and limits");
     let patch = serde_json::json!({
         "metadata": { "uid": sandbox.metadata.uid },
         "spec": { "podTemplate": { "spec": spec } },

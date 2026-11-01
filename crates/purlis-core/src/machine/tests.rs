@@ -2401,7 +2401,7 @@ fn the_lock_is_let_go_even_where_a_copy_of_its_descriptor_lives_on() {
 
     drop(lock);
 
-    let again = std::fs::File::open(dir(machine.path()).join(LOCK)).unwrap();
+    let again = std::fs::File::open(charterd(machine.path()).join(LOCK)).unwrap();
     assert!(
         rustix::fs::flock(&again, rustix::fs::FlockOperation::NonBlockingLockExclusive).is_ok(),
         "the lock is free once its holder is dropped"
@@ -2643,4 +2643,15 @@ fn a_renamed_workspace_keeps_where_its_chats_run() {
         store.chats_run_on(Path::new("/planes/a"), "editor"),
         Some("builds")
     );
+}
+
+/// What takes a lock keeps its file where no chat's sandbox opens it.
+#[cfg(unix)]
+#[test]
+fn a_named_lock_is_kept_in_the_session_hosts_folder() {
+    let machine = machine();
+    let lock = Lock::named(machine.path(), "a.lock");
+    assert!(lock.held());
+    assert!(charterd(machine.path()).join("a.lock").is_file());
+    assert!(!dir(machine.path()).join("a.lock").exists());
 }

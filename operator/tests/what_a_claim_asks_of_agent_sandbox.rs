@@ -125,11 +125,18 @@ fn each_container_of_a_runners_pod_asks_for_what_it_needs_so_a_quota_can_count_i
     let pod = &template["spec"]["podTemplate"]["spec"];
     assert_eq!(
         pod["containers"][0]["resources"],
-        json!({ "requests": { "cpu": "250m", "memory": "512Mi" } })
+        json!({
+            "requests": { "cpu": "250m", "memory": "512Mi", "ephemeral-storage": "1Gi" },
+            // The fresh home's 10Gi, and 2Gi of the container's own.
+            "limits": { "memory": "4Gi", "ephemeral-storage": "12288Mi" },
+        })
     );
     assert_eq!(
         pod["initContainers"][0]["resources"],
-        json!({ "requests": { "cpu": "50m", "memory": "32Mi" } })
+        json!({
+            "requests": { "cpu": "50m", "memory": "32Mi", "ephemeral-storage": "16Mi" },
+            "limits": { "memory": "128Mi", "ephemeral-storage": "256Mi" },
+        })
     );
 }
 

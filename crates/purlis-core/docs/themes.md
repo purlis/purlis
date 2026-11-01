@@ -367,7 +367,8 @@ own fills back after it, keeping what the theme sets in a state itself. A switch
 A part's fill with alpha is measured where it is drawn: over its root's own fill, then the
 family's grounds, so a `rail.badge.fill` wash is read over the button that holds it. A part drawn
 around its root stands on the grounds alone, and a chip's count on the bar's ground, which
-`titlebar.css` draws under its wash whatever the chip's fill.
+`titlebar.css` draws under its wash whatever the chip's fill. A `tabs.count.fill` is read over the
+`surface.sunken` counts button the tab's chip paints under it, and that over the tab's fill.
 
 A card pressed whole (the welcome's doors, the Get page's repo picks) is the `card-button`
 family, not a part of the card's: a theme's `card.title` reaches a card's own title and never a
@@ -675,7 +676,10 @@ A workspace's own colour can be any hue, so each pair a tint can move is read at
 degree too. A pair that clears its floor at every named tint and falls between them is said once,
 at the degree it is lowest (`state.waiting on wash.warning over surface.deep, in a workspace's own
 colour at 121°: 4.49, under 4.5`). In `--json` it is a warning of kind `contrast-between-tints`,
-with the `degree`, the `pair` and the `ratio`.
+with the `degree`, the `pair` and the `ratio`. What must stand apart and is not a pair is read the
+same way: the selected row (`selected-between-tints`), a side view's card row on its panel
+(`card-between-tints`) and a notice card's secondary way on its ground
+(`notice-way-between-tints`).
 
 Then `consent floors:`, what the window draws of the theme. Every combination of appearance
 and option values is checked against the consent floors as the window draws it, with the option

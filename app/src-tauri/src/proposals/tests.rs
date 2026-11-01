@@ -145,6 +145,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
         change: mode_pr(),
         since: 1,
         stale: false,
+        limit: None,
     };
     let refused = |_: &proposed::Applied<'_>| Err("the event log is not open".to_owned());
     assert_eq!(
@@ -201,6 +202,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
     // One marked stale is never applied.
     let marked = Proposal {
         stale: true,
+        limit: None,
         base: base_of(Some(b"[plane]\nmode = \"pr\"\n")),
         ..one
     };
@@ -222,6 +224,7 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
         change: mode_pr(),
         since: 1,
         stale: false,
+        limit: None,
     };
     let ids = |shown: &crate::asking::Shown| -> Vec<String> {
         shown.options.iter().map(|one| one.id.clone()).collect()
@@ -284,6 +287,7 @@ fn apply_never_writes_a_change_not_shown_whole() {
         },
         since: 1,
         stale: false,
+        limit: None,
     };
     let audit = |_: &proposed::Applied<'_>| -> Result<(), String> {
         panic!("nothing is recorded for a change never written")
@@ -315,6 +319,7 @@ fn two_applies_against_the_same_file_as_it_was_never_both_write() {
         },
         since: 1,
         stale: false,
+        limit: None,
     };
     let handles: Vec<_> = [
         proposal(1, "mode = \"pr\""),
@@ -356,6 +361,7 @@ fn a_write_that_fails_is_recorded_as_failed() {
         change: mode_pr(),
         since: 1,
         stale: false,
+        limit: None,
     };
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o555)).expect("read-only");
     let audited = std::cell::RefCell::new(Vec::new());
@@ -388,6 +394,7 @@ fn a_change_too_long_for_a_row_is_shown_whole_on_its_tab() {
         change: mode_pr(),
         since: 1,
         stale: false,
+        limit: None,
     };
     let long = "line\n".repeat(purlis_core::harness::asked::edit::MOST_LINES + 1);
     let whole = whole_of(
@@ -429,6 +436,7 @@ fn a_long_change_on_its_tab_marks_only_the_lines_that_changed() {
         change: mode_pr(),
         since: 1,
         stale: false,
+        limit: None,
     };
     let lines = |changed: &str| {
         (1..=2000)
@@ -471,6 +479,7 @@ fn tab_hunks(before: &str, after: &str) -> Vec<(u32, u32, u32, u32)> {
         change: mode_pr(),
         since: 1,
         stale: false,
+        limit: None,
     };
     let now = Now::Made {
         before: before.to_owned(),
@@ -514,6 +523,7 @@ fn a_change_too_long_for_a_row_is_applied_only_from_its_tab() {
         },
         since: 1,
         stale: false,
+        limit: None,
     };
     // Too long a whole content to travel: made here, as the app would hold it.
     let ok = |_: &proposed::Applied<'_>| Ok(());
@@ -546,4 +556,212 @@ fn no_chat_proposes_as_purlis() {
     let refused = asked_in(&root, &held, &ask(BY_PURLIS, None, mode_pr()), 1);
     assert!(refused.is_err(), "{refused:?}");
     assert!(held.every().is_empty());
+}
+
+/// **A value for a pool's limit** (#4284, the person's ruling of 2026-11-01 on PC-1).
+mod limit {
+    use super::*;
+    use purlis_core::dockerpool::Image;
+    use purlis_core::hookwire::ProposeLimitAsk;
+    use purlis_core::poollimits::LimitId::SignInWait;
+    use purlis_core::runners;
+
+    const IMAGE: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn a_machine() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = runners::Pool::new(
+            "builds",
+            Image::pinned(IMAGE).unwrap(),
+            runners::Set::default(),
+        )
+        .unwrap();
+        runners::record_pool(dir.path(), &pool).unwrap();
+        dir
+    }
+
+    fn asks(value: Option<u64>) -> ProposeLimitAsk {
+        ProposeLimitAsk {
+            chat: 3,
+            pool: "builds".to_owned(),
+            key: "signInWait".to_owned(),
+            value,
+        }
+    }
+
+    fn set(config: &Path) -> Option<u64> {
+        runners::chosen_limits_of(config, "builds")
+            .unwrap()
+            .get(SignInWait)
+    }
+
+    #[test]
+    fn it_is_held_shown_old_to_new_writes_nothing_and_apply_saves_only_that_value() {
+        let project = tempfile::tempdir().unwrap();
+        let config = a_machine();
+        let proposals = Proposals::default();
+        let file =
+            purlis_core::machine::dir(config.path()).join(purlis_core::machine::RUNNERS_FILE);
+        let before = std::fs::read_to_string(&file).unwrap();
+
+        limit_asked_in(
+            project.path(),
+            config.path(),
+            &proposals,
+            &asks(Some(30)),
+            1,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            before,
+            "nothing yet"
+        );
+
+        let one = proposals.every().remove(0);
+        let change = one.limit.clone().unwrap();
+        let Now::Made { before: was, after } = limit_now(&change) else {
+            panic!("it is shown");
+        };
+        assert!(was.contains("15 minutes (purlis's default)"), "{was}");
+        assert!(after.contains("30 minutes"), "{after}");
+        assert!(one.path.contains("builds"), "{}", one.path);
+
+        let outcomes = Mutex::new(Vec::new());
+        let audit = |applied: &proposed::Applied<'_>| {
+            outcomes.lock().unwrap().push(applied.outcome);
+            Ok(())
+        };
+        let lock = Mutex::new(());
+        apply_limit(&one, &change, None, &audit, &lock).unwrap();
+        assert_eq!(set(config.path()), Some(30));
+        assert_eq!(
+            *outcomes.lock().unwrap(),
+            vec![proposed::Outcome::Intent, proposed::Outcome::Applied],
+            "audited before it is saved"
+        );
+    }
+
+    #[test]
+    fn a_value_the_check_refuses_or_no_such_pool_is_never_held() {
+        let project = tempfile::tempdir().unwrap();
+        let config = a_machine();
+        let proposals = Proposals::default();
+        let mut refused = vec![asks(Some(0)), asks(Some(121))];
+        refused.push(ProposeLimitAsk {
+            pool: "none".to_owned(),
+            ..asks(Some(30))
+        });
+        refused.push(ProposeLimitAsk {
+            key: "image".to_owned(),
+            ..asks(Some(30))
+        });
+        refused.push(ProposeLimitAsk {
+            key: "vouchWait".to_owned(),
+            ..asks(Some(10))
+        });
+        refused.push(ProposeLimitAsk {
+            chat: BY_PURLIS,
+            ..asks(Some(30))
+        });
+        for ask in refused {
+            assert!(
+                limit_asked_in(project.path(), config.path(), &proposals, &ask, 1).is_err(),
+                "{ask:?}"
+            );
+        }
+        assert!(proposals.every().is_empty());
+    }
+
+    /// #4381: a chat can reset a value the file can't use, and is shown as replacing it.
+    #[test]
+    fn a_reset_of_a_value_the_file_cannot_use_is_held_and_says_what_it_replaces() {
+        let project = tempfile::tempdir().unwrap();
+        let config = a_machine();
+        let file =
+            purlis_core::machine::dir(config.path()).join(purlis_core::machine::RUNNERS_FILE);
+        let edited = std::fs::read_to_string(&file).unwrap().replacen(
+            "\"name\"",
+            "\"signInWait\":\"lots\",\"name\"",
+            1,
+        );
+        std::fs::write(&file, edited).unwrap();
+        let proposals = Proposals::default();
+        limit_asked_in(project.path(), config.path(), &proposals, &asks(None), 1).unwrap();
+        let change = proposals.every().remove(0).limit.unwrap();
+        let Now::Made { before, .. } = limit_now(&change) else {
+            panic!("it is shown");
+        };
+        assert!(before.contains("can't be used"), "{before}");
+        assert!(!before.contains("lots"), "{before}");
+    }
+
+    /// A chat can't learn the person's value by guessing it: the same value is held like another.
+    #[test]
+    fn a_value_already_set_is_held_and_says_nothing_to_the_chat() {
+        let project = tempfile::tempdir().unwrap();
+        let config = a_machine();
+        let proposals = Proposals::default();
+        runners::set_pool_limit(config.path(), "builds", SignInWait, Some(30)).unwrap();
+        limit_asked_in(
+            project.path(),
+            config.path(),
+            &proposals,
+            &asks(Some(30)),
+            1,
+        )
+        .unwrap();
+        assert_eq!(proposals.every().len(), 1);
+    }
+
+    /// PC-8: another value since makes it stale, and Apply saves nothing.
+    #[test]
+    fn a_limit_changed_since_makes_it_stale() {
+        let project = tempfile::tempdir().unwrap();
+        let config = a_machine();
+        let proposals = Proposals::default();
+        limit_asked_in(
+            project.path(),
+            config.path(),
+            &proposals,
+            &asks(Some(30)),
+            1,
+        )
+        .unwrap();
+        runners::set_pool_limit(config.path(), "builds", SignInWait, Some(45)).unwrap();
+        let one = proposals.every().remove(0);
+        let change = one.limit.clone().unwrap();
+        assert_eq!(limit_now(&change), Now::Stale);
+        let audit = |_: &proposed::Applied<'_>| Ok(());
+        let lock = Mutex::new(());
+        assert_eq!(
+            apply_limit(&one, &change, None, &audit, &lock),
+            Err(Refusal::Stale)
+        );
+        assert_eq!(set(config.path()), Some(45));
+    }
+
+    /// PC-14: where proposed changes are off, none of these is held.
+    #[test]
+    fn policy_off_holds_no_limit_either() {
+        let project = tempfile::tempdir().unwrap();
+        let config = a_machine();
+        let proposals = Proposals::default();
+        purlis_core::sandbox::policy::set_for_this_test(
+            purlis_core::sandbox::policy::Locks::parse(
+                r#"{"sandbox": {"proposed-changes": "off"}}"#,
+                Path::new("/etc/purlis/policy.json"),
+            ),
+        );
+        let held = limit_asked_in(
+            project.path(),
+            config.path(),
+            &proposals,
+            &asks(Some(30)),
+            1,
+        );
+        purlis_core::sandbox::policy::set_for_this_test(purlis_core::sandbox::policy::Locks::none());
+        assert!(held.is_err());
+        assert!(proposals.every().is_empty());
+    }
 }

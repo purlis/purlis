@@ -1,0 +1,146 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+# What the operator's service account writes of upstream's objects, held by the cluster (#3754):
+# only in runner namespaces, and a template's pod only in purlis's runner shape, so a mistake in
+# the operator, or its token used as it is, can write nothing else of these. What it may change
+# of a Sandbox is the policy in sandbox-policy.yaml's. It says nothing of what
+# others write. The operator may not change policies or their bindings, so it cannot lift this.
+# Kept when the release is uninstalled, as the policy on Claims is.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-operator-writes-only-a-runners-shape
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [extensions.agents.x-k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [sandboxclaims, sandboxtemplates, sandboxwarmpools]
+  matchConditions:
+    - name: by-the-operator
+      expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:{{ .Release.Namespace }}:purlis-cluster-operator'
+  variables:
+    - name: template
+      expression: request.resource.resource == 'sandboxtemplates'
+    - name: pod
+      expression: object.spec.podTemplate.spec
+    - name: containers
+      expression: >-
+        variables.pod.containers +
+        (has(variables.pod.initContainers) ? variables.pod.initContainers : [])
+  validations:
+    # Only a runner namespace, which keeps every system namespace out without a list to keep.
+    - expression: request.namespace.startsWith('purlis-runners-')
+      message: purlis's cluster operator writes upstream's objects in a runner namespace alone.
+      reason: Forbidden
+    # What it changes of a claim: upstream adds to one as it adopts a warm runner, and the operator's
+    # apply leaves that as it is.
+    - expression: >-
+        request.resource.resource != 'sandboxclaims' ||
+        (request.operation == 'UPDATE' && object.spec == oldObject.spec) ||
+        (object.spec.warmPoolRef.name.startsWith('purlis-pool-') &&
+        !has(object.spec.env) && !has(object.spec.additionalPodMetadata) &&
+        !has(object.spec.lifecycle) &&
+        (!has(object.spec.volumeClaimTemplates) ||
+        (size(object.spec.volumeClaimTemplates) == 1 &&
+        object.spec.volumeClaimTemplates[0].metadata.name == 'purlis-kept' &&
+        object.spec.volumeClaimTemplates[0].spec.accessModes == ['ReadWriteOnce'] &&
+        !has(object.spec.volumeClaimTemplates[0].spec.volumeName) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.dataSource) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.dataSourceRef) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.selector) &&
+        !has(object.spec.volumeClaimTemplates[0].metadata.labels) &&
+        !has(object.spec.volumeClaimTemplates[0].metadata.annotations) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.volumeAttributesClassName) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.volumeMode))))
+      message: >-
+        purlis's cluster operator claims a purlis pool's warm pool, with a kept volume at most and
+        nothing added to the pod.
+      reason: Forbidden
+    - expression: >-
+        request.resource.resource != 'sandboxwarmpools' ||
+        (object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') && object.spec.replicas <= 20 &&
+        object.spec.updateStrategy.type == 'Recreate')
+      message: purlis's cluster operator keeps a purlis pool's template warm, at most 20 of them.
+      reason: Forbidden
+    # Every field of the pinned upstream's template spec but the pod
+    # (operator/tests/the_install_manifests.rs holds the list to the vendored definitions).
+    - expression: >-
+        !variables.template ||
+        (!has(object.spec.networkPolicy) && !has(object.spec.service) &&
+        !has(object.spec.volumeClaimTemplates) &&
+        (!has(object.spec.networkPolicyManagement) || object.spec.networkPolicyManagement == 'Managed') &&
+        (!has(object.spec.envVarsInjectionPolicy) || object.spec.envVarsInjectionPolicy == 'Disallowed') &&
+        object.spec.volumeClaimTemplatesPolicy == 'Allowed')
+      message: purlis's cluster operator's template sets nothing of upstream's but its pod.
+      reason: Forbidden
+    # The default service account, no token mounted, nothing of the node's: of every field of the
+    # pinned upstream's pod spec, only what its template sets.
+    - expression: >-
+        !variables.template ||
+        ((!has(object.spec.podTemplate.metadata) ||
+        (!has(object.spec.podTemplate.metadata.labels) && !has(object.spec.podTemplate.metadata.annotations))) &&
+        (!has(variables.pod.serviceAccountName) || variables.pod.serviceAccountName == 'default') &&
+        (!has(variables.pod.serviceAccount) || variables.pod.serviceAccount == 'default') &&
+        variables.pod.automountServiceAccountToken == false &&
+        variables.pod.enableServiceLinks == false &&
+        {{- range splitList " " (include "purlis-cluster-operator.pod-fields" .) }}
+        !has(variables.pod.{{ . }}) &&
+        {{- end }}
+        {{- range list "appArmorProfile" "runAsGroup" "runAsNonRoot" "runAsUser" "seLinuxChangePolicy" "seLinuxOptions" "seccompProfile" "supplementalGroups" "supplementalGroupsPolicy" "sysctls" "windowsOptions" }}
+        !has(variables.pod.securityContext.{{ . }}) &&
+        {{- end }}
+        variables.pod.securityContext.fsGroup == 10001 &&
+        variables.pod.securityContext.fsGroupChangePolicy == 'OnRootMismatch')
+      message: >-
+        purlis's cluster operator's template runs as the default service account, with no token
+        mounted and nothing of the node's.
+      reason: Forbidden
+    # Only purlis's volumes, each a folder of the pod's own.
+    - expression: >-
+        !variables.template ||
+        (has(variables.pod.volumes) && variables.pod.volumes.all(v,
+        v.name in ['purlis-link', 'purlis-kept'] && has(v.emptyDir)))
+      message: purlis's cluster operator's template holds only purlis's own volumes.
+      reason: Forbidden
+    # The confinement the operator's template sets, on each container: of every field of the
+    # pinned upstream's container, only what its template sets.
+    - expression: >-
+        !variables.template ||
+        (size(variables.pod.containers) == 1 && variables.pod.containers[0].name == 'runner' &&
+        variables.containers.all(c, c.name in ['runner', 'link-key'] &&
+        c.securityContext.runAsNonRoot == true &&
+        c.securityContext.allowPrivilegeEscalation == false &&
+        c.securityContext.capabilities.drop == ['ALL'] && !has(c.securityContext.capabilities.add) &&
+        c.securityContext.seccompProfile.type == 'RuntimeDefault' &&
+        {{- range list "appArmorProfile" "privileged" "procMount" "readOnlyRootFilesystem" "runAsGroup" "runAsUser" "seLinuxOptions" "windowsOptions" }}
+        !has(c.securityContext.{{ . }}) &&
+        {{- end }}
+        {{- range splitList " " (include "purlis-cluster-operator.container-fields" .) }}
+        !has(c.{{ . }}) &&
+        {{- end }}
+        (!has(c.resources) || !has(c.resources.claims)) &&
+        (!has(c.env) || c.env.all(e, !has(e.valueFrom) || has(e.valueFrom.fieldRef))) &&
+        (!has(c.volumeMounts) || c.volumeMounts.all(m, m.name in ['purlis-link', 'purlis-kept']))))
+      message: purlis's cluster operator's template confines each container as purlis's runner is.
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-operator-writes-only-a-runners-shape
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-operator-writes-only-a-runners-shape
+  validationActions: [Deny]

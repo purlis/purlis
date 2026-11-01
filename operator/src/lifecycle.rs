@@ -14,7 +14,7 @@ use crate::person::NAMESPACE_PREFIX;
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition, condition_of};
 use crate::upstream::{self, RUNNER_CONTAINER, SUSPENDED, Sandbox, Suspension};
 use crate::vouch::Vouching;
-use k8s_openapi::api::core::v1::Pod;
+use k8s_openapi::api::core::v1::{Pod, PodSpec};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
 use k8s_openapi::jiff::{SignedDuration, Timestamp};
 use kube::ResourceExt;
@@ -384,6 +384,38 @@ pub fn with_image(pod_spec: &mut serde_json::Value, image: &str) -> bool {
         for container in containers {
             if container.get("image").and_then(|held| held.as_str()) != Some(image) {
                 container["image"] = serde_json::Value::from(image);
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+/// **`pod_spec`, a Sandbox's pod template spec as the cluster holds it, with each container's
+/// resources as `wanted` says**, and whether that changed anything (#3844). A Sandbox keeps the
+/// template it was made from, and a quota that holds limits refuses a pod without them, so a kept
+/// runner made before there were limits could not otherwise start again.
+pub fn with_resources(pod_spec: &mut serde_json::Value, wanted: &PodSpec) -> bool {
+    let wanted = wanted
+        .init_containers
+        .iter()
+        .flatten()
+        .chain(&wanted.containers)
+        .map(|container| (container.name.as_str(), &container.resources))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut changed = false;
+    for list in ["initContainers", "containers"] {
+        let Some(containers) = pod_spec.get_mut(list).and_then(|held| held.as_array_mut()) else {
+            continue;
+        };
+        for container in containers {
+            let name = container.get("name").and_then(|held| held.as_str());
+            let Some(Some(resources)) = name.and_then(|name| wanted.get(name)) else {
+                continue;
+            };
+            let resources = serde_json::to_value(resources).unwrap_or_default();
+            if container.get("resources") != Some(&resources) {
+                container["resources"] = resources;
                 changed = true;
             }
         }

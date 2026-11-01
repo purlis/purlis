@@ -476,6 +476,17 @@ describe("a dot pressed from the keyboard (#3648's review, WCAG 2.4.3)", () => {
     await waitFor(() => expect(card).toHaveFocus());
   });
 
+  // #4026: a window's frames can stall for seconds; the keyboard was left on the page until they
+  // came back.
+  it("hands the keyboard to the card though no frame is drawn", async () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 1);
+    render(<Bar on="alpha" startOpen={false} />);
+    screen.getByRole("button", { name: "Show the notice on alpha" }).focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await screen.findByRole("region", { name: "Notices for alpha" });
+    await waitFor(() => expect(card).toHaveFocus());
+  });
+
   // #3896: the card hands itself the keyboard over a few frames, while React Aria places it;
   // the keyboard going on into the card in those frames was taken back to the card's edge.
   it("leaves the keyboard where it went in the card, as the card takes it", async () => {

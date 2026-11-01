@@ -37,6 +37,7 @@ type RepoTried = { refused?: string; asksForge?: string };
 import { SessionBusNotice } from "./SessionBusNotice";
 import { EngineDownloadNotice } from "./EngineDownloadNotice";
 import { EngineSandboxNotice } from "./EngineSandboxNotice";
+import { PoolMintingNotice } from "./PoolMintingNotice";
 import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
@@ -2566,6 +2567,8 @@ function App() {
             {/* Browsers that cannot start for the engine's sandbox, and the ways out (#2835). */}
             <EngineDownloadNotice />
             <EngineSandboxNotice />
+            {/* A cluster pool that began minting without asking: told once, blocking nothing (#4442). */}
+            <PoolMintingNotice onOpenPools={() => openSettingsAt("you.machine.pools")} />
 
             {/* The session host stopped unexpectedly three times in five minutes, and the window's
             supervisor stopped starting it again: Try again (#2007). */}

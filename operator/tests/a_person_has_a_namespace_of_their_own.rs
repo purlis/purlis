@@ -9,7 +9,8 @@
 use k8s_openapi::api::core::v1::{ResourceQuota, ResourceQuotaStatus};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use purlis_cluster_operator::person::{
-    self, CLAIMS_KEY, CPU_KEY, MEMORY_KEY, Quota, STORAGE_KEY, milli,
+    self, CLAIMS_KEY, CPU_KEY, EPHEMERAL_STORAGE_KEY, MEMORY_KEY, MEMORY_LIMIT_KEY, Quota,
+    STORAGE_KEY, milli,
 };
 use purlis_cluster_operator::{Pool, PoolSpec, upstream};
 use serde_json::json;
@@ -44,7 +45,10 @@ fn the_operator_uses_a_runner_namespace_only_when_it_made_it_for_that_person() {
         serde_json::to_value(&made).unwrap()["metadata"],
         json!({
             "name": "purlis-runners-b5fc85e55755f9e0",
-            "labels": { "app.kubernetes.io/managed-by": "purlis-cluster-operator" },
+            "labels": {
+                "app.kubernetes.io/managed-by": "purlis-cluster-operator",
+                "pod-security.kubernetes.io/enforce": "restricted",
+            },
             "annotations": { "runners.purlis.dev/requester": "ada@example.com" },
         })
     );
@@ -137,6 +141,8 @@ fn the_default_quota_is_five_claims_and_what_five_runners_ask_for() {
                 "count/sandboxclaims.extensions.agents.x-k8s.io": "5",
                 "requests.cpu": "4",
                 "requests.memory": "8Gi",
+                "limits.memory": "64Gi",
+                "requests.ephemeral-storage": "16Gi",
                 "requests.storage": "50Gi",
             } },
         })
@@ -167,6 +173,8 @@ fn the_charts_quota_is_read_with_each_key_it_leaves_out_unlimited() {
             claims: Some(2),
             cpu: Some("1.5".into()),
             memory: Some("2Gi".into()),
+            memory_limit: None,
+            ephemeral_storage: None,
             storage: None,
         }
     );
@@ -272,6 +280,8 @@ fn one_more_runner_asks_for_a_claim_its_pods_requests_and_a_kept_ones_volume() {
             (CLAIMS_KEY, "1".to_owned()),
             (CPU_KEY, "250m".to_owned()),
             (MEMORY_KEY, format!("{}m", 512u128 * 1000 * (1 << 20))),
+            (EPHEMERAL_STORAGE_KEY, format!("{}m", 1000u128 * (1 << 30))),
+            (MEMORY_LIMIT_KEY, format!("{}m", 4000u128 * (1 << 30))),
         ]
     );
     assert_eq!(

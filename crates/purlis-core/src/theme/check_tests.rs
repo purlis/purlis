@@ -203,10 +203,10 @@ fn the_current_line_is_measured_over_the_editor_s_ground() {
 
 #[test]
 fn purlis_classic_light_s_property_and_attribute_read_on_the_current_line() {
-    // Darkened from #218bff (2.79 on the current line) to the nearest of its hue that clears
-    // the floor; the rest of the light appearance is as it was.
+    // Darkened from #218bff (2.79 on the current line), and again for a diff's changed word
+    // (#4424); the terminal's bright blue stays as it was.
     for token in ["syntax.property", "syntax.attribute"] {
-        assert_eq!(classic_light().value(token), "#1283ff");
+        assert_eq!(classic_light().value(token), "#0969da");
     }
     assert_eq!(
         classic_light().value("terminal.ansi.bright-blue"),

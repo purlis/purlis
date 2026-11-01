@@ -136,6 +136,47 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 None,
                 Some(*ratio),
             ),
+            Finding::SelectedBetweenTints { degree, other } => (
+                format!(
+                    "list.selected is drawn exactly as {other}, in a workspace's own colour at \
+                     {degree}°"
+                ),
+                None,
+                None,
+                None,
+            ),
+            Finding::CardBetweenTints {
+                degree,
+                card,
+                ground,
+                ratio,
+                floor,
+            } => (
+                format!(
+                    "a side view's card row ({card}) on its panel ({ground}), in a workspace's \
+                     own colour at {degree}°"
+                ),
+                Some(*floor),
+                None,
+                Some(*ratio),
+            ),
+            Finding::NoticeWayBetweenTints {
+                degree,
+                variant,
+                ground,
+                pointed,
+                distance,
+                floor,
+            } => (
+                format!(
+                    "a {variant} notice card's secondary way{} on its ground ({ground}), in a \
+                     workspace's own colour at {degree}°",
+                    if *pointed { " under the pointer" } else { "" }
+                ),
+                Some(*floor),
+                None,
+                Some(*distance),
+            ),
             Finding::Ansi {
                 tint,
                 token,

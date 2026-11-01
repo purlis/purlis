@@ -197,6 +197,10 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 #
 # The sixth policy, purlis-only-the-operator-writes-a-claims-status (#3981): what the operator acts
 # on is what a Claim's status says, so no one else writes it.
+#
+# The seventh policy, purlis-operator-writes-only-a-runners-shape (#3754): the operator writes
+# upstream's templates, claims and warm pools in a runner namespace alone, a template's pod only in
+# purlis's runner shape.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.
@@ -401,7 +405,10 @@ fn the_per_person_quota_reaches_the_operator_as_set() {
     let defaults = quota_handed(&rendered(&with_digest(&[])));
     assert_eq!(
         defaults,
-        json!({ "claims": 5, "cpu": "4", "memory": "8Gi", "storage": "50Gi" })
+        json!({
+            "claims": 5, "cpu": "4", "memory": "8Gi", "memoryLimit": "64Gi",
+            "ephemeralStorage": "16Gi", "storage": "50Gi",
+        })
     );
     let quota = purlis_cluster_operator::person::Quota::from_var(Some(&defaults.to_string()))
         .expect("the operator reads the default");
@@ -411,7 +418,13 @@ fn the_per_person_quota_reaches_the_operator_as_set() {
         "perPerson.quota.cpu=1500m",
         "perPerson.quota.storage=null",
     ])));
-    assert_eq!(set, json!({ "claims": 2, "cpu": "1500m", "memory": "8Gi" }));
+    assert_eq!(
+        set,
+        json!({
+            "claims": 2, "cpu": "1500m", "memory": "8Gi", "memoryLimit": "64Gi",
+            "ephemeralStorage": "16Gi",
+        })
+    );
     for value in ["perPerson.quota.disks=2", "perPerson.quota.cpu=lots"] {
         render(&with_digest(&[value])).expect_err(value);
     }

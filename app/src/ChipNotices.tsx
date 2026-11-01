@@ -401,8 +401,9 @@ export function ChipCard({
   useLayoutEffect(() => {
     handed.current = { takesKeyboard, onKeyboardTaken };
   });
-  // Once React Aria has placed it (it is drawn hidden until then), a frame or a few later; and
-  // never taken back to the card's edge once the keyboard is in it already (#3896): Tab in
+  // At once where it can take it, as a window's frames can stall for seconds on a busy machine
+  // (#4026); else once React Aria has placed it (it is drawn hidden until then), a frame or a few
+  // later. Never taken back to the card's edge once the keyboard is in it already (#3896): Tab in
   // those frames goes on into it, as it would a moment later.
   useEffect(() => {
     if (!takesKeyboard) return;
@@ -417,7 +418,7 @@ export function ChipCard({
       }
       asked = requestAnimationFrame(land);
     };
-    asked = requestAnimationFrame(land);
+    land();
     return () => cancelAnimationFrame(asked);
   }, [takesKeyboard]);
   // **The keyboard back on the chip** (#3648's review, WCAG 2.4.3): a card the keyboard was in
