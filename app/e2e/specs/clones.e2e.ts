@@ -221,6 +221,18 @@ async function theStatusBarsCardIsPutAway(): Promise<void> {
   });
 }
 
+/** The status bar's card put away, and the chip's brought back by pressing its dot. */
+async function theChipsCardIsBack(workspace: string): Promise<void> {
+  await theStatusBarsCardIsPutAway();
+  await browser.execute((name: string) => {
+    const chip = document.querySelector(`[data-chip-of="${name}"]`);
+    chip
+      ?.closest('[data-scope="titlebar"][data-part="slot"]')
+      ?.querySelector<HTMLElement>(`button:not([data-chip-of])`)
+      ?.click();
+  }, workspace);
+}
+
 /** The workspace `name` made in its dialog with `repos` picked: its clones run on its chip. */
 async function aNewWorkspaceCloning(name: string, repos: string[]): Promise<void> {
   // Before the card comes: a press anywhere else hides it.
@@ -477,6 +489,10 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     await untilLanded(landed, 90_000, "the retry after signing in");
     aWholeClone(landed);
     expect(existsSync(hidden)).toBe(false);
+    // Its result comes once the clone has answered, on the status bar's card: read here, or it
+    // would come up over the next case's.
+    await untilSays('[data-chip="status/bar/notices"]', "Cloned first-repo").catch(() => undefined);
+    await theStatusBarsCardIsPutAway();
     const signed = forge.heard().filter((one) => one.repo === "first-repo" && one.signedIn);
     expect(signed.length).toBeGreaterThan(0);
     // GitLab's name for an OAuth or personal token, from the account's helper and no CLI's.
@@ -498,6 +514,8 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
         ];
         if (card !== null) onCard.push(card);
         if (row !== null) onRow.push(row);
+        // A notice of the project's that came meanwhile puts the chip's card behind its dot.
+        if (card === null) await theChipsCardIsBack("long-clone");
         // Part way, with both on screen, for a person to look at.
         if (!pictured && card !== null && row !== null && card >= 25 && row >= 25) {
           pictured = true;
@@ -574,7 +592,11 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     await aNewWorkspaceCloning("stopped-card", [repo]);
     const { hidden } = foldersOf(plane, "stopped-card", repo);
     await browser.waitUntil(
-      async () => ((await percentOf(cardMeterOf("stopped-card"))) ?? 0) >= 10,
+      async () => {
+        const card = await percentOf(cardMeterOf("stopped-card"));
+        if (card === null) await theChipsCardIsBack("stopped-card");
+        return (card ?? 0) >= 10;
+      },
       {
         timeout: 60_000,
         timeoutMsg: "the card's meter never got part way",
