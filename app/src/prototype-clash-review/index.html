@@ -1,0 +1,168 @@
+<title>Skill clash review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!-- PROTOTYPE, throwaway (#4530). Question: what should the install review look like when a name
+     clashes, and where does a skill's source label go? Three variants of the review, then the
+     label on each list. Nothing is real: all state is in this page's memory. -->
+<style>
+:root{
+  /* Layout: the review as the app draws it, one column with Install fixed at the foot; a state readout beside it. */
+  --bg:#f6f7f9;--panel:#fff;--fg:#1b1f27;--muted:#5d6675;--line:#d9dde4;--accent:#2f5fd0;--accent-fg:#fff;
+  --warn-bg:#fdf3df;--warn-fg:#7a4b00;--bad:#b3261e;--chip:#eceff4;
+  --ui:ui-sans-serif,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171c;--panel:#1c2027;--fg:#e7eaf0;--muted:#9aa4b3;--line:#323844;--accent:#7ea2f5;--accent-fg:#10131a;--warn-bg:#3a2d12;--warn-fg:#f1cf8a;--bad:#f2968f;--chip:#2a303a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171c;--panel:#1c2027;--fg:#e7eaf0;--muted:#9aa4b3;--line:#323844;--accent:#7ea2f5;--accent-fg:#10131a;--warn-bg:#3a2d12;--warn-fg:#f1cf8a;--bad:#f2968f;--chip:#2a303a;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--ui);padding-block:20px 90px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1{font-size:20px;margin:0 0 4px;text-wrap:balance}h2{font-size:15px;margin:0}h3{font-size:13px;margin:0}
+p{margin:0}code{font:12.5px var(--mono)}
+.wrap{max-width:1040px;margin:0 auto;display:grid;gap:20px}
+.lede{color:var(--muted);max-width:68ch}
+.tabs,.seg{display:flex;flex-wrap:wrap;gap:6px}
+button{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:16px;align-items:start}
+@media (max-width:760px){.stage{grid-template-columns:minmax(0,1fr)}}
+.page{background:var(--panel);border:1px solid var(--line);border-radius:8px;display:grid}
+.page>header,.page>section,.page>footer{padding:12px 16px}
+.page>section,.page>footer{border-top:1px solid var(--line)}
+.page>footer{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.sub{color:var(--muted);font-size:13px}
+.state{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}
+.state pre{margin:6px 0 0;font:12px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.stop{background:var(--warn-bg);color:var(--warn-fg);padding:10px 12px;border-radius:6px;display:grid;gap:8px}
+.stop .sub{color:inherit}
+.choice{display:grid;gap:6px}
+.choice label{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=text]{font:13px var(--mono);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:4px 7px;min-width:0;width:min(260px,100%)}
+.err{color:var(--bad);font-size:13px}
+.warnline{color:var(--warn-fg);background:var(--warn-bg);border-radius:5px;padding:4px 8px;font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;justify-content:space-between}
+.grid2{display:grid;gap:8px}
+.fold{color:var(--muted);font-size:13px}
+.lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:8px;align-content:start;min-width:0}
+.item{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.label{color:var(--muted)}
+.chip{background:var(--chip);color:var(--muted);border-radius:99px;padding:0 8px;font-size:12px}
+.chat{font:12px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+.q{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:6px}
+ol{margin:0;padding-left:20px;display:grid;gap:6px;max-width:75ch}
+.bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom,0px));background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;display:flex;gap:6px;align-items:center;max-width:calc(100vw - 32px);flex-wrap:wrap;justify-content:center}
+</style>
+<div class="wrap">
+  <div>
+    <h1>A name clash in the install review</h1>
+    <p class="lede">Prototype for #4530. The source offers <code>grilling</code> and <code>release</code>, and this project's skills already have a <code>grilling</code> from another source. Try the variants with the bar at the foot, then pick a case. Nothing here installs anything.</p>
+  </div>
+  <div class="tabs" id="cases" aria-label="Case"></div>
+  <div class="stage">
+    <div id="review"></div>
+    <aside class="state"><h3>What Install would do</h3><pre id="state"></pre></aside>
+  </div>
+  <div class="q">
+    <h2>Questions for the operator</h2>
+    <ol>
+      <li><strong>Which variant?</strong> My pick is A: the choice sits in the review that already holds the skill, and Install waits for it.</li>
+      <li><strong>Does "per level by the narrowest-copy rule" stop on a copy at another level?</strong> The case "Another level" draws what I would do: only the same level stops, because two copies there cannot exist. A copy at another level is settled by the narrowest-copy rule, so it gets one line and no stop. The other reading stops on it too.</li>
+      <li><strong>Is the built-in case a clash?</strong> Today a built-in's name is refused or left out. The case "Built-in" offers the same two choices.</li>
+    </ol>
+  </div>
+  <h2>The source label on each list</h2>
+  <div class="lists">
+    <div class="list"><h3>Library</h3>
+      <div class="item"><strong>grilling</strong><span class="label">· mattpocock</span></div>
+      <div class="item"><strong>acme-grilling</strong><span class="label">· acme</span><span class="chip">grilling at its source</span></div>
+      <div class="item"><strong>handoff</strong><span class="sub">no label: made here</span></div>
+    </div>
+    <div class="list"><h3>Use skill…</h3>
+      <div class="item"><strong>grilling</strong><span class="label">· mattpocock</span></div>
+      <div class="item"><strong>acme-grilling</strong><span class="label">· acme</span></div>
+    </div>
+    <div class="list"><h3>Updates</h3>
+      <div class="item"><strong>acme-grilling</strong><span class="label">· acme</span></div>
+      <p class="sub">A newer commit of <code>grilling</code> at its source. Only the name line differs here, so it is not marked as edited.</p>
+    </div>
+    <div class="list"><h3>What a chat gets (no label)</h3>
+<pre class="chat">- `grilling` (project): Grill the user…
+- `acme-grilling` (project): Stress-test…</pre>
+    </div>
+  </div>
+</div>
+<div class="bar" role="group" aria-label="Variant"><span class="sub">Variant</span>
+  <button data-v="A">A In the review</button><button data-v="B">B Names first</button><button data-v="C">C One row each</button>
+</div>
+<script>
+const CASES={
+  single:{t:"One clash",skills:[{n:"grilling",with:"the project's skills hold a grilling from mattpocock"}],others:[]},
+  set:{t:"Two of three clash",skills:[{n:"grilling",with:"the project's skills hold a grilling from mattpocock"},{n:"review",with:"the project's skills hold a review made here"}],others:["release"]},
+  warn:{t:"Refers to another source's",skills:[],others:["release"],warn:"release refers to grilling, which is mattpocock's here."},
+  level:{t:"Another level",skills:[],others:["grilling"],note:"The ops workspace has its own grilling. Chats in ops keep that one, and every other chat gets this one."},
+  builtin:{t:"Built-in",skills:[{n:"handoff",with:"handoff belongs to a built-in skill"}],others:[]},
+};
+const SOURCE="acme";
+const TAKEN=new Set(["grilling","review","handoff","release"]);
+let variant="A",which="single",picks={};
+const pick=n=>picks[which+n]||(picks[which+n]={how:null,name:SOURCE+"-"+n});
+const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function problem(name){
+  if(!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name))return "A skill's name is lower-case letters, digits and single hyphens.";
+  if(name.length>64)return "A skill's name is at most 64 characters.";
+  if(TAKEN.has(name))return `The project's skills already have one named ${name}. Pick another name.`;
+  return null;
+}
+const c=()=>CASES[which];
+const settled=()=>c().skills.every(s=>{const p=pick(s.n);return p.how==="skip"||(p.how==="rename"&&!problem(p.name))});
+function installing(){const out=c().others.map(n=>n);c().skills.forEach(s=>{const p=pick(s.n);if(p.how==="rename"&&!problem(p.name))out.push(p.name)});return out}
+function choice(s){
+  const p=pick(s.n),err=p.how==="rename"?problem(p.name):null,id="n-"+s.n;
+  return `<div class="choice" role="radiogroup" aria-label="${s.n}">
+    <label><input type="radio" name="h-${s.n}" data-how="skip" data-n="${s.n}" ${p.how==="skip"?"checked":""}> Skip it</label>
+    <label><input type="radio" name="h-${s.n}" data-how="rename" data-n="${s.n}" ${p.how==="rename"?"checked":""}> Install it as
+      <input type="text" id="${id}" data-name="${s.n}" value="${esc(p.name)}" aria-label="New name for ${s.n}"></label>
+    ${err?`<p class="err">${esc(err)}</p>`:""}
+    <p class="sub">Only its name line and folder change. Its text is left as the source wrote it.</p></div>`;
+}
+const skillBody=n=>`<p class="fold">Summary, then each file: 1 file, no scripts, no network hosts ▸</p>`;
+function foot(){
+  const n=installing().length,left=c().skills.filter(s=>!pick(s.n).how).length,ok=settled()&&n>0;
+  const why=!settled()?(left?`Choose for ${left===1?"the skill":left+" skills"} whose name is taken.`:"Fix the new name."):n?"":"Every skill is skipped, so there is nothing to install.";
+  return `<footer><span class="sub">${esc(why)}</span><button class="primary" ${ok?"":"disabled"}>${n>1?`Install ${n} skills`:"Install"}</button></footer>`;
+}
+const head=`<header><h2>Install from acme</h2><p class="sub">Nothing is installed until you press Install. It lands in the project's skills.</p></header>`;
+const lines=()=>(c().warn?`<section><p class="warnline">${esc(c().warn)}</p></section>`:"")+(c().note?`<section><p class="sub">${esc(c().note)}</p></section>`:"");
+const plain=()=>c().others.map(n=>`<section><h3>${n}</h3>${skillBody(n)}</section>`).join("");
+function A(){return `<div class="page">${head}${lines()}${c().skills.map(s=>`<section class="grid2"><h3>${s.n}</h3>
+  <div class="stop"><strong>This name is taken: ${esc(s.with)}.</strong>${choice(s)}</div>${skillBody(s.n)}</section>`).join("")}${plain()}${foot()}</div>`}
+function B(){
+  const open=c().skills.length&&picks["step"+which]!=="review";
+  if(open)return `<div class="page"><header><h2>${c().skills.length===1?"A name is taken":c().skills.length+" names are taken"}</h2><p class="sub">Settle these first. The review comes next.</p></header>
+   ${c().skills.map(s=>`<section class="grid2"><h3>${s.n}</h3><p class="sub">${esc(s.with)}.</p>${choice(s)}</section>`).join("")}
+   <footer><span class="sub"></span><button class="primary" data-next ${settled()?"":"disabled"}>Review</button></footer></div>`;
+  const kept=c().skills.filter(s=>pick(s.n).how==="rename").map(s=>`<section><h3>${esc(pick(s.n).name)} <span class="label">· ${s.n} at its source</span></h3>${skillBody(s.n)}</section>`).join("");
+  return `<div class="page">${head}${lines()}${kept}${plain()}${foot()}</div>`;
+}
+function C(){return `<div class="page">${head}${lines()}<section class="grid2">${c().skills.map(s=>{const p=pick(s.n),err=p.how==="rename"?problem(p.name):null;return `<div class="row"><span><strong>${s.n}</strong> <span class="sub">${esc(s.with)}</span></span>
+  <span class="seg"><button data-seg="skip" data-n="${s.n}" aria-pressed="${p.how==="skip"}">Skip</button><button data-seg="rename" data-n="${s.n}" aria-pressed="${p.how==="rename"}">New name</button></span></div>
+  ${p.how==="rename"?`<input type="text" id="n-${s.n}" data-name="${s.n}" value="${esc(p.name)}" aria-label="New name for ${s.n}">`:""}${err?`<p class="err">${esc(err)}</p>`:""}`}).join("")||'<p class="sub">No name is taken.</p>'}</section>${plain()}${foot()}</div>`}
+function draw(focus){
+  document.getElementById("review").innerHTML=({A,B,C})[variant]();
+  document.querySelectorAll("[data-v]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===variant));
+  document.getElementById("cases").innerHTML=Object.entries(CASES).map(([k,v])=>`<button data-case="${k}" aria-pressed="${k===which}">${v.t}</button>`).join("");
+  const rec=c().skills.filter(s=>pick(s.n).how==="rename"&&!problem(pick(s.n).name)).map(s=>`\n  ${pick(s.n).name}: source_name ${s.n}`).join("");
+  document.getElementById("state").textContent=`variant ${variant}\ninstalls [${installing().join(", ")}]\nskips [${c().skills.filter(s=>pick(s.n).how==="skip").map(s=>s.n).join(", ")}]\nInstall ${settled()&&installing().length?"on":"waits"}\nrecord:${rec||" nothing renamed"}`;
+  if(focus){const el=document.getElementById(focus);if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length)}}
+}
+document.addEventListener("click",e=>{const t=e.target.closest("button");if(!t)return;
+  if(t.dataset.v){variant=t.dataset.v;draw()}
+  else if(t.dataset.case){which=t.dataset.case;draw()}
+  else if(t.dataset.seg){pick(t.dataset.n).how=t.dataset.seg;draw()}
+  else if("next" in t.dataset){picks["step"+which]="review";draw()}
+});
+document.addEventListener("change",e=>{if(e.target.dataset.how){pick(e.target.dataset.n).how=e.target.dataset.how;draw()}});
+document.addEventListener("input",e=>{const n=e.target.dataset.name;if(n){const p=pick(n);p.name=e.target.value;p.how="rename";draw("n-"+n)}});
+draw();
+</script>
