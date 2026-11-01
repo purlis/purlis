@@ -744,6 +744,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // and pairs a container as adding a pool does, so only their own press in their window.
     "docker_pools_removed",
     "docker_pool_make_again",
+    // Replacing a pool's runner (#4286): the person's press alone, as every limit is theirs (Q6).
+    "docker_pool_replace_runner",
     // The runner image this version's release names (2026-10-30): the Add a pool dialog's
     // default image, read through the updater, for the person's own window.
     "runner_image_of_this_version",

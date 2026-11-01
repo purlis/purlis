@@ -27,6 +27,9 @@ pub enum Unit {
     Files,
     Minutes,
     Seconds,
+    /// CPUs, held in thousandths, as a pool's `cpus` is read.
+    Cpus,
+    Processes,
 }
 
 impl Unit {
@@ -40,6 +43,9 @@ impl Unit {
             Unit::Minutes => format!("{value} minutes"),
             Unit::Seconds if value == 1 => "1 second".to_owned(),
             Unit::Seconds => format!("{value} seconds"),
+            Unit::Cpus if value == 1000 => "1 CPU".to_owned(),
+            Unit::Cpus => format!("{} CPUs", cpus_said(value)),
+            Unit::Processes => format!("{value} processes"),
         }
     }
 
@@ -51,6 +57,8 @@ impl Unit {
             Unit::Files => "files",
             Unit::Minutes => "minutes",
             Unit::Seconds => "seconds",
+            Unit::Cpus => "CPUs",
+            Unit::Processes => "processes",
         }
     }
 
@@ -61,6 +69,8 @@ impl Unit {
             Unit::Mib => Some(16),
             Unit::Files => Some(256),
             Unit::Minutes | Unit::Seconds => None,
+            Unit::Cpus => Some(1000),
+            Unit::Processes => Some(64),
         }
     }
 
@@ -70,9 +80,35 @@ impl Unit {
         match self {
             Unit::Minutes => Some(std::time::Duration::from_secs(value.saturating_mul(60))),
             Unit::Seconds => Some(std::time::Duration::from_secs(value)),
-            Unit::Mib | Unit::Files => None,
+            Unit::Mib | Unit::Files | Unit::Cpus | Unit::Processes => None,
         }
     }
+}
+
+/// CPUs in thousandths, as a person writes them: `1.5`.
+fn cpus_said(thousandths: u64) -> String {
+    let (whole, part) = (thousandths / 1000, thousandths % 1000);
+    if part == 0 {
+        return whole.to_string();
+    }
+    let part = format!("{part:03}");
+    format!("{whole}.{}", part.trim_end_matches('0'))
+}
+
+/// `1.5` as thousandths of a CPU; `None` for anything but digits with at most three after a point.
+fn cpus_read(typed: &str) -> Option<u64> {
+    let (whole, part) = typed.split_once('.').unwrap_or((typed, ""));
+    let digits = |text: &str| text.bytes().all(|byte| byte.is_ascii_digit());
+    if !digits(whole) || !digits(part) || part.len() > 3 || (whole.is_empty() && part.is_empty()) {
+        return None;
+    }
+    let whole = if whole.is_empty() {
+        0
+    } else {
+        whole.parse::<u64>().ok()?
+    };
+    let part = format!("{part:0<3}").parse::<u64>().ok()?;
+    whole.checked_mul(1000)?.checked_add(part)
 }
 
 /// What a limit affects: the groups of the pool's page (variant B of the prototype).
@@ -147,6 +183,11 @@ pub enum LimitId {
     SignInWait = 4,
     VouchWait = 5,
     AnswerWait = 6,
+    Cpus = 7,
+    Memory = 8,
+    Processes = 9,
+    Tmp = 10,
+    SuspendAfter = 11,
 }
 
 /// One of a pool's limits.
@@ -172,7 +213,7 @@ pub struct Limit {
     pub measured: Measurement,
 }
 
-const ALL: [Limit; 7] = [
+const ALL: [Limit; 12] = [
     Limit {
         id: LimitId::ProfileSize,
         key: "profileSize",
@@ -315,6 +356,101 @@ const ALL: [Limit; 7] = [
             chosen_because: "stated: what a window waited before this was a limit, which real work has not outrun",
         },
     },
+    Limit {
+        id: LimitId::Cpus,
+        key: "cpus",
+        plain: "CPUs",
+        unit: Unit::Cpus,
+        default: 2000,
+        // Docker's own least; `dockerpool::Limits::new` holds the same.
+        least: 10,
+        most: 1_000_000,
+        group: Group::Runner,
+        advanced: false,
+        clusters_only: false,
+        takes_effect: TakesEffect::NextReplacement,
+        measured: Measurement {
+            on: "not timed on its own: the pool journey and parity behaviours on a busy CI runner, 2026-11-01",
+            found: "none failed for want of CPU at two",
+            chosen_because: "stated: what a pool has had since #2506, which real work has not outrun",
+        },
+    },
+    Limit {
+        id: LimitId::Memory,
+        key: "memory",
+        plain: "Memory",
+        unit: Unit::Mib,
+        default: 4096,
+        least: 512,
+        most: 16 * 1024 * 1024,
+        group: Group::Runner,
+        advanced: false,
+        clusters_only: false,
+        takes_effect: TakesEffect::NextReplacement,
+        measured: Measurement {
+            on: "a default runner taking a 999 MiB profile on CI, 2026-11-01 (#4314)",
+            found: "a peak of 3.26 of its 4 GiB",
+            chosen_because: "holds the largest profile a runner can be sent",
+        },
+    },
+    Limit {
+        id: LimitId::Processes,
+        key: "processes",
+        plain: "Processes",
+        unit: Unit::Processes,
+        default: 1024,
+        // A runner's host, a chat, its harness and its sandbox's supervisor, with room for a build.
+        least: 64,
+        // Linux's own highest process id.
+        most: 4_194_304,
+        group: Group::Runner,
+        advanced: false,
+        clusters_only: false,
+        takes_effect: TakesEffect::NextReplacement,
+        measured: Measurement {
+            on: "not counted on its own: the pool journey and parity behaviours on CI, 2026-11-01",
+            found: "none failed for want of a process at 1024",
+            chosen_because: "stated: what a pool has had since #2506, which real work has not outrun",
+        },
+    },
+    Limit {
+        id: LimitId::Tmp,
+        key: "tmp",
+        plain: "Size of /tmp",
+        unit: Unit::Mib,
+        default: 1024,
+        least: 1,
+        // No larger than the memory it counts against, which a pool checks with its other values.
+        most: 16 * 1024 * 1024,
+        group: Group::Runner,
+        advanced: false,
+        clusters_only: false,
+        takes_effect: TakesEffect::NextReplacement,
+        measured: Measurement {
+            on: "not measured on its own: the pool journey and parity behaviours on CI, 2026-11-01",
+            found: "none filled it at 1024 MiB",
+            chosen_because: "stated: a quarter of the default memory it counts against, since #2506",
+        },
+    },
+    Limit {
+        id: LimitId::SuspendAfter,
+        key: "suspendAfter",
+        plain: "Suspends after this long with no link",
+        unit: Unit::Minutes,
+        default: 1440,
+        least: 1,
+        // `dockerpool::MOST_SUSPEND_AFTER`: 30 days.
+        most: 43_200,
+        group: Group::Runner,
+        advanced: false,
+        clusters_only: false,
+        takes_effect: TakesEffect::NextReplacement,
+        measured: Measurement {
+            on: "not measurable by a machine: it is how long a person stays away",
+            found: "a day, ruled for #2051",
+            chosen_because: "stated: a night away keeps the runner up, and a runner left for longer stops costing",
+        },
+    },
 ];
 
 /// **Every limit a pool has.**
@@ -337,6 +473,13 @@ impl LimitId {
 }
 
 impl Limit {
+    /// **Whether it shapes the runner itself** (Q13): written in a pool's row as its own key, on
+    /// a Docker pool alone, whose runner this machine makes. A cluster's team makes its runners.
+    #[must_use]
+    pub fn shapes_runner(&self) -> bool {
+        self.takes_effect == TakesEffect::NextReplacement
+    }
+
     /// **Whether `value` can be this limit's**, under the `highest` allowed where a team set one:
     /// the one check the file, the command and the window share.
     pub fn check(&self, value: u64, highest: Option<u64>) -> Result<(), String> {
@@ -362,6 +505,11 @@ impl Limit {
     /// for what a person types, so a window never reads a number by rules of its own.
     pub fn check_typed(&self, typed: &str, highest: Option<u64>) -> Result<u64, String> {
         let typed = typed.trim();
+        if self.unit == Unit::Cpus {
+            let value = cpus_read(typed)
+                .ok_or_else(|| format!("{} is a number such as 1.5", self.plain))?;
+            return self.check(value, highest).map(|()| value);
+        }
         let value = typed
             .bytes()
             .all(|byte| byte.is_ascii_digit())
@@ -513,7 +661,7 @@ impl Chosen {
 
     /// Writes the values set into a pool's `row`; one unset is left out.
     pub fn to_row(&self, row: &mut Value) {
-        for limit in all() {
+        for limit in all().iter().filter(|limit| !limit.shapes_runner()) {
             if let Some(value) = self.get(limit.id) {
                 row[limit.key] = value.into();
             }
@@ -523,7 +671,8 @@ impl Chosen {
     /// The values a pool's row holds, each a whole number [`Limit::check`] takes, or why not.
     pub fn from_row(fields: &Map<String, Value>) -> Result<Chosen, String> {
         let mut chosen = Chosen::default();
-        for limit in all() {
+        // Those shaping a runner have their own spelling in the row (`runners::Set`).
+        for limit in all().iter().filter(|limit| !limit.shapes_runner()) {
             let Some(value) = fields.get(limit.key) else {
                 continue;
             };
@@ -557,6 +706,38 @@ mod tests {
                 assert!(!said.trim().is_empty(), "{} has no measurement", limit.key);
             }
         }
+    }
+
+    /// The list says what a pool holds when nothing is set, so neither can drift from the other.
+    #[test]
+    fn the_limits_shaping_a_runner_default_to_what_a_runner_is_made_with() {
+        let made = crate::dockerpool::Limits::default();
+        assert_eq!(LimitId::Cpus.limit().default, u64::from(made.millicpus()));
+        assert_eq!(LimitId::Memory.limit().default, made.memory_mib());
+        assert_eq!(LimitId::Processes.limit().default, u64::from(made.pids()));
+        assert_eq!(LimitId::Tmp.limit().default, made.tmp_mib());
+        assert_eq!(
+            LimitId::SuspendAfter.limit().default * 60,
+            crate::dockerpool::SUSPEND_AFTER.as_secs()
+        );
+        assert_eq!(
+            LimitId::SuspendAfter.limit().most * 60,
+            crate::dockerpool::MOST_SUSPEND_AFTER.as_secs()
+        );
+    }
+
+    #[test]
+    fn cpus_are_typed_as_a_person_writes_them_and_held_in_thousandths() {
+        let cpus = LimitId::Cpus.limit();
+        assert_eq!(cpus.check_typed("1.5", None), Ok(1500));
+        assert_eq!(cpus.check_typed(" 2 ", None), Ok(2000));
+        assert_eq!(cpus.check_typed(".25", None), Ok(250));
+        for bad in ["", ".", "1.2345", "1,5", "-1", "1e3", "0"] {
+            assert!(cpus.check_typed(bad, None).is_err(), "{bad:?}");
+        }
+        assert_eq!(cpus.unit.said(1000), "1 CPU");
+        assert_eq!(cpus.unit.said(1500), "1.5 CPUs");
+        assert_eq!(cpus.unit.said(2000), "2 CPUs");
     }
 
     /// The defaults hold what was measured, so an ordinary profile starts with no change.

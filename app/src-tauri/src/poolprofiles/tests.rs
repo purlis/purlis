@@ -779,7 +779,7 @@ fn a_removed_profile_leaves_a_cluster_pool_only_where_its_runner_forgot_it() {
 fn a_pools_page_lists_every_limit_once_with_what_the_person_set() {
     use purlis_core::poollimits::{Chosen, LimitId, all};
     let chosen = Chosen::default().with(LimitId::ProfileFiles, Some(9000));
-    let shown = limits_shown(&chosen);
+    let shown = limits_shown(&chosen, true, &[]);
     let rows: Vec<&PoolLimitRow> = shown
         .groups
         .iter()
@@ -822,7 +822,7 @@ fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait()
     let hits = hits_said_in("ran-out-signing-in", &said);
     assert_eq!(hits[0].limit, LimitId::SignInWait);
 
-    let page = limits_shown(&Chosen::default());
+    let page = limits_shown(&Chosen::default(), true, &[]);
     let keys: Vec<&str> = page
         .groups
         .iter()
@@ -834,4 +834,33 @@ fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait()
     assert!(keys.contains(&"answerWait"), "{keys:?}");
     assert!(!keys.contains(&"vouchWait"), "{keys:?}");
     assert_eq!(page.advanced.len(), 1);
+}
+
+/// **A cluster pool's runner is its team's** (#4286): its page has no limit shaping one, and what
+/// waits is named only where something does.
+#[test]
+fn only_a_docker_pools_page_lists_the_limits_shaping_its_runner_and_what_waits() {
+    use purlis_core::poollimits::{Chosen, LimitId};
+    let keys = |page: &PoolLimitsPage| -> Vec<String> {
+        page.groups
+            .iter()
+            .flat_map(|group| &group.limits)
+            .map(|row| row.key.clone())
+            .collect()
+    };
+    let cluster = limits_shown(&Chosen::default(), false, &[]);
+    assert!(!keys(&cluster).contains(&"memory".to_owned()));
+    assert!(cluster.waiting.is_empty());
+    let docker = limits_shown(&Chosen::default(), true, &[LimitId::Memory]);
+    assert!(keys(&docker).contains(&"memory".to_owned()));
+    assert_eq!(docker.waiting, vec!["Memory".to_owned()]);
+    let runner = docker
+        .groups
+        .iter()
+        .find(|group| group.label == "Runner")
+        .unwrap();
+    assert_eq!(
+        runner.applies.as_deref(),
+        Some("Applies when this runner is next replaced.")
+    );
 }
