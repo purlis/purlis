@@ -42,7 +42,7 @@ pub(super) const STEPS: Family = Family {
             name: "mark",
             since: super::NEXT,
             description: "A step's mark: its state's icon, or its number.",
-            properties: &[Prop::Fill, Prop::Text, Prop::BorderColour],
+            properties: &[Prop::Text, Prop::BorderColour],
         },
         Part {
             name: "name",

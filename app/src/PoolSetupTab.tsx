@@ -412,6 +412,9 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
     const mine = ++reads.current;
     void commands.poolSetup(plane).then((answer) => {
       if (mine !== reads.current) return;
+      // What went wrong starting Docker is over once Docker needs nothing.
+      if (answer.status === "ok" && answer.data.steps[0]?.state !== "attention")
+        setTrouble(undefined);
       setRead(
         answer.status === "ok"
           ? { state: "read", shown: answer.data }
@@ -434,10 +437,7 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
     (at === "where" || at === "pool") &&
     shown?.steps.find((step) => step.id === at)?.state === "attention";
   useEffect(() => {
-    if (!waiting) {
-      setTrouble(undefined);
-      return;
-    }
+    if (!waiting) return;
     const every = setInterval(reread, RECHECK_MS);
     return () => clearInterval(every);
   }, [waiting, reread]);
@@ -514,7 +514,7 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
                 setShowing(undefined);
                 void commands.poolSetupChooseDocker().then((answer) => {
                   if (answer.status === "error") setTrouble(answer.error);
-                  reread();
+                  else reread();
                 });
               }}
             />

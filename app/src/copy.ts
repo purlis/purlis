@@ -40,7 +40,7 @@ const STOCK =
  * here fails the guard on its first label; adding it is the fix, and it is the only list.
  */
 const NAMES =
-  /\b(Claude Code|Codex|opencode|GitHub|GitLab|Keychain|Touch ID|Windows Hello|LM Studio|Ollama|Finder|File Explorer|Files|macOS|Linux|Windows|IntelliJ IDEA|JetBrains)\b/g;
+  /\b(Docker|Claude Code|Codex|opencode|GitHub|GitLab|Keychain|Touch ID|Windows Hello|LM Studio|Ollama|Finder|File Explorer|Files|macOS|Linux|Windows|IntelliJ IDEA|JetBrains)\b/g;
 
 /**
  * Acronyms of four letters or more, the environment variables the window names, and a

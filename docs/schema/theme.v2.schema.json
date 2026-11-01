@@ -8366,17 +8366,11 @@
         "steps.press.later.padding": {
           "$ref": "#/$defs/part-padding"
         },
-        "steps.mark.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
         "steps.mark.text": {
           "$ref": "#/$defs/part-text"
         },
         "steps.mark.border-colour": {
           "$ref": "#/$defs/part-border-colour"
-        },
-        "steps.mark.done.fill": {
-          "$ref": "#/$defs/part-fill"
         },
         "steps.mark.done.text": {
           "$ref": "#/$defs/part-text"
@@ -8384,17 +8378,11 @@
         "steps.mark.done.border-colour": {
           "$ref": "#/$defs/part-border-colour"
         },
-        "steps.mark.current.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
         "steps.mark.current.text": {
           "$ref": "#/$defs/part-text"
         },
         "steps.mark.current.border-colour": {
           "$ref": "#/$defs/part-border-colour"
-        },
-        "steps.mark.attention.fill": {
-          "$ref": "#/$defs/part-fill"
         },
         "steps.mark.attention.text": {
           "$ref": "#/$defs/part-text"
@@ -8402,26 +8390,17 @@
         "steps.mark.attention.border-colour": {
           "$ref": "#/$defs/part-border-colour"
         },
-        "steps.mark.skipped.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
         "steps.mark.skipped.text": {
           "$ref": "#/$defs/part-text"
         },
         "steps.mark.skipped.border-colour": {
           "$ref": "#/$defs/part-border-colour"
         },
-        "steps.mark.waiting.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
         "steps.mark.waiting.text": {
           "$ref": "#/$defs/part-text"
         },
         "steps.mark.waiting.border-colour": {
           "$ref": "#/$defs/part-border-colour"
-        },
-        "steps.mark.later.fill": {
-          "$ref": "#/$defs/part-fill"
         },
         "steps.mark.later.text": {
           "$ref": "#/$defs/part-text"
