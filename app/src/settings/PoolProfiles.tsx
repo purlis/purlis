@@ -233,6 +233,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
             {/* Where a limit kept it off the runner, the form is here, and asks again (#4397). */}
             {row.not_kept !== null && (
               <OfferToRaise
+                key={row.not_kept}
                 pool={pool}
                 refused={row.not_kept}
                 action="Save to the pool and ask again"

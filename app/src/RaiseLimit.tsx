@@ -121,7 +121,7 @@ export function RaiseLimit({
  * **The form where a refusal on pool `pool` said a limit was hit** (#4397): asked of the core,
  * never read from the words, so a refusal that hit no limit draws nothing. A value saved goes to the
  * pool, then `onRaised` goes again. Used where a person meets a limit with no flow of its own, as
- * Start a chat and a move have.
+ * Start a chat and a move have. Given a `key` of the refusal, so another refusal starts over.
  */
 export function OfferToRaise({
   pool,
@@ -141,7 +141,6 @@ export function OfferToRaise({
   const [why, setWhy] = useState<string>();
   useEffect(() => {
     let gone = false;
-    setOffer(null);
     void commands
       .poolLimitOfferForMove(pool, refused)
       .catch(() => null)
