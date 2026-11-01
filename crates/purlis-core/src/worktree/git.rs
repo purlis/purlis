@@ -895,9 +895,52 @@ fn common_git_dir(dir: &Path, link: Option<&(PathBuf, PathBuf)>) -> Option<PathB
         .ancestors()
         .map(|folder| folder.join(".git"))
         .find(|git| git.symlink_metadata().is_ok())
-        .filter(|git| {
-            git.symlink_metadata().is_ok_and(|found| found.is_dir()) && git.join("HEAD").is_file()
-        })
+        .filter(|git| git_takes(git))
+}
+
+/// Whether git takes the folder `git` for a repository as it climbs to it, by what git itself
+/// requires (`is_git_directory`, #4402): a `HEAD` it reads as one, and `objects` and `refs` it can
+/// search. **Never more than git takes, and in places less**: a link at any of those, or a
+/// `commondir` (whose repository would be another folder's, store and all), answers no, as
+/// anything else this cannot read does. A no only holds the LFS filter.
+fn git_takes(git: &Path) -> bool {
+    let searchable = |name: &str| {
+        let folder = git.join(name);
+        folder.symlink_metadata().is_ok_and(|found| found.is_dir())
+            && rustix::fs::access(&folder, rustix::fs::Access::EXEC_OK).is_ok()
+    };
+    let shared = git.join("commondir").symlink_metadata();
+    git.symlink_metadata().is_ok_and(|found| found.is_dir())
+        && shared.is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound)
+        && reads_as_a_head(&git.join("HEAD"))
+        && searchable("objects")
+        && searchable("refs")
+}
+
+/// Whether `head` is a plain file that says what a `HEAD` says: a ref under `refs/`, or an id. It
+/// is read following no link and never waiting on a pipe, no further than git reads one.
+fn reads_as_a_head(head: &Path) -> bool {
+    use rustix::fs::{Mode, OFlags, open};
+    let how = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+    let Ok(opened) = open(head, how, Mode::empty()) else {
+        return false;
+    };
+    let file = std::fs::File::from(opened);
+    if !file.metadata().is_ok_and(|found| found.is_file()) {
+        return false;
+    }
+    let mut read = Vec::new();
+    if file.take(256).read_to_end(&mut read).is_err() {
+        return false;
+    }
+    let Ok(text) = std::str::from_utf8(&read) else {
+        return false;
+    };
+    let text = text.trim_end();
+    match text.strip_prefix("ref:") {
+        Some(named) => named.trim_start().starts_with("refs/"),
+        None => matches!(text.len(), 40 | 64) && text.bytes().all(|b| b.is_ascii_hexdigit()),
+    }
 }
 
 /// Whether `folder`, down `depth` folders, holds no symbolic link and can all be read.
