@@ -1011,6 +1011,18 @@ pub(crate) fn refusals_of(
                 shown::short(var)
             ),
         ));
+    } else if let Some(var) = names
+        .iter()
+        .find(|var| crate::hookwire::harness_internal(var))
+    {
+        out.push((
+            "env",
+            format!(
+                "profile '{shown_name}' sets {}, a harness's internal variable, which stays out \
+                 of a chat's environment. Remove it.",
+                shown::short(var)
+            ),
+        ));
     } else if let Some(var) = names.iter().find(|var| named_like_a_credential(var)) {
         out.push((
             "env",
@@ -1736,6 +1748,23 @@ mod tests {
             &toml::Value::Table(table),
             &crate::harness_declaration::Declarations::default(),
         )
+    }
+
+    #[test]
+    fn a_profile_may_not_set_a_harnesss_internal_variable_in_any_case() {
+        for name in ["CLAUDE_CODE_SANDBOXED", "claude_code_sandboxed"] {
+            assert_eq!(
+                env_refusals(name),
+                [(
+                    "env",
+                    format!(
+                        "profile 'x' sets {name}, a harness's internal variable, which stays \
+                         out of a chat's environment. Remove it."
+                    )
+                )],
+            );
+        }
+        assert_eq!(env_refusals("CLAUDE_CONFIG_DIR"), Vec::new());
     }
 
     #[test]
