@@ -990,3 +990,11 @@ fn a_gone_runner_tells_only_the_chats_lost_on_it_and_only_once() {
 
     assert_eq!(told_now(2), vec![1, 2], "a removed pool's runners all went");
 }
+
+/// **A host cannot say a runner went** (#4421): that word is the window's, and a host's signal is
+/// free text.
+#[test]
+fn a_hosts_signal_is_never_the_windows_word_for_a_gone_runner() {
+    assert_ne!(a_hosts_signal(ITS_RUNNER_WENT.to_owned()), ITS_RUNNER_WENT);
+    assert_eq!(a_hosts_signal("Hangup".to_owned()), "Hangup");
+}

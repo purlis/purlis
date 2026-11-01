@@ -275,6 +275,16 @@ fn was_cancelled() -> bool {
 /// its terminal's close gives it (#2007).
 pub const ENDED_WITH_THE_HOST: &str = "Hangup";
 
+/// The signal a host said a program ended by. It is free text from the host, and
+/// [`ITS_RUNNER_WENT`] is the window's word alone, so a host saying it says something else.
+fn a_hosts_signal(signal: String) -> String {
+    if signal == ITS_RUNNER_WENT {
+        format!("{signal} (as its host said)")
+    } else {
+        signal
+    }
+}
+
 /// What is told of a chat that already ended with its host when its runner then goes for good
 /// (#4421): its program did not end again, and whoever hears this only learns the second part.
 pub const ITS_RUNNER_WENT: &str = "RunnerGone";
@@ -4743,7 +4753,7 @@ impl HostedSessions {
                 let exit = match ending {
                     Ending::Exited(Exit::Code(code)) => purlis_core::session::Exit::Code(code),
                     Ending::Exited(Exit::Signal(signal)) => {
-                        purlis_core::session::Exit::Signal(signal)
+                        purlis_core::session::Exit::Signal(a_hosts_signal(signal))
                     }
                     // Its terminal closed with its host, which hangs its program up.
                     Ending::WithTheHost => {
