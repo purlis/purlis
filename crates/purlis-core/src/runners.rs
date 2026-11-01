@@ -2019,6 +2019,22 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
     write(config_root, &held)
 }
 
+/// **Keeps whether the cluster pool `name`'s Pool opts in to minting now** (#4330): a Pool may opt in
+/// after it was added. Read only to say whether a chat's repos are sent to the Claim, so it decides
+/// nothing the cluster's own policy and operator do not.
+pub fn keep_cluster_minting(config_root: &Path, name: &str, opted_in: bool) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
+        return Ok(());
+    };
+    if held.clusters[at].mints_in_cluster() == opted_in {
+        return Ok(());
+    }
+    held.clusters[at] = held.clusters[at].clone().minting_in_cluster(opted_in);
+    write(config_root, &held)
+}
+
 /// A cluster pool's row (#3292): `{"name", "kind": "cluster", "kubeconfig", "context", "pool",
 /// "namespace", "operatorKey", "cluster", "holds", "owned", "mintInCluster", "profiles"}`,
 /// `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned` and

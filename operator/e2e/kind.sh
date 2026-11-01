@@ -237,6 +237,12 @@ CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context \
   "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
   --test it -- a_chat_runs_on_a_cluster_runner_through_kubectl_exec:: --ignored --test-threads=1
 
+step "a whole chat on a Pool that mints, with its desktop away"
+# The stand-in for GitHub is this test's own now: the one above has ended.
+CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context FAKE_GITHUB_PORT=$fake_github_port \
+  "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
+  --test it -- a_chat_mints_on_a_cluster_runner_with_its_desktop_away:: --ignored --test-threads=1
+
 step "uninstalled, the chart leaves the definitions and the policy"
 helm uninstall purlis-cluster-operator --kube-context "$context" --namespace purlis-system --wait
 kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev \

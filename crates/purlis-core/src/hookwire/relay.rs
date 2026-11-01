@@ -380,6 +380,10 @@ pub struct Relaying {
     runs_handed: hosted::RunsHanded,
     /// What a minting tool's run asks of the cluster first (#4207).
     in_cluster: hosted::InCluster,
+    /// How soon each chat's tool asks the cluster again, once refused (#4332).
+    port_paced: hosted::Paced,
+    /// How soon each chat's tool asks the window again, once both have refused it (#4332).
+    asks_paced: hosted::Paced,
     /// The window's socket each slot a chat's server dials in is handed on over (#3316), where
     /// it was told one; none, and every slot is refused.
     slots_to: Mutex<Option<std::path::PathBuf>>,
@@ -433,6 +437,8 @@ impl Relaying {
             waiting_lines: Mutex::default(),
             runs_handed: Arc::new(brokered::serve_handed),
             in_cluster: Arc::new(hosted::in_cluster),
+            port_paced: hosted::Paced::default(),
+            asks_paced: hosted::Paced::default(),
             slots_to: Mutex::default(),
         })
     }

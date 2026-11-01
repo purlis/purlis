@@ -214,6 +214,18 @@ fn an_exec_through(
     std::os::unix::net::UnixStream,
     mpsc::Receiver<()>,
 ) {
+    an_exec_on(Arc::new(host), ask)
+}
+
+/// [`an_exec_through`], on a host that takes more than one.
+fn an_exec_on(
+    host: Arc<Hearing>,
+    ask: brokered::Ask,
+) -> (
+    Arc<Mutex<Vec<u8>>>,
+    std::os::unix::net::UnixStream,
+    mpsc::Receiver<()>,
+) {
     let written = Arc::new(Mutex::new(Vec::new()));
     let (theirs, ours) = std::os::unix::net::UnixStream::pair().unwrap();
     let (ended, done) = mpsc::channel();
@@ -765,4 +777,87 @@ fn a_host_told_of_no_port_hands_a_minting_tool_to_the_window_saying_nothing_of_i
     asker.shutdown(std::net::Shutdown::Write).unwrap();
     let _ = done.recv_timeout(Duration::from_secs(10));
     assert!(desktop.ran.lock().unwrap().is_empty());
+}
+
+/// A chat that keeps running its tool while the port refuses it asks the operator once for now
+/// (#4332), and each run still reaches the window, whose gate and Ask decide.
+#[test]
+fn a_chats_refused_mints_are_paced_and_each_still_goes_to_the_window() {
+    let project = a_composed_minting_chat();
+    let there = Arc::new(AtomicBool::new(true));
+    let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let desktop = a_desktop_minting(
+        &there,
+        Arc::new(|_, _| None),
+        Arc::new({
+            let asked = Arc::clone(&asked);
+            move |_, _| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                Some(Err("the claim or its pool is stopped".to_owned()))
+            }
+        }),
+    );
+    desktop.relaying.of_project_at(project.path());
+    let host = Arc::new(desktop.host);
+    for run in 1..=3 {
+        let (written, asker, done) = an_exec_on(Arc::clone(&host), gh_asked());
+        soon("the window never heard it", || {
+            desktop.heard.lock().unwrap().len() == run
+        });
+        assert!(
+            said(&written).contains("the claim or its pool is stopped"),
+            "a paced run says the operator's words too: {}",
+            said(&written)
+        );
+        asker.shutdown(std::net::Shutdown::Write).unwrap();
+        let _ = done.recv_timeout(Duration::from_secs(10));
+    }
+    assert_eq!(
+        asked.load(Ordering::SeqCst),
+        1,
+        "the operator is asked once"
+    );
+}
+
+/// Once the window has refused such a run too, the next is refused here, saying so, with the person
+/// not asked again (#4332).
+#[test]
+fn a_run_the_window_refused_is_not_asked_of_the_person_again_at_once() {
+    let project = a_composed_minting_chat();
+    let there = Arc::new(AtomicBool::new(true));
+    let desktop = a_desktop_minting(
+        &there,
+        Arc::new(|_, _| None),
+        Arc::new(|_, _| Some(Err("the claim or its pool is stopped".to_owned()))),
+    );
+    desktop.relaying.of_project_at(project.path());
+    let paced = (project.path().to_path_buf(), MINTING, "gh".to_owned());
+    desktop
+        .relaying
+        .asks_paced
+        .refused(&paced, "refused by the person");
+    let (written, asker, done) = an_exec_through(desktop.host, gh_asked());
+    soon("the asker was never told", || {
+        said(&written).contains("does not ask again")
+    });
+    asker.shutdown(std::net::Shutdown::Write).unwrap();
+    let _ = done.recv_timeout(Duration::from_secs(10));
+    assert!(desktop.heard.lock().unwrap().is_empty(), "nobody is asked");
+    assert!(desktop.ran.lock().unwrap().is_empty());
+}
+
+/// The window says the person is being asked before they answer: only its refusal paces.
+#[test]
+fn the_windows_note_that_it_asks_is_no_refusal() {
+    use super::is_a_refusal;
+    let line = |frame: &brokered::Frame| serde_json::to_string(frame).unwrap();
+    let note = line(&brokered::Frame::Note("asked".to_owned()));
+    let refusal = line(&brokered::Frame::Refused {
+        why: "no".to_owned(),
+        code: 1,
+    });
+    assert!(!is_a_refusal(&note));
+    assert!(is_a_refusal(&refusal));
+    assert!(is_a_refusal(&format!("{note}\n{refusal}\n")));
+    assert!(!is_a_refusal("not a frame"));
 }

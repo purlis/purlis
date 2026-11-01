@@ -1125,7 +1125,103 @@ pub fn before_cluster_link_to(
             "this link was made for a runner pool {name} no longer keeps"
         )));
     }
-    before_cluster_link(config_root, kubectl, name, now)
+    before_cluster_link(config_root, kubectl, name, now)?;
+    tells_the_mint_port_again(config_root, kubectl, name);
+    Ok(())
+}
+
+/// What settled each runner at a link since this desktop started (#4330): settled, a runner is told
+/// again only once its address or this desktop's pin moves.
+static TOLD_AT_A_LINK: std::sync::Mutex<std::collections::BTreeSet<String>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+/// **Tells the runner of the cluster pool `name` of its mint port, off the link's way** (#4330): a
+/// runner that went unbuilt for it at pairing comes to use the port. Nothing waits on it, and what
+/// fails is tried at the next link: until then the runner asks this desktop, with the person's Ask.
+fn tells_the_mint_port_again(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+) {
+    let (config_root, kubectl, name) =
+        (config_root.to_path_buf(), kubectl.clone(), name.to_owned());
+    let spawned = std::thread::Builder::new()
+        .name("purlis-mint-port-told".to_owned())
+        .spawn(move || {
+            if let Err(why) = told_at_a_link(&config_root, &kubectl, &name) {
+                tracing::info!("purlis: pool {name}'s runner was not told of its mint port: {why}");
+            }
+        });
+    if let Err(why) = spawned {
+        tracing::info!("purlis: a pool's runner was not told of its mint port: {why}");
+    }
+}
+
+/// [`tells_the_mint_port_again`], at its own pace.
+fn told_at_a_link(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+) -> Result<(), String> {
+    let Some((pool, kept)) =
+        runners::cluster_runner_for(config_root, name).map_err(|why| why.to_string())?
+    else {
+        return Ok(());
+    };
+    let reached = pool.kubectl(&kubectl.clone().within(VOUCHED_NOW_WITHIN));
+    let seen = reached.pool(pool.pool()).map_err(|why| why.to_string())?;
+    runners::keep_cluster_minting(config_root, name, seen.mints_in_cluster)
+        .map_err(|why| why.to_string())?;
+    let pin = pool.pin().map_err(|why| why.to_string())?;
+    let Some(told) = crate::clusterpool::to_tell_at_a_link(&seen, &reached, &pin, &kept.claimed)
+        .map_err(|why| why.to_string())?
+    else {
+        return Ok(());
+    };
+    let line = format!(
+        "{name}\n{}\n{}\n{:?}",
+        kept.reached(),
+        told.address,
+        told.keys
+    );
+    let told_already = |lines: &std::collections::BTreeSet<String>| lines.contains(&line);
+    if told_already(&TOLD_AT_A_LINK.lock().unwrap_or_else(|e| e.into_inner())) {
+        return Ok(());
+    }
+    let settled = crate::clusterpool::tell_again(
+        &reached,
+        &crate::clusterpool::runner_namespace(&kept.claimed.requester),
+        &kept.pod,
+        &told,
+    )
+    .map_err(|why| why.to_string())?;
+    if settled {
+        TOLD_AT_A_LINK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(line);
+    }
+    Ok(())
+}
+
+/// How long a chat's start on a pool waits for its repos to reach the Claim (#4331).
+pub const REPOS_WAITED_FOR: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// **Runs `work` on a thread of its own, waiting for it at most `within`** (#4331): true where it
+/// finished. Past that it goes on by itself. A thread that could not start says why.
+pub fn waited_at_most(
+    within: std::time::Duration,
+    work: impl FnOnce() + Send + 'static,
+) -> Result<bool, String> {
+    let (finished, waited) = std::sync::mpsc::channel::<()>();
+    std::thread::Builder::new()
+        .name("purlis-claim-repos".to_owned())
+        .spawn(move || {
+            work();
+            let _ = finished.send(());
+        })
+        .map_err(|why| why.to_string())?;
+    Ok(waited.recv_timeout(within).is_ok())
 }
 
 /// **Puts a workspace's repos on the Claim of the cluster pool `name`'s runner** (#4207), as a chat
