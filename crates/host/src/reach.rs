@@ -320,7 +320,9 @@ impl Runners {
                     .into_iter()
                     .filter(|(name, _)| rearmed.contains(name))
                     .collect();
-                for (runner, sent) in send_to_each(again, Command::StopAll, self.reached_within).await {
+                for (runner, sent) in
+                    send_to_each(again, Command::StopAll, self.reached_within).await
+                {
                     self.stopped(runner, sent);
                 }
             }
