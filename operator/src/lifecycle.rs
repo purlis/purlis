@@ -374,12 +374,19 @@ pub fn saying_stuck(
     let (Some(ready), Some(held)) = (ready_of(status), previous.and_then(ready_of)) else {
         return;
     };
+    // A stop or an idle suspension has just ended: `Unknown` for this pass, so the `False` to come
+    // has a time of its own, as a woken runner's does.
+    if ready.status != "True" && matches!(held.reason.as_str(), "Stopped" | IDLE_REASON) {
+        if let Some(ready) = status.conditions.iter_mut().find(|one| one.type_ == READY) {
+            ready.status = "Unknown".to_owned();
+        }
+        return;
+    }
     let pod_is_new = pod
         .and_then(|pod| pod.metadata.creation_timestamp.as_ref())
         .is_some_and(|made| now.duration_since(made.0) < since(after));
     if ready.status == "True"
         || held.status != "False"
-        || matches!(held.reason.as_str(), "Stopped" | IDLE_REASON)
         || pod_is_new
         || now.duration_since(held.last_transition_time.0) < since(after)
     {
