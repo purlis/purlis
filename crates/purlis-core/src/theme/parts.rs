@@ -929,6 +929,9 @@ mod rest_kept_tests;
 mod part_fills_tests;
 
 #[cfg(test)]
+#[path = "hot_count_tints_tests.rs"]
+mod hot_count_tints_tests;
+#[cfg(test)]
 #[path = "see_through_tints_tests.rs"]
 mod see_through_tints_tests;
 #[cfg(test)]
@@ -2723,13 +2726,15 @@ fn unreadable_by(
         }
     }
     // The plain activity count stays told from the hot one (#3098): the floors hold its default
-    // pill apart, and a rule that brings it near draws that default.
+    // pill apart, and a rule that brings it near draws that default. The margin widens the
+    // distance too, so a coarse reading finds a rule that only comes near between its tints
+    // (#4384): a tint's step moves a colour far less than [`NEAR_A_FLOOR`] in OKLab.
     if let Some(count) = plain_count_at(family)
         && alike(
             theme,
             look.grounds[count],
             super::floors::HOT_COUNT,
-            super::floors::HOT_COUNT_APART,
+            super::floors::HOT_COUNT_APART + margin,
         )
     {
         return Some((
@@ -3020,7 +3025,9 @@ fn held_from(
             let written = held.rules.len();
             // What shows a tint through it is read in the tints too (#4257): coarsely, and at
             // every degree where that comes near a floor.
-            let coarse: &[ResolvedTheme] = if shows_through(theme, held.rules, family) {
+            let coarse: &[ResolvedTheme] = if shows_through(theme, held.rules, family)
+                || count_turns(theme, held.rules, family)
+            {
                 coarse_tints()
             } else {
                 &[]
@@ -3194,6 +3201,25 @@ fn draws_see_through(theme: &ResolvedTheme, look: &Drawn) -> bool {
         || look.grounds.iter().any(|one| see_through(one))
         || look.words.iter().any(|one| see_through(one))
         || look.marks.iter().any(|one| see_through(one))
+}
+
+/// **Whether a fill a theme gives the plain activity count is one its tint recipe turns** (#4384):
+/// the hot count is never turned, so at some hue the rule can come near it. An opaque colour moves
+/// no contrast in a tint, so [`shows_through`] has no reason to ask, but this is a distance.
+fn count_turns(theme: &ResolvedTheme, rules: &[Rule], family: &Family) -> bool {
+    let Some(count) = plain_count_at(family) else {
+        return false;
+    };
+    let turned = theme.tint.tabs();
+    rules.iter().any(|rule| {
+        std::ptr::eq(rule.family, family)
+            && !rule.fallback
+            && rule.part == count
+            && matches!(
+                rule.values.get(&Prop::Fill),
+                Some(PartValue::Colour(token)) if turned.contains(token)
+            )
+    })
 }
 
 #[cfg(test)]

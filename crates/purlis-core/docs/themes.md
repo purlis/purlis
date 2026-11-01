@@ -968,7 +968,8 @@ screen draws them, as written and in every tint, or the window draws purlis's ow
 its mark's colour stays on it: when a floor takes either, or more contrast raises the mark, or a
 person's colour for the mark is drawn or left out, the count goes with it. A theme whose count is
 its own colour is held on its own. A rule on `activity.count` never reaches the hot count, and one
-whose fill comes that near the hot count draws the family default.
+whose fill comes that near the hot count, as written or at any hue the tint recipe turns it to,
+draws the family default.
 
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names

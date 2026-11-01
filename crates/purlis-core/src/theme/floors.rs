@@ -49,7 +49,8 @@
 //!   `surface.hover`, the plain count's pill, each laid on each ground a bar stands on as the
 //!   screen draws them, in the theme as written, under each of its own tints and at every whole
 //!   degree a workspace's own colour can take. A part rule that brings the plain count's fill near
-//!   the hot one draws its family default ([`super::parts`]).
+//!   the hot one, as written or at any hue the recipe turns it to, draws its family default
+//!   ([`super::parts`], #4384).
 //!
 //! The contrast floors are pairs of the check's own [`PAIRS`], held to the floor the check holds
 //! each to, so a pair is measured in one place. Each holds as the theme is and tinted by every
