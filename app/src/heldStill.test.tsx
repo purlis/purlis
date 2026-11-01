@@ -189,20 +189,20 @@ describe("a list held still (useHeldStill)", () => {
     expect(holding()).toBe(false);
   });
 
-  it("lets go when the pointer leaves the window with no leave on the list (#3095)", () => {
+  it("lets go when the pointer leaves the window with no leave on the list (#3095)", async () => {
     render(<Held />);
     fireEvent.pointerEnter(button("row"), { pointerType: "mouse" });
     expect(holding()).toBe(true);
     // WebKit: no `pointerleave` on the list, only an out into nothing.
-    act(() => void fireEvent.pointerOut(document, { relatedTarget: null }));
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
     expect(holding()).toBe(false);
   });
 
-  it("keeps the keyboard's hold when the pointer leaves the window (#3095)", () => {
+  it("keeps the keyboard's hold when the pointer leaves the window (#3095)", async () => {
     render(<Held />);
     keyboardOnTheRow();
     expect(holding()).toBe(true);
-    act(() => void fireEvent.pointerOut(document, { relatedTarget: null }));
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
     expect(holding()).toBe(true);
   });
 

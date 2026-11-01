@@ -19,6 +19,8 @@ function Watching({ heard, on = true }: { heard: WindowLeft[]; on?: boolean }) {
 }
 
 const root = () => document.documentElement;
+/** What was dispatched together has been heard. */
+const settled = () => Promise.resolve();
 const back = () => fireEvent.pointerMove(document, { clientX: 10, clientY: 10 });
 
 describe("the pointer leaving the window", () => {
@@ -29,22 +31,34 @@ describe("the pointer leaving the window", () => {
       () => void fireEvent.pointerOut(document, { relatedTarget: null }),
     ],
     ["a mouseout into nothing", () => void fireEvent.mouseOut(document, { relatedTarget: null })],
-  ])("is told by %s", (_, leave) => {
+  ])("is told by %s", async (_, leave) => {
     const heard: WindowLeft[] = [];
     render(<Watching heard={heard} />);
     back();
     leave();
+    await settled();
     expect(heard).toEqual(["pointer"]);
   });
 
-  it("is told once for one trip out, however many ways the engine says it", () => {
+  it("is told once for one trip out, however many ways the engine says it", async () => {
     const heard: WindowLeft[] = [];
     render(<Watching heard={heard} />);
     back();
     fireEvent.pointerOut(document, { relatedTarget: null });
     fireEvent.mouseOut(document, { relatedTarget: null });
     fireEvent.pointerLeave(root());
+    await settled();
     expect(heard).toEqual(["pointer"]);
+  });
+
+  it("is not told for an out into nothing with an over right behind it", async () => {
+    const heard: WindowLeft[] = [];
+    render(<Watching heard={heard} />);
+    back();
+    fireEvent.pointerOut(document.body, { relatedTarget: null });
+    fireEvent.pointerOver(document.body, { relatedTarget: null });
+    await settled();
+    expect(heard).toEqual([]);
   });
 
   it("is told again after the first move back in the window", () => {

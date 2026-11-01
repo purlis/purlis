@@ -81,10 +81,10 @@ describe("the project rail's peek (#2915)", () => {
     ["pointerout", (to: Document) => fireEvent.pointerOut(to, { relatedTarget: null })],
     ["mouseout", (to: Document) => fireEvent.mouseOut(to, { relatedTarget: null })],
     ["pointerleave", () => fireEvent.pointerLeave(document.documentElement)],
-  ])("goes when the pointer leaves the window, told by %s (S4)", (_, leave) => {
+  ])("goes when the pointer leaves the window, told by %s (S4)", async (_, leave) => {
     render(<Window mode="auto" />);
     peekIn();
-    act(() => void leave(document));
+    await act(async () => void leave(document));
     expect(peek()).toHaveAttribute("data-leaving");
   });
 

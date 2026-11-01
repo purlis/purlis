@@ -275,7 +275,7 @@ describe("a table of controls whose columns chose (#3671)", () => {
       fireEvent.pointerEnter(chat, { pointerType: "mouse" });
     });
     await waitFor(() => expect(shownTip()).not.toBeNull(), { timeout: 1000 });
-    act(() => {
+    await act(async () => {
       fireEvent.pointerOut(document, { relatedTarget: null });
     });
     expect(shownTip()).toBeNull();

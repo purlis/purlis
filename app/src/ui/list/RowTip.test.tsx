@@ -23,21 +23,21 @@ function Row() {
 }
 
 describe("a row's tooltip, the pointer gone from the window (#3095)", () => {
-  it("goes", () => {
+  it("goes", async () => {
     vi.useFakeTimers();
     render(<Row />);
     fireEvent.pointerEnter(screen.getByTestId("row"), { pointerType: "mouse" });
     act(() => void vi.advanceTimersByTime(TOOLTIP_DELAY));
     expect(screen.queryByRole("tooltip")).not.toBeNull();
-    act(() => void fireEvent.pointerOut(document, { relatedTarget: null }));
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
-  it("never comes, when the pointer left before its delay ran out", () => {
+  it("never comes, when the pointer left before its delay ran out", async () => {
     vi.useFakeTimers();
     render(<Row />);
     fireEvent.pointerEnter(screen.getByTestId("row"), { pointerType: "mouse" });
-    act(() => void fireEvent.pointerOut(document, { relatedTarget: null }));
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
     act(() => void vi.advanceTimersByTime(TOOLTIP_DELAY));
     expect(screen.queryByRole("tooltip")).toBeNull();
   });

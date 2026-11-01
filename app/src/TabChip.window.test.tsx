@@ -887,7 +887,7 @@ describe("opening and closing the menu", () => {
     over(theChip("steward 1"));
     pass(REST_MS);
     expect(menu()).not.toBeNull();
-    act(() => void fireEvent.pointerOut(document, { relatedTarget: null }));
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
     pass(GRACE_MS);
     expect(menu()).toBeNull();
   });

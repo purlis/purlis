@@ -45,10 +45,25 @@ const pointerGone = () => {
   told = true;
   tell("pointer");
 };
+/** An out into nothing heard, and nothing yet to say the pointer is still here. */
+let outHeard = false;
 const outIntoNothing = (event: MouseEvent) => {
-  if (event.relatedTarget === null) pointerGone();
+  if (event.relatedTarget !== null || outHeard) return;
+  outHeard = true;
+  // **Weighed once what was dispatched with it has been heard**: an out into nothing with an
+  // over right behind it (an element taken away under the pointer, a driven move) is a pointer
+  // that never left.
+  queueMicrotask(() => {
+    if (!outHeard) return;
+    outHeard = false;
+    pointerGone();
+  });
+};
+const pointerOver = () => {
+  outHeard = false;
 };
 const pointerHere = () => {
+  outHeard = false;
   told = false;
 };
 const focusGone = () => tell("focus");
@@ -60,6 +75,7 @@ function listen() {
   document.documentElement.addEventListener("pointerleave", pointerGone);
   document.addEventListener("pointerout", outIntoNothing);
   document.addEventListener("mouseout", outIntoNothing);
+  document.addEventListener("pointerover", pointerOver, BEFORE);
   document.addEventListener("pointermove", pointerHere, BEFORE);
   document.addEventListener("pointerdown", pointerHere, BEFORE);
   window.addEventListener("blur", focusGone);
@@ -69,10 +85,12 @@ function unlisten() {
   document.documentElement.removeEventListener("pointerleave", pointerGone);
   document.removeEventListener("pointerout", outIntoNothing);
   document.removeEventListener("mouseout", outIntoNothing);
+  document.removeEventListener("pointerover", pointerOver, BEFORE);
   document.removeEventListener("pointermove", pointerHere, BEFORE);
   document.removeEventListener("pointerdown", pointerHere, BEFORE);
   window.removeEventListener("blur", focusGone);
   told = false;
+  outHeard = false;
 }
 
 /** **Tells `watcher` each time** until the function it answers is called, for what is no hook. */
