@@ -28,10 +28,17 @@ const row = (over: Partial<PoolLimitRow> & { key: string }): PoolLimitRow => ({
 let values: Record<string, number>;
 let written: { key: unknown; value: unknown }[];
 
+/** The read after a save fails from here on (#4390). */
+let readsFail = false;
+/** What was replaced, and why it is refused where a test says. */
+let replaced: string[] = [];
+let refuseReplace: string | undefined;
+
 function theCore(refuseSave?: string) {
   mockIPC((cmd, args) => {
     const asked = (args ?? {}) as { key: string; typed: string; value: number | null };
     const withValue = (one: PoolLimitRow) => ({ ...one, set: values[one.key] ?? null });
+    if (cmd === "pool_limits" && readsFail) throw "the pool's file could not be read";
     if (cmd === "pool_limits")
       return {
         groups: [
@@ -53,7 +60,14 @@ function theCore(refuseSave?: string) {
           },
         ],
         advanced: [withValue(row({ key: "rare", applies: "Applies from the next attempt." }))],
+        waiting: values.shaping === undefined ? [] : ["Limit shaping"],
       } satisfies PoolLimitsPage;
+    if (cmd === "docker_pool_replace_runner") {
+      replaced.push((args as { name: string }).name);
+      if (refuseReplace !== undefined) throw refuseReplace;
+      Reflect.deleteProperty(values, "shaping");
+      return null;
+    }
     if (cmd === "pool_limit_check") {
       if (!/^\d+$/.test(asked.typed.trim())) throw `${asked.key} is a whole number`;
       const value = Number(asked.typed);
@@ -74,6 +88,9 @@ function theCore(refuseSave?: string) {
 beforeEach(() => {
   values = {};
   written = [];
+  readsFail = false;
+  replaced = [];
+  refuseReplace = undefined;
   theCore();
 });
 afterEach(() => {
@@ -129,6 +146,7 @@ describe("a pool's limits page", () => {
             },
           ],
           advanced: [],
+          waiting: [],
         } satisfies PoolLimitsPage;
       }
       if (cmd === "pool_limit_set") {
@@ -154,6 +172,54 @@ describe("a pool's limits page", () => {
     await user.tab();
     expect(written).toEqual([]);
     expect((box("first") as HTMLInputElement).value).toBe("5000");
+  });
+
+  it("offers Replace only while a change waits, and only the press replaces", async () => {
+    const POOL = "replaced";
+    const user = await opened(POOL);
+    expect(screen.queryByRole("button", { name: "Replace the runner…" })).toBeNull();
+    await user.type(box("shaping"), "256");
+    await user.tab();
+    await user.click(await screen.findByRole("button", { name: "Replace the runner…" }));
+    // It asks first, and says what happens to running chats, and never that they stop.
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog.textContent).toContain("carry on on the old runner until they end");
+    expect(dialog.textContent).toContain("interrupts none of them");
+    expect(replaced).toEqual([]);
+    await user.click(within(dialog).getByRole("button", { name: "Replace the runner" }));
+    await waitFor(() => expect(replaced).toEqual([POOL]));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Replace the runner…" })).toBeNull(),
+    );
+  });
+
+  it("leaves the change waiting when Cancel is pressed, or a replace is refused", async () => {
+    const POOL = "replace-refused";
+    const user = await opened(POOL);
+    await user.type(box("shaping"), "256");
+    await user.tab();
+    await user.click(await screen.findByRole("button", { name: "Replace the runner…" }));
+    const asked = await screen.findByRole("alertdialog");
+    await user.click(within(asked).getByRole("button", { name: "Cancel" }));
+    expect(replaced).toEqual([]);
+    refuseReplace = "Docker did not answer";
+    await user.click(screen.getByRole("button", { name: "Replace the runner…" }));
+    const again = await screen.findByRole("alertdialog");
+    await user.click(within(again).getByRole("button", { name: "Replace the runner" }));
+    expect(await screen.findByText(/Docker did not answer/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Replace the runner…" })).toBeTruthy();
+  });
+
+  it("shows what was saved, with Reset on, even if the read after the save fails", async () => {
+    const POOL = "read-fails";
+    const user = await opened(POOL);
+    readsFail = true;
+    await user.type(box("first"), "256");
+    await user.tab();
+    await screen.findByText("You set this");
+    expect((box("first") as HTMLInputElement).value).toBe("256");
+    expect((resetOf("first", POOL) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("saves a good value on leaving the box, and marks it as the person's", async () => {
