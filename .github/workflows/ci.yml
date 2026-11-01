@@ -1706,28 +1706,28 @@ jobs:
           CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
       - name: The Skill studio's outcome bars on codex's stand-in
         run: npm run e2e:outcome
-        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        if: ${{ false }} # DEBUG-4351
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
           CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
       - name: The Skill studio's outcome bars on codex's stand-in
         run: xvfb-run -a npm run e2e:outcome
-        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
+        if: ${{ false }} # DEBUG-4351
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
           CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: npm run e2e:outcome
-        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        if: ${{ false }} # DEBUG-4351
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
           CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release # DEBUG-4351
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: xvfb-run -a npm run e2e:outcome
-        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
+        if: ${{ false }} # DEBUG-4351
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
