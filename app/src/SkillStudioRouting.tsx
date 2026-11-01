@@ -8,6 +8,7 @@ import {
   type SkillPinner,
   type SkillRouterOffer,
   type StudioRouted,
+  type StudioBudget,
   type StudioRouter,
 } from "./bindings";
 import { counted } from "./dispatches";
