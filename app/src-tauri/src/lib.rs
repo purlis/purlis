@@ -3062,6 +3062,11 @@ fn commands() -> Builder<tauri::Wry> {
             "ENGINE_SANDBOX_NEEDED",
             enginesandbox::ENGINE_SANDBOX_NEEDED,
         )
+        // The event a pool's beginning to mint without asking raises its Notice on (#4442).
+        .constant(
+            "POOL_MINTS_WITHOUT_ASKING",
+            clusterpools::POOL_MINTS_WITHOUT_ASKING,
+        )
         // The event the engine's downloads changed on (#2207).
         .constant("ENGINE_DOWNLOAD", enginedownload::ENGINE_DOWNLOAD)
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
@@ -3783,6 +3788,13 @@ pub fn run() {
                 let window = app.handle().clone();
                 enginesandbox::telling(Box::new(move |machine| {
                     let _ = window.emit(enginesandbox::ENGINE_SANDBOX_NEEDED, machine);
+                }));
+            }
+            // A pool that began minting without asking raises its Notice (#4442).
+            {
+                let window = app.handle().clone();
+                purlis_core::pools::telling_of_minting(Box::new(move || {
+                    let _ = window.emit(clusterpools::POOL_MINTS_WITHOUT_ASKING, ());
                 }));
             }
             // A finish leans on that lock, and is refused without it.

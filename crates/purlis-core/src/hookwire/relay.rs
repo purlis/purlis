@@ -384,6 +384,8 @@ pub struct Relaying {
     port_paced: hosted::Paced,
     /// How soon each chat's tool asks the window again, once both have refused it (#4332).
     asks_paced: hosted::Paced,
+    /// Each chat's tool's run that is asking now: the others started with it wait (#4374).
+    ask_turns: hosted::Turns,
     /// The window's socket each slot a chat's server dials in is handed on over (#3316), where
     /// it was told one; none, and every slot is refused.
     slots_to: Mutex<Option<std::path::PathBuf>>,
@@ -439,6 +441,7 @@ impl Relaying {
             in_cluster: Arc::new(hosted::in_cluster),
             port_paced: hosted::Paced::default(),
             asks_paced: hosted::Paced::default(),
+            ask_turns: hosted::Turns::default(),
             slots_to: Mutex::default(),
         })
     }
@@ -737,6 +740,12 @@ impl Relaying {
                 waiting.remove(&chat);
             }
         }
+    }
+
+    /// **Chat `chat` went** (#4374): what starts again under its number asks with no pace.
+    pub fn chat_went(&self, chat: u32) {
+        self.port_paced.chat_went(chat);
+        self.asks_paced.chat_went(chat);
     }
 
     /// Whether chat `chat` is still there: its token is held.

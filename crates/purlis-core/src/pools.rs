@@ -1179,6 +1179,16 @@ pub fn before_cluster_link_to(
 static TOLD_AT_A_LINK: std::sync::Mutex<std::collections::BTreeSet<String>> =
     std::sync::Mutex::new(std::collections::BTreeSet::new());
 
+/// What tells the window a pool's Notice of minting without asking moved (#4442).
+static TOLD_OF_MINTING: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> =
+    std::sync::OnceLock::new();
+
+/// Tells the window with `tell` each time a pool's link finds it began minting without asking, or
+/// went back to asking (#4442). What is due is kept in `runners.json`, so a window opened later reads it there.
+pub fn telling_of_minting(tell: Box<dyn Fn() + Send + Sync>) {
+    let _ = TOLD_OF_MINTING.set(tell);
+}
+
 /// **Tells the runner of the cluster pool `name` of its mint port, off the link's way** (#4330): a
 /// runner that went unbuilt for it at pairing comes to use the port. Nothing waits on it, and what
 /// fails is tried at the next link: until then the runner asks this desktop, with the person's Ask.
@@ -1214,8 +1224,11 @@ fn told_at_a_link(
     };
     let reached = pool.kubectl(&kubectl.clone().within(VOUCHED_NOW_WITHIN));
     let seen = reached.pool(pool.pool()).map_err(|why| why.to_string())?;
-    runners::keep_cluster_minting(config_root, name, seen.mints_in_cluster)
+    let moved = runners::keep_cluster_minting(config_root, name, seen.mints_in_cluster)
         .map_err(|why| why.to_string())?;
+    if moved && let Some(tell) = TOLD_OF_MINTING.get() {
+        tell();
+    }
     let pin = pool.pin().map_err(|why| why.to_string())?;
     let Some(told) = crate::clusterpool::to_tell_at_a_link(&seen, &reached, &pin, &kept.claimed)
         .map_err(|why| why.to_string())?

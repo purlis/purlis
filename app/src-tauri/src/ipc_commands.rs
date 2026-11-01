@@ -487,6 +487,8 @@ macro_rules! app_commands {
                 clusterpools::cluster_pool_key,
                 clusterpools::add_cluster_pool,
                 clusterpools::set_cluster_pool_owned,
+                clusterpools::pools_minting_without_asking,
+                clusterpools::put_away_pool_minting_notice,
                 poolprofiles::pool_profiles,
                 poolprofiles::pool_profile_add,
                 poolprofiles::pool_limit_offer,

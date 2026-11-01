@@ -147,7 +147,11 @@ fn replaced_if_still(config_root: &Path, was: Option<&Told>, next: Told) -> Resu
     let folder = crate::machine::charterd(config_root);
     purlis_same_user::PrivateDirectory::open(&folder)
         .map_err(|why| format!("the session host's folder could not be opened: {why}"))?;
-    let _locked = crate::machine::Lock::at(&folder.join(LOCK));
+    let locked = crate::machine::Lock::at(&folder.join(LOCK));
+    // Unlocked, it could undo a word it did not see: the next look or link says it again.
+    if !locked.held() {
+        return Ok(false);
+    }
     if told(config_root)?.as_ref() != was {
         return Ok(false);
     }
