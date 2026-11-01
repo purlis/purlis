@@ -186,11 +186,14 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # The third policy, purlis-operator-changes-only-a-sandboxs-mode, narrows the operator's own
 # `patch` on upstream's sandboxes (#2058), which RBAC cannot scope to a field or an owner: the
 # operator may change only a Sandbox's spec.operatingMode, and only on a Sandbox a SandboxClaim
-# controls.
+# controls; and its spec.podTemplate only while it is Suspended in a runner namespace (#3982).
 #
 # The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
 # key it names (forgekeys), and only a Claim's requester changes the repos it names. The operator
 # mints only for a Claim and a Pool made once its binding has settled.
+#
+# The fifth policy, purlis-operator-deletes-only-a-retained-claim (#3981): the operator deletes
+# only a kept Claim, not stopped, that carries its own RetentionEnded condition.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.

@@ -32,11 +32,14 @@
 # The third policy, purlis-operator-changes-only-a-sandboxs-mode, narrows the operator's own
 # `patch` on upstream's sandboxes (#2058), which RBAC cannot scope to a field or an owner: the
 # operator may change only a Sandbox's spec.operatingMode, and only on a Sandbox a SandboxClaim
-# controls.
+# controls; and its spec.podTemplate only while it is Suspended in a runner namespace (#3982).
 #
 # The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
 # key it names (forgekeys), and only a Claim's requester changes the repos it names. The operator
 # mints only for a Claim and a Pool made once its binding has settled.
+#
+# The fifth policy, purlis-operator-deletes-only-a-retained-claim (#3981): the operator deletes
+# only a kept Claim, not stopped, that carries its own RetentionEnded condition.
 ---
 # Source: purlis-cluster-operator/templates/forge-policy.yaml
 # Copyright 2026 Purlis
@@ -175,6 +178,43 @@ spec:
         cluster operator puts a warm pool on the template of a purlis pool, or takes one off it.'
       reason: Forbidden
 ---
+# Source: purlis-cluster-operator/templates/retention-policy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+# The operator's `delete` on Claims, narrowed by the cluster (#3981, ruled 2026-11-01): RBAC cannot
+# name which, so this policy refuses its service account any deletion but of a kept Claim that is
+# not stopped and carries its own RetentionEnded condition. Kept when the release is uninstalled,
+# as the policy on Claims is.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-operator-deletes-only-a-retained-claim
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [DELETE]
+        resources: [claims]
+  matchConditions:
+    - name: by-the-operator
+      expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:purlis-system:purlis-cluster-operator'
+  validations:
+    - expression: >-
+        oldObject.spec.kept == true && oldObject.spec.stopped != true &&
+        has(oldObject.status) && has(oldObject.status.conditions) &&
+        oldObject.status.conditions.exists(c, c.type == 'RetentionEnded' && c.status == 'True')
+      message: purlis's cluster operator deletes only a kept Claim whose retention has ended.
+      reason: Forbidden
+---
 # Source: purlis-cluster-operator/templates/runner-namespaces-policy.yaml
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
@@ -301,7 +341,8 @@ spec:
 # The operator's `patch` on upstream's sandboxes, narrowed by the cluster (#2058): RBAC cannot
 # name a field or an owner, so this policy refuses any change the operator's service account
 # makes to a Sandbox but its spec.operatingMode, and any change at all to a Sandbox no
-# SandboxClaim controls. The operator may not change policies or their bindings, so it cannot
+# SandboxClaim controls. Its spec.podTemplate may change only on a Sandbox already Suspended in a
+# runner namespace (#3982, ruled 2026-11-01): a kept runner next starts on its pool's image. The operator may not change policies or their bindings, so it cannot
 # lift this. Kept when the release is uninstalled, as the policy on Claims is.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
@@ -336,7 +377,9 @@ spec:
     # (operator/tests/the_install_manifests.rs holds the list to the vendored definitions).
     - expression: >-
         has(object.spec.podTemplate) == has(oldObject.spec.podTemplate) &&
-        (!has(object.spec.podTemplate) || object.spec.podTemplate == oldObject.spec.podTemplate) &&
+        (!has(object.spec.podTemplate) || object.spec.podTemplate == oldObject.spec.podTemplate ||
+        (request.namespace.startsWith('purlis-runners-') && has(oldObject.spec.operatingMode) &&
+        oldObject.spec.operatingMode == 'Suspended')) &&
         has(object.spec.service) == has(oldObject.spec.service) &&
         (!has(object.spec.service) || object.spec.service == oldObject.spec.service) &&
         has(object.spec.shutdownPolicy) == has(oldObject.spec.shutdownPolicy) &&
@@ -345,7 +388,9 @@ spec:
         (!has(object.spec.shutdownTime) || object.spec.shutdownTime == oldObject.spec.shutdownTime) &&
         has(object.spec.volumeClaimTemplates) == has(oldObject.spec.volumeClaimTemplates) &&
         (!has(object.spec.volumeClaimTemplates) || object.spec.volumeClaimTemplates == oldObject.spec.volumeClaimTemplates)
-      message: purlis's cluster operator changes only a Sandbox's spec.operatingMode.
+      message: >-
+        purlis's cluster operator changes only a Sandbox's spec.operatingMode, and its
+        spec.podTemplate only while it is Suspended in a runner namespace.
       reason: Forbidden
     - expression: >-
         has(object.metadata.labels) == has(oldObject.metadata.labels) &&
@@ -385,6 +430,20 @@ metadata:
     helm.sh/resource-policy: keep
 spec:
   policyName: purlis-claims-use-their-pool
+  validationActions: [Deny]
+---
+# Source: purlis-cluster-operator/templates/retention-policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-operator-deletes-only-a-retained-claim
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-operator-deletes-only-a-retained-claim
   validationActions: [Deny]
 ---
 # Source: purlis-cluster-operator/templates/runner-namespaces-policy.yaml

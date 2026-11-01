@@ -210,7 +210,8 @@ if [ -z "$gateway" ]; then
   exit 1
 fi
 kubectl --context "$context" -n purlis-system set env deployment/purlis-cluster-operator \
-  "PURLIS_FORGE_API_URL=http://$gateway:$fake_github_port" >/dev/null
+  "PURLIS_FORGE_API_URL=http://$gateway:$fake_github_port" \
+  PURLIS_OPERATOR_STUCK_AFTER=90 PURLIS_OPERATOR_ORPHANS_EVERY=30 >/dev/null
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
 
 step "the policy settles"

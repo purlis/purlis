@@ -1,0 +1,46 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+# The operator's `delete` on Claims, narrowed by the cluster (#3981, ruled 2026-11-01): RBAC cannot
+# name which, so this policy refuses its service account any deletion but of a kept Claim that is
+# not stopped and carries its own RetentionEnded condition. Kept when the release is uninstalled,
+# as the policy on Claims is.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-operator-deletes-only-a-retained-claim
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [DELETE]
+        resources: [claims]
+  matchConditions:
+    - name: by-the-operator
+      expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:{{ .Release.Namespace }}:purlis-cluster-operator'
+  validations:
+    - expression: >-
+        oldObject.spec.kept == true && oldObject.spec.stopped != true &&
+        has(oldObject.status) && has(oldObject.status.conditions) &&
+        oldObject.status.conditions.exists(c, c.type == 'RetentionEnded' && c.status == 'True')
+      message: purlis's cluster operator deletes only a kept Claim whose retention has ended.
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-operator-deletes-only-a-retained-claim
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-operator-deletes-only-a-retained-claim
+  validationActions: [Deny]

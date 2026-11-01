@@ -33,7 +33,8 @@ use k8s_openapi::api::core::v1::{Namespace, Pod, ResourceQuota};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::api::rbac::v1::RoleBinding;
 use kube::api::{
-    Api, DeleteParams, ObjectMeta, PartialObjectMeta, Patch, PatchParams, PostParams, Preconditions,
+    Api, ApiResource, DeleteParams, DynamicObject, ObjectMeta, PartialObjectMeta, Patch,
+    PatchParams, PostParams, Preconditions,
 };
 use kube::runtime::controller::{Action, Controller};
 use kube::runtime::finalizer::{self, Event, finalizer};
@@ -296,6 +297,8 @@ struct Context {
     suspending: Mutex<HashMap<ObjectRef<Claim>, u32>>,
     /// What the operator counts for its metrics (#3737).
     metrics: Arc<Metrics>,
+    /// How long a runner goes on not being ready before its Claim says it is stuck (#3739).
+    stuck_after: Duration,
 }
 
 /// How long a Claim waits for its requester's quota to count before it says so.
@@ -639,6 +642,27 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
         return Ok(Action::await_change());
     }
+    // An idle fresh claim's upstream claim went with its runner: made again only once its desktop
+    // asks (#3982).
+    if !stopped && claim_found == Found::Nothing && lifecycle::idle_condition(&claim).is_some() {
+        write_ours(&templates, template, template_found).await?;
+        write_ours(&warm_pools, warm, warm_found).await?;
+        let status = if lifecycle::asked_to_run_again(&claim) {
+            write_status_exactly(
+                client,
+                &claim,
+                namespace,
+                lifecycle::status_woken(),
+                LinkKeyIs::Said,
+            )
+            .await?;
+            return Ok(Action::requeue(vouch::KEY_WAIT));
+        } else {
+            lifecycle::status_of_an_idle_runner(Suspension::Suspended)
+        };
+        write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+        return Ok(Action::requeue(vouch::RECHECK));
+    }
     // A runner not asked for yet is asked for only within its requester's quota (#2055). A fresh
     // Claim on a pool that keeps runners warm takes one already counted, so it asks for nothing
     // more; one made cold instead is still held to the quota by the cluster (#3737).
@@ -733,7 +757,35 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     if stays_idle {
         let (suspension, again) =
             suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
-        let status = lifecycle::status_of_an_idle_runner(suspension);
+        let mut status = lifecycle::status_of_an_idle_runner(suspension);
+        if suspension == Suspension::Suspended
+            && let Some(sandbox) = sandbox.as_ref()
+        {
+            if !claim.spec.kept {
+                // A fresh runner keeps nothing: its upstream claim goes, its quota with it, and
+                // the next is made from the pool as it is then (#3982).
+                if let Some(uid) = applied.metadata.uid.clone() {
+                    delete_by_uid(&upstream_claims, &name, uid).await?;
+                }
+            } else {
+                renew_image(client, sandbox, &pool).await?;
+                let retention = lifecycle::retention(
+                    &claim,
+                    &pool,
+                    Some(sandbox),
+                    k8s_openapi::jiff::Timestamp::now(),
+                );
+                lifecycle::saying_retention(&mut status, retention);
+                // Deleted only on a word already on the Claim, which the cluster's policy reads.
+                if matches!(retention, lifecycle::Retention::Delete { .. }) {
+                    if lifecycle::retention_ended(&claim) {
+                        return delete_retained(client, &claim, namespace).await;
+                    }
+                    write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+                    return Ok(Action::requeue(vouch::KEY_WAIT));
+                }
+            }
+        }
         write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
         return Ok(Action::requeue(again));
     }
@@ -762,6 +814,14 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     }
     // A runner not ready yet says its stage (#2057).
     let mut status = stage::staged(status_of(Some(&applied)), pod.as_ref());
+    let now = k8s_openapi::jiff::Timestamp::now();
+    lifecycle::saying_stuck(&mut status, claim.status.as_ref(), context.stuck_after, now);
+    if pod
+        .as_ref()
+        .is_some_and(|pod| lifecycle::past_max_age(pod, &pool, now))
+    {
+        lifecycle::saying_past_max_age(&mut status);
+    }
     status.conditions.push(vouching.condition());
     status.link_key = vouching.link_key();
     status.mint = crate::mint::said_on_a_claim(
@@ -857,7 +917,12 @@ async fn cleanup(claim: &Claim, context: &Context) -> Result<Action, Error> {
         && delete_by_uid(&upstream_claims, &claim.name_any(), uid).await?
         && !going
     {
-        context.metrics.deleted(&claim.spec.pool, Cause::Requested);
+        let cause = if lifecycle::retention_ended(claim) {
+            Cause::Retention
+        } else {
+            Cause::Requested
+        };
+        context.metrics.deleted(&claim.spec.pool, cause);
     }
     // Every Claim known first, so one not read yet never lets the pool's objects go under it.
     let _ = context.claims.wait_until_ready().await;
@@ -920,6 +985,127 @@ async fn sandbox_of(
     Ok(Api::<Sandbox>::namespaced(client.clone(), namespace)
         .get_opt(&named.name)
         .await?)
+}
+
+/// **A suspended kept runner's sandbox brought to its pool's image** (#3982, ruled 2026-11-01), so
+/// it next starts on it: its pod template read as the cluster holds it, and only the images
+/// changed, by the sandbox's uid. The cluster's policy lets this through only on a Sandbox already
+/// `Suspended`, in a runner namespace.
+async fn renew_image(client: &Client, sandbox: &Sandbox, pool: &Pool) -> Result<(), Error> {
+    if sandbox.spec.operating_mode.as_deref() != Some(upstream::SUSPENDED) {
+        return Ok(());
+    }
+    let api = Api::<DynamicObject>::namespaced_with(
+        client.clone(),
+        &sandbox.namespace().unwrap_or_default(),
+        &ApiResource::erase::<Sandbox>(&()),
+    );
+    let name = sandbox.name_any();
+    let held = api.get(&name).await?;
+    let Some(mut spec) = held.data.pointer("/spec/podTemplate/spec").cloned() else {
+        return Ok(());
+    };
+    if !lifecycle::with_image(&mut spec, &pool.spec.image) {
+        return Ok(());
+    }
+    tracing::info!(sandbox = %name, "a suspended kept runner brought to its pool's image");
+    let patch = serde_json::json!({
+        "metadata": { "uid": sandbox.metadata.uid },
+        "spec": { "podTemplate": { "spec": spec } },
+    });
+    api.patch(&name, &PatchParams::default(), &Patch::Merge(patch))
+        .await?;
+    Ok(())
+}
+
+/// **A Claim whose retention has ended deleted** (#3981), by its uid. Its finalizer then removes
+/// its runner and its volume.
+async fn delete_retained(client: &Client, claim: &Claim, namespace: &str) -> Result<Action, Error> {
+    if let Some(uid) = claim.metadata.uid.clone() {
+        tracing::info!(claim = %claim.name_any(), %namespace, "its retention has ended");
+        let claims = Api::<Claim>::namespaced(client.clone(), namespace);
+        delete_by_uid(&claims, &claim.name_any(), uid).await?;
+    }
+    Ok(Action::await_change())
+}
+
+/// **What Claims left behind, removed** (#3739): each look, what the finalizer did not get to, as
+/// when a Claim's finalizer was taken off by hand. Only what the operator made, by uid, and never
+/// before its watch has every Claim. What goes with an upstream claim, a kept volume among them,
+/// is upstream's to remove.
+async fn sweep_orphans(client: Client, claims: Store<Claim>, every: Duration) {
+    use lifecycle::{pool_object_is_orphaned, upstream_claim_is_orphaned};
+    if claims.wait_until_ready().await.is_err() {
+        return;
+    }
+    let mut ticks = tokio::time::interval(every);
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        ticks.tick().await;
+        let listed: Result<(), Error> = async {
+            let held = claims.state();
+            let now = k8s_openapi::jiff::Timestamp::now();
+            let upstream_claims = Api::<SandboxClaim>::all(client.clone())
+                .list_metadata(&kube::api::ListParams::default())
+                .await?
+                .items;
+            for object in upstream_claims {
+                let object = object.metadata;
+                if upstream_claim_is_orphaned(&object, &held, every, now) {
+                    remove_orphan::<SandboxClaim>(&client, &object).await?;
+                }
+            }
+            let templates = Api::<SandboxTemplate>::all(client.clone())
+                .list_metadata(&kube::api::ListParams::default())
+                .await?
+                .items;
+            for object in templates {
+                let object = object.metadata;
+                if pool_object_is_orphaned(&object, &held, every, now) {
+                    remove_orphan::<SandboxTemplate>(&client, &object).await?;
+                }
+            }
+            let warm_pools = Api::<SandboxWarmPool>::all(client.clone())
+                .list_metadata(&kube::api::ListParams::default())
+                .await?
+                .items;
+            for object in warm_pools {
+                let object = object.metadata;
+                if pool_object_is_orphaned(&object, &held, every, now) {
+                    remove_orphan::<SandboxWarmPool>(&client, &object).await?;
+                }
+            }
+            Ok(())
+        }
+        .await;
+        if let Err(error) = listed {
+            tracing::warn!(%error, "what claims left behind could not be looked for");
+        }
+    }
+}
+
+/// `object` removed, where the operator made it: held by a runner namespace that is the one it made.
+async fn remove_orphan<K>(client: &Client, object: &ObjectMeta) -> Result<(), Error>
+where
+    K: Resource<Scope = kube::core::NamespaceResourceScope> + Clone + DeserializeOwned + Debug,
+    K::DynamicType: Default,
+{
+    let (Some(name), Some(namespace)) = (object.name.as_deref(), object.namespace.as_deref())
+    else {
+        return Ok(());
+    };
+    let Some(runner) = Api::<Namespace>::all(client.clone())
+        .get_opt(namespace)
+        .await?
+    else {
+        return Ok(());
+    };
+    let Found::Ours { uid } = made_for(Some(object), &runner) else {
+        return Ok(());
+    };
+    tracing::info!(%name, %namespace, "removed: its claim has gone");
+    delete_by_uid(&Api::<K>::namespaced(client.clone(), namespace), name, uid).await?;
+    Ok(())
 }
 
 /// Whether the pod `sandbox` records says its runner is idle (#3980).
@@ -1366,6 +1552,15 @@ pub fn pool_status_patch(
     Some(serde_json::json!({ "status": status }))
 }
 
+/// `otherwise`, or the whole seconds the environment variable `name` says: for the kind tests,
+/// which cannot wait half an hour. No value of the chart sets one.
+fn duration_from_env(name: &str, otherwise: Duration) -> Duration {
+    std::env::var(name)
+        .ok()
+        .and_then(|seconds| seconds.parse().ok())
+        .map_or(otherwise, Duration::from_secs)
+}
+
 async fn run_claims(
     client: Client,
     keys: Arc<MountedKeys>,
@@ -1388,6 +1583,11 @@ async fn run_claims(
         client.clone(),
         metrics.clone(),
         controller.store(),
+    ));
+    tokio::spawn(sweep_orphans(
+        client.clone(),
+        controller.store(),
+        duration_from_env("PURLIS_OPERATOR_ORPHANS_EVERY", lifecycle::ORPHANS_EVERY),
     ));
     // Upstream's objects are watched by their metadata alone, whoever made them: each wakes the
     // Claims it is named for, so a Claim that still needs one it made makes it again at once,
@@ -1449,6 +1649,10 @@ async fn run_claims(
                 suspending: Mutex::new(HashMap::new()),
                 uncounted: Mutex::new(HashMap::new()),
                 metrics,
+                stuck_after: duration_from_env(
+                    "PURLIS_OPERATOR_STUCK_AFTER",
+                    lifecycle::STUCK_AFTER,
+                ),
             }),
         )
         .for_each(|result| async move {
