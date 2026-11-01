@@ -6,6 +6,8 @@
 //! address, or be there before the login is. Where the system says nothing of owners (`None`), the
 //! caller keeps to the address the login was found on.
 
+#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
+
 use std::net::IpAddr;
 
 #[cfg(target_os = "linux")]
@@ -88,7 +90,7 @@ fn sockets_of_group(group: u32) -> Option<std::collections::HashSet<u64>> {
                 .to_str()
                 .and_then(|link| link.strip_prefix("socket:["))
                 .and_then(|rest| rest.strip_suffix(']'))
-                .and_then(|inode| inode.parse().ok());
+                .and_then(|inode| inode.parse::<u64>().ok());
             sockets.extend(inode);
         }
     }
