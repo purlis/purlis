@@ -1561,10 +1561,13 @@ fn a_chat_the_app_started_is_told_the_one_route_for_work_that_reports_back() {
         Some(format!(
             "⬢ **If work has to go to another chat.** Use purlis's tools for it first: `dispatch` \
              starts a task; `dispatch_list`, `dispatch_read`, `dispatch_wait`, `dispatch_tell`, \
-             `dispatch_answer`, `dispatch_cancel` and `dispatch_close` look after one, and \
-             `dispatch_tell` with `all` tells every task still working at once; a task answers \
-             with `dispatch_note` (its `ack` acknowledges an instruction), `dispatch_ask` and \
-             `dispatch_report`. They need no shell; the `purlis dispatch` command does the same, \
+             `dispatch_answer`, `dispatch_pass_on`, `dispatch_cancel` and `dispatch_close` look \
+             after one, and `dispatch_tell` with `all` tells every task still working at once; \
+             a task answers with `dispatch_note` (its `ack` acknowledges an instruction), \
+             `dispatch_ask` and `dispatch_report`. A task's question comes to you first: answer \
+             it, or pass it on with `dispatch_pass_on`. Security, cost, anything public and \
+             anything that amends a ruling are always passed on, and your own answer is never \
+             the person's word. They need no shell; the `purlis dispatch` command does the same, \
              one call at a time. {} This \
              says where such work goes, not that work should go: what this chat can do itself, \
              it does.",

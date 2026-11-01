@@ -579,6 +579,16 @@ fn task_tool(name: &str) -> Option<TaskTool> {
                 &dispatch_text(args, "text", chattools::DISPATCH_ANSWER)?,
             )
         },
+        chattools::DISPATCH_PASS_ON => |args| {
+            let note = match args.get("note") {
+                None => None,
+                Some(_) => Some(dispatch_text(args, "note", chattools::DISPATCH_PASS_ON)?),
+            };
+            dispatch::pass_on(
+                dispatch_task(args, chattools::DISPATCH_PASS_ON)?,
+                note.as_deref(),
+            )
+        },
         chattools::DISPATCH_CANCEL => {
             |args| dispatch::cancel(dispatch_task(args, chattools::DISPATCH_CANCEL)?)
         }

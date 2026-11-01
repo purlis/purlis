@@ -167,6 +167,7 @@ fn the_persona_skill_teaches_the_dispatch_tools_before_the_command() {
         "dispatch_wait",
         "dispatch_tell",
         "dispatch_answer",
+        "dispatch_pass_on",
         "dispatch_cancel",
         "dispatch_close",
         "dispatch_note",

@@ -181,6 +181,15 @@ pub enum DispatchCommand {
         /// The answer, in a few lines.
         text: String,
     },
+    /// Pass the question a task this chat dispatched asked it on to the person, in the task's
+    /// own words: for what only they should answer.
+    PassOn {
+        /// The task's chat, by its number in `purlis dispatch list`.
+        chat: u32,
+        /// This chat's own context for the person, on one line, shown as its note.
+        #[arg(long)]
+        note: Option<String>,
+    },
     /// From a dispatched task: send the chat that asked a progress note. It reads it on its
     /// next turn, and nothing waits on it. With `--ack <number>`, it acknowledges that
     /// instruction of the asking chat's, and the text may be left out.
@@ -763,6 +772,7 @@ pub fn run(command: &DispatchCommand) -> ExitCode {
         DispatchCommand::Cancel { chat } => said(cancel(*chat)),
         DispatchCommand::Tell { all, words } => said(tell_words(*all, words)),
         DispatchCommand::Answer { chat, text } => said(answer(Via::Command, *chat, text)),
+        DispatchCommand::PassOn { chat, note } => said(pass_on(*chat, note.as_deref())),
         DispatchCommand::Note { ack, text } => said(note(Via::Command, text.as_deref(), *ack)),
         DispatchCommand::Ask { question, timeout } => said(ask(Via::Command, question, *timeout)),
     }
@@ -1025,6 +1035,25 @@ pub fn answer(via: Via, to: u32, text: &str) -> Result<String, String> {
     Ok(format!(
         "{SAYS} answer sent to '{name}' (chat {to}), which carries on with it."
     ))
+}
+
+/// `purlis dispatch pass-on <chat>`: a question a task asked this chat goes on to the person,
+/// in the task's own words, with this chat's `note` (#4554). Not queued: while the app does not
+/// answer, the question stands with this chat, and this says so.
+pub fn pass_on(to: u32, note: Option<&str>) -> Result<String, String> {
+    let note = note.map(str::to_owned);
+    match asked(
+        What::PassOn { to, note },
+        crate::handoff::A_TICKET_TAKES_AT_MOST,
+    )? {
+        Answered::PassedOn { to: name } => Ok(format!(
+            "{SAYS} '{name}' (chat {to})'s question was passed on to the person in its own \
+             words. Its answer goes to the task, and this chat is told what they said."
+        )),
+        _ => Err(format!(
+            "{SAYS} the purlis app did not answer, so nothing was passed on."
+        )),
+    }
 }
 
 /// `purlis dispatch note "<text>"`: a progress note to the chat that dispatched this one; with

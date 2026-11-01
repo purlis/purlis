@@ -219,6 +219,23 @@ describe("the asks, grouped by chat", () => {
     expect(chats()).toEqual(["steward 3", "steward 5", "steward 7"]);
   });
 
+  it("draws a task's question in its own words, with its asking chat's note marked apart (ADR 0107)", () => {
+    const question: Shown = {
+      session: 9,
+      ask: "task-question:9:4",
+      says: "Which host?",
+      options: [],
+      source: "task-question",
+      chain: ["steward 6", "check prod"],
+      answer: { via: "task-question", why: "passed-on", from: "steward 6", note: "Your call." },
+    };
+    core();
+    draw([question]);
+
+    expect(screen.getByText("Which host?")).toBeTruthy();
+    expect(screen.getByText("steward 6 passed this on. Its note: Your call.")).toBeTruthy();
+  });
+
   it("draws what an ask says as text: no word of it is ever a control", () => {
     core();
     const forged = permission(

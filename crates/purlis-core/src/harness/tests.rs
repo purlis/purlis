@@ -548,6 +548,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis dispatch note *)",
             "Bash(purlis dispatch ask *)",
             "Bash(purlis dispatch answer *)",
+            "Bash(purlis dispatch pass-on *)",
             "Bash(purlis dispatch close *)",
             "Bash(purlis handoff --name *)",
             "Bash(purlis handoff --report *)",
@@ -588,6 +589,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "mcp__purlis__dispatch_report",
             "mcp__purlis__dispatch_tell",
             "mcp__purlis__dispatch_answer",
+            "mcp__purlis__dispatch_pass_on",
             "mcp__purlis__dispatch_cancel",
             "mcp__purlis__dispatch_close",
             "mcp__purlis__dispatch_note",
@@ -681,6 +683,7 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
             "Bash(purlis dispatch note *)",
             "Bash(purlis dispatch ask *)",
             "Bash(purlis dispatch answer *)",
+            "Bash(purlis dispatch pass-on *)",
             "Bash(purlis dispatch close *)",
         ]
     );
@@ -919,6 +922,7 @@ fn every_charter_tool_a_claude_code_chat_runs_without_asking_is_ruled_in_by_name
         "dispatch_wait",
         "dispatch_tell",
         "dispatch_answer",
+        "dispatch_pass_on",
         "dispatch_cancel",
         "dispatch_close",
         "dispatch_note",

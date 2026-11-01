@@ -1266,6 +1266,7 @@ pub const DISPATCH_TASK_ALLOW: [&str; 11] = [
     "Bash(purlis dispatch note *)",
     "Bash(purlis dispatch ask *)",
     "Bash(purlis dispatch answer *)",
+    "Bash(purlis dispatch pass-on *)",
     "Bash(purlis dispatch close *)",
 ];
 

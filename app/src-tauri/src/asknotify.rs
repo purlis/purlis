@@ -285,6 +285,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::RunnerDispatch => "Asks, from a pool's runner, to start a chat here",
         AskSource::Terminal => "Waiting in its terminal",
         AskSource::Question => "Waiting on your reply",
+        AskSource::TaskQuestion => "A task asks you a question",
         AskSource::SignIn => "Asks you to sign a profile in",
         AskSource::SandboxOnly => "Asks you to make a sandbox-only profile",
         AskSource::OldHarnessPlugins => "Old harness plugin settings, ignored now",

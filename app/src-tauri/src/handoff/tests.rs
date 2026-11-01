@@ -11935,6 +11935,9 @@ mod waits_on_memory;
 /// Tasks across a restart, and a task whose asking chat has gone (#1513).
 mod across_restart;
 
+/// A task's question on its route (ADR 0107).
+mod task_questions;
+
 /// A task started fresh is handed its brief again, or not started at all (#1609).
 mod started_fresh;
 

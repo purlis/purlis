@@ -118,8 +118,14 @@ pub enum What {
     Question { text: String },
     /// Answer the question task `to` asked this chat.
     Answer { to: u32, text: String },
-    /// Wait for the answer to this task's question, for at most `within_secs`.
-    AwaitAnswer { within_secs: u32 },
+    /// **Pass the question task `to` asked this chat on to the person** (#4554), with this
+    /// chat's own one-line `note`. It has no field for the question, so its words cannot change.
+    PassOn {
+        to: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
+    /// Wait for the answer to this task's question, for at most `within_secs`. { within_secs: u32 },
     /// The waiting command has the answer: it need not be handed to the next turn too.
     GotAnswer,
     /// **What the person said to this chat in the purlis window** that it has not been handed
@@ -165,6 +171,8 @@ pub enum Answered {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         messages: Vec<crate::dispatchtalk::Record>,
     },
+    /// The question of the task called `to` waits on the person now (#4554).
+    PassedOn { to: String },
     /// Task `of`, called `name`, is being cancelled; its report follows as any report does.
     Cancelling { of: u32, name: String },
     /// Finished task `of`, called `name`, is closed (#1981 D-4).
