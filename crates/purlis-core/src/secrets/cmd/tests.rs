@@ -1216,6 +1216,23 @@ fn a_key_a_mint_line_names_is_refused_to_every_raw_read_and_others_are_not() {
 }
 
 #[test]
+fn a_name_kept_for_agent_identity_is_written_and_deleted_by_that_flow_alone() {
+    let plane = a_plane_minting_with_its_key();
+    let v = provider(&plane.ctx, "forge").unwrap();
+    let key = "agent-identity-github-Iv23li";
+    assert!(set_value(&plane.ctx, &v, key, "planted").is_err());
+    assert!(set_value(&plane.ctx, &v, &key.to_uppercase(), "planted").is_err());
+    assert!(rename(&plane.ctx, &v, "app-key", key).is_err());
+    assert!(!keys(&plane.ctx, &v).unwrap().iter().any(|one| one == key));
+
+    set_reserved(&plane.ctx, &v, key, "kept").unwrap();
+    assert!(delete(&plane.ctx, &v, key).is_err());
+    assert!(get_value(&plane.ctx, &v, key).is_err());
+    delete_reserved(&plane.ctx, &v, key).unwrap();
+    assert!(!keys(&plane.ctx, &v).unwrap().iter().any(|one| one == key));
+}
+
+#[test]
 fn a_key_a_mint_line_names_still_resolves_for_verify_and_the_mint_but_is_not_renamed_away() {
     let plane = a_plane_minting_with_its_key();
     let v = provider(&plane.ctx, "forge").unwrap();
