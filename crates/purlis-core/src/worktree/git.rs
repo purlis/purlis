@@ -805,13 +805,17 @@ const LFS_HELD: [&str; 4] = [
 /// `.git/lfs`, among what it holds, or in `objects/<xx>/<yy>`, the deepest folder it writes in.
 /// A chat's sandbox lets it write there, and this git runs outside that sandbox, so a link would
 /// have the filter write the chat's bytes where the chat chose (#4380). Where it cannot tell
-/// (git is told of another directory, or a folder cannot be read) the answer is no, and the
-/// filter is held. **Not a closed race**, like the listing: a link made after this is followed.
+/// (git is told of another directory, a folder cannot be read, or any config moves the store
+/// with `lfs.storage`) the answer is no, and the filter is held. **Not a closed race**, like the listing: a link made after this is followed.
 fn lfs_store_is_its_own(
     dir: &Path,
     before_verb: &[&str],
     link: Option<&(PathBuf, PathBuf)>,
+    listing: &str,
 ) -> bool {
+    if listed_entries(listing).any(|(_, key, _)| key.eq_ignore_ascii_case("lfs.storage")) {
+        return false;
+    }
     if !before_verb.iter().all(|word| {
         !matches!(*word, "-C" | "--git-dir" | "--work-tree")
             && !word.starts_with("--git-dir=")
@@ -825,7 +829,7 @@ fn lfs_store_is_its_own(
     let store = common.join("lfs");
     match store.symlink_metadata() {
         Err(error) => error.kind() == std::io::ErrorKind::NotFound,
-        Ok(found) => found.is_dir() && holds_no_link(&store, 3),
+        Ok(found) => found.is_dir() && holds_no_link(&store, 2),
     }
 }
 
@@ -838,10 +842,16 @@ fn common_git_dir(dir: &Path, link: Option<&(PathBuf, PathBuf)>) -> Option<PathB
         };
         return Some(git_dir.join(named.trim()));
     }
-    dir.ancestors()
+    // The folder as git climbs it, links resolved. The nearest `.git` must be one git takes: it
+    // climbs past a folder that is no repository, and this cannot say how far.
+    std::fs::canonicalize(dir)
+        .ok()?
+        .ancestors()
         .map(|folder| folder.join(".git"))
         .find(|git| git.symlink_metadata().is_ok())
-        .filter(|git| git.symlink_metadata().is_ok_and(|found| found.is_dir()))
+        .filter(|git| {
+            git.symlink_metadata().is_ok_and(|found| found.is_dir()) && git.join("HEAD").is_file()
+        })
 }
 
 /// Whether `folder`, down `depth` folders, holds no symbolic link and can all be read.
@@ -922,7 +932,7 @@ fn programs_held(
             extra.config.extend(settings);
             // `git lfs` itself is no filter: it is how such a clone downloads, under the rule.
             if args[at] != "lfs" && lfs_filter_offline(&said) {
-                if lfs_store_is_its_own(dir, &args[..at], extra.link.as_ref()) {
+                if lfs_store_is_its_own(dir, &args[..at], extra.link.as_ref(), &said) {
                     extra.pass.push((LFS_SKIP_SMUDGE.to_owned(), "1".into()));
                     if !extra.network {
                         extra.config.push("credential.helper=".to_owned());

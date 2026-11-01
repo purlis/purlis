@@ -881,6 +881,57 @@ fn a_link_in_the_lfs_store_holds_the_filter_of_a_wired_clone() {
 }
 
 #[test]
+fn the_lfs_store_checked_is_the_one_git_finds_from_a_subfolder() {
+    let held = |dir: &Path| {
+        let said = run(dir, &["var", "-l"], READ).expect("git runs");
+        said.out.contains("filter.lfs.process=\n")
+    };
+    let wired = || {
+        let repo = repo();
+        let config = ["config", "credential.helper", "!gh auth git-credential"];
+        assert!(crate::testgit::run(repo.path(), &config).ok());
+        repo
+    };
+    let elsewhere = tempfile::tempdir().unwrap();
+
+    // An empty `.git` in a subfolder, which git climbs past to a store with a link.
+    let outer = wired();
+    let sub = outer.path().join("sub");
+    std::fs::create_dir_all(sub.join(".git")).unwrap();
+    assert!(held(&sub));
+    let other = wired();
+    let sub = other.path().join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    assert!(!held(&sub), "a plain subfolder keeps the filter");
+
+    // A subfolder that is a link into a second repository, whose store has a link.
+    let (near, far) = (wired(), wired());
+    std::os::unix::fs::symlink(elsewhere.path(), far.path().join(".git/lfs")).unwrap();
+    let through = near.path().join("through");
+    std::os::unix::fs::symlink(far.path(), &through).unwrap();
+    assert!(held(&through));
+}
+
+#[test]
+fn an_lfs_store_moved_by_any_config_holds_the_filter_of_a_wired_clone() {
+    let named = |scope| {
+        let named = listing(&[
+            (scope, "lfs.storage", "elsewhere"),
+            ("local", "credential.helper", "!gh auth git-credential"),
+        ]);
+        String::from_utf8_lossy(&named).into_owned()
+    };
+    let repo = repo();
+    assert!(!lfs_store_is_its_own(
+        repo.path(),
+        &[],
+        None,
+        &named("global")
+    ));
+    assert!(lfs_store_is_its_own(repo.path(), &[], None, ""));
+}
+
+#[test]
 fn a_repository_with_no_wired_helper_is_given_no_reset_of_the_persons_helpers() {
     let repo = repo();
     let run = run(repo.path(), &["var", "-l"], READ).expect("git runs");
