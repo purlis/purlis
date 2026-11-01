@@ -1173,7 +1173,11 @@ fn a_chat_commits_with_the_command_with_and_without_the_sandbox() {
     let before = head();
     let ran = run(&["worktree", "commit", "-m", "refused", "c.txt"], false);
     assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
-    assert!(err(&ran).contains("refuse_unsandboxed_commit"), "{}", err(&ran));
+    assert!(
+        err(&ran).contains("refuse_unsandboxed_commit"),
+        "{}",
+        err(&ran)
+    );
     assert_eq!(head(), before);
     let ran = run(&["worktree", "commit", "-m", "still", "c.txt"], true);
     assert!(ran.status.success(), "{}", err(&ran));
