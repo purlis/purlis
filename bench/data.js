@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793545769183,
+  "lastUpdate": 1793547446790,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35028,6 +35028,48 @@ window.BENCHMARK_DATA = {
             "value": 101.42375799999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.311, 101.377, 101.424, 102.163, 102.181 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "37f410e2bd61d3271748ef7d41fd628aba8815b8",
+          "message": "Runner sign-ins, cluster checks and forge program settings (#4417)\n\n* Forge programs' settings and extensions are later-code names\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n* Browser: a listed title is scrubbed before it is cut, as a snapshot's is\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n* Cluster pools: a tidy is remembered by the claim; kubectl runs without a handed KUBERC\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n* Runner sign-ins: one address for a login's answer, a status beside a sign-in file, no sign-in after an unsandboxed chat\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n* Cluster checks share one time; a kubectl run's left helpers end with it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n* Runner keep: a harness's names no desktop sends are cleared at each keep\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n* Runners: a relayed link stays on its runner; a sign-out in a terminal holds the running runner's carry\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n* Runners: review fixes across sign-in entries, the carry hold, tidies, kubectl preferences and waking\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n* Runners: the carry hold is released only by a sign-in driven to its end; a terminal sign-out stops one open\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n* A chat's settings stay on its command line up to 120 KiB, under Linux's one-word limit\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n* Cluster pool tests: a test's closing brace, after a rebase\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR4714GWV4CGEC3M9ZY7V3\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T14:57:44Z",
+          "tree_id": "ab0f01777f33251e354ee70f4a72bb83f4cbe002",
+          "url": "https://github.com/purlis/purlis/commit/37f410e2bd61d3271748ef7d41fd628aba8815b8"
+        },
+        "date": 1793547440125,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6652629999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.647, 0.658, 0.665, 0.669, 0.677 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5585655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.241, 16.314, 16.559, 16.570, 16.582 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.536372,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.190, 101.244, 101.536, 101.894, 102.645 ms"
           }
         ]
       }
