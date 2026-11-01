@@ -27,6 +27,45 @@ use crate::extensions::{PersonInForce, WindowTheme};
 /// test below holds the script to it, and `windowprefs.test.ts` holds the page to it.
 pub(crate) const GLOBAL: &str = "__CHARTER_AT_CREATION__";
 
+/// **How long a window's creation waits for the themes it draws to be measured** (#4337), all told:
+/// a theme whose parts pass over its tints takes hundreds of milliseconds per appearance. Past it
+/// the frame is drawn with no parts of that theme's, and they land when the window asks.
+const FIRST_FRAME_WAITS: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// The themes of one creation, each in the window's shape by the one deadline. **The clock starts
+/// at the first theme handed**: what a creation reads before it is not a measure, and must not
+/// leave a shipped theme, which measures in under a millisecond, no time to.
+struct Handing {
+    wait: std::time::Duration,
+    deadline: std::cell::OnceCell<std::time::Instant>,
+}
+
+impl Handing {
+    fn new(wait: std::time::Duration) -> Self {
+        Self {
+            wait,
+            deadline: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// When the measures of this creation stop being waited for.
+    fn deadline(&self) -> std::time::Instant {
+        *self
+            .deadline
+            .get_or_init(|| std::time::Instant::now() + self.wait)
+    }
+
+    /// `theme` as the window is handed it, and whether its parts come later.
+    fn of(&self, theme: &theme::ResolvedTheme) -> (WindowTheme, bool) {
+        let parts = theme::parts::stylesheet_by(theme, self.deadline());
+        let later = parts.is_none();
+        (
+            WindowTheme::with_parts(theme, parts.unwrap_or_default()),
+            later,
+        )
+    }
+}
+
 /// What the page receives. Every theme in it is a [`WindowTheme`], the one wire shape a
 /// resolved theme has, which `theme_in_force` answers in too.
 #[derive(Debug, serde::Serialize)]
@@ -181,6 +220,7 @@ impl FirstFrame {
         theirs: Option<&theme::Theme>,
         contrast: Option<Contrast>,
         person: &theme::Layer,
+        handing: &Handing,
     ) -> (Self, theme::Native) {
         // More contrast in purlis is layered on the system's (#2925): it draws as the system's
         // does, so there is one frame for it.
@@ -230,7 +270,7 @@ impl FirstFrame {
                 let frame = Frame {
                     light,
                     more,
-                    theme: WindowTheme::from(resolved),
+                    theme: handing.of(resolved).0,
                     floors: one.held.map(|held| held.said()),
                     mine: said(one.mine),
                 };
@@ -274,6 +314,9 @@ struct TheirTheme {
     floors: Option<String>,
     /// Which of the person's colours it left out (#3023), as [`Self::floors`] says its floors.
     mine: Vec<String>,
+    /// Whether what is handed was drawn before its parts were measured (#4337): the window then
+    /// asks the core for it instead of drawing what it holds.
+    parts_later: bool,
     /// Whether it is a format 1 file in force, which the window offers, once, to move into a
     /// theme folder (#2323).
     format_1: bool,
@@ -290,27 +333,35 @@ struct TheirDrawn {
     floors: Option<String>,
     /// Which of the person's colours this appearance left out (#3023).
     mine: Vec<String>,
+    #[serde(skip)]
+    parts_later: bool,
 }
 
 impl TheirTheme {
     /// The person's own theme with their layer `person` drawn over it (#2925).
-    fn of(theirs: Theirs, person: &theme::Layer) -> Self {
+    fn of(theirs: Theirs, person: &theme::Layer, handing: &Handing) -> Self {
         // What the window draws of the person's own theme where no level chooses (`handedFor`
         // in `Extensions.tsx`): its first appearance for each contrast, the consent floors held.
         // The page picks with `prefers-contrast`, so both are handed.
         let drawn = |contrast| {
             theirs.theme.as_ref().and_then(|theme| {
                 let drawn = theme::draw(theme.first_for(contrast)).under(person);
+                let (theme, parts_later) = handing.of(drawn.theme.as_ref()?);
                 Some(TheirDrawn {
-                    theme: WindowTheme::from(drawn.theme.as_ref()?),
+                    theme,
                     floors: drawn.held.map(|held| held.said()),
                     mine: said(drawn.mine),
+                    parts_later,
                 })
             })
         };
         let standard = drawn(Contrast::Standard);
         let more = drawn(Contrast::More)
             .filter(|more| Some(&more.theme) != standard.as_ref().map(|it| &it.theme));
+        let parts_later = [&standard, &more]
+            .into_iter()
+            .flatten()
+            .any(|it| it.parts_later);
         Self {
             path: theirs.path,
             found: theirs.found,
@@ -322,6 +373,7 @@ impl TheirTheme {
                 .map_or_else(Vec::new, |it| it.mine.clone()),
             theme: standard.map(|it| it.theme),
             more,
+            parts_later,
             format_1: theirs.format_1,
         }
     }
@@ -352,11 +404,43 @@ pub(crate) static THEIRS: TheirsKept = TheirsKept::new();
 /// A machine with no config home hands the page an empty layout and no theme of the person's:
 /// the default arrangement and the built-in theme, which is what such a machine has always had.
 pub(crate) fn at_creation(config_root: Option<&Path>, on: Option<&CreatedOn>) -> Created {
-    at_creation_from(&THEIRS, config_root, on, crate::syscontrast::asked())
+    created_within(
+        FIRST_FRAME_WAITS,
+        &THEIRS,
+        config_root,
+        on,
+        crate::syscontrast::asked(),
+    )
 }
 
-/// [`at_creation`], from the person's theme as `kept` holds it and the contrast `contrast`.
+/// [`created_within`], waiting as long as a measure takes: what a test reads does not turn on how
+/// busy its machine is.
+#[cfg(test)]
 fn at_creation_from(
+    kept: &TheirsKept,
+    config_root: Option<&Path>,
+    on: Option<&CreatedOn>,
+    contrast: Option<Contrast>,
+) -> Created {
+    let hour = std::time::Duration::from_secs(3600);
+    created_within(hour, kept, config_root, on, contrast)
+}
+
+/// [`at_creation`], waiting `wait` for its themes to be measured, from the person's theme as `kept`
+/// holds it and the contrast `contrast`.
+fn created_within(
+    wait: std::time::Duration,
+    kept: &TheirsKept,
+    config_root: Option<&Path>,
+    on: Option<&CreatedOn>,
+    contrast: Option<Contrast>,
+) -> Created {
+    created_by(&Handing::new(wait), kept, config_root, on, contrast)
+}
+
+/// [`created_within`], its themes handed by `handing`.
+fn created_by(
+    handing: &Handing,
     kept: &TheirsKept,
     config_root: Option<&Path>,
     on: Option<&CreatedOn>,
@@ -370,7 +454,14 @@ fn at_creation_from(
         .and_then(|document| document.get("appearance"));
     let (person, layer) = PersonInForce::read(appearance);
     let theirs = kept.get(config_root);
-    let (first, native) = FirstFrame::of(config_root, on, theirs.theme.as_ref(), contrast, &layer);
+    let (first, native) = FirstFrame::of(
+        config_root,
+        on,
+        theirs.theme.as_ref(),
+        contrast,
+        &layer,
+        handing,
+    );
     let follows_system = first.follows_system;
     let Handed {
         built_in,
@@ -378,7 +469,7 @@ fn at_creation_from(
         default_theme,
     } = Handed::under(&layer);
     let at = AtCreation {
-        theme: TheirTheme::of(theirs, &layer),
+        theme: TheirTheme::of(theirs, &layer, handing),
         built_in,
         built_in_mine,
         default_theme,
@@ -841,6 +932,166 @@ mod tests {
             !at["theme"]["mine"].as_array().expect("mine").is_empty(),
             "{}",
             at["theme"]
+        );
+    }
+
+    /// A theme file whose parts pass over its tints when measured.
+    const MEASURED_IN_TINTS: &str = r##"{"name":"Heavy","extends":"purlis-classic",
+        "appearances":[{"id":"dark","tokens":{"chart.4":"#ff000040","chart.3":"#ffffff"}}],
+        "tint":{"tokens":["surface.base","control.base"]},
+        "parts":{"button.root.fill":"chart.4","button.root.text":"chart.3"}}"##;
+
+    #[test]
+    fn a_first_frame_past_its_wait_is_drawn_with_no_parts_and_the_window_asks_for_them() {
+        // #4337: the frame carries the theme's colours and no parts: each part its family default,
+        // what a part that falls is drawn as. The reading says the window must ask.
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(windowprefs::THEME), MEASURED_IN_TINTS).unwrap();
+        let standard = Some(Contrast::Standard);
+        let root = Some(home.path());
+        let zero = std::time::Duration::ZERO;
+        let at = defined(&created_within(zero, &TheirsKept::new(), root, None, standard).script);
+        assert_eq!(at["theme"]["parts_later"], true);
+        assert_eq!(at["theme"]["theme"]["parts"], "");
+        assert_eq!(at["first"]["frames"][0]["theme"]["name"], "Heavy");
+        assert_eq!(at["first"]["frames"][0]["theme"]["parts"], "");
+
+        // With the measure done, the same creation is handed the parts, and nothing to ask for.
+        let at = defined(&at_creation_from(&TheirsKept::new(), root, None, standard).script);
+        assert_eq!(at["theme"]["parts_later"], false);
+        let parts = at["first"]["frames"][0]["theme"]["parts"].as_str().unwrap();
+        assert!(parts.contains("@layer parts"), "{parts}");
+        // And kept, so a later window waits for nothing.
+        let again = defined(&created_within(zero, &TheirsKept::new(), root, None, standard).script);
+        assert_eq!(again["first"]["frames"][0]["theme"]["parts"], parts);
+        assert_eq!(again["theme"]["parts_later"], false);
+    }
+
+    #[test]
+    fn the_wait_starts_at_the_first_theme_handed_not_when_the_creation_starts() {
+        // Review of #4337: reading the layout, the levels and the folders comes first, and none of
+        // it is a measure, so none of it spends the wait. No clock race: what is read is when the
+        // deadline was set.
+        let wait = std::time::Duration::from_millis(20);
+        let handing = Handing::new(wait);
+        std::thread::sleep(wait * 2);
+        let reached = std::time::Instant::now();
+        let deadline = handing.deadline();
+        assert!(deadline >= reached + wait, "the setup spent the wait");
+        // One deadline for the whole creation, however many themes it hands.
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        assert_eq!(handing.deadline(), deadline);
+    }
+
+    #[test]
+    fn a_slow_setup_leaves_a_shipped_theme_its_parts_on_the_first_frame() {
+        // Review of #4337: past its deadline before its first theme, a creation would draw Purlis
+        // with none of its parts, and they would pop in. A second is far longer than Purlis takes.
+        let wait = std::time::Duration::from_secs(1);
+        let handing = Handing::new(wait);
+        std::thread::sleep(wait + std::time::Duration::from_millis(100));
+        let standard = Some(Contrast::Standard);
+        let at = defined(&created_by(&handing, &TheirsKept::new(), None, None, standard).script);
+        let frame = &at["first"]["frames"][0]["theme"];
+        assert_eq!(frame["name"], theme::default_theme().name.as_str());
+        let parts = frame["parts"].as_str().expect("parts are written");
+        assert!(parts.contains("@layer parts"), "drawn without: {parts:?}");
+    }
+
+    #[test]
+    fn a_first_frame_with_no_parts_still_holds_the_consent_floors_and_the_text_tiers() {
+        // Review of #4337: what keeps the frame without parts readable is the holds on its tokens,
+        // not the family defaults. This theme breaks a consent floor and a tier as it is written.
+        let lost = theme::built_in_for(theme::Appearance::Dark).value("surface.base");
+        let written = MEASURED_IN_TINTS.replace(
+            r##""chart.3":"#ffffff""##,
+            &format!(r##""chart.3":"#ffffff","state.failed":"{lost}","text.muted":"{lost}""##),
+        );
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(windowprefs::THEME), &written).unwrap();
+        let standard = Some(Contrast::Standard);
+        let root = Some(home.path());
+        let zero = std::time::Duration::ZERO;
+        let at = defined(&created_within(zero, &TheirsKept::new(), root, None, standard).script);
+        let frame = &at["first"]["frames"][0]["theme"];
+        assert_eq!(frame["parts"], "", "this frame is the one without parts");
+
+        // The frame's own colours, read back onto the theme, as the check reads a theme.
+        let mut drawn = theme::load_text(&written).theme.first().clone();
+        let unheld = under_floors(&drawn);
+        assert!(
+            ["state.failed", "text.muted"]
+                .iter()
+                .all(|token| unheld.iter().any(|pair| pair.starts_with(token))),
+            "as written it breaks both, or this holds nothing: {unheld:?}"
+        );
+        for (token, value) in &mut drawn.values {
+            *value = frame["values"][*token].as_str().unwrap().to_owned();
+        }
+        assert_eq!(under_floors(&drawn), Vec::<String>::new());
+    }
+
+    /// The consent pairs and text tiers `theme` draws under their floors, untinted.
+    fn under_floors(theme: &theme::ResolvedTheme) -> Vec<String> {
+        theme::check(theme)
+            .findings
+            .iter()
+            .filter_map(|finding| match finding {
+                theme::Finding::Contrast {
+                    tint: None, pair, ..
+                } if pair.front.starts_with("state.")
+                    || pair.front.starts_with("danger.")
+                    || pair.front.starts_with("needs-you.")
+                    || pair.front == theme::FAINT
+                    || theme::TEXT_TIERS.contains(&pair.front) =>
+                {
+                    Some(format!("{} on {}", pair.front, pair.back))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// **What a creation takes with a heavy theme** (#4337), printed, in this process's cold state:
+    /// `cargo test -p purlis-app --lib creation_with_a_heavy_theme_timed -- --ignored --nocapture`.
+    /// Everything but opening the window and loading the page; each run measures nothing kept.
+    #[test]
+    #[ignore = "a timing to read, not a check"]
+    fn creation_with_a_heavy_theme_timed() {
+        let recipe = r#"["surface.base","surface.sunken","surface.deep","surface.raised",
+            "surface.overlay","surface.hover","control.base","control.hover","tab.active",
+            "list.selected"]"#;
+        let written = MEASURED_IN_TINTS.replace(r#"["surface.base","control.base"]"#, recipe);
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(windowprefs::THEME), &written).unwrap();
+        let loaded = theme::load_text(&written).theme;
+
+        let started = std::time::Instant::now();
+        let drawn = theme::draw(loaded.first());
+        let holds = started.elapsed();
+        assert!(drawn.theme.is_some());
+
+        let started = std::time::Instant::now();
+        let created = created_within(
+            FIRST_FRAME_WAITS,
+            &TheirsKept::new(),
+            Some(home.path()),
+            None,
+            None,
+        );
+        let took = started.elapsed();
+        let at = defined(&created.script);
+        let frames = at["first"]["frames"].as_array().unwrap();
+        println!(
+            "one draw (both holds) {holds:?}; created_within {took:?}; {} frames; parts later: {}",
+            frames.len(),
+            at["theme"]["parts_later"],
         );
     }
 

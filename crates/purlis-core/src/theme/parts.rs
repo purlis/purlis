@@ -64,7 +64,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write as _;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use serde_json::{Map, Value, json};
 
@@ -4543,8 +4543,9 @@ type Measured = (Vec<Rule>, Vec<Fell>);
 /// parts themes.
 const KEPT: usize = 64;
 
-/// The themes measured last, the latest first, each with its measure.
-type Kept = VecDeque<(ResolvedTheme, Arc<Measured>)>;
+/// The themes measured last, the latest first, each with its measure, or the place it lands in
+/// while a thread is still making it.
+type Kept = VecDeque<(ResolvedTheme, Arc<OnceLock<Arc<Measured>>>)>;
 
 #[cfg(not(test))]
 static MEASURED: Mutex<Kept> = Mutex::new(VecDeque::new());
@@ -4552,14 +4553,27 @@ static MEASURED: Mutex<Kept> = Mutex::new(VecDeque::new());
 #[cfg(test)]
 thread_local! {
     /// Each test thread keeps its own, so what one test measures is never another's.
-    static MEASURED: &'static Mutex<Kept> = Box::leak(Box::new(Mutex::new(VecDeque::new())));
+    static MEASURED: std::cell::Cell<&'static Mutex<Kept>> =
+        std::cell::Cell::new(Box::leak(Box::new(Mutex::new(VecDeque::new()))));
+}
+
+/// This test thread's kept measures, to hand a thread that shares them as the window's do.
+#[cfg(test)]
+fn kept_here() -> &'static Mutex<Kept> {
+    MEASURED.with(std::cell::Cell::get)
+}
+
+/// This test thread keeps `kept`, as every thread of the app keeps the one.
+#[cfg(test)]
+fn keep_in(kept: &'static Mutex<Kept>) {
+    MEASURED.with(|here| here.set(kept));
 }
 
 fn measured() -> std::sync::MutexGuard<'static, Kept> {
     #[cfg(not(test))]
     let kept: &'static Mutex<Kept> = &MEASURED;
     #[cfg(test)]
-    let kept: &'static Mutex<Kept> = MEASURED.with(|kept| *kept);
+    let kept: &'static Mutex<Kept> = kept_here();
     kept.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -4567,30 +4581,43 @@ fn measured() -> std::sync::MutexGuard<'static, Kept> {
 /// writing the stylesheet, reporting what fell and the gallery's cards all ask for the same
 /// theme. The measure is a function of the whole theme, so a theme equal in every value is the
 /// same theme, and the last [`KEPT`] are kept. A theme that names no parts costs nothing.
+///
+/// **A second asker waits for the first's measure** (#4337): a window's ask that finds the theme
+/// its creation left measuring does not make the pass again.
 fn held_once(theme: &ResolvedTheme) -> Arc<Measured> {
     if theme.parts.is_empty() {
         return Arc::new((Vec::new(), Vec::new()));
     }
-    let kept = |measured: &mut Kept| {
-        let at = measured.iter().position(|(one, _)| one == theme)?;
-        let hit = measured.remove(at)?;
-        let held = Arc::clone(&hit.1);
-        measured.push_front(hit);
-        Some(held)
+    let place = {
+        let mut kept = measured();
+        match kept.iter().position(|(one, _)| one == theme) {
+            Some(at) => {
+                let hit = kept.remove(at).expect("the position was just found");
+                let place = Arc::clone(&hit.1);
+                kept.push_front(hit);
+                place
+            }
+            None => {
+                let place = Arc::new(OnceLock::new());
+                kept.push_front((theme.clone(), Arc::clone(&place)));
+                kept.truncate(KEPT);
+                place
+            }
+        }
     };
-    if let Some(held) = kept(&mut measured()) {
-        return held;
-    }
-    #[cfg(test)]
-    PASSES.with(|passes| passes.set(passes.get() + 1));
-    let held = Arc::new(held(theme));
-    let mut kept_now = measured();
-    if let Some(already) = kept(&mut kept_now) {
-        return already;
-    }
-    kept_now.push_front((theme.clone(), Arc::clone(&held)));
-    kept_now.truncate(KEPT);
-    held
+    Arc::clone(place.get_or_init(|| {
+        #[cfg(test)]
+        PASSES.with(|passes| passes.set(passes.get() + 1));
+        Arc::new(held(theme))
+    }))
+}
+
+/// Whether `theme`'s measure is there to be read, with no pass to make or wait for.
+fn measure_is_kept(theme: &ResolvedTheme) -> bool {
+    theme.parts.is_empty()
+        || measured()
+            .iter()
+            .any(|(one, place)| one == theme && place.get().is_some())
 }
 
 #[cfg(test)]
@@ -4991,6 +5018,27 @@ fn sizes(property: Prop) -> bool {
             | Prop::Height
             | Prop::BorderWidth
     )
+}
+
+/// **[`stylesheet`], if it is written by `deadline`** (#4337): what a window's creation asks, so
+/// the first frame never waits out a theme's pass over its tints. `None` past it, and the pass
+/// goes on off this thread and is kept, for the window's ask once it has drawn.
+///
+/// With `None` the window draws the theme with no parts: each part its family default, on tokens
+/// [`super::draw`] has already held to the consent and tier floors. Those holds are what keep it
+/// readable: a family default is only as legible as the tokens it draws.
+pub fn stylesheet_by(theme: &ResolvedTheme, deadline: std::time::Instant) -> Option<String> {
+    if measure_is_kept(theme) {
+        return Some(stylesheet(theme));
+    }
+    let (written, wait) = std::sync::mpsc::channel();
+    let measuring = theme.clone();
+    std::thread::spawn(move || {
+        // The creation has gone on without it when nobody is left to tell: the measure is kept.
+        let _ = written.send(stylesheet(&measuring));
+    });
+    wait.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+        .ok()
 }
 
 /// **The stylesheet the window draws `theme`'s parts with**: one rule per part, variant and state
