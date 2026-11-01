@@ -2364,10 +2364,13 @@ fn a_task_that_ended_with_a_gone_runner_names_it_and_refuses_reopen() {
         ),
         "{ended:?}"
     );
-    let row = crate::finished::listed(&held)
-        .into_iter()
-        .find(|row| row.id == ended.id)
-        .expect("its finished row");
+    // Its chat closes off the thread that told it, and only then is its row drawn.
+    let row = eventually(|| {
+        crate::finished::listed(&held)
+            .into_iter()
+            .find(|row| row.id == ended.id)
+    })
+    .expect("its finished row");
     assert!(!row.reopens, "{row:?}");
     assert!(
         row.not_reopened
