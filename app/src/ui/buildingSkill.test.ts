@@ -5,7 +5,7 @@
 /**
  * **The purlis UI skill says what the repository has** (#2928, spec #2897 story 76).
  *
- * `building-purlis-ui` is the skill an agent loads to build the window, and it points into the
+ * `purlis-building-purlis-ui` is the skill an agent loads to build the window, and it points into the
  * docs rather than restating them. A pointer that has gone stale sends the agent nowhere, so
  * every one is held here, as the purlis-theme skill's commands are held by `purlis theme --help`:
  *
@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
 const APP = process.cwd();
 const REPO = join(APP, "..");
 const SKILL = readFileSync(
-  join(APP, "src-tauri", "plugin", "skills", "building-purlis-ui", "SKILL.md"),
+  join(APP, "src-tauri", "plugin", "skills", "purlis-building-purlis-ui", "SKILL.md"),
   "utf8",
 );
 const PARTS = readFileSync(join(REPO, "crates", "purlis-core", "src", "theme", "parts.rs"), "utf8");
