@@ -1369,3 +1369,51 @@ fn a_tool_with_a_program_or_not_listed_is_not_absent_from_the_image() {
     super::SEARCH_HERE.with(|here| *here.borrow_mut() = None);
     let _ = std::fs::remove_dir_all(found);
 }
+
+/// **On a runner, a listed tool nobody allowed says the sentence too, where its program is absent**
+/// (#4373), and no shim is ready; on the person's own machine it stays as it was.
+#[test]
+fn an_unallowed_tool_absent_from_the_image_refuses_in_a_sentence() {
+    let root = outside_temp("unallowed-root");
+    let system = outside_temp("unallowed-system");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&system).unwrap();
+    program(&system, "kubectl");
+    let personas = std::collections::BTreeMap::from([(
+        "devops".to_owned(),
+        Grants {
+            hosts: Vec::new(),
+            tools: vec![gh(), kubectl()],
+            browser: None,
+        },
+    )]);
+    let started = |image: Option<&str>| {
+        super::for_chat_on(
+            &root,
+            &personas,
+            "devops",
+            &Locks::none(),
+            std::slice::from_ref(&system),
+            &[],
+            &[],
+            None,
+            image,
+        )
+    };
+
+    let resolved = started(Some("example/team:1")).expect("it has something to say");
+
+    assert!(
+        resolved.ready.is_empty(),
+        "nothing allowed runs: {resolved:?}"
+    );
+    assert_eq!(resolved.refusing.len(), 1, "kubectl is there: {resolved:?}");
+    assert_eq!(resolved.refusing[0].0, "gh");
+    assert!(
+        resolved.refusing[0].1.contains("example/team:1, has no gh"),
+        "{resolved:?}"
+    );
+    assert_eq!(started(None), None, "not on a runner");
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(system);
+}
