@@ -1206,7 +1206,10 @@ pub fn browser_login(
         allows: true,
         preselected: None,
     };
-    let mut options = vec![allow(Level::Once, "Allow once")];
+    let mut options = Vec::new();
+    if locks.scope_removed(Level::Once).is_none() {
+        options.push(allow(Level::Once, "Allow once"));
+    }
     if locks.scope_removed(Level::Chat).is_none() {
         options.push(allow(Level::Chat, "Allow for this chat"));
     }

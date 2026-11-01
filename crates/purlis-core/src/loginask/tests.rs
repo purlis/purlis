@@ -90,6 +90,9 @@ fn a_host_that_cant_be_confirmed_by_reading_it_is_refused() {
     for site in [
         "https://localhost/login",
         "https://dev.localhost/login",
+        "https://printer.local/login",
+        "https://git.corp.internal/login",
+        "https://router.lan/login",
         "https://intranet/login",
         "https://127.0.0.1/login",
         "https://2130706433/login",
@@ -203,6 +206,28 @@ fn a_password_key_on_another_site_is_said_and_its_own_site_is_not() {
     );
     let same = proposed(dir.path(), "https://old.example.test/other");
     assert!(same.warnings.is_empty(), "{same:?}");
+}
+
+#[test]
+fn a_password_named_as_a_user_name_or_in_another_case_is_said_too() {
+    let dir = project(
+        "[sandbox.personas.ops.tools]\nold = { vault = \"qa\", browser = \
+         \"https://old.example.test/login\", key = \"password\" }\n",
+    );
+    for (user, key) in [("password", "dummy"), ("name", "PASSWORD")] {
+        let spelled = Suggested {
+            user_key: Some(user.to_owned()),
+            key: key.to_owned(),
+            ..suggested("https://new.example.test/")
+        };
+        let one = proposal(dir.path(), "qa", "shop-login", &spelled, &[]).expect("a proposal");
+        assert!(
+            one.warnings
+                .iter()
+                .any(|warning| matches!(warning, Warning::KeyElsewhere { .. })),
+            "{one:?}"
+        );
+    }
 }
 
 #[test]

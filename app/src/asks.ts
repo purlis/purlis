@@ -376,7 +376,7 @@ export async function answerTaken(
           path.id,
           press,
           path.shown,
-          typed?.trim() || null,
+          typed ?? null,
           reason?.trim() || null,
         );
         if (pressed.status === "error") return pressed;

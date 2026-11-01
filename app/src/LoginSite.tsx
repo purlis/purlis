@@ -36,9 +36,12 @@ export function LoginSite({
 }) {
   return (
     <div className="login-site" data-testid="login-site">
+      <p className="login-site-domain">
+        https://{login.domain}
+        <span className="login-site-page">{login.path}</span>
+      </p>
       <TextField
-        className="login-site-domain"
-        aria-label="The site this login is filled on"
+        aria-label="Change the site this login is filled on"
         value={typed ?? siteOf(login)}
         spellCheck={false}
         onChange={onTyped}

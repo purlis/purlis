@@ -47,7 +47,8 @@ function OneLogin({
   if (first === undefined || ask.login == null) return null;
   return (
     <Notice
-      cause={`browser-login:${ask.ask}`}
+      // Drawn anew, it's a new Notice to settle and read.
+      cause={`browser-login:${ask.ask}:${ask.answer.via === "browser-login" ? ask.answer.shown : ""}`}
       at="pane"
       tone={refused === undefined ? "news" : "trouble"}
       label="Browser login"

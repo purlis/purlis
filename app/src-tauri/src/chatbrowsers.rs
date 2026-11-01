@@ -3122,10 +3122,16 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         why.unwrap_or_else(|| format!("chat {session} is not one this app has open"))
     })?;
     // One the person allowed from its notice (#4595): nothing of it is kept, on disk or sealed.
-    let grants = held.login_grants();
-    if let Some(tool) = grants.granted(session, asker.persona.as_deref(), name) {
+    if let Some(tool) = held
+        .login_grants()
+        .take(session, asker.persona.as_deref(), name)
+    {
+        // Policy changed since the press holds a grant too.
+        let locks = purlis_core::sandbox::policy::Locks::of(held.root());
+        if let Some(why) = locks.refuses_tool(asker.persona.as_deref().unwrap_or_default(), name) {
+            return Err(why);
+        }
         let (login, identity) = purlis_core::secrets::brokered::granted_login(&asker, &tool)?;
-        grants.used(session, name);
         return Ok(LoginRead {
             login,
             opens: false,
@@ -3237,12 +3243,15 @@ fn pool_login_of(
         }
         return Err(why);
     }
-    let (login, identity) = match &granted {
-        Some(tool) => purlis_core::secrets::brokered::granted_login(&asker, tool)?,
-        None => purlis_core::secrets::brokered::login_and_identity_for(&asker, name, true)?,
+    let taken = grants.take(session, asker.persona.as_deref(), name);
+    let (login, identity) = match (&granted, &taken) {
+        (Some(_), None) => {
+            return Err(format!("login {name} was used already, so nothing was filled"));
+        }
+        (Some(_), Some(tool)) => purlis_core::secrets::brokered::granted_login(&asker, tool)?,
+        (None, _) => purlis_core::secrets::brokered::login_and_identity_for(&asker, name, true)?,
     };
     let fresh = granted.is_some();
-    grants.used(session, name);
     // Again once it is read: a vault may wait on a sign-in for as long as it takes (#4071).
     if purlis_core::poollogins::Bound::over_the_link(&config, pool, reached.as_deref()).as_ref()
         != Ok(&bound)

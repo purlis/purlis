@@ -107,8 +107,9 @@ fn allow_once_fills_what_was_confirmed_writes_nothing_and_goes_with_its_read() {
         tool.login.expect("a login").origin,
         "https://shop.example.test"
     );
-    grants.used(7, "shop-login");
+    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
     assert!(tool_of(&grants, "shop-login").is_none(), "used once");
+    assert!(grants.take(7, Some("qa"), "shop-login").is_none());
 }
 
 #[test]
@@ -124,7 +125,7 @@ fn allow_for_this_chat_stays_for_that_chat_and_persona_alone() {
         &press(id, Press::Chat, &proposal.digest()),
     )
     .expect("allowed");
-    grants.used(7, "shop-login");
+    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
     assert!(tool_of(&grants, "shop-login").is_some());
     assert!(grants.granted(8, Some("qa"), "shop-login").is_none());
     assert!(grants.granted(7, Some("ops"), "shop-login").is_none());
@@ -254,7 +255,7 @@ fn a_warning_that_came_up_while_the_notice_was_drawn_is_drawn_before_a_press_cou
     let grants = Grants::default();
     let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
     grants.grant(9, "qa", other_site(dir.path()), true);
-    grants.used(9, "other");
+    grants.take(9, Some("qa"), "other");
     let audited = Audited::default();
     let drawn = answered(
         dir.path(),
@@ -316,6 +317,40 @@ fn two_keep_blocked_end_a_chats_login_notices() {
     grants.keep(7, "two", "https://b.example.test");
     assert!(grants.kept(7, "three", "https://c.example.test"));
     assert!(!grants.kept(8, "three", "https://c.example.test"));
+}
+
+#[test]
+fn an_empty_field_never_falls_back_to_the_chats_site() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    let audited = Audited::default();
+    let asked = Asked {
+        typed: Some("  "),
+        ..press(id, Press::Once, &proposal.digest())
+    };
+    assert!(answered(dir.path(), &grants, &audited, &asked).is_err());
+    assert!(tool_of(&grants, "shop-login").is_none());
+}
+
+#[test]
+fn always_on_a_typed_site_shows_its_line_first() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised(dir.path(), &grants, "https://evil.example.test/login");
+    let audited = Audited::default();
+    let before = file_of(dir.path());
+    let asked = Asked {
+        typed: Some("shop.example.test"),
+        ..press(id, Press::Always, &proposal.digest())
+    };
+    let drawn = answered(dir.path(), &grants, &audited, &asked);
+    assert!(matches!(drawn, Ok(Pressed::DrawnAgain { .. })), "{drawn:?}");
+    assert_eq!(file_of(dir.path()), before);
+    assert_eq!(
+        grants.waiting()[0].proposal.origin,
+        "https://shop.example.test"
+    );
 }
 
 #[test]

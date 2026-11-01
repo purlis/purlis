@@ -830,6 +830,8 @@ function Ask({
     shape.line,
     ...shape.offers.map((one) => one.label),
     changeDrawn ? "drawn" : "",
+    // A login's notice drawn anew has to be read anew (#4595).
+    ask.answer.via === "browser-login" ? ask.answer.shown : "",
   ].join("\n");
   const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
   /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
