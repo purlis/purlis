@@ -6580,11 +6580,16 @@ fn usual_home_folders(level: Level, machine: &Machine) -> Vec<PathBuf> {
     out
 }
 
-/// `folders`, each made where it is missing and its parent is there, private to the person as the
-/// XDG base directory rules ask. One not made is left to the chat, which is refused as it would
-/// have been, and a name already taken is left as it is.
+/// `folders`, each before what is in it, made where it is missing and its parent is there, private
+/// to the person as the XDG base directory rules ask. A name already taken is left as it is, and
+/// nothing is made through it where it is a link or a file. One not made is left to the chat, which
+/// is refused as it would have been.
 fn make_folders(folders: &[PathBuf]) {
+    let mut not_folders: Vec<&PathBuf> = Vec::new();
     for folder in folders {
+        if not_folders.iter().any(|name| folder.starts_with(name)) {
+            continue;
+        }
         let mut builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
@@ -6597,6 +6602,9 @@ fn make_folders(folders: &[PathBuf]) {
                     folder.display()
                 );
             }
+        }
+        if !std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()) {
+            not_folders.push(folder);
         }
     }
 }

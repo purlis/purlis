@@ -1993,3 +1993,16 @@ fn an_xdg_folder_that_climbs_out_of_the_home_is_not_listed() {
         ]
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn nothing_is_made_through_a_link_at_a_shared_folders_name() {
+    let dir = tempfile::tempdir().expect("a home");
+    let home = dir.path().canonicalize().expect("a real folder");
+    let elsewhere = home.join("elsewhere");
+    std::fs::create_dir(&elsewhere).expect("a folder");
+    std::os::unix::fs::symlink(&elsewhere, home.join(".local")).expect("a link");
+    make_folders(&usual_home_folders(Level::Floor, &homed(&home, &[])));
+    assert!(!elsewhere.join("share").exists(), "made through the link");
+    assert!(home.join(".config").is_dir(), "the others are still made");
+}

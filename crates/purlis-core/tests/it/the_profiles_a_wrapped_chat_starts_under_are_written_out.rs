@@ -263,7 +263,6 @@ fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
     );
     let scratch = tempfile::tempdir().expect("a folder");
     let out = scratch.path().canonicalize().expect("a real folder");
-    let mut measured = String::new();
     for (harness, called, others) in [
         (
             Harness::Codex,
@@ -297,7 +296,7 @@ fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
         assert_eq!(level, Level::Floor);
         let done = purlis_core::forklock::output(
             std::process::Command::new("/usr/bin/sandbox-exec")
-                .args(["-p", &profile, "/bin/sh", script, "--installers"])
+                .args(["-p", &profile, "/bin/sh", script])
                 .arg(&home)
                 .arg(called)
                 .args(others)
@@ -311,7 +310,5 @@ fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
             "{called}:\n{said}\n{}",
             String::from_utf8_lossy(&done.stderr)
         );
-        measured.push_str(&said);
     }
-    panic!("measured:\n{measured}");
 }
