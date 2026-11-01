@@ -8320,6 +8320,11 @@ export type PoolLimitRow = {
 export type PoolLimitsPage = {
 	groups: PoolLimitGroup[],
 	advanced: PoolLimitRow[],
+	/**
+	 *  The limits changed since its runner was made, in plain words (#4286): what waits for it
+	 *  to be replaced. Empty where nothing waits, the only time Replace is offered.
+	 */
+	waiting: string[],
 };
 
 /**
