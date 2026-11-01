@@ -1117,9 +1117,9 @@ pub static TOOLS: [Tool; 27] = [
     },
     Tool {
         name: DISPATCH_ASK,
-        description: "From a dispatched task: ask the chat that asked a question, and wait for \
-                      its answer. A question only the person can answer is not asked this \
-                      way: ask them in this chat. If the wait runs out, end the turn: the \
+        description: "From a dispatched task: ask a question, and wait for its answer. It goes \
+                      to the chat that asked, which answers it or passes it on to the person, \
+                      and you are told who answered. If the wait runs out, end the turn: the \
                       answer is handed to the next one.",
         schema: || {
             json!({
@@ -1140,7 +1140,8 @@ pub static TOOLS: [Tool; 27] = [
     Tool {
         name: ASK_OPERATOR,
         description: "Ask the operator a question and wait for the answer, through this \
-                      harness's own prompt. Never ask for a password, token or other secret: \
+                      harness's own prompt. From a dispatched task the question goes to the chat \
+                      that asked first, and you are told who answered. Never ask for a password, token or other secret: \
                       a credential is used through `purlis secret`, never typed in. When a page \
                       in one of your browsers needs a person (a CAPTCHA, a second factor, a \
                       consent page), name that browser in `browser`: the person is asked to \

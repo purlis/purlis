@@ -699,6 +699,20 @@ async fn ask_operator(
         Ok(question) => question,
         Err(why) => return Ok(done(Err(why))),
     };
+    // A task's plain question takes the task's route (#4555, ADR 0107), by the app's own
+    // record of the chat. A browser takeover never comes here, and any other chat, or an app
+    // that does not answer, goes on as it always did. Not on a retried call: that one holds
+    // the person's answer.
+    if request.input_responses.is_none() {
+        let asked = question.clone();
+        let routed = tokio::task::spawn_blocking(move || crate::dispatch::ask_routed(&asked))
+            .await
+            .ok()
+            .flatten();
+        if let Some(answered) = routed {
+            return Ok(done(answered));
+        }
+    }
     let state = chattools::question_state(&question);
     if let Some(answer) = request
         .input_responses

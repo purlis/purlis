@@ -42,6 +42,10 @@
 //! handed over, and is not enforced: code cannot classify a question's meaning, and the harm is
 //! limited because **an asking chat's answer is never the person's word**.
 //!
+//! **The route is the app's to decide**, from its own record of the chat ([`up`]) and nothing a
+//! chat says: a task's own question prompt and a plain `ask_operator` come here too (#4555), and
+//! a chat with no asking chat to answer asks the person as it always did.
+//!
 //! A harness prompt that purlis has no adapter for, a permission, a secret, a dispatch grant, a
 //! sandbox block and a browser takeover are not task questions and never enter here. `purlis
 //! dispatch answer` answers a question this module holds and nothing else: where it holds none,
@@ -117,6 +121,10 @@ impl Kind {
 pub fn down(sender: u32, to: u32, record: Option<&HandedFrom>) -> Result<&HandedFrom, String> {
     crate::dispatched::owned(sender, to, record)
 }
+
+/// What a task that already has a question open is told when it asks another.
+pub const ALREADY_ASKING: &str = "this chat already has a question waiting for its asking \
+    chat's answer, and is paused on it. Nothing was sent.";
 
 /// What a chat no dispatch started is told when it sends a message up.
 pub const NO_ASKING_CHAT: &str = "this chat was not started as a dispatched task, so it has no \
@@ -479,6 +487,19 @@ pub fn records_text(records: &[Record]) -> Option<String> {
         said.push_str(&format!("\n- {what}{queued}, to {all}{to}"));
     }
     Some(said)
+}
+
+/// **What a task's own question prompt is answered with**, sent to its asking chat `to` in its
+/// place (#4555, ADR 0107): the harness is refused the prompt in these words, so the task goes on
+/// with what it can and its turn ends. The answer comes as an answer to a question always does.
+pub fn redirected(to: &str) -> String {
+    format!(
+        "purlis sent this question to '{}', the chat that dispatched this task, so it is not \
+         asked here. Do not guess, and do not ask it again. Carry on with any other work you \
+         can, then end your turn: the answer is handed to this chat's next turn as context, \
+         quoted as data, and it says who gave it.",
+        crate::personas::one_line(to)
+    )
 }
 
 /// What a task is told when it acknowledges an instruction its asking chat did not send it.
@@ -1090,11 +1111,7 @@ impl Talk {
     /// later one, though the task ask it in the same words.
     pub fn ask(&mut self, task: u32, text: &str, file: Option<PathBuf>) -> Result<u32, String> {
         if self.asks(task).is_some() {
-            return Err(
-                "this chat already has a question waiting for its asking chat's answer, and is \
-                 paused on it. Nothing was sent."
-                    .to_owned(),
-            );
+            return Err(ALREADY_ASKING.to_owned());
         }
         self.asked = self.asked.saturating_add(1);
         let number = self.asked;

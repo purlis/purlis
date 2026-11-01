@@ -834,6 +834,12 @@ purlis dispatch pass-on <chat> --note "..." # the asking chat, on to you, in the
   it is), and it is not counted against the pair's messages a minute. If the task ends
   before it has read your answer, the Activity tab says so on the answer. Only the purlis window can send an answer as yours: no command, hook or file of a
   chat's can.
+- **A task has one way to ask.** Its route is decided by purlis's record of the chat. A task's
+  own question prompt on Claude Code and a plain `ask_operator` go to its asking chat as
+  `dispatch_ask` does, and the task is told who answered. A handoff, a task you started from a
+  tab, and your own chats ask you directly, as a browser takeover does. A harness with no adapter
+  yet (Codex, opencode) keeps its prompt in its pane and the Inbox, and a redirect that fails
+  stays there too.
 - **The asking chat answers a question or passes it on.** `pass-on` sends it to you in the
   task's own words, with at most a one-line note marked as the asking chat's. It takes no
   question text, so the wording cannot change on the way, and only the task's asking chat can

@@ -200,8 +200,8 @@ pub enum DispatchCommand {
         /// Where the task has got to, in a few lines.
         text: Option<String>,
     },
-    /// From a dispatched task: ask the chat that asked a question, and wait for its answer.
-    /// A question only the person can answer is not asked this way: ask them in this chat.
+    /// From a dispatched task: ask a question, and wait for its answer. It goes to the chat
+    /// that asked, which answers it or passes it on to the person.
     Ask {
         /// The question, in a few lines.
         question: String,
@@ -1125,6 +1125,68 @@ pub fn ask(via: Via, question: &str, within: Option<u32>) -> Result<String, Stri
             ));
         }
     };
+    answer_waited_for(on, asker, within, asked_text)
+}
+
+/// **Where a question a chat's harness would ask the person goes** (#4555, ADR 0107), as the
+/// app decides it from its own record of the chat.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Routed {
+    /// It was sent to the asking chat of this name.
+    AskingChat(String),
+    /// It was not sent, because this chat is paused on a question already, in this sentence.
+    AlreadyAsking(String),
+    /// The person is asked as they always were. **So too where the app does not answer or the
+    /// redirect failed**: a question is never dropped, and stays in the pane and the Inbox.
+    ThePerson,
+}
+
+/// Has the app route `text` on the connection `on`.
+fn routed_on(on: &mut (purlis_core::hookwire::Asking, u32), text: &str) -> Routed {
+    let (asking, chat) = on;
+    let what = What::Route {
+        text: text.to_owned(),
+    };
+    match answered(asking, *chat, what, crate::handoff::A_TICKET_TAKES_AT_MOST) {
+        Ok(Answered::Sent { to, .. }) => {
+            Routed::AskingChat(purlis_core::personas::one_line(&to))
+        }
+        Ok(Answered::AlreadyAsking { why }) => Routed::AlreadyAsking(why),
+        Ok(_) | Err(_) => Routed::ThePerson,
+    }
+}
+
+/// [`routed_on`], on a connection of its own: for a harness's prompt, whose hook answers at once.
+pub fn route(text: &str) -> Routed {
+    the_app().map_or(Routed::ThePerson, |mut on| routed_on(&mut on, text))
+}
+
+/// **A plain `ask_operator`, as the app routes it** (#4555): for a task, its question is asked
+/// and waited for as `dispatch_ask` waits, and this is what its tool answers. None where the
+/// person is to be asked, as they always were.
+pub fn ask_routed(question: &str) -> Option<Result<String, String>> {
+    let text = message(question).ok()?;
+    let mut on = the_app()?;
+    match routed_on(&mut on, &text) {
+        Routed::ThePerson => None,
+        Routed::AlreadyAsking(why) => Some(Ok(why)),
+        Routed::AskingChat(asker) => Some(answer_waited_for(
+            Some(on),
+            asker,
+            dispatched::wait_secs(dispatched::WAITS_BY_DEFAULT),
+            text,
+        )),
+    }
+}
+
+/// **The answer to a question sent to the chat called `asker`**, waited for on the connection it
+/// was asked on for `within` seconds, as the sentence a turn is told it in.
+fn answer_waited_for(
+    on: Option<(purlis_core::hookwire::Asking, u32)>,
+    asker: String,
+    within: u32,
+    asked_text: String,
+) -> Result<String, String> {
     let held = std::time::Duration::from_secs(u64::from(within)) + A_WAIT_IS_ANSWERED_WITHIN;
     let paused = format!(
         "{SAYS} question sent to '{asker}', which has not answered after {within} seconds. \
