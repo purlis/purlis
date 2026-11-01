@@ -104,23 +104,25 @@ describe("the Deleted page", () => {
     );
   });
 
-  it("brings back one whose name a built-in skill took under a new name, never a built-in's", async () => {
-    // #3729: a newer purlis ships a built-in skill of its name.
-    const asked = core([gone("secrets", { reserved: true })], undefined, BUILT_INS);
+  it("brings back one whose name became purlis's under a new name, never one of purlis's", async () => {
+    // #3729: its name starts with `purlis-` now.
+    const asked = core([gone("purlis-secrets", { reserved: true })], undefined, BUILT_INS);
     const user = userEvent.setup();
     renderStudio(AT_THE_ROOT, "deleted");
-    const page = await openDeleted("secrets", user);
+    const page = await openDeleted("purlis-secrets", user);
     expect(within(page).getByTestId("deleted-name-taken")).toHaveTextContent(
-      "Its name belongs to a built-in skill now, so it comes back under a new name.",
+      "Its name belongs to purlis now, so it comes back under a new name.",
     );
     const box = within(page).getByRole("textbox", { name: "New name" });
     expect(box).toHaveValue("my-secrets");
     await user.clear(box);
-    await user.type(box, "browser");
+    await user.type(box, "purlis-browser");
     expect(within(page).getByTestId("deleted-name-reserved")).toHaveTextContent(
-      "That name belongs to a built-in skill; pick another, or make a copy.",
+      "A name starting with purlis- belongs to purlis; pick another.",
     );
-    const back = within(page).getByRole("button", { name: "Bring back secrets as browser" });
+    const back = within(page).getByRole("button", {
+      name: "Bring back purlis-secrets as purlis-browser",
+    });
     expect(back).toBeDisabled();
     await user.click(back);
     expect(asked.some((one) => one.cmd === "skill_restore")).toBe(false);
@@ -128,11 +130,11 @@ describe("the Deleted page", () => {
     await user.type(box, "vault-keys");
     expect(within(page).queryByTestId("deleted-name-reserved")).toBeNull();
     await user.click(
-      within(page).getByRole("button", { name: "Bring back secrets as vault-keys" }),
+      within(page).getByRole("button", { name: "Bring back purlis-secrets as vault-keys" }),
     );
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_restore")?.args).toMatchObject({
-        id: "secrets-id",
+        id: "purlis-secrets-id",
         under: "vault-keys",
       }),
     );

@@ -30,7 +30,7 @@ fn a_skill_is_shown_what_it_uses_and_every_level_that_uses_it() {
         root,
         "skills/deploy",
         "deploy",
-        "Then skills:notify and skills:gone, and purlis:handoff.",
+        "Then skills:notify and skills:gone, and purlis:purlis-handoff.",
     );
     skill(root, "skills/notify", "notify", "Says it.");
     skill(
@@ -46,7 +46,12 @@ fn a_skill_is_shown_what_it_uses_and_every_level_that_uses_it() {
         "Every day skills:deploy.",
     );
     let built_in = tempfile::tempdir().unwrap();
-    skill(built_in.path(), "handoff", "handoff", "Hands off.");
+    skill(
+        built_in.path(),
+        "purlis-handoff",
+        "purlis-handoff",
+        "Hands off.",
+    );
 
     let deploy = uses_of(root, Some(built_in.path()), "deploy");
 
@@ -60,7 +65,7 @@ fn a_skill_is_shown_what_it_uses_and_every_level_that_uses_it() {
         [
             ("skills:notify", false),
             ("skills:gone", true),
-            ("purlis:handoff", false)
+            ("purlis:purlis-handoff", false)
         ]
     );
     assert_eq!(deploy.used_by, ["daily", "release"]);

@@ -9309,7 +9309,7 @@ export const PlaneView = memo(function PlaneView({
         </Notice>
       )}
       {/* **A Smart close that saved its record with no pass** (#1361): the chat ran it, and
-          purlis did not see /smart-close typed in its pane, so its tab stayed open. Never a
+          purlis did not see /purlis-smart-close typed in its pane, so its tab stayed open. Never a
           silent miss: one press closes it, as Close would. Only while its tab is there. */}
       {keptOpen.map(({ session, name }) => (
         <Notice
@@ -9318,8 +9318,8 @@ export const PlaneView = memo(function PlaneView({
           fixes={[{ label: "Close tab", onPress: () => closeKeptOpen(session) }]}
           onDismiss={() => forgetKeptOpen(session)}
         >
-          {name} saved its session record. purlis did not see <code>/smart-close</code> typed in it,
-          so its tab stayed open.
+          {name} saved its session record. purlis did not see <code>/purlis-smart-close</code> typed
+          in it, so its tab stayed open.
         </Notice>
       ))}
 

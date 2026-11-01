@@ -296,35 +296,26 @@ fn a_session_start_names_its_model_and_nothing_else_does() {
 }
 
 #[test]
-fn opencode_s_own_name_for_smart_close_is_heard_in_an_opencode_chat_alone() {
-    // opencode knows purlis's built-in skills as `purlis-<name>`; nowhere else is that name
-    // purlis's, so a skill named so in another chat is its own.
-    let heard = |harness: Option<&str>| {
-        let mut pairs = vec![(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")];
-        pairs.extend(harness.map(|harness| (HARNESS_ENV, harness)));
-        let env = env_of(&pairs);
-        Report::read(
-            Event::UserPromptSubmit,
-            &prompt_payload("/purlis-smart-close"),
-            &env,
-        )
-        .expect("a report")
-        .detail
-        .smart_close
-    };
-    assert!(heard(Some("opencode")));
-    assert!(!heard(Some("claude")));
-    assert!(!heard(Some("codex")));
-    assert!(!heard(None));
+fn a_bare_smart_close_is_any_skills_name_and_never_purlis_s() {
+    let env = env_of(&[(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")]);
+    let report = Report::read(
+        Event::UserPromptSubmit,
+        &prompt_payload("/smart-close"),
+        &env,
+    )
+    .expect("a report");
+    assert!(!report.detail.smart_close);
 }
 
 #[test]
 fn a_typed_smart_close_is_one_bit_of_the_prompt_and_the_prompt_goes_nowhere() {
     let env = env_of(&[(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")]);
     for typed in [
-        "/smart-close",
+        "/purlis-smart-close",
+        "/purlis:purlis-smart-close",
         "/purlis:smart-close",
-        "  /smart-close now please",
+        "/charter:smart-close",
+        "  /purlis-smart-close now please",
     ] {
         let report =
             Report::read(Event::UserPromptSubmit, &prompt_payload(typed), &env).expect("a report");

@@ -443,12 +443,5 @@ pub fn handed_text(text: &str, honours: &Honours) -> Result<String, Refusal> {
     crate::handed::handed(text, honours)
 }
 
-/// [`handed_text`] for a skill the set holds as `name`, which its handed frontmatter says: a
-/// built-in skill on a route that names it its own ([`crate::Route::built_in_name`]) is handed
-/// as `purlis-<name>`, its folder's name in the set's folder, as the skill format asks.
-pub fn handed_text_as(text: &str, honours: &Honours, name: &str) -> Result<String, Refusal> {
-    crate::handed::handed_as(text, honours, Some(name))
-}
-
 #[cfg(test)]
 mod tests;

@@ -1445,7 +1445,6 @@ export function SkillStudioTab({
           key={one.id}
           plane={plane}
           deleted={one}
-          builtIns={skills.filter((skill) => skill.level === "built-in").map((skill) => skill.name)}
           busy={busy}
           onBringBack={(it, under) => bringBack(it.id, under ?? null)}
         />
@@ -1640,7 +1639,6 @@ export function SkillStudioTab({
           takenAt={(level) =>
             skills.filter((one) => atLevel(one, scope, level)).map((one) => one.name)
           }
-          builtIns={builtInNames}
           busy={busy}
           refused={doing.refused}
           onEdit={editedInDialog}
@@ -1663,7 +1661,6 @@ export function SkillStudioTab({
           taken={skills
             .filter((one) => one !== doing.skill && atLevel(one, scope, doing.level))
             .map((one) => one.name)}
-          builtIns={builtInNames}
           busy={busy}
           refused={doing.refused}
           onEdit={editedInDialog}

@@ -337,15 +337,23 @@ fn a_personas_own_skill_is_made_moved_deleted_restored_and_shared_with_p() {
 #[test]
 fn skill_new_and_mv_refuse_a_built_in_skills_name() {
     let project = Project::new();
-    let reserved = "That name belongs to a built-in skill; pick another, or make a copy.";
+    let reserved = "A name starting with purlis- belongs to purlis; pick another.";
 
-    let out = project.run(&["skill", "new", "secrets", "-d", "Stands in.", "-w", "alpha"]);
+    let out = project.run(&[
+        "skill",
+        "new",
+        "purlis-secrets",
+        "-d",
+        "Stands in.",
+        "-w",
+        "alpha",
+    ]);
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(stderr(&out).contains(reserved), "{}", stderr(&out));
     assert!(
         !project
             .root()
-            .join("workspaces/alpha/skills/secrets")
+            .join("workspaces/alpha/skills/purlis-secrets")
             .exists()
     );
 
@@ -355,7 +363,15 @@ fn skill_new_and_mv_refuse_a_built_in_skills_name() {
             .status
             .success()
     );
-    let out = project.run(&["skill", "mv", "deploy", "-w", "alpha", "--name", "browser"]);
+    let out = project.run(&[
+        "skill",
+        "mv",
+        "deploy",
+        "-w",
+        "alpha",
+        "--name",
+        "purlis-browser",
+    ]);
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(stderr(&out).contains(reserved), "{}", stderr(&out));
     assert_eq!(project.gets(Some("alpha")), ["deploy"]);
@@ -366,41 +382,46 @@ fn skill_new_and_mv_refuse_a_built_in_skills_name() {
 #[test]
 fn skill_restore_as_brings_back_a_skill_whose_name_a_built_in_skill_took() {
     let project = Project::new();
-    let folder = project.root().join("skills/secrets");
+    let folder = project.root().join("skills/purlis-secrets");
     std::fs::create_dir_all(&folder).unwrap();
     // Written by a purlis older than the built-in skill of that name.
     std::fs::write(
         folder.join("SKILL.md"),
-        "---\nname: secrets\ndescription: Mine.\n---\n\nbody\n",
+        "---\nname: purlis-secrets\ndescription: Mine.\n---\n\nbody\n",
     )
     .unwrap();
-    let out = project.run(&["skill", "rm", "secrets"]);
+    let out = project.run(&["skill", "rm", "purlis-secrets"]);
     assert!(out.status.success(), "{}", stderr(&out));
 
     let out = project.run(&["skill", "restore"]);
     let listed = String::from_utf8_lossy(&out.stdout).into_owned();
     assert!(
-        listed.contains("its name belongs to a built-in skill now: restore it with --as"),
+        listed.contains("its name belongs to purlis now: restore it with --as"),
         "{listed}"
     );
-    let out = project.run(&["skill", "restore", "secrets"]);
+    let out = project.run(&["skill", "restore", "purlis-secrets"]);
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(
         stderr(&out).contains("restore it under a new name"),
         "{}",
         stderr(&out)
     );
-    let out = project.run(&["skill", "restore", "secrets", "--as", "browser"]);
+    let out = project.run(&[
+        "skill",
+        "restore",
+        "purlis-secrets",
+        "--as",
+        "purlis-browser",
+    ]);
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(
-        stderr(&out)
-            .contains("That name belongs to a built-in skill; pick another, or make a copy."),
+        stderr(&out).contains("A name starting with purlis- belongs to purlis; pick another."),
         "{}",
         stderr(&out)
     );
     assert!(!folder.exists());
 
-    let out = project.run(&["skill", "restore", "secrets", "--as", "my-secrets"]);
+    let out = project.run(&["skill", "restore", "purlis-secrets", "--as", "my-secrets"]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(project.gets(None), ["my-secrets"]);
     let text = std::fs::read_to_string(project.root().join("skills/my-secrets/SKILL.md")).unwrap();

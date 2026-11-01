@@ -394,7 +394,7 @@ fn a_harness_group_and_a_run_say_what_they_ran_on_as_a_person_calls_it() {
 }
 
 #[test]
-fn a_run_of_a_built_in_skill_by_opencode_s_name_is_a_run_of_that_skill() {
+fn a_run_of_a_built_in_skill_by_any_of_its_names_is_a_run_of_that_skill() {
     let run = |skill: &str, origin| Run {
         id: None,
         skill: skill.to_owned(),
@@ -415,9 +415,16 @@ fn a_run_of_a_built_in_skill_by_opencode_s_name_is_a_run_of_that_skill() {
         end: None,
     };
     use crate::skills::Origin;
-    assert!(run("purlis-secrets", Origin::BuiltIn).is_of("secrets"));
-    assert!(run("purlis:secrets", Origin::BuiltIn).is_of("secrets"));
     assert!(run("purlis-secrets", Origin::BuiltIn).is_of("purlis-secrets"));
-    // A project skill of a `purlis-` name is its own, wherever it runs.
-    assert!(!run("purlis-deploy", Origin::Project).is_of("deploy"));
+    assert!(run("purlis:purlis-secrets", Origin::BuiltIn).is_of("purlis-secrets"));
+    // A run recorded before the skill took the prefix is of it too.
+    assert!(run("purlis:secrets", Origin::BuiltIn).is_of("purlis-secrets"));
+    assert!(!run("purlis-secrets", Origin::BuiltIn).is_of("secrets"));
+    // And of a row that does not say which copy, by its namespace, and a bare one by its copy.
+    assert!(run("secrets", Origin::BuiltIn).is_of("purlis-secrets"));
+    assert!(!run("secrets", Origin::BuiltIn).is_of("secrets"));
+    assert_eq!(own_name("purlis:secrets", None), "purlis-secrets");
+    // A plane skill's run keeps the name it has.
+    assert!(run("deploy", Origin::Project).is_of("deploy"));
+    assert!(!run("deploy", Origin::Project).is_of("purlis-deploy"));
 }

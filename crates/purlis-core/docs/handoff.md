@@ -1082,9 +1082,9 @@ the two numbers are both on screen. Name long material by its path instead of pa
 A command nobody is told about is a command nobody runs, and the three failures at the top of
 this page are what happens instead.
 
-**`purlis:handoff`** is the procedure, shipped as a skill with the app's plugin: apply the
+**`purlis:purlis-handoff`** is the procedure, shipped as a skill with the app's plugin: apply the
 three tests, find the workspace, write the brief from a template, show it **in full**, and run
-the command. The route above is said in the same words in that skill, in `purlis:persona`, in
+the command. The route above is said in the same words in that skill, in `purlis:purlis-persona`, in
 `purlis handoff --help`, in the result of a handoff that asked for a report, and in the
 briefing of a chat the app started. There is no per-prompt "where this could run" hint, and that
 is left out by design: it would be read on every prompt of every chat to help with the few that

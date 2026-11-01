@@ -22,7 +22,7 @@ fn plane() -> tempfile::TempDir {
     std::fs::create_dir_all(root.join("personas/steward")).unwrap();
     std::fs::write(
         root.join("personas/steward/persona.md"),
-        "---\nname: steward\nskills: deploy, purlis:handoff\n---\n\nRun skills:deploy daily.\n",
+        "---\nname: steward\nskills: deploy, purlis:purlis-handoff\n---\n\nRun skills:deploy daily.\n",
     )
     .unwrap();
     skill(root, "skills/deploy", "deploy", "Ships it.");
@@ -156,7 +156,12 @@ fn a_new_skill_is_refused_for_a_bad_name_a_taken_name_or_a_built_in_name() {
     let tmp = plane();
     let root = tmp.path();
     let built_in = tempfile::tempdir().unwrap();
-    skill(built_in.path(), "handoff", "handoff", "Hands off.");
+    skill(
+        built_in.path(),
+        "purlis-handoff",
+        "purlis-handoff",
+        "Hands off.",
+    );
     let new = |name: &str| {
         on(root, Some(built_in.path()), |cx| {
             create(
@@ -181,8 +186,13 @@ fn a_new_skill_is_refused_for_a_bad_name_a_taken_name_or_a_built_in_name() {
             .unwrap_err()
             .contains("already have one named deploy")
     );
-    assert!(new("handoff").unwrap_err().contains("built-in skill"));
-    assert!(!root.join("skills/handoff").exists());
+    assert_eq!(
+        new("purlis-handoff").unwrap_err(),
+        crate::skills::NAME_RESERVED
+    );
+    assert!(!root.join("skills/purlis-handoff").exists());
+    // A built-in skill's old name is anyone's.
+    assert!(new("handoff").is_ok());
     let workspace_gone = did(root, |cx| {
         create(
             cx,
@@ -252,7 +262,7 @@ fn a_rename_follows_into_every_persona_skill_and_turn_off_that_names_it() {
     assert!(gets(root, None).contains(&"ship".to_owned()));
     assert_eq!(
         std::fs::read_to_string(root.join("personas/steward/persona.md")).unwrap(),
-        "---\nname: steward\nskills: ship, purlis:handoff\n---\n\nRun skills:ship daily.\n"
+        "---\nname: steward\nskills: ship, purlis:purlis-handoff\n---\n\nRun skills:ship daily.\n"
     );
     assert!(
         std::fs::read_to_string(root.join("skills/release/SKILL.md"))
@@ -1398,7 +1408,7 @@ fn a_project_skill_moved_to_a_persona_leaves_its_list_its_grant_and_the_turn_off
     assert!(!beside(&moved).exists(), "a persona's skill keeps no grant");
     assert_eq!(
         skills_line(root, "personas/steward/persona.md"),
-        "skills: purlis:handoff"
+        "skills: purlis:purlis-handoff"
     );
     assert!(crate::skills::turned_off(root, "ops").is_empty());
     assert!(gets_as(root, Some("ops"), "steward").contains(&"deploy".to_owned()));
@@ -1875,10 +1885,9 @@ fn at(level: &Level, folder: &str) -> String {
     format!("{}/{folder}", level.rel().unwrap())
 }
 
-/// The names that belong to a built-in skill (spec #3679 S12): one purlis ships, found with no
-/// bundle beside the binary; one only `bundle` holds; the index skill's; and the name of its own
-/// a route gives a built-in skill.
-const RESERVED: [&str; 4] = ["secrets", "bundled", "skill-index", "purlis-browser"];
+/// Names of purlis's own (spec #3679 S12, ADR 0099 as amended 2026-11-01): one purlis ships, one
+/// no built-in skill has, the index skill's.
+const RESERVED: [&str; 3] = ["purlis-secrets", "purlis-mine", "purlis-skill-index"];
 
 /// A bundle's `skills/` holding the built-in skill `bundled`.
 fn bundle() -> tempfile::TempDir {
@@ -1915,7 +1924,7 @@ fn a_new_skill_with_a_built_in_skills_name_is_refused_at_every_level_in_the_agre
     }
     assert_eq!(
         crate::skills::NAME_RESERVED,
-        "That name belongs to a built-in skill; pick another, or make a copy."
+        "A name starting with purlis- belongs to purlis; pick another."
     );
 }
 
@@ -1946,36 +1955,49 @@ fn a_rename_to_a_built_in_skills_name_is_refused_at_every_level_and_changes_noth
 }
 
 #[test]
-fn a_skill_named_as_a_built_in_one_is_not_moved_or_shared_to_any_level() {
+fn a_skill_with_a_reserved_name_one_is_not_moved_or_shared_to_any_level() {
     let tmp = plane();
     let root = tmp.path();
     // Written by hand, or by a purlis older than the built-in skill.
     let from = Level::workspace("ops");
-    skill(root, &at(&from, "secrets"), "secrets", "Mine.");
+    skill(
+        root,
+        &at(&from, "purlis-secrets"),
+        "purlis-secrets",
+        "Mine.",
+    );
 
     for to in every_level().into_iter().filter(|to| *to != from) {
         let refused = did(root, |cx| {
-            move_to(cx, &from, "secrets", &to, Some(&Grant::All))
+            move_to(cx, &from, "purlis-secrets", &to, Some(&Grant::All))
         });
         assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED, "{to}");
-        assert!(!root.join(at(&to, "secrets")).exists(), "{to}");
+        assert!(!root.join(at(&to, "purlis-secrets")).exists(), "{to}");
     }
-    assert!(root.join(at(&from, "secrets")).join("SKILL.md").is_file());
+    assert!(
+        root.join(at(&from, "purlis-secrets"))
+            .join("SKILL.md")
+            .is_file()
+    );
 
     let local = from.clone().local(true);
-    skill(root, &at(&local, "theme"), "theme", "Mine.");
-    let refused = did(root, |cx| share(cx, &local.at, "theme"));
+    skill(root, &at(&local, "purlis-theme"), "purlis-theme", "Mine.");
+    let refused = did(root, |cx| share(cx, &local.at, "purlis-theme"));
     assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED);
-    assert!(root.join(at(&local, "theme")).join("SKILL.md").is_file());
-    assert!(!root.join(at(&from, "theme")).exists());
+    assert!(
+        root.join(at(&local, "purlis-theme"))
+            .join("SKILL.md")
+            .is_file()
+    );
+    assert!(!root.join(at(&from, "purlis-theme")).exists());
 }
 
 #[test]
-fn a_deleted_skill_named_as_a_built_in_one_is_not_restored() {
+fn a_deleted_skill_with_a_reserved_name_one_is_not_restored() {
     let tmp = plane();
     let root = tmp.path();
-    skill(root, "skills/secrets", "secrets", "Mine.");
-    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    skill(root, "skills/purlis-secrets", "purlis-secrets", "Mine.");
+    did(root, |cx| delete(cx, &Level::project(), "purlis-secrets")).unwrap();
     let listed = deleted(root);
     assert_eq!(listed.len(), 1, "{listed:?}");
 
@@ -1983,21 +2005,21 @@ fn a_deleted_skill_named_as_a_built_in_one_is_not_restored() {
 
     assert_eq!(
         refused.unwrap_err(),
-        "secrets cannot be restored under its name: it belongs to a built-in skill now, so \
-         restore it under a new name"
+        "purlis-secrets cannot be restored under its name: it belongs to purlis now, so restore \
+         it under a new name"
     );
-    assert!(!root.join("skills/secrets").exists());
+    assert!(!root.join("skills/purlis-secrets").exists());
 }
 
 /// #3729: a deleted skill whose name a built-in skill took comes back under a name the person
 /// picks, its `name:` and folder renamed, from this machine's kept copy.
 #[test]
-fn a_deleted_skill_named_as_a_built_in_one_is_restored_under_a_new_name() {
+fn a_deleted_skill_with_a_reserved_name_one_is_restored_under_a_new_name() {
     let tmp = plane();
     let root = tmp.path();
-    skill(root, "skills/secrets", "secrets", "Mine.");
-    std::fs::write(root.join("skills/secrets/notes.md"), "kept\n").unwrap();
-    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    skill(root, "skills/purlis-secrets", "purlis-secrets", "Mine.");
+    std::fs::write(root.join("skills/purlis-secrets/notes.md"), "kept\n").unwrap();
+    did(root, |cx| delete(cx, &Level::project(), "purlis-secrets")).unwrap();
     let listed = deleted(root);
 
     let landed = did(root, |cx| restore(cx, &listed[0], Some("my-secrets"))).unwrap();
@@ -2010,7 +2032,7 @@ fn a_deleted_skill_named_as_a_built_in_one_is_restored_under_a_new_name() {
         std::fs::read_to_string(root.join("skills/my-secrets/notes.md")).unwrap(),
         "kept\n"
     );
-    assert!(!root.join("skills/secrets").exists());
+    assert!(!root.join("skills/purlis-secrets").exists());
     assert!(deleted(root).is_empty(), "{:?}", deleted(root));
 }
 
@@ -2039,25 +2061,28 @@ fn a_deleted_skill_whose_name_is_free_is_not_restored_under_another() {
 fn a_committed_deleted_skill_comes_back_under_a_new_name_in_one_commit() {
     let tmp = committed_plane();
     let root = tmp.path();
-    skill(root, "skills/secrets", "secrets", "Mine.");
+    skill(root, "skills/purlis-secrets", "purlis-secrets", "Mine.");
     run(root, &["add", "-A"]);
-    run(root, &["commit", "-q", "-m", "secrets"]);
-    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    run(root, &["commit", "-q", "-m", "purlis-secrets"]);
+    did(root, |cx| delete(cx, &Level::project(), "purlis-secrets")).unwrap();
     let listed = deleted(root);
-    let one = listed.iter().find(|one| one.name == "secrets").unwrap();
+    let one = listed
+        .iter()
+        .find(|one| one.name == "purlis-secrets")
+        .unwrap();
     assert!(one.kept().in_git(), "{one:?}");
 
     did(root, |cx| restore(cx, one, Some("my-secrets"))).unwrap();
 
     let (subject, paths) = last_commit(root);
     assert!(
-        subject.ends_with("skill restore secrets as my-secrets"),
+        subject.ends_with("skill restore purlis-secrets as my-secrets"),
         "{subject}"
     );
     assert_eq!(paths, ["skills/my-secrets/SKILL.md"]);
     let text = std::fs::read_to_string(root.join("skills/my-secrets/SKILL.md")).unwrap();
     assert!(text.contains("name: my-secrets\n"), "{text}");
-    assert!(!root.join("skills/secrets").exists());
+    assert!(!root.join("skills/purlis-secrets").exists());
     let status = run(root, &["status", "--porcelain", "--", "skills"]);
     assert_eq!(status.out, "");
 }
@@ -2069,46 +2094,53 @@ fn a_committed_deleted_skill_comes_back_under_a_new_name_in_one_commit() {
 fn a_deleted_skill_is_not_restored_under_a_name_it_cannot_take() {
     let tmp = plane();
     let root = tmp.path();
-    skill(root, "skills/secrets", "secrets", "Mine.");
+    skill(root, "skills/purlis-secrets", "purlis-secrets", "Mine.");
     skill(root, "skills/vault", "vault", "Theirs.");
-    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    did(root, |cx| delete(cx, &Level::project(), "purlis-secrets")).unwrap();
     let listed = deleted(root);
 
-    let reserved = did(root, |cx| restore(cx, &listed[0], Some("browser")));
+    let reserved = did(root, |cx| restore(cx, &listed[0], Some("purlis-browser")));
     assert_eq!(reserved.unwrap_err(), crate::skills::NAME_RESERVED);
     let bad = did(root, |cx| restore(cx, &listed[0], Some("My Secrets")));
     assert!(bad.unwrap_err().contains("cannot be a skill's name"));
     let taken = did(root, |cx| restore(cx, &listed[0], Some("vault")));
     assert!(taken.unwrap_err().contains("already have one named vault"));
-    let same = did(root, |cx| restore(cx, &listed[0], Some("secrets")));
+    let same = did(root, |cx| restore(cx, &listed[0], Some("purlis-secrets")));
     assert_eq!(same.unwrap_err(), crate::skills::NAME_RESERVED);
 
-    assert!(!root.join("skills/secrets").exists());
-    assert!(!root.join("skills/browser").exists());
+    assert!(!root.join("skills/purlis-secrets").exists());
+    assert!(!root.join("skills/purlis-browser").exists());
     assert_eq!(deleted(root).len(), 1);
 }
 
 #[test]
-fn a_skill_on_disk_named_as_a_built_in_one_is_a_clash_to_rename_at_every_level() {
+fn a_skill_on_disk_with_a_reserved_name_is_a_clash_to_rename_at_every_level() {
     let tmp = plane();
     let root = tmp.path();
-    let built_in = bundle();
     for level in every_level() {
-        skill(root, &at(&level, "bundled"), "bundled", "Mine.");
+        skill(root, &at(&level, "purlis-mine"), "purlis-mine", "Mine.");
     }
     // Its folder's name is not its name: the name is what clashes.
-    skill(root, "skills/vault", "secrets", "Mine.");
+    skill(root, "skills/vault", "purlis-secrets", "Mine.");
+    // A built-in skill's old name is anyone's.
+    skill(root, "skills/handoff", "handoff", "Mine.");
 
-    let clashes = crate::skills::named_as_a_built_in(root, Some(built_in.path()));
+    let clashes = crate::skills::with_a_reserved_name(root);
 
     let mut wanted: Vec<(String, Level, String)> = every_level()
         .into_iter()
-        .map(|level| ("bundled".to_owned(), level.clone(), at(&level, "bundled")))
+        .map(|level| {
+            (
+                "purlis-mine".to_owned(),
+                level.clone(),
+                at(&level, "purlis-mine"),
+            )
+        })
         .collect();
     wanted.insert(
         1,
         (
-            "secrets".to_owned(),
+            "purlis-secrets".to_owned(),
             Level::project(),
             "skills/vault".to_owned(),
         ),
@@ -2118,12 +2150,6 @@ fn a_skill_on_disk_named_as_a_built_in_one_is_a_clash_to_rename_at_every_level()
         .map(|one| (one.name, one.level, one.folder))
         .collect();
     assert_eq!(found, wanted);
-    // Without the bundle, the name only it holds is anyone's again; the one purlis ships is not.
-    let bare: Vec<String> = crate::skills::named_as_a_built_in(root, None)
-        .into_iter()
-        .map(|one| one.name)
-        .collect();
-    assert_eq!(bare, ["secrets"]);
 }
 
 #[test]

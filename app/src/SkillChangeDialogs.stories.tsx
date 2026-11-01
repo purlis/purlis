@@ -65,7 +65,6 @@ function Shown({ which }: { which: Which }) {
         skill={DEPLOY}
         level={PROJECT}
         taken={["review-pr"]}
-        builtIns={["browser", "secrets"]}
         busy={false}
         onEdit={nothing}
         onRename={nothing}
@@ -138,7 +137,7 @@ export const Rename: Story = {
     const box = within(dialog).getByLabelText("New name");
     await untilFocusWithin(() => box, "the dialog starts on its field");
     await userEvent.clear(box);
-    await userEvent.type(box, "secrets");
+    await userEvent.type(box, "purlis-secrets");
     await expect(within(dialog).getByTestId("skill-rename-problem")).toHaveTextContent(
       NAME_RESERVED,
     );

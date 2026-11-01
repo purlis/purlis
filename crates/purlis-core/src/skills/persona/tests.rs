@@ -68,7 +68,7 @@ fn adding_a_name_writes_the_skills_line_and_keeps_every_other_line() {
 
     assert_eq!(
         definition(&plane),
-        "---\nrole: Ops\nskills: deploy, purlis:handoff\n---\n\nThe body.\n"
+        "---\nrole: Ops\nskills: deploy, purlis:purlis-handoff\n---\n\nThe body.\n"
     );
 }
 

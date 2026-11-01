@@ -293,7 +293,7 @@ pub fn is_stamped_from(msg: &str, chat: &str) -> bool {
 pub const SHOWN_STAMP: &str = "⟨handoff from {from} · {place} · {when}⟩";
 
 /// **The one route for work that reports back** (#1515), in the words every place that teaches
-/// it uses: the handoff skill, the persona skill, `purlis docs show handoff`, the handoff
+/// it uses: the purlis-handoff skill, the purlis-persona skill, `purlis docs show handoff`, the handoff
 /// command's help, a chat's SessionStart briefing and the result of a handoff that asked for a
 /// report. Two routes for one job is how a chat told to dispatch to a persona ran a reporting
 /// handoff instead; `the_one_route_is_taught_in_the_same_words` holds the places to this text.

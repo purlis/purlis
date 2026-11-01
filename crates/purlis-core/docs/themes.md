@@ -271,7 +271,7 @@ popover's filter row, list and footer. A theme sets parts in a top-level `parts`
 ```
 
 `purlis theme parts` prints every family, part, variant, state and property there is, with each
-bound, as JSON: what the theme skill, the gallery and an editor read. The schema completes each
+bound, as JSON: what the purlis-theme skill, the gallery and an editor read. The schema completes each
 key. A theme that extends another starts from its parent's parts and layers its own over them,
 key by key. A property typed in its CSS spelling (`border-color`) is told the name it means.
 

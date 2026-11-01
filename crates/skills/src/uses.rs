@@ -22,7 +22,7 @@ pub const MOST_REFERENCES: usize = 200;
 /// One skill a skill's text names.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Use {
-    /// As the text writes it: `skills:deploy`, `purlis:secrets`.
+    /// As the text writes it: `skills:deploy`, `purlis:purlis-secrets`.
     pub said: String,
     /// The skill's name.
     pub name: String,
@@ -70,6 +70,15 @@ pub fn uses_in(
             if out.len() >= MOST_REFERENCES || out.iter().any(|one| one.said == said) {
                 continue;
             }
+            // A built-in skill by the name it had before it took the prefix reads as it now.
+            let name = if project {
+                name
+            } else {
+                match crate::Reference::parse(&said) {
+                    Some(crate::Reference::BuiltIn(own)) => own,
+                    _ => name,
+                }
+            };
             out.push(Use {
                 broken: !known(&name),
                 said,

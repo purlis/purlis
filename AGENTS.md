@@ -70,8 +70,8 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
   allow of the lint appears anywhere else. A fifth block is a new ruling, not an edit.
 - **UI is built from the component families in `app/src/ui`, never hand-rolled markup** (ADR
   0104): each wraps its React Aria primitive once, and lint refuses a control drawn by hand. Before
-  any UI work, follow the `building-purlis-ui` skill
-  (`app/src-tauri/plugin/skills/building-purlis-ui/SKILL.md`): the families, parts, stories and
+  any UI work, follow the `purlis-building-purlis-ui` skill
+  (`app/src-tauri/plugin/skills/purlis-building-purlis-ui/SKILL.md`): the families, parts, stories and
   checks that make it done. A family that has not moved yet takes its Radix primitive, never
   behind a purlis API of our own. A shadcn/ui component's source **copied into the repo
   is allowed** and is not that layer (ADR 0037, amended 2026-09-22). **One house set is the

@@ -909,14 +909,7 @@ pub(crate) async fn skill_install_review(
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
-        let built_in = crate::skillchange::built_in();
-        let review = source::review(
-            held.root(),
-            built_in.as_deref(),
-            &source.core(),
-            &names,
-            &(&level).into(),
-        )?;
+        let review = source::review(held.root(), &source.core(), &names, &(&level).into())?;
         Ok(InstallReview::from(&review))
     })
     .await
@@ -937,15 +930,8 @@ pub(crate) async fn skill_install_set_review(
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
-        let built_in = crate::skillchange::built_in();
         Ok(
-            match source::review_set(
-                held.root(),
-                built_in.as_deref(),
-                &source.core(),
-                &names,
-                &(&level).into(),
-            )? {
+            match source::review_set(held.root(), &source.core(), &names, &(&level).into())? {
                 source::SetReview::Review { review, there } => InstallSetReview::Review {
                     review: (&review).into(),
                     there: there.iter().map(|one| esc(one)).collect(),
@@ -1092,9 +1078,7 @@ pub(crate) async fn skill_update_review(
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the update", move || {
         flag_on()?;
-        let built_in = crate::skillchange::built_in();
-        let update =
-            source::update_review(held.root(), built_in.as_deref(), &(&level).into(), &name)?;
+        let update = source::update_review(held.root(), &(&level).into(), &name)?;
         Ok(UpdateReview {
             name: esc(&update.name),
             pinned: (&update.pinned).into(),

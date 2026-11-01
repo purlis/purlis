@@ -101,17 +101,17 @@ fn an_opencode_chat_is_handed_charter_s_mcp_server_in_its_session_config() {
 #[test]
 fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name() {
     // SK-6 (#2769): opencode's `permission.skill` goes by the name alone, so a built-in
-    // skill's name is never denied, whatever a file says. It is `purlis-secrets` here, so a
-    // skill of the person's or the clone's named `secrets` is another, and is denied.
+    // skill's name is never denied, whatever a file says. A skill of the person's or the clone's
+    // named `secrets` is another, and is denied.
     let bundle = tempfile::tempdir().expect("a bundle");
     let shim = crate::opencode::shim_in(bundle.path());
     std::fs::create_dir_all(shim.parent().expect("a parent")).expect("dirs");
     std::fs::write(&shim, "").expect("the shim");
-    let secrets = bundle.path().join("skills/secrets");
+    let secrets = bundle.path().join("skills/purlis-secrets");
     std::fs::create_dir_all(&secrets).expect("a built-in skill");
     std::fs::write(
         secrets.join("SKILL.md"),
-        "---\nname: secrets\ndescription: Keeps secrets.\n---\n",
+        "---\nname: purlis-secrets\ndescription: Keeps secrets.\n---\n",
     )
     .expect("its SKILL.md");
     let chosen = crate::harness_plugin::Chosen {
@@ -120,9 +120,9 @@ fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name()
             "review".to_owned(),
             "secrets".to_owned(),
             "purlis-secrets".to_owned(),
+            crate::skills::INDEX.to_owned(),
         ]
         .into(),
-        own_index: false,
     };
     let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
         Kit {
@@ -156,7 +156,7 @@ fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name()
 /// The shim is handed the set's folder the host laid out, which holds the built-in skills
 /// as `purlis-<name>`, and never the bundle's own `skills/`, whose `secrets` is a bare name.
 #[test]
-fn an_opencode_chat_is_handed_the_set_s_folder_alone_never_the_bundle_s_skills() {
+fn an_opencode_chat_is_handed_the_bundles_skills_and_nothing_else_it_has_no_folder_for() {
     let bundle = tempfile::tempdir().expect("a bundle");
     let shim = crate::opencode::shim_in(bundle.path());
     std::fs::create_dir_all(shim.parent().expect("a parent")).expect("dirs");
@@ -196,12 +196,7 @@ fn an_opencode_chat_is_handed_the_set_s_folder_alone_never_the_bundle_s_skills()
         config["plugin"][0].clone()
     };
 
-    assert_eq!(
-        handed(Some(folder.as_path()))[1]["skills"],
-        folder.join("skills").display().to_string()
-    );
-    assert!(
-        handed(None).is_string(),
-        "no folder: the shim with no skills option, never the bundle's"
-    );
+    let bundled = bundle.path().join("skills").display().to_string();
+    assert_eq!(handed(Some(folder.as_path()))[1]["skills"], bundled);
+    assert_eq!(handed(None)[1]["skills"], bundled);
 }

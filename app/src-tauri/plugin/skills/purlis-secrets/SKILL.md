@@ -1,5 +1,5 @@
 ---
-name: secrets
+name: purlis-secrets
 description: Use a credential held in a purlis vault — a database password, API token, kubeconfig, SSH key or server login — without its value entering the conversation. Use when a task needs a secret, when asked to store one, or before running any command that requires a credential.
 ---
 

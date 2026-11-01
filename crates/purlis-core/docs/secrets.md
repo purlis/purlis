@@ -270,7 +270,7 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   gets the scripts, and a save that adds one is refused.
 - **A browser login: a persona's tool that logs a browser in to one page** (D-PE-browser-1,
   approved by the operator on 2026-10-12). A sandboxed chat runs only declared tools, and a
-  shell or a `--dotenv` is never one, so the `browser` skill's terminal flow does not run in a
+  shell or a `--dotenv` is never one, so the `purlis-browser` skill's terminal flow does not run in a
   chat. Declare the login instead, beside the persona's other tools:
 
   ```toml

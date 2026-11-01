@@ -1,5 +1,5 @@
 ---
-name: browser
+name: purlis-browser
 description: Drive a real browser for a task that needs one — a web login, an end-to-end check, verifying a UI, reaching something behind auth — with credentials pulled from a vault so purlis hands the password to the browser instead of you typing it into the conversation. Use when browser automation needs to authenticate, or when several workers each need their own logged-in session.
 ---
 

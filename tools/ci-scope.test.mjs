@@ -93,7 +93,7 @@ test("CI itself, a lockfile, the toolchain and a shared config run everything", 
 
 test("code runs everything", () => {
   for (const path of [
-    "app/src-tauri/plugin/skills/theme/SKILL.md",
+    "app/src-tauri/plugin/skills/purlis-theme/SKILL.md",
     "tests/fixtures/recorded/behaviour.jsonl",
     "fixtures/corpora/a.json",
     "runner-image/Dockerfile",
@@ -764,7 +764,7 @@ test("the rest of the app's Rust folder, which the window's build reads, runs ev
     "app/src-tauri/Cargo.toml",
     "app/src-tauri/tauri.conf.json",
     "app/src-tauri/capabilities/default.json",
-    "app/src-tauri/plugin/skills/theme/SKILL.md",
+    "app/src-tauri/plugin/skills/purlis-theme/SKILL.md",
   ]) {
     assert.deepEqual(of([path]), all, path);
   }

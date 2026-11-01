@@ -289,9 +289,9 @@ impl Ctx<'_> {
         }
     }
 
-    /// **Refused where `name` belongs to a built-in skill** ([`super::name_reserved`], spec
-    /// #3679 S12), with [`super::NAME_RESERVED`]: so no skill of the plane stands in for a
-    /// guarded built-in such as `secrets`. Every change that lands a skill under a name asks it
+    /// **Refused where `name` is purlis's own** ([`super::name_reserved`], spec #3679 S12), with
+    /// [`super::NAME_RESERVED`]: so no skill of the plane stands in for a guarded built-in such
+    /// as `purlis-secrets`. Every change that lands a skill under a name asks it
     /// first: [`create`], [`rename`], [`move_to`], [`share`] and a draft's accept, and Make my own
     /// copy of the copy's name (#3686). [`restore`], an install and an update's skills brought
     /// along ask [`Self::reserved`], and say it in their own words.
@@ -302,10 +302,10 @@ impl Ctx<'_> {
         Ok(())
     }
 
-    /// Whether `name` belongs to a built-in skill ([`super::name_reserved`]): what a change that
-    /// cannot offer another name (a restore, an install) asks, and says in its own words.
+    /// Whether `name` is purlis's own ([`super::name_reserved`]): what a change that cannot offer
+    /// another name (a restore, an install) asks, and says in its own words.
     pub fn reserved(&self, name: &str) -> bool {
-        super::name_reserved(self.built_in, name)
+        super::name_reserved(name)
     }
 
     /// Says `line` as a warning.
@@ -437,7 +437,7 @@ pub(super) fn write(
 /// **Creates a skill** named `name`, described by `description`, from the template `template`
 /// that `templates` offers, at `level` (#2770): its folder and `SKILL.md`, committed. A project
 /// skill starts granted to the project's root alone, the default. Refused for a name the open
-/// format does not allow, one a built-in skill has, or one the level already holds, and for a
+/// format does not allow, one of purlis's own, or one the level already holds, and for a
 /// template whose text is not a whole skill that keeps its name.
 ///
 /// `templates` is purlis's own ([`purlis_skills::change::BuiltInTemplates`]) or the studio's,
@@ -494,7 +494,7 @@ pub fn create(
 /// loading.
 ///
 /// Refused where `name` is no built-in skill in `cx.built_in`, for a name the open format does
-/// not allow, one that belongs to a built-in skill ([`Ctx::not_built_in`]), or one `level`
+/// not allow, one of purlis's own ([`Ctx::not_built_in`]), or one `level`
 /// already holds; and for a description that breaks a rule ([`change::description_problem`]) or
 /// is the built-in's word for word. A built-in skill is its `SKILL.md` alone (held by a test of the bundle), so
 /// that one file is what is copied.
@@ -1883,7 +1883,7 @@ fn taken_again(plane: &Path, level: &Level, name: &str, folder: &str, toml_count
 /// [`deleted`] lists (restored already, or its folder or its name at that level taken again).
 /// One commit.
 ///
-/// **`under` a new name** (#3729), and only where its own belongs to a built-in skill now (a
+/// **`under` a new name** (#3729), and only where its own belongs to purlis now (a
 /// newer purlis ships one of that name): the name is checked as [`rename`]'s is
 /// ([`Ctx::not_built_in`] among them), and the skill comes back with its `SKILL.md`'s `name:`
 /// rewritten and its folder named as it, in the same commit, or does not come back at all.
@@ -1908,8 +1908,8 @@ pub fn restore(
     match under {
         None if reserved => {
             return Err(format!(
-                "{name} cannot be restored under its name: it belongs to a built-in skill now, so \
-                 restore it under a new name"
+                "{name} cannot be restored under its name: it belongs to purlis now, so restore \
+                 it under a new name"
             ));
         }
         None => {}

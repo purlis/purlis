@@ -1,5 +1,5 @@
 ---
-name: persona
+name: purlis-persona
 description: Work as a purlis persona, create one, or dispatch work to another — a role with its own charter, memory and vault. Use when asked to act as a role, to create a persona, or when deciding which persona a piece of work belongs to.
 ---
 

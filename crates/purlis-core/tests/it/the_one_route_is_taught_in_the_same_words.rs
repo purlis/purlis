@@ -3,17 +3,17 @@
 
 //! **Work that reports back has one route, taught in the same words everywhere** (#1515).
 //!
-//! A chat told "try to dispatch devops" ran a reporting handoff, twice: the handoff skill
+//! A chat told "try to dispatch devops" ran a reporting handoff, twice: the purlis-handoff skill
 //! taught `--report` as the way to get an answer and `--persona` for another persona, while
 //! the persona skill taught `purlis dispatch`. Two routes for one job, and a chat picks either.
 //!
 //! So the route is one sentence, [`purlis_core::handoff::ONE_ROUTE`], and every page a chat
-//! learns it from carries that sentence word for word: the handoff skill, the persona skill
+//! learns it from carries that sentence word for word: the purlis-handoff skill, the persona skill
 //! and `purlis docs show handoff`. A chat's SessionStart briefing and the handoff command's
 //! result carry the constant itself (their own tests hold them), and the command's help is
 //! held to it in `purlis-cli`.
 //!
-//! And the handoff skill offers no flag that asks for an answer.
+//! And the purlis-handoff skill offers no flag that asks for an answer.
 
 use std::path::{Path, PathBuf};
 
@@ -45,8 +45,8 @@ fn words(text: &str) -> String {
 fn the_skills_and_the_handoff_page_say_the_route_in_the_same_words() {
     purlis_core::unsteered!();
     for (what, text) in [
-        ("the handoff skill", skill("handoff")),
-        ("the persona skill", skill("persona")),
+        ("the purlis-handoff skill", skill("purlis-handoff")),
+        ("the purlis-persona skill", skill("purlis-persona")),
         ("docs/handoff.md", handoff_page()),
     ] {
         assert!(
@@ -59,14 +59,14 @@ fn the_skills_and_the_handoff_page_say_the_route_in_the_same_words() {
 #[test]
 fn the_handoff_skill_offers_no_flag_that_asks_for_an_answer() {
     purlis_core::unsteered!();
-    let handoff = skill("handoff");
+    let handoff = skill("purlis-handoff");
     assert!(
         !handoff.contains("--report"),
-        "the handoff skill still names --report"
+        "the purlis-handoff skill still names --report"
     );
     assert!(
         !handoff.contains("handoff report"),
-        "the handoff skill still teaches a handoff's report back"
+        "the purlis-handoff skill still teaches a handoff's report back"
     );
     // What it points to instead, for this chat's own persona and for another.
     let said = words(&handoff);
@@ -75,7 +75,10 @@ fn the_handoff_skill_offers_no_flag_that_asks_for_an_answer() {
         "`--to <persona>`",
         "`--in workspace:<name>`",
     ] {
-        assert!(said.contains(route), "the handoff skill names {route}");
+        assert!(
+            said.contains(route),
+            "the purlis-handoff skill names {route}"
+        );
     }
 }
 
@@ -86,7 +89,7 @@ fn the_handoff_skill_offers_no_flag_that_asks_for_an_answer() {
 #[test]
 fn the_handoff_skill_tells_a_handed_off_chat_to_do_what_its_own_first_message_says() {
     purlis_core::unsteered!();
-    let said = words(&skill("handoff"));
+    let said = words(&skill("purlis-handoff"));
     let asked = "If one says the chat that handed this off wants an answer, do what that line says";
     let (before, after) = said
         .split_once(asked)
@@ -103,7 +106,7 @@ fn the_handoff_skill_tells_a_handed_off_chat_to_do_what_its_own_first_message_sa
 #[test]
 fn the_handoff_skills_description_rules_out_answers_and_not_another_persona() {
     purlis_core::unsteered!();
-    let handoff = skill("handoff");
+    let handoff = skill("purlis-handoff");
     let description = handoff
         .lines()
         .find(|line| line.starts_with("description: "))
@@ -126,7 +129,7 @@ fn the_handoff_skills_description_rules_out_answers_and_not_another_persona() {
 #[test]
 fn the_persona_skill_names_the_dispatch_and_not_a_handoff_to_a_persona() {
     purlis_core::unsteered!();
-    let said = words(&skill("persona"));
+    let said = words(&skill("purlis-persona"));
     assert!(said.contains("purlis dispatch --to <persona> --name"));
     assert!(said.contains("never `purlis handoff --persona devops`"));
 }
@@ -153,7 +156,7 @@ fn the_handoff_page_shows_no_report_flag_on_the_command_and_says_what_becomes_of
 #[test]
 fn the_persona_skill_teaches_the_dispatch_tools_before_the_command() {
     purlis_core::unsteered!();
-    let text = skill("persona");
+    let text = skill("purlis-persona");
     let tool = text
         .find("the `dispatch` tool")
         .expect("the tool is taught");
