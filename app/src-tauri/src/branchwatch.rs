@@ -50,6 +50,10 @@
 //! stamp holds the clone's `HEAD` and refs (`purlis_core::standings::Stamp`), so its next read
 //! has the move anyway (D-1152-6).
 //!
+//! **A move in a repo skill's folder is told apart** (#4377): [`SKILLS_MOVED`], for the Skills view,
+//! which reads a whole set again on it and so must not on an agent's every other write. It is told
+//! before git is asked, since a repo may ignore the folder its harness still reads skills from.
+//!
 //! **Every burst is told by what it named** ([`crate::watchset::bursts`], #1139): a file made
 //! and removed inside one is still a move. A burst that is everything — the platform lost
 //! track, a watcher error, more paths than a burst holds — moves every branch listened to, and
@@ -99,6 +103,10 @@ use crate::planes::{PlaneId, Planes};
 
 /// The event a window is sent.
 pub(crate) const CHANGED: &str = "branch-changed";
+
+/// The event a window is sent when a repo skill's folder in a branch moved, with what
+/// [`CHANGED`] carries.
+pub(crate) const SKILLS_MOVED: &str = "repo-skills-moved";
 
 /// How long a burst is folded for, as the tree's watch folds it.
 const QUIET_FOR: Duration = Duration::from_millis(250);
@@ -167,6 +175,8 @@ struct Listened {
 
 struct Inner<W: notify::Watcher> {
     watcher: Option<W>,
+    /// Told which window's branches moved a repo skill ([`SKILLS_MOVED`]).
+    skills_told: Option<Told>,
     by_window: HashMap<String, Vec<Listened>>,
     newest: HashMap<String, u64>,
     watched: HashMap<PathBuf, RecursiveMode>,
@@ -359,6 +369,7 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 watcher: None,
+                skills_told: None,
                 by_window: HashMap::new(),
                 newest: HashMap::new(),
                 watched: HashMap::new(),
@@ -384,6 +395,15 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
             tickets: std::sync::atomic::AtomicU64::new(0),
             how_of: how,
         }
+    }
+
+    /// The same watch, telling `told` of each move in a repo skill's folder ([`SKILLS_MOVED`]).
+    pub fn telling_skills(self, told: Told) -> Self {
+        self.inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .skills_told = Some(told);
+        self
     }
 
     /// The same watch, whose re-finds of refs wait for `latch` to open: for a test to order a
@@ -795,6 +815,22 @@ fn check<W: notify::Watcher + Send + 'static>(
                     std::mem::take(&mut waiting.made_folder),
                 )
             };
+            // Past what one check looks at, a skill's folder may be among what was left out.
+            if moved.len() > purlis_core::files::ASKED
+                || moved.iter().any(|path| {
+                    path.strip_prefix(root.path())
+                        .is_ok_and(purlis_core::harness_plugin::moves_a_repo_skill)
+                })
+            {
+                let held = inner.lock().unwrap_or_else(PoisonError::into_inner);
+                if let Some(skills_told) = held.skills_told.clone() {
+                    let by_window = windows_listening(&held, root.path());
+                    drop(held);
+                    for (window, branches) in by_window {
+                        skills_told(&window, branches);
+                    }
+                }
+            }
             // Outside the lock: this is the read that can take until the reader's deadline.
             if !root.matters(&reader, &moved) {
                 continue;
@@ -816,30 +852,32 @@ fn check<W: notify::Watcher + Send + 'static>(
             if made_folder {
                 relist_soon(&inner, &reader, root.clone());
             }
-            let concerned: Vec<(String, WatchedBranch)> = {
+            let by_window = {
                 let held = inner.lock().unwrap_or_else(PoisonError::into_inner);
-                held.by_window
-                    .iter()
-                    .flat_map(|(window, listened)| {
-                        listened
-                            .iter()
-                            .filter(|one| one.root.path() == root.path())
-                            .map(|one| (window.clone(), one.branch.clone()))
-                    })
-                    .collect()
+                windows_listening(&held, root.path())
             };
-            let mut by_window: HashMap<String, Vec<WatchedBranch>> = HashMap::new();
-            for (window, branch) in concerned {
-                let told = by_window.entry(window).or_default();
-                if !told.contains(&branch) {
-                    told.push(branch);
-                }
-            }
             for (window, branches) in by_window {
                 told(&window, branches);
             }
         }
     });
+}
+
+/// The branches at `path` each window listens to.
+fn windows_listening<W: notify::Watcher>(
+    held: &Inner<W>,
+    path: &Path,
+) -> HashMap<String, Vec<WatchedBranch>> {
+    let mut by_window: HashMap<String, Vec<WatchedBranch>> = HashMap::new();
+    for (window, listened) in &held.by_window {
+        for one in listened.iter().filter(|one| one.root.path() == path) {
+            let told = by_window.entry(window.clone()).or_default();
+            if !told.contains(&one.branch) {
+                told.push(one.branch.clone());
+            }
+        }
+    }
+    by_window
 }
 
 /// Lists `root`'s folders again, now or — when it was listed less than [`RELISTED_EVERY`] ago —

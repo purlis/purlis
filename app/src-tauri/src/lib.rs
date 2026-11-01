@@ -3888,19 +3888,31 @@ pub fn run() {
             app.manage(findfiles::FileFinder::default());
             // The branches each window shows the changes of, listened to whole so an agent's
             // first write anywhere in one moves its markers (FM-4).
-            app.manage(branchwatch::BranchWatch::new(
-                {
+            app.manage(
+                branchwatch::BranchWatch::new(
+                    {
+                        let app = app.handle().clone();
+                        std::sync::Arc::new(move |window: &str, branches| {
+                            let _ = app.emit_to(
+                                window,
+                                branchwatch::CHANGED,
+                                branchwatch::BranchChanged { branches },
+                            );
+                        })
+                    },
+                    reader(),
+                )
+                .telling_skills({
                     let app = app.handle().clone();
                     std::sync::Arc::new(move |window: &str, branches| {
                         let _ = app.emit_to(
                             window,
-                            branchwatch::CHANGED,
+                            branchwatch::SKILLS_MOVED,
                             branchwatch::BranchChanged { branches },
                         );
                     })
-                },
-                reader(),
-            ));
+                }),
+            );
             // The clones whose save standing is shared ask the same watch to listen to their
             // working trees (FD-11), so an idle clone's standing costs no `git status`.
             {

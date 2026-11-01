@@ -337,6 +337,47 @@ fn a_write_only_where_git_ignores_tells_nobody() {
     }
 }
 
+/// A watch of the piece of `root`, and what it tells of repo skills.
+fn hearing_skills(root: &Path, how: fn(&Root) -> How) -> (BranchWatch<Source>, Heard) {
+    let (skills, heard) = mpsc::channel();
+    let skills = Mutex::new(skills);
+    let (watch, _told) = watch_with(crate::reader());
+    let watch = watch.telling_skills(Arc::new(move |window: &str, branches| {
+        let _ = skills.lock().unwrap().send((window.to_string(), branches));
+    }));
+    let found = root_of(root, "piece");
+    let chosen = how(&found);
+    watch
+        .set_from("main", watch.ticket(), vec![(branch(), found, chosen)])
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    (watch, heard)
+}
+
+#[test]
+fn a_write_in_a_repo_skills_folder_is_told_as_a_skill_even_where_git_ignores_it() {
+    let (_dir, root, piece) = plane();
+    std::fs::write(piece.join(".gitignore"), "target/\n.claude/\n").unwrap();
+    std::fs::create_dir_all(piece.join(".claude/skills/deploy")).unwrap();
+    let (_watch, heard) = hearing_skills(&root, |_| How::Whole);
+
+    std::fs::write(piece.join(".claude/skills/deploy/SKILL.md"), "\n").unwrap();
+
+    let (window, branches) = heard.recv_timeout(PATIENCE).expect("the window was told");
+    assert_eq!(window, "main");
+    assert_eq!(branches, [branch()]);
+}
+
+#[test]
+fn a_write_anywhere_else_tells_no_one_of_a_skill() {
+    let (_dir, root, piece) = plane();
+    let (_watch, heard) = hearing_skills(&root, |_| How::Whole);
+
+    std::fs::write(piece.join("src/deep/first.rs"), "\n").unwrap();
+
+    assert!(heard.recv_timeout(Duration::from_secs(2)).is_err());
+}
+
 #[cfg(unix)]
 #[test]
 fn a_link_in_the_branch_to_a_large_tree_outside_is_never_walked() {

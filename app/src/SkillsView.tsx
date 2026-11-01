@@ -27,6 +27,7 @@ import {
   type StudioScope,
 } from "./skillStudio";
 import { SkillMenu, SkillsList } from "./SkillsList";
+import { useRepoSkillsMoved } from "./repoSkillsMoved";
 import {
   branchFolderOf,
   branchFolderRowsOf,
@@ -63,6 +64,9 @@ export type FrontChat = {
   persona: string | null;
   /** The program it runs, by the word the project calls it: whose own skills it gets. */
   harness: HarnessKind | undefined;
+  /** The branch folder it works in, where it works in one (`worktree_of_chat`, which the window
+   *  has asked already): the checkout whose skills it gets. */
+  branchFolder?: { repo: string; piece: string };
 };
 
 /** What the view read: its rows, what the studio offers to start from, and the levels a new
@@ -76,6 +80,8 @@ type Read =
       pinsRefused: SkillPinsRefused | null;
       /** What the chat in front's set says as a whole (S8, #3694): none with no chat in front. */
       said?: ChatSkillsSaid;
+      /** The clones whose own folder the chat in front works in (`chat_skills`). */
+      repos?: readonly string[];
     }
   | { refused: string };
 
@@ -157,6 +163,7 @@ async function readSkills(
     levels: base.ok.levels,
     pinsRefused: base.ok.pins_refused,
     said,
+    repos: given.repos,
   };
 }
 
@@ -174,7 +181,8 @@ function scopeOfRow(row: ListedSkill, place: string | undefined, persona: string
  * **The Skills view** (SK-55, #3266; spec #3679 S7): one answer to what a chat gets and why. It
  * follows the chat in front, its workspace, persona and program, and with no chat in front shows
  * what a new chat in the title bar's workspace gets; its header names whose set it is. It reads
- * again whenever the project's skills change on disk, as the studio does.
+ * again whenever the project's skills change on disk, as the studio does, and when the checkout
+ * the chat works in moves its repo skills (#4377).
  *
  * Every act is one the window already has: a card opens the Skill studio at Library › it, the
  * chat keeping its pane; Use types it into the chat through Use skill…; the switch and the pin
@@ -215,6 +223,8 @@ export function SkillsView({
   const instructions = usePlaneChanged([plane], INSTRUCTIONS);
   // Asked again after the chat in front is restarted from here: it then has what changed.
   const [restarted, setRestarted] = useState(0);
+  // Asked again when the checkout the chat works in moves its skills (#4377).
+  const [skillsMoved, setSkillsMoved] = useState(0);
   const [read, setRead] = useState<{ of: FrontChat | undefined; read: Read }>();
   const [said, setSaid] = useState<{ label: string; text: string }>();
   const [busy, setBusy] = useState(false);
@@ -239,7 +249,32 @@ export function SkillsView({
     };
     // The name is not read by: it only says whose set it is.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, place, session, chatWorkspace, persona, harness, changed, instructions, restarted]);
+  }, [
+    plane,
+    place,
+    session,
+    chatWorkspace,
+    persona,
+    harness,
+    changed,
+    instructions,
+    restarted,
+    skillsMoved,
+  ]);
+
+  // Its branch folder, else the clones its read named: a chat's, and only the one in front's.
+  const repos =
+    read?.of?.session === session && read !== undefined && "rows" in read.read
+      ? read.read.repos
+      : undefined;
+  const branchFolder = chat?.branchFolder;
+  const checkouts =
+    session === undefined
+      ? []
+      : branchFolder !== undefined
+        ? [branchFolder]
+        : (repos ?? []).map((repo) => ({ repo, piece: null }));
+  useRepoSkillsMoved(plane, chatWorkspace, checkouts, () => setSkillsMoved((was) => was + 1));
 
   // Its "started without" notice put away is put away in the core: its card goes as the Skills
   // chip's warning does (#3953), with no read again.

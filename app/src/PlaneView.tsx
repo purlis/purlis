@@ -9415,6 +9415,9 @@ export const PlaneView = memo(function PlaneView({
           workspace: frontWorkspace === OUTSIDE ? undefined : frontWorkspace,
           persona: personaOf(frontSession),
           harness: harnessOf(frontSession),
+          ...(worktree === undefined
+            ? {}
+            : { branchFolder: { repo: worktree.repo, piece: worktree.piece } }),
         };
 
   const view = (

@@ -10,6 +10,7 @@ import {
   type PlaneId,
 } from "./bindings";
 import { answeredBy, heldWithin } from "./branchFolders";
+import { listenToBranches } from "./branchWatchSet";
 import { listen } from "./here";
 
 /**
@@ -156,9 +157,7 @@ export function useBranchStatus(
     };
   });
 
-  /** Whether the core listens to anything for this window, so a window that never opened a
-   *  branch's files never asks it to listen to nothing. */
-  const listening = useRef(false);
+  const [owner] = useState(() => Symbol("explorer"));
   /** The newest `branch_watch` this explorer has sent, answered or not. */
   const newestWatch = useRef<Promise<unknown>>(Promise.resolve());
   useEffect(() => {
@@ -167,10 +166,7 @@ export function useBranchStatus(
       plane === undefined || workspace === undefined
         ? []
         : refs.map((ref) => ({ plane, workspace, ...ref }));
-    if (wanted.length > 0 || listening.current) {
-      listening.current = wanted.length > 0;
-      newestWatch.current = commands.branchWatch(wanted).catch(() => undefined);
-    }
+    newestWatch.current = listenToBranches(owner, wanted);
     if (plane === undefined || workspace === undefined) return;
     if (asked.current.workspace !== workspace) asked.current = { workspace, keys: new Set() };
     byKey.current = new Map(refs.map((ref) => [branchKey(ref), ref]));
@@ -189,15 +185,10 @@ export function useBranchStatus(
       // Read before its watch held: read again once it holds, so a change in between is marked.
       if (!inTime) void answeredBy(latest).then(readFresh);
     });
-  }, [keys, plane, workspace]);
+  }, [keys, owner, plane, workspace]);
 
-  // Nothing listened to once the explorer is gone.
-  useEffect(
-    () => () => {
-      if (listening.current) void commands.branchWatch([]).catch(() => undefined);
-    },
-    [],
-  );
+  // Nothing listened to for it once the explorer is gone.
+  useEffect(() => () => void listenToBranches(owner, []), [owner]);
 
   // Something moved in an open branch: what it changed is read again.
   useEffect(() => {

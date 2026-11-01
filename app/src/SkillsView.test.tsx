@@ -13,6 +13,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { skillsMissingPutAway } from "./chatSkillsAsk";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import type {
   ChatSkill,
   PersonaSkills,
@@ -83,32 +84,35 @@ function core(
   } = {},
 ): Asked[] {
   const asked: Asked[] = [];
-  mockIPC((cmd, args) => {
-    const given = (args ?? {}) as Record<string, unknown>;
-    asked.push({ cmd, args: given });
-    if (cmd === "skill_studio")
-      return of(given.workspace as string | null, given.persona as string | null);
-    if (cmd === "skill_persona_skills") return more.personas ?? [];
-    if (cmd === "chat_skills")
-      return {
-        on: true,
-        known: true,
-        skills: more.chat ?? [],
-        budget: more.budget ?? null,
-        routing: more.routing ?? null,
-        repos: more.repos ?? [],
-        missing: more.missing ?? null,
-      };
-    if (cmd === "chat_branch_folder_skills") return more.branch ?? [];
-    if (cmd === "chats_plane_updated") return more.updated ?? [];
-    if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];
-    if (cmd === "skill_sources_offered") return [];
-    if (cmd === "skill_updates") return { offers: [], unconfirmed: [], unasked: [] };
-    if (cmd === "skill_templates")
-      return [{ id: { kind: "blank" }, label: "Blank", about: "Empty." }];
-    if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };
-    return { notes: [] };
-  });
+  mockIPC(
+    (cmd, args) => {
+      const given = (args ?? {}) as Record<string, unknown>;
+      asked.push({ cmd, args: given });
+      if (cmd === "skill_studio")
+        return of(given.workspace as string | null, given.persona as string | null);
+      if (cmd === "skill_persona_skills") return more.personas ?? [];
+      if (cmd === "chat_skills")
+        return {
+          on: true,
+          known: true,
+          skills: more.chat ?? [],
+          budget: more.budget ?? null,
+          routing: more.routing ?? null,
+          repos: more.repos ?? [],
+          missing: more.missing ?? null,
+        };
+      if (cmd === "chat_branch_folder_skills") return more.branch ?? [];
+      if (cmd === "chats_plane_updated") return more.updated ?? [];
+      if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];
+      if (cmd === "skill_sources_offered") return [];
+      if (cmd === "skill_updates") return { offers: [], unconfirmed: [], unasked: [] };
+      if (cmd === "skill_templates")
+        return [{ id: { kind: "blank" }, label: "Blank", about: "Empty." }];
+      if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };
+      return { notes: [] };
+    },
+    { shouldMockEvents: true },
+  );
   return asked;
 }
 
@@ -834,6 +838,86 @@ describe("a chat in a branch folder (#4326)", () => {
     view();
     await list();
     expect(asked.some((one) => one.cmd === "chat_branch_folder_skills")).toBe(false);
+  });
+});
+
+describe("a checkout that changes its skills (#4377)", () => {
+  const inBranch: FrontChat = {
+    session: 9,
+    name: "fix",
+    workspace: "ops",
+    persona: null,
+    harness: "claude",
+    branchFolder: { repo: "svc", piece: "fix" },
+  };
+  const inClone: FrontChat = { ...inBranch, branchFolder: undefined };
+  const listens = (asked: Asked[]) =>
+    asked.filter((one) => one.cmd === "branch_watch").at(-1)?.args.branches;
+  const reads = (asked: Asked[]) => asked.filter((one) => one.cmd === "skill_studio").length;
+  const moved = (repo: string, piece: string | null) =>
+    act(() =>
+      emit("repo-skills-moved", {
+        branches: [{ plane: "p", workspace: "ops", repo, piece }],
+      }),
+    );
+
+  it("reads again when the branch folder the chat works in moves a skill", async () => {
+    const asked = core(() => studio([skill("deploy")]));
+    view({ chat: inBranch });
+    await list();
+    await waitFor(() =>
+      expect(listens(asked)).toEqual([{ plane: "p", workspace: "ops", repo: "svc", piece: "fix" }]),
+    );
+    await waitFor(() => expect(reads(asked)).toBeGreaterThan(0));
+    await act(async () => {});
+    const before = reads(asked);
+
+    await moved("svc", "fix");
+
+    await waitFor(() => expect(reads(asked)).toBe(before + 1));
+  });
+
+  it("listens to the clone a chat in its own folder works in", async () => {
+    const asked = core(() => studio([skill("deploy")]), { repos: ["svc"] });
+    view({ chat: inClone });
+    await list();
+    await waitFor(() =>
+      expect(listens(asked)).toEqual([{ plane: "p", workspace: "ops", repo: "svc", piece: null }]),
+    );
+  });
+
+  it("reads nothing again for another checkout's skills", async () => {
+    const asked = core(() => studio([skill("deploy")]));
+    view({ chat: inBranch });
+    await list();
+    await waitFor(() => expect(listens(asked)).toBeDefined());
+    await act(async () => {});
+    const before = reads(asked);
+
+    await moved("svc", "other");
+    await moved("web", "fix");
+
+    expect(reads(asked)).toBe(before);
+  });
+
+  it("asks to listen to nothing with no chat in front, or once it is gone", async () => {
+    const asked = core(() => studio([skill("deploy")]));
+    const { unmount } = render(
+      <SkillsView
+        plane="p"
+        workspace="ops"
+        chat={inBranch}
+        onOpenView={vi.fn()}
+        onUseSkill={vi.fn()}
+        onShowInExplorer={vi.fn()}
+      />,
+    );
+    await list();
+    await waitFor(() => expect(listens(asked)).toHaveLength(1));
+
+    unmount();
+
+    await waitFor(() => expect(listens(asked)).toEqual([]));
   });
 });
 
