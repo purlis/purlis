@@ -135,26 +135,15 @@ pub(crate) fn finish(
         // As old as its dispatch's record says, which the ledger did not see (#1463).
         // And how it came back across the restart (#3900).
         crate::dispatched::brought_back(held, open.session, &records, kept.contains(&open.session));
-        let told = launch
-            .back
-            .chats
-            .iter()
-            .any(|chat| chat.number == Some(open.session) && launch.told(chat).is_some());
-        if told {
-            questions_were_not_kept(held, open.session);
-        }
     }
+    // A question of a task that did not come back ended with it (#4553).
+    let back: Vec<String> = launch.back.chats.iter().filter_map(|chat| chat.id.clone()).collect();
+    crate::dispatched::only_these_came_back(held, &back);
     after_put_back(held, &launch, coming, settles);
     // What the chats queued while the app was away is delivered now that their tasks are back
     // (#3902), with nobody acting.
     crate::dispatched::deliver_all_queued(held);
     opened
-}
-
-/// Task chat `task` was told to carry on (#1546): what it asked its asking chat before the
-/// restart was in the app's memory and is gone, and an answer to it is told so.
-fn questions_were_not_kept(held: &Held, task: u32) {
-    held.tasks().ledger().talk.restored(task);
 }
 
 /// The reports kept for chats `record` brings back, taken from their workspaces before any of
