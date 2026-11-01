@@ -906,14 +906,16 @@ fn read_with(token: &dyn Transport) -> Result<(u64, Option<String>), String> {
     Ok((count, first))
 }
 
-/// The JWT of the App `app`, its key read by the one read that may, and dropped.
-fn jwt_of(ctx: &Ctx, vault: &str, key: &str, app: &str) -> Result<Zeroizing<String>, String> {
+/// The JWT of the App `app`, the key this flow keeps for it read by the one read that may, and
+/// dropped. No other key is ever read here: a tool line can't point this at one.
+fn jwt_of(ctx: &Ctx, app: &str) -> Result<Zeroizing<String>, String> {
     if crate::fence::FENCED {
         return Err("A test build of purlis doesn't talk to GitHub.".to_owned());
     }
-    let vault = cmd::provider(ctx, vault).map_err(|e| e.message.to_string())?;
-    let pem =
-        Zeroizing::new(cmd::read_to_mint(ctx, &vault, key).map_err(|e| e.message.to_string())?);
+    let vault = cmd::provider(ctx, VAULT).map_err(|e| e.message.to_string())?;
+    let pem = Zeroizing::new(
+        cmd::read_to_mint(ctx, &vault, &key_of(app)).map_err(|e| e.message.to_string())?,
+    );
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?
