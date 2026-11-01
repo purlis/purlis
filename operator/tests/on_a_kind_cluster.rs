@@ -2732,11 +2732,27 @@ async fn doctor_needs_only_reads_and_says_what_a_reader_may_not_apply() {
 
 /// The claim `name`'s statement's `pod:` line, once the operator vouches for its runner.
 async fn vouched_pod(claims: &Api<Claim>, name: &str) -> (String, String) {
+    // What the claim said, each time it changed: a failed test's output shows why it waited.
+    let said = std::cell::RefCell::new(String::new());
     eventually(
         &format!("the operator vouches for {name}'s runner"),
         Duration::from_secs(300),
         || async {
-            let statement = claims.get(name).await.ok()?.status?.link_key?.statement;
+            let held = claims.get(name).await.ok()?;
+            let conditions = held.status.as_ref().map(|status| {
+                status
+                    .conditions
+                    .iter()
+                    .map(|c| format!("{}={} {}: {}", c.type_, c.status, c.reason, c.message))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            });
+            let now = conditions.unwrap_or_default();
+            if *said.borrow() != now {
+                println!("{name} says: {now}");
+                said.replace(now);
+            }
+            let statement = held.status?.link_key?.statement;
             let pod = statement
                 .lines()
                 .find_map(|line| line.strip_prefix("pod: "))?

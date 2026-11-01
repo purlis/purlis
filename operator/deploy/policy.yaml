@@ -647,6 +647,9 @@ spec:
         !has(object.spec.volumeClaimTemplates[0].spec.dataSource) &&
         !has(object.spec.volumeClaimTemplates[0].spec.dataSourceRef) &&
         !has(object.spec.volumeClaimTemplates[0].spec.selector) &&
+        !has(object.spec.volumeClaimTemplates[0].metadata.labels) &&
+        !has(object.spec.volumeClaimTemplates[0].metadata.annotations) &&
+        !has(object.spec.volumeClaimTemplates[0].spec.volumeAttributesClassName) &&
         !has(object.spec.volumeClaimTemplates[0].spec.volumeMode))))
       message: >-
         purlis's cluster operator claims a purlis pool's warm pool, with a kept volume at most and

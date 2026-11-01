@@ -165,7 +165,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
             (
                 "admissionregistration.k8s.io",
                 "validatingadmissionpolicies",
-                "purlis-forge",
+                "purlis-claims-use-their-pool,purlis-runner-namespaces,purlis-forge",
                 "get",
             ),
             (
@@ -776,6 +776,12 @@ fn spending_an_app_key_takes_use_on_it() {
     assert_eq!(strings(&binding["spec"]["validationActions"]), ["Deny"]);
 }
 
+/// Whether `text` names `name`, and not a longer word that starts with it.
+fn names(text: &str, name: &str) -> bool {
+    text.match_indices(name)
+        .any(|(at, _)| !text[at + name.len()..].starts_with(char::is_alphanumeric))
+}
+
 /// The spec schema of the pinned upstream's definition of `kind`.
 fn upstream_definition(kind: &str) -> Value {
     let vendored = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -847,14 +853,14 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
     // here and is looked at when the pin moves.
     for field in upstream_spec_fields("SandboxClaim") {
         assert!(
-            validations[1].contains(&field),
+            names(&validations[1], &field),
             "{field}: {}",
             validations[1]
         );
     }
     for field in upstream_spec_fields("SandboxTemplate") {
         assert!(
-            field == "podTemplate" || validations[3].contains(&field),
+            field == "podTemplate" || names(&validations[3], &field),
             "{field}: {}",
             validations[3]
         );
@@ -880,15 +886,18 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
         .filter(|field| field != "initContainers")
     {
         assert!(
-            validations[4].contains(&format!("variables.pod.{field}"))
-                || validations[5].contains(&format!("variables.pod.{field}"))
-                || validations[6].contains(&format!("variables.pod.{field}")),
+            names(&validations[4], &format!("variables.pod.{field}"))
+                || names(&validations[5], &format!("variables.pod.{field}"))
+                || names(&validations[6], &format!("variables.pod.{field}")),
             "the pod's {field}"
         );
     }
     for field in fields_of(&pod["securityContext"]["properties"]) {
         assert!(
-            validations[4].contains(&format!("variables.pod.securityContext.{field}")),
+            names(
+                &validations[4],
+                &format!("variables.pod.securityContext.{field}")
+            ),
             "the pod's securityContext.{field}"
         );
     }
@@ -903,14 +912,24 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
         ]
         .contains(&field.as_str());
         assert!(
-            set_by_it || validations[6].contains(&format!("c.{field}")),
+            set_by_it || names(&validations[6], &format!("c.{field}")),
             "a container's {field}"
         );
     }
     for field in fields_of(&container["securityContext"]["properties"]) {
         assert!(
-            validations[6].contains(&format!("c.securityContext.{field}")),
+            names(&validations[6], &format!("c.securityContext.{field}")),
             "a container's securityContext.{field}"
+        );
+    }
+    // A new kept volume's fields too: its size, how it is written and its class alone are free.
+    let volume = &upstream_definition("SandboxClaim")["properties"]["volumeClaimTemplates"]["items"]
+        ["properties"]["spec"]["properties"];
+    for field in fields_of(volume) {
+        assert!(
+            ["accessModes", "resources", "storageClassName"].contains(&field.as_str())
+                || names(&validations[1], &format!("spec.{field}")),
+            "a kept volume's {field}"
         );
     }
     // A renewal holds every one of them as it was, but a container's image and resources.
@@ -921,14 +940,17 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
         .to_owned();
     for field in fields_of(pod) {
         assert!(
-            renewal.contains(&format!("oldObject.spec.podTemplate.spec.{field}")),
+            names(
+                &renewal,
+                &format!("oldObject.spec.podTemplate.spec.{field}")
+            ),
             "the pod's {field}"
         );
     }
     for field in fields_of(container) {
         let may_differ = ["image", "name", "resources"].contains(&field.as_str());
         assert!(
-            may_differ || renewal.contains(&format!("o.{field}")),
+            may_differ || names(&renewal, &format!("o.{field}")),
             "a container's {field}"
         );
     }
