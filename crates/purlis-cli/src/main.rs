@@ -50,6 +50,7 @@ mod memory;
 mod permission;
 mod piece;
 mod pool;
+mod poolsetup;
 mod report;
 mod scan;
 mod secret;

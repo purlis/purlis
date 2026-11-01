@@ -2805,6 +2805,23 @@ impl Docker {
         }
     }
 
+    /// **Whether an engine answers this `docker` at all** (#4478): a listing Docker and Podman
+    /// both answer, and fail where nothing is behind them. It changes nothing.
+    pub fn answers(&self) -> Result<(), Refused> {
+        self.read(
+            &[
+                "container".into(),
+                "ls".into(),
+                "--quiet".into(),
+                "--no-trunc".into(),
+                "--filter".into(),
+                "id=0".into(),
+            ],
+            MOST_INSPECTED,
+        )
+        .map(|_| ())
+    }
+
     /// **Which engine this `docker` reaches** (#4166), by the id `docker info` prints for it.
     /// `None` where it prints none that reads as an id. A Podman has no such field and is
     /// refused.
