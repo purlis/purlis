@@ -1816,10 +1816,11 @@ impl HostLink {
         let SendHeld {
             most, within, late, ..
         } = held;
-        let started = std::time::Instant::now();
         let asked = ask(Arc::clone(&self.client), transfer);
         let file = file.map(Path::to_path_buf);
-        let sent = self.transfer(transfer, within, async move {
+        let graced = tokio::time::Instant::now() + within + ANSWER_WITHIN;
+        // Past `graced`, so this send's own clock says it ran out, not this bound.
+        let sent = self.transfer(transfer, within + ANSWER_WITHIN, async move {
             let writing = async move {
                 let mut stream = stream.await.map_err(|_| no_code_stream())?;
                 if let Some(file) = file {
@@ -1837,22 +1838,36 @@ impl HostLink {
             // The host's answer comes as soon as it refuses, stream or none: a refusal is
             // said at once, never after the bound on a transfer.
             tokio::pin!(asked, writing);
+            // This machine's own clock, started before the host's: `Ok(None)` is this send's
+            // wait ending it, and nothing a runner says is. Whatever answered first says itself
+            // (#4398). Bytes all sent by then are given the same grace as any answer, so a send
+            // the host finishes just after its time still counts.
+            let time_up = tokio::time::sleep(within);
+            tokio::pin!(time_up);
             tokio::select! {
+                biased;
                 answered = &mut asked => {
                     let answer = answered.map_err(code_refused)?;
                     writing.await?;
-                    Ok(answer)
+                    Ok(Some(answer))
                 }
                 written = &mut writing => {
                     written?;
-                    asked.await.map_err(code_refused)
+                    match tokio::time::timeout_at(graced, &mut asked).await {
+                        Ok(answered) => answered.map(Some).map_err(code_refused),
+                        Err(_) => Ok(None),
+                    }
                 }
+                () = &mut time_up => Ok(None),
             }
         });
-        sent.map_err(|why| match late {
-            Some(hit) if started.elapsed() >= within => self.limit_said(hit),
-            _ => why,
-        })
+        match sent? {
+            Some(answer) => Ok(answer),
+            None => Err(late.map_or_else(
+                || "the host did not finish moving the code in time".to_owned(),
+                |hit| self.limit_said(hit),
+            )),
+        }
     }
 
     /// One transfer the host writes: `ask` names it, and the bytes the host writes on the code

@@ -1022,7 +1022,10 @@ pub fn add_cluster(
         within,
         ASKED_EVERY,
     )
-    .map_err(|why| Refused::Other(why.to_string()));
+    .map_err(|why| match why {
+        crate::clusterpool::Refused::WaitRanOut(said) => Refused::WaitRanOut(said),
+        other => Refused::Other(other.to_string()),
+    });
     let kept = paired.and_then(|paired| {
         let kept = runners::ClusterKept {
             name: pool.name().to_owned(),
