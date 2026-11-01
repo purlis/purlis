@@ -4562,7 +4562,11 @@ fn confirmed_in_the_window(config: &std::path::Path, pool: &str, name: &str) -> 
 
 /// A runner is never Windows, and no window line reaches one from there.
 #[cfg(not(unix))]
-fn confirmed_in_the_window(_config: &std::path::Path, pool: &str, name: &str) -> Result<(), String> {
+fn confirmed_in_the_window(
+    _config: &std::path::Path,
+    pool: &str,
+    name: &str,
+) -> Result<(), String> {
     Err(format!(
         "signing '{name}' in on pool {pool} from here is confirmed in the purlis window, which \
          this command cannot reach on this system, so nothing was started. Sign it in from its \
