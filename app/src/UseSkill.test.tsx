@@ -573,3 +573,20 @@ describe("the Skills chip on a chat's pane", () => {
     expect(Object.keys(result.current[0])).toEqual(["7"]);
   });
 });
+
+describe("Use on a skill of the chat's own program (#4477)", () => {
+  it("types the skill the Skills view's Use asked for", () => {
+    const onUse = vi.fn();
+    render(
+      <UseSkill
+        chat="main"
+        picks="superpowers:brainstorming"
+        skills={skills([skill("deploy")])}
+        busy={false}
+        onUse={onUse}
+        onCancel={() => undefined}
+      />,
+    );
+    expect(onUse).toHaveBeenCalledWith("superpowers:brainstorming", []);
+  });
+});
