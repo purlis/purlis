@@ -52,6 +52,8 @@ pub enum UpdateKind {
     RootUpdateRefused,
     /// A chat asked the person to take its browser over, and the browser ended first (#2015).
     BrowserAskEnded,
+    /// A task ended with its question unanswered (#4556).
+    QuestionClosed,
 }
 
 impl From<UpdateKind> for Kind {
@@ -68,6 +70,7 @@ impl From<UpdateKind> for Kind {
             UpdateKind::CommitRefused => Kind::CommitRefused,
             UpdateKind::RootUpdateRefused => Kind::RootUpdateRefused,
             UpdateKind::BrowserAskEnded => Kind::BrowserAskEnded,
+            UpdateKind::QuestionClosed => Kind::QuestionClosed,
         }
     }
 }
@@ -86,6 +89,7 @@ impl From<Kind> for UpdateKind {
             Kind::CommitRefused => UpdateKind::CommitRefused,
             Kind::RootUpdateRefused => UpdateKind::RootUpdateRefused,
             Kind::BrowserAskEnded => UpdateKind::BrowserAskEnded,
+            Kind::QuestionClosed => UpdateKind::QuestionClosed,
         }
     }
 }
@@ -366,6 +370,7 @@ mod tests {
             UpdateKind::RefusedAway,
             UpdateKind::SmartClose,
             UpdateKind::BrowserAskEnded,
+            UpdateKind::QuestionClosed,
         ] {
             assert_eq!(UpdateKind::from(Kind::from(kind)), kind);
         }

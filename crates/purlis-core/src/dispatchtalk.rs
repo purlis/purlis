@@ -36,6 +36,12 @@
 //! never carries the person's answer: that stays in memory, so a restart before the task has
 //! it asks again, and nothing in a file reads as the person's word.
 //!
+//! **It reaches the person by itself where nobody handles it** ([`Talk::look`]): at once where
+//! its asking chat has closed or crashed, and otherwise [`A_QUESTION_WAITS_SECS`] after that
+//! chat had a turn in which it was handed over, so a stuck turn is not counted against it. A
+//! nested task's question goes one level up, and passed on it goes straight to the person as
+//! one item, labelled with its chain. It is closed everywhere when its task ends.
+//!
 //! The asking chat answers it or **passes it on** ([`Talk::pass_on`]): the question reaches the
 //! person in the task's own words, with at most a short note marked as the asking chat's. What
 //! must always be passed on is a written rule in the briefing and in the question as it is
@@ -245,6 +251,8 @@ pub struct Talk {
     /// The record did not read, or was written by a build that kept no questions: a task brought
     /// back may have lost one, and is told so.
     questions_unread: bool,
+    /// The questions closed unanswered and not said yet ([`Talk::take_closed_unanswered`]).
+    closed_unanswered: Vec<ClosedUnanswered>,
     /// What became of each chat's messages, and its instruction numbers (#3902, #3904): kept
     /// on disk where [`Talk::keep_at`] says, so a restart of the app forgets neither.
     messages: Sent,
@@ -315,6 +323,17 @@ pub enum Reached {
     NoReply,
     /// Its asking chat closed or crashed.
     AskerGone,
+}
+
+/// **How long an asking chat has with a question**, from the turn it was handed to it, before
+/// the question reaches the person by itself (ADR 0107).
+pub const A_QUESTION_WAITS_SECS: u64 = 100;
+
+/// A question closed unanswered because its task ended ([`Talk::take_closed_unanswered`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClosedUnanswered {
+    pub task: u32,
+    pub number: u32,
 }
 
 /// **A question waiting on the person** ([`Talk::reached`]).
@@ -529,6 +548,11 @@ struct Question {
 }
 
 impl Question {
+    /// Unanswered, and still its asking chat's to answer or pass on.
+    fn waits_on_its_asking_chat(&self) -> bool {
+        self.answer.is_none() && self.standing == Standing::WithAskingChat
+    }
+
     /// What is written of it, for a task that asks `asker` ([`KeptQuestion`]).
     fn kept(&self, asker: u32) -> KeptQuestion {
         KeptQuestion {
@@ -991,6 +1015,95 @@ impl Talk {
         Ok(number)
     }
 
+    /// **The messages named `names` were handed to a turn at `now`** (#4556): a question among
+    /// them has been seen by its asking chat, and its time starts. Its file is gone.
+    pub fn handed(&mut self, names: &[String], now: u64) {
+        let mut any = false;
+        for question in self.questions.values_mut() {
+            let named = question
+                .file
+                .as_deref()
+                .and_then(Path::file_name)
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| names.iter().any(|one| one == name));
+            if named {
+                question.file = None;
+                question.handed_at.get_or_insert(now);
+                any = true;
+            }
+        }
+        if any {
+            self.save();
+        }
+    }
+
+    /// The asking chats of every question still with its asking chat: which of them have gone
+    /// is the app's to say ([`Talk::look`]).
+    pub fn askers(&self) -> HashSet<u32> {
+        self.questions
+            .iter()
+            .filter(|(_, question)| question.waits_on_its_asking_chat())
+            .filter_map(|(task, _)| self.known.get(task).map(|known| known.asker))
+            .collect()
+    }
+
+    /// **Looks at each question still with its asking chat, at `now`** (#4556, ADR 0107): one
+    /// whose asking chat is among `gone` reaches the person at once, whether or not that chat
+    /// saw it, and one [`A_QUESTION_WAITS_SECS`] past the turn it was handed to reaches them too.
+    /// **A question no turn has been handed waits**: a stuck turn is not counted against it.
+    /// Answers each that moved. Once it has reached the person nothing moves it again: there is
+    /// no time limit and no automatic answer.
+    pub fn look(&mut self, now: u64, gone: &HashSet<u32>) -> Vec<(u32, Reached)> {
+        let mut moved = Vec::new();
+        for (task, question) in &mut self.questions {
+            if !question.waits_on_its_asking_chat() {
+                continue;
+            }
+            let asker_gone = self
+                .known
+                .get(task)
+                .is_some_and(|known| gone.contains(&known.asker));
+            let waited = question
+                .handed_at
+                .is_some_and(|at| now.saturating_sub(at) >= A_QUESTION_WAITS_SECS);
+            let why = if asker_gone {
+                Reached::AskerGone
+            } else if waited {
+                Reached::NoReply
+            } else {
+                continue;
+            };
+            question.standing = Standing::ReachedPerson {
+                why,
+                at: now,
+                note: None,
+            };
+            moved.push((*task, why));
+        }
+        if !moved.is_empty() {
+            self.save();
+        }
+        moved
+    }
+
+    /// The questions closed unanswered because their task ended, since this was last asked: each
+    /// is said once ([`ClosedUnanswered`]).
+    pub fn take_closed_unanswered(&mut self) -> Vec<ClosedUnanswered> {
+        std::mem::take(&mut self.closed_unanswered)
+    }
+
+    /// `task`'s question, gone because the task ended: said once where nobody had answered it.
+    fn close_question(&mut self, task: u32) {
+        if let Some(question) = self.questions.remove(&task)
+            && question.answer.is_none()
+        {
+            self.closed_unanswered.push(ClosedUnanswered {
+                task,
+                number: question.number,
+            });
+        }
+    }
+
     /// **Every question that has reached the person and waits on them, oldest first**: what
     /// the Inbox and the ✋ are read from, and the one place that says so.
     pub fn reached(&self) -> Vec<ReachedYou> {
@@ -1160,6 +1273,10 @@ impl Talk {
             .get_mut(&task)
             .filter(|question| question.answer.is_none() && !question.shown)?;
         question.shown = true;
+        // A wait of the asking chat's has it: that turn has seen it (#4556).
+        question
+            .handed_at
+            .get_or_insert(secs(std::time::SystemTime::now()));
         let text = question.text.clone();
         self.save();
         Some(text)
@@ -1490,7 +1607,7 @@ impl Talk {
 
     /// `task` has reported: a question it had open is closed, answered or not.
     pub fn close(&mut self, task: u32) {
-        self.questions.remove(&task);
+        self.close_question(task);
         // It will ask nothing again: an answer is not told it may be asked again.
         self.restored.remove(&task);
         // An answer of the person's it had not been handed would reach no turn of the work.
@@ -1554,7 +1671,7 @@ impl Talk {
 
     /// Chat `chat` has closed: nothing is remembered of it.
     pub fn forget(&mut self, chat: u32) {
-        self.questions.remove(&chat);
+        self.close_question(chat);
         if let Some(known) = self.known.remove(&chat) {
             self.unclaimed.remove(&known.key);
         }
@@ -2247,6 +2364,8 @@ pub fn removal_said(word: &RemovalWord) -> String {
 
 #[cfg(test)]
 mod pass_on_tests;
+#[cfg(test)]
+mod reach_tests;
 #[cfg(test)]
 mod restart_tests;
 #[cfg(test)]

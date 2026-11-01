@@ -514,9 +514,14 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
             })
         }
         // The messages waiting for this chat that its turn read, and no other chat's.
-        What::TookMessages { names } => task(Answered::TookMessages {
-            taken: purlis_core::dispatchtalk::took(held.root(), asker, names),
-        }),
+        What::TookMessages { names } => {
+            let taken = purlis_core::dispatchtalk::took(held.root(), asker, names);
+            // A question among them has been seen by its asking chat: its time starts (#4556).
+            ledger(held)
+                .talk
+                .handed(&taken, now_secs(SystemTime::now()));
+            task(Answered::TookMessages { taken })
+        }
     }
 }
 
@@ -1464,7 +1469,8 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         return Err(dispatchtalk::ALREADY_REPORTED.to_owned());
     }
     let asker = from.chat;
-    if seen(held, asker).ended {
+    let asker_gone = seen(held, asker).ended;
+    if asker_gone && kind != Kind::Question {
         return Err(format!(
             "'{}', the chat that asked for this task, has closed, so nobody is left to read a \
              {}. Finish what you can and send the task's report, which is kept for its \
@@ -1490,12 +1496,24 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         if kind == Kind::Question && ledger.talk.asks(sender).is_some() {
             return Err(dispatchtalk::ALREADY_ASKING.to_owned());
         }
-        ledger.talk.count(asker, sender, &limits, Instant::now())?;
-        let file = dispatchtalk::leave(held.root(), asker, &message).map_err(kept)?;
-        if kind == Kind::Question {
+        if asker_gone {
+            // Nobody is left to see it, so it is the person's from here (#4556).
             ledger.talk.known_as(sender, &sender_key, asker);
-            ledger.talk.ask(sender, &text, Some(file))?;
-            ledger.landed(asker, Landed::Question(sender));
+            ledger.talk.ask(sender, &text, None)?;
+            ledger.talk.reach(
+                sender,
+                dispatchtalk::Reached::AskerGone,
+                None,
+                now_secs(SystemTime::now()),
+            );
+        } else {
+            ledger.talk.count(asker, sender, &limits, Instant::now())?;
+            let file = dispatchtalk::leave(held.root(), asker, &message).map_err(kept)?;
+            if kind == Kind::Question {
+                ledger.talk.known_as(sender, &sender_key, asker);
+                ledger.talk.ask(sender, &text, Some(file))?;
+                ledger.landed(asker, Landed::Question(sender));
+            }
         }
         // Its last note is what its list row shows (#3905).
         if kind == Kind::Note {
@@ -1523,6 +1541,9 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         // turn's end was held for this task, it is the one who must act and the person the
         // one who can see that (#1491): this task no longer counts toward its wait.
         woken(held, Wake::ToldOrSettled(asker));
+        if asker_gone {
+            held.chats().asks_may_have_moved();
+        }
     }
     let to = held
         .chats()
@@ -1621,7 +1642,7 @@ fn route(held: &Held, chat: u32, text: &str) -> Answer {
     let Ok(from) = dispatchtalk::up(record.as_ref()) else {
         return task(Answered::ToThePerson);
     };
-    if !talks(held, chat, from) || seen(held, from.chat).ended {
+    if !talks(held, chat, from) {
         return task(Answered::ToThePerson);
     }
     if held.tasks().ledger().talk.asks(chat).is_some() {
@@ -1685,7 +1706,7 @@ pub fn await_answer(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer
         }
         let asker_gone = seen(&held, from.chat).ended;
         let hung_up = held.hooks().asker_gone(connection);
-        let ledger = tasks.ledger();
+        let mut ledger = tasks.ledger();
         if let Some(given) = ledger.talk.answered(sender) {
             return task(Answered::Replied {
                 what: Reply::Answered {
@@ -1699,6 +1720,13 @@ pub fn await_answer(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer
             return no("this chat has no question waiting for an answer".to_owned());
         }
         if asker_gone {
+            // The question is the person's from here, and this task's turn may end (#4556).
+            ledger.talk.reach(
+                sender,
+                dispatchtalk::Reached::AskerGone,
+                None,
+                now_secs(SystemTime::now()),
+            );
             return task(Answered::Replied {
                 what: Reply::AskerGone,
             });
@@ -1757,6 +1785,57 @@ pub fn question_of(held: &Held, task: u32) -> Option<TaskQuestion> {
         number,
         question,
     })
+}
+
+/// **Moves each task's question nobody has handled on to the person** (#4556, ADR 0107): the
+/// one look behind the clock and a chat's end. What `Talk::look` decides from the app's own
+/// record of who has gone. And each question closed unanswered since the last look is said once,
+/// as one Update and one line of the log.
+pub fn look_at_questions(held: &Held) {
+    let askers = ledger(held).talk.askers();
+    let gone: std::collections::HashSet<u32> = askers
+        .into_iter()
+        .filter(|asker| seen(held, *asker).ended)
+        .collect();
+    let now = now_secs(SystemTime::now());
+    let (moved, closed) = {
+        let mut ledger = ledger(held);
+        (ledger.talk.look(now, &gone), ledger.talk.take_closed_unanswered())
+    };
+    for one in &closed {
+        question_closed(held, *one, now);
+    }
+    if !moved.is_empty() || !closed.is_empty() {
+        held.rows_changed();
+        held.tasks().changed();
+        held.chats().asks_may_have_moved();
+    }
+}
+
+/// The one Update and log line for a question closed unanswered, because its task ended.
+fn question_closed(held: &Held, closed: dispatchtalk::ClosedUnanswered, now: u64) {
+    use purlis_core::inboxupdates::{Kind, Store, Update};
+    let name = held.chats().shown_name(closed.task);
+    let says = name.as_deref().map_or_else(
+        || "A task ended before its question was answered.".to_owned(),
+        |name| format!("'{name}' ended before its question was answered."),
+    );
+    tracing::info!("purlis: {says}");
+    let update = Update {
+        key: format!("task-question:{}:{}", closed.task, closed.number),
+        kind: Kind::QuestionClosed,
+        at: now,
+        session: Some(closed.task),
+        chain: name.into_iter().collect(),
+        says,
+        read: false,
+        dismissed: false,
+    };
+    if let Some(store) = Store::here()
+        && let Err(why) = store.note(held.root(), vec![update], now)
+    {
+        tracing::warn!("purlis: a closed question's Update was not kept ({why})");
+    }
 }
 
 /// **Every task question waiting on the person**, oldest first (ADR 0107): each one the task
@@ -2857,6 +2936,8 @@ pub fn moved(held: &Held, chat: u32) {
     // And where its program has ended: a task of its that was paused on a question to it has
     // nobody left to answer, and the chats above it may have waited on it.
     if seen(held, chat).ended {
+        // A question put to it reaches the person at once (#4556).
+        look_at_questions(held);
         for (task, _) in held.chats().tasks_of(chat) {
             settle(held, task);
         }
