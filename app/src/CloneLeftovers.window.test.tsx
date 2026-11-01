@@ -3,14 +3,29 @@
 
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render as renderBare, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { findOnCard } from "./actionResult.testkit";
 import { cloneRepos, forgetRepoClones } from "./repoClones";
 import { forgetThisLaunch } from "./regions";
-import { chipName, showTheExplorer, workspaceChips, workspaceInFront } from "./test-strips";
+import {
+  chipName,
+  showTheChanges,
+  showTheExplorer,
+  workspaceChips,
+  workspaceInFront,
+} from "./test-strips";
 
 /**
  * **What a clone leaves on the window once it has ended**: the row in the Repos view and the
@@ -68,7 +83,7 @@ function core(
           personas: ["steward"],
           persona: "steward",
           unfiled: [],
-          workspaces: ["alpha", "beta", ...made].map((name) => ({
+          workspaces: [...new Set(["alpha", "beta", ...made])].map((name) => ({
             name,
             path: `${PLANE}/workspaces/${name}`,
             vision: "",
@@ -206,5 +221,117 @@ describe("a repo that landed while its workspace was not focused", () => {
 
     expect(await screen.findByTestId("clone-newcomer")).toBeInTheDocument();
     expect(screen.queryByTestId("absent-newcomer")).toBeNull();
+  });
+});
+
+/** Makes the workspace gamma in its dialog, with `repos` picked. */
+async function makeGamma(repos: string[]) {
+  await waitFor(() => chipOf("alpha"));
+  fireEvent.contextMenu(chipOf("alpha"));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "New workspace…" }));
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.type(within(dialog).getByLabelText("Name"), "gamma");
+  for (const repo of repos)
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: repo }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+  await waitFor(() => expect(workspaceInFront()).toBe("gamma"));
+  await showTheExplorer();
+}
+
+const NO_ACCESS = "api: clone failed — no access.";
+
+describe("a new workspace's repo whose clone failed", () => {
+  it("keeps a row saying why, with a Retry that clones it", async () => {
+    const { clones } = core({ fails: { api: { said: NO_ACCESS, times: 1 } } });
+    render(<App />);
+
+    await makeGamma(["api"]);
+
+    const row = await screen.findByTestId("absent-api");
+    expect(await within(row).findByRole("alert")).toHaveTextContent(NO_ACCESS);
+    expect(screen.queryByText("No repos in this workspace")).toBeNull();
+    await userEvent.click(await within(row).findByRole("button", { name: "Retry api" }));
+
+    expect(await screen.findByTestId("clone-api")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId("absent-api")).toBeNull());
+    expect(clones()).toEqual(["api", "api"]);
+  });
+
+  it("says so on its row in the Changes view too", async () => {
+    core({ fails: { api: { said: NO_ACCESS, times: 1 } } });
+    render(<App />);
+
+    await makeGamma(["api"]);
+
+    const bar = await showTheChanges();
+    expect(await within(bar).findByTestId("repo-api")).toHaveTextContent(NO_ACCESS);
+  });
+
+  it("is offered no Remove, since the workspace does not name it, and Dismiss clears the row", async () => {
+    core({ fails: { api: { said: NO_ACCESS, times: 1 } } });
+    render(<App />);
+
+    await makeGamma(["api"]);
+
+    const row = await screen.findByTestId("absent-api");
+    expect(within(row).queryByRole("button", { name: /^Remove/ })).toBeNull();
+    await userEvent.click(await within(row).findByRole("button", { name: "Dismiss api" }));
+
+    await waitFor(() => expect(screen.queryByTestId("absent-api")).toBeNull());
+    expect(await screen.findAllByText("No repos in this workspace")).not.toEqual([]);
+  });
+
+  it("offers Clone and Dismiss on its row's menu", async () => {
+    core({ fails: { api: { said: NO_ACCESS, times: 1 } } });
+    render(<App />);
+
+    await makeGamma(["api"]);
+
+    fireEvent.contextMenu(within(await screen.findByTestId("absent-api")).getByText("api"));
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.getAttribute("aria-label")),
+    ).toEqual(["Clone", "Dismiss"]);
+  });
+
+  it("does not come back in a workspace made again under the same name", async () => {
+    core({ fails: { api: { said: NO_ACCESS, times: 1 } } });
+    render(<App />);
+    await makeGamma(["api"]);
+    await screen.findByTestId("absent-api");
+
+    await focus("alpha");
+    await makeGamma([]);
+
+    await waitFor(() => expect(screen.queryByTestId("absent-api")).toBeNull());
+  });
+});
+
+describe("a new workspace's repo the person stopped", () => {
+  it("leaves no row, and the chip keeps its Retry", async () => {
+    const { clones } = core({ holds: ["api"] });
+    render(<App />);
+
+    await makeGamma(["api"]);
+    await waitFor(() => expect(clones()).toEqual(["api"]));
+    const row = await screen.findByTestId("absent-api");
+    await userEvent.click(await within(row).findByRole("button", { name: "Cancel cloning api" }));
+
+    await waitFor(() => expect(screen.queryByTestId("absent-api")).toBeNull());
+    expect(await findOnCard("gamma", "Stopped cloning api")).toHaveTextContent("Retry");
+  });
+});
+
+describe("a workspace that names repos and has none cloned", () => {
+  it("does not say it has no repos above the ones not cloned here", async () => {
+    core({ named: { alpha: ["charter"] } });
+    render(<App />);
+
+    const explorer = await focus("alpha");
+
+    expect(await within(explorer).findByTestId("absent-charter")).toBeInTheDocument();
+    expect(within(explorer).queryByText("No repos in this workspace")).toBeNull();
   });
 });
