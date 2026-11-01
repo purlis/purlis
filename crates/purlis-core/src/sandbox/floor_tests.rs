@@ -2049,9 +2049,14 @@ fn a_link_on_the_way_to_a_held_path_is_held_by_its_own_name() {
         reach: Reach::AndBelow,
         any_case: false,
     }];
-    let profile =
-        seatbelt::floor_profile(&denied, &[], &Own::default(), &[], None).expect("a profile");
-    for link in [home.join(".local"), home.join("second/hop")] {
+    let profile = seatbelt::floor_profile(&denied, &[], &seatbelt::Own::default(), &[], None)
+        .expect("a profile");
+    // The folder holding a link too: moved whole, another of that name could take its place.
+    for link in [
+        home.join(".local"),
+        home.join("second/hop"),
+        home.join("second"),
+    ] {
         assert!(
             profile.contains(&format!("(literal \"{}\")", link.display())),
             "{} is not held: {profile}",
@@ -2069,27 +2074,33 @@ fn a_link_on_the_way_to_a_held_path_cannot_be_moved_away_at_the_floor() {
     let dir = tempfile::tempdir().expect("a home");
     let home = dir.path().canonicalize().expect("a real folder");
     std::fs::create_dir_all(home.join("real/inner")).expect("a folder");
-    std::os::unix::fs::symlink(home.join("real"), home.join(".local")).expect("a link");
+    std::fs::create_dir(home.join("second")).expect("a folder");
+    std::os::unix::fs::symlink(home.join("real"), home.join("second/hop")).expect("a link");
     let denied = [seatbelt::Denial {
         class: Class::Integrity,
-        path: home.join(".local/inner/auth.json"),
+        path: home.join("second/hop/inner/auth.json"),
         access: Access::Write,
         named: None,
         reach: Reach::AndBelow,
         any_case: false,
     }];
-    let profile =
-        seatbelt::floor_profile(&denied, &[], &Own::default(), &[], None).expect("a profile");
+    let profile = seatbelt::floor_profile(&denied, &[], &seatbelt::Own::default(), &[], None)
+        .expect("a profile");
+    let script = format!(
+        "/bin/mv '{from}/hop' '{from}/x'; a=$?; /bin/mv '{from}' '{to}'; b=$?; \
+         echo through > '{from}/hop/through'; c=$?; [ $a -ne 0 ] && [ $b -ne 0 ] && [ $c -eq 0 ]",
+        from = home.join("second").display(),
+        to = home.join("moved").display(),
+    );
     let ran = crate::forklock::output(
         std::process::Command::new("/usr/bin/sandbox-exec")
-            .args(["-p", &profile, "/bin/mv"])
-            .arg(home.join(".local"))
-            .arg(home.join("moved")),
+            .args(["-p", &profile, "/bin/sh", "-c", &script]),
     )
     .expect("sandbox-exec runs");
-    assert!(!ran.status.success(), "the link was moved");
     assert!(
-        std::fs::symlink_metadata(home.join(".local")).is_ok_and(|meta| meta.is_symlink()),
-        "the link is where it was"
+        ran.status.success(),
+        "the link and its folder stay, and what goes through it is written: {}",
+        String::from_utf8_lossy(&ran.stderr)
     );
+    assert!(home.join("real/through").exists());
 }

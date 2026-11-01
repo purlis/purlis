@@ -138,10 +138,11 @@ pub fn held_names(path: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// **The links on the way to `path`, each by its own name**: a folder above it, or above what one
-/// of those points at, that is a link, and `path` itself where it is one. A rule resolved through a
-/// link holds what it points at and not the link, which could be replaced by one pointing elsewhere
-/// (measured), so that `path` no longer leads to what is denied.
+/// **The links on the way to `path`, each by its own name, with every folder above each**: a folder
+/// above it, or above what one of those points at, that is a link, and `path` itself where it is
+/// one. A rule resolved through a link holds what it points at and not the link, which could be
+/// replaced by one pointing elsewhere (measured), so that `path` no longer leads to what is denied;
+/// and a folder above the link could be moved away whole, with another put in its place.
 fn links_on_the_way(path: &Path) -> Vec<PathBuf> {
     /// More than the kernel follows, so a loop of links ends here too.
     const MOST: usize = 64;
@@ -161,7 +162,15 @@ fn links_on_the_way(path: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    links
+    let mut held: Vec<PathBuf> = Vec::new();
+    for link in &links {
+        for name in link.ancestors().filter(|name| name.parent().is_some()) {
+            if !held.iter().any(|one| one == name) {
+                held.push(name.to_path_buf());
+            }
+        }
+    }
+    held
 }
 
 /// The rules that deny `denial`: under each name it is held by, as itself and as its target

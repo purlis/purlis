@@ -801,7 +801,7 @@ fn a_chats_refused_mints_are_paced_and_each_still_goes_to_the_window() {
     let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let desktop = a_desktop_minting(
         &there,
-        Arc::new(|_, _| None),
+        a_window_asking_until_input_ends(),
         Arc::new({
             let asked = Arc::clone(&asked);
             move |_, _| {
@@ -837,6 +837,14 @@ fn a_chats_refused_mints_are_paced_and_each_still_goes_to_the_window() {
     );
 }
 
+/// A window that holds its Ask open until the run's input ends, as one asking the person does.
+fn a_window_asking_until_input_ends() -> Deciding {
+    Arc::new(|_: &brokered::Ask, mut reader: Box<dyn BufRead + Send>| {
+        let _ = std::io::copy(&mut reader, &mut std::io::sink());
+        None
+    })
+}
+
 /// A run that hangs up once the person is asked withdraws the Ask, which costs them as a refusal
 /// does: the next is refused here, with nobody asked again.
 #[test]
@@ -845,7 +853,7 @@ fn a_run_that_hangs_up_once_asked_paces_the_next_ask() {
     let there = Arc::new(AtomicBool::new(true));
     let desktop = a_desktop_minting(
         &there,
-        Arc::new(|_, _| None),
+        a_window_asking_until_input_ends(),
         Arc::new(|_, _| Some(Err("the claim or its pool is stopped".to_owned()))),
     );
     desktop.relaying.of_project_at(project.path());

@@ -557,7 +557,7 @@ fn read(root: &Path) -> OnDisk {
         .unwrap_or_default()
 }
 
-/// Reads this machine's file, changes it and writes it back, under purlis's lock on its folder.
+/// Reads this machine's file, changes it and writes it back, under purlis's named lock for them.
 fn change(root: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
     let file = path(root);
     if file.as_os_str().is_empty() {

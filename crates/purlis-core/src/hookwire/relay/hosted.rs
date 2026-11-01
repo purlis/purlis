@@ -110,6 +110,10 @@ pub fn in_cluster(
     None
 }
 
+/// What a pace left by a run hanging up follows: an Ask raised and withdrawn costs the person as a
+/// refusal does. One that hung up before it went to the window costs nothing.
+const HUNG_UP: &str = "the run hung up";
+
 /// What the asker of `tool` is told where the window refused a run the cluster refused too, moments
 /// ago, or the run hung up once the person was asked.
 fn asked_too_soon_said(tool: &str, left: Duration) -> String {
@@ -407,11 +411,9 @@ impl Relaying {
                     if input.gone() && !told_gone {
                         told_gone = true;
                         self.tell(&Heard::InputEnded { of: id });
-                        // Asked and gone: raising and withdrawing an Ask costs the person as a
-                        // refusal costs them. One that hung up before asking costs nothing.
                         if cluster_refused && !paced_now {
                             paced_now = true;
-                            self.asks_paced.refused(&paced, "the run hung up");
+                            self.asks_paced.refused(&paced, HUNG_UP);
                             drop(turn.take());
                         }
                     }
@@ -470,6 +472,13 @@ impl Relaying {
                         .and_then(|()| writer.flush())
                         .is_err()
                     {
+                        // Gone for good, however it closed: told, and paced, as a hang-up is.
+                        if !told_gone {
+                            self.tell(&Heard::InputEnded { of: id });
+                        }
+                        if cluster_refused && !paced_now {
+                            self.asks_paced.refused(&paced, HUNG_UP);
+                        }
                         break;
                     }
                 }
@@ -478,7 +487,12 @@ impl Relaying {
                     brokered::refused(writer, not_taken_said(&tool, &why));
                     break;
                 }
-                Replied::Ended => break,
+                Replied::Ended => {
+                    if cluster_refused && !paced_now && input.gone() {
+                        self.asks_paced.refused(&paced, HUNG_UP);
+                    }
+                    break;
+                }
                 _ => {}
             }
         }
