@@ -570,7 +570,8 @@ type Shape = {
   /** Its line is what its chat said, or that there is no message (#4550), so it is drawn whole
    *  over the lines it has, and the status line above it names the card. */
   message: boolean;
-  /** What its chat said, where its line is the reason it waits instead. */
+  /** What its chat said, or that there is no message, where its line is the reason it waits
+   *  instead. */
   said: string | undefined;
   /** It gets a box for why it is kept blocked, which its chat is told with the answer
    *  (#1987). */
@@ -617,8 +618,7 @@ function shapeOf(
       ask.source !== "dispatch" && ask.options.length > 0 && ask.answer.via !== "in-its-pane",
     reply,
     message,
-    said:
-      reply && !message && ask.last_message != null ? capMarks(ask.last_message).text : undefined,
+    said: reply && !message ? capMarks(ask.last_message ?? NO_MESSAGE).text : undefined,
     reason:
       (ask.answer.via === "sandbox-block" ||
         ask.answer.via === "browser" ||

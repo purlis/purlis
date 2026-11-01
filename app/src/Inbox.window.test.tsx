@@ -819,6 +819,16 @@ describe("answering in place", () => {
     expect(screen.getByText("Which branch?")).toBeTruthy();
   });
 
+  it("says once under the reason it also waits for that it has no message to show", () => {
+    core();
+    draw([QUESTION], {
+      whyOf: (session) => (session === 6 ? "its report has nowhere to go" : undefined),
+      asked: (session) => session === 6,
+    });
+    expect(screen.getByText("its report has nowhere to go")).toBeTruthy();
+    expect(screen.getAllByText(NO_MESSAGE)).toHaveLength(1);
+  });
+
   it("shows no message on a chat that asked nothing, whose card is its reason", () => {
     core();
     draw([{ ...QUESTION, last_message: "All done." }], {
