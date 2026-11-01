@@ -152,8 +152,9 @@ pub fn remove(
     let mut removed = None;
     let mut all_gone = true;
     for kept in of_it {
-        let one = runners::remove_locked(config_root, docker, kept.name(), unpair, &locked)?;
+        let mut one = runners::remove_locked(config_root, docker, kept.name(), unpair, &locked)?;
         all_gone &= one.forgotten;
+        one.earlier = removed.as_ref().and_then(runners::Removed::left);
         removed = Some(one);
     }
     if all_gone {

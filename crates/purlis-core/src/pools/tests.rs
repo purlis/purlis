@@ -2556,6 +2556,98 @@ fn a_follow_makes_nothing_on_another_engine() {
     assert_eq!(runners::runner_for(config.path(), "first").unwrap(), old);
 }
 
+/// **Removing a pool whose runner is on another engine touches nothing there** (#4325), and names
+/// what stays and how to remove it. The pool is forgotten, so one whose engine is gone for good
+/// can still be removed.
+#[test]
+fn a_pool_removed_while_another_engine_answers_names_what_stays_there() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    let kept = a_pool_added(config.path(), &fake, &ours);
+    fake.set("engine", "engine-b\n");
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let removed = remove(config.path(), &fake.docker(), "first", None)
+        .unwrap()
+        .unwrap();
+
+    assert!(!fake.file("log").contains(" rm"), "{}", fake.file("log"));
+    assert!(removed.forgotten);
+    let left = removed.left().unwrap();
+    assert!(
+        left.contains(&format!(
+            "docker container rm --force {}",
+            kept.made.container.as_str()
+        )),
+        "{left}"
+    );
+    assert!(
+        left.contains(&format!(
+            "docker volume rm --force {}",
+            kept.made.runner.volume()
+        )),
+        "{left}"
+    );
+    assert!(left.contains("stays"), "{left}");
+    assert!(runners::runner_for(config.path(), "first").is_err());
+    assert!(
+        !runners::pools(config.path())
+            .unwrap()
+            .iter()
+            .any(|pool| pool.name() == "first")
+    );
+}
+
+/// **A pool's draining runner on another engine is named too**, beside the pool's own (#4325).
+#[test]
+fn a_pool_removed_on_another_engine_names_each_of_its_runners() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    a_pool_draining(config.path(), &fake);
+    let names: Vec<String> = runners::read(config.path())
+        .unwrap()
+        .iter()
+        .map(|kept| kept.made.runner.volume())
+        .collect();
+    assert_eq!(names.len(), 2);
+    fake.set("engine", "engine-b\n");
+
+    let left = remove(config.path(), &fake.docker(), "first", None)
+        .unwrap()
+        .unwrap()
+        .left()
+        .unwrap();
+
+    for volume in names {
+        assert!(left.contains(&volume), "{left}");
+    }
+}
+
+/// **Where nothing says which engine answers, a removal touches nothing and keeps the row**
+/// (#4325): what is by name might be another engine's.
+#[test]
+fn a_runner_is_not_removed_where_no_engine_says_which_it_is() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    a_pool_added(config.path(), &fake, &ours);
+    fake.set("engine", "\n");
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let removed = remove(config.path(), &fake.docker(), "first", None)
+        .unwrap()
+        .unwrap();
+
+    assert!(!fake.file("log").contains(" rm"), "{}", fake.file("log"));
+    assert!(!removed.forgotten);
+    assert!(removed.left().unwrap().contains("can be removed again"));
+    assert!(runners::runner_for(config.path(), "first").is_ok());
+}
+
 /// **A draining runner is not drained on another engine's word** (#4166): its row stays.
 #[test]
 fn a_draining_runner_stays_while_another_engine_answers() {
