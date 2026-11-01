@@ -734,7 +734,11 @@ fn the_studio_says_the_budget_and_what_its_scope_writes_as_its_router_3692() {
     let written = router(Some("alpha"), None);
     assert!(written.budget.iter().all(|one| one.chars == 9_000));
     assert_eq!(written.past_limits.len(), 1, "Codex's limit alone");
-    assert_eq!(router(None, None).past_limits.len(), 0, "the workspace's own");
+    assert_eq!(
+        router(None, None).past_limits.len(),
+        0,
+        "the workspace's own"
+    );
 
     std::fs::write(
         root.join("workspaces/alpha/workspace.json"),

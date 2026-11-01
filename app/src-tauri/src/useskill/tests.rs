@@ -59,10 +59,12 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
         shown.budget,
         Some(SkillBudget {
             skills: 2,
-            chars: u32::try_from("Hands off.".len() + "Reviews.".len()).unwrap(),
+            // Claude Code's limit counts whole lines: each name, and 23 around it.
+            chars: u32::try_from("handoffHands off.".len() + "reviewReviews.".len() + 2 * 23)
+                .unwrap(),
             manual: 1,
-            most_skills: 30,
-            most_chars: 6_000,
+            most_skills: 60,
+            most_chars: 15_000,
             warns: None,
             hidden: 0,
             still_over: None,

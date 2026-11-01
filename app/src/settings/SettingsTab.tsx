@@ -1066,12 +1066,14 @@ function FileRow({
             }
             onValueChange={write}
           />
+        ) : setting.kind === "lines" ? (
+          <Field kind="list" ids={ids} value={value} onChange={setDraft} onCommit={commit} />
         ) : (
           <Field
-            kind={setting.kind === "lines" ? "list" : "text"}
+            kind="text"
             ids={ids}
             value={value}
-            {...(setting.numeric ? { inputMode: "numeric" as const } : {})}
+            inputMode={setting.numeric ? "numeric" : undefined}
             onChange={setDraft}
             onCommit={commit}
           />
