@@ -224,8 +224,21 @@ describe("a repo that landed while its workspace was not focused", () => {
   });
 });
 
-/** Makes the workspace gamma in its dialog, with `repos` picked. */
+/** The list of repos not cloned here. */
+const absentList = () => screen.findByTestId("absent");
+
+/** Brings the chip's card back from behind its dot: a press anywhere else hides it. */
+const theCardIsBack = async (workspace: string) => {
+  const dot = screen.queryByRole("button", {
+    name: new RegExp(`^Show the notice on ${workspace}`),
+  });
+  if (dot !== null) await userEvent.click(dot);
+};
+
+/** Makes the workspace gamma in its dialog, with `repos` picked. The view is opened first: a press
+ *  after the chip's card comes would hide it. */
 async function makeGamma(repos: string[]) {
+  await showTheExplorer();
   await waitFor(() => chipOf("alpha"));
   fireEvent.contextMenu(chipOf("alpha"));
   await userEvent.click(await screen.findByRole("menuitem", { name: "New workspace…" }));
@@ -235,7 +248,6 @@ async function makeGamma(repos: string[]) {
     await userEvent.click(await within(dialog).findByRole("checkbox", { name: repo }));
   await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
   await waitFor(() => expect(workspaceInFront()).toBe("gamma"));
-  await showTheExplorer();
 }
 
 const NO_ACCESS = "api: clone failed — no access.";
@@ -320,6 +332,7 @@ describe("a new workspace's repo the person stopped", () => {
     await userEvent.click(await within(row).findByRole("button", { name: "Cancel cloning api" }));
 
     await waitFor(() => expect(screen.queryByTestId("absent-api")).toBeNull());
+    await theCardIsBack("gamma");
     expect(await findOnCard("gamma", "Stopped cloning api")).toHaveTextContent("Retry");
   });
 });
@@ -329,10 +342,10 @@ describe("a workspace that names repos and has none cloned", () => {
     core({ named: { alpha: ["charter"] } });
     render(<App />);
 
-    const explorer = await focus("alpha");
+    await focus("alpha");
 
-    expect(await within(explorer).findByTestId("absent-charter")).toBeInTheDocument();
-    expect(within(explorer).queryByText("No repos in this workspace")).toBeNull();
+    expect(await within(await absentList()).findByTestId("absent-charter")).toBeInTheDocument();
+    expect(screen.queryByText("No repos in this workspace")).toBeNull();
   });
 });
 
@@ -345,11 +358,15 @@ describe("a failed clone's notice, once the repo lands", () => {
   it("goes when Retry on its row lands, and the result stands alone", async () => {
     core({ named: { alpha: ["charter"] }, fails: failing("charter") });
     render(<App />);
-    const explorer = await focus("alpha");
-    await userEvent.click(await within(explorer).findByRole("button", { name: "Clone charter" }));
+    await focus("alpha");
+    await userEvent.click(
+      await within(await absentList()).findByRole("button", { name: "Clone charter" }),
+    );
     await findResult(/Could not clone charter into alpha/);
 
-    await userEvent.click(await within(explorer).findByRole("button", { name: "Retry charter" }));
+    await userEvent.click(
+      await within(await absentList()).findByRole("button", { name: "Retry charter" }),
+    );
 
     await findResult("Cloned charter into alpha.");
     await waitFor(() => expect(says("Could not clone charter")).toBe(false));
@@ -358,8 +375,10 @@ describe("a failed clone's notice, once the repo lands", () => {
   it("goes when the repo lands by another way than its row", async () => {
     core({ named: { alpha: ["charter"] }, fails: failing("charter") });
     render(<App />);
-    const explorer = await focus("alpha");
-    await userEvent.click(await within(explorer).findByRole("button", { name: "Clone charter" }));
+    await focus("alpha");
+    await userEvent.click(
+      await within(await absentList()).findByRole("button", { name: "Clone charter" }),
+    );
     await findResult(/Could not clone charter into alpha/);
 
     await act(async () => {
@@ -372,15 +391,21 @@ describe("a failed clone's notice, once the repo lands", () => {
   it("stands for the repos of a Clone all that have not landed, and no more", async () => {
     core({ named: { alpha: ["charter", "web"] }, fails: failing("charter", "web") });
     render(<App />);
-    const explorer = await focus("alpha");
-    await userEvent.click(await within(explorer).findByRole("button", { name: "Clone all" }));
+    await focus("alpha");
+    await userEvent.click(
+      await within(await absentList()).findByRole("button", { name: "Clone all" }),
+    );
     await findResult(/Could not clone charter, web into alpha/);
 
-    await userEvent.click(await within(explorer).findByRole("button", { name: "Retry charter" }));
+    await userEvent.click(
+      await within(await absentList()).findByRole("button", { name: "Retry charter" }),
+    );
 
     await findResult("Cloned charter into alpha.");
     await waitFor(() => expect(says("Could not clone charter, web")).toBe(false));
-    await userEvent.click(await within(explorer).findByRole("button", { name: "Retry web" }));
+    await userEvent.click(
+      await within(await absentList()).findByRole("button", { name: "Retry web" }),
+    );
     await findResult("Cloned web into alpha.");
     await waitFor(() => expect(says("Could not clone")).toBe(false));
   });
@@ -407,6 +432,7 @@ describe("a failed clone's notice, once the repo lands", () => {
     const row = await screen.findByTestId("absent-api");
     await userEvent.click(await within(row).findByRole("button", { name: "Retry api" }));
 
+    await theCardIsBack("gamma");
     const card = await findOnCard("gamma", /Could not clone web into gamma/);
     expect(card).not.toHaveTextContent(noAccess("api"));
     await userEvent.click(within(card).getByRole("button", { name: "Retry" }));
