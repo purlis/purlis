@@ -1351,3 +1351,19 @@ fn repos_are_written_over_the_claim_as_it_was_read_and_only_where_they_add_somet
         "{run}"
     );
 }
+
+#[test]
+fn a_claims_deletion_notice_is_read_only_where_it_is_true() {
+    let with = |status: &str| {
+        serde_json::json!({ "status": { "conditions": [
+            { "type": "Ready", "status": "False", "message": "not this" },
+            { "type": "DeletionNotice", "status": status, "message": "deleted at noon" },
+        ] } })
+    };
+    assert_eq!(
+        deletion_notice_of(&with("True")).as_deref(),
+        Some("deleted at noon")
+    );
+    assert_eq!(deletion_notice_of(&with("False")), None);
+    assert_eq!(deletion_notice_of(&serde_json::json!({})), None);
+}

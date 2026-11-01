@@ -1086,6 +1086,29 @@ pub fn before_cluster_link(
     checked
 }
 
+/// **What each cluster pool's kept runner is told of its deletion** (#3981): each pool's name and
+/// its operator's words, where its Claim has been given notice. A cluster that does not answer
+/// says nothing here: this only tells, and each kubectl run is held to a time.
+pub fn cluster_deletion_notices(config_root: &Path) -> Vec<(String, String)> {
+    let Ok(kubectl) = kubectl_here(config_root) else {
+        return Vec::new();
+    };
+    let kubectl = kubectl.within(VOUCHED_NOW_WITHIN);
+    runners::cluster_pools(config_root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|pool| {
+            let name = pool.name().to_owned();
+            let (pool, kept) = runners::cluster_runner_for(config_root, &name).ok()??;
+            let said = pool
+                .kubectl(&kubectl)
+                .deletion_notice(&kept.claimed.namespace, &kept.claimed.name)
+                .ok()??;
+            Some((name, said))
+        })
+        .collect()
+}
+
 /// **Asks for the cluster pool `name`'s idle runner to run again** (#3980), as a chat starts there. No
 /// check, view, redial or kill switch asks this: they never wake a runner (ADR 0089, amended
 /// 2026-10-27, item 5). A word that cannot be written refuses nothing: the check every
