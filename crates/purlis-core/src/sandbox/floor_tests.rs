@@ -1919,6 +1919,26 @@ fn every_name_that_may_be_lifted_is_held() {
     }
 }
 
+/// A Claude Code chat's rules go past the lifted name alone: its neighbours stay held.
+#[test]
+fn a_lifted_name_alone_leaves_a_claude_code_chats_rules() {
+    let (_dir, root) = project();
+    let home = root.join("home");
+    std::fs::create_dir_all(&home).expect("a home");
+    let machine = homed(&home, &[]);
+    let mut chat = grant::Grants::default();
+    chat.add(&grant::What::Write(home.join(".config/gh")));
+    let compiled = Compiled::floor(&root, &machine, &chat);
+    assert_eq!(compiled.widened.lifted, vec![home.join(".config/gh")]);
+    let compile = compiler(Harness::ClaudeCode).expect("a compiler");
+    let Form::ClaudeCode(settings) = compile(&compiled).expect("compiled") else {
+        unreachable!();
+    };
+    let rules = settings.sandbox.to_string();
+    assert!(!rules.contains(".config/gh\""), "{rules}");
+    assert!(rules.contains(".config/glab-cli"), "{rules}");
+}
+
 /// What the floor makes is a later-code name it holds, the home's among them.
 #[test]
 fn the_homes_git_config_made_is_one_the_floor_holds() {
