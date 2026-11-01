@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793547446790,
+  "lastUpdate": 1793549000342,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35070,6 +35070,48 @@ window.BENCHMARK_DATA = {
             "value": 101.536372,
             "unit": "ms",
             "extra": "median of 5 runs: 101.190, 101.244, 101.536, 101.894, 102.645 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d5fbd634ae176332be6fd0096ec9adff83152e82",
+          "message": "A runner chat says which settings were left out of its copy (#3848, #3867) (#4446)\n\n* A runner chat says which settings were left out of its copy (#3848, #3867)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR1DJHSA12VQ6WVW785PYD\nPurlis-Persona: steward\n\n* Say what a runner chat's settings left out once, and only of what was sent (#3848, #3867)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR1DJHSA12VQ6WVW785PYD\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T14:58:12Z",
+          "tree_id": "a34a63a9e10cf17fe7975babc4d4be32477d74d6",
+          "url": "https://github.com/purlis/purlis/commit/d5fbd634ae176332be6fd0096ec9adff83152e82"
+        },
+        "date": 1793548993806,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.536692,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.519, 0.529, 0.537, 0.540, 0.550 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.422442,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.188, 16.382, 16.422, 16.432, 16.540 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.356683,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.589, 101.333, 101.357, 102.288, 102.560 ms"
           }
         ]
       }
