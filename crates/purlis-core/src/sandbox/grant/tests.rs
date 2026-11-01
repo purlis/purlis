@@ -1109,3 +1109,21 @@ fn only_what_this_chat_holds_for_itself_stays_lifted() {
     assert!(still_lifted(&once, &locks, &ground).is_empty());
     assert!(still_lifted(&chat, &locks, &ground_of(&m, false)).is_empty());
 }
+
+#[test]
+fn a_denial_class_keeps_a_held_folder_from_being_lifted() {
+    let m = Disk::new();
+    let mut ground = ground_of(&m, true);
+    ground.denied = vec![Denial {
+        class: Class::Vaults,
+        path: m.at.join("home/.config/gh"),
+        access: Access::ReadWrite,
+        named: None,
+        reach: crate::sandbox::Reach::AndBelow,
+        any_case: false,
+    }];
+    assert!(matches!(
+        lift(&m.path("home/.config/gh"), &ground),
+        Err(Refused::Never(_))
+    ));
+}

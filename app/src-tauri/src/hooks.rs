@@ -1676,7 +1676,7 @@ fn lifted_here(
     if block.ours
         || block.kind != Kind::ProtectedFile
         || !matches!(block.operation, Operation::Write | Operation::File)
-        || machine.os.purlis_wraps(harness)
+        || machine.purlis_wraps(harness)
     {
         return None;
     }

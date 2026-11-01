@@ -252,6 +252,9 @@ export function TaskBlocksNotice({
       {target}
       {group.offer === "write" && " and everything in it"}:{" "}
       {listed(group.members.map((one) => one.whose))}.{" "}
+      {group.offer === "write" && group.members[0]?.block.route != null
+        ? `${group.members[0].block.route} `
+        : null}
       {held.length === 0 ? (
         <>The sandbox blocked {group.said} in each.</>
       ) : (

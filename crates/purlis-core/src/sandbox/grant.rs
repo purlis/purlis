@@ -817,6 +817,14 @@ pub fn lift(typed: &str, ground: &Ground) -> Result<PathBuf, Refused> {
     if !ground.floor || key(&lexical(asked), &place) != key(&lexical(&folder), &place) {
         return Err(never());
     }
+    // What a denial class holds stays held, whatever a list says: on a runner, a forge's sign-in.
+    if let Some(denial) = place
+        .denied
+        .iter()
+        .find(|denial| inside_any(&folder, &denial.path, &place))
+    {
+        return Err(Refused::Never(brokered_route(denial.class).to_owned()));
+    }
     let resolved = super::real(&folder);
     let home = place.home.map(super::real).ok_or_else(never)?;
     let name = folder
