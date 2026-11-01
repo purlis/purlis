@@ -27,10 +27,14 @@ const row = (over: Partial<PoolLimitRow> & { key: string }): PoolLimitRow => ({
 let values: Record<string, number>;
 let written: { key: unknown; value: unknown }[];
 
+/** The read after a save fails from here on (#4390). */
+let readsFail = false;
+
 function theCore(refuseSave?: string) {
   mockIPC((cmd, args) => {
     const asked = (args ?? {}) as { key: string; typed: string; value: number | null };
     const withValue = (one: PoolLimitRow) => ({ ...one, set: values[one.key] ?? null });
+    if (cmd === "pool_limits" && readsFail) throw "the pool's file could not be read";
     if (cmd === "pool_limits")
       return {
         groups: [
@@ -73,6 +77,7 @@ function theCore(refuseSave?: string) {
 beforeEach(() => {
   values = {};
   written = [];
+  readsFail = false;
   theCore();
 });
 afterEach(() => {
@@ -122,6 +127,18 @@ describe("a pool's limits page", () => {
     await user.tab();
     expect(written).toEqual([]);
     expect((box("first") as HTMLInputElement).value).toBe("5000");
+  });
+
+  it("shows what was saved, with Reset on, even if the read after the save fails", async () => {
+    const POOL = "read-fails";
+    const user = await opened(POOL);
+    readsFail = true;
+    await user.type(box("first"), "256");
+    await user.tab();
+    await screen.findByText("You set this");
+    expect((box("first") as HTMLInputElement).value).toBe("256");
+    expect((resetOf("first", POOL) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("saves a good value on leaving the box, and marks it as the person's", async () => {

@@ -9,6 +9,7 @@ import {
   type ClusterPoolKey,
   type PoolAdding,
   type PoolLink,
+  type PoolLimitRow,
   type PoolLimitsPage,
   type PoolProfiles as PoolProfilesAnswered,
   type PoolRemoved,
@@ -309,10 +310,29 @@ export function checkLimit(key: string, typed: string) {
   return caught(commands.poolLimitCheck(key, typed));
 }
 
+/** Limit `key` of pool `name` as it was just saved, in what is shown of the pool's limits. */
+function limitSaved(name: string, key: string, value: number | null) {
+  readingLimits.set(name, (readingLimits.get(name) ?? 0) + 1);
+  const saved = (one: PoolLimitRow) => (one.key === key ? { ...one, set: value } : one);
+  set((was) => {
+    const shown = was.limits[name];
+    if (shown === undefined || !("groups" in shown)) return was;
+    const limits = {
+      ...shown,
+      groups: shown.groups.map((group) => ({ ...group, limits: group.limits.map(saved) })),
+      advanced: shown.advanced.map(saved),
+    };
+    return { ...was, limits: { ...was.limits, [name]: limits } };
+  });
+}
+
 /**
  * **Saves `values` to pool `name`'s limits**, a `null` returning that one to purlis's default
  * (#4285), then reads them again, so an open page shows them. Why not, in the core's words: those
  * before it stay saved.
+ *
+ * **A row shows what was saved as soon as it is** (#4390): the read after it can fail or be
+ * overtaken, and a read still out from before the save is dropped, so neither shows the older value.
  */
 export async function saveLimits(
   name: string,
@@ -325,6 +345,7 @@ export async function saveLimits(
       refused = saved.error;
       break;
     }
+    limitSaved(name, key, value);
   }
   await askLimits(name);
   return refused;
