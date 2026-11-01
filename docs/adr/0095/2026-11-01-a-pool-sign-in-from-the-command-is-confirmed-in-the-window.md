@@ -1,10 +1,14 @@
 # A pool sign-in from the command is confirmed in the window
 
-Amends ADR 0095, by the person's ruling of 2026-11-01.
+Amends ADR 0095, by the person's rulings of 2026-11-01 and 2026-11-02.
 
 `purlis profile sign-in <profile> --pool <pool>` asks the running window before it reaches a
-runner or its engine, and goes on only on the person's press there. With no window running, or on
-any answer but yes, it starts nothing. This holds for Docker pools and cluster pools alike.
+runner or its engine. With no window running, or on any answer but yes, it starts nothing. This
+holds for Docker pools and cluster pools alike.
+
+This is a check, so that a sandboxed chat or a mistake does not start a pool sign-in without the
+person's press in the window. It is not a boundary against a process running outside the sandbox
+in the person's own account, which already has their powers.
 
 The window asks only of a profile and a pool its own files name, for a command reading the same
 config home, one question at a time. It takes the question back when the command ends, and after

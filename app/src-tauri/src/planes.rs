@@ -4252,6 +4252,36 @@ impl Planes {
                 .when_one_ends(Arc::new(move |session, exit| {
                     // A curation prompt still waiting is for a chat that is gone: never typed.
                     typed.forget(session);
+                    // **Its runner went, after its program had ended with its host** (#4421):
+                    // nothing ended now, so only this is new. No Resume now, and a task that
+                    // waited to be resumed reports, whatever stopped it reporting as it ended.
+                    // Only the window says this: a host's word for it never gets here.
+                    if matches!(&exit, purlis_core::session::Exit::Signal(said)
+                        if said == crate::hostedsessions::ITS_RUNNER_WENT)
+                    {
+                        if let Some(was) = lost.of(session) {
+                            let now = crate::hostlost::LostRun {
+                                resumable: false,
+                                with_the_runner: true,
+                                ..was
+                            };
+                            lost.note(session, now);
+                            tell_lost(crate::hostlost::LostChat {
+                                plane: plane.clone(),
+                                session,
+                                left_in: now.left_in,
+                                resumable: false,
+                                with_the_runner: true,
+                            });
+                        }
+                        if let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
+                            && !held.stopping().is_stopping(session)
+                        {
+                            crate::handoff::its_runner_went(&held, session);
+                            crate::dispatched::moved(&held, session);
+                        }
+                        return;
+                    }
                     // **Its program ended with its session host** (#2007): what its run is left
                     // in is read from the board as it was, before its end moves it, and said on
                     // its pane with Resume. It did not end by itself: like a quit, it fails no
@@ -4262,9 +4292,10 @@ impl Planes {
                         .filter(|held| held.chats.sessions().lost_with_its_host(session));
                     // One whose runner is gone for good cannot be resumed, so a task on it reports
                     // now, as one that ended on its own does (#4350).
-                    let with_the_host = lost_with
+                    let with_the_runner = lost_with
                         .as_ref()
-                        .is_some_and(|held| !held.chats.sessions().lost_with_its_runner(session));
+                        .is_some_and(|held| held.chats.sessions().lost_with_its_runner(session));
+                    let with_the_host = lost_with.is_some() && !with_the_runner;
                     if let Some(held) = lost_with {
                         let resumes_by_id = held
                             .chats
@@ -4279,7 +4310,6 @@ impl Planes {
                             )
                         };
                         // Its conversation went with a runner gone for good (#4350): no Resume.
-                        let with_the_runner = held.chats.sessions().lost_with_its_runner(session);
                         if let Some(left_in) =
                             crate::hostlost::after_the_host(state, asking, resumes_by_id, resumable)
                         {
@@ -4362,15 +4392,15 @@ impl Planes {
                     // window is told, so what it reads next already says so. **Only for a
                     // program that ended on its own** (D-1443-10): not at a quit or as the
                     // project is let go of, and not when every agent was stopped. Those chats
-                    // are kept, and report when they are started again.
+                    // are kept, and report when they are started again. **Nothing starts one
+                    // whose runner is gone again** (#4421), so it reports whatever else is so.
                     //
                     // **One word for one end** (D-T59-j3). A task its asking chat cancelled
                     // reports as cancelled, so that is written first (#1441) and nothing is
                     // then owed. A chat the person is stopping is told of by its stop, below
                     // (#1448), and is not also said to have failed by itself.
                     if let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
-                        && !held.chats.ending()
-                        && !every_agent.is_stopped()
+                        && (with_the_runner || (!held.chats.ending() && !every_agent.is_stopped()))
                         && !held.stopping().is_stopping(session)
                         && !with_the_host
                     {

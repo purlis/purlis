@@ -114,6 +114,38 @@ fn a_finished_task_s_row_says_how_it_ended_and_carries_its_report_as_written() {
     );
 }
 
+/// **A task that ended with a gone runner has no Reopen, and its row says why** (#4420), though
+/// its record names a conversation. The same words from anyone but the app change nothing.
+#[test]
+fn a_task_that_ended_with_a_gone_runner_is_not_reopened_and_says_why() {
+    let gone = Record {
+        conversation: Some("a-conversation".to_owned()),
+        ended_by: Some(dispatchrecord::EndedBy::Unreported),
+        ended_way: None,
+        ..a_task(
+            Outcome::Failed,
+            purlis_core::handback::ENDED_WITH_ITS_RUNNER,
+        )
+    };
+    let drawn = row(&gone, 3, Finished::of(&gone).unwrap());
+    assert!(!drawn.reopens, "{drawn:?}");
+    assert!(
+        drawn
+            .not_reopened
+            .as_deref()
+            .is_some_and(|why| why.contains("runner")),
+        "{drawn:?}"
+    );
+
+    let said = Record {
+        ended_by: None,
+        ..gone
+    };
+    let drawn = row(&said, 3, Finished::of(&said).unwrap());
+    assert!(drawn.reopens, "{drawn:?}");
+    assert_eq!(drawn.not_reopened, None);
+}
+
 #[test]
 fn a_failure_is_a_row_of_its_own_and_a_task_with_no_conversation_is_not_reopened() {
     let failed = a_task(Outcome::Failed, "The cluster refused the login.");

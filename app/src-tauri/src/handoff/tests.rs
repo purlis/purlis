@@ -2341,6 +2341,76 @@ fn a_task_that_ended_with_a_gone_runner_reports_to_the_chat_that_asked() {
     assert!(record.report.is_some(), "{record:?}");
 }
 
+/// **A task that ended with a gone runner says why, and refuses Reopen in words** (#4420): its
+/// conversation went with that runner.
+#[test]
+fn a_task_that_ended_with_a_gone_runner_names_it_and_refuses_reopen() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+
+    host.program_ends_with_its_runner(task);
+
+    let mut ended = record_of(&held, task);
+    // Named, so what refuses Reopen is the runner and not a conversation it never had.
+    purlis_core::dispatchrecord::ended_in(held.root(), &ended.id, "a-conversation").unwrap();
+    assert_eq!(
+        ended.report.as_ref().map(|report| report.text.as_str()),
+        Some(
+            "ended without a report because its pool's runner is gone, and its conversation went \
+             with it"
+        ),
+        "{ended:?}"
+    );
+    let refused = crate::finished::reopening(&held, &ended.id).map(|_| ());
+    assert!(refused.is_err_and(|why| why.contains("went with its pool's runner")));
+    // The words alone are not the app's: a task that reported them keeps its Reopen.
+    ended.ended_by = None;
+    assert!(!ended.ended_with_its_runner());
+}
+
+/// **A task lost with its host waits to be resumed until its runner goes too** (#4421): nothing
+/// can resume it then, so it reports, and its chat no longer offers Resume.
+#[test]
+fn a_chat_lost_earlier_is_told_when_its_runner_then_goes() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+    host.program_ends_with_its_host(steward);
+    host.program_ends_with_its_host(task);
+    assert!(record_of(&held, task).running());
+    assert!(held.lost_with_the_host().of(steward).is_some());
+
+    host.its_runner_goes_since(steward);
+    host.its_runner_goes_since(task);
+
+    let record = record_of(&held, task);
+    assert!(!record.running(), "{record:?}");
+    assert!(record.ended_with_its_runner(), "{record:?}");
+    let lost = held.lost_with_the_host().of(steward).expect("still said");
+    assert!(lost.with_the_runner && !lost.resumable, "{lost:?}");
+}
+
+/// **Every agent stopped keeps a task to report when it starts again, unless nothing can start
+/// it** (#4421): one on a gone runner reports all the same.
+#[test]
+fn a_task_on_a_gone_runner_reports_though_every_agent_was_stopped() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+    let _ = planes.kill_switch().stop(purlis_core::halt::Actor::Window);
+
+    host.program_ends_with_its_runner(task);
+
+    assert!(record_of(&held, task).ended_with_its_runner());
+}
+
 /// **A chat whose idle program ended with a gone runner offers no Resume** (#4350): its
 /// conversation went with that runner's home, whatever it was doing.
 #[test]

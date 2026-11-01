@@ -221,6 +221,10 @@ fn a_code_is_not_passed_on_once_the_runner_is_no_longer_yours() {
     });
 
     assert_eq!(said, Err("the mark was taken back".to_owned()));
+    // Looked at once the login has ended, not while it is ending: a login whose input was closed
+    // under it read the end of it and went on to write this (#4388).
+    let ended = (0..100).any(|_| matches!(driving.next(LOOK_EVERY), Some(Event::Cancelled)));
+    assert!(ended, "the cancelled login ended");
     assert!(!got.exists(), "the code went nowhere");
 }
 

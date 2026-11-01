@@ -179,7 +179,7 @@ export const CouldNotFollow: Story = {
 
 /** It did not sign in, and why; Open the page again starts another, a Tab away from the strip. */
 export const Failed: Story = {
-  args: { step: { at: "failed", why: "the code has expired" } },
+  args: { step: { at: "failed", why: "the code has expired", stopped: false } },
   play: async ({ canvas, userEvent }) => {
     await expect(canvas.getByRole("alert")).toHaveTextContent("the code has expired");
     await untilFocused(

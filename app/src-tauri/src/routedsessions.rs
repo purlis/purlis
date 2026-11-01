@@ -671,7 +671,14 @@ impl SessionHost for RoutedSessions {
             let root = self.root.clone();
             let on_pools = Arc::clone(&self.on_pools);
             Arc::new(move |id, exit| {
+                // Its runner went after its program ended: there is nothing to fetch, and a
+                // fetch would let go of the host the chats still being told are read through.
+                let its_runner_went = matches!(&exit, purlis_core::session::Exit::Signal(said)
+                    if said == crate::hostedsessions::ITS_RUNNER_WENT);
                 tell(id, exit);
+                if its_runner_went {
+                    return;
+                }
                 let Some(shared) = shared.upgrade() else {
                     return;
                 };

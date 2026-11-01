@@ -53,7 +53,8 @@
 //! (D-PE-ruling-2, [`declared`]). So a committed tool is what lets a vault's value reach a
 //! program on a chat's say, and a teammate can change it: a persona's tools reach no chat on a
 //! machine until the person there allows them, with its hosts, on the same Notice
-//! ([`super::persona::digest_of`]). Until then, and after any change, no shim is written and the
+//! ([`super::persona::digest_of`]). Until then, and after any change, no shim that runs anything is
+//! written (on a runner, a tool whose program is absent has one that only says so, #4373) and the
 //! broker runs nothing. The person's own terminal, and anything run outside a chat's sandbox, is
 //! not held to any of this.
 //!
@@ -1115,6 +1116,9 @@ pub struct Resolved {
     pub absent: Vec<String>,
     /// On a runner, each tool of [`Resolved::absent`] and what its name says in the chat (#4354).
     pub refusing: Vec<(String, String)>,
+    /// Nothing is allowed this chat, and it only says what is absent (#4373): another chat of the
+    /// persona shares the folder, so the shims of its Allow stay.
+    pub only_refuses: bool,
 }
 
 /// **The variable a pool's runner is made with, naming the image it runs** (#4354):
@@ -1226,6 +1230,33 @@ pub(crate) fn for_chat_beside(
     temps: &[PathBuf],
     from_desktop: Option<&str>,
 ) -> Option<Resolved> {
+    for_chat_on(
+        root,
+        personas,
+        persona,
+        locks,
+        search,
+        writable,
+        temps,
+        from_desktop,
+        pool_image().as_deref(),
+    )
+}
+
+/// [`for_chat_beside`], with `image` as what this runner was told it runs: only a pool's runner is
+/// told, so it says a chat is on one where its start carries no Allow from a desktop (#4373).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn for_chat_on(
+    root: &Path,
+    personas: &std::collections::BTreeMap<String, super::persona::Grants>,
+    persona: &str,
+    locks: &super::policy::Locks,
+    search: &[PathBuf],
+    writable: &[PathBuf],
+    temps: &[PathBuf],
+    from_desktop: Option<&str>,
+    image: Option<&str>,
+) -> Option<Resolved> {
     let mut allowed = super::persona::tools_in_force_here(root, personas, Some(persona), locks);
     if let (true, Some(digest)) = (allowed.is_empty(), from_desktop) {
         allowed = super::persona::tools_its_desktop_allowed(root, personas, persona, locks, digest);
@@ -1237,13 +1268,45 @@ pub(crate) fn for_chat_beside(
              Allow of {persona}'s hosts and tools"
         );
     }
-    let mut resolved = resolve_beside(root, persona, &allowed, locks, search, writable, temps)?;
-    // Only a start from a runner's desktop says this, and only there is a program's absence the
-    // image's: on the person's own machine the log says why, as it does for any tool left out.
-    if from_desktop.is_some() {
-        resolved.refuse_what_is_absent(pool_image().as_deref());
+    let mut resolved = resolve_beside(root, persona, &allowed, locks, search, writable, temps);
+    // Only on a runner is a program's absence the image's: on the person's own machine the log
+    // says why, as it does for any tool left out.
+    if from_desktop.is_none() && image.is_none() {
+        return resolved;
     }
-    Some(resolved)
+    // A tool nobody allowed is found for this and no more: it says the same sentence, and is
+    // never ready, so no value flows through its shim (#4373).
+    let unallowed: Vec<Tool> = super::persona::of(personas, Some(persona))
+        .map(|grants| {
+            grants
+                .tools
+                .iter()
+                .filter(|tool| !allowed.contains(tool))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(unallowed) =
+        resolve_beside(root, persona, &unallowed, locks, search, writable, temps)
+            .filter(|unallowed| !unallowed.absent.is_empty())
+    {
+        resolved
+            .get_or_insert_with(|| Resolved {
+                persona: persona.to_owned(),
+                folder: unallowed.folder.clone(),
+                ready: Vec::new(),
+                left: Vec::new(),
+                absent: Vec::new(),
+                refusing: Vec::new(),
+                only_refuses: true,
+            })
+            .absent
+            .extend(unallowed.absent);
+    }
+    if let Some(resolved) = &mut resolved {
+        resolved.refuse_what_is_absent(image);
+    }
+    resolved
 }
 
 /// [`resolve`], with `temps` as the temporary folders.
@@ -1318,6 +1381,7 @@ pub(crate) fn resolve_beside(
         left,
         absent,
         refusing: Vec::new(),
+        only_refuses: false,
     })
 }
 
@@ -1908,17 +1972,19 @@ impl Resolved {
             .create(&bin)
             .map_err(refused(&bin))?;
         // Every shim an earlier start wrote that is not one now.
-        for entry in std::fs::read_dir(&bin).map_err(refused(&bin))? {
-            let entry = entry.map_err(refused(&bin))?;
-            let name = entry.file_name();
-            let current = self
-                .ready
-                .iter()
-                .map(|one| &one.tool.name)
-                .chain(self.refusing.iter().map(|(tool, _)| tool))
-                .any(|tool| std::ffi::OsStr::new(tool) == name);
-            if !current {
-                std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
+        if !self.only_refuses {
+            for entry in std::fs::read_dir(&bin).map_err(refused(&bin))? {
+                let entry = entry.map_err(refused(&bin))?;
+                let name = entry.file_name();
+                let current = self
+                    .ready
+                    .iter()
+                    .map(|one| &one.tool.name)
+                    .chain(self.refusing.iter().map(|(tool, _)| tool))
+                    .any(|tool| std::ffi::OsStr::new(tool) == name);
+                if !current {
+                    std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
+                }
             }
         }
         if self.ready.is_empty() && self.refusing.is_empty() {
