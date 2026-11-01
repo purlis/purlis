@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793511739907,
+  "lastUpdate": 1793512929350,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34734,6 +34734,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9133275,
             "unit": "ms",
             "extra": "median of 5 runs: 101.291, 101.899, 101.913, 102.063, 102.270 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "688ad32c932fe637c0ac1ce3779493c9ee68918b",
+          "message": "Theme check: measure a see-through part fill over its root's own fill (#3303) (#4386)\n\nA part fill with alpha was laid over the family's grounds alone, so the check\njudged it on a colour it never sits on. Parts around the root, on their\nvariant's ground, or on a ground of their own (a chip's count) stay as they were.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6A3R3GJBRW2A8HTFENW93VY\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T04:54:52Z",
+          "tree_id": "73fbbca3415c788c66280e1cd0ed0caefd20dfd5",
+          "url": "https://github.com/purlis/purlis/commit/688ad32c932fe637c0ac1ce3779493c9ee68918b"
+        },
+        "date": 1793512922906,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6417845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.636, 0.641, 0.642, 0.653, 0.669 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.462502999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.207, 16.385, 16.463, 16.765, 16.791 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.90812600000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.753, 101.898, 101.908, 102.604, 102.698 ms"
           }
         ]
       }
