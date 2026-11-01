@@ -876,6 +876,37 @@ mod tests {
     }
 
     #[test]
+    fn only_the_exact_wired_helper_leaves_a_repository_fit_to_upload() {
+        let (_dir, repo) = repo_with("plain.txt", "text\n");
+        let says = |key: &str, value: &str| {
+            assert!(testgit::run(&repo, &["config", key, value]).ok());
+            let said = git::lfs_would_start_a_program(&repo).unwrap();
+            assert!(testgit::run(&repo, &["config", "--unset-all", key]).ok());
+            said
+        };
+        assert!(!git::lfs_would_start_a_program(&repo).unwrap());
+        assert!(!says("credential.helper", "!gh auth git-credential"));
+        for (key, value) in [
+            ("credential.helper", "!gh auth git-credential --x"),
+            (
+                "credential.https://f.example.helper",
+                "!gh auth git-credential",
+            ),
+            ("alias.lfs", "!x"),
+            ("alias.lfs.command", "!x"),
+            ("lfs.storage", "/x"),
+            ("lfs.customTransfer.x.path", "x"),
+            ("xlfs.customtransfer.x.path", "x"),
+            ("lfs.https://f.example/.standalonetransferagent", "x"),
+            ("http.extraheader", "x: y"),
+            ("http.https://f.example/.extraheader", "x: y"),
+            ("core.sshcommand", "x"),
+        ] {
+            assert!(says(key, value), "{key}");
+        }
+    }
+
+    #[test]
     fn a_file_grown_past_its_size_is_read_no_further() {
         let mut grown = std::io::repeat(0);
         let (mut copy, mut head) = (Vec::new(), Vec::new());

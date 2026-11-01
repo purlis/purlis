@@ -745,7 +745,7 @@ pub(crate) fn lfs_would_start_a_program(dir: &Path) -> Result<bool, GitUnavailab
     let Some(listing) = listed else {
         return Ok(true);
     };
-    Ok(listed_entries(&listing).any(|(scope, key, _value)| {
+    Ok(listed_entries(&listing).any(|(scope, key, value)| {
         if matches!(scope, "global" | "system" | "unknown" | "command") {
             return false;
         }
@@ -760,12 +760,20 @@ pub(crate) fn lfs_would_start_a_program(dir: &Path) -> Result<bool, GitUnavailab
         };
         // git-lfs finds some of these with loose patterns, and a URL-scoped key outranks the
         // command line ([`crate::lfsupload`]): anything that spells one counts, at any depth.
-        lfs_names_a_program(section, sub, variable)
-            || (section == "lfs" && variable == "storage")
-            || (section == "alias" && (variable == "lfs" || sub == Some("lfs")))
-            || (section == "http" && variable == "extraheader")
-            || key.contains("customtransfer")
-            || key.contains("standalonetransferagent")
+        // The exact helper purlis's git policy writes never runs: the one-credential rule empties
+        // the list, and the push's own helper follows.
+        match (section, sub, variable) {
+            ("credential", None, "helper") => !matches!(
+                value,
+                "!gh auth git-credential" | "!glab auth git-credential"
+            ),
+            ("credential", _, "helper") | ("core", None, "sshcommand" | "askpass") => true,
+            ("lfs", Some(sub), "path") if sub.starts_with("customtransfer.") => true,
+            ("lfs", Some(sub), "clean" | "smudge") if sub.starts_with("extension.") => true,
+            ("lfs", _, "storage") | ("http", _, "extraheader") => true,
+            ("alias", None, "lfs") | ("alias", Some("lfs"), _) => true,
+            _ => key.contains("customtransfer") || key.contains("standalonetransferagent"),
+        }
     }))
 }
 
