@@ -1028,9 +1028,9 @@ const KEPT_WITHIN: std::time::Duration = std::time::Duration::from_secs(120);
 /// How long one link waits for every profile it keeps, batches and all.
 const ALL_KEPT_WITHIN: std::time::Duration = std::time::Duration::from_secs(600);
 
-/// **How much longer each MiB a profile may send gives its keep, in seconds** (#4314): twice
-/// what a send took measured at 128 MiB, on a debug build of both ends through `docker exec` on
-/// a CI runner: 137 seconds.
+/// **How much time each MiB a profile may send gives its keep, in seconds** (#4314): twice what
+/// was measured on debug builds of both ends through `docker exec` on a CI runner: 137 seconds for
+/// 128 MiB, 1000 seconds for 999 MiB.
 const SECONDS_KEPT_PER_MIB: u64 = 2;
 
 /// **How long keeping `profiles` may take all told** (#4314, sorted by the spec's rule): not a

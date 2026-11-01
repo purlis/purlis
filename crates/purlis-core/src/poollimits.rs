@@ -180,7 +180,8 @@ const ALL: [Limit; 7] = [
         unit: Unit::Mib,
         default: 128,
         least: 1,
-        // What a runner stages in memory (`MOST_PROFILE_SETTINGS_STAGED_BYTES`).
+        // What a runner stages in memory (`MOST_PROFILE_SETTINGS_STAGED_BYTES`). Near it a default
+        // runner peaked at 3.26 of its 4 GiB (999 MiB sent, #4314): more than three times the size.
         most: 1024,
         group: Group::SignIn,
         advanced: false,
@@ -229,9 +230,9 @@ const ALL: [Limit; 7] = [
         clusters_only: false,
         takes_effect: TakesEffect::NextAttempt,
         measured: Measurement {
-            on: "@@CODE_ON@@",
-            found: "@@CODE_FOUND@@",
-            chosen_because: "@@CODE_WHY@@",
+            on: "a whole bundle of purlis itself, on 2026-11-01",
+            found: "235 MiB",
+            chosen_because: "over four times a large real repository, and what purlis has always carried",
         },
     },
     Limit {
@@ -248,9 +249,9 @@ const ALL: [Limit; 7] = [
         clusters_only: false,
         takes_effect: TakesEffect::NextAttempt,
         measured: Measurement {
-            on: "@@SEND_ON@@",
-            found: "@@SEND_FOUND@@",
-            chosen_because: "@@SEND_WHY@@",
+            on: "a start sending bytes that do not compress, debug builds through docker exec on a CI runner, 2026-11-01",
+            found: "64 MiB in 20 s, 256 MiB in 101 s, 512 MiB in 273 s: about half a second a MiB",
+            chosen_because: "holds the default largest code even on that slow build, about 9 minutes",
         },
     },
     Limit {
@@ -289,9 +290,9 @@ const ALL: [Limit; 7] = [
         clusters_only: true,
         takes_effect: TakesEffect::NextAttempt,
         measured: Measurement {
-            on: "@@VOUCH_ON@@",
-            found: "@@VOUCH_FOUND@@",
-            chosen_because: "@@VOUCH_WHY@@",
+            on: "a whole chat test on a kind cluster on CI with its image already loaded; no real cluster, 2026-11-01",
+            found: "under 15 seconds, claim to chat",
+            chosen_because: "stated, not measured: room for a real cluster to pull an image and schedule a pod",
         },
     },
     Limit {
@@ -309,9 +310,9 @@ const ALL: [Limit; 7] = [
         clusters_only: false,
         takes_effect: TakesEffect::NextAttempt,
         measured: Measurement {
-            on: "@@ANSWER_ON@@",
-            found: "@@ANSWER_FOUND@@",
-            chosen_because: "@@ANSWER_WHY@@",
+            on: "no answer on its own was timed: the pool journey and parity behaviours on a busy CI runner, 2026-11-01",
+            found: "none ran out at 30 seconds",
+            chosen_because: "stated: what a window waited before this was a limit, which real work has not outrun",
         },
     },
 ];

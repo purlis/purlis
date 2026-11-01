@@ -51,7 +51,7 @@ retries = 0
 # settings folder sent three times over, with two runners made and one left to drain.
 [[profile.ci.overrides]]
 filter = "package(purlis-app) & test(/^behaviour::pool_journey::in_a_docker_pool$/)"
-slow-timeout = { period = "60s", terminate-after = 50 }
+slow-timeout = { period = "60s", terminate-after = 15 }
 retries = 0
 
 # The run's report, at `target/nextest/ci/junit.xml`: `tools/slowest-tests.mjs` reads each
