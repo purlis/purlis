@@ -946,6 +946,13 @@ impl Upstream {
                 ),
             });
         }
+        // A runner before 1.67 refuses this, which would say nothing of what runs there: it is not
+        // asked, and the window takes nothing back from it (#4271).
+        if matches!(command, Command::ProgramsOf { .. })
+            && self.client.version() < session::KNOWS_PROGRAMS_RELAYED
+        {
+            return Ok(Answer::Programs(Vec::new()));
+        }
         let _in_flight = Counted::start(&self.calls);
         self.client.call(command).await.map_err(|why| refused(&why))
     }
@@ -1361,7 +1368,8 @@ fn ids_for_the_window_alone(command: Command, scope: Scope) -> Command {
 
 /// Whether `power` is one only the window holds of those the relay meets in a command or a
 /// push: holding a project, replying to its hook lines, saving it, confining a chat, moving
-/// code (1.34, #2046), and a browser, its acts, its driving and its login (1.38, #2050).
+/// code (1.34, #2046), a browser, its acts, its driving and its login (1.38, #2050), and asking
+/// which of its programs run (#4271).
 fn the_windows_power(power: Power) -> bool {
     matches!(
         power,
@@ -1374,6 +1382,7 @@ fn the_windows_power(power: Power) -> bool {
             | Power::LogIn
             | Power::EventLog
             | Power::Rearm
+            | Power::ProgramsOf
     )
 }
 

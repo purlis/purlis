@@ -308,6 +308,30 @@ pub fn cluster_reached(
     }
 }
 
+/// **The draining runners of `pool` a window's restart asks for the chats it left** (#4271), each
+/// as `<pool>/<runner>`. Only one that runs: a link wakes a suspended runner (#2051), which holds
+/// no chat. None whose drain began, which takes no link or has no chat left.
+pub fn draining_to_ask(config: &Path, pool: &str) -> Vec<String> {
+    docker().map_or_else(
+        |_| Vec::new(),
+        |docker| draining_to_ask_on(&docker, config, pool),
+    )
+}
+
+/// [`draining_to_ask`], through `docker`.
+pub(crate) fn draining_to_ask_on(docker: &Docker, config: &Path, pool: &str) -> Vec<String> {
+    let Ok(draining) = purlis_core::runners::draining(config) else {
+        return Vec::new();
+    };
+    draining
+        .into_iter()
+        .filter(|kept| kept.pool() == pool)
+        .filter(|kept| !kept.unpaired && !kept.carried && !kept.carry_failed)
+        .filter(|kept| docker.running(&kept.made).unwrap_or(false))
+        .map(|kept| format!("{}/{}", kept.pool(), kept.name()))
+        .collect()
+}
+
 /// This machine's `docker`, where the window's `PATH` or Docker's installers put it.
 pub fn docker() -> Result<Docker, String> {
     let path = purlis_core::envvar::var("PATH");

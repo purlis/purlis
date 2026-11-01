@@ -889,8 +889,9 @@ struct Hosted {
     /// The identity of each login purlis performed in it, or of the kept login it opened from
     /// (1.39, #2025): the host's own record, which no note of the window's unsays.
     logins: Arc<Mutex<Vec<String>>>,
-    /// Who opened it, for a browser (#2050): this host's own window, or a link between hosts
-    /// for the window it named, which alone may act on it from such a link.
+    /// Who opened it (#2050, #4271): this host's own window, or a link between hosts for the
+    /// window it named. Such a link acts only on a browser opened for that window, and is
+    /// answered only that window's programs.
     opened_by: OpenedBy,
     /// The profile it runs on, as its start named it: what a profile's forgetting on a runner
     /// waits for (#4047).
@@ -2233,6 +2234,8 @@ impl Hosting {
         // Answered only to a link that may compose a start or take one back: the window's, or
         // its host's relaying it (#3369).
         let answers_prompt_key = peer.scope().may(Power::Launch);
+        // Read now: the link may end while the program starts, and the chat stays its window's.
+        let started_for = opened_by(&self.state(), peer);
         // Composed off the runtime: a start the host composes itself reads the project's files
         // and starts its confinement (#2171).
         let composed = {
@@ -2349,7 +2352,7 @@ impl Hosting {
                     sandbox: sandbox.clone(),
                     note: start.note.clone(),
                     logins: Arc::default(),
-                    opened_by: OpenedBy::ThisHost,
+                    opened_by: started_for,
                     profile: start.profile.clone(),
                     harness: start.harness.clone(),
                     ends_with_its_window,
@@ -2771,18 +2774,33 @@ impl Hosting {
     /// each with the place of the confinement it runs in. Each confinement it answers is named to
     /// that link (#2444), which may act on it and hear it from then on. Its browsers too, to a
     /// link of 1.39 or later (#2025), each with who drives it; and each program with the note
-    /// the window keeps of it here.
+    /// the window keeps of it here. A link between hosts is answered only what was opened for the
+    /// window it named, and nothing where it named none (#4271).
     fn programs_of(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
         let knows_browsers = peer.version() >= session::KNOWS_BROWSERS_TAKEN_BACK;
         let mut state = self.state();
         let at = held_by(&state, project, link_of(peer))
             .cloned()
             .ok_or_else(|| no_such_project(project))?;
+        let asked_for = opened_by(&state, peer);
+        let answers_it = |hosted: &Hosted| match &asked_for {
+            OpenedBy::ThisHost => true,
+            OpenedBy::Relayed(None) => false,
+            OpenedBy::Relayed(Some(_)) => hosted.opened_by == asked_for,
+        };
+        // Only the sandbox `take_back` names that window: one composed for a start that named
+        // none to its link stays unnamed, its chat answered without it.
+        let names_it = |held: &Confinement| match &asked_for {
+            OpenedBy::ThisHost => true,
+            OpenedBy::Relayed(window) => window.is_some() && held.window == *window,
+        };
         let mut programs: Vec<HeldProgram> = state
             .programs
             .iter()
             .filter(|(_, hosted)| {
-                hosted.at == at && (knows_browsers || hosted.kind != ProgramKind::Browser)
+                hosted.at == at
+                    && (knows_browsers || hosted.kind != ProgramKind::Browser)
+                    && answers_it(hosted)
             })
             .map(|(id, hosted)| HeldProgram {
                 program: id.clone(),
@@ -2794,7 +2812,7 @@ impl Hosting {
                 confined: state
                     .confinements
                     .iter()
-                    .find(|(_, held)| held.owner == Owner::Program(id.clone()))
+                    .find(|(_, held)| held.owner == Owner::Program(id.clone()) && names_it(held))
                     .map(|(confinement, held)| Confined {
                         confinement: confinement.clone(),
                         ..held.confining.confined()
@@ -2802,7 +2820,7 @@ impl Hosting {
                 plan: state
                     .confinements
                     .values()
-                    .find(|held| held.owner == Owner::Program(id.clone()))
+                    .find(|held| held.owner == Owner::Program(id.clone()) && names_it(held))
                     .map(|held| held.plan.clone()),
                 sandbox: Some(hosted.sandbox.clone()),
                 cols: hosted.size.columns,

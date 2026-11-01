@@ -532,14 +532,16 @@ async fn a_link_between_hosts_cannot_act_on_a_browser_the_runners_own_window_ope
 
 /// Dials host B over a link that agreed on session protocol 1.37, before relayed browsers.
 fn over_a_link_before_1_38(b: Hosting) -> Dial {
+    over_a_link_of(b, 37)
+}
+
+/// Dials host B over a link that agreed on session protocol 1.`minor`.
+fn over_a_link_of(b: Hosting, minor: u16) -> Dial {
     Arc::new(move || {
         let b = b.clone();
         Box::pin(async move {
             let old = purlis_session_protocol::version::Speaks::new([
-                purlis_session_protocol::version::Version {
-                    major: 1,
-                    minor: 37,
-                },
+                purlis_session_protocol::version::Version { major: 1, minor },
             ]);
             let (a, b_end) = duplex(4 << 20);
             let (client, served) = tokio::join!(
@@ -550,6 +552,32 @@ fn over_a_link_before_1_38(b: Hosting) -> Dial {
             Ok(client.unwrap())
         })
     })
+}
+
+#[tokio::test]
+async fn host_a_asks_a_runner_its_programs_from_1_67_and_not_before() {
+    let runner = a_runner();
+    let project = tempfile::tempdir().unwrap();
+    let at = project.path().to_str().unwrap();
+    let (own, _own_views, _own_events) =
+        Client::new(as_scope(Scope::LocalUi, runner.hosting.clone()).await);
+    own.hold_project(PROJECT, at).await.unwrap();
+    own.start_program(StartProgram::of(PROJECT, ProgramKind::Browser))
+        .await
+        .expect("the runner's own window's browser");
+
+    // Each link here is admitted as `local-ui`, so the runner answers whichever it is asked.
+    for (minor, answered) in [(66, 0), (67, 1)] {
+        let relay = Relay::new(over_a_link_of(runner.hosting.clone(), minor));
+        let (client, _views, _events) = Client::new(as_scope(Scope::LocalUi, relay).await);
+        client.hold_project(PROJECT, at).await.unwrap();
+
+        assert_eq!(
+            client.programs_of(PROJECT).await.expect("answered").len(),
+            answered,
+            "a runner of 1.{minor}"
+        );
+    }
 }
 
 #[tokio::test]
