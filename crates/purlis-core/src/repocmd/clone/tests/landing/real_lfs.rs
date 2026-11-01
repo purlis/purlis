@@ -724,9 +724,10 @@ fn real_git_lfs_a_filter_outside_a_wired_clone_asks_none_of_the_persons_helpers(
             assert!(cut.ok(), "{cut:?}");
 
             for checked_out in [repo.join("large.bin"), folder.join("large.bin")] {
-                assert_eq!(
-                    std::fs::read_to_string(&checked_out).unwrap(),
-                    object.pointer()
+                assert!(
+                    std::fs::read(&checked_out).unwrap() == object.pointer().into_bytes(),
+                    "{} is not its pointer",
+                    checked_out.display()
                 );
             }
             assert!(!machine.persons_helper_ran(), "purlis's git asked it");

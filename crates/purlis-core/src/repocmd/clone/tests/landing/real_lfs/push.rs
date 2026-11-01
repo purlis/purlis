@@ -162,10 +162,11 @@ impl Place {
     fn wired(self) -> Self {
         let url = "https://github.com/acme/widget.git";
         plain_git(&self.clone, &["remote", "set-url", "origin", url]);
-        let rewrite = format!("url.file://{}.insteadOf", self.forge.display());
-        plain_git(&self.clone, &["config", &rewrite, url]);
+        // Before the rewrite: the policy goes by what the remote's address says.
         crate::gitpolicy::apply(&self.clone, &self.plane);
         assert_wired(&self.clone);
+        let rewrite = format!("url.file://{}.insteadOf", self.forge.display());
+        plain_git(&self.clone, &["config", &rewrite, url]);
         self
     }
 

@@ -1223,7 +1223,8 @@ fn a_worktree_add_holds_what_a_config_its_checkout_reads_the_same_way_names() {
             assert!(crate::testgit::run(repo, config).ok(), "{config:?}");
         }
     };
-    let ways: [(&str, &dyn Fn(&Path, &Path)); 2] = [
+    type Plant<'a> = &'a dyn Fn(&Path, &Path);
+    let ways: [(&str, Plant); 2] = [
         ("a plain include", &plain_include),
         ("a worktree config", &worktree_config),
     ];
