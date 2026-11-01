@@ -50,6 +50,9 @@ pub enum Refused {
     /// No statement this desktop can trust vouches for the runner: none yet, one signed by
     /// another key than the pool's, or one about another claim or requester.
     NotVouched(String),
+    /// The whole wait for the operator to vouch passed with no statement yet (spec #4275, #4398):
+    /// the one refusal a longer wait could have changed.
+    WaitRanOut(String),
     /// Anything else, in words a person reads.
     Other(String),
 }
@@ -70,7 +73,9 @@ impl std::fmt::Display for Refused {
                  check the new key with your cluster's admin, then remove the pool and add it \
                  again"
             ),
-            Refused::NotVouched(why) | Refused::Other(why) => f.write_str(why),
+            Refused::NotVouched(why) | Refused::WaitRanOut(why) | Refused::Other(why) => {
+                f.write_str(why)
+            }
         }
     }
 }
@@ -2034,7 +2039,7 @@ fn vouched_within(
                 .claim_said(&claimed.namespace, &claimed.name)
                 .map(|said| format!(" The claim says: {said}."))
                 .unwrap_or_default();
-            return Err(Refused::NotVouched(format!(
+            return Err(Refused::WaitRanOut(format!(
                 "the cluster operator did not vouch for the runner of claim {}/{} within {} \
                  seconds, so purlis deleted the claim.{said}",
                 claimed.namespace,

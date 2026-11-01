@@ -207,7 +207,7 @@ fn a_send_out_of_its_time_says_the_limit_and_double_it() {
     let refused = link
         .write_on_a_stream(None, held, move |client, transfer| {
             Box::pin(async move {
-                // Not held there: a failed send, past its time by this machine's clock.
+                // Not answered by the time this machine's clock says its time is up.
                 client
                     .take_code_held(
                         "01J9PRJCT00000000000000001",
@@ -224,4 +224,34 @@ fn a_send_out_of_its_time_says_the_limit_and_double_it() {
 
     assert!(refused.contains("Longest code send"), "{refused}");
     assert!(refused.contains("raise it to 20 minutes"), "{refused}");
+}
+
+/// **A send a host refused says that, even with its whole time gone** (#4398): raising the wait
+/// would not help, so nothing offers to.
+#[test]
+fn a_definite_refusal_past_its_time_offers_no_longer_wait() {
+    use purlis_core::poollimits::LimitId::CodeSendTime;
+    let runtime = runtime();
+    let home = tempfile::tempdir().unwrap();
+    let link = a_link_moving_code(&runtime, home.path());
+    let held = SendHeld {
+        most: 1024,
+        within: Duration::ZERO,
+        given: None,
+        late: Some(CodeSendTime.limit().waited(10, None)),
+    };
+
+    let refused = link
+        .write_on_a_stream(None, held, move |_client, _transfer| {
+            Box::pin(async move {
+                Err::<(), _>(session::CallError::Refused(Refusal {
+                    code: "not_allowed".to_owned(),
+                    why: "this runner takes no more code".to_owned(),
+                }))
+            })
+        })
+        .unwrap_err();
+
+    assert!(refused.contains("takes no more code"), "{refused}");
+    assert!(!refused.contains("Longest code send"), "{refused}");
 }

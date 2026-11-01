@@ -52,6 +52,9 @@ pub enum Refused {
     /// A runner already kept answered with another device id or key: it is refused, and what
     /// was kept stays. The window says the runner's key changed and offers to remove it.
     KeyChanged { name: String },
+    /// A wait that is one of the pool's limits ended the attempt (spec #4275, #4398): only this
+    /// refusal offers to raise it.
+    WaitRanOut(String),
     /// Anything else, in words a person reads.
     Other(String),
 }
@@ -64,7 +67,7 @@ impl std::fmt::Display for Refused {
                 "runner {name} answered with another key than the one kept for it, so purlis \
                  refused it and keeps the key it pinned; remove the runner if it was made again"
             ),
-            Refused::Other(why) => f.write_str(why),
+            Refused::WaitRanOut(why) | Refused::Other(why) => f.write_str(why),
         }
     }
 }

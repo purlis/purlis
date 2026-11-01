@@ -280,17 +280,24 @@ pub fn add_on(
     let desktop =
         purlis_core::linkkey::desktop(config, &*purlis_core::linkkey::this_builds_keyring(config))?
             .pinned();
-    let started = std::time::Instant::now();
-    purlis_core::pools::add_cluster(config, kubectl, &pool, &desktop, within).map_err(|why| {
-        let said = crate::dockerpools::refused_said(&why.to_string());
-        // By this machine's own clock, never the cluster's words.
-        if started.elapsed() >= within {
-            ran_out_vouching(adding.name.trim(), within, &said)
-        } else {
-            said
-        }
-    })?;
+    purlis_core::pools::add_cluster(config, kubectl, &pool, &desktop, within)
+        .map_err(|why| add_refused(adding.name.trim(), within, &why))?;
     Ok(row(&pool))
+}
+
+/// What a refused add says: only one the wait itself ended offers to raise it (#4398), as this
+/// machine's own loop found it, never from the cluster's words.
+fn add_refused(
+    name: &str,
+    within: std::time::Duration,
+    why: &purlis_core::runners::Refused,
+) -> String {
+    let said = crate::dockerpools::refused_said(&why.to_string());
+    if matches!(why, purlis_core::runners::Refused::WaitRanOut(_)) {
+        ran_out_vouching(name, within, &said)
+    } else {
+        said
+    }
 }
 
 /// An add that ran out of the wait `within`, in words the window can ask of for what to raise it

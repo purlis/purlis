@@ -1772,7 +1772,6 @@ impl HostLink {
         let SendHeld {
             most, within, late, ..
         } = held;
-        let started = std::time::Instant::now();
         let asked = ask(Arc::clone(&self.client), transfer);
         let file = file.map(Path::to_path_buf);
         let sent = self.transfer(transfer, within, async move {
@@ -1793,22 +1792,34 @@ impl HostLink {
             // The host's answer comes as soon as it refuses, stream or none: a refusal is
             // said at once, never after the bound on a transfer.
             tokio::pin!(asked, writing);
-            tokio::select! {
-                answered = &mut asked => {
-                    let answer = answered.map_err(code_refused)?;
-                    writing.await?;
-                    Ok(answer)
+            let moving = async {
+                tokio::select! {
+                    answered = &mut asked => {
+                        let answer = answered.map_err(code_refused)?;
+                        writing.await?;
+                        Ok::<T, String>(answer)
+                    }
+                    written = &mut writing => {
+                        written?;
+                        asked.await.map_err(code_refused)
+                    }
                 }
-                written = &mut writing => {
-                    written?;
-                    asked.await.map_err(code_refused)
-                }
+            };
+            // This machine's own clock, started before the host's: `Ok(None)` is this send's
+            // wait ending it, and nothing a runner says is. What it answered first says itself
+            // (#4398), however late.
+            match tokio::time::timeout(within, moving).await {
+                Ok(moved) => moved.map(Some),
+                Err(_) => Ok(None),
             }
         });
-        sent.map_err(|why| match late {
-            Some(hit) if started.elapsed() >= within => self.limit_said(hit),
-            _ => why,
-        })
+        match sent? {
+            Some(answer) => Ok(answer),
+            None => Err(late.map_or_else(
+                || "the host did not finish moving the code in time".to_owned(),
+                |hit| self.limit_said(hit),
+            )),
+        }
     }
 
     /// One transfer the host writes: `ask` names it, and the bytes the host writes on the code

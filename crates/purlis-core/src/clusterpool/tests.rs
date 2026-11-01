@@ -1177,6 +1177,8 @@ fn a_claim_never_vouched_for_is_deleted_and_says_what_the_claim_says() {
     )
     .unwrap_err();
     assert!(why.to_string().contains("OverQuota: 5 claims"), "{why}");
+    // Only this outcome offers a longer wait (#4398).
+    assert!(matches!(why, Refused::WaitRanOut(_)), "{why:?}");
     assert!(
         cluster
             .calls()
