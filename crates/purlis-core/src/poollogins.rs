@@ -186,7 +186,8 @@ impl Bound {
         if !held.owned() {
             return Err(not_marked_said(pool));
         }
-        if crate::runnertaint::pool_ran_unsandboxed(config_root, pool) {
+        // By the pool's own name, whatever name this was asked by.
+        if crate::runnertaint::pool_ran_unsandboxed(config_root, held.name()) {
             return Err(crate::runnertaint::sent_nothing_on(pool));
         }
         let pod = vouch(config_root, link).map_err(|why| {

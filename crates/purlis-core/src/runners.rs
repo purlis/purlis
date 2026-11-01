@@ -2244,11 +2244,15 @@ pub fn keep_cluster_runner_locked(
             "no cluster pool named {name} is on this machine"
         )));
     }
+    // A chat has one fresh runner, on whichever pool: a second would refuse the whole file.
     let there = held
         .cluster_runners
         .iter()
         .chain(&held.fresh_runners)
-        .find(|one| one.name == name && one.chat == kept.chat);
+        .find(|one| match &kept.chat {
+            Some(_) => one.chat == kept.chat,
+            None => one.chat.is_none() && one.name == name,
+        });
     if let Some(there) = there {
         return if there.claimed == kept.claimed
             && there.pod == kept.pod
@@ -2629,9 +2633,9 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         "key",
         "paired",
     ];
-    let rest = fields.keys().filter(|key| key.as_str() != "chat");
+    let mut rest = fields.keys().filter(|key| key.as_str() != "chat");
     if fields.len() - usize::from(chat.is_some()) != known.len()
-        || rest.into_iter().any(|key| !known.contains(&key.as_str()))
+        || rest.any(|key| !known.contains(&key.as_str()))
     {
         return None;
     }

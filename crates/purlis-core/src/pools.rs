@@ -833,6 +833,13 @@ pub fn claim_fresh(
     if let Some((_, kept)) = runners::fresh_runner_of(config_root, chat)? {
         return Ok(kept);
     }
+    // Only of a pool whose add finished: one that fails forgets its pool, and a fresh runner with
+    // no pool would refuse the whole file. No lock across the wait: tasks start side by side.
+    if runners::cluster_runner_for(config_root, name)?.is_none() {
+        return Err(Refused::Other(format!(
+            "no cluster pool named {name} is on this machine"
+        )));
+    }
     let pool = runners::cluster_pools(config_root)?
         .into_iter()
         .find(|pool| pool.name() == name)
@@ -1311,7 +1318,7 @@ fn told_at_a_link(
     };
     let reached = pool.kubectl(&kubectl.clone().within(VOUCHED_NOW_WITHIN));
     let seen = reached.pool(pool.pool()).map_err(|why| why.to_string())?;
-    let moved = runners::keep_cluster_minting(config_root, name, seen.mints_in_cluster)
+    let moved = runners::keep_cluster_minting(config_root, pool.name(), seen.mints_in_cluster)
         .map_err(|why| why.to_string())?;
     if moved && let Some(tell) = TOLD_OF_MINTING.get() {
         tell();
@@ -1710,20 +1717,21 @@ pub fn remove_cluster(
         // to stop.
         tracing::info!("purlis: pool {name}'s runner was not unpaired: {why}");
     }
-    let left = claim_released(&pool, kept.as_ref(), kubectl, device);
+    let mut left = claim_released(&pool, kept.as_ref(), kubectl, device);
     // Each chat's own runner of the pool goes with it (#3709): those chats' links end with it.
-    if let Some(kubectl) = kubectl {
-        let kubectl = pool.kubectl(kubectl);
-        for fresh in runners::fresh_runners(config_root)?
-            .iter()
-            .filter(|fresh| fresh.name == name)
-        {
-            if let Err(why) = kubectl.delete_claim(&fresh.claimed.namespace, &fresh.claimed.name) {
-                tracing::warn!(
-                    "purlis: claim {} of pool {name} was not deleted: {why}",
-                    fresh.claimed.name
-                );
-            }
+    for fresh in runners::fresh_runners(config_root)?
+        .iter()
+        .filter(|fresh| fresh.name == name)
+    {
+        let (namespace, claim) = (&fresh.claimed.namespace, &fresh.claimed.name);
+        let deleted = kubectl
+            .is_some_and(|kubectl| pool.kubectl(kubectl).delete_claim(namespace, claim).is_ok());
+        if !deleted {
+            let said = format!(
+                "The claim {claim} may still hold a runner in the cluster: delete it with \
+                 kubectl delete claims.runners.purlis.dev {claim} --namespace {namespace}."
+            );
+            left = Some(left.map_or(said.clone(), |left| format!("{left} {said}")));
         }
     }
     {

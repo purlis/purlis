@@ -395,11 +395,11 @@ pub fn relaying(
 /// and asks nothing here: its link's own check waits for its start.
 pub fn runs_again(config_root: PathBuf) -> purlis_host::RunsAgain {
     Arc::new(move |pool: &str| {
-        let Ok(Some((cluster, _))) = cluster_reached(&config_root, pool) else {
+        let Ok(Some((_, kept))) = cluster_reached(&config_root, pool) else {
             return None;
         };
         let kubectl = crate::clusterpools::kubectl(&config_root).ok()?;
-        purlis_core::pools::run_cluster_runner_again(&config_root, &kubectl, cluster.name())
+        purlis_core::pools::run_cluster_runner_again(&config_root, &kubectl, &kept.link_name())
     })
 }
 
