@@ -26,6 +26,14 @@ test("every command block of the guide is run on kind or says it is not", () => 
   }
 });
 
+test("every command block is one the check reads", () => {
+  // An indented block, or one fenced as `sh`, would escape the check above.
+  assert.deepEqual(
+    guide.split("\n").filter((line) => /^\s*```/.test(line) && !/^```(bash|text|)$/.test(line)),
+    [],
+  );
+});
+
 test("kind.sh runs every block the guide says it runs, and no other", () => {
   const named = blocks(guide).flatMap((block) => block.name ?? []);
   assert.equal(new Set(named).size, named.length, "a name is used twice");

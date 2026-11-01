@@ -12,7 +12,7 @@ name: cluster operator
 # guide's commands. A push doesn't: a green push publishes an image (operator-image.yml), and the
 # nightly run checks the guide on main.
 #
-# Only a change to the operator, the runner image, the desktop's side of a cluster runner, the
+# Otherwise only a change to the operator, the runner image, the desktop's side of a cluster runner, the
 # toolchain, the licence and advisory rules or this file runs it on a pull request, so every
 # other pull request waits on none of it; it also runs nightly on `main`. It publishes nothing
 # and holds no write permission.

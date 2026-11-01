@@ -38,7 +38,7 @@ _Not yet run in CI: CI starts from a checkout already._
 ```bash
 git clone https://github.com/purlis/purlis.git
 cd purlis
-commit=$(gh run list --repo purlis/purlis --workflow operator-image.yml --branch main --status success --limit 1 --json headSha --jq '.[0].headSha')
+commit=$(gh run list --repo purlis/purlis --workflow operator-image.yml --branch main --status success --limit 1 --json displayTitle --jq '.[0].displayTitle | split(" ") | last')
 git checkout "$commit"
 ```
 
@@ -71,9 +71,9 @@ A runner's pod has no way to name a pull secret, so your nodes have to be able t
 Copying both images to your own registry covers that. Each image is checked against its signature
 first, and copying keeps its digest.
 
-Set `channel` to the update channel your purlis is on, `latest` for stable or `dev` for dev. The
-runner image has to be the one your app's version names, or purlis won't sign your profiles in
-there for you.
+Update purlis first, because this takes the newest runner image of your update channel, and it has
+to match your app's version or purlis won't sign your profiles in there for you. Set `channel` to
+your channel, `latest` for stable or `dev` for dev.
 
 _Not yet run in CI: it needs a sign-in that can read the private images._
 
@@ -90,23 +90,25 @@ operator_digest=$(docker buildx imagetools inspect "ghcr.io/purlis/purlis-cluste
 operator=ghcr.io/purlis/purlis-cluster-operator@$operator_digest
 cosign verify "$operator" \
   --certificate-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-echo "$runner"
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com &&
+  echo "operator checked: $operator"
 ```
 
-The last line prints the runner image, and `cosign` prints what it checked. Now check the runner
-image. On the dev channel use the same command with this identity. On stable use
+You should see `operator checked:`. **If you don't, stop here** and don't copy the image.
+
+Now check the runner image and copy both. The command below is for the dev channel. On stable, use
 `runner-image.yml@refs/tags/v<version>`, with your version, in place of
-`runner-image.yml@refs/heads/main`:
+`runner-image.yml@refs/heads/main`. Nothing is copied unless the check passes.
 
 _Not yet run in CI: the same reason._
 
 ```bash
 cosign verify "$runner" \
   --certificate-identity https://github.com/purlis/purlis/.github/workflows/runner-image.yml@refs/heads/main \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-docker buildx imagetools create --tag <your registry>/purlis-cluster-operator:guide "$operator"
-docker buildx imagetools create --tag <your registry>/purlis-runner:guide "$runner"
+  --certificate-github-workflow-repository purlis/purlis \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com &&
+  docker buildx imagetools create --tag <your registry>/purlis-cluster-operator:guide "$operator" &&
+  docker buildx imagetools create --tag <your registry>/purlis-runner:guide "$runner"
 docker buildx imagetools inspect <your registry>/purlis-cluster-operator:guide --format '{{.Manifest.Digest}}'
 docker buildx imagetools inspect <your registry>/purlis-runner:guide --format '{{.Manifest.Digest}}'
 docker logout ghcr.io
@@ -155,7 +157,7 @@ You should see `namespace/purlis-system created`, then `labeled`, then
 ## 5. Install the operator
 
 Put in your registry and the operator's digest from step 2. CI renders this command with
-`helm template` and checks it makes exactly what the install it runs makes.
+`helm template` and checks it matches the chart CI installs, but doesn't run it.
 
 <!-- kind: install -->
 
@@ -180,8 +182,8 @@ image: `kubectl -n purlis-system describe pods` says so under Events.
 ## 6. Make your first pool
 
 Wait a minute after step 5: the operator only acts on Claims made more than 30 seconds after its
-policy is in place. Put in your registry and the runner's digest from step 2. Change `team` if you
-want another name.
+policy is in place. Put in your registry and the runner's digest from step 2. This guide calls the pool `team`
+throughout, so if you choose another name, change it in every command after this.
 
 <!-- kind: pool -->
 
@@ -243,7 +245,7 @@ kubectl apply -f - <<'EOF'
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: use-pool-team
+  name: purlis-pool-team
 rules:
   - apiGroups: [runners.purlis.dev]
     resources: [pools]
@@ -253,11 +255,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: use-pool-team-<their namespace>
+  name: purlis-pool-team-<their namespace>
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: use-pool-team
+  name: purlis-pool-team
 subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: User
@@ -288,10 +290,11 @@ subjects:
     name: <their name>
 EOF
 kubectl auth can-i use pools.runners.purlis.dev/team --as <their name>
+kubectl auth can-i get pools.runners.purlis.dev/team --as <their name>
 kubectl auth can-i create claims.runners.purlis.dev --namespace <their namespace> --as <their name>
 ```
 
-You should see `yes` twice at the end. Give them the pool's key too, so they can check it in step 7.
+You should see `yes` three times at the end. Give them the pool's key too, so they can check it in step 7.
 They only need step 7, and the operator gives them a namespace of their own for their runners.
 
 ## If something goes wrong
