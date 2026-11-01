@@ -123,16 +123,22 @@ fn a_harness_purlis_ships_keeps_its_route_and_a_declared_one_that_takes_mcp_take
 }
 
 #[test]
-fn only_a_chat_on_the_mcp_route_is_briefed_with_the_one_line() {
-    assert_eq!(briefing(Some(Route::Mcp)), Some(crate::skills::POINTER));
-    for told_by_its_route in [
-        None,
-        Some(Route::Plugin),
-        Some(Route::Config),
-        Some(Route::Briefing),
+fn each_route_is_briefed_with_its_own_line_and_a_chat_with_none_is_told_nothing() {
+    use crate::skills::{NOT_KNOWN, POINTER};
+    // #4510: on a route that hands skills, a skill can name another its harness was not handed
+    // (hidden by the router, or installed since the chat started), and the harness can only
+    // answer "Unknown skill".
+    for (route, line) in [
+        (Some(Route::Mcp), Some(POINTER)),
+        (Some(Route::Plugin), Some(NOT_KNOWN)),
+        (Some(Route::Config), Some(NOT_KNOWN)),
+        (Some(Route::Briefing), Some(NOT_KNOWN)),
+        (Some(Route::Own), None),
+        (None, None),
     ] {
-        assert_eq!(briefing(told_by_its_route), None, "{told_by_its_route:?}");
+        assert_eq!(briefing(route), line, "{route:?}");
     }
+    assert!(NOT_KNOWN.contains("does not know") && NOT_KNOWN.contains("skill_load"));
 }
 
 #[test]

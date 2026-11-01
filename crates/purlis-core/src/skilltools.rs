@@ -169,10 +169,18 @@ impl Asking<'_> {
 
 /// **What the server tells a chat of its skills at its start**, in its instructions: the one
 /// line [`crate::skills::POINTER`] for a chat on [`Route::Mcp`], whose harness runs none of
-/// purlis's hooks and so is briefed by nothing else, and nothing for a chat on any other route,
-/// which is told about its skills by that route (a chat is told once).
+/// purlis's hooks and so is briefed by nothing else. A chat on any other route is told about its
+/// skills by that route, so it is told here only [`crate::skills::NOT_KNOWN`], what to do when
+/// its harness does not know a skill it was not handed (#4510). A terminal's own Claude Code is
+/// on `Plugin` too, was handed none of the plane's skills, and the line is as true for it. A
+/// harness with no route is told nothing.
 pub fn briefing(route: Option<Route>) -> Option<&'static str> {
-    (route == Some(Route::Mcp)).then_some(crate::skills::POINTER)
+    match route? {
+        Route::Mcp => Some(crate::skills::POINTER),
+        Route::Plugin | Route::Config | Route::Briefing => Some(crate::skills::NOT_KNOWN),
+        // A chat's own route is never this: it is a harness or repo skill's.
+        Route::Own => None,
+    }
 }
 
 /// **Answers the skill tool `name` for `chat`, with `args`.** A load opens its run through

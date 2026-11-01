@@ -84,6 +84,7 @@ mod plain_git_in_a_held_branch_folder_is_refused_by_the_hook;
 mod plane_resolution;
 mod plane_root;
 mod plugin_install;
+mod pool_setup;
 mod profile_create;
 mod profile_list;
 mod profile_sign_in;

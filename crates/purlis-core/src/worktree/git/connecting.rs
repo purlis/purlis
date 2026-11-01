@@ -37,6 +37,9 @@ const CONNECTING: [&str; 15] = [
 /// What `git submodule` does that fetches or clones a submodule.
 const SUBMODULE_FETCHES: [&str; 2] = ["update", "add"];
 
+/// What `git lfs` does that reaches nothing but this machine.
+const LFS_STAYS_HERE: [&str; 6] = ["version", "env", "ls-files", "status", "pointer", "fsck"];
+
 /// Whether a call whose verb starts `from` can reach another repository, and so is run only
 /// through the network entry point. `ls-remote --get-url` and a `remote` that only reads or
 /// writes its config connect to nothing.
@@ -53,6 +56,8 @@ pub(super) fn connects(from: &[&str]) -> bool {
         }
         "submodule" => sub().is_some_and(|sub| SUBMODULE_FETCHES.contains(&sub)),
         "archive" => rest.iter().any(|word| word.starts_with("--remote")),
+        // Whatever git-lfs may send or fetch: only what reads this machine alone stays off it.
+        "lfs" => sub().is_none_or(|sub| !LFS_STAYS_HERE.contains(&sub)),
         verb if verb.starts_with("remote-") => true,
         verb if verb.starts_with("cvs") => true,
         verb => CONNECTING.contains(&verb),
@@ -77,6 +82,9 @@ mod tests {
             &["clone", "--", "/a/folder", "/b"],
             &["clone", "https://example.invalid/x.git"],
             &["ls-remote", "origin"],
+            &["lfs", "push", "origin", "main"],
+            &["lfs", "pull"],
+            &["lfs", "fetch", "--all"],
             &["ls-remote", "--heads", "https://example.invalid/x.git"],
             &["remote", "update"],
             &["remote", "show", "origin"],

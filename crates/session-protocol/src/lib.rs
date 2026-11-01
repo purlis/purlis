@@ -81,6 +81,7 @@
 pub mod auth;
 pub mod browsing;
 pub mod code;
+pub mod fixedlimits;
 pub mod grants;
 pub mod hostlink;
 pub mod link;

@@ -736,6 +736,52 @@ fn repo_names_a_recent_objects_hook(listing: &str) -> bool {
     })
 }
 
+/// Whether the repository's own config at `dir` names a program `git-lfs` itself would start, or
+/// moves its store: what refuses an upload before a push ([`crate::lfsupload`], #4399). Your
+/// global and system files are yours, and what the command line gives is the caller's. A listing
+/// that cannot be had counts as naming one.
+pub(crate) fn lfs_would_start_a_program(dir: &Path) -> Result<bool, GitUnavailable> {
+    let listed = run_raw_listing(dir)?;
+    let Some(listing) = listed else {
+        return Ok(true);
+    };
+    Ok(listed_entries(&listing).any(|(scope, key, value)| {
+        if matches!(scope, "global" | "system" | "unknown" | "command") {
+            return false;
+        }
+        // Lowered whole: a sub-section keeps its case in git's listing, and git-lfs may not.
+        let key = key.to_ascii_lowercase();
+        let Some((section, rest)) = key.split_once('.') else {
+            return false;
+        };
+        let (sub, variable) = match rest.rsplit_once('.') {
+            Some((sub, variable)) => (Some(sub), variable),
+            None => (None, rest),
+        };
+        // git-lfs finds some of these with loose patterns, and a URL-scoped key outranks the
+        // command line ([`crate::lfsupload`]): anything that spells one counts, at any depth.
+        // The exact helper purlis's git policy writes never runs: the one-credential rule empties
+        // the list, and the push's own helper follows.
+        match (section, sub, variable) {
+            ("credential", None, "helper") => !matches!(
+                value,
+                "!gh auth git-credential" | "!glab auth git-credential"
+            ),
+            ("credential", _, "helper") | ("core", None, "sshcommand" | "askpass") => true,
+            ("lfs", Some(sub), "path") if sub.starts_with("customtransfer.") => true,
+            ("lfs", Some(sub), "clean" | "smudge") if sub.starts_with("extension.") => true,
+            ("lfs", _, "storage") | ("http", _, "extraheader") => true,
+            ("alias", None, "lfs") | ("alias", Some("lfs"), _) => true,
+            _ => key.contains("customtransfer") || key.contains("standalonetransferagent"),
+        }
+    }))
+}
+
+fn run_raw_listing(dir: &Path) -> Result<Option<String>, GitUnavailable> {
+    let ran = run(dir, &["config", "--list", "--show-scope", "-z"], READ)?;
+    Ok(ran.ok().then_some(ran.out))
+}
+
 /// Whether a config key (lowercased as git lists it) names a program `git-lfs` runs when git
 /// starts it as a filter: a transfer agent or an extension of LFS's own, or the credential,
 /// ssh and askpass programs it asks for itself when it downloads. The exact helper purlis's git
@@ -2267,6 +2313,14 @@ pub(crate) fn network_call_ended(dir: &Path, args: &[&str], ok: bool, started: I
     for (operation, remote) in destinations(dir, args) {
         crate::netlog::git_call(operation, &remote, ok, started.elapsed());
     }
+}
+
+/// Each URL a push given `args` goes to, read as git reads it ([`destinations`]).
+pub(crate) fn push_destinations(dir: &Path, args: &[&str]) -> Vec<String> {
+    destinations(dir, args)
+        .into_iter()
+        .map(|(_, url)| url)
+        .collect()
 }
 
 /// The verbs that reach a remote the repository names, by its name or as its default.

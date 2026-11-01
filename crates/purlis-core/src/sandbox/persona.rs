@@ -597,8 +597,48 @@ pub fn shown_in(root: &Path, plane: &super::Plane, locks: &Locks) -> Vec<Shown> 
     let Some(policy) = plane.in_force(locks) else {
         return Vec::new();
     };
-    policy
-        .personas
+    shown_of(root, &policy.personas, locks, true)
+}
+
+/// **How each persona's tools stand here, for someone only looking, with the tools it declares**
+/// (#4478): [`shown`], read whether or not the project's chats are sandboxed, with an Allow that no
+/// longer matches read as waiting and never marked, so looking changes nothing. `None` where the
+/// project says no policy that can be read.
+#[must_use]
+pub fn looked_at(root: &Path) -> Option<Vec<(Shown, Vec<super::tools::Tool>)>> {
+    let said = super::Plane::read(root).said();
+    let policy = said.policy.or(said.unset)?;
+    let locks = Locks::of(root);
+    let shown = shown_of(root, &policy.personas, &locks, false);
+    let kept = super::local::allowed_persona_hosts(root);
+    Some(
+        shown
+            .into_iter()
+            .map(|mut one| {
+                // Unjudged, an Allow that no longer matches reads as none: it is one that waits.
+                if one.standing == Standing::NotAllowed
+                    && kept.iter().any(|allow| allow.persona == one.persona)
+                {
+                    one.standing = Standing::Waiting;
+                }
+                let declared = of(&policy.personas, Some(&one.persona))
+                    .map(|grants| grants.tools.clone())
+                    .unwrap_or_default();
+                (one, declared)
+            })
+            .collect(),
+    )
+}
+
+/// [`shown_in`]'s answer for `personas`. Where `judged`, an Allow that no longer matches is marked
+/// ([`standing`]).
+fn shown_of(
+    root: &Path,
+    personas: &BTreeMap<String, Grants>,
+    locks: &Locks,
+    judged: bool,
+) -> Vec<Shown> {
+    personas
         .iter()
         .filter(|(_, grants)| !grants.hosts.is_empty() || !grants.tools.is_empty())
         .map(|(persona, grants)| {
@@ -610,7 +650,7 @@ pub fn shown_in(root: &Path, plane: &super::Plane, locks: &Locks) -> Vec<Shown> 
             Shown {
                 persona: persona.clone(),
                 listed: grants.hosts.clone(),
-                standing: standing(root, persona, &digest, asked),
+                standing: standing(root, persona, &digest, judged && asked),
                 default,
                 digest,
                 hosts,

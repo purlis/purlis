@@ -532,6 +532,14 @@ timeout, quota or config.
 _Avoid_: node pool (that is the cluster's), fleet, cluster (for the pool), warm pool (that is one
 setting of it), runner provider (that is the code)
 
+**Pool setup**:
+The one guided view tab that takes anyone from nothing to a working chat on a **Pool**: a list of
+steps on the left, each with its state (done, current, needs attention, skipped, waiting on
+someone), and one step with one main action on the right. The steps of a kind of pool are data.
+Everything it shows is read fresh, and only the person's choices are stored, so work done by hand
+or through `purlis pool` is picked up (spec #4469). Window text says Pool setup.
+_Avoid_: wizard, onboarding, add pool form (that is what it replaces)
+
 **Claim**:
 One person's request for a runner from a pool, and the runner it is given. A **kept** claim has
 storage of its own, its runner's home, and survives the loss of its runner's pod, its pairing
