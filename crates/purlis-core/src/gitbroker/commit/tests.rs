@@ -164,12 +164,14 @@ fn ask() -> CommitAsk {
 }
 
 #[test]
-fn a_chat_that_is_not_sandboxed_is_told_to_use_git_and_nothing_is_run() {
-    // No manifest turns the sandbox on here, so every chat is one that commits by itself.
+fn a_chat_that_is_not_sandboxed_is_refused_only_where_the_project_says_and_nothing_is_run() {
+    // No manifest turns the sandbox on here, so no chat here is held as sandboxed.
     let dir = tempfile::tempdir().expect("a temp dir");
     let root = dir.path();
     std::fs::create_dir_all(root.join("workspaces/alpha")).expect("a workspace");
     let identity = git::Isolated::default();
+    let manifest = crate::names::manifest(root);
+    std::fs::write(&manifest, "[plane]\nrefuse_unsandboxed_commit = true\n").expect("a manifest");
     for who in [
         asker(Some(root)),
         Asker {
@@ -187,6 +189,20 @@ fn a_chat_that_is_not_sandboxed_is_told_to_use_git_and_nothing_is_run() {
                 why: PLAIN_GIT.to_owned()
             }
         );
+    }
+    // Not turned on, the same chat goes on to what any other is checked for: here, the folder.
+    std::fs::write(&manifest, "").expect("a manifest");
+    for who in [
+        asker(Some(root)),
+        Asker {
+            unsandboxed: true,
+            ..asker(Some(root))
+        },
+    ] {
+        let Answer::No { why } = answer(root, &who, &ask(), &identity) else {
+            panic!("a commit outside a branch folder was made");
+        };
+        assert!(why.contains("branch folder"), "{why}");
     }
 }
 

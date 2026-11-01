@@ -540,6 +540,12 @@ const PLANE_KEYS: readonly SaveKey[] = [
   },
   { key: "sign", label: "Sign commits", kind: "bool", hint: "Sign the commits a save makes." },
   {
+    key: "refuse_unsandboxed_commit",
+    label: "Refuse unsandboxed commits",
+    kind: "bool",
+    hint: "Make `purlis worktree commit` refuse a chat with no sandbox and send it to git. Off, it commits there with that chat's own git.",
+  },
+  {
     key: "autosave",
     label: "Auto-save",
     kind: "bool",

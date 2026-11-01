@@ -89,9 +89,21 @@ pub const COMMITS_ONLY: &str = "purlis commits for a sandboxed chat and does not
      history: it does not amend, reset, rebase, merge or push. Make a new commit, or ask the \
      person to run the command in their own terminal";
 
-/// What a chat that is not sandboxed is told: it needs no broker.
-pub const PLAIN_GIT: &str = "this chat is not sandboxed, so `git add` and `git commit` work \
-     here as they are: use them";
+/// What a chat that is not sandboxed is told where its project turned the refusal on
+/// ([`refuses_unsandboxed`]).
+pub const PLAIN_GIT: &str = "this chat is not sandboxed, and this project's \
+     `[plane] refuse_unsandboxed_commit` says such a chat commits with git: `git add` and `git \
+     commit` work here as they are, so use them";
+
+/// Whether the project at `root` turned on the refusal of [`PLAIN_GIT`] (#4534): by default a
+/// chat with no sandbox commits with `purlis worktree commit` as any other does, since the
+/// harness's own rules may refuse its plain git.
+pub fn refuses_unsandboxed(root: &Path) -> bool {
+    crate::planesave::Settings::read(root)
+        .plane
+        .refuse_unsandboxed_commit
+        .value
+}
 
 /// How long git may take to stage: it reads every named file, so a read's deadline is not
 /// its deadline.
@@ -183,7 +195,10 @@ fn commit(
     identity: &git::Isolated,
     now: std::time::Instant,
 ) -> Result<Vec<Say>, Refused> {
-    if !sandboxed(root, asker)? {
+    // The command commits by itself where its chat has no sandbox ([`plain`]), so what is asked
+    // here with no sandbox on the app's record is a chat started in one the project has since
+    // turned off, or at the floor. It is made as any other brokered commit, unless refused.
+    if !sandboxed(root, asker)? && refuses_unsandboxed(root) {
         return Err(PLAIN_GIT.into());
     }
     message_ok(&ask.message)?;
@@ -1304,6 +1319,8 @@ fn scanned(top: &Path, message: &str, queue: &mut Option<String>) -> Result<(), 
          entry that would let a finding through"
     ))
 }
+
+pub mod plain;
 
 #[cfg(test)]
 mod tests;
