@@ -14,7 +14,13 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { focusWorkspace, press, theProjectsFoldersAreAccepted, untilSays } from "../acting.js";
+import {
+  focusWorkspace,
+  press,
+  textOf,
+  theProjectsFoldersAreAccepted,
+  untilSays,
+} from "../acting.js";
 import {
   type FakeGitLab,
   gitConfigFor,
@@ -100,6 +106,7 @@ type Account = { id: string; host: string; method: string };
 /** The repos the forge has, each served its own way and named for it. */
 const REPOS: Record<string, Served & { files: number }> = {
   "first-repo": { way: "whole", files: 3 },
+  "refused-in-a-new-workspace": { way: "whole", files: 3 },
   "second-repo": { way: "whole", files: 3 },
   "third-repo": { way: "whole", files: 3 },
   "fourth-repo": { way: "whole", files: 3 },
@@ -346,6 +353,10 @@ function nothingOf(plane: string, workspace: string, repo: string): void {
   });
 }
 
+/** Everything the window draws, in words. */
+const wordsOfTheWindow = (): Promise<string> =>
+  browser.execute(() => document.body.textContent ?? "");
+
 /** Words that would name a forge's CLI to the person. */
 const NAMES_A_CLI = /\b(gh|glab)\b/;
 
@@ -452,6 +463,20 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     expect(forge.heard().some((one) => one.signedIn)).toBe(false);
   });
 
+  it("a new workspace's refused clone keeps its row, with a Retry and no Remove", async () => {
+    const repo = "refused-in-a-new-workspace";
+    await aNewWorkspaceCloning("refused-new", [repo]);
+    await $(`${rowOf(repo)} .trouble`).waitForExist({
+      timeout: 60_000,
+      timeoutMsg: "the refused clone of a repo the workspace does not name lost its row",
+    });
+    const pressable = await browser.execute((css: string) => {
+      const buttons = document.querySelectorAll(`${css} button`);
+      return [...buttons].map((one) => one.getAttribute("aria-label"));
+    }, rowOf(repo));
+    expect(pressable).toEqual([`Retry ${repo}`, `Dismiss ${repo}`]);
+  });
+
   it("signs in once through the browser flow", async () => {
     // With no account the fallback above is the CLI's, by design: so the stand-ins are what the
     // window finds, and the note would show one signing a clone. From here on none may.
@@ -492,11 +517,32 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     // Its result comes once the clone has answered, on the status bar's card: read here, or it
     // would come up over the next case's.
     await untilSays('[data-chip="status/bar/notices"]', "Cloned first-repo").catch(() => undefined);
+    // The failure it stacked over before (#4394): the row's Retry took it away.
+    expect(await wordsOfTheWindow()).not.toContain("Could not clone first-repo");
     await theStatusBarsCardIsPutAway();
     const signed = forge.heard().filter((one) => one.repo === "first-repo" && one.signedIn);
     expect(signed.length).toBeGreaterThan(0);
     // GitLab's name for an OAuth or personal token, from the account's helper and no CLI's.
     expect(new Set(signed.map((one) => one.user))).toEqual(new Set(["oauth2"]));
+  });
+
+  it("a new workspace's repo lands from its row's Retry, and takes the chip's failure with it", async () => {
+    const repo = "refused-in-a-new-workspace";
+    await focusWorkspace("refused-new");
+    await showView("Repos");
+    await press(rowOf(repo), "Retry", "starting");
+    const { landed } = foldersOf(plane, "refused-new", repo);
+    await untilLanded(landed, 90_000, "the row's Retry after signing in");
+    aWholeClone(landed);
+    await browser.waitUntil(async () => !(await $(rowOf(repo)).isExisting()), {
+      timeout: 30_000,
+      timeoutMsg: "the landed repo stayed a row of the ones not cloned here",
+    });
+    await browser.waitUntil(
+      async () => !(await wordsOfTheWindow()).includes(`Could not clone ${repo}`),
+      { timeout: 30_000, timeoutMsg: "the chip's failure outlived the clone that landed" },
+    );
+    await theStatusBarsCardIsPutAway();
   });
 
   it("a clone past the old 120 seconds climbs on the chip's notice and its row, and lands", async () => {
@@ -550,10 +596,18 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     }
     // Its folder deleted by hand: the window has forgotten the clone, so the row offers it again.
     // Not before the clone has answered, or the window reads the deletion as a clone that failed.
-    await browser.waitUntil(async () => (await percentOf(cardMeterOf("long-clone"))) === null, {
-      timeout: 30_000,
-      timeoutMsg: "the landed clone's notice never stopped climbing",
-    });
+    // Its result says so. No meter says nothing: a card behind its dot draws none either.
+    await browser.waitUntil(
+      async () => {
+        if (!(await $(cardOf("long-clone")).isExisting())) await theChipsCardIsBack("long-clone");
+        return ((await textOf(cardOf("long-clone"))) ?? "").includes("Cloned 1 repo");
+      },
+      {
+        timeout: 30_000,
+        interval: 1_000,
+        timeoutMsg: "the landed clone's notice never said it had cloned",
+      },
+    );
     rmSync(landed, { recursive: true, force: true });
     await $(`${rowOf("long-repo")} button[aria-label^="Clone"]`).waitForExist({
       timeout: 60_000,
