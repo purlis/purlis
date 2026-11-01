@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793494635985,
+  "lastUpdate": 1793495721339,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -34482,6 +34482,48 @@ window.BENCHMARK_DATA = {
             "value": 102.86420949999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.968, 102.393, 102.864, 103.024, 103.929 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f2036ee6e9616b411d6be92636bf51070368fd6c",
+          "message": "Runners: a minting chat tested whole, told again at a link, its refused mints paced (#4369)\n\n* Runners: pace a chat's refused mints, and record a cluster-minted run as such (#4332)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XZPDY1GEAK9H11JJ514TB\nPurlis-Persona: steward\n\n* Runners: tell a runner of the mint port again at a link, and hold a chat's start for its repos (#4330, #4331)\n\nA desktop tells a runner where to ask at each link, once for what it says, and reads the Pool's\nopt-in again. The runner keeps any key the port still shows, so a roll it followed is not undone.\nA chat's start on an opted-in pool waits at most five seconds for its repos to reach the Claim.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XZPDY1GEAK9H11JJ514TB\nPurlis-Persona: steward\n\n* Runners: a whole minting chat on the kind job, and the hand-over folder really mounted (#4329)\n\nA stand-in harness composed by the runner's host runs its persona's minting tool in its sandbox\nwith its desktop gone. A start outside the sandbox on a minting pool is refused live, with a pool\nnaming no key as the control. The probe runs again with the pod's hand-over folder mounted, so the\nrow denying it compiles and is tried.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XZPDY1GEAK9H11JJ514TB\nPurlis-Persona: steward\n\n* Runners: what the reviews of the mint follow-ups found\n\nA window's note that it asks is no refusal, and only a refusal paces. A token or values clear both\npaces. A chat's repos reach the Claim before its program starts. A runner takes back no key it moved\non from, writes what it decided only over what it read, and is told again until a word settles it.\nThe amendment is a file of its own, and the kind test compiles and retries its Pool.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XZPDY1GEAK9H11JJ514TB\nPurlis-Persona: steward\n\n* Runners: the link thread's refusal names no moved value\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XZPDY1GEAK9H11JJ514TB\nPurlis-Persona: steward\n\n* Runners: the pace's test names its helper\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XZPDY1GEAK9H11JJ514TB\nPurlis-Persona: steward\n\n* Runners: the mint follow-ups' tests hold the words they say and pass clippy\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XZPDY1GEAK9H11JJ514TB\nPurlis-Persona: steward\n\n* Runners: what the re-review of the mint follow-ups found\n\nThe lock on what a runner keeps of the port is in the session host's own folder, which no chat opens.\nA key let go of while following the next roll is kept as moved on from, and a word naming one takes\nnothing back. A start its runner is sure to refuse adds nothing to the Claim.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M69XZPDY1GEAK9H11JJ514TB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T00:42:40Z",
+          "tree_id": "c2e7645ea4016dafd1fd4312a3b5908cf9a0b663",
+          "url": "https://github.com/purlis/purlis/commit/f2036ee6e9616b411d6be92636bf51070368fd6c"
+        },
+        "date": 1793495716233,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.659358,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.645, 0.659, 0.659, 0.665, 0.692 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.524557,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.403, 16.516, 16.525, 16.647, 16.765 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.383712,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.640, 101.845, 102.384, 102.633, 103.626 ms"
           }
         ]
       }
