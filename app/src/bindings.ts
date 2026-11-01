@@ -10787,8 +10787,11 @@ export type PoolSignInStep =
 { at: "signed-in" } | 
 /**  purlis could not follow the login: what it printed. */
 { at: "could-not-follow"; said: string } | 
-/**  It did not sign in, and why. */
-{ at: "failed"; why: string } | 
+/**
+ *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
+ *  ending so, and the page it opened is no use now (#4367).
+ */
+{ at: "failed"; why: string; stopped: boolean } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" };
 

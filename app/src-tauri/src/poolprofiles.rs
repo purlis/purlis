@@ -1427,8 +1427,10 @@ pub fn sign_out_line(pool: &str, name: &str) -> Result<String, String> {
     let line = crate::runnerlinks::docker()?.sign_out_line(&runner.made, &engine, name)?;
     // A sign-in open on it would say signed in over this sign-out, so it ends first.
     for one in let_go(|one| one.pool == pool && one.name == name) {
-        one.driving
-            .stop("the sign-in was stopped, as a sign-out of this profile started.");
+        stop(
+            &one,
+            "the sign-in was stopped, as a sign-out of this profile started.",
+        );
     }
     // The running runner too: a follow while the line waits makes it one that drains.
     purlis_core::runners::hold_every_runner_from_carrying(&config, pool, name)
@@ -1512,8 +1514,9 @@ pub enum PoolSignInStep {
     SignedIn,
     /// purlis could not follow the login: what it printed.
     CouldNotFollow { said: String },
-    /// It did not sign in, and why.
-    Failed { why: String },
+    /// It did not sign in, and why; `stopped` where purlis stopped it rather than the login
+    /// ending so, and the page it opened is no use now (#4367).
+    Failed { why: String, stopped: bool },
     /// It was cancelled, and its login ended.
     Cancelled,
 }
@@ -1531,7 +1534,10 @@ impl From<driven::Event> for PoolSignInStep {
             driven::Event::Checking => Self::Checking,
             driven::Event::SignedIn => Self::SignedIn,
             driven::Event::CouldNotFollow { said } => Self::CouldNotFollow { said },
-            driven::Event::Failed { why } => Self::Failed { why },
+            driven::Event::Failed { why } => Self::Failed {
+                why,
+                stopped: false,
+            },
             driven::Event::Cancelled => Self::Cancelled,
         }
     }
@@ -1551,6 +1557,10 @@ struct SignIn {
 }
 
 static SIGN_INS: Mutex<Vec<SignIn>> = Mutex::new(Vec::new());
+/// Why each sign-in stopped lately was, for a strip that asks after it was let go (#4367): the
+/// last few, as a strip asks again at once.
+static STOPPED: Mutex<Vec<(u32, String)>> = Mutex::new(Vec::new());
+const MOST_STOPPED_KEPT: usize = 16;
 static NEXT_SIGN_IN: AtomicU32 = AtomicU32::new(1);
 
 /// Why a sign-in ended, where another of the same profile on the same pool replaced it.
@@ -1687,13 +1697,13 @@ pub async fn pool_sign_in_start(
                 drop(held);
                 driving.cancel();
                 for one in before {
-                    one.driving.stop(REPLACED);
+                    stop(&one, REPLACED);
                 }
                 return Err(REPLACED.to_owned());
             }
         };
         for one in before {
-            one.driving.stop(REPLACED);
+            stop(&one, REPLACED);
         }
         Ok(flow)
     })
@@ -1709,6 +1719,13 @@ pub async fn pool_sign_in_next(
     app: tauri::AppHandle,
     flow: u32,
 ) -> Result<Option<PoolSignInStep>, String> {
+    // Named now: a stop lets it go while this waits, and what it answers still concerns them.
+    let named = SIGN_INS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .find(|one| one.flow == flow)
+        .map(|one| (one.pool.clone(), one.name.clone()));
     // Asked at each step, as a login at its device code may take nothing typed.
     let event = tauri::async_runtime::spawn_blocking(move || {
         still_driving(flow).map(|driving| driving.next(STEP_WITHIN))
@@ -1716,6 +1733,7 @@ pub async fn pool_sign_in_next(
     .await
     .map_err(|why| format!("the sign-in did not answer: {why}"))??;
     let mut said_over = None;
+    let mut stopped = false;
     if let Some(event) = event.as_ref().filter(|event| event.is_last()) {
         let over = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -1723,6 +1741,8 @@ pub async fn pool_sign_in_next(
                 .position(|one| one.flow == flow)
                 .map(|at| held.remove(at))
         };
+        // Every stop lets a sign-in go before it ends it.
+        stopped = over.is_none();
         if let Some(over) = over.as_ref()
             && *event == driven::Event::SignedIn
         {
@@ -1731,8 +1751,12 @@ pub async fn pool_sign_in_next(
             tauri::async_runtime::spawn_blocking(move || {
                 carries_again_after_a_sign_in(&pool, &name);
             });
-            // Told with no lock held; every project whose wait went has an Ask to stop drawing.
-            let went = onrunner::let_go(None, &over.pool, &over.name);
+        }
+        // Signed in, stopped or not (#4367): only a carry is the stop's to hold back, as a
+        // sign-out's stop holds it. Told with no lock held; every project whose wait went has an
+        // Ask to stop drawing.
+        if let Some((pool, name)) = named.as_ref().filter(|_| *event == driven::Event::SignedIn) {
+            let went = onrunner::let_go(None, pool, name);
             crate::machineprofiles::tell_asks_at(&app, &went);
         }
         if let Some(over) = over
@@ -1741,9 +1765,10 @@ pub async fn pool_sign_in_next(
             said_over = Some(sign_in_ran_out(&over.pool, over.wait));
         }
     }
-    Ok(event.map(|event| match said_over {
-        Some(why) => PoolSignInStep::from(driven::Event::Failed { why }),
-        None => PoolSignInStep::from(event),
+    Ok(event.map(|event| match (said_over, event) {
+        (Some(why), _) => PoolSignInStep::from(driven::Event::Failed { why }),
+        (None, driven::Event::Failed { why }) => PoolSignInStep::Failed { why, stopped },
+        (None, event) => PoolSignInStep::from(event),
     }))
 }
 
@@ -1805,7 +1830,7 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
                 one.judged.clone(),
             )
         })
-        .ok_or_else(|| "that sign-in is over".to_owned())?;
+        .ok_or_else(|| no_longer_held(flow))?;
     let held = config_root().and_then(|config| {
         may_sign_in_on(&config, &pool)?;
         match &judged {
@@ -1818,7 +1843,7 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
         let why =
             format!("the sign-in was stopped, as pool {pool} or its runner changed. Try again.");
         for one in let_go(|one| one.flow == flow) {
-            one.driving.stop(&why);
+            stop(&one, &why);
         }
         return Err(why);
     }
@@ -1829,8 +1854,30 @@ fn still_driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
 pub fn cancel_sign_ins_on(pool: &str) {
     let why = format!("the sign-in was stopped, as pool {pool} is no longer marked yours.");
     for one in let_go(|one| one.pool == pool) {
-        one.driving.stop(&why);
+        stop(&one, &why);
     }
+}
+
+/// **Ends `one`, let go of already, because it had to stop**: its strip reads why, however its
+/// next ask falls (#4367).
+fn stop(one: &SignIn, why: &str) {
+    let mut stopped = STOPPED.lock().unwrap_or_else(PoisonError::into_inner);
+    if stopped.len() >= MOST_STOPPED_KEPT {
+        stopped.remove(0);
+    }
+    stopped.push((one.flow, why.to_owned()));
+    drop(stopped);
+    one.driving.stop(why);
+}
+
+/// Why sign-in `flow`, no longer held, is over: its stop's reason, where one stopped it.
+fn no_longer_held(flow: u32) -> String {
+    STOPPED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .find(|(stopped, _)| *stopped == flow)
+        .map_or_else(|| "that sign-in is over".to_owned(), |(_, why)| why.clone())
 }
 
 /// **The sign-ins `which` picks, no longer held**, for the caller to end with no lock held.

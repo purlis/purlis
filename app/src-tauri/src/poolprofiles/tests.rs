@@ -1038,3 +1038,42 @@ fn only_a_docker_pools_page_lists_the_limits_shaping_its_runner_and_what_waits()
         Some("Applies when this runner is next replaced.")
     );
 }
+
+/// **A stop heard between two asks says its reason** (#4367): the strip's next ask finds the
+/// sign-in let go, and reads why rather than that it is over.
+#[cfg(unix)]
+#[test]
+fn a_stop_between_two_asks_says_its_reason() {
+    let login = purlis_core::profilestore::sign_in::Login {
+        program: "/bin/sh".to_owned(),
+        args: vec!["-c".to_owned(), "sleep 30".to_owned()],
+        env: Vec::new(),
+        cleared: Vec::new(),
+    };
+    let driving = driven::drive_with(&login, "claude", None, None, driven::LONGEST, || {
+        Standing::SignedOut
+    })
+    .unwrap();
+    let flow = NEXT_SIGN_IN.fetch_add(1, Ordering::SeqCst);
+    let pool = "a-stop-between-two-asks";
+    SIGN_INS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(SignIn {
+            flow,
+            pool: pool.to_owned(),
+            name: "work".to_owned(),
+            wait: 1,
+            driving: Arc::new(driving),
+            judged: None,
+        });
+
+    cancel_sign_ins_on(pool);
+
+    let said = still_driving(flow).map(|_| ()).unwrap_err();
+    assert!(said.contains("no longer marked yours"), "{said}");
+    assert_eq!(
+        still_driving(u32::MAX).map(|_| ()).unwrap_err(),
+        "that sign-in is over"
+    );
+}
