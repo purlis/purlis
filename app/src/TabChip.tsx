@@ -65,6 +65,7 @@ import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Button, IconButton } from "./ui/button/Button";
 import { Twist } from "./ui/disclosure/Disclosure";
 import { tabPart } from "./ui/tabs/Tabs";
+import { useWindowLeft } from "./ui/windowLeft";
 
 /** The chip's hand: in the needs-you colour, at the words' size, drawn on the icon itself
  *  (#3264), as each count's mark is, so the button's class says only where it stands. */
@@ -408,6 +409,11 @@ function Chip({
     notLeaving();
     leaving.current = window.setTimeout(hide, GRACE_MS);
   };
+
+  // Gone from the window, which an engine may not say on the chip or the menu (#3095).
+  useWindowLeft((why) => {
+    if (why === "pointer") leaveSoon();
+  });
 
   // **The keyboard's own open lands on the chat the tab shows**, or its first line: the menu
   // takes the keyboard on itself as it opens, and then on that line.
