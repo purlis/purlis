@@ -249,3 +249,61 @@ fn the_macos_profiles_limit_file_link_to_the_folders_a_chat_may_write() {
         }
     }
 }
+
+/// **What a wrapped chat at the floor can make in a home missing the usual folders** (#4357),
+/// under each profile, applied for real. Measuring for now.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_wrapped_chat_at_the_floor_makes_the_usual_folders_in_its_home() {
+    purlis_core::unsteered!();
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tools/standard-home-paths.sh"
+    );
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let mut said = String::new();
+    let layouts: [(&str, &[&str]); 3] = [
+        ("bare", &[]),
+        ("parents", &[".local", ".config"]),
+        (
+            "usual",
+            &[".local/share", ".local/state", ".local/lib", ".config"],
+        ),
+    ];
+    for (name, folders) in layouts {
+        for (harness, called) in HARNESSES {
+            let at = out.join(name).join(called);
+            let home = at.join("home");
+            let bin = at.join("bin");
+            let root = at.join("project");
+            let tmp = at.join("tmp");
+            for folder in [&home, &bin, &tmp] {
+                fs::create_dir_all(folder).expect("a folder");
+            }
+            for folder in folders {
+                fs::create_dir_all(home.join(folder)).expect("a folder");
+            }
+            lay_out(&root, "schema = 1\n");
+            let machine = Machine {
+                env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+                home: Some(home.clone()),
+                os: Os::MacOs,
+            };
+            let (level, profile) = emitted(harness, &root, &tmp, &machine);
+            assert_eq!(level, Level::Floor);
+            let done = purlis_core::forklock::output(
+                std::process::Command::new("/usr/bin/sandbox-exec")
+                    .args(["-p", &profile, "/bin/sh", script])
+                    .arg(&home)
+                    .arg(format!("{called} {name}"))
+                    .current_dir(&root)
+                    .env("TMPDIR", &tmp),
+            )
+            .expect("sandbox-exec runs");
+            said.push_str(&String::from_utf8_lossy(&done.stdout));
+            said.push_str(&String::from_utf8_lossy(&done.stderr));
+        }
+    }
+    panic!("measured:\n{said}");
+}

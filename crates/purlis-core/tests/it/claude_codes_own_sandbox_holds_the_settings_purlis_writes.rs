@@ -65,6 +65,12 @@ const REPOSITORY_PROBES: usize = 17;
 /// The id of the stand-in's one Bash call.
 const CALL: &str = "toolu_seatbelt_case";
 
+/// What a chat tries to make in its home ([`tools/standard-home-paths.sh`]).
+const HOME_PATHS: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tools/standard-home-paths.sh"
+);
+
 /// Each level, its folder's name and the manifest of a project that starts its chats there.
 const LEVELS: [(Level, &str, &str); 2] = [
     (
@@ -314,12 +320,6 @@ fn probed(
     sources: &[String],
     what: &str,
 ) -> String {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("a runtime");
-    let server = rt.block_on(MockServer::start());
-    let results = Arc::new(Mutex::new(Vec::new()));
     let mode = if cfg!(target_os = "macos") {
         "--here"
     } else {
@@ -333,6 +333,29 @@ fn probed(
             .display(),
         root.display()
     );
+    ran(program, home, tmp, root, settings, sources, what, command)
+}
+
+/// Claude Code at `program`, started in `root` with the settings at `settings` against a
+/// stand-in model whose one Bash call runs `command`: what that call's result said, the last
+/// time it was asked.
+#[allow(clippy::too_many_arguments)]
+fn ran(
+    program: &Path,
+    home: &Path,
+    tmp: &Path,
+    root: &Path,
+    settings: &Path,
+    sources: &[String],
+    what: &str,
+    command: String,
+) -> String {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let server = rt.block_on(MockServer::start());
+    let results = Arc::new(Mutex::new(Vec::new()));
     rt.block_on(async {
         Mock::given(method("POST"))
             .and(path("/v1/messages/count_tokens"))
@@ -477,4 +500,75 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
     if program.is_some() {
         assert_eq!(probed_levels, 2, "Claude Code probed at each level");
     }
+}
+
+/// **What a chat at the floor can make in a home missing the usual folders** (#4357), each home
+/// laid out as named and tried once through Claude Code's own sandbox. Measuring for now.
+#[test]
+fn a_chat_at_the_floor_makes_the_usual_folders_in_its_home() {
+    purlis_core::unsteered!();
+    let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
+        return;
+    };
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let mut said = String::new();
+    let layouts: [(&str, &[&str]); 3] = [
+        ("bare", &[]),
+        ("parents", &[".local", ".config"]),
+        (
+            "usual",
+            &[".local/share", ".local/state", ".local/lib", ".config"],
+        ),
+    ];
+    for (name, folders) in layouts {
+        let at = out.join(name);
+        let home = at.join("home");
+        let bin = at.join("bin");
+        let root = at.join("project");
+        let tmp = at.join("tmp");
+        for folder in [&home.join(".claude"), &bin, &tmp] {
+            fs::create_dir_all(folder).expect("a folder");
+        }
+        for folder in folders {
+            fs::create_dir_all(home.join(folder)).expect("a folder");
+        }
+        lay_out(&root, "schema = 1\n");
+        let machine = Machine {
+            env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+            home: Some(home.clone()),
+            os: Os::this(),
+        };
+        let (level, settings) = settings_for(&root, &machine);
+        assert_eq!(level, Level::Floor);
+        let file = at.join("claude.json");
+        fs::write(&file, settings.to_string()).expect("the settings");
+        let screened = purlis_core::harness::claude::project::screen_with(Some(&root), None);
+        let what = format!("claude-code {name}");
+        let command = format!(
+            "/bin/sh '{}' '{}' '{what}'",
+            Path::new(HOME_PATHS)
+                .canonicalize()
+                .expect("the script")
+                .display(),
+            home.display()
+        );
+        said.push_str(&ran(
+            &program,
+            &home,
+            &tmp,
+            &root,
+            &file,
+            &screened.setting_sources(),
+            &what,
+            command,
+        ));
+        said.push('\n');
+        // What stayed once the chat ended, from outside its sandbox.
+        for entry in [".local", ".local/share", ".config"] {
+            let kind = fs::symlink_metadata(home.join(entry)).map(|meta| meta.file_type());
+            said.push_str(&format!("{what}: after: {entry}: {kind:?}\n"));
+        }
+    }
+    panic!("measured:\n{said}");
 }

@@ -142,6 +142,75 @@ fn each_profile_a_wrapped_chat_starts_under_holds_on_linux() {
     }
 }
 
+/// **What a wrapped chat at the floor can make in a home missing the usual folders** (#4357),
+/// under each profile, applied for real. Measuring for now.
+#[test]
+fn a_wrapped_chat_at_the_floor_makes_the_usual_folders_in_its_home() {
+    purlis_core::unsteered!();
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tools/standard-home-paths.sh"
+    );
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let mut said = String::new();
+    let layouts: [(&str, &[&str]); 3] = [
+        ("bare", &[]),
+        ("parents", &[".local", ".config"]),
+        (
+            "usual",
+            &[".local/share", ".local/state", ".local/lib", ".config"],
+        ),
+    ];
+    for (name, folders) in layouts {
+        for harness in [Harness::Codex, Harness::Opencode] {
+            let at = out.join(name).join(harness.name());
+            let home = at.join("home");
+            let bin = at.join("bin");
+            let root = at.join("project");
+            let tmp = at.join("tmp");
+            for folder in [&home, &bin, &tmp] {
+                fs::create_dir_all(folder).expect("a folder");
+            }
+            for folder in folders {
+                fs::create_dir_all(home.join(folder)).expect("a folder");
+            }
+            lay_out(&root, "schema = 1\n");
+            let machine = Machine {
+                env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+                home: Some(home.clone()),
+                os: Os::Linux,
+            };
+            let decided = sandbox::decide(harness, &root, &machine, &|_| true, None, None)
+                .expect("decided")
+                .expect("a sandbox in force");
+            let Decided::Sandboxed(applied) = decided else {
+                panic!("not sandboxed: {decided:?}");
+            };
+            assert_eq!(applied.level(), Level::Floor);
+            let profile = match applied.form() {
+                Form::Codex(wrap) => sandbox::codex::profile(wrap, &root, &tmp, &[4040], None),
+                Form::Opencode(wrap) => {
+                    sandbox::opencode::profile(wrap, &root, &tmp, &[4040], None)
+                }
+                Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => {
+                    panic!("Claude Code is not wrapped off a runner")
+                }
+            }
+            .expect("a profile");
+            let line = format!(
+                "TMPDIR='{}' PATH=/usr/bin:/bin /bin/sh '{script}' '{}' '{} {name}'",
+                tmp.display(),
+                home.display(),
+                harness.name()
+            );
+            said.push_str(&under(&profile, &root, &line));
+            said.push('\n');
+        }
+    }
+    panic!("measured:\n{said}");
+}
+
 /// **A Claude Code chat on a runner, held as Codex and opencode are, by this build's own wrap**
 /// (#4083), at the full sandbox and at the floor, on a machine paired as a runner: every class
 /// the two above are tried on, and its config folder: what a turn writes is written, and what
