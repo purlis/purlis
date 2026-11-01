@@ -1387,23 +1387,35 @@ fn a_judges_answer_is_taken_only_from_a_turn_that_read_its_folder_alone() {
 /// it, a path past it, or a link that leads nowhere. No other chat is held so.
 #[test]
 fn an_outcome_chats_writes_land_in_its_own_piece() {
-    let plane = Plane::new();
-    let folder = plane.root.join("piece");
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let folder = root.join("piece");
     std::fs::create_dir_all(&folder).unwrap();
-    let away = plane.root.join("away");
+    let away = root.join("away");
     std::fs::create_dir_all(&away).unwrap();
-    std::fs::write(plane.root.join("kept.md"), "no").unwrap();
+    std::fs::write(root.join("kept.md"), "no").unwrap();
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(&away, folder.join("out")).unwrap();
-        std::os::unix::fs::symlink(plane.root.join("kept.md"), folder.join("file.md")).unwrap();
-        std::os::unix::fs::symlink(plane.root.join("gone"), folder.join("dangling")).unwrap();
+        std::os::unix::fs::symlink(root.join("kept.md"), folder.join("file.md")).unwrap();
+        std::os::unix::fs::symlink(root.join("gone"), folder.join("dangling")).unwrap();
     }
     let cwd = folder.to_str().unwrap().to_owned();
     let write = |path: &str| serde_json::json!({"tool_name": "Write", "cwd": cwd, "tool_input": {"file_path": path}});
-    let held = plane.with_env(OUTCOME_FOLDER_ENV, &cwd);
+    let ask = |payload: Value| {
+        let lookup = |name: &str| (name == OUTCOME_FOLDER_ENV).then(|| cwd.clone());
+        pretooluse_edit(&Hook {
+            root: &root,
+            in_plane: false,
+            payload: &payload,
+            env: &lookup,
+            cwd: &root,
+            now: now(),
+            host: "box",
+        })
+    };
     for inside in ["new.md", "deep/er/new.md"] {
-        let Answer::Say(said) = held.ask(write(inside), pretooluse_edit) else {
+        let Answer::Say(said) = ask(write(inside)) else {
             panic!("{inside} is not allowed by the guard");
         };
         assert!(said.contains("\"allow\""), "{said}");
@@ -1413,14 +1425,8 @@ fn an_outcome_chats_writes_land_in_its_own_piece() {
         outside.extend(["out/new.md", "file.md", "dangling"].map(str::to_owned));
     }
     for path in &outside {
-        assert!(
-            matches!(held.ask(write(path), pretooluse_edit), Answer::Deny(_)),
-            "{path}"
-        );
+        assert!(matches!(ask(write(path)), Answer::Deny(_)), "{path}");
     }
     let unnamed = serde_json::json!({"tool_name": "Write", "cwd": cwd, "tool_input": {}});
-    assert!(matches!(
-        held.ask(unnamed, pretooluse_edit),
-        Answer::Deny(_)
-    ));
+    assert!(matches!(ask(unnamed), Answer::Deny(_)));
 }
