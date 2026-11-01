@@ -1,10 +1,13 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { reposNotCloned } from "./actionResult";
 import type { Said } from "./actions";
 import { KEPT_RESULTS, keep, resultsFor, trackOf, useKeptResults } from "./keptResults";
+import { cloneRepos, forgetRepoClones } from "./repoClones";
 
 const said = (words: string) => ({ from: "x", refused: false, words });
 
@@ -180,5 +183,74 @@ describe("a dismissed track said on again (#3898)", () => {
     const dropped = new Set([trackOf(counting, "/p")]);
     const kept = keep([], { ...counting, after: ready }, "/p", 0, dropped);
     expect(kept.map((one) => one.said)).toEqual([ready]);
+  });
+});
+
+describe("a failed clone's line, once its repo lands (#4394)", () => {
+  afterEach(() => {
+    forgetRepoClones();
+    clearMocks();
+  });
+
+  const failed = (workspace: string, ...repos: string[]): Said =>
+    reposNotCloned(
+      workspace,
+      repos.map((repo) => ({ repo, said: `${repo} refused.` })),
+      () => undefined,
+      1,
+    );
+
+  const lands = async (plane: string, workspace: string, repo: string) => {
+    mockIPC((cmd) => (cmd === "clone_repo" ? ["landed"] : null));
+    await act(async () => {
+      await cloneRepos(plane, workspace, [repo]);
+    });
+  };
+
+  const keeping = (first: Said) =>
+    renderHook(({ now }) => useKeptResults(now, "/p"), {
+      initialProps: { now: first as Said | undefined },
+    });
+
+  it("goes with the last repo it names", async () => {
+    const { result } = keeping(failed("alpha", "api"));
+    await lands("/p", "alpha", "api");
+    expect(result.current.kept).toEqual([]);
+  });
+
+  it("keeps its place and its track, naming the repos left", async () => {
+    const line = failed("alpha", "api", "web");
+    const { result } = keeping(line);
+    const { id } = result.current.kept[0];
+    await lands("/p", "alpha", "api");
+    expect(result.current.kept).toHaveLength(1);
+    expect(result.current.kept[0].id).toBe(id);
+    expect(result.current.kept[0].said.track).toBe(line.track);
+    expect(result.current.kept[0].said.title).toBe("Could not clone web into alpha");
+    expect(result.current.kept[0].said.words).toBe("web refused.");
+  });
+
+  it("stays for the same repo in another workspace, or in another project", async () => {
+    const { result } = keeping(failed("alpha", "api"));
+    await lands("/p", "beta", "api");
+    await lands("/other", "alpha", "api");
+    expect(result.current.kept).toHaveLength(1);
+  });
+
+  it("does not come back with the project that said it", async () => {
+    const line = failed("alpha", "api");
+    const { result, rerender } = keeping(line);
+    await lands("/p", "alpha", "api");
+    rerender({ now: said("another project's") });
+    rerender({ now: line });
+    expect(result.current.kept.map((one) => one.said.words)).toEqual(["another project's"]);
+  });
+
+  it("stays when a repo it does not name lands, and for a line about no clone", async () => {
+    const other = said("Unrelated.");
+    const { result, rerender } = keeping(other);
+    rerender({ now: failed("alpha", "api") });
+    await lands("/p", "alpha", "web");
+    expect(result.current.kept).toHaveLength(2);
   });
 });

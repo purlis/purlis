@@ -16,7 +16,7 @@ import { userEvent } from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { findOnCard } from "./actionResult.testkit";
+import { findOnCard, findResult } from "./actionResult.testkit";
 import { cloneRepos, forgetRepoClones } from "./repoClones";
 import { forgetThisLaunch } from "./regions";
 import {
@@ -333,5 +333,84 @@ describe("a workspace that names repos and has none cloned", () => {
 
     expect(await within(explorer).findByTestId("absent-charter")).toBeInTheDocument();
     expect(within(explorer).queryByText("No repos in this workspace")).toBeNull();
+  });
+});
+
+describe("a failed clone's notice, once the repo lands", () => {
+  const noAccess = (repo: string) => `${repo}: clone failed — no access.`;
+  const failing = (...repos: string[]) =>
+    Object.fromEntries(repos.map((repo) => [repo, { said: noAccess(repo), times: 1 }]));
+  const says = (text: string) => document.body.textContent?.includes(text) === true;
+
+  it("goes when Retry on its row lands, and the result stands alone", async () => {
+    core({ named: { alpha: ["charter"] }, fails: failing("charter") });
+    render(<App />);
+    const explorer = await focus("alpha");
+    await userEvent.click(await within(explorer).findByRole("button", { name: "Clone charter" }));
+    await findResult(/Could not clone charter into alpha/);
+
+    await userEvent.click(await within(explorer).findByRole("button", { name: "Retry charter" }));
+
+    await findResult("Cloned charter into alpha.");
+    await waitFor(() => expect(says("Could not clone charter")).toBe(false));
+  });
+
+  it("goes when the repo lands by another way than its row", async () => {
+    core({ named: { alpha: ["charter"] }, fails: failing("charter") });
+    render(<App />);
+    const explorer = await focus("alpha");
+    await userEvent.click(await within(explorer).findByRole("button", { name: "Clone charter" }));
+    await findResult(/Could not clone charter into alpha/);
+
+    await act(async () => {
+      await cloneRepos(PLANE, "alpha", ["charter"]);
+    });
+
+    await waitFor(() => expect(says("Could not clone charter")).toBe(false));
+  });
+
+  it("stands for the repos of a Clone all that have not landed, and no more", async () => {
+    core({ named: { alpha: ["charter", "web"] }, fails: failing("charter", "web") });
+    render(<App />);
+    const explorer = await focus("alpha");
+    await userEvent.click(await within(explorer).findByRole("button", { name: "Clone all" }));
+    await findResult(/Could not clone charter, web into alpha/);
+
+    await userEvent.click(await within(explorer).findByRole("button", { name: "Retry charter" }));
+
+    await findResult("Cloned charter into alpha.");
+    await waitFor(() => expect(says("Could not clone charter, web")).toBe(false));
+    await userEvent.click(await within(explorer).findByRole("button", { name: "Retry web" }));
+    await findResult("Cloned web into alpha.");
+    await waitFor(() => expect(says("Could not clone")).toBe(false));
+  });
+
+  it("goes from the chip's card when the row's Retry lands", async () => {
+    core({ fails: failing("api") });
+    render(<App />);
+    await makeGamma(["api"]);
+    await findOnCard("gamma", /Could not clone api into gamma/);
+
+    const row = await screen.findByTestId("absent-api");
+    await userEvent.click(await within(row).findByRole("button", { name: "Retry api" }));
+
+    expect(await screen.findByTestId("clone-api")).toBeInTheDocument();
+    await waitFor(() => expect(says("Could not clone api")).toBe(false));
+  });
+
+  it("names on the chip's card, and retries, only the repo still not cloned", async () => {
+    const { clones } = core({ fails: failing("api", "web") });
+    render(<App />);
+    await makeGamma(["api", "web"]);
+    await findOnCard("gamma", /Could not clone api, web into gamma/);
+
+    const row = await screen.findByTestId("absent-api");
+    await userEvent.click(await within(row).findByRole("button", { name: "Retry api" }));
+
+    const card = await findOnCard("gamma", /Could not clone web into gamma/);
+    expect(card).not.toHaveTextContent(noAccess("api"));
+    await userEvent.click(within(card).getByRole("button", { name: "Retry" }));
+    expect(await screen.findByTestId("clone-web")).toBeInTheDocument();
+    expect(clones()).toEqual(["api", "web", "api", "web"]);
   });
 });
