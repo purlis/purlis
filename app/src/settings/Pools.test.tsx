@@ -876,14 +876,14 @@ describe("The guide to setting a pool up on a cluster (#4537)", () => {
     render(<App />);
     await palette("Add a pool…");
     const first = await screen.findByRole("dialog", { name: "Add a pool" });
-    expect(within(first).queryByRole("link", { name: "Here's how" })).toBeNull();
+    expect(within(first).queryByRole("button", { name: "Here's how" })).toBeNull();
     await userEvent.click(within(first).getByRole("radio", { name: /Cluster/ }));
     const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
-    await userEvent.click(within(dialog).getByRole("link", { name: "Here's how" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Here's how" }));
     await waitFor(() => expect(opened).toEqual([GUIDE]));
     await userEvent.click(within(dialog).getByRole("button", { name: "Check its key" }));
     expect(await within(dialog).findByRole("alert")).toBeInTheDocument();
-    expect(within(dialog).getByRole("link", { name: "Here's how" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Here's how" })).toBeInTheDocument();
   });
 
   it("opens from the pools settings", async () => {
@@ -891,7 +891,7 @@ describe("The guide to setting a pool up on a cluster (#4537)", () => {
     const nav = await yourSettings();
     await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
     const group = await screen.findByRole("region", { name: "Pools" });
-    await userEvent.click(await within(group).findByRole("link", { name: "Here's how" }));
+    await userEvent.click(await within(group).findByRole("button", { name: "Here's how" }));
     await waitFor(() => expect(opened).toEqual([GUIDE]));
   });
 });

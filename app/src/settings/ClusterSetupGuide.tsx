@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { ExternalLink } from "../ReleaseNotes";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { Button } from "../ui/button/Button";
 
 /** The guide, on GitHub: the docs site isn't published yet (ruling V38). */
 export const CLUSTER_SETUP_GUIDE =
@@ -15,7 +16,13 @@ export function ClusterSetupGuide() {
   return (
     <p className="ui-setting-help">
       Nothing's set up on this cluster yet?{" "}
-      <ExternalLink href={CLUSTER_SETUP_GUIDE}>Here's how</ExternalLink>.
+      <Button
+        variant="link"
+        className="said-link"
+        onPress={() => void openUrl(CLUSTER_SETUP_GUIDE).catch(() => undefined)}
+      >
+        Here's how
+      </Button>
     </p>
   );
 }
