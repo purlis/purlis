@@ -49,9 +49,10 @@
 //! project for the chat it is for and handed to its next turn by its own hook, quoted as data.
 //! Nothing a chat wrote is ever typed.
 //!
-//! **A question for the person never passes through here.** It is a prompt in the task's own
-//! tab, which only the person's keys answer; an answer from the asking chat is refused unless
-//! this module holds a question that task asked it.
+//! **A task question goes to its asking chat first** (ADR 0107), and `dispatchtalk` holds it
+//! until it is answered, across a restart too. An answer from the asking chat is refused unless
+//! this module holds a question that task asked it: a harness's prompt with no adapter stays a
+//! prompt in the task's own tab, which only the person's keys answer.
 //!
 //! **The person's words in a task's pane are remembered as one bit** ([`person_typed`]), which
 //! its report carries as "the operator stepped in". Nothing they typed is kept.
@@ -1478,10 +1479,11 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         instruction: None,
     };
     let limits = limits_between(held, asker, sender);
+    let sender_key = key(held, sender);
     {
         // One hold from "has it a question open" to "this is its question", so of two
         // questions sent at once one is asked and the other refused with nothing left behind.
-        let mut ledger = held.tasks().ledger();
+        let mut ledger = ledger(held);
         if kind == Kind::Question && ledger.talk.asks(sender).is_some() {
             return Err(
                 "this chat already has a question waiting for its asking chat's answer, and is \
@@ -1492,6 +1494,7 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         ledger.talk.count(asker, sender, &limits, Instant::now())?;
         let file = dispatchtalk::leave(held.root(), asker, &message).map_err(kept)?;
         if kind == Kind::Question {
+            ledger.talk.known_as(sender, &sender_key, asker);
             ledger.talk.ask(sender, &text, Some(file))?;
             ledger.landed(asker, Landed::Question(sender));
         }
@@ -2152,7 +2155,19 @@ pub fn brought_back(
     } else {
         Restart::StartedAgain
     };
-    let mut ledger = held.tasks().ledger();
+    let key = key(held, task);
+    let mut ledger = ledger(held);
+    // What it had open is open again, where it stood (#4553): its asking chat is told of it
+    // again if it has not had it, since a line it was due died with the last run.
+    let back = ledger
+        .talk
+        .restored(task, &key, held.root(), now_secs(SystemTime::now()));
+    if back == dispatchtalk::Restored::Open
+        && ledger.talk.handed_at(task).is_none()
+        && let Some(asker) = ledger.talk.asked_of(task)
+    {
+        ledger.landed(asker, Landed::Question(task));
+    }
     ledger.brought_back(task, record.map(|record| record.started.as_str()), restart);
     // The last note it sent is on its record, which a restart keeps (#3900): it was heard from
     // then, though not by this app. What it ran is kept in memory only. And its list row says
@@ -2162,6 +2177,18 @@ pub fn brought_back(
         ledger.heard_doing(task, purlis_core::dispatchliveness::Did::SentANote, at);
         ledger.noted_before(task, note);
     }
+}
+
+/// A launch has put back the tasks with the keys `back`: what was kept of a question of any
+/// other is let go, its task having ended (#4553).
+pub fn only_these_came_back(held: &Held, back: &[String]) {
+    ledger(held).talk.only_these_came_back(back);
+}
+
+/// Seconds since 1970 at `at`.
+fn now_secs(at: SystemTime) -> u64 {
+    at.duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
 }
 
 /// The outcome `task`'s report is delivered with, given the one its chat said.

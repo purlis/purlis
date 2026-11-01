@@ -25,14 +25,21 @@
 //! ([`text`]): 4,096 bytes, no control characters. What it says is checked again when it is
 //! read ([`take`]), because the directory is writable by anything running as the person.
 //!
-//! # A question, and who may answer it
+//! # A task question, and who may answer it
 //!
-//! A task's question to its asking chat is kept by the app until that chat answers it
-//! ([`Talk::ask`], [`Talk::answer`]). **A question for the person never enters here.** It is
-//! the harness's own prompt in the task's tab, or purlis's `ask_operator` tool, and the only
-//! thing that answers it is the person's keys in that tab. `purlis dispatch answer` answers a
-//! question this module holds and nothing else: where it holds none, it is refused, whatever
-//! the task's tab is showing.
+//! **A task question goes to its asking chat first** (ADR 0107, which reverses this module's
+//! old rule that a question for the person never entered here). The app keeps it until it is
+//! answered ([`Talk::ask`], [`Talk::answer`]), and it moves through one state: with the asking
+//! chat, reached the person ([`Standing`], and [`Reached`] says why), closed. Open questions are
+//! written with the rest of this module's record, so a restart of the app leaves each where it
+//! stood ([`Talk::restored`]). What is written is masked and bounded as a report's text is, and
+//! never carries the person's answer: that stays in memory, so a restart before the task has
+//! it asks again, and nothing in a file reads as the person's word.
+//!
+//! A harness prompt that purlis has no adapter for, a permission, a secret, a dispatch grant, a
+//! sandbox block and a browser takeover are not task questions and never enter here. `purlis
+//! dispatch answer` answers a question this module holds and nothing else: where it holds none,
+//! it is refused, whatever the task's tab is showing.
 //!
 //! # The person may answer it too, and only the window says so (#1496, V100-46)
 //!
@@ -189,7 +196,8 @@ pub fn may_send(
 // ---- what the app remembers -------------------------------------------------------------------
 
 /// What the app remembers of the messages in one project: how many each pair has exchanged
-/// lately, and each task's open question. In memory, and gone with the app.
+/// lately, and each task's open question. In memory, but for what [`Talk::keep_at`] says is
+/// kept on disk ([`Sent`]).
 #[derive(Debug, Default)]
 pub struct Talk {
     /// By asking chat and task: when each message between them was sent.
@@ -211,10 +219,18 @@ pub struct Talk {
     /// (#1666) or a workspace's removal (qw356): the next one's number is
     /// [`NETWORK_NUMBERS`] and this.
     network: u32,
-    /// The tasks brought back by this launch and told to carry on (#1513, #1546): a question
-    /// one asked before the restart was not kept, and an answer to it is told so
-    /// ([`asked_before_the_restart`]).
+    /// The tasks brought back by this launch whose question did not read back (#4553): an
+    /// answer to it is told so ([`asked_before_the_restart`]).
     restored: HashSet<u32>,
+    /// By task: its key and the chat it asks ([`Talk::known_as`]), which is how an open question
+    /// is found again after a restart.
+    known: HashMap<u32, Known>,
+    /// What the last run of the app kept of the questions of tasks not brought back yet, by
+    /// each task's key ([`Talk::restored`]): written back as it was until then.
+    unclaimed: HashMap<String, serde_json::Value>,
+    /// The record did not read, or was written by a build that kept no questions: a task brought
+    /// back may have lost one, and is told so.
+    questions_unread: bool,
     /// What became of each chat's messages, and its instruction numbers (#3902, #3904): kept
     /// on disk where [`Talk::keep_at`] says, so a restart of the app forgets neither.
     messages: Sent,
@@ -239,10 +255,91 @@ struct Sent {
     /// By sender: how many records it has had kept, ever: what says a delivery kept one.
     #[serde(default)]
     recorded: HashMap<String, u64>,
+    /// **By task's key: the question it has open** (#4553), each a [`KeptQuestion`]. Held as
+    /// plain JSON and read one by one, so one that does not read loses that one alone.
+    #[serde(default)]
+    questions: HashMap<String, serde_json::Value>,
+    /// How many questions have been asked in this project, ever: a question's number is never
+    /// another's, across a restart too.
+    #[serde(default)]
+    asked: u32,
 }
 
-/// The version of the file [`Sent`] is kept in.
-const SENT_VERSION: u32 = 1;
+/// The version of the file [`Sent`] is kept in: 2 keeps open questions (#4553).
+const SENT_VERSION: u32 = 2;
+
+/// Seconds since 1970, by the clock of the machine the app runs on.
+fn secs(at: std::time::SystemTime) -> u64 {
+    at.duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
+/// **Where a task question stands** (#4553, ADR 0107): the one state the task's row, the ✋ and
+/// the Inbox are all read from. Closed is its going ([`Closed`] says how).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", tag = "standing")]
+pub enum Standing {
+    /// With the asking chat: nothing waits on the person yet.
+    WithAskingChat,
+    /// It has reached the person, at `at` (seconds since 1970), for `why`. `note` is the asking
+    /// chat's own one line, where it passed the question on with one.
+    ReachedPerson {
+        why: Reached,
+        at: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
+}
+
+/// **Why a task question reached the person** (ADR 0107).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reached {
+    /// Its asking chat passed it on.
+    PassedOn,
+    /// Its asking chat had a turn to see it, and did nothing with it in time.
+    NoReply,
+    /// Its asking chat closed or crashed.
+    AskerGone,
+}
+
+/// A task's key and the chat it asks ([`Talk::known_as`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Known {
+    key: String,
+    asker: u32,
+}
+
+/// **An open question as it is written** (#4553). Its text is [`crate::dispatchrecord::masked`],
+/// and read back held to a message's rule ([`text`]). The file it waits in is by name alone: the
+/// file's folder is the app's own word for the chat it is for, never what a file says.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct KeptQuestion {
+    number: u32,
+    text: String,
+    /// The chat asked, by the app's number, which a restart keeps.
+    asker: u32,
+    #[serde(flatten)]
+    standing: Standing,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    file: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    shown: bool,
+    asked_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    handed_at: Option<u64>,
+}
+
+/// What became of a task's question as the task was brought back ([`Talk::restored`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Restored {
+    /// It had none that was open.
+    Nothing,
+    /// Its question is open again, where it stood.
+    Open,
+    /// One may have been lost, and the task is told to ask again.
+    Lost,
+}
 
 /// The most records of its messages the app keeps for one sender.
 pub const RECORDS_KEPT: usize = 32;
@@ -382,6 +479,33 @@ struct Question {
     /// A wait of the asking chat's has been answered with it.
     shown: bool,
     answer: Option<Given>,
+    /// Where it stands now.
+    standing: Standing,
+    /// When it was asked, in seconds since 1970.
+    asked_at: u64,
+    /// When the asking chat had a turn in which it was handed over.
+    handed_at: Option<u64>,
+}
+
+impl Question {
+    /// What is written of it, for a task that asks `asker` ([`KeptQuestion`]).
+    fn kept(&self, asker: u32) -> KeptQuestion {
+        KeptQuestion {
+            number: self.number,
+            text: crate::dispatchrecord::masked(&self.text),
+            asker,
+            standing: self.standing.clone(),
+            file: self
+                .file
+                .as_deref()
+                .and_then(Path::file_name)
+                .and_then(|name| name.to_str())
+                .map(str::to_owned),
+            shown: self.shown,
+            asked_at: self.asked_at,
+            handed_at: self.handed_at,
+        }
+    }
 }
 
 /// An answer to a task's question, kept until the task has it: the asking chat's, or the
@@ -450,6 +574,9 @@ pub enum PersonSaid {
     /// app's record of the task and what its hooks were heard say, never the task's words.
     /// `number` is minted for it alone ([`Talk::quiet_word`]).
     Quiet { number: u32, word: QuietWord },
+    /// **A question this task asked before the app restarted did not read back** (#4553):
+    /// purlis's own fixed words, and nothing of the question. `number` is minted for it alone.
+    QuestionLost { number: u32 },
     /// **What became of a change this chat proposed to purlis's own configuration** (#1975,
     /// PC-10): applied, dismissed or stale, in purlis's own fixed words around the file's path.
     /// `number` is minted for it alone ([`Talk::proposal_word`]).
@@ -541,6 +668,7 @@ impl PersonSaid {
             | Self::Removal { number, .. }
             | Self::McpServer { number, .. }
             | Self::Quiet { number, .. }
+            | Self::QuestionLost { number }
             | Self::Proposal { number, .. } => *number,
         }
     }
@@ -554,23 +682,35 @@ pub const THE_PERSON: &str = "the person";
 const A_MINUTE: Duration = Duration::from_secs(60);
 
 impl Talk {
-    /// **Keeps what became of each chat's messages at `path`** (#3902, #3904), and reads what is
-    /// there: once, as the app first needs it. What does not read is started afresh, and said.
+    /// **Keeps what became of each chat's messages, and the open questions, at `path`** (#3902,
+    /// #3904, #4553), and reads what is there: once, as the app first needs it. What does not
+    /// read is started afresh, and said: to the log here, and to each task brought back
+    /// ([`Talk::restored`]).
     pub fn keep_at(&mut self, path: &Path) {
         if self.kept_at.as_deref() == Some(path) {
             return;
         }
         self.messages = match std::fs::read(path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|why| {
-                tracing::warn!(
-                    "purlis: {} does not read as the record of dispatch messages ({why}); it \
-                     is started afresh",
-                    path.display()
-                );
-                Sent::default()
-            }),
+            Ok(bytes) => match serde_json::from_slice::<Sent>(&bytes) {
+                Ok(sent) => {
+                    self.questions_unread = sent.v < SENT_VERSION;
+                    sent
+                }
+                Err(why) => {
+                    tracing::warn!(
+                        "purlis: {} does not read as the record of dispatch messages ({why}); \
+                         it is started afresh, and a task brought back is told to ask its \
+                         question again",
+                        path.display()
+                    );
+                    self.questions_unread = true;
+                    Sent::default()
+                }
+            },
             Err(_) => Sent::default(),
         };
+        self.unclaimed = std::mem::take(&mut self.messages.questions);
+        self.asked = self.asked.max(self.messages.asked);
         self.kept_at = Some(path.to_path_buf());
     }
 
@@ -578,6 +718,23 @@ impl Talk {
     fn save(&mut self) {
         let Some(path) = &self.kept_at else { return };
         self.messages.v = SENT_VERSION;
+        self.messages.asked = self.asked;
+        self.messages.questions = self.unclaimed.clone();
+        for (task, question) in &self.questions {
+            // An answer the chat gave waits in its file. The person's is in no file (#1496), so
+            // until the task has it the question stands open as written.
+            let chat_answered = question.answer.as_ref().is_some_and(|one| !one.by_person);
+            if chat_answered {
+                continue;
+            }
+            let Some(known) = self.known.get(task) else {
+                continue;
+            };
+            let kept = question.kept(known.asker);
+            if let Ok(value) = serde_json::to_value(&kept) {
+                self.messages.questions.insert(known.key.clone(), value);
+            }
+        }
         let written = serde_json::to_vec(&self.messages)
             .map_err(std::io::Error::other)
             .and_then(|bytes| {
@@ -708,6 +865,145 @@ impl Talk {
         Ok(())
     }
 
+    /// **Task `task` is known by `key` and asks chat `asker`** (#4553): the app's own record of
+    /// the chat, by which its open question is found again after a restart. A task it was
+    /// never said of keeps its question in memory alone.
+    pub fn known_as(&mut self, task: u32, key: &str, asker: u32) {
+        self.known.insert(
+            task,
+            Known {
+                key: key.to_owned(),
+                asker,
+            },
+        );
+    }
+
+    /// The chat `task`'s open question was put to, by the app's number.
+    pub fn asked_of(&self, task: u32) -> Option<u32> {
+        self.questions.get(&task)?;
+        self.known.get(&task).map(|known| known.asker)
+    }
+
+    /// Where `task`'s open question stands.
+    pub fn standing(&self, task: u32) -> Option<&Standing> {
+        self.questions
+            .get(&task)
+            .filter(|question| question.answer.is_none())
+            .map(|question| &question.standing)
+    }
+
+    /// When the asking chat had a turn in which `task`'s open question was handed to it.
+    pub fn handed_at(&self, task: u32) -> Option<u64> {
+        self.questions.get(&task)?.handed_at
+    }
+
+    /// **`task`'s open question reaches the person, at `now`, for `why`** (ADR 0107), with the
+    /// asking chat's `note` where it wrote one. Answers whether it moved: one that has reached
+    /// the person already stays where and when it reached them, and keeps its first reason.
+    pub fn reach(&mut self, task: u32, why: Reached, note: Option<String>, now: u64) -> bool {
+        let Some(question) = self
+            .questions
+            .get_mut(&task)
+            .filter(|question| question.answer.is_none())
+        else {
+            return false;
+        };
+        if question.standing != Standing::WithAskingChat {
+            return false;
+        }
+        question.standing = Standing::ReachedPerson { why, at: now, note };
+        self.save();
+        true
+    }
+
+    /// **Task `task` is brought back by a restart of the app** (#4553), under its `key`: what
+    /// was kept of its open question is open again, where it stood. Its question waits in the
+    /// project at `root`, in the folder of the chat it asks.
+    ///
+    /// **What does not read back is said once, and not left to look like an empty record**: the
+    /// task is handed a word of purlis's to ask again ([`PersonSaid::QuestionLost`]), the log
+    /// has a line, and an answer from its asking chat says why it reached nothing
+    /// ([`asked_before_the_restart`]). A question lost with the record's own loss is told the
+    /// same way, to each task brought back.
+    pub fn restored(&mut self, task: u32, key: &str, root: &Path, now: u64) -> Restored {
+        let Some(value) = self.unclaimed.remove(key) else {
+            if !self.questions_unread {
+                return Restored::Nothing;
+            }
+            self.question_lost(task);
+            return Restored::Lost;
+        };
+        let read = serde_json::from_value::<KeptQuestion>(value)
+            .map_err(|why| why.to_string())
+            .and_then(|kept| {
+                let text = text(&kept.text)?;
+                Ok(KeptQuestion { text, ..kept })
+            });
+        let kept = match read {
+            Ok(kept) => kept,
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: the question kept for chat {task} does not read back ({why}); it \
+                     is told to ask it again"
+                );
+                self.question_lost(task);
+                self.save();
+                return Restored::Lost;
+            }
+        };
+        self.known.insert(
+            task,
+            Known {
+                key: key.to_owned(),
+                asker: kept.asker,
+            },
+        );
+        self.asked = self.asked.max(kept.number);
+        let file = kept.file.as_deref().and_then(|name| {
+            let dir = dir_for(root, kept.asker).ok()?;
+            let plain = Path::new(name).file_name().is_some_and(|one| one == name);
+            plain.then(|| dir.join(name))
+        });
+        // The turn had it, and the app went before it wrote so.
+        let left = file.as_ref().is_some_and(|file| file.exists());
+        let unhanded = kept.handed_at.is_none() && !left;
+        self.questions.insert(
+            task,
+            Question {
+                number: kept.number,
+                text: kept.text,
+                file: file.filter(|_| left),
+                shown: kept.shown,
+                answer: None,
+                standing: kept.standing,
+                asked_at: kept.asked_at,
+                handed_at: if unhanded { Some(now) } else { kept.handed_at },
+            },
+        );
+        self.save();
+        Restored::Open
+    }
+
+    /// The questions kept for tasks that are not among `keys`, the tasks a launch put back or
+    /// may still start, are dropped: their tasks have ended (#4553).
+    pub fn only_these_came_back(&mut self, keys: &[String]) {
+        self.unclaimed.retain(|key, _| keys.contains(key));
+        self.save();
+    }
+
+    /// **Tells `task` its question was lost**, in purlis's own words.
+    fn question_lost(&mut self, task: u32) {
+        if !self.restored.insert(task) {
+            return;
+        }
+        self.network = self.network.wrapping_add(1) % NETWORK_NUMBERS;
+        let number = NETWORK_NUMBERS + self.network;
+        self.person
+            .entry(task)
+            .or_default()
+            .push(PersonSaid::QuestionLost { number });
+    }
+
     /// Task `task` asks its asking chat `text`, left in `file` for that chat's next turn.
     /// Refused while a question of its is still unanswered: it is paused on that one.
     ///
@@ -733,12 +1029,16 @@ impl Talk {
                 file,
                 shown: false,
                 answer: None,
+                standing: Standing::WithAskingChat,
+                asked_at: secs(std::time::SystemTime::now()),
+                handed_at: None,
             },
         );
         // A new question: how the one before it was closed says nothing of this one, nor
         // does the restart before it.
         self.closed.remove(&task);
         self.restored.remove(&task);
+        self.save();
         Ok(number)
     }
 
@@ -766,17 +1066,22 @@ impl Talk {
             .get_mut(&task)
             .filter(|question| question.answer.is_none() && !question.shown)?;
         question.shown = true;
-        Some(question.text.clone())
+        let text = question.text.clone();
+        self.save();
+        Some(text)
     }
 
     /// The file `task`'s question waits in for the asking chat's next turn, where a wait has
     /// shown that chat the question already: to remove, so the turn is not handed it again.
     pub fn read(&mut self, task: u32) -> Option<PathBuf> {
-        self.questions
+        let file = self
+            .questions
             .get_mut(&task)
             .filter(|question| question.shown)?
             .file
-            .take()
+            .take();
+        self.save();
+        file
     }
 
     /// **Whether the asking chat `asker` may answer `task`, called `name`, now**: the number
@@ -828,6 +1133,7 @@ impl Talk {
             },
         );
         question.answer = Some(given);
+        self.save();
         Ok(number)
     }
 
@@ -840,13 +1146,6 @@ impl Talk {
             _ if self.restored.contains(&task) => asked_before_the_restart(name, task),
             _ => no_question(name, task),
         }
-    }
-
-    /// `task` was brought back by this launch and told to carry on (#1546): what it asked its
-    /// asking chat before the restart was in the app's memory, and is gone. An answer to it is
-    /// told so ([`Self::nothing_to_answer`]).
-    pub fn restored(&mut self, task: u32) {
-        self.restored.insert(task);
     }
 
     /// **The person answers question `number`, which `task`, called `name`, put to its asking
@@ -918,6 +1217,7 @@ impl Talk {
                     text: text.to_owned(),
                 });
         }
+        self.save();
         Ok(unread)
     }
 
@@ -1080,7 +1380,9 @@ impl Talk {
         // The person's answer waited in no file: the command has it, so the next turn is not
         // handed it again.
         self.has_the_person_s_answer(task);
-        self.questions.remove(&task)?.answer?.file
+        let file = self.questions.remove(&task)?.answer?.file;
+        self.save();
+        file
     }
 
     /// `task`'s turn began: an answer left for it was handed to that turn, so its question is
@@ -1088,6 +1390,7 @@ impl Talk {
     pub fn turn_began(&mut self, task: u32) {
         if self.answered(task).is_some() {
             self.questions.remove(&task);
+            self.save();
         }
     }
 
@@ -1103,6 +1406,7 @@ impl Talk {
             self.closed_unread.insert(task);
         }
         self.has_the_person_s_answer(task);
+        self.save();
     }
 
     /// Chat `old` is now `new`, the same chat started again under a new number: its question
@@ -1110,6 +1414,14 @@ impl Talk {
     pub fn followed(&mut self, old: u32, new: u32) {
         if let Some(question) = self.questions.remove(&old) {
             self.questions.insert(new, question);
+        }
+        if let Some(known) = self.known.remove(&old) {
+            self.known.insert(new, known);
+        }
+        for known in self.known.values_mut() {
+            if known.asker == old {
+                known.asker = new;
+            }
         }
         if let Some(closed) = self.closed.remove(&old) {
             self.closed.insert(new, closed);
@@ -1143,17 +1455,22 @@ impl Talk {
                 self.sent.insert((renumber(pair.0), renumber(pair.1)), sent);
             }
         }
+        self.save();
     }
 
     /// Chat `chat` has closed: nothing is remembered of it.
     pub fn forget(&mut self, chat: u32) {
         self.questions.remove(&chat);
+        if let Some(known) = self.known.remove(&chat) {
+            self.unclaimed.remove(&known.key);
+        }
         self.closed.remove(&chat);
         self.person.remove(&chat);
         self.closed_unread.remove(&chat);
         self.restored.remove(&chat);
         self.sent
             .retain(|(asker, task), _| *asker != chat && *task != chat);
+        self.save();
     }
 }
 
@@ -1170,16 +1487,15 @@ pub fn no_question(name: &str, task: u32) -> String {
     )
 }
 
-/// What an asking chat is told when it answers a task brought back after a restart that has
-/// asked it nothing since (#1546): **a question asked before the restart was not kept**, and
-/// the task was told to ask it again where its work waits on the answer
-/// ([`crate::dispatchrestart::CARRY_ON`]).
+/// What an asking chat is told when it answers a task brought back after a restart whose
+/// question did not read back (#1546, #4553), and which has asked it nothing since: the task
+/// was told to ask it again where its work waits on the answer ([`QUESTION_LOST`]).
 pub fn asked_before_the_restart(name: &str, task: u32) -> String {
     format!(
         "'{name}' (chat {task}) has asked this chat no question since purlis was restarted, so \
-         this answer was not sent. Any question it asked before the restart was not kept \
-         across it: '{name}' was told to ask again if its work waits on the answer, and this \
-         chat can answer it then."
+         this answer was not sent. A question it asked before the restart could not be read \
+         back: '{name}' was told to ask again if its work waits on the answer, and this chat \
+         can answer it then."
     )
 }
 
@@ -1681,9 +1997,16 @@ pub fn person_said(said: &PersonSaid) -> String {
         PersonSaid::Removal { word, .. } => removal_said(word),
         PersonSaid::McpServer { word, .. } => mcp_said(word),
         PersonSaid::Quiet { word, .. } => quiet_said(word),
+        PersonSaid::QuestionLost { .. } => QUESTION_LOST.to_owned(),
         PersonSaid::Proposal { word, .. } => proposal_said(word),
     }
 }
+
+/// What a task is told where a question it asked before the app restarted did not read back
+/// (#4553).
+pub const QUESTION_LOST: &str = "⬢ purlis: a question this chat asked before purlis restarted \
+    could not be read back. If the work still waits on the answer, ask it again. This line is \
+    purlis's own.";
 
 /// **purlis's fixed words on a change the chat proposed** (#1975, PC-10): the file in a code
 /// span, and nothing else that is not purlis's.
@@ -1795,5 +2118,7 @@ pub fn removal_said(word: &RemovalWord) -> String {
     }
 }
 
+#[cfg(test)]
+mod restart_tests;
 #[cfg(test)]
 mod tests;
