@@ -214,7 +214,12 @@ fn the_operator_may_do_exactly_what_it_needs() {
                 "purlis-runner-owner",
                 "get,patch"
             ),
-            ("runners.purlis.dev", "claims", "", "delete,get,list,patch,watch"),
+            (
+                "runners.purlis.dev",
+                "claims",
+                "",
+                "delete,get,list,patch,watch"
+            ),
             ("runners.purlis.dev", "claims/status", "", "patch"),
             ("runners.purlis.dev", "pools", "", "get,list,watch"),
             ("runners.purlis.dev", "pools/status", "", "patch"),
