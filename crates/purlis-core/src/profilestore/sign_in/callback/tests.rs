@@ -267,8 +267,8 @@ fn a_listener_of_another_group_is_never_answered() {
         )
     };
     assert_eq!(of_group(ours), vec![here]);
-    // Process group 1 is init's: never this test's.
-    assert_eq!(of_group(1), Vec::<IpAddr>::new());
+    // A group with no process in it holds no socket.
+    assert_eq!(of_group(u32::MAX - 1), Vec::<IpAddr>::new());
     // Nothing recorded of a group: where it was found.
     assert_eq!(
         answered_at(
