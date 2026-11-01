@@ -1610,10 +1610,10 @@ export const commands = {
 	agentIdentities: (plane: PlaneId) => typedError<IdentitiesShown, string>(__TAURI_INVOKE("agent_identities", { plane })),
 	/**
 	 *  **Makes the App on GitHub**: the page opened in the person's browser, its one redirect taken,
-	 *  the key stored, and the page for choosing its repos opened. `owner` is an organisation, or
-	 *  none with `personal` for the person's own account. Answers the client id.
+	 *  the key stored, and the page for choosing its repos opened. `owner` is the account's name, an
+	 *  organisation's, or with `personal` the person's own. Answers the client id.
 	 */
-	agentIdentityCreate: (plane: PlaneId, attempt: string, owner: string | null, personal: boolean, workflows: boolean) => typedError<string, string>(__TAURI_INVOKE("agent_identity_create", { plane, attempt, owner, personal, workflows })),
+	agentIdentityCreate: (plane: PlaneId, attempt: string, owner: string, personal: boolean, workflows: boolean) => typedError<string, string>(__TAURI_INVOKE("agent_identity_create", { plane, attempt, owner, personal, workflows })),
 	/**  Stop making the App: the listener closes at once, and nothing is kept. */
 	agentIdentityCreateCancel: (attempt: string) => __TAURI_INVOKE<void>("agent_identity_create_cancel", { attempt }),
 	/**  **Opens GitHub's page again** for the try under way. The page's address never reaches the window. */
@@ -1625,7 +1625,8 @@ export const commands = {
 	/**
 	 *  **Finish** (Q11, Q17): proves a real token first, so a failed proof writes nothing, then adds
 	 *  the lines, then allows them on this machine. A persona with anything else waiting for an Allow
-	 *  isn't allowed here: only these lines were shown, so that stays the person's own Allow.
+	 *  isn't allowed here, nor is the default persona, whose Allow reaches every chat that names no
+	 *  persona: only these lines were shown, so those stay the person's own Allow.
 	 */
 	agentIdentityFinish: (plane: PlaneId, app: string, personas: string[]) => typedError<IdentityFinished, string>(__TAURI_INVOKE("agent_identity_finish", { plane, app, personas })),
 	/**
@@ -8475,6 +8476,8 @@ export type IdentityRow = {
 	settings_page: string | null,
 	/**  Why GitHub couldn't say. The row stays, and can still be removed. */
 	trouble: string | null,
+	/**  A line this flow didn't write: shown, never read with, and removed in the project file. */
+	by_hand: boolean,
 };
 
 /**  An App as GitHub says it is, before Finish. */

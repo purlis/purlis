@@ -49,6 +49,8 @@ pub struct IdentityRow {
     pub settings_page: Option<String>,
     /// Why GitHub couldn't say. The row stays, and can still be removed.
     pub trouble: Option<String>,
+    /// A line this flow didn't write: shown, never read with, and removed in the project file.
+    pub by_hand: bool,
 }
 
 /// An App whose key is kept and whose lines Finish hasn't written.
@@ -124,28 +126,31 @@ fn stand_of(stand: &core::Stand) -> IdentityStand {
 }
 
 fn row_of(ctx: &Ctx, held: core::Held) -> IdentityRow {
-    let proved = core::prove(ctx, &held.vault, &held.key, &held.app);
     let mut row = IdentityRow {
         host: core::HOST.to_owned(),
-        app: held.app,
-        personas: held.personas,
+        by_hand: !held.ours(),
+        personas: held.personas.clone(),
+        app: held.app.clone(),
         acts_as: None,
         repos: None,
         settings_page: None,
         trouble: None,
     };
-    match proved {
-        Ok(proof) => {
-            row.acts_as = Some(proof.stand.acts_as());
-            row.settings_page = Some(proof.stand.settings_page());
-            row.repos = Some(u32::try_from(proof.repos).unwrap_or(u32::MAX));
+    // A committed line this flow didn't write opens no vault on this machine.
+    if held.ours() {
+        match core::prove(ctx, &held.app) {
+            Ok(proof) => {
+                row.acts_as = Some(proof.stand.acts_as());
+                row.settings_page = Some(proof.stand.settings_page());
+                row.repos = Some(u32::try_from(proof.repos).unwrap_or(u32::MAX));
+            }
+            Err(why) => row.trouble = Some(why),
         }
-        Err(why) => row.trouble = Some(why),
     }
     row
 }
 
-/// The owners offered: those the project's clones are under, the person's own account marked.
+/// The owners offered: those the project's clones are under, then the person's own account.
 fn owners(root: &std::path::Path) -> Vec<IdentityOwner> {
     let mine: Vec<String> = crate::forgeaccounts::config_root()
         .ok()
@@ -155,13 +160,25 @@ fn owners(root: &std::path::Path) -> Vec<IdentityOwner> {
         .filter(|account| account.host == core::HOST)
         .map(|account| account.login)
         .collect();
-    core::owners_on_github(root)
+    let mut offered: Vec<IdentityOwner> = core::owners_on_github(root)
         .into_iter()
         .map(|name| IdentityOwner {
             personal: mine.iter().any(|login| login.eq_ignore_ascii_case(&name)),
             name,
         })
-        .collect()
+        .collect();
+    for login in mine {
+        if !offered
+            .iter()
+            .any(|one| one.name.eq_ignore_ascii_case(&login))
+        {
+            offered.push(IdentityOwner {
+                name: login,
+                personal: true,
+            });
+        }
+    }
+    offered
 }
 
 /// **What the Agent identity tab draws**, read fresh. Each row proves itself against GitHub, so
@@ -179,20 +196,18 @@ pub async fn agent_identities(
         let rows = held.into_iter().map(|one| row_of(&ctx, one)).collect();
         let pending = core::pending(&ctx, &root)?
             .into_iter()
-            .map(
-                |app| match core::stand(&ctx, core::VAULT, &core::key_of(&app), &app) {
-                    Ok(stand) => IdentityPending {
-                        app,
-                        stand: Some(stand_of(&stand)),
-                        trouble: None,
-                    },
-                    Err(why) => IdentityPending {
-                        app,
-                        stand: None,
-                        trouble: Some(why),
-                    },
+            .map(|app| match core::stand(&ctx, &app) {
+                Ok(stand) => IdentityPending {
+                    app,
+                    stand: Some(stand_of(&stand)),
+                    trouble: None,
                 },
-            )
+                Err(why) => IdentityPending {
+                    app,
+                    stand: None,
+                    trouble: Some(why),
+                },
+            })
             .collect();
         Ok(IdentitiesShown {
             rows,
@@ -207,8 +222,8 @@ pub async fn agent_identities(
 }
 
 /// **Makes the App on GitHub**: the page opened in the person's browser, its one redirect taken,
-/// the key stored, and the page for choosing its repos opened. `owner` is an organisation, or
-/// none with `personal` for the person's own account. Answers the client id.
+/// the key stored, and the page for choosing its repos opened. `owner` is the account's name, an
+/// organisation's, or with `personal` the person's own. Answers the client id.
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_identity_create(
@@ -216,7 +231,7 @@ pub async fn agent_identity_create(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     attempt: String,
-    owner: Option<String>,
+    owner: String,
     personal: bool,
     workflows: bool,
 ) -> Result<String, String> {
@@ -232,7 +247,7 @@ pub async fn agent_identity_create(
             owner: if personal {
                 Owner::Personal(owner)
             } else {
-                Owner::Organisation(owner.ok_or("Choose who owns the App.")?)
+                Owner::Organisation(owner)
             },
             workflows,
         };
@@ -303,10 +318,7 @@ pub async fn agent_identity_stand(
     app: String,
 ) -> Result<IdentityStand, String> {
     let ctx = ctx_of(&planes, &plane)?;
-    blocking(move || {
-        core::stand(&ctx, core::VAULT, &core::key_of(&app), &app).map(|stand| stand_of(&stand))
-    })
-    .await
+    blocking(move || core::stand(&ctx, &app).map(|stand| stand_of(&stand))).await
 }
 
 /// **The exact lines Finish adds** (Q11), from the one source Finish writes from.
@@ -318,7 +330,8 @@ pub async fn agent_identity_lines(app: String, personas: Vec<String>) -> Result<
 
 /// **Finish** (Q11, Q17): proves a real token first, so a failed proof writes nothing, then adds
 /// the lines, then allows them on this machine. A persona with anything else waiting for an Allow
-/// isn't allowed here: only these lines were shown, so that stays the person's own Allow.
+/// isn't allowed here, nor is the default persona, whose Allow reaches every chat that names no
+/// persona: only these lines were shown, so those stay the person's own Allow.
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_identity_finish(
@@ -335,8 +348,7 @@ pub async fn agent_identity_finish(
     let network = planes.network().cloned();
     blocking(move || {
         let root = held.root().to_path_buf();
-        let key = core::key_of(&app);
-        let proof = core::prove(&ctx, core::VAULT, &key, &app)?;
+        let proof = core::prove(&ctx, &app)?;
         let before = sandbox::persona::shown(&root);
         let clear = |persona: &str| {
             before
@@ -353,7 +365,7 @@ pub async fn agent_identity_finish(
         for persona in &personas {
             let now = after.iter().find(|one| &one.persona == persona);
             match now {
-                Some(now) if clear(persona) => crate::sandboxing::allow_persona(
+                Some(now) if clear(persona) && !now.default => crate::sandboxing::allow_persona(
                     &root,
                     persona,
                     &now.digest,
@@ -376,6 +388,7 @@ pub async fn agent_identity_finish(
                 repos: Some(u32::try_from(proof.repos).unwrap_or(u32::MAX)),
                 settings_page: Some(proof.stand.settings_page()),
                 trouble: None,
+                by_hand: false,
             },
             read: proof.read,
             to_allow,
@@ -396,18 +409,11 @@ pub async fn agent_identity_remove(
     let ctx = ctx_of(&planes, &plane)?;
     let root = planes.held(&plane)?.root().to_path_buf();
     blocking(move || {
-        let (vault, key) = core::held(&root)?
-            .into_iter()
-            .find(|one| one.app == app)
-            .map_or_else(
-                || (core::VAULT.to_owned(), core::key_of(&app)),
-                |one| (one.vault, one.key),
-            );
         // Asked first: once the key is gone, GitHub can't be asked as the App.
-        let settings_page = core::stand(&ctx, &vault, &key, &app)
+        let settings_page = core::stand(&ctx, &app)
             .ok()
             .map(|stand| stand.settings_page());
-        let revoked = core::remove(&ctx, &root, &vault, &key, &app)?;
+        let revoked = core::remove(&ctx, &root, &app)?;
         Ok(IdentityRemoved {
             settings_page,
             tokens_revoked: u32::try_from(revoked).unwrap_or(u32::MAX),

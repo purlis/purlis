@@ -13,11 +13,15 @@
 //!    alone can't do this. Only the holder of that address gets the page.
 //! 3. GitHub sends the browser back with a one-time code and that `state`. Any other request is
 //!    refused by the listener's own rules, and the first that matches closes it.
-//! 4. The code is exchanged at once ([`convert`]). The answer is held to what was asked: the
+//! 4. The code is exchanged at once ([`convert`]). The answer is held to what was asked: the named
 //!    owner, the permissions, no events. The client secret and webhook secret are wiped unread.
 //! 5. The key goes straight to a vault under [`mint::RESERVED_PREFIX`] ([`keep_key`]), so it is
 //!    marked from the moment it is stored: no read but the mint's ever gets it, before or after
 //!    the tool line exists. Nothing of it crosses to a page, a chat or a log.
+//!
+//! **Only what this flow made is acted on.** A tool line is committed text a teammate may have
+//! written, so a line that doesn't name this flow's own vault and reserved key ([`Held::ours`]) is
+//! shown and never signed with, proved with, or deleted.
 //!
 //! **Everything else is read fresh.** The tool lines in the project file say which Apps are set
 //! up ([`held`]), the vault says which wait for Finish ([`pending`]), and GitHub says who an App
@@ -55,6 +59,9 @@ const START_PATH: &str = "/purlis/agent-identity/start/";
 /// Where GitHub sends the browser back.
 const BACK_PATH: &str = "/purlis/agent-identity/back";
 
+/// How many times GitHub is asked to hand over an App before purlis gives up.
+const CONVERT_TRIES: usize = 3;
+
 /// The longest code taken. GitHub's are far shorter.
 const MOST_CODE: usize = 256;
 
@@ -82,8 +89,8 @@ const POST_THE_FORM: &str = "document.getElementById(\"f\").submit()";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Owner {
     Organisation(String),
-    /// The person's own account, under the name purlis knows it by, where it knows one.
-    Personal(Option<String>),
+    /// The person's own account, by name, so what GitHub answers can be held to it.
+    Personal(String),
 }
 
 /// What the person chose.
@@ -135,14 +142,10 @@ impl Wanted {
     /// The name the App is first offered under. GitHub's page lets the person change a taken one.
     fn app_name(&self) -> String {
         const AGENT: &str = "purlis-agent";
-        match &self.owner {
-            Owner::Organisation(name) | Owner::Personal(Some(name)) => {
-                let room = MOST_APP_NAME - AGENT.len() - 1;
-                let short: String = name.chars().take(room).collect();
-                format!("{}-{AGENT}", short.trim_end_matches('-'))
-            }
-            Owner::Personal(None) => AGENT.to_owned(),
-        }
+        let (Owner::Organisation(name) | Owner::Personal(name)) = &self.owner;
+        let room = MOST_APP_NAME - AGENT.len() - 1;
+        let short: String = name.chars().take(room).collect();
+        format!("{}-{AGENT}", short.trim_end_matches('-'))
     }
 }
 
@@ -173,11 +176,13 @@ pub fn new_app_page(owner: &Owner, state: &str) -> Result<String, String> {
         Owner::Organisation(name) if account_ok(name) => Ok(format!(
             "https://{HOST}/organizations/{name}/settings/apps/new?state={state}"
         )),
-        Owner::Organisation(name) => Err(format!(
-            "{} is not a GitHub organisation's name.",
+        Owner::Personal(name) if account_ok(name) => {
+            Ok(format!("https://{HOST}/settings/apps/new?state={state}"))
+        }
+        Owner::Organisation(name) | Owner::Personal(name) => Err(format!(
+            "{} is not a GitHub account's name.",
             crate::shown::short(name)
         )),
-        Owner::Personal(_) => Ok(format!("https://{HOST}/settings/apps/new?state={state}")),
     }
 }
 
@@ -251,9 +256,21 @@ pub fn convert(endpoint: &dyn Endpoint, code: &Code, wanted: &Wanted) -> Result<
         return Err("GitHub's answer wasn't a code purlis can use. Start over.".to_owned());
     }
     let url = format!("https://api.{HOST}/app-manifests/{code}/conversions");
-    let mut answer = endpoint
-        .post(&url, &[])
-        .map_err(|why| format!("GitHub could not be asked for the App: {why}"))?;
+    // A code works once, so an answer lost on the way can leave it unspent: it is tried again, and
+    // while it lives it can still fetch the App's key, as the sentence below says.
+    let mut asked = endpoint.post(&url, &[]);
+    for _ in 1..CONVERT_TRIES {
+        if asked.is_ok() {
+            break;
+        }
+        asked = endpoint.post(&url, &[]);
+    }
+    let mut answer = asked.map_err(|why| {
+        format!(
+            "GitHub didn't answer, so purlis has no key for the App it may have made ({why}). \
+             Delete that App on GitHub, close the browser tab, and start over."
+        )
+    })?;
     // Neither is ever used: an App's webhook is off, and it signs in with no secret.
     drop(answer.secret("client_secret"));
     drop(answer.secret("webhook_secret"));
@@ -276,8 +293,7 @@ pub fn convert(endpoint: &dyn Endpoint, code: &Code, wanted: &Wanted) -> Result<
     let kind = owner_text("type");
     let right_owner = match &wanted.owner {
         Owner::Organisation(name) => kind == "Organization" && login.eq_ignore_ascii_case(name),
-        Owner::Personal(Some(name)) => kind == "User" && login.eq_ignore_ascii_case(name),
-        Owner::Personal(None) => kind == "User",
+        Owner::Personal(name) => kind == "User" && login.eq_ignore_ascii_case(name),
     };
     if !right_owner || !account_ok(&login) {
         return Err(
@@ -287,10 +303,11 @@ pub fn convert(endpoint: &dyn Endpoint, code: &Code, wanted: &Wanted) -> Result<
         );
     }
     let asked = wanted.permissions();
+    // Held to what was asked: an answer that doesn't say is not taken as one that asks for less.
     let wider = answer
         .value("permissions")
         .and_then(serde_json::Value::as_object)
-        .is_some_and(|given| {
+        .is_none_or(|given| {
             given.iter().any(|(name, level)| {
                 let wanted = asked
                     .iter()
@@ -305,7 +322,7 @@ pub fn convert(endpoint: &dyn Endpoint, code: &Code, wanted: &Wanted) -> Result<
     let listens = answer
         .value("events")
         .and_then(serde_json::Value::as_array)
-        .is_some_and(|events| !events.is_empty());
+        .is_none_or(|events| !events.is_empty());
     if wider || listens {
         return Err(
             "The App GitHub made can do more than purlis asked for, so purlis kept \
@@ -432,8 +449,12 @@ pub fn keep_key(ctx: &Ctx, created: &Created) -> Result<(), String> {
              rename it, then start over. The App is on GitHub and can be deleted there."
         ));
     }
-    cmd::set_value(ctx, &vault, &key_of(&created.app), &created.pem)
-        .map_err(|e| e.message.to_string())
+    let key = key_of(&created.app);
+    cmd::set_reserved(ctx, &vault, &key, &created.pem).map_err(|e| e.message.to_string())?;
+    if crate::secrets::keyring::left_unheld(ctx, &vault, &key) {
+        tracing::warn!("purlis: an App's key is in the keyring and not yet held to this app");
+    }
+    Ok(())
 }
 
 /// **The github.com accounts the project's clones are under**, each once: what the person is
@@ -443,12 +464,13 @@ pub fn owners_on_github(root: &Path) -> Vec<String> {
     let plane = crate::workspaces::Plane::open(root.to_path_buf());
     let known = super::known(root);
     let forge_of = |url: &str| super::resolve_in(url, &known);
+    let out_of_reach = apptoken::grantable_beside(root, &[]);
     let mut owners: Vec<String> = plane
         .workspaces()
         .unwrap_or_default()
         .iter()
         .filter_map(|workspace| crate::repos::clones(root, workspace).ok())
-        .flat_map(|clones| clones.repos)
+        .flat_map(|clones| apptoken::held_from_chats(clones.repos, &out_of_reach))
         .filter_map(|repo| {
             let run = crate::worktree::git::run(
                 &repo.path,
@@ -482,7 +504,16 @@ pub struct Held {
     pub personas: Vec<String>,
 }
 
-/// **Every App the project's tool lines mint with**, by client id. Nothing where there is no file;
+impl Held {
+    /// **Whether this flow made the line**: its vault and reserved key. Another line is committed
+    /// text naming any value, so purlis only shows it.
+    #[must_use]
+    pub fn ours(&self) -> bool {
+        self.vault == VAULT && self.key == key_of(&self.app)
+    }
+}
+
+/// **Every App the project's tool lines mint with**, one entry per App and key. Nothing where there is no file;
 /// a file that doesn't read is refused rather than read as no identity.
 pub fn held(root: &Path) -> Result<Vec<Held>, String> {
     let text = match std::fs::read_to_string(crate::names::manifest(root)) {
@@ -512,7 +543,10 @@ pub fn held(root: &Path) -> Result<Vec<Held>, String> {
         else {
             continue;
         };
-        match found.iter_mut().find(|one| one.app == app) {
+        match found
+            .iter_mut()
+            .find(|one| one.app == app && one.vault == vault && one.key == key)
+        {
             Some(one) => one.personas.push(persona.clone()),
             None => found.push(Held {
                 app,
@@ -627,7 +661,8 @@ pub fn with_lines(text: &str, app: &str, personas: &[String]) -> Result<String, 
     Ok(doc.to_string())
 }
 
-/// **The project file `text` with every `gh` line of App `app` taken out**, all else as it was.
+/// **The project file `text` with this flow's `gh` lines for App `app` taken out** ([`Held::ours`]),
+/// all else as it was. A hand-written line stays, and so does the mark on what it names.
 pub fn without_lines(text: &str, app: &str) -> Result<String, String> {
     let mut doc: toml_edit::DocumentMut = text
         .parse()
@@ -647,12 +682,11 @@ pub fn without_lines(text: &str, app: &str) -> Result<String, String> {
             else {
                 continue;
             };
-            let ours = tools
-                .get("gh")
-                .and_then(toml_edit::Item::as_table_like)
-                .and_then(|gh| gh.get(mint::APP_KEY))
-                .and_then(toml_edit::Item::as_str)
-                == Some(app);
+            let gh = tools.get("gh").and_then(toml_edit::Item::as_table_like);
+            let text = |key: &str| gh.and_then(|gh| gh.get(key)?.as_str());
+            let ours = text(mint::APP_KEY) == Some(app)
+                && text("vault") == Some(VAULT)
+                && text("key") == Some(key_of(app).as_str());
             if ours {
                 tools.remove("gh");
             }
@@ -664,18 +698,6 @@ pub fn without_lines(text: &str, app: &str) -> Result<String, String> {
     Ok(doc.to_string())
 }
 
-/// `text` put where the project's file is, whole or not at all.
-fn write_manifest(root: &Path, text: &str) -> Result<(), String> {
-    use std::io::Write as _;
-    let path = crate::names::manifest(root);
-    let said = |e: std::io::Error| format!("the project's settings couldn't be written: {e}");
-    let folder = path.parent().unwrap_or(root);
-    let mut file = tempfile::NamedTempFile::new_in(folder).map_err(said)?;
-    file.write_all(text.as_bytes()).map_err(said)?;
-    file.persist(&path).map_err(|e| said(e.error))?;
-    Ok(())
-}
-
 /// The project's file as it stands, empty where there is none.
 fn read_manifest(root: &Path) -> Result<String, String> {
     match std::fs::read_to_string(crate::names::manifest(root)) {
@@ -685,9 +707,21 @@ fn read_manifest(root: &Path) -> Result<String, String> {
     }
 }
 
+/// **The project's file changed by `edit`**, one writer at a time and whole or not at all.
+fn rewrite_manifest(
+    root: &Path,
+    edit: impl FnOnce(&str) -> Result<String, String>,
+) -> Result<(), String> {
+    let path = crate::names::manifest(root);
+    let _held = crate::rewrite::Lock::on(root);
+    let text = edit(&read_manifest(root)?)?;
+    crate::rewrite::replace(root, &path, text.as_bytes(), crate::rewrite::Mode::Kept)
+        .map_err(|e| format!("the project's settings couldn't be written: {e}"))
+}
+
 /// **Adds App `app`'s line for `personas`** to the project at `root`: what Finish writes (Q11).
 pub fn add_lines(root: &Path, app: &str, personas: &[String]) -> Result<(), String> {
-    write_manifest(root, &with_lines(&read_manifest(root)?, app, personas)?)
+    rewrite_manifest(root, |text| with_lines(text, app, personas))
 }
 
 /// **An App as GitHub says it is.**
@@ -888,30 +922,39 @@ fn jwt_of(ctx: &Ctx, vault: &str, key: &str, app: &str) -> Result<Zeroizing<Stri
 }
 
 /// [`stand_over`] for the App `app` on github.com.
-pub fn stand(ctx: &Ctx, vault: &str, key: &str, app: &str) -> Result<Stand, String> {
-    let jwt = jwt_of(ctx, vault, key, app)?;
+pub fn stand(ctx: &Ctx, app: &str) -> Result<Stand, String> {
+    let jwt = jwt_of(ctx, app)?;
     stand_over(&apptoken::jwt_transport::to_github_com(&jwt)?)
 }
 
 /// [`prove_over`] for the App `app` on github.com.
-pub fn prove(ctx: &Ctx, vault: &str, key: &str, app: &str) -> Result<Proof, String> {
-    let jwt = jwt_of(ctx, vault, key, app)?;
+pub fn prove(ctx: &Ctx, app: &str) -> Result<Proof, String> {
+    let jwt = jwt_of(ctx, app)?;
     prove_over(&apptoken::jwt_transport::to_github_com(&jwt)?, &|token| {
         Ok(Box::new(apptoken::jwt_transport::to_github_com(token)?) as Box<dyn Transport>)
     })
 }
 
-/// **Removes the identity at once** (Q13): the key first, so no line ever outlives it unmarked,
-/// then the lines, then every live token. Nothing is taken out if the key can't go. Answers how
-/// many live tokens went.
-pub fn remove(ctx: &Ctx, root: &Path, vault: &str, key: &str, app: &str) -> Result<usize, String> {
-    let held_in = cmd::provider(ctx, vault).map_err(|e| e.message.to_string())?;
-    let keys = cmd::keys(ctx, &held_in).map_err(|e| e.message.to_string())?;
-    if keys.iter().any(|one| one == key) {
-        cmd::delete(ctx, &held_in, key).map_err(|e| e.message.to_string())?;
+/// **Removes the identity at once** (Q13): only this flow's key and lines ([`Held::ours`]). The
+/// file is read and edited first, so one that won't parse changes nothing. Then the key goes and
+/// every live token with it, so the file failing to write leaves no token handed out, and the
+/// sentence says the lines stayed. Answers how many live tokens went.
+pub fn remove(ctx: &Ctx, root: &Path, app: &str) -> Result<usize, String> {
+    if !client_id_ok(app) {
+        return Err("That isn't a GitHub App's client id.".to_owned());
     }
-    write_manifest(root, &without_lines(&read_manifest(root)?, app)?)?;
-    Ok(apptoken::app_removed(root, app, Duration::from_secs(5)))
+    without_lines(&read_manifest(root)?, app)?;
+    let key = key_of(app);
+    let vault = cmd::provider(ctx, VAULT).map_err(|e| e.message.to_string())?;
+    let keys = cmd::keys(ctx, &vault).map_err(|e| e.message.to_string())?;
+    if keys.iter().any(|one| *one == key) {
+        cmd::delete_reserved(ctx, &vault, &key).map_err(|e| e.message.to_string())?;
+    }
+    let revoked = apptoken::app_removed(root, app, Duration::from_secs(5));
+    rewrite_manifest(root, |text| without_lines(text, app)).map_err(|why| {
+        format!("The key and live tokens are gone, and the tool lines stayed: {why}")
+    })?;
+    Ok(revoked)
 }
 
 #[cfg(test)]

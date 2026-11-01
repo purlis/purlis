@@ -40,6 +40,17 @@ pub const VAR: &str = "GH_TOKEN";
 /// the project file unreadable and over a restart.
 pub const RESERVED_PREFIX: &str = "agent-identity-";
 
+/// **Whether `key` is under [`RESERVED_PREFIX`]**, in any case, since some stores fold case.
+pub fn reserved(key: &str) -> bool {
+    key.get(..RESERVED_PREFIX.len())
+        .is_some_and(|start| start.eq_ignore_ascii_case(RESERVED_PREFIX))
+}
+
+/// What a write or delete under [`RESERVED_PREFIX`] is refused with, but Agent identity's own.
+pub fn reserved_write_said(key: &str) -> String {
+    format!("'{key}' is a name purlis keeps for Agent identity, so only that tab changes it")
+}
+
 /// The longest client id read.
 const MOST_APP: usize = 64;
 
@@ -146,7 +157,7 @@ pub enum Raw {
 
 /// [`Raw`] for key `key` of vault `vault` in the project at `root`.
 pub fn raw(root: &Path, vault: &str, key: &str) -> Raw {
-    if key.starts_with(RESERVED_PREFIX) {
+    if reserved(key) {
         return Raw::Refused(refused_said(vault, key));
     }
     match marked(root) {

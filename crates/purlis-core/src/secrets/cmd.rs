@@ -126,6 +126,20 @@ pub fn keys(ctx: &Ctx, v: &Vault) -> Result<Vec<String>, VaultError> {
 /// Store a value. **Remembered** as a value read is ([`super::seen`], #1520), but in a
 /// reference vault, where what is stored is a pointer and not the secret.
 pub fn set_value(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Result<(), VaultError> {
+    use crate::sandbox::tools::mint;
+    if mint::reserved(key) {
+        return Err(VaultError::new(mint::reserved_write_said(key)));
+    }
+    store_value(ctx, v, key, value)
+}
+
+/// **A GitHub App's key, stored under its reserved name** (#4485): the one write [`set_value`]
+/// refuses there, for Agent identity alone.
+pub(crate) fn set_reserved(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Result<(), VaultError> {
+    store_value(ctx, v, key, value)
+}
+
+fn store_value(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Result<(), VaultError> {
     if v.provider != "reference" {
         super::seen::remember(value);
     }
@@ -139,6 +153,19 @@ pub fn set_value(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Result<(), Vau
 
 /// Delete a value.
 pub fn delete(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
+    use crate::sandbox::tools::mint;
+    if mint::reserved(key) {
+        return Err(VaultError::new(mint::reserved_write_said(key)));
+    }
+    delete_value(ctx, v, key)
+}
+
+/// **A key under its reserved name, taken out** (#4485): for Agent identity's Remove alone.
+pub(crate) fn delete_reserved(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
+    delete_value(ctx, v, key)
+}
+
+fn delete_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
     match v.provider.as_str() {
         "keyring" => keyring::delete(ctx, v, key),
         "plain-file" => plain_file::delete(ctx, v, key),

@@ -244,6 +244,10 @@ fn a_key_kept_under_the_reserved_prefix_is_refused_with_no_line_and_no_project_f
         mint::raw(root.path(), "agent-identity", &reserved),
         mint::Raw::Refused(_)
     ));
+    assert!(matches!(
+        mint::raw(root.path(), "agent-identity", &reserved.to_uppercase()),
+        mint::Raw::Refused(_)
+    ));
     assert_eq!(
         mint::raw(root.path(), "agent-identity", "something-else"),
         mint::Raw::Taken

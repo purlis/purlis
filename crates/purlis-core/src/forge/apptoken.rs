@@ -171,7 +171,7 @@ pub fn held_from_chats(
 
 /// The folders a chat of the project at `root` may be granted, beside `writes`: Settings' list of
 /// grantable folders. A chat's temporary folder is its own and holds no clone of a workspace.
-fn grantable_beside(root: &Path, writes: &[PathBuf]) -> Vec<PathBuf> {
+pub(super) fn grantable_beside(root: &Path, writes: &[PathBuf]) -> Vec<PathBuf> {
     let mut out = writes.to_vec();
     out.extend(crate::sandbox::local::grantable_folders(root));
     out

@@ -11,10 +11,12 @@ use crate::forge::transport::{Endpoint as Path_, NoAnswer};
 /// Not a key: the shape [`mint::a_private_key`] looks for, written so nothing takes it for one.
 fn pem() -> String {
     let kind = "RSA PRIVATE";
-    format!("-----BEGIN {kind} KEY-----
+    format!(
+        "-----BEGIN {kind} KEY-----
 abc
 -----END {kind} KEY-----
-")
+"
+    )
 }
 
 fn acme() -> Wanted {
@@ -126,7 +128,7 @@ fn the_page_goes_to_the_owners_own_address_and_refuses_a_name_that_cant_be_one()
         "https://github.com/organizations/acme/settings/apps/new?state=s"
     );
     assert_eq!(
-        new_app_page(&Owner::Personal(None), "s").unwrap(),
+        new_app_page(&Owner::Personal("me".into()), "s").unwrap(),
         "https://github.com/settings/apps/new?state=s"
     );
     assert!(new_app_page(&Owner::Organisation("a/../b".into()), "s").is_err());
@@ -256,6 +258,52 @@ fn an_app_that_can_do_more_than_was_asked_is_dropped() {
 }
 
 #[test]
+fn an_answer_that_does_not_say_what_the_app_can_do_is_dropped() {
+    for key in ["permissions", "events"] {
+        let mut silent = app_answer("acme", "Organization");
+        silent.as_object_mut().unwrap().remove(key);
+        assert!(convert(&Conversions::say(201, &silent), &code("c"), &acme()).is_err());
+    }
+}
+
+#[test]
+fn a_personal_app_is_held_to_the_named_account() {
+    let mine = Wanted {
+        owner: Owner::Personal("me".to_owned()),
+        workflows: false,
+    };
+    let refused = convert(
+        &Conversions::say(201, &app_answer("evil", "User")),
+        &code("c"),
+        &mine,
+    );
+    assert!(refused.unwrap_err().contains("another account"));
+    assert!(
+        convert(
+            &Conversions::say(201, &app_answer("me", "User")),
+            &code("c"),
+            &mine
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn an_exchange_that_gets_no_answer_is_tried_again_and_then_says_what_to_do() {
+    struct Silent(Mutex<usize>);
+    impl Endpoint for Silent {
+        fn post(&self, _: &str, _: &[(&str, &str)]) -> Result<Answer, String> {
+            *self.0.lock().unwrap() += 1;
+            Err("nothing answered".to_owned())
+        }
+    }
+    let silent = Silent(Mutex::new(0));
+    let refused = convert(&silent, &code("c"), &acme()).unwrap_err();
+    assert!(refused.contains("Delete that App on GitHub"), "{refused}");
+    assert_eq!(*silent.0.lock().unwrap(), 3);
+}
+
+#[test]
 fn what_github_refuses_and_what_is_not_a_key_keep_nothing() {
     let refused = convert(
         &Conversions::say(404, &serde_json::json!({})),
@@ -349,6 +397,31 @@ fn removing_takes_out_only_that_apps_lines() {
         cfg["sandbox"]["personas"]["other"]["tools"]["gh"]["app"].as_str(),
         Some("Other")
     );
+}
+
+#[test]
+fn removing_leaves_a_line_this_flow_did_not_write_and_finds_it_is_not_ours() {
+    let text = "[sandbox.personas.dev.tools]\ngh = { vault = \"prod\", mint = \"github-app\", \
+                app = \"Iv23li\", key = \"db-password\" }\n";
+    assert_eq!(without_lines(text, "Iv23li").unwrap(), text);
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(crate::names::manifest(root.path()), text).unwrap();
+    let found = held(root.path()).unwrap();
+    assert_eq!(found.len(), 1);
+    assert!(!found[0].ours());
+}
+
+#[test]
+fn two_lines_of_one_app_on_two_keys_are_two_entries() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        crate::names::manifest(root.path()),
+        "[sandbox.personas.a.tools]\ngh = { vault = \"v\", mint = \"github-app\", app = \"X\", \
+         key = \"k1\" }\n[sandbox.personas.b.tools]\ngh = { vault = \"v\", mint = \"github-app\", \
+         app = \"X\", key = \"k2\" }\n",
+    )
+    .unwrap();
+    assert_eq!(held(root.path()).unwrap().len(), 2);
 }
 
 #[test]
