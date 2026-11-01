@@ -13,6 +13,9 @@ import { appendFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { requiredDrift } from "./ci-push-jobs.mjs";
+import { requiredNames } from "./land.mjs";
+
 /** The `p` (0..1) percentile of `values` by nearest rank, or null for none. */
 export function percentile(values, p) {
   if (values.length === 0) return null;
@@ -229,7 +232,7 @@ export function headline(week) {
 
 /** The whole report, as Markdown for the job summary and the issue's body. */
 export function report(week) {
-  const { runs, queue, jobs, flaky, slowest, sampled } = week;
+  const { runs, queue, jobs, flaky, slowest, sampled, drift } = week;
   const lines = [
     `## CI health, ${week.from} to ${week.to}`,
     "",
@@ -237,6 +240,15 @@ export function report(week) {
     "",
     ...(week.unread > 0
       ? [`> [!WARNING]`, `> ${week.unread} of the week's runs could not be read: the runs list held them back. The numbers below are of the rest.`, ""]
+      : []),
+    ...(drift && drift.missing.length + drift.extra.length > 0
+      ? [
+          `> [!WARNING]`,
+          `> \`tools/ci-push-jobs.mjs\` and main's required checks have parted, so its check reads the wrong list. ` +
+            `Main requires and it does not know: ${drift.missing.join(", ") || "none"}. ` +
+            `It lists and main does not require: ${drift.extra.join(", ") || "none"}.`,
+          "",
+        ]
       : []),
     "### Runs",
     "",
@@ -311,7 +323,7 @@ export function report(week) {
 // refuses it as too costly), for `--sample` runs spread evenly over the week: 600 is ~60 queries,
 // about four minutes, ~400 of GraphQL's 5,000 points an hour. The slowest tests are read from the
 // newest SLOWEST_RUNS green runs on main, four rust jobs each. The merged pull requests are ~5
-// pages of 50. ~110 calls in all.
+// pages of 50. Main's required checks are two calls. ~110 calls in all.
 
 /** How many of the newest green runs on main the slowest tests are read from. */
 export const SLOWEST_RUNS = 3;
@@ -426,6 +438,10 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     .slice(-SLOWEST_RUNS);
   const suites = await suitesOf(sampled.map((run) => run.check_suite_node_id), token);
   const mainSuites = await suitesOf(mainGreen.map((run) => run.check_suite_node_id), token);
+  const required = requiredNames(
+    await call(`/repos/${repo}/rules/branches/main?per_page=100`, { token }),
+    (await call(`/repos/${repo}/branches/main`, { token })).protection,
+  );
   const lists = [];
   for (const job of mainSuites.flatMap((suite) => suite?.checkRuns?.nodes ?? [])) {
     if (!job.name.startsWith("rust tests (part")) continue;
@@ -454,6 +470,8 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     flaky: flakyTests(suites),
     slowest: slowestTests(lists),
     slowestFrom: mainGreen.length,
+    // No names means the token could not read them, which says nothing of the list.
+    drift: required.length > 0 ? requiredDrift(required) : undefined,
   };
 }
 

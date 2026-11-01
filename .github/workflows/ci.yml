@@ -83,6 +83,11 @@ env:
   # The test runner the `rust` job installs, one exact version (`.config/nextest.toml`).
   NEXTEST_VERSION: "0.9.146"
 
+# **Every job that runs on a push to main has chosen what its red means (#4471).** `ci` ending
+# `failure` on main stops both `release.yml` and `tools/land.mjs`, whichever job did it. So a job
+# here that can run on a push is required, or read by a required job (`needs.<job>.result`), or
+# `continue-on-error`, or listed with its reason: `tools/ci-push-jobs.mjs`, in the tools' tests.
+
 jobs:
   # Which scopes this change needs (`tools/ci-scope.mjs`, `.github/actions/change-scope`).
   changes:

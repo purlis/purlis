@@ -12,8 +12,10 @@
 //   1. refuses unless the pull request is open, from a branch of this repository (approving a
 //      fork's runs is a person's call), and based on `main`;
 //   2. refuses when its head is not `--sha`, the commit the review approved;
-//   3. refuses while main is red: the newest finished `ci` run of a push to main failed. A pull
-//      request labelled `fixes-main` lands past a red main, and only it goes to the front of the
+//   3. refuses while main is red: the newest `ci` run of a push to main to reach a verdict failed.
+//      It reads the run's conclusion, as `release.yml` does, not main's required checks, so that
+//      landing and releases stop together; `tools/ci-push-jobs.mjs` holds every job that can turn
+//      that conclusion red to having chosen to (the reasons are on #4471). A pull request labelled `fixes-main` lands past a red main, and only it goes to the front of the
 //      queue (`jump`), since a jump restarts every group being built;
 //   4. stops when any run of the head is held for approval (`action_required`), naming each by
 //      its name, id and link: the operator approves them, and it never reruns one (#3991). Exit 4;
@@ -94,16 +96,25 @@ export function fixesMain(pr) {
 }
 
 const RED = new Set(["failure", "timed_out", "startup_failure"]);
+const VERDICTS = new Set(["success", ...RED]);
+
+/**
+ * How many of main's newest finished push runs are read for one with a verdict. Each merge cancels
+ * the run pending behind it, so a few in a row can have none: the longest row among main's 575
+ * push runs from 2026-10-20 to 11-01 was 5.
+ */
+export const RUNS_READ = 30;
 
 /**
  * The run that makes main red, of `runs` (the `ci` workflow's runs of pushes to main), or
- * `undefined`. Main's colour is its newest *finished* push run: a run still going says nothing
- * yet, so a red main stays red until a run goes green, however busy the queue is. A rerun that
- * went green clears it, and a nightly or merge-queue run is not main's.
+ * `undefined`. Main's colour is its newest push run with a verdict: a run still going says nothing
+ * yet, and neither does one cancelled or skipped, so a red main stays red until a run goes green,
+ * however busy the queue is. A rerun that went green clears it, and a nightly or merge-queue run is
+ * not main's.
  */
 export function redRun(runs) {
   const newest = [...runs]
-    .filter((run) => run.event === "push" && run.status === "completed")
+    .filter((run) => run.event === "push" && run.status === "completed" && VERDICTS.has(run.conclusion))
     .sort((a, b) => b.run_number - a.run_number || b.run_attempt - a.run_attempt)[0];
   return newest && RED.has(newest.conclusion) ? newest : undefined;
 }
@@ -278,7 +289,7 @@ function main(options) {
       "-f",
       "status=completed",
       "-f",
-      "per_page=1",
+      `per_page=${RUNS_READ}`,
       "--jq",
       ".workflow_runs",
     ]);

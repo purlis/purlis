@@ -173,6 +173,13 @@ const week = {
   slowestFrom: 1,
 };
 
+test("the report warns when main's required checks and the push-job check's list have parted", () => {
+  const drift = { missing: ["parity"], extra: [] };
+  assert.match(report({ ...week, drift }), /\[!WARNING\][\s\S]*have parted[\s\S]*does not know: parity\./);
+  assert.doesNotMatch(report({ ...week, drift: { missing: [], extra: [] } }), /have parted/);
+  assert.doesNotMatch(report(week), /have parted/);
+});
+
 test("the report's headline names the numbers a slowdown shows in first", () => {
   assert.equal(
     headline(week),
