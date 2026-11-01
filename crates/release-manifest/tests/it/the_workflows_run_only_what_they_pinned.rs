@@ -326,6 +326,31 @@ fn no_release_job_that_holds_a_key_or_publishes_restores_a_cache() {
 }
 
 #[test]
+fn no_job_that_builds_the_releases_commit_caches_through_an_action_it_calls() {
+    // The rule above follows composite actions only for the jobs that hold a key or publish.
+    // `manifest` holds nothing but writes what the updater reads, and `runner-image.yml`'s
+    // `binary` builds the purlis the signed image carries; each calls the toolchain action
+    // on the commit `plan` chose. So every job of both workflows is held to caching nothing,
+    // through every action it calls, and an action that starts caching fails here.
+    let dir = workflow::workflows_dir();
+    let mut problems = Vec::new();
+    for file in ["release.yml", "runner-image.yml"] {
+        for job in workflow::jobs(&workflow::read(&dir.join(file))) {
+            for step in job.steps() {
+                if let Some(why) = caches_through(&step, &repository_action) {
+                    problems.push(format!(
+                        "{file}: job `{}`: {} ({why})",
+                        job.name,
+                        step[0].trim()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+#[test]
 fn the_other_workflows_keep_their_caches() {
     // The rule above is for the release's privileged jobs, not a ban on caching: `ci` still
     // restores and saves one, which is what makes a PR's checks quick.
