@@ -343,7 +343,7 @@ pub(crate) fn shared_text(root: &Path) -> Option<String> {
 /// is refused at once with a sentence instead. **And capped** at
 /// [`crate::sandbox::PLANE_FILE_MAX`], the most a chat's start reads of the same file, so a save
 /// never reads more under the lock than a start would.
-fn on_disk(root: &Path, which: Which) -> Result<(bool, String), String> {
+pub(crate) fn on_disk(root: &Path, which: Which) -> Result<(bool, String), String> {
     let path = which.path(root);
     match read_capped(root, &path) {
         Ok(bytes) if bytes.len() > crate::sandbox::PLANE_FILE_MAX => Err(format!(

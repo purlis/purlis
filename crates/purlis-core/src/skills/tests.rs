@@ -3141,3 +3141,24 @@ fn a_chat_in_a_branch_folder_lists_the_repo_skills_of_that_folder() {
     assert!(rows(&plane, &clone).is_empty());
     assert!(rows(&plane, &plane.join("workspaces/alpha")).is_empty());
 }
+
+/// **Opening the studio does not ask git about a Local file that holds nothing it reads** (#4351):
+/// each ask is a `git status`, about 150 ms on the macOS runner, and these readers took three of
+/// them, half the studio's read, to learn a file said nothing to them.
+#[test]
+fn a_studio_read_asks_git_nothing_about_a_local_file_with_none_of_its_tables() {
+    let dir = tempfile::tempdir().expect("a plane");
+    let root = dir.path();
+    std::fs::write(root.join("charter.toml"), "[plane]\nname = \"p\"\n").expect("written");
+    std::fs::write(root.join("charter.local.toml"), "[profile.mine]\n").expect("written");
+    let asks = crate::profiles::GIT_ASKS.with(std::cell::Cell::get);
+
+    let list = studio_list(None, root, None, None, &crate::harness_plugin::Env::of(&[]));
+    let extensions = crate::extension::project::Choices::read(root);
+    let old = crate::harness_plugin::old::found(root);
+
+    assert!(list.rows.is_empty());
+    assert_eq!(extensions.plane(), Some(root));
+    assert!(old.is_empty());
+    assert_eq!(crate::profiles::GIT_ASKS.with(std::cell::Cell::get), asks);
+}

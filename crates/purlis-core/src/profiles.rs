@@ -1312,6 +1312,8 @@ fn checked_within(root: &Path, git: Option<&Path>, timeout: std::time::Duration)
     if let Some(kept) = kept {
         return kept;
     }
+    #[cfg(test)]
+    GIT_ASKS.with(|asks| asks.set(asks.get() + 1));
     let check = check_of(root, git_path_state(root, git, timeout));
     ASKED_ONCE.with_borrow_mut(|kept| {
         if let Some(kept) = kept {
@@ -1380,6 +1382,13 @@ impl FileStamp {
 /// ([`git_asked_once`]).
 type AskedOnce =
     Option<std::collections::HashMap<(PathBuf, Option<PathBuf>), (Stamp, IgnoreCheck)>>;
+
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread has gone to git about a Local file, for a test of a read that
+    /// must not: each is a `git status`, 150 ms on the macOS runner (#4351).
+    pub(crate) static GIT_ASKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 thread_local! {
     static ASKED_ONCE: std::cell::RefCell<AskedOnce> = const { std::cell::RefCell::new(None) };

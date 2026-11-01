@@ -1626,6 +1626,9 @@ jobs:
       # workspace's crates change with every pull request that runs this job).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
+        env: # DEBUG-4351 thin LTO: fat took the Linux runner down twice
+          CARGO_PROFILE_RELEASE_LTO: thin
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
         run: npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings # DEBUG-4351
         working-directory: app
       # Cargo's own account of that build, unit by unit (`--timings`), kept a week: what a slow

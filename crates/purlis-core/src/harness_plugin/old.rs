@@ -54,19 +54,16 @@ fn holds(top: &toml::Table) -> bool {
 pub fn found(root: &Path) -> Vec<Found> {
     let mut out = Vec::new();
     for which in [Which::Shared, Which::Local] {
-        let Ok(read) = crate::settings::read(root, which) else {
+        // Its text alone: what saving it would be refused for asks git, and a studio's read comes
+        // through here (#4351).
+        let Ok((exists, text)) = crate::settings::on_disk(root, which) else {
             continue;
         };
-        if read.exists
-            && read
-                .text
-                .parse::<toml::Table>()
-                .is_ok_and(|top| holds(&top))
-        {
+        if exists && text.parse::<toml::Table>().is_ok_and(|top| holds(&top)) {
             out.push(Found {
                 file: which.file_at(root).to_owned(),
                 which: Some(which),
-                text: read.text,
+                text,
             });
         }
     }

@@ -157,14 +157,15 @@ impl Choices {
 
     /// The plane at `root`'s two files, as [`crate::settings::layer_text`] hands them: a file
     /// that cannot be read says nothing, and neither does a `charter.local.toml` git would carry
-    /// (charter-app#308).
+    /// (charter-app#308). Git is asked only where the Local file holds [`TABLE`], all this reads
+    /// of it (#4351).
     pub fn read(root: &Path) -> Self {
-        use crate::settings::{Which, layer_text};
+        use crate::settings::{Which, layer_text, local_layer_holding};
         Self {
             plane: Some(root.to_path_buf()),
             ..Self::from_layers(
                 &layer_text(root, Which::Shared),
-                &layer_text(root, Which::Local),
+                &local_layer_holding(root, TABLE),
             )
         }
     }
