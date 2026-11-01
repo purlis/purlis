@@ -22,5 +22,3 @@ workspace still names its pool per machine, and now a project and a start can to
 6. **Removing a pool sends what named it to this machine.** A workspace that named it is set to This
    machine and never moves on to a pool its project names, since nobody chose that pool for it. The
    removal says so. *(D-4536-3)*
-7. **A level purlis can't read stops the start** where the order would fall past it, until the
-   setting is chosen again. *(D-4536-6)*

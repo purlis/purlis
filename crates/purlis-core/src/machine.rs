@@ -1037,9 +1037,9 @@ pub struct Recent {
     /// and the strip would be arranging itself. Forgetting the plane forgets it with the pins,
     /// and the next open pins again — which is the arrangement a first open gets.
     pub most_active_pinned: bool,
-    /// Which pool each of this plane's workspaces runs its chats on, on this machine, by the
-    /// workspace's name (#2679, ruled 2026-10-20): a workspace not named here runs its chats on
-    /// this machine. A pool is named here, never defined: what it is, and its runner, are in
+    /// Which pool each of this plane's workspaces names for its chats, on this machine, by the
+    /// workspace's name (#2679, ruled 2026-10-20): a workspace not named here is set to this
+    /// machine ([`Self::chats_run_here`]) or follows the project. A pool is named here, never defined: what it is, and its runner, are in
     /// `runners.json` ([`crate::runners`]), and a name not kept there starts no chat.
     pub chats_run_on: BTreeMap<String, String>,
     /// The workspaces the person set to this machine (#4536), which a project's pool doesn't
@@ -1643,8 +1643,8 @@ impl Store {
             .map(String::as_str)
     }
 
-    /// Every workspace of `plane` that runs its chats on a pool on this machine, with its pool
-    /// (#2046).
+    /// Every workspace of `plane` that names a pool for its chats on this machine, with its pool
+    /// (#2046). One that follows its project isn't listed.
     pub fn every_chats_run_on(&self, plane: &Path) -> Vec<(&str, &str)> {
         self.recent(plane)
             .map(|entry| {
@@ -2039,7 +2039,7 @@ pub enum Dropped {
     /// One pinned workspace, inside a plane that was itself taken.
     Pin { workspace: String, why: String },
     /// Where one workspace's chats run, inside a plane that was itself taken (#2679): the
-    /// workspace runs its chats on this machine.
+    /// workspace follows its project.
     RunsOn { workspace: String, why: String },
     /// One entry of the workspaces set to this machine (#4536).
     RunsHere { workspace: String, why: String },
@@ -2048,17 +2048,6 @@ pub enum Dropped {
     /// The update channel, because the word is not one charter writes. The machine stays on
     /// the default, which is stable.
     Channel { named: String },
-}
-
-impl Dropped {
-    /// Whether this was a say in where chats run, so that what's left can't be trusted to say it
-    /// (#4536): [`crate::pools::chat_place`] refuses to fall through it.
-    pub fn is_a_place(&self) -> bool {
-        matches!(
-            self,
-            Self::RunsOn { .. } | Self::RunsHere { .. } | Self::ProjectRunsOn { .. }
-        )
-    }
 }
 
 impl std::fmt::Display for Dropped {
@@ -2072,6 +2061,10 @@ impl std::fmt::Display for Dropped {
                 f,
                 "where the workspace '{workspace}' runs its chats {why}, so it was not kept"
             ),
+            Self::RunsHere { workspace, why } if workspace.is_empty() => write!(
+                f,
+                "the workspaces set to this machine {why}, so they were not kept"
+            ),
             Self::RunsHere { workspace, why } => write!(
                 f,
                 "the workspace '{workspace}' set to this machine {why}, so it was not kept"
@@ -2079,7 +2072,7 @@ impl std::fmt::Display for Dropped {
             Self::ProjectRunsOn { why } => {
                 write!(
                     f,
-                    "where the project runs its chats {why}, so it was not kept"
+                    "where a project runs its chats {why}, so it was not kept"
                 )
             }
             Self::Channel { named } => write!(
@@ -2667,8 +2660,7 @@ fn pinned_workspaces_of(
     kept
 }
 
-/// The workspaces set to this machine, each one purlis can't read dropped with a reason: without
-/// it the workspace would follow its project, perhaps to a pool.
+/// The workspaces set to this machine, each one purlis can't read dropped with a reason.
 fn chats_run_here_of(
     raw: Option<&serde_json::Value>,
     dropped: &mut Vec<Dropped>,
@@ -2680,12 +2672,18 @@ fn chats_run_here_of(
     let Some(list) = raw.as_array() else {
         dropped.push(Dropped::RunsHere {
             workspace: String::new(),
-            why: "is not a list purlis wrote".to_owned(),
+            why: "aren't a list purlis wrote".to_owned(),
         });
         return kept;
     };
     for workspace in list {
-        let name = workspace.as_str().unwrap_or_default();
+        let Some(name) = workspace.as_str() else {
+            dropped.push(Dropped::RunsHere {
+                workspace: workspace.to_string(),
+                why: "is not a name".to_owned(),
+            });
+            continue;
+        };
         match usable_workspace(name) {
             Ok(()) => {
                 kept.insert(name.to_owned());
@@ -2933,7 +2931,7 @@ struct RecentOnDisk {
     pinned_workspaces: Vec<String>,
     #[serde(rename = "mostActivePinned", skip_serializing_if = "is_false")]
     most_active_pinned: bool,
-    /// Left out while every workspace runs its chats on this machine (#2679).
+    /// Left out while no workspace names a pool (#2679).
     #[serde(rename = "chatsRunOn", skip_serializing_if = "BTreeMap::is_empty")]
     chats_run_on: BTreeMap<String, String>,
     /// Left out while no workspace is set to this machine (#4536).

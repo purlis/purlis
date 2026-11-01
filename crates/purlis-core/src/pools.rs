@@ -206,10 +206,6 @@ pub fn runs_on(
 /// order is [`crate::machine::Store::chat_place`]'s. A chat at the project's root runs on this
 /// machine, since code moves to a runner by a workspace's clones, and a start that chose a pool
 /// for one is refused and never run here in its place.
-///
-/// **A level the file held and purlis couldn't read stops the start** where the order would
-/// otherwise fall past it: it may have said this machine, or a pool. The next write of the store
-/// drops it for good, so choosing in settings clears this.
 pub fn chat_place(
     config_root: &Path,
     plane: &Path,
@@ -233,16 +229,9 @@ pub fn chat_place(
             }),
         };
     };
-    let loaded = crate::machine::read(config_root);
-    let place = loaded.store.chat_place(plane, workspace, start);
-    if matches!(place.level, PlaceLevel::Project | PlaceLevel::Default)
-        && let Some(unread) = loaded.dropped.iter().find(|one| one.is_a_place())
-    {
-        return Err(format!(
-            "purlis could not read where this chat runs: {unread}. Choose where its chats run in \
-             its settings."
-        ));
-    }
+    let place = crate::machine::read(config_root)
+        .store
+        .chat_place(plane, workspace, start);
     let Some(pool) = &place.pool else {
         return Ok(place);
     };

@@ -2625,8 +2625,7 @@ fn a_pool_name_purlis_would_not_write_is_dropped_and_says_so() {
     assert!(
         back.dropped
             .iter()
-            .all(|dropped| dropped.is_a_place()
-                && dropped.to_string().contains("so it was not kept")),
+            .all(|dropped| dropped.to_string().contains("so it was not kept")),
         "{:?}",
         back.dropped
     );
@@ -2760,12 +2759,21 @@ fn a_project_default_purlis_would_not_write_is_dropped_with_a_reason() {
     let bad = serde_json::json!("../team");
     assert_eq!(project_chats_run_on_of(Some(&bad), &mut dropped), None);
     assert_eq!(dropped.len(), 1);
-    assert!(dropped[0].is_a_place());
-    assert!(dropped[0].to_string().starts_with("where the project runs"));
+    assert!(dropped[0].to_string().starts_with("where a project runs"));
     let bad = serde_json::json!(["ok", "a/b", 3]);
     let kept = chats_run_here_of(Some(&bad), &mut dropped);
     assert_eq!(kept.len(), 1);
     assert_eq!(dropped.len(), 3);
+    assert_eq!(
+        dropped[2].to_string(),
+        "the workspace '3' set to this machine is not a name, so it was not kept"
+    );
+    let bad = serde_json::json!("ide");
+    chats_run_here_of(Some(&bad), &mut dropped);
+    assert_eq!(
+        dropped[3].to_string(),
+        "the workspaces set to this machine aren't a list purlis wrote, so they were not kept"
+    );
     assert!(
         Store::default()
             .set_project_chats_run_on(Path::new("/planes/none"), Some("../team"))
