@@ -3673,11 +3673,13 @@ impl session::Host for Hosting {
                 refs,
                 checkout,
                 moving,
+                held,
             } => {
                 let way = crate::code::Way::In {
                     refs,
                     checkout,
                     moving,
+                    held,
                 };
                 self.move_code(&project, repo, transfer, way, peer).await
             }

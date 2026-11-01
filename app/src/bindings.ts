@@ -3127,10 +3127,10 @@ export const commands = {
 	 *  **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
 	 *  Start a chat offers beside that refusal. Asked of the core, never read from the words.
 	 */
-	poolLimitOffer: (profile: string, refused: string) => __TAURI_INVOKE<{
+	poolLimitOffer: (profile: string, refused: string, root: string | null, cwd: string | null) => __TAURI_INVOKE<{
 	pool: string,
 	hits: PoolLimitHitRow[],
-} | null>("pool_limit_offer", { profile, refused }),
+} | null>("pool_limit_offer", { profile, refused, root, cwd }),
 	/**
 	 *  **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
 	 *  move's line offers beside that refusal, as [`pool_limit_offer`] does for a start.
@@ -6079,6 +6079,11 @@ export type ClusterPoolAdding = {
 	pool: string,
 	/**  The cluster operator key Check its key showed, spelled as it showed it. */
 	key: string,
+	/**
+	 *  The longest wait for its runner to be vouched for, in minutes, where the person raised it
+	 *  after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
+	 */
+	vouch_wait: number | null,
 };
 
 /**  What Check its key read of a cluster's Pool. */

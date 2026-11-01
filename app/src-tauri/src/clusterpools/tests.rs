@@ -164,3 +164,19 @@ fn a_context_or_pool_purlis_cannot_name_is_refused_before_kubectl_runs() {
     assert!(usable("team", "-default").is_err());
     assert!(usable("team", "Default Pool").is_err());
 }
+
+/// **An add out of its wait offers double it, on the pool being added** (spec #4275).
+#[test]
+fn an_add_that_ran_out_says_its_limit_and_offers_double_on_that_pool() {
+    use purlis_core::poollimits::{LimitId, hits_said_in};
+    let said = ran_out_vouching(
+        "ran-out-of-vouching",
+        std::time::Duration::from_secs(300),
+        "the cluster operator did not vouch.",
+    );
+    assert!(said.contains("raise it to 10 minutes"), "{said}");
+    let hits = hits_said_in("ran-out-of-vouching", &said);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].limit, LimitId::VouchWait);
+    assert_eq!(hits[0].suggested, Some(10));
+}

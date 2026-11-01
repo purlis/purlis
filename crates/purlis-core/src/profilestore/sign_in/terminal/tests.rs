@@ -3,7 +3,7 @@
 
 use std::sync::mpsc::channel;
 
-use super::super::driven::drive_with;
+use super::super::driven::{LONGEST, drive_with};
 use super::super::{Login, Standing};
 use super::*;
 
@@ -54,7 +54,7 @@ fn followed_with(
     lines: &[&str],
     input: Input,
 ) -> (Result<(), String>, Vec<String>) {
-    let driving = drive_with(login, kind, plan, None, || Standing::SignedIn).unwrap();
+    let driving = drive_with(login, kind, plan, None, LONGEST, || Standing::SignedIn).unwrap();
     let (type_in, typed) = channel();
     for line in lines {
         type_in.send((*line).to_owned()).unwrap();
@@ -201,7 +201,10 @@ fn a_code_is_not_passed_on_once_the_runner_is_no_longer_yours() {
     let dir = tempfile::tempdir().unwrap();
     let got = dir.path().join("got");
     let login = claude(&format!("read code; echo \"$code\" > '{}'", got.display()));
-    let driving = drive_with(&login, "claude", None, None, || Standing::SignedOut).unwrap();
+    let driving = drive_with(&login, "claude", None, None, LONGEST, || {
+        Standing::SignedOut
+    })
+    .unwrap();
     let (typed, lines) = channel();
     typed.send("the-code".to_owned()).unwrap();
     let mut written = Written::default();
@@ -227,7 +230,10 @@ fn a_code_is_not_passed_on_once_the_runner_is_no_longer_yours() {
 #[test]
 fn a_sign_in_waiting_on_no_code_ends_once_the_runner_is_no_longer_yours() {
     let login = claude("sleep 30");
-    let driving = drive_with(&login, "claude", None, None, || Standing::SignedOut).unwrap();
+    let driving = drive_with(&login, "claude", None, None, LONGEST, || {
+        Standing::SignedOut
+    })
+    .unwrap();
     let (_typed, lines) = channel();
     let mut written = Written::default();
 

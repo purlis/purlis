@@ -436,6 +436,7 @@ fn every_command() -> Vec<Command> {
             }],
             checkout: Some("refs/heads/fix-login".into()),
             moving: false,
+            held: None,
         },
         Command::GiveCode {
             project: "01J9PRJCT00000000000000000".into(),

@@ -453,6 +453,41 @@ fn in_the_journey(
     purlis_core::runners::set_pool_limit(&machine.config, pool, hit.limit, None)
         .expect("back to the default");
 
+    step("code over its pool's limit");
+    // Over the limit on code nothing goes, and the suggestion, applied, starts the chat.
+    use purlis_core::poollimits::{self, LimitId};
+    let clone = target.root.join("workspaces").join(WORKSPACE).join("web");
+    std::fs::write(clone.join("large.bin"), data(7, 3 << 20)).expect("its file");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(1))
+        .expect("the limit is lowered");
+    let refused = target
+        .sessions
+        .open_named(
+            None,
+            &a_chat(Some("Past the code limit."), None),
+            Hearing::default(),
+            &|_| {},
+        )
+        .map(|_| ())
+        .expect_err("the code is over the limit");
+    let hits = poollimits::hits_said_in(pool, &refused);
+    assert!(!hits.is_empty(), "a limit said it: {refused}");
+    let raised = hits[0].suggested.expect("a value to raise it to");
+    assert_eq!(hits[0].limit, LimitId::CodeSize, "{refused}");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(raised))
+        .expect("it is saved to the pool");
+    let (id, pane) = a_chat_runs(
+        target,
+        machine,
+        pool,
+        &a_chat(Some("Past the code limit."), None),
+    );
+    pane.shows_within("Past the code limit.", LONG);
+    target.sessions.close(id).expect("it closes");
+    std::fs::remove_file(clone.join("large.bin")).expect("the file goes");
+    purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, None)
+        .expect("back to the default");
+
     step("the chat moves back");
     // Move it back here: its conversation and the work done there come with it.
     let on_the_runner = format!(

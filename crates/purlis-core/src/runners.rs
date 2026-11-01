@@ -729,6 +729,16 @@ pub fn chosen_limits_of(
         .unwrap_or_default())
 }
 
+/// **How long a sign-in on pool `name` may wait**: its limit as it stands (spec #4275), or
+/// purlis's default. Only the wait: every check around a sign-in stands.
+#[must_use]
+pub fn longest_login_of(config_root: &Path, name: &str) -> std::time::Duration {
+    chosen_limits_of(config_root, name)
+        .unwrap_or_default()
+        .wait(crate::poollimits::LimitId::SignInWait)
+        .unwrap_or(crate::profilestore::sign_in::driven::LONGEST)
+}
+
 /// **Sets pool `name`'s limit `id` to `value`**, or, `None`, back to purlis's default (spec
 /// #4275), of either kind, under the file's lock. It applies as the limit says
 /// ([`crate::poollimits::TakesEffect`]). A value [`crate::poollimits::Limit::check`] refuses, or no such pool, is
@@ -745,6 +755,12 @@ pub fn set_pool_limit(
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
     if let Some(pool) = held.pools.iter_mut().find(|pool| pool.name == name) {
+        if id.limit().clusters_only {
+            return Err(Refused::Other(format!(
+                "{} is a cluster pool's, and {name} is a Docker pool",
+                id.limit().plain
+            )));
+        }
         pool.set.chosen = pool.set.chosen.with(id, value);
     } else if let Some(pool) = held.clusters.iter_mut().find(|pool| pool.name == name) {
         *pool.chosen = pool.chosen.with(id, value);
@@ -1473,7 +1489,14 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         },
         frames: count(fields.get("frames"))?,
         width: count(fields.get("width"))?,
-        chosen: crate::poollimits::Chosen::from_row(fields).ok()?,
+        // The same checks as the command's: a limit only a cluster pool has is no Docker pool's.
+        chosen: crate::poollimits::Chosen::from_row(fields)
+            .ok()
+            .filter(|chosen| {
+                !crate::poollimits::all()
+                    .iter()
+                    .any(|limit| limit.clusters_only && chosen.get(limit.id).is_some())
+            })?,
     };
     Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
 }
@@ -1521,6 +1544,13 @@ pub struct ClusterPool {
 }
 
 impl ClusterPool {
+    /// This pool with its limit `id` set to `value`: what its add was retried with (spec #4275).
+    #[must_use]
+    pub fn with_limit(mut self, id: crate::poollimits::LimitId, value: u64) -> ClusterPool {
+        *self.chosen = self.chosen.with(id, Some(value));
+        self
+    }
+
     /// A cluster pool called `name` (as a Docker pool is named), its kubeconfig an absolute
     /// path, its context a name kubectl knows, its cluster `pool` and `namespace` named as
     /// Kubernetes names them, pinning `pin`.

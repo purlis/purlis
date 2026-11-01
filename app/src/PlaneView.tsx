@@ -3563,7 +3563,14 @@ export const PlaneView = memo(function PlaneView({
         // cannot see beside the rows is one they cannot act on.
         // Over a pool's limit, what to raise it to: asked of the core, as the sign-in below is.
         // Said together, so a form on screen isn't taken down and drawn again between them.
-        const offer = await commands.poolLimitOffer(profile, refused).catch(() => null);
+        const offer = await commands
+          .poolLimitOffer(
+            profile,
+            refused,
+            root ?? null,
+            ("in" in picking.where ? picking.where.in : undefined) ?? startIn ?? null,
+          )
+          .catch(() => null);
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
         setPickerLimit(offer === null ? undefined : { offer, refused, profile });
@@ -3588,7 +3595,7 @@ export const PlaneView = memo(function PlaneView({
       setPickerTrouble(undefined);
       setPickerSignIn(undefined);
     },
-    [picking, plane, startOn],
+    [picking, plane, root, startIn, startOn],
   );
 
   /** The approval IS this click. After it, the whole chain of checks runs again from the
@@ -4365,7 +4372,9 @@ export const PlaneView = memo(function PlaneView({
             return;
           }
           // Over a pool's limit, the picker that comes up offers to raise it (spec #4275).
-          const offer = await commands.poolLimitOffer(only.name, refused).catch(() => null);
+          const offer = await commands
+            .poolLimitOffer(only.name, refused, root ?? null, where.in ?? startIn ?? null)
+            .catch(() => null);
           setPickerTrouble(refused);
           setPickerLimit(offer === null ? undefined : { offer, refused, profile: only.name });
         } else setPickerTrouble(undefined);

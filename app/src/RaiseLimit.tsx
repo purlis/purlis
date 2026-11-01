@@ -10,9 +10,12 @@ import { TextField } from "./ui/field/Field";
 /** What the core's check said of each box: the value, or why not. */
 type Checked = Readonly<Record<string, { value: number } | { why: string }>>;
 
+/** Whether a limit is a wait: what ran out is all that is known, so nothing more is "needed". */
+const isATime = (unit: string): boolean => unit === "minutes" || unit === "seconds";
+
 /** Why a value the limit can be still would not do: what was needed doesn't fit in it. */
 const tooSmall = (hit: PoolLimitHitRow, value: number) =>
-  value < hit.needed
+  !isATime(hit.unit) && value < hit.needed
     ? `It needs ${hit.needed} ${hit.unit}, so this would be refused again.`
     : undefined;
 
@@ -84,7 +87,11 @@ export function RaiseLimit({
         <TextField
           key={hit.key}
           label={`${hit.plain} on pool ${offer.pool}, in ${hit.unit}`}
-          help={`It needs ${hit.needed} ${hit.unit}. The limit is ${hit.in_force} ${hit.unit}.`}
+          help={
+            isATime(hit.unit)
+              ? `It took longer than ${hit.in_force} ${hit.unit}.`
+              : `It needs ${hit.needed} ${hit.unit}. The limit is ${hit.in_force} ${hit.unit}.`
+          }
           inputMode="numeric"
           columns={8}
           value={typed[hit.key] ?? ""}

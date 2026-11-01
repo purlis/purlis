@@ -4497,7 +4497,14 @@ fn pool_sign_in(
                 .unwrap_or(sign_in::Standing::CannotTell)
         }
     };
-    let driving = sign_in::driven::drive_with(&login, &record.harness, provider, None, check)?;
+    let driving = sign_in::driven::drive_with(
+        &login,
+        &record.harness,
+        provider,
+        None,
+        purlis_core::runners::longest_login_of(config, pool),
+        check,
+    )?;
     let (typed, lines) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         for line in std::io::stdin().lines().map_while(Result::ok) {
@@ -4599,7 +4606,14 @@ fn cluster_pool_sign_in(
                 .unwrap_or(sign_in::Standing::CannotTell)
         }
     };
-    let driving = sign_in::driven::drive_with(&login, &record.harness, provider, None, check)?;
+    let driving = sign_in::driven::drive_with(
+        &login,
+        &record.harness,
+        provider,
+        None,
+        purlis_core::runners::longest_login_of(config, pool),
+        check,
+    )?;
     let (typed, lines) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         for line in std::io::stdin().lines().map_while(Result::ok) {

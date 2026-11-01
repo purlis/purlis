@@ -51,8 +51,12 @@ use super::{Login, Standing};
 /// for a runner to fetch the harness first (#4007).
 pub const PAGE_WITHIN: Duration = Duration::from_secs(180);
 
-/// The longest a sign-in runs before it is ended.
+/// The longest a sign-in runs before it is ended, where its pool's limit says nothing else
+/// (`poollimits`, spec #4275).
 pub const LONGEST: Duration = Duration::from_secs(15 * 60);
+
+/// What a sign-in ended at its longest says, which the window's side adds the limit to.
+pub const TOOK_TOO_LONG: &str = "the sign-in took too long, so purlis ended it";
 
 /// How long a sign-in runs with no one asking for its next step before it is ended: a window
 /// that went away. Its driver asks again at least this often.
@@ -949,6 +953,7 @@ pub fn drive_with(
     kind: &str,
     plan: Option<&str>,
     carry: Option<Carry>,
+    longest: Duration,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
     let driven = Driven::of_plan(kind, plan, Instant::now())
@@ -966,7 +971,7 @@ pub fn drive_with(
             forward: Mutex::new(Forwarded::Not),
         })
     });
-    run(login, driven, forwarding, check)
+    run(login, driven, forwarding, longest, check)
 }
 
 /// **Runs `login` in the runner's terminal it sets up itself, for the person to drive**
@@ -974,15 +979,23 @@ pub fn drive_with(
 /// ([`Driving::typed`]), and `check` is asked once it ends, however it ended.
 pub fn in_a_terminal(
     login: &Login,
+    longest: Duration,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
-    run(login, Driven::in_a_terminal(Instant::now()), None, check)
+    run(
+        login,
+        Driven::in_a_terminal(Instant::now()),
+        None,
+        longest,
+        check,
+    )
 }
 
 fn run(
     login: &Login,
     driven: Driven,
     forwarding: Option<Arc<Forwarding>>,
+    longest: Duration,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
     let mut command = Command::new(&login.program);
@@ -1047,6 +1060,7 @@ fn run(
                 cancelled: &cancelled,
                 stopped: &stopped,
                 asked: &asked,
+                longest,
             };
             watching(
                 child,
@@ -1155,6 +1169,7 @@ struct Outside<'a> {
     cancelled: &'a AtomicBool,
     stopped: &'a Mutex<Option<String>>,
     asked: &'a Mutex<Instant>,
+    longest: Duration,
 }
 
 impl Outside<'_> {
@@ -1234,11 +1249,11 @@ fn watching(
             close();
             return;
         }
-        if started.elapsed() > LONGEST {
+        if started.elapsed() > outside.longest {
             end(&mut child);
             close();
             tell.say_last(Event::Failed {
-                why: "the sign-in took too long, so purlis ended it".to_owned(),
+                why: TOOK_TOO_LONG.to_owned(),
             });
             return;
         }

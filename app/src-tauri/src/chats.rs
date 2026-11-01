@@ -108,7 +108,7 @@ fn project_sandbox(
 /// starts (#1333): `None` at the project root or outside it. Against the app's own project,
 /// never a root found from `cwd`: a clone carrying a manifest of its own would read as a
 /// project root, and the chat's writes as a root chat's.
-fn workspace_at_start(
+pub(crate) fn workspace_at_start(
     root: Option<&std::path::Path>,
     cwd: Option<&std::path::Path>,
 ) -> Option<String> {
