@@ -13,6 +13,7 @@ import { expect, waitFor, within } from "storybook/test";
 import { ArrowUpCircle, Bell, Hand, Info, OctagonX } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { drawWindowText, LEAST_TEXT } from "../../textSize";
+import { reordered } from "../../statusBarPrefs";
 import { StatusBar, type StatusContribution } from "./StatusBar";
 import { StatusCell, StatusItem } from "./StatusItem";
 
@@ -244,6 +245,144 @@ export const StatusBarAndItsMenu: Story = {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(within(document.body).queryByRole("menu")).toBeNull());
     await expect(notices).toHaveFocus();
+  },
+};
+
+/** The bar's items, each end in its order, as the bar draws them. */
+const onTheBar = (bar: HTMLElement) =>
+  [...bar.querySelectorAll<HTMLElement>('[data-part="slot"]')].map((one) => one.dataset.item);
+
+/** A bar with two items on each end, whose order is the story's to keep, as the window keeps it. */
+function Arranged() {
+  const [order, setOrder] = useState<readonly string[]>([]);
+  const [opened, setOpened] = useState(0);
+  const items: StatusContribution[] = [
+    ...ITEMS(() => setOpened((was) => was + 1)),
+    {
+      id: "purlis.doctor",
+      name: "Doctor",
+      side: "right",
+      priority: 50,
+      item: <StatusItem>Doctor</StatusItem>,
+    },
+  ];
+  return (
+    <div style={{ inlineSize: "36rem", display: "grid", gap: "var(--space-3)" }}>
+      <StatusBar
+        aria-label="Status"
+        items={items}
+        order={order}
+        onHide={() => {}}
+        onMove={(id, onto, shown) => setOrder((was) => reordered(was, shown, id, onto))}
+      />
+      <p style={{ margin: 0 }}>{`Inbox opened ${opened} times`}</p>
+    </div>
+  );
+}
+
+/** One step of a pointer, sent as the browser sends it, to what it presses or to the page. */
+function pointer(to: EventTarget, type: string, clientX: number, clientY: number) {
+  to.dispatchEvent(
+    new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      clientY,
+      button: 0,
+      buttons: type === "pointerup" ? 0 : 1,
+      isPrimary: true,
+      pointerType: "mouse",
+    }),
+  );
+}
+
+/**
+ * **Moving an item with the keyboard** (#3030): Move left and Move right in the bar's menu list
+ * every item the bar draws. A row moves its item one place and the menu stays up with the keyboard
+ * on the row, so a second press moves it again; at its end's edge the row says it cannot run.
+ */
+export const MovingAnItemByTheKeyboard: Story = {
+  render: () => <Arranged />,
+  parameters: { screenshot: "page" },
+  play: async ({ canvas, userEvent }) => {
+    const bar = canvas.getByRole("contentinfo", { name: "Status" });
+    canvas.getByRole("button", { name: "Doctor" }).focus();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await within(document.body).findByRole("menu", {
+      name: "Status: the items shown",
+    });
+    const moveLeft = within(menu).getByRole("menuitem", { name: "Move left" });
+    moveLeft.focus();
+    await untilFocused(() => moveLeft, "Move left, its row");
+    await userEvent.keyboard("{ArrowRight}");
+    const move = await within(document.body).findByRole("menu", { name: "Move left" });
+    await untilFocused(
+      () => within(move).getByRole("menuitem", { name: "Project" }),
+      "Move left, its first row",
+    );
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    await untilFocused(
+      () => within(move).getByRole("menuitem", { name: "PRs (Forge)" }),
+      "Move left, the PRs row",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(onTheBar(bar)).toEqual([
+        "purlis.project",
+        "extension:prs/open",
+        "purlis.todos",
+        "purlis.doctor",
+        "purlis.notices",
+      ]),
+    );
+    await expect(canvas.getByText("PRs (Forge) moved left of Todos")).toBeInTheDocument();
+    // The menu stayed up, with the keyboard on the row, for the next move.
+    await untilFocused(
+      () => within(move).getByRole("menuitem", { name: "PRs (Forge)" }),
+      "Move left, the same row after the move",
+    );
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(onTheBar(bar)[0]).toBe("extension:prs/open"));
+    await waitFor(() =>
+      expect(within(move).getByRole("menuitem", { name: "PRs (Forge)" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      ),
+    );
+  },
+};
+
+/**
+ * **Moving an item with the pointer** (#3030): a drag along its end moves it, no further than the
+ * end, and its release is no press of the item.
+ */
+export const MovingAnItemByTheDrag: Story = {
+  render: () => <Arranged />,
+  play: async ({ canvas }) => {
+    const bar = canvas.getByRole("contentinfo", { name: "Status" });
+    const notices = canvas.getByRole("button", { name: "Notices: 2" });
+    const doctor = canvas.getByRole("button", { name: "Doctor" });
+    const { left, top, height } = notices.getBoundingClientRect();
+    const middle = top + height / 2;
+    pointer(notices, "pointerdown", left + 4, middle);
+    // Past how far a press may wander, and over the Doctor.
+    pointer(document, "pointermove", left - 8, middle);
+    await waitFor(() =>
+      expect(notices.closest('[data-part="slot"]')).toHaveAttribute("data-dragging"),
+    );
+    pointer(document, "pointermove", doctor.getBoundingClientRect().left, middle);
+    await waitFor(() =>
+      expect(doctor.closest('[data-part="slot"]')?.getAttribute("style") ?? "").toContain(
+        "translate",
+      ),
+    );
+    pointer(document, "pointerup", doctor.getBoundingClientRect().left, middle);
+    notices.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await waitFor(() =>
+      expect(onTheBar(bar).slice(-2)).toEqual(["purlis.notices", "purlis.doctor"]),
+    );
+    await expect(canvas.getByText("Inbox opened 0 times")).toBeInTheDocument();
   },
 };
 

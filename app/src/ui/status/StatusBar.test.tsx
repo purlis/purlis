@@ -304,7 +304,7 @@ describe("moving an item with the keyboard, from the bar's menu (#3030)", () => 
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(slots()).toEqual(["a", "c", "b", "purlis.notices"]));
     expect(screen.getByRole("menu", { name: "Move left" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("c moved left of b");
+    expect(screen.getByText("c moved left of b")).toHaveAttribute("role", "status");
     expect(within(move).getByRole("menuitem", { name: "c" })).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(slots()).toEqual(["c", "a", "b", "purlis.notices"]));
@@ -352,7 +352,9 @@ describe("moving an item with the keyboard, from the bar's menu (#3030)", () => 
   });
 
   it("offers no move where the bar's owner keeps no order", async () => {
-    render(<StatusBar aria-label="Status" onHide={() => {}} items={[own("a", "left", 1), notices()]} />);
+    render(
+      <StatusBar aria-label="Status" onHide={() => {}} items={[own("a", "left", 1), notices()]} />,
+    );
     screen.getByRole("button", { name: "Notices" }).focus();
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
     const menu = await screen.findByRole("menu");

@@ -130,12 +130,12 @@ describe("the order the person gave the status items (#3030)", () => {
     });
     hideStatusItem("purlis.pin", true);
     moveStatusItem("purlis.branches", "purlis.todos", ["purlis.todos", "purlis.branches"]);
-    await expect.poll(() => written.length).toBe(2);
-    const status = JSON.parse(written[1]).status;
-    expect(status).toEqual({
+    const said = () => JSON.parse(written.at(-1) ?? "{}").status;
+    await expect.poll(said).toEqual({
       hidden: ["purlis.pin"],
       order: ["purlis.branches", "purlis.todos"],
     });
+    const status = said();
     expect(loadStatusBar({ status }).prefs).toEqual(status);
   });
 
