@@ -46,8 +46,7 @@ pub use lock::{Kept, Locked, Lockfile};
 pub use outgoing::{Outgoing, Purpose, Stop, export_folder, export_zip, gather};
 pub use review::{
     Accepted, AcceptedSkill, Browse, Clash, Offered, Review, ReviewFile, SetReview, SkillReview,
-    TooMuch,
-    browse, review, review_all, review_set,
+    TooMuch, browse, review, review_all, review_set,
 };
 pub use update::{
     Changed, FileChange, Offer, Unasked, Unconfirmed, UpdateReview, Updates, line_diff, update,

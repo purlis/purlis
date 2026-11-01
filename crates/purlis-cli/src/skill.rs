@@ -1836,7 +1836,9 @@ fn install(
             .collect()
     };
     let review = match named {
-        Named::These(names) => source::review(root, cx.built_in, source, &without_skipped(names), level),
+        Named::These(names) => {
+            source::review(root, cx.built_in, source, &without_skipped(names), level)
+        }
         Named::All => match source::review_all(root, cx.built_in, source, level) {
             Ok(source::SetReview::Review { review, there }) => {
                 // Those the level has already, made there or from another source, or a
