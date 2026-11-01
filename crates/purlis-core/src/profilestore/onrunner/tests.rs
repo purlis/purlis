@@ -2395,3 +2395,37 @@ fn a_profile_with_nothing_left_out_says_nothing() {
 
     assert_eq!(left_out_said("has-nothing-left-out"), None);
 }
+
+/// A start that sends nothing says nothing of an earlier one's.
+#[test]
+fn what_was_left_out_is_forgotten() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let mut kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    kept.name = "forgets-what-it-left-out".to_owned();
+    in_batches(&kept).unwrap();
+    assert!(left_out_said("forgets-what-it-left-out").is_some());
+
+    forget_left_out("forgets-what-it-left-out");
+
+    assert_eq!(left_out_said("forgets-what-it-left-out"), None);
+}
+
+/// A runner before 1.56 is told of too.
+#[test]
+fn what_an_older_runners_copy_left_out_is_said() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    fs::write(
+        desktop.folders.config.join("settings.json"),
+        r#"{"env":{"ANTHROPIC_BASE_URL":"https://h"}}"#,
+    )
+    .unwrap();
+    let mut kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    kept.name = "older-runner-left-out".to_owned();
+
+    to_send(&kept).unwrap();
+
+    let said = left_out_said("older-runner-left-out").expect("said");
+    assert!(said.contains("ANTHROPIC_BASE_URL"), "{said}");
+}

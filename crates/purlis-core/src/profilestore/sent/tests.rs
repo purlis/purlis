@@ -703,3 +703,17 @@ fn a_removed_endpoint_variable_is_named() {
     .unwrap();
     assert_eq!(sent.variables, ["OPENAI_BASE_URL"]);
 }
+
+/// A server's own environment says nothing of where the chat's requests go, and a name that could
+/// hold a value is never repeated.
+#[test]
+fn only_the_harnesss_own_plain_endpoint_variables_are_named() {
+    let sent = filtered(
+        "claude",
+        "settings.json",
+        br#"{"mcpServers":{"a":{"env":{"GITLAB_BASE_URL":"x"}}},
+            "env":{"https://me:pw@h/x_BASE_URL":"x","AWS_REGION":"y"}}"#,
+    )
+    .unwrap();
+    assert_eq!(sent.variables, ["AWS_REGION"]);
+}

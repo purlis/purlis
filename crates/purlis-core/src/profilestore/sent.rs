@@ -221,7 +221,10 @@ impl Said {
     fn variables<'a>(&mut self, names: impl Iterator<Item = &'a str>) {
         for name in names {
             let new = !self.variables.iter().any(|one| one == name);
-            if chooses_an_endpoint(name) && new && self.variables.len() < MOST_SAID {
+            let plain = name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && name.len() <= 64
+                && crate::secretshape::token_kind(name).is_none();
+            if chooses_an_endpoint(name) && plain && new && self.variables.len() < MOST_SAID {
                 self.variables.push(name.to_owned());
             }
         }
@@ -604,7 +607,11 @@ fn clean_json(value: &mut serde_json::Value, names: &[&str], at: &str, said: &mu
             }
             map.retain(|key, inner| {
                 if names.contains(&key.as_str()) || crate::secretshape::token_kind(key).is_some() {
-                    if let Value::Object(block) = &*inner {
+                    // Only the harness's own environment chooses where its chat's requests go.
+                    if at == "settings"
+                        && key == "env"
+                        && let Value::Object(block) = &*inner
+                    {
                         said.variables(block.keys().map(String::as_str));
                     }
                     said.push(further(at, key));
@@ -861,10 +868,7 @@ fn drop_toml(table: &mut dyn toml_edit::TableLike, names: &[&str], at: &str, sai
     let keys: Vec<String> = table.iter().map(|(k, _)| k.to_owned()).collect();
     for key in keys {
         if names.contains(&key.as_str()) {
-            let gone = table.remove(&key);
-            if let Some(block) = gone.as_ref().and_then(toml_edit::Item::as_table_like) {
-                said.variables(block.iter().map(|(name, _)| name));
-            }
+            table.remove(&key);
             said.push(further(at, &key));
             continue;
         }

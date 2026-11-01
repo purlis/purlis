@@ -180,6 +180,7 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
             if !read.left_behind.is_empty() {
                 return Err(too_large());
             }
+            let skipped = read.skipped;
             let read = read.files;
             if read.len() > MOST_SETTINGS_FILES {
                 return Err(format!(
@@ -190,15 +191,18 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
             }
             let mut sent = Vec::with_capacity(read.len());
             let mut size = 0;
+            let mut left_out = LeftOut::default();
             for (path, bytes) in read {
-                let bytes =
-                    super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?.bytes;
+                let file = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
+                left_out.add(&path, &file);
+                let bytes = file.bytes;
                 size += bytes.len() + path.len() + FRAMING_BYTES;
                 sent.push(purlis_session_protocol::session::SettingsFile { path, bytes });
             }
             if size > MOST_SETTINGS_BYTES {
                 return Err(too_large());
             }
+            left_out.keep_for(&kept.name, skipped);
             Some(sent)
         }
         None => None,
@@ -287,6 +291,45 @@ struct LeftOut {
     variables: Vec<String>,
 }
 
+impl LeftOut {
+    /// What the filter took from the settings file `path`.
+    fn add(&mut self, path: &str, file: &super::sent::Filtered) {
+        let short = crate::shown::short(path);
+        self.what
+            .extend(file.removed.iter().map(|what| format!("{short}: {what}")));
+        for variable in &file.variables {
+            if !self.variables.contains(variable) {
+                self.variables.push(variable.clone());
+            }
+        }
+    }
+
+    /// Kept as what the profile `name` last left out, with what the read of it passed over after
+    /// what was taken out, whose names are the ones a chat most needs. A name that may hold a value
+    /// is not repeated.
+    fn keep_for(mut self, name: &str, skipped: Vec<String>) {
+        self.what.extend(skipped.iter().map(|one| {
+            if crate::secretshape::token_kind(one).is_some() {
+                "a file named like a credential".to_owned()
+            } else {
+                crate::shown::short(one)
+            }
+        }));
+        LEFT_OUT
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(name.to_owned(), self);
+    }
+}
+
+/// Forgets what the profile `profile` last left out, before a start that may send nothing.
+pub fn forget_left_out(profile: &str) {
+    LEFT_OUT
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .remove(profile);
+}
+
 static LEFT_OUT: Mutex<BTreeMap<String, LeftOut>> = Mutex::new(BTreeMap::new());
 
 /// The most things of a profile's settings [`left_out_said`] names, before it counts the rest.
@@ -306,8 +349,7 @@ pub fn left_out_said(profile: &str) -> Option<String> {
     let named = left.what[..left.what.len().min(MOST_NAMED)].join("; ");
     let more = left.what.len().saturating_sub(MOST_NAMED);
     let mut said = format!(
-        "The runner was sent the profile '{}' without some of its settings, so no sign-in reaches \
-         it: {named}",
+        "The runner was sent the profile '{}' without some of its settings: {named}",
         crate::shown::short(profile)
     );
     if more > 0 {
@@ -317,8 +359,8 @@ pub fn left_out_said(profile: &str) -> Option<String> {
     if !left.variables.is_empty() {
         said.push_str(&format!(
             " {} set an endpoint or a provider, so this chat may use another than a chat on this \
-             machine. To give it one, put it in a vault its persona declares.",
-            left.variables.join(", ")
+             machine. To give it one, put it in a vault a persona declares, and start the chat as that persona.",
+            left.variables[..left.variables.len().min(MOST_NAMED)].join(", ")
         ));
     }
     Some(said)
@@ -425,33 +467,19 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
         return Err(refused_over_limit(kept, limits_hit(kept, bytes, files)));
     }
     let mut sent = Vec::with_capacity(read.files.len());
-    let mut left_out = LeftOut {
-        what: read.skipped,
-        variables: Vec::new(),
-    };
+    let mut left_out = LeftOut::default();
     for (path, bytes) in read.files {
         if let Some(why) = too_large(&path, bytes.len()) {
             return Err(why);
         }
         let file = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
-        let short = crate::shown::short(&path);
-        left_out
-            .what
-            .extend(file.removed.iter().map(|what| format!("{short}: {what}")));
-        for variable in file.variables {
-            if !left_out.variables.contains(&variable) {
-                left_out.variables.push(variable);
-            }
-        }
+        left_out.add(&path, &file);
         sent.push(wire::SettingsFile {
             path,
             bytes: file.bytes,
         });
     }
-    LEFT_OUT
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(kept.name.clone(), left_out);
+    left_out.keep_for(&kept.name, read.skipped);
     let sent = match only_what_changed(&kept.harness, sent, held) {
         Ok((changed, sent)) => {
             profile.settings_changed = Some(changed);
