@@ -126,7 +126,10 @@ pub fn apply_in(
                 .to_owned(),
         );
     };
-    let held = crate::rewrite::Lock::on(root);
+    let held = match crate::rewrite::Lock::bounded(root) {
+        Ok(held) => held,
+        Err(why) => return Fixed::Refused(why.to_string()),
+    };
     if let Err(why) = committable(root, "the move") {
         return Fixed::Refused(why);
     }
