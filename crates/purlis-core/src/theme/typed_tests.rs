@@ -57,11 +57,14 @@ const LOOK_BEFORE: &[(&str, &str, bool, bool)] = &[
     ("punctuation", "terminal.foreground", false, false),
 ];
 
-/// The roles Purlis Classic light draws a shade darker than the colour the editor borrowed, so
-/// they read on the editor's current line (#2522), and the colour each is drawn in.
-const LIGHT_DARKER: &[(&str, &str)] = &[
-    ("syntax.property", "#1283ff"),
-    ("syntax.attribute", "#1283ff"),
+/// The roles Purlis Classic moved off the colour the editor borrowed, so they read on the editor's
+/// current line (#2522) and on a diff's changed word (#4424), and the colour each is drawn in.
+const MOVED: &[(Appearance, &str, &str)] = &[
+    (Appearance::Dark, "syntax.comment", "#8b949e"),
+    (Appearance::Light, "syntax.keyword", "#7c48d9"),
+    (Appearance::Light, "syntax.type", "#19757c"),
+    (Appearance::Light, "syntax.property", "#0969da"),
+    (Appearance::Light, "syntax.attribute", "#0969da"),
 ];
 
 // ---------------------------------------------------------------------------------------
@@ -73,11 +76,11 @@ fn purlis_classic_draws_its_code_in_the_colours_the_editor_borrowed_from_the_ter
     for theme in [dark(), light()] {
         for (role, borrowed, italic, bold) in LOOK_BEFORE {
             let token = format!("syntax.{role}");
-            let darker = LIGHT_DARKER
+            let moved = MOVED
                 .iter()
-                .find(|(it, _)| *it == token && theme.appearance == Appearance::Light);
-            match darker {
-                Some((_, colour)) => assert_eq!(theme.value(&token), *colour, "{token}"),
+                .find(|(appearance, it, _)| *it == token && theme.appearance == *appearance);
+            match moved {
+                Some((_, _, colour)) => assert_eq!(theme.value(&token), *colour, "{token}"),
                 None => assert_eq!(theme.value(&token), theme.value(borrowed), "{token}"),
             }
             assert_eq!(

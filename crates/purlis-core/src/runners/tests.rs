@@ -1355,20 +1355,83 @@ fn a_docker_pool_refuses_the_wait_only_a_cluster_pool_has() {
     );
 }
 
-/// A hand-edited file is held to the same check as the command (Q15).
-#[test]
-fn a_docker_pools_row_holding_the_vouch_wait_is_not_read() {
-    let dir = tempfile::tempdir().unwrap();
-    record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
-    let file = crate::machine::dir(dir.path()).join(crate::machine::RUNNERS_FILE);
+/// The file edited by hand: the first pool's row gains `key: value`.
+fn a_limit_typed_into_the_file(config: &Path, key: &str, value: &str) {
+    let file = crate::machine::dir(config).join(crate::machine::RUNNERS_FILE);
     let edited = std::fs::read_to_string(&file).unwrap().replacen(
         "\"name\"",
-        "\"vouchWait\":10,\"name\"",
+        &format!("\"{key}\":{value},\"name\""),
         1,
     );
     std::fs::write(&file, edited).unwrap();
     std::fs::set_permissions(&file, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
-    assert!(chosen_limits_of(dir.path(), "builds").is_err());
+}
+
+/// A hand-edited file is held to the same check as the command (Q15), and costs that limit alone
+/// (#4381).
+#[test]
+fn a_docker_pools_row_holding_the_vouch_wait_refuses_that_limit_in_the_commands_words() {
+    use crate::poollimits::LimitId::VouchWait;
+    let dir = tempfile::tempdir().unwrap();
+    record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
+    a_limit_typed_into_the_file(dir.path(), "vouchWait", "10");
+
+    let held = limits_held_of(dir.path(), "builds").unwrap();
+    assert_eq!(held.chosen.get(VouchWait), None);
+    let by_the_command = set_pool_limit(dir.path(), "builds", VouchWait, Some(10))
+        .unwrap_err()
+        .to_string();
+    assert_eq!(held.refused[0].why, by_the_command);
+
+    // A reset is the way to put it right.
+    set_pool_limit(dir.path(), "builds", VouchWait, None).unwrap();
+    assert_eq!(
+        limits_held_of(dir.path(), "builds").unwrap().refused,
+        Vec::new()
+    );
+}
+
+/// **#4381**: one bad value leaves every pool and runner on the machine listed; the value stays
+/// in the file through other writes, and setting or resetting that limit replaces it.
+#[test]
+fn a_bad_limit_in_the_file_costs_that_limit_alone_and_stays_until_it_is_put_right() {
+    use crate::poollimits::LimitId::{CodeSendTime, ProfileSize};
+    let dir = tempfile::tempdir().unwrap();
+    record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
+    record_pool(dir.path(), &pool("other", Set::default())).unwrap();
+    a_limit_typed_into_the_file(dir.path(), "profileSize", "\"lots\"");
+
+    assert_eq!(pools(dir.path()).unwrap().len(), 2, "every pool is listed");
+    let refused = |config: &Path| limits_held_of(config, "builds").unwrap().refused;
+    let name_of_the_bad = refused(dir.path())[0].limit;
+    assert_eq!(name_of_the_bad, ProfileSize);
+
+    // Another write keeps what was typed.
+    set_pool_limit(dir.path(), "builds", CodeSendTime, Some(20)).unwrap();
+    assert_eq!(refused(dir.path()).len(), 1);
+    let file = crate::machine::dir(dir.path()).join(crate::machine::RUNNERS_FILE);
+    assert!(std::fs::read_to_string(&file).unwrap().contains("lots"));
+
+    // A reset puts it right.
+    set_pool_limit(dir.path(), "builds", ProfileSize, None).unwrap();
+    assert_eq!(refused(dir.path()), Vec::new());
+    assert!(!std::fs::read_to_string(&file).unwrap().contains("lots"));
+}
+
+/// **A project reaches no limit, and a chat can't propose the file** (Q6, story 27): the real
+/// file is no proposable path, wherever it sits. `a_pools_limits_at_the_command_line` drives a
+/// project that names a limit; the sandbox's own tests hold the file denied to a chat.
+#[test]
+fn the_pools_file_cannot_be_proposed_from_a_project() {
+    let project = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    let real = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    assert!(real.is_file());
+    assert!(crate::proposed::proposable(project.path(), &real).is_err());
+    let inside = project.path().join(crate::machine::RUNNERS_FILE);
+    std::fs::write(&inside, "{}").unwrap();
+    assert!(crate::proposed::proposable(project.path(), &inside).is_err());
 }
 
 /// **A sign-out waiting in a terminal holds the running runner from a later drain's carry**, and
@@ -1392,4 +1455,22 @@ fn a_sign_out_in_progress_holds_the_running_runner_until_a_sign_in_there() {
 
     carries_again(config.path(), kept.pool(), "work").unwrap();
     assert!(read(config.path()).unwrap()[0].signed_out.is_empty());
+}
+
+/// PC-8, under the file's lock: another value since writes nothing.
+#[test]
+fn a_set_held_to_what_was_there_writes_nothing_where_it_changed() {
+    use crate::poollimits::LimitId::SignInWait;
+    let dir = tempfile::tempdir().unwrap();
+    record_pool(dir.path(), &pool("builds", Set::default())).unwrap();
+    assert!(set_pool_limit_if(dir.path(), "builds", SignInWait, Some(30), None, false).unwrap());
+    assert!(!set_pool_limit_if(dir.path(), "builds", SignInWait, Some(60), None, false).unwrap());
+    let chosen = chosen_limits_of(dir.path(), "builds").unwrap();
+    assert_eq!(chosen.get(SignInWait), Some(30));
+
+    // A bad value typed since, with the person's own value gone, is a change too.
+    set_pool_limit(dir.path(), "builds", SignInWait, None).unwrap();
+    a_limit_typed_into_the_file(dir.path(), "signInWait", "\"lots\"");
+    assert!(!set_pool_limit_if(dir.path(), "builds", SignInWait, None, None, false).unwrap());
+    assert!(set_pool_limit_if(dir.path(), "builds", SignInWait, None, None, true).unwrap());
 }

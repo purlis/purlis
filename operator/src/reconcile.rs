@@ -1031,8 +1031,8 @@ async fn sandbox_of(
 }
 
 /// **A suspended kept runner's sandbox brought to its pool's image** (#3982, ruled 2026-11-01), so
-/// it next starts on it: its pod template read as the cluster holds it, and only the images
-/// changed, by the sandbox's uid. The cluster's policy lets this through only on a Sandbox already
+/// it next starts on it: its pod template read as the cluster holds it, and only its images and
+/// resources changed, by the sandbox's uid. The cluster's policy lets this through only on a Sandbox already
 /// `Suspended`, in a runner namespace.
 async fn renew_image(client: &Client, sandbox: &Sandbox, pool: &Pool) -> Result<(), Error> {
     if sandbox.spec.operating_mode.as_deref() != Some(upstream::SUSPENDED) {
@@ -1048,10 +1048,17 @@ async fn renew_image(client: &Client, sandbox: &Sandbox, pool: &Pool) -> Result<
     let Some(mut spec) = held.data.pointer("/spec/podTemplate/spec").cloned() else {
         return Ok(());
     };
-    if !lifecycle::with_image(&mut spec, &pool.spec.image) {
+    let image_changed = lifecycle::with_image(&mut spec, &pool.spec.image);
+    let wanted = upstream::template_for(pool, &sandbox.namespace().unwrap_or_default(), Vec::new())
+        .spec
+        .pod_template
+        .spec
+        .unwrap_or_default();
+    let resources_changed = lifecycle::with_resources(&mut spec, &wanted);
+    if !image_changed && !resources_changed {
         return Ok(());
     }
-    tracing::info!(sandbox = %name, "a suspended kept runner brought to its pool's image");
+    tracing::info!(sandbox = %name, "a suspended kept runner brought to its pool's image and limits");
     let patch = serde_json::json!({
         "metadata": { "uid": sandbox.metadata.uid },
         "spec": { "podTemplate": { "spec": spec } },

@@ -4277,3 +4277,108 @@ async fn the_operators_token_writes_upstreams_objects_only_in_a_runners_shape() 
     let _ = pools.delete("e2e-shape", &DeleteParams::default()).await;
     scratch.end().await;
 }
+
+/// A pod in a labelled runner namespace, as the API server's dry run answers it: what Pod Security
+/// admits there says what a browser pod (#2059) can be (#3824).
+async fn admitted_in_a_runner_namespace(
+    client: &Client,
+    namespace: &str,
+    name: &str,
+    changed: impl FnOnce(&mut serde_json::Value),
+) -> Result<Pod, kube::Error> {
+    let mut pod = serde_json::json!({
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": { "name": name },
+        "spec": { "containers": [{
+            "name": "c",
+            "image": runner_image(),
+            "resources": { "limits": { "memory": "64Mi" }, "requests": {
+                "cpu": "10m", "memory": "64Mi", "ephemeral-storage": "1Mi",
+            } },
+            "securityContext": {
+                "runAsNonRoot": true,
+                "allowPrivilegeEscalation": false,
+                "capabilities": { "drop": ["ALL"] },
+                "seccompProfile": { "type": "RuntimeDefault" },
+            },
+        }] },
+    });
+    changed(&mut pod);
+    let params = PostParams {
+        dry_run: true,
+        ..PostParams::default()
+    };
+    Api::<Pod>::namespaced(client.clone(), namespace)
+        .create(&params, &serde_json::from_value(pod).expect("a pod"))
+        .await
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_runner_namespace_enforces_restricted_pod_security_and_its_runner_is_admitted() {
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-restricted").await;
+    let pools = small_pool(&client, "e2e-restricted").await;
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(
+            &PostParams::default(),
+            &claim("restricted-1", "e2e-restricted"),
+        )
+        .await
+        .expect("the claim");
+    vouched_pod(&claims, "restricted-1").await;
+    let namespace = runners();
+    let held = Api::<Namespace>::all(client.clone())
+        .get(&namespace)
+        .await
+        .expect("the runner namespace");
+    let (label, level) = purlis_cluster_operator::person::POD_SECURITY;
+    assert_eq!(held.labels().get(label).map(String::as_str), Some(level));
+
+    // The node file a Localhost profile names is not read at admission: the shape is what's asked.
+    let localhost = admitted_in_a_runner_namespace(&client, &namespace, "localhost", |pod| {
+        pod["spec"]["containers"][0]["securityContext"]["seccompProfile"] =
+            serde_json::json!({ "type": "Localhost", "localhostProfile": "purlis/browser.json" });
+    })
+    .await;
+    println!(
+        "measured #3824: Localhost seccomp profile: {:?}",
+        localhost.as_ref().map(|_| "admitted")
+    );
+    localhost.expect("a browser pod's own seccomp profile is admitted");
+    for (what, change) in [
+        (
+            "seccomp off, with pod user namespaces",
+            serde_json::json!({ "seccompProfile": { "type": "Unconfined" } }),
+        ),
+        (
+            "the capabilities to start another user",
+            serde_json::json!({ "capabilities": { "drop": ["ALL"], "add": ["SETUID", "SETGID"] } }),
+        ),
+    ] {
+        let refused = admitted_in_a_runner_namespace(&client, &namespace, "refused", |pod| {
+            pod["spec"]["hostUsers"] = serde_json::json!(false);
+            for (field, value) in change.as_object().expect("an object") {
+                pod["spec"]["containers"][0]["securityContext"][field] = value.clone();
+            }
+        })
+        .await;
+        println!(
+            "measured #3824: {what}: {}",
+            match &refused {
+                Ok(_) => "admitted".to_owned(),
+                Err(error) => format!("refused: {error}"),
+            }
+        );
+        assert!(
+            refused_saying(&refused, "restricted"),
+            "{what}: {refused:?}"
+        );
+    }
+    let _ = pools
+        .delete("e2e-restricted", &DeleteParams::default())
+        .await;
+    scratch.end().await;
+}

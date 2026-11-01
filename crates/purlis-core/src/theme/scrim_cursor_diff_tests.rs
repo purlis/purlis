@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use super::super::{
     Appearance, Drawn, Person, ResolvedTheme, built_ins, check, classic, draw, load,
 };
-use super::{Finding, PAIRS, Pair, Report, SCRIM_DIM, drawn, ratio, scrim_dim};
+use super::{Finding, PAIRS, Pair, Report, SCRIM_DIM, WORD_WASH_APART, drawn, ratio, scrim_dim};
 
 /// Every pair #2987 holds: `front`, `back`, what `back` is laid over, and the floor.
 const HELD: [(&str, &str, Option<&str>, f64); 6] = [
@@ -288,11 +288,105 @@ fn every_built_in_s_scrim_clears_its_floor_and_a_clear_one_falls() {
 }
 
 #[test]
-fn the_thinnest_shipped_scrim_is_purlis_classic_light_s() {
-    // What the floor was chosen against (#2987): 3:1 is out of this measure's reach for this
-    // appearance as it ships, and changing a shipped colour is not the check's to decide.
-    let light = classic().of(Appearance::Light).expect("light");
-    assert_eq!(scrim_dim(light), 2.44);
+fn every_built_in_s_scrim_moves_the_window_three_to_one() {
+    // Above the floor every theme is held to: what the built-ins chose for themselves (#4424).
+    for theme in built_ins() {
+        assert!(
+            scrim_dim(theme) >= 3.0,
+            "{}: {}",
+            theme.name,
+            scrim_dim(theme)
+        );
+    }
+    // The control: Classic light's scrim as it was before #4424 falls short of it.
+    let mut thin = classic().of(Appearance::Light).expect("light").clone();
+    thin.values.insert("overlay.scrim", "#1f1e1a66".to_owned());
+    assert_eq!(scrim_dim(&thin), 2.44);
+}
+
+/// The syntax roles a diff draws, each as the check names it.
+fn syntax_roles() -> impl Iterator<Item = &'static str> {
+    PAIRS
+        .iter()
+        .filter(|pair| pair.back == "terminal.background" && pair.front.starts_with("syntax."))
+        .map(|pair| pair.front)
+}
+
+#[test]
+fn every_built_in_holds_each_syntax_role_on_a_changed_word_and_the_sweep_can_fall() {
+    assert_eq!(syntax_roles().count(), 15);
+    for theme in built_ins() {
+        for back in ["diff.inserted-text", "diff.deleted-text"] {
+            for front in syntax_roles() {
+                let pair = pair_of(front, back);
+                assert_eq!(pair.floor, 3.0, "{front} on {back}");
+                let cleared = ratio(theme, pair).expect("measured");
+                assert!(
+                    cleared >= 3.0,
+                    "{} {front} on {back}: {cleared}",
+                    theme.name
+                );
+                // The control: the same sweep with the role drawn in its own ground falls.
+                let (_, ground) = drawn(theme, pair).expect("drawn");
+                let mut broken = theme.clone();
+                broken.values.insert(front, ground);
+                assert!(
+                    check(&broken).findings.iter().any(|one| matches!(
+                        one,
+                        Finding::Contrast { pair: found, .. } if found == pair
+                    )),
+                    "{} {front} on {back} did not fall",
+                    theme.name
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn every_built_in_holds_each_syntax_role_on_a_changed_line() {
+    // Not a pair of the check's: a line's wash is nearer the ground than the word's laid on it.
+    for theme in built_ins() {
+        for (back, name) in [("diff.inserted", "inserted"), ("diff.deleted", "deleted")] {
+            for front in syntax_roles() {
+                let pair = Pair {
+                    back,
+                    under: Some("terminal.background"),
+                    ..*pair_of(front, "terminal.background")
+                };
+                let cleared = ratio(theme, &pair).expect("measured");
+                assert!(
+                    cleared >= 3.0,
+                    "{} {front} on {name}: {cleared}",
+                    theme.name
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn every_built_in_keeps_a_changed_word_apart_from_its_line_and_a_clear_wash_falls() {
+    for theme in built_ins() {
+        for (word, line) in [
+            ("diff.inserted-text", "diff.inserted"),
+            ("diff.deleted-text", "diff.deleted"),
+        ] {
+            let pair = pair_of(word, line);
+            assert_eq!(pair.floor, WORD_WASH_APART);
+            let apart = ratio(theme, pair).expect("measured");
+            assert!(apart >= WORD_WASH_APART, "{} {word}: {apart}", theme.name);
+            // The control: a wash thinned away, which every syntax role would welcome, falls.
+            let mut clear = theme.clone();
+            clear.values.insert(word, "#00000000".to_owned());
+            assert_eq!(
+                found(&check(&clear), word, line),
+                Some(1.0),
+                "{}",
+                theme.name
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------

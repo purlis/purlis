@@ -1528,6 +1528,11 @@ pub enum Ask {
     /// it, or why they do not. No ticket, for [`Self::Removal`]'s reason. Boxed: it carries the
     /// file's whole new content.
     Propose(Box<ProposeAsk>),
+    /// **A proposed value for a pool's limit** (#4284, the person's ruling of 2026-11-01 on
+    /// PC-1): what `purlis pool limit` hands over in a chat. The same ask as [`Self::Propose`],
+    /// held for the person, who alone applies it. **It carries a value and no file**, so nothing
+    /// else in the pool's file can change. No ticket, for [`Self::Removal`]'s reason.
+    ProposeLimit(Box<ProposeLimitAsk>),
     /// Drive one of this chat's browsers (#2013): what a chat's browser tools hand over. The app
     /// decides whether the chat may have a browser at all (the one Ask that sets its posture),
     /// starts its browser in the session host with what it may reach, and hands the act on. It
@@ -1670,6 +1675,19 @@ pub struct ProposeAsk {
     /// What it changes: the tool's own edits, which the app makes to the file as it reads it,
     /// or the file's whole new content.
     pub change: crate::proposed::Change,
+}
+
+/// **A value a chat proposes for a pool's limit** ([`Ask::ProposeLimit`]). Judged by the app
+/// against the list of limits, and again at Apply.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProposeLimitAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    pub pool: String,
+    /// The limit's key ([`crate::poollimits::of_key`]).
+    pub key: String,
+    /// The value; `None` returns it to purlis's default.
+    pub value: Option<u64>,
 }
 
 /// Something a chat asks the person to remove ([`crate::removalask`], qw356).
@@ -2479,6 +2497,7 @@ impl Ask {
             Self::Task(asked) => asked.chat,
             Self::Removal(removal) => removal.chat,
             Self::Propose(proposed) => proposed.chat,
+            Self::ProposeLimit(proposed) => proposed.chat,
             Self::Browse(browse) => browse.chat,
             Self::ThemePreview(asks) => asks.chat,
             Self::ThemeDraft(draft) => draft.chat,

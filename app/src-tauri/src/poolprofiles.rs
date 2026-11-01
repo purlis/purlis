@@ -889,6 +889,8 @@ pub struct PoolLimitRow {
     pub set: Option<u32>,
     /// When a change applies, where its group doesn't say it for all of its limits.
     pub applies: Option<String>,
+    /// Why the value in the pool's file can't be used, where one can't (#4381).
+    pub refused: Option<String>,
 }
 
 /// **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced.
@@ -910,7 +912,10 @@ pub struct PoolLimitsPage {
 }
 
 /// What the page draws of the values `chosen`.
-fn limits_shown(chosen: &purlis_core::poollimits::Chosen) -> PoolLimitsPage {
+fn limits_shown(
+    chosen: &purlis_core::poollimits::Chosen,
+    refused: &[purlis_core::poollimits::RefusedValue],
+) -> PoolLimitsPage {
     use purlis_core::poollimits::{Group, Limit, all};
     let number = |value: u64| u32::try_from(value).unwrap_or(u32::MAX);
     let row = |limit: &Limit, says: bool| PoolLimitRow {
@@ -921,6 +926,10 @@ fn limits_shown(chosen: &purlis_core::poollimits::Chosen) -> PoolLimitsPage {
         default_said: limit.unit.said(limit.default),
         set: chosen.get(limit.id).map(number),
         applies: says.then(|| limit.takes_effect.said().to_owned()),
+        refused: refused
+            .iter()
+            .find(|one| one.limit == limit.id)
+            .map(purlis_core::poollimits::RefusedValue::said),
     };
     let groups = Group::ALL
         .into_iter()
@@ -968,9 +977,9 @@ fn limit_named(key: &str) -> Result<&'static purlis_core::poollimits::Limit, Str
 #[specta::specta]
 pub async fn pool_limits(pool: String) -> Result<PoolLimitsPage, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let chosen = purlis_core::runners::chosen_limits_of(&config_root()?, &pool)
+        let held = purlis_core::runners::limits_held_of(&config_root()?, &pool)
             .map_err(|why| why.to_string())?;
-        Ok(limits_shown(&chosen))
+        Ok(limits_shown(&held.chosen, &held.refused))
     })
     .await
     .map_err(|why| format!("the limits were not read: {why}"))?

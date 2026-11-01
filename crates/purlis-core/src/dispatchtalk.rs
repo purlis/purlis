@@ -471,6 +471,10 @@ pub enum ProposalWord {
     /// The person applied it, and it could not be made, for `why`, purlis's own sentence:
     /// nothing was written (#2046).
     NotMade { path: String, why: String },
+    /// The person applied a value for a pool's limit (#4284): `path` is the limit's name.
+    LimitApplied { path: String },
+    /// A pool's limit changed since the value was proposed, so it can't be applied.
+    LimitStale { path: String },
 }
 
 impl ProposalWord {
@@ -480,7 +484,9 @@ impl ProposalWord {
             Self::Applied { path }
             | Self::Dismissed { path }
             | Self::Stale { path }
-            | Self::NotMade { path, .. } => path,
+            | Self::NotMade { path, .. }
+            | Self::LimitApplied { path }
+            | Self::LimitStale { path } => path,
         }
     }
 }
@@ -1696,6 +1702,14 @@ pub fn proposal_said(word: &ProposalWord) -> String {
             "⬢ purlis: the change you proposed to `{path}` can no longer be applied: the file \
              changed since you read it. Read it again and propose the change again if it is \
              still wanted. This line is purlis's own."
+        ),
+        ProposalWord::LimitApplied { path } => format!(
+            "⬢ purlis: the person applied the value you proposed for `{path}` in the purlis \
+             window. It is saved. This line is purlis's own."
+        ),
+        ProposalWord::LimitStale { path } => format!(
+            "⬢ purlis: the value you proposed for `{path}` can no longer be applied: the limit \
+             changed since. Propose it again if it is still wanted. This line is purlis's own."
         ),
         ProposalWord::NotMade { path, why } => format!(
             "⬢ purlis: the person applied the change you asked for, `{path}`, and it could not \

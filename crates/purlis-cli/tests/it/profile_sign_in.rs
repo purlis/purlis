@@ -95,6 +95,7 @@ impl Machine {
                 settings_in: None,
                 limits: Default::default(),
                 highest: Default::default(),
+                mcp_state: None,
             },
             "01JA0DESKT0P00000000000000",
             7,

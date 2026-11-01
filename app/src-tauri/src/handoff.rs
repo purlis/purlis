@@ -302,6 +302,9 @@ pub fn answer(
         // and a change; the app writes nothing for it, and holds it for the person on the tab
         // of the chat whose token the line carries.
         Ask::Propose(proposal) => crate::proposals::asked(held, &proposal),
+        // A proposed value for a pool's limit (#4284): no ticket, for the removal's reason. The
+        // app writes nothing for it, and holds it for the person.
+        Ask::ProposeLimit(proposal) => crate::proposals::asked_limit(held, &proposal),
         // A prompt for the asking chat's router (SK-15c): no ticket, for the record's reason.
         // Its router and the skills its list leaves out are this app's record of the chat whose
         // token the line carries, never anything the line names.

@@ -35,6 +35,7 @@ const NO_THEME: TheirReading = {
   complaints: [],
   floors: null,
   mine: [],
+  parts_later: false,
   format_1: false,
   more: null,
 };
@@ -165,6 +166,62 @@ describe("the operator's own theme", () => {
     await drawn;
     await Promise.resolve();
     expect(inForce()).toBe(theirs);
+    forgetExtensionThemes();
+  });
+
+  it("asks the core for the person's theme when it was handed before its parts were measured (#4337)", async () => {
+    const parts = "@layer parts {}";
+    handed({ theme: MINE, parts_later: true });
+    const theirs = theirThemeOnce();
+    if (theirs === undefined) throw new Error("the operator's theme was not read");
+    drawIn(theirs);
+    mockIPC((cmd) =>
+      cmd === "theme_in_force"
+        ? {
+            theme: { ...MINE, parts },
+            complaints: [],
+            follows_system: false,
+            floors: null,
+            options: [],
+          }
+        : null,
+    );
+
+    await drawThemeFor(new Set(), null, { plane: "p-1" as PlaneId });
+
+    expect(inForce().parts).toBe(parts);
+    forgetExtensionThemes();
+  });
+
+  it("draws the parts that landed in the frame of a project switch, whatever the core says after (#4337)", async () => {
+    const parts = "@layer parts {}";
+    handed({ theme: MINE, parts_later: true });
+    const theirs = theirThemeOnce();
+    if (theirs === undefined) throw new Error("the operator's theme was not read");
+    drawIn(theirs);
+    let answer = { ...MINE, parts };
+    mockIPC((cmd) => {
+      return cmd === "theme_in_force"
+        ? {
+            theme: answer,
+            complaints: [],
+            follows_system: false,
+            floors: null,
+            options: [],
+          }
+        : null;
+    });
+    await drawThemeFor(new Set(), null, { plane: "p-1" as PlaneId });
+
+    // Away and back. The core is still asked after the frame, for a chat's theme draft (#2332), so
+    // it answers with something else: only a window that asked it for the theme would draw that.
+    drawIn(DEFAULT_THEME);
+    answer = { ...MINE, parts: "@layer parts { /* the core's */ }" };
+    const switched = drawThemeFor(new Set(), null, { plane: "p-2" as PlaneId });
+    expect(inForce().parts).toBe(parts);
+    await switched;
+    await Promise.resolve();
+    expect(inForce().parts).toBe(parts);
     forgetExtensionThemes();
   });
 

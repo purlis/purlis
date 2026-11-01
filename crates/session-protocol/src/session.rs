@@ -431,15 +431,25 @@ use crate::view::{Limits, Views};
 /// [`crate::code::LONGEST_TRANSFER_SECS`]. Only ever a send to the host: what a host writes back
 /// stays held to [`crate::code::MOST_BUNDLE_BYTES`]. A host before 1.65 ignores the field and
 /// holds a send to what it always did, so the desktop holds it there too and says so.
+///
+/// 1.66 lets a runner keep a Claude Code profile's user-scope MCP servers (#3846): a keep may stage
+/// `mcp-servers.json` among its settings, which the runner puts into that profile's state file. No
+/// frame changes. A runner before 1.66 refuses a settings file it does not know, so it is sent none.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 65,
+    minor: 66,
 };
 
 /// The version that first holds a send of code to what its desktop gives it (spec #4275).
 pub const KNOWS_CODE_HELD: Version = Version {
     major: 1,
     minor: 65,
+};
+
+/// The version that first keeps a profile's user-scope MCP servers (#3846).
+pub const KNOWS_PROFILE_MCP_SERVERS: Version = Version {
+    major: 1,
+    minor: 66,
 };
 
 /// The version that first stages a profile's settings up to a pool's limit (spec #4275).

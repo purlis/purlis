@@ -54,6 +54,8 @@ export type TheirReading = {
   floors: string | null;
   /** Which of the person's colours it left out (#3023). */
   mine: readonly string[];
+  /** Drawn before its parts were measured (#4337): the core holds them, so the window asks it. */
+  parts_later: boolean;
   /** Whether it is a format 1 file in force, offered once a move into a theme folder (#2323). */
   format_1: boolean;
   /** What is drawn in its place while the system asks for more contrast (#2328): its
@@ -93,6 +95,7 @@ const NO_THEME: TheirReading = {
   complaints: [],
   floors: null,
   mine: [],
+  parts_later: false,
   format_1: false,
   more: null,
 };
@@ -174,6 +177,7 @@ function theirReading(raw: unknown): TheirReading {
     ),
     floors: typeof from.floors === "string" ? from.floors : null,
     mine: lines(from.mine),
+    parts_later: from.parts_later === true,
     format_1: from.format_1 === true,
     more: theirDrawn(from.more),
   };

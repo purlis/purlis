@@ -565,6 +565,7 @@ fn work_with_settings_in(folder: &std::path::Path) -> purlis_core::profilestore:
         settings_in: Some(folder.to_path_buf()),
         limits: Default::default(),
         highest: Default::default(),
+        mcp_state: None,
     }
 }
 
@@ -876,6 +877,7 @@ fn keeping_a_profile_has_the_time_its_limit_could_take() {
         settings_in: None,
         limits: Chosen::default().with(ProfileSize, mib),
         highest: Chosen::default(),
+        mcp_state: None,
     };
     let ten_minutes = std::time::Duration::from_secs(600);
     assert_eq!(all_kept_within(&[kept(None)]), ten_minutes);

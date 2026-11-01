@@ -1063,6 +1063,13 @@ pub struct WindowMotion {
 
 impl From<&purlis_core::theme::ResolvedTheme> for WindowTheme {
     fn from(theme: &purlis_core::theme::ResolvedTheme) -> Self {
+        Self::with_parts(theme, purlis_core::theme::parts::stylesheet(theme))
+    }
+}
+
+impl WindowTheme {
+    /// `theme` in the window's shape, drawing its parts from `parts`.
+    pub(crate) fn with_parts(theme: &purlis_core::theme::ResolvedTheme, parts: String) -> Self {
         let owned = |map: &std::collections::BTreeMap<&'static str, String>| {
             map.iter()
                 .map(|(key, value)| ((*key).to_owned(), value.clone()))
@@ -1143,7 +1150,7 @@ impl From<&purlis_core::theme::ResolvedTheme> for WindowTheme {
                     })
                     .collect(),
             },
-            parts: purlis_core::theme::parts::stylesheet(theme),
+            parts,
         }
     }
 }
