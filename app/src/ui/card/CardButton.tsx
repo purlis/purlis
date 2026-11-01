@@ -26,6 +26,8 @@
  *   theme's state keys reach it, and nothing reads what the box holds.
  * - **Variants**: `door` (the default), a mark, a title and a line in a column on the control
  *   ground; `pick`, one line on the surface under it, a pick from a list.
+ *   `row`, a mark beside its title and line with no edge of its own, one of a launcher's ways in;
+ *   `current` says it is the one whose page is showing.
  * - **A place, never a look**: `className` gives the box a margin, a width or an order.
  */
 import { Children, useId, useState, type ReactNode, type Ref } from "react";
@@ -34,7 +36,7 @@ import { mergeProps, useFocusRing } from "react-aria";
 import { pressable, renderPressed, type Native } from "../pressable";
 
 /** The pressable card's variants. */
-export const CARD_BUTTON_VARIANTS = ["door", "pick"] as const;
+export const CARD_BUTTON_VARIANTS = ["door", "pick", "row"] as const;
 export type CardButtonVariant = (typeof CARD_BUTTON_VARIANTS)[number];
 
 export interface CardButtonProps
@@ -44,6 +46,8 @@ export interface CardButtonProps
   title: ReactNode;
   /** What it does, under its title: its description. */
   line?: ReactNode;
+  /** Whether this card's page is the one showing: `aria-current` on its button. */
+  current?: boolean;
   /** A mark before the title, in the accent: the door's icon. */
   mark?: ReactNode;
   /**
@@ -65,6 +69,7 @@ export function CardButton({
   title,
   line,
   mark,
+  current,
   children,
   className,
   ref,
@@ -89,6 +94,7 @@ export function CardButton({
       data-hovered={hovered && !off ? "" : undefined}
       data-pressed={pressed && !off ? "" : undefined}
       data-disabled={off ? "" : undefined}
+      data-current={current ? "" : undefined}
       data-focus-visible={isFocusVisible ? "" : undefined}
     >
       {mark !== undefined && (
@@ -108,6 +114,7 @@ export function CardButton({
           onPressChange?.(now);
         }}
         aria-describedby={describedBy || undefined}
+        aria-current={current ? "page" : undefined}
         render={renderPressed(native, undefined, own)}
         {...{ "data-scope": "card-button", "data-part": "press" }}
       >

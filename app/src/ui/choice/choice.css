@@ -624,6 +624,11 @@
   font-weight: var(--font-weight-medium);
 }
 
+/* With no icon the title starts where its detail does, not after an empty column's gap. */
+[data-scope="option-card"][data-part="root"]:not(:has(> [data-part="icon"])) [data-part="title"] {
+  grid-column: 1 / span 2;
+}
+
 /* Its check keeps its room whether it shows or not. */
 [data-scope="option-card"][data-part="check"] {
   grid-row: 1 / span 2;

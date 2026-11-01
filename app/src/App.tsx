@@ -954,6 +954,42 @@ function App() {
     [openRepo],
   );
 
+  /**
+   * Create a project on this Mac: a project with no repo, in the folder its name gave it, with its
+   * refusal kept on the page that asked. It comes through the trust gate, and the guided steps
+   * take it up as they take up a repo opened there.
+   */
+  const firstRunMake = useCallback((folder: string) => {
+    setRepoTrouble(undefined);
+    setRepoForgeAsk(undefined);
+    setOpeningRepo(true);
+    void commands
+      .createProject(folder, false, null, null)
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+      .then((answer) => {
+        setOpeningRepo(false);
+        if (answer.status === "error") {
+          setRepoTrouble(answer.error);
+          return;
+        }
+        const made = answer.data.opened;
+        if (made === null) return;
+        if (made.plane === null) {
+          const ask = made.ask;
+          if (ask)
+            setApproving((queue) =>
+              queue.some((q) => q.path === ask.path) ? queue : [...queue, ask],
+            );
+          return;
+        }
+        const plane = made.plane;
+        setPlanes((was) => (was.includes(plane) ? was : [...was, plane]));
+        setShowing({ at: "plane", plane });
+        if (stepsNow.current.awaiting)
+          stepsNow.current.arrived({ plane, cwd: plane, workspace: "" });
+      });
+  }, []);
+
   /** The same, from the New project dialog, which closes once the repo is open. */
   const dialogRepo = useCallback(
     (path: string, forge: ForgeWord | null = null) => {
@@ -2616,7 +2652,7 @@ function App() {
                     // Create a project's act, on every window: a repo into this machine's project
                     // (FR-4), laid out from the template picked beside it (FR-17).
                     onOpenRepo={firstRunRepo}
-                    onNewProject={windowDoes.createProject}
+                    onMakeProject={firstRunMake}
                     onSignInToForge={(row) => {
                       setRepoTrouble(undefined);
                       void signInToForge(row).then(setRepoTrouble);

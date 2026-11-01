@@ -13,6 +13,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A redesigned first window.** With no project open, the ways in now stay down the left of the
+  window and each one opens its page beside them. Recent projects sit in the same place on every
+  launch, and a person who has already been through setup is no longer counted through steps.
+- **Create a project on this Mac from a name alone**, with no repo and no account. Starting from
+  a repo you already have is still on the same page.
+
 - **The event log keeps 30 days and can be followed from a cursor.** The host's event log
   (`<data>/events/<device>/`) is now written in segments: at 16 MiB a segment is sealed as
   `events.<first seq>.jsonl`, and a sealed segment whose newest event is more than 30 days old is
@@ -42,10 +48,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   took, and whether it went to purlis or to a third party. It never holds a body, a header, a
   token, a query or the names in a path, and nothing sends it anywhere. Without an account, and
   unless you send a report, the only purlis addresses it lists are the updater's.
-- **Read any file of a worktree in purlis.** A worktree's menu in the explorer has *Browse the
-  files of …*: a tab listing the worktree's files, narrowed as you type, with the file you pick
+- **Read any file of a worktree in purlis.** A worktree's menu in the explorer has _Browse the
+  files of …_: a tab listing the worktree's files, narrowed as you type, with the file you pick
   drawn beside the list in the light editor, purlis's read-only CodeMirror 6 viewer with syntax
-  colours from your theme. *Open in a tab of its own* gives a file a tab to itself. A binary file
+  colours from your theme. _Open in a tab of its own_ gives a file a tab to itself. A binary file
   or one past 5 MiB is named rather than drawn. The diff view the Review tab will use is built
   on the same component (RC-5, #706).
 
@@ -111,13 +117,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   do not exist yet (FR-25, #619).
 
 - **A project switcher.** ⌘P (Ctrl+Shift+P off a Mac), the new button at the start of the
-  project strip's controls, or *Switch project…* in the palette lists the projects open in the
+  project strip's controls, or _Switch project…_ in the palette lists the projects open in the
   window, the last one you were in first and already selected, so the key and Enter take you
   back to it. Pressing the key again moves down the list, and typing narrows it by name. The
   button shows once a window holds two projects (FR-27, #620).
 
 - **`purlis change revert` undoes a cross-repo change as a new one.** `purlis change revert
-  <change>` creates `revert-<change>`: for every member purlis landed, a branch off that repo's
+<change>` creates `revert-<change>`: for every member purlis landed, a branch off that repo's
   default branch carrying `git revert` of the commit purlis recorded, ordered so a member that
   depended on another is reverted first. It pushes and merges nothing; you push and land the
   revert with `purlis change push` and `purlis change land` like any other change. A member
@@ -128,7 +134,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   seeded yet. It never force-pushes, deletes a branch or resets one (#473).
 
 - **`purlis change land` lands one member of a cross-repo change.** `purlis change land
-  <change> --repo <name>` merges that member's request at the commit its checks passed on, and
+<change> --repo <name>` merges that member's request at the commit its checks passed on, and
   only once every member it needs has landed. Each refusal says which gate stopped it: a
   blocker not landed, checks failed, running, not run or unreadable at that commit, a branch
   that moved after the checks were read, or more than one member named. Where the target
@@ -156,7 +162,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   When members are on different hosts, a member elsewhere is named by its request's link, so
   a GitLab description never points at a GitHub number as if it were a GitLab one. The guard
   that stops a live substitution in `purlis change create` or `drop` now names `purlis
-  change push` as what writes the `why` into requests (#471).
+change push` as what writes the `why` into requests (#471).
 
 - **The first run lays your project out for the stack you work in.** Project templates for
   Rust, TypeScript, Python, Go, monorepos and docs-only repos each add an engineer and a
@@ -176,16 +182,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   changes, sessions, harnesses and guards, plus `workspace recall`), saying once that it is
   read-only and why. Every command that could write it is refused, extension commands,
   `doctor --fix`, `init` and `reinit` included, with the version to upgrade to (update the app); `purlis
-  doctor`'s `schema` row says the same. Keys and sections purlis does not know are kept when it
+doctor`'s `schema` row says the same. Keys and sections purlis does not know are kept when it
   rewrites `charter.toml` or a workspace's `workspace.json`. The window and the chat hooks will
   follow the same rule before any release carries it (#826).
 
-- **A chat that starts in a repo gets a branch of its own.** Start a chat with *New tab in
-  <repo>*, or after *Start new chats in <repo>*, and purlis cuts a new branch for it, in a folder
+- **A chat that starts in a repo gets a branch of its own.** Start a chat with _New tab in
+  <repo>_, or after _Start new chats in <repo>_, and purlis cuts a new branch for it, in a folder
   beside the repo's clone, so two chats in one repo no longer edit the same files. The branch is
-  named after the chat, or `chat-1`, `chat-2` and on. Clear *start on a new branch* in the picker
+  named after the chat, or `chat-1`, `chat-2` and on. Clear _start on a new branch_ in the picker
   to work on the branch the repo has checked out, as before. If the chat does not start, the
-  branch goes with it. *New branch in <repo>…* on the repo's menu and in the palette cuts one
+  branch goes with it. _New branch in <repo>…_ on the repo's menu and in the palette cuts one
   without starting a chat, and new chats start on it.
 
 - **A chat in its own worktree leaves an `AGENTS.md` behind for any agent that opens it.** When
@@ -206,8 +212,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as your user can read it. The coming timeline, audit and fleet views are built from it (#649).
 
 - **The first run offers your repo's agent instructions to its workspace's memory.** When the
-  repo you open has a `CLAUDE.md`, an `AGENTS.md` or Cursor rules in `.cursor/rules`, a *Memory
-  from the repo* tab opens beside the first chat, showing each file whole. Press Add to memory
+  repo you open has a `CLAUDE.md`, an `AGENTS.md` or Cursor rules in `.cursor/rules`, a _Memory
+  from the repo_ tab opens beside the first chat, showing each file whole. Press Add to memory
   and every chat in that workspace starts with them, whichever agent runs it. Nothing is written
   until you press it, and nothing is ever written into your repo. A link, a file over 64 KB, or
   one that looks like it holds a secret is left out and says which line. A file over 8 KB, or one
@@ -581,8 +587,8 @@ their own conversation at a relaunch.
   and on the shared list opens a new memory in edit mode, and Save lists it where it was made.
   The palette offers the same: New memory in, for or shared, and Open shared memory (ADR 0065).
 - **Edit, archive and unarchive a memory from the command line.** `purlis workspace
-  edit|archive|unarchive` and `purlis persona edit-memory|archive-memory|unarchive-memory
-  [--shared]` do what the window does. Edit takes `--title`, and the body as an argument or as
+edit|archive|unarchive` and `purlis persona edit-memory|archive-memory|unarchive-memory
+[--shared]` do what the window does. Edit takes `--title`, and the body as an argument or as
   `-` to read standard input; a slug is the memory's exact name, or the one file whose name
   ends `-<slug>.md`; and an archive that had to number its file prints an Undo that restores
   the original name with `--as` (ADR 0065).
@@ -639,7 +645,7 @@ projects in windows of their own, and opencode chats started by the app.
 ### Added
 
 - **The plane root is the first tab of the workspace strip.** It is always there, drawn as an
-  icon (its tooltip: *Plane — chats here start at the plane root*), and it cannot be dragged,
+  icon (its tooltip: _Plane — chats here start at the plane root_), and it cannot be dragged,
   pinned, renamed or deleted. Its menu starts a chat or a shell at the plane root, and so do
   `New tab` and `New shell` while it is focused. A chat started there is in no workspace on
   purpose: it is not asked which workspace to use, its briefing lists the plane's workspaces as
@@ -673,7 +679,7 @@ projects in windows of their own, and opencode chats started by the app.
 - **purlis ships three curation actions, and a persona can add its own.** Safe remove,
   Compact & improve, and Add curation action each name a new skill in purlis's plugin
   (`safe-remove`, `compact`, `add-curation-action`), so the prompt you read is one line — for
-  example *Use purlis's safe-remove skill to remove the workspace alpha.* — and the skill
+  example _Use purlis's safe-remove skill to remove the workspace alpha._ — and the skill
   holds the steps. A persona adds its own as `personas/<name>/curation/<id>.md`, or with
   `purlis persona curation add`. `purlis curation show workspace:<name>` (or
   `persona:<name>`, or `plane`) lists what a subject is offered, who runs each action, where,
@@ -689,7 +695,7 @@ projects in windows of their own, and opencode chats started by the app.
   actions (ADR 0061).
 - **Plain shell tabs, and a warning when a harness starts inside one.** `New shell` sits beside
   `New tab` in the palette, on the panes' menu and on each workspace's menu (`New shell in
-  <workspace>`), on ⌘⇧T (Ctrl+Shift+T off a Mac): your own shell, where a new chat would start,
+<workspace>`), on ⌘⇧T (Ctrl+Shift+T off a Mac): your own shell, where a new chat would start,
   with a terminal's mark on its tab and no chat-state mark. Typing `claude`, `codex` or
   `opencode` in one still starts it, after one line saying it runs outside purlis's session
   tracking, and the tab shows a banner whose **Open as chat** opens the picker there with that
@@ -709,15 +715,15 @@ projects in windows of their own, and opencode chats started by the app.
   puts the keyboard back in the terminal. In a Claude Code, Codex or opencode chat, Shift+Enter
   now adds a new line to the prompt instead of sending it; in a shell it is Enter, as before.
 - **Create and delete vaults, personas and todos in the window.** A `+` on the Vaults and
-  Personas headings opens *New vault…* and *New persona* (name, role, the work that comes to it,
-  and what it inherits from; it is created as a draft and its tab opens). *Delete vault…* lists
+  Personas headings opens _New vault…_ and _New persona_ (name, role, the work that comes to it,
+  and what it inherits from; it is created as a draft and its tab opens). _Delete vault…_ lists
   the secrets the vault holds by name, says plainly that a keychain vault's secrets are
   destroyed and cannot be recovered (a plain-file, references or 1Password vault's file or item
-  is left where it is), and stays disabled until you type the vault's name. *Delete persona…*
+  is left where it is), and stays disabled until you type the vault's name. _Delete persona…_
   runs `purlis persona remove`, never forced, so a persona another one extends or uses is
-  refused with their names. *Edit persona.md* opens the file in the app your system opens `.md`
+  refused with their names. _Edit persona.md_ opens the file in the app your system opens `.md`
   files with. The Todos panel has a box for a new todo in the focused workspace, and each todo's
-  menu has *Mark done* and *Forget*; the window refuses a todo with the same rules and words as
+  menu has _Mark done_ and _Forget_; the window refuses a todo with the same rules and words as
   `purlis ws todo`.
 - **Codex and opencode chats get purlis's skills too.** `safe-remove`, `compact`, `handoff`
   and the other six reached only Claude Code chats. An opencode chat the app starts now finds
@@ -760,7 +766,7 @@ projects in windows of their own, and opencode chats started by the app.
 - **purlis's plugin teaches personas, vaults and the browser again.** It now ships the
   `charter:persona`, `charter:secrets` and `charter:browser` skills beside `handoff`,
   `update` and `working-in-a-clone`, rewritten for this purlis's commands. `purlis browser
-  install [--version X.Y.Z]` generates Playwright's own page-driving skill into the plane's
+install [--version X.Y.Z]` generates Playwright's own page-driving skill into the plane's
   `.claude/skills/playwright-cli/` with `npx`, and gitignores `.playwright-cli/`, where traces
   of logged-in runs land. The version must be an exact version: anything else npm would read
   there, such as a tag or a git URL, is refused.
@@ -774,20 +780,20 @@ projects in windows of their own, and opencode chats started by the app.
   worktree row shows the same word, and its menu can mark it done.
   ([#368](https://github.com/diazoxide/charter/issues/368))
 - **A persona's memory can be kept up like a workspace's.** `purlis persona forget <name>
-  <slug>` deletes one memory, `purlis persona dedupe` lists near-duplicate pairs to prune,
+<slug>` deletes one memory, `purlis persona dedupe` lists near-duplicate pairs to prune,
   `purlis persona optimize` runs the curation `purlis workspace optimize` runs over each
   persona's memory and the shared store (read-only unless `--apply`), and `purlis persona
-  log` notes to, or shows, a persona's activity in this session.
+log` notes to, or shows, a persona's activity in this session.
   ([#366](https://github.com/diazoxide/charter/issues/366))
 - **A persona can be made, read, cleared and removed from the command line.** `purlis persona
-  create <name> --delegate-when "<the work that comes to it>"` writes
+create <name> --delegate-when "<the work that comes to it>"` writes
   `personas/<name>/persona.md` as a draft, with its memory and refs; `--extends` inherits from
   another persona, `--with-vault` registers its vault and `--use` selects it. `purlis persona
-  show` prints what a persona adopts, `purlis persona clear` drops your selection, and
+show` prints what a persona adopts, `purlis persona clear` drops your selection, and
   `purlis persona remove` refuses while another persona still extends or uses it (`--force`
   overrides). `purlis persona lint` finds dangling `uses:`/`extends:`, keys purlis cannot
   read, a missing role, vault or `delegate-when`, and stale generated sub-agents, and `purlis
-  doctor`'s `personas` and `persona grant` rows now run it instead of saying "not checked".
+doctor`'s `personas` and `persona grant` rows now run it instead of saying "not checked".
   A refusal about a missing persona suggests `purlis persona create` again.
   ([#365](https://github.com/diazoxide/charter/issues/365))
 - **The app starts opencode chats.** Pick an opencode profile in the new-chat picker and the
@@ -800,8 +806,8 @@ projects in windows of their own, and opencode chats started by the app.
   `purlis plugin install --harness opencode` installs the guard for opencode chats you start
   in a terminal, and replaces the retired Python charter's opencode plugin if it is there.
   ([#371](https://github.com/diazoxide/charter/issues/371))
-- **A workspace can be renamed.** `purlis workspace rename <old> <new>` (or `mv`), or *Rename
-  workspace…* on the workspace tab's menu and in the palette. The folder moves, every git
+- **A workspace can be renamed.** `purlis workspace rename <old> <new>` (or `mv`), or _Rename
+  workspace…_ on the workspace tab's menu and in the palette. The folder moves, every git
   worktree of its clones is repaired so it keeps working, and everything that names the
   workspace follows: its manifest, the LIVE list, the default and each session's choice, the
   app's open tabs and what a relaunch reopens, and your pins. A LIVE workspace is saved once
@@ -825,14 +831,14 @@ projects in windows of their own, and opencode chats started by the app.
   the purlis version, which panic records now include.
   ([#363](https://github.com/diazoxide/charter/issues/363))
 - **A project tab can move into a window of its own, and back.** Right-click a project tab, or
-  use the palette, and choose *Move project … to a new window*. Its chats keep running. In that
-  window, *Move project … to the main window* brings it back, and so does closing the window.
+  use the palette, and choose _Move project … to a new window_. Its chats keep running. In that
+  window, _Move project … to the main window_ brings it back, and so does closing the window.
   Each window has its own palette and project tabs. The ✋ list still shows every chat that needs
   you, whichever window it is in, and pressing one takes you to that window. Quitting warns
   about the chats in every window. The next launch opens each window again.
   ([#126](https://github.com/diazoxide/charter/issues/126))
 - **`purlis guard` is back: rules that always ask, or stop asking.** `purlis guard ask
-  '<pattern>'` and `purlis guard allow '<pattern>'` write the rule in each harness's own
+'<pattern>'` and `purlis guard allow '<pattern>'` write the rule in each harness's own
   file: Claude Code's `.claude/settings.json`, or `.claude/settings.local.json` with
   `--local`, and opencode's `opencode.json`. They touch nothing else in either file, and if
   one of those files cannot be read, they write nothing anywhere. `purlis guard handoff` puts
@@ -942,7 +948,7 @@ projects in windows of their own, and opencode chats started by the app.
   ([#493](https://github.com/diazoxide/charter/issues/493))
 - **The prose guards treat a process substitution as the substitution it is.** A `gh` or
   `glab` command that publishes prose, a purlis command that persists it, and `purlis
-  handoff` now refuse `<(…)` and `>(…)` wherever the shell runs them, and zsh's `=(…)`, exactly
+handoff` now refuse `<(…)` and `>(…)` wherever the shell runs them, and zsh's `=(…)`, exactly
   as they refuse `$(…)`. Quoted, or in a heredoc body, they are text and are left alone. The
   refusal names a process substitution rather than calling it a command substitution.
 - **Where the shells may disagree about a heredoc, the guards read it both ways.** Inside
@@ -1066,7 +1072,7 @@ projects in windows of their own, and opencode chats started by the app.
   - purlis's own state files that you made read-only are replaced, as purlis owns their
     mode. A read-only shared vault registry, local registry or fingerprint key is refused.
   - A `.gitkeep` that is a symlink stops `purlis init`'s front-door persona with an error.
-  ([#434](https://github.com/diazoxide/charter/issues/434))
+    ([#434](https://github.com/diazoxide/charter/issues/434))
 - **`purlis doctor` knows the Python charter is retired.** Its `python3` row no longer warns.
   Its three plugin rows, which said "not checked", now check purlis's plugin for chats started
   outside the app: whether it is installed, whether it is current, and whether the `charter` its
@@ -1219,8 +1225,8 @@ and purlis's own plugin is now called `charter`.
   ([#341](https://github.com/diazoxide/charter/issues/341))
 - **Workspace repos are saved too, each by its own mode.** The Saving tab has a row for every
   repo in the workspace: its stage, the branch it is on, its pull request and its own Save
-  button, with *Save all* for the project and every repo at once. The title bar counts the
-  workspace's repos in: *1 repo changed*. A repo is saved by `[repos.<name>] mode`, `pr` by
+  button, with _Save all_ for the project and every repo at once. The title bar counts the
+  workspace's repos in: _1 repo changed_. A repo is saved by `[repos.<name>] mode`, `pr` by
   default. A save commits on the branch the repo is on. `push` pushes that branch. `pr` pushes it
   and opens or updates a pull request into `branch`, the repo's default branch by default.
   `pr-merge` also asks for auto-merge, and says so when the forge won't queue it. On the default
@@ -1269,15 +1275,15 @@ and purlis's own plugin is now called `charter`.
 - **LIVE and LOCAL, from the window.** A LIVE workspace, whose purlis, memory and todos are
   published with the project, is marked on its tab, in the title bar and in the Explorer, and
   the Saving tab names the live ones. Its menu, the palette and its settings page offer
-  *Make live…* or *Make local…*. Before anything changes, a confirmation says which files and
+  _Make live…_ or _Make local…_. Before anything changes, a confirmation says which files and
   where they go (the remote, or "this machine only"). The project is saved at once. Making a
   workspace LOCAL stops publishing its files and keeps them on disk; what was already pushed
-  stays in history, and the confirmation says so. The new-workspace dialog has a *Live* box,
+  stays in history, and the confirmation says so. The new-workspace dialog has a _Live_ box,
   unticked by default. ([#301](https://github.com/diazoxide/charter/issues/301))
 - **A blocked save shows its way out.** When a save can't go further (a conflict with the
   remote, a secret the scan caught, a pull request mode on a remote purlis can't open pull
   requests on), the Saving tab says why, names the files a conflict is in, and offers
-  *Resolve in a chat* (the chat picker, starting in the project) or *Open terminal here* (a plain
+  _Resolve in a chat_ (the chat picker, starting in the project) or _Open terminal here_ (a plain
   shell in the project). The alerts drawer says so too: at once for a secret, and after ten
   minutes for anything else.
 - **Fewer conflicts in the first place.** `purlis init` and `purlis reinit` write a
@@ -1291,7 +1297,7 @@ and purlis's own plugin is now called `charter`.
   and opens one pull request from there into `[plane] branch`. The next save updates that same
   pull request. `pr-merge` also asks GitHub or GitLab to merge it once its checks pass. If the
   forge will not queue the merge, the Saving tab says why and the pull request stays open for
-  you. The Saving tab shows *Pushed — waiting on its pull request* with the link. Once the pull
+  you. The Saving tab shows _Pushed — waiting on its pull request_ with the link. Once the pull
   request has merged, by a merge commit, a rebase or a squash, purlis moves your branch onto
   the remote's and keeps anything newer you have not saved. If the pull request was closed
   without merging, or the branch no longer holds what was pushed, the project is **blocked**
@@ -1310,20 +1316,20 @@ and purlis's own plugin is now called `charter`.
   every 30 seconds.
 - **What came in.** Every five minutes, and when the window comes back into focus, purlis
   fetches the project's branch. The title bar and the Saving tab say how many commits came in
-  (*2 incoming*). With auto-save on, a project with nothing unsaved is fast-forwarded onto
+  (_2 incoming_). With auto-save on, a project with nothing unsaved is fast-forwarded onto
   them. Otherwise they wait for your next save.
 - **One question per project.** A project that has never said how it is saved (no
   `[plane] mode`, including every project whose `charter.toml` says `share = "local"`) is asked
-  in the Saving tab: *Push*, *Commit only* or *Off*. The answer is written into `charter.toml`,
+  in the Saving tab: _Push_, _Commit only_ or _Off_. The answer is written into `charter.toml`,
   and until there is one, nothing saves the project by itself.
   ([#296](https://github.com/diazoxide/charter/issues/296))
 - **The title bar says what is not saved yet.** Beside the needs-you button, the project in
-  front shows where its unsaved work sits: *3 changed*, *committed, not pushed*,
-  *waiting on its pull request*, *blocked*, or *Saved*. A save button sits next to it while
+  front shows where its unsaved work sits: _3 changed_, _committed, not pushed_,
+  _waiting on its pull request_, _blocked_, or _Saved_. A save button sits next to it while
   there is anything to save. Press the words to open the project's **Saving** tab, which lists
   the files the next save takes, lets you type a message (leave it empty and purlis writes one
   that says what changed), and shows the last 50 saves and how each one ended. The tab is also on
-  the project tab's menu and in the palette, as *Saving…*. The button runs the same save as
+  the project tab's menu and in the palette, as _Saving…_. The button runs the same save as
   `purlis save`, so both follow `[plane] mode`.
   ([#294](https://github.com/diazoxide/charter/issues/294))
 - **Project settings has Plane and Repos sections.** Both files, Shared (`charter.toml`) and
@@ -1437,7 +1443,7 @@ and every settings group that it would have changed says so.
   off until you approve it in Extensions. A project that says nothing keeps every approved
   extension on, as before. Panels, views and themes follow the project in front, and a view
   refuses to run in a project that turned its extension off. ([#253](https://github.com/diazoxide/charter/issues/253))
-- **Harness plugins per project.** Project settings has a *Harness plugins* group for each
+- **Harness plugins per project.** Project settings has a _Harness plugins_ group for each
   harness purlis knows, in Shared and in Local. For Claude Code it lists the plugins installed
   on this machine, and each one can be on, off or not set for the chats purlis starts in the
   project. Local wins plugin by plugin, and not set leaves the plugin to Claude Code's own
@@ -1447,7 +1453,7 @@ and every settings group that it would have changed says so.
   plugin's on/off given for one session, and purlis does not start opencode chats yet.
   ([#274](https://github.com/diazoxide/charter/issues/274))
 - **A theme per project.** Project settings has a Theme select in Shared and in Local: purlis's
-  dark or light theme, *Follow the system*, or any theme an extension you approved contributes.
+  dark or light theme, _Follow the system_, or any theme an extension you approved contributes.
   Local wins over Shared. While that project is in front the window and every terminal draw its
   theme, and switching projects switches it live. A pick whose extension is off in the project,
   or not approved on this machine, draws the built-in dark theme, and the tab says why. A
@@ -1496,7 +1502,7 @@ and every settings group that it would have changed says so.
   provider and how many secrets it holds. Clicking one opens the vault in a tab of its own, as a
   persona opens, and the tab comes back at the next launch. The tab has a search box, **Add**,
   and a table of name, size and when each secret was written. Each row's menu has Edit value,
-  Rename, Copy and Delete. The palette has *Open vault…* and *New vault…*, and a new vault is a
+  Rename, Copy and Delete. The palette has _Open vault…_ and _New vault…_, and a new vault is a
   keyring one unless you pick another kind. Nothing the window lists or writes ever carries a
   value back. ([#234](https://github.com/diazoxide/charter/issues/234),
   [#235](https://github.com/diazoxide/charter/issues/235))
@@ -1728,9 +1734,10 @@ and every settings group that it would have changed says so.
   [#172](https://github.com/diazoxide/charter/pull/172),
   [#192](https://github.com/diazoxide/charter/pull/192))
 
-  *Erratum:* 0.1.0 could remove a worktree from the window but not cut one, and no later
+  _Erratum:_ 0.1.0 could remove a worktree from the window but not cut one, and no later
   version can yet. Cut one with `purlis worktree add` (since 0.4.0); cutting from the window
   is [#701](https://github.com/diazoxide/charter/issues/701).
+
 - A command palette and right-click menus reach every action the bars have.
   ([#45](https://github.com/diazoxide/charter/pull/45),
   [#172](https://github.com/diazoxide/charter/pull/172),

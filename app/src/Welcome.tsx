@@ -1,11 +1,19 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { CloudDownload, FolderOpen, FolderPlus, LogIn } from "lucide-react";
 import { commands, type ForgeRow, type Recents, type TemplateChoice } from "./bindings";
-import { EmptyState } from "./ui/empty-state/EmptyState";
 import { CreateOnForge, type Where, WhereItLives } from "./CreateOnForge";
+import { Launcher } from "./DoorPage";
 import { ForgeSignIn } from "./ForgeSignIn";
 import type { ForgeAsk } from "./ForgeQuestion";
 import { FirstRun } from "./FirstRun";
@@ -44,7 +52,7 @@ export type Chose = Door | "open" | "sign-in-first" | undefined;
  *
  * - **Create a project** — the first run's page, behind its door: a repo on this machine, opened
  *   in a workspace of its own in the project purlis keeps here, with a template for its stack
- *   (FR-17). New project… is one press from it, for a project in a folder of its own.
+ *   (FR-17), or a new project from its name alone, with no repo and no account.
  * - **Get a project from your forge** — a pasted HTTPS or SSH URL, cloned into a folder under
  *   `~/Projects` (or the place picked last) and opened through the trust question (#1815).
  *   {@link GetProject} is its page; the list of the person's repos comes with sign-in (#1818).
@@ -82,7 +90,7 @@ export function Welcome({
   goneChanged,
   trouble,
   onOpenRepo,
-  onNewProject,
+  onMakeProject,
   onSignInToForge,
   openingRepo,
   repoTrouble,
@@ -91,6 +99,8 @@ export function Welcome({
   onChose,
   withGit = run,
   onSignedIn,
+  stepSaid,
+  signInEnd,
 }: {
   /** Whether the launch had a directory to go on at all. */
   here: boolean;
@@ -114,8 +124,8 @@ export function Welcome({
   /** Opens a repo into this machine's local project, laid out from `template`: Create a
    *  project's act. */
   onOpenRepo: (path: string, template: TemplateChoice) => void;
-  /** Opens the New project dialog, for a project in a folder of its own. */
-  onNewProject: () => void;
+  /** Makes a project with no repo in this folder, and opens it: Create a project on this Mac. */
+  onMakeProject: (folder: string) => void;
   /** Opens the local project with `<cli> auth login` in a shell tab: today's forge sign-in. */
   onSignInToForge: (row: ForgeRow) => void;
   /** Whether a repo is being opened right now. */
@@ -134,6 +144,10 @@ export function Welcome({
   withGit?: (act: () => unknown) => void;
   /** A token signed in on the sign-in page: told to the guided steps. */
   onSignedIn?: () => void;
+  /** Where the guided steps have got to, under the ways in, on a first run. */
+  stepSaid?: ReactNode;
+  /** The sign-in page's way on, from the guided steps: Skip for now, or Continue. */
+  signInEnd?: ReactNode;
 }) {
   const [recents, setRecents] = useState<Recents>();
   /** The Notices dismissed here, by cause, for this run (NO-2 keeps them across a relaunch). */
@@ -327,8 +341,8 @@ export function Welcome({
   /** Sign in to GitHub or GitLab: the page #1814 builds; until then it says so. */
   const signInToAForge = useCallback(() => setDoor("sign-in"), [setDoor]);
 
-  if (makeAt !== undefined)
-    return (
+  const page =
+    makeAt !== undefined ? (
       <MakeItAProject
         path={makeAt}
         onMake={onOpenRepo}
@@ -337,13 +351,11 @@ export function Welcome({
         trouble={repoTrouble}
         forgeAsk={repoForgeAsk}
       />
-    );
-  if (door === "create")
-    return (
+    ) : door === "create" ? (
       <FirstRun
         onOpenRepo={onOpenRepo}
         onBack={back}
-        onNewProject={onNewProject}
+        onMake={onMakeProject}
         opening={openingRepo ?? false}
         trouble={repoTrouble}
         forgeAsk={repoForgeAsk}
@@ -362,9 +374,7 @@ export function Welcome({
               )
         }
       />
-    );
-  if (door === "get")
-    return (
+    ) : door === "get" ? (
       <GetProject
         onBack={back}
         onOpen={openAFolderAt}
@@ -372,16 +382,15 @@ export function Welcome({
         said={said}
         withGit={withGit}
       />
-    );
-  if (door === "sign-in")
-    return (
+    ) : door === "sign-in" ? (
       <ForgeSignIn
         onBack={back}
         onSignInToForge={onSignInToForge}
         trouble={repoTrouble}
         onSignedIn={signedIn}
+        end={signInEnd}
       />
-    );
+    ) : undefined;
 
   const planes = recents?.planes ?? [];
   const goneRows = recents?.gone ?? [];
@@ -406,14 +415,14 @@ export function Welcome({
     {
       door: "create",
       title: "Create a project",
-      says: "On GitHub, on GitLab or only on this machine, with a template for its stack.",
+      says: "On GitHub, on GitLab or only on this Mac.",
       mark: FolderPlus,
       press: createAProject,
     },
     {
       door: "get",
       title: "Get a project from your forge",
-      says: "Clone your team's project from GitHub or GitLab, from your repos or by its URL.",
+      says: "Clone your team's from GitHub or GitLab.",
       mark: CloudDownload,
       press: getFromYourForge,
     },
@@ -426,99 +435,31 @@ export function Welcome({
     },
   ];
 
-  return (
-    <section className="welcome" aria-labelledby={`${ids}-heading`}>
-      <header className="welcome-head">
-        <h1 id={`${ids}-heading`}>
-          {adding
-            ? "Add another project"
-            : here
-              ? "purlis found no project here"
-              : "Welcome to purlis"}
-        </h1>
-        {adding ? (
-          <p className="welcome-lede">
-            It opens as another tab in this window, beside the ones already here. Every project
-            keeps its own chats, and nothing running in them stops.
-          </p>
-        ) : here ? (
-          // The resolver's own words. Somebody who ran `purlis` in a directory asked a question,
-          // and "a project is the nearest directory at or above this one with a purlis.toml" is
-          // the answer to it.
-          <p className="welcome-lede">{reason}</p>
-        ) : (
-          <p className="welcome-lede">
-            A project is where purlis keeps your workspaces, personas and memory. Create one, get
-            your team&apos;s from GitHub or GitLab, or open one you already have.
-          </p>
-        )}
-      </header>
-
-      {/* Each door is a card pressed whole (`ui/card/CardButton`), named by its title alone and
-          described by its line, so a screen reader reads the act first and the explanation after
-          it. */}
-      <ul className="welcome-doors" aria-label="Ways to start">
-        {doorRows.map(({ door: which, title, says, mark: Mark, press }) => (
-          <li key={which}>
-            <CardButton
-              title={title}
-              line={says}
-              mark={<Mark aria-hidden="true" />}
-              ref={(element) => {
-                if (which === "open") openDoorButton.current = element;
-                else doors.current[which] = element;
-              }}
-              onPress={press}
-            />
-          </li>
-        ))}
-      </ul>
-
-      <p className="welcome-sign-in">
-        <Button
-          variant="link"
-          ref={(element) => {
-            doors.current["sign-in"] = element;
-          }}
-          onPress={signInToAForge}
-          icon={<LogIn />}
-          className="welcome-link"
-        >
-          Sign in to GitHub or GitLab
-        </Button>
-      </p>
-
-      {/* The path box is not a lesser picker. A native folder dialog cannot be driven by the
-          scenario tests, and somebody who already knows the path types faster than they click —
-          so the two are one command with two ways in, and neither resolves anything itself. */}
-      <Form
-        className="by-path"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (typed.trim()) openAFolderAt(typed.trim());
-        }}
-      >
-        {/* The settings set's row (#1719). `setting` is the handle the scenario tests find it
-            by. */}
-        <SettingRow
-          label="Or type a path"
-          setting="open-by-path"
-          control={(fieldIds) => (
-            <Field
-              ids={fieldIds}
-              kind="text"
-              value={typed}
-              placeholder="/path/to/project"
-              onChange={setTyped}
-            />
-          )}
-        />
-        <SettingActions>
-          <Button type="submit" isDisabled={!typed.trim()}>
-            Open project
-          </Button>
-        </SettingActions>
-      </Form>
+  const home = (
+    <section className="welcome-home" aria-labelledby={`${ids}-heading`}>
+      <h1 id={`${ids}-heading`}>
+        {adding
+          ? "Add another project"
+          : here
+            ? "purlis found no project here"
+            : "Welcome to purlis"}
+      </h1>
+      {adding ? (
+        <p className="welcome-lede">
+          It opens as another tab in this window, beside the ones already here. Every project keeps
+          its own chats, and nothing running in them stops.
+        </p>
+      ) : here ? (
+        // The resolver's own words. Somebody who ran `purlis` in a directory asked a question,
+        // and "a project is the nearest directory at or above this one with a purlis.toml" is
+        // the answer to it.
+        <p className="welcome-lede">{reason}</p>
+      ) : (
+        <p className="welcome-lede">
+          A project is where purlis keeps your workspaces, personas and memory. Create one, get your
+          team&apos;s from GitHub or GitLab, or open one you already have.
+        </p>
+      )}
 
       {said && (
         <p className="trouble" role="alert">
@@ -562,12 +503,14 @@ export function Welcome({
           </List>
         </section>
       )}
+      {/* A first run has nothing to list, so it says what comes next rather than what is
+          missing. */}
       {nothingRecent && (
-        <EmptyState
-          variant="panel"
-          headline="No recent projects yet"
-          body="Each project you open is listed here, one press from opening again."
-        />
+        <ol className="welcome-next" aria-label="What comes next">
+          <li>Pick a project from the list on the left.</li>
+          <li>purlis checks it has what the project needs, and helps you get anything missing.</li>
+          <li>Start a chat in it, on the coding harness you use.</li>
+        </ol>
       )}
 
       {/* An entry the store itself would not take back is dropped with a line saying so, never
@@ -623,7 +566,87 @@ export function Welcome({
           recent list and it will ask about every project you open.
         </Notice>
       )}
+
+      {/* The path box is not a lesser picker. A native folder dialog cannot be driven by the
+          scenario tests, and somebody who already knows the path types faster than they click —
+          so the two are one command with two ways in, and neither resolves anything itself. */}
+      <Form
+        className="by-path"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (typed.trim()) openAFolderAt(typed.trim());
+        }}
+      >
+        {/* The settings set's row (#1719). `setting` is the handle the scenario tests find it
+            by. */}
+        <SettingRow
+          label="Or type a path"
+          setting="open-by-path"
+          control={(fieldIds) => (
+            <Field
+              ids={fieldIds}
+              kind="text"
+              value={typed}
+              placeholder="/path/to/project"
+              onChange={setTyped}
+            />
+          )}
+        />
+        <SettingActions>
+          <Button type="submit" isDisabled={!typed.trim()}>
+            Open project
+          </Button>
+        </SettingActions>
+      </Form>
     </section>
+  );
+
+  /** Which way in the page showing is, so its row says so. */
+  const currentDoor = makeAt !== undefined ? "open" : door;
+
+  return (
+    <Launcher
+      side={
+        <>
+          {/* Each way in is a row pressed whole (`ui/card/CardButton`), named by its title alone
+              and described by its line, so a screen reader reads the act first and the
+              explanation after it. */}
+          <ul className="welcome-doors" aria-label="Ways to start">
+            {doorRows.map(({ door: which, title, says, mark: Mark, press }) => (
+              <li key={which}>
+                <CardButton
+                  variant="row"
+                  title={title}
+                  line={says}
+                  current={currentDoor === which}
+                  mark={<Mark aria-hidden="true" />}
+                  ref={(element) => {
+                    if (which === "open") openDoorButton.current = element;
+                    else doors.current[which] = element;
+                  }}
+                  onPress={press}
+                />
+              </li>
+            ))}
+          </ul>
+          <div className="welcome-sign-in">
+            <CardButton
+              variant="row"
+              title="Sign in to GitHub or GitLab"
+              current={currentDoor === "sign-in"}
+              mark={<LogIn aria-hidden="true" />}
+              ref={(element) => {
+                doors.current["sign-in"] = element;
+              }}
+              onPress={signInToAForge}
+            />
+          </div>
+          {stepSaid}
+        </>
+      }
+    >
+      {page ?? home}
+    </Launcher>
   );
 }
 

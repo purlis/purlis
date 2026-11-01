@@ -23,7 +23,7 @@ export const FORGE_NAME: Record<Exclude<Where, "mac">, string> = {
 const EMPTY = ":empty";
 
 /** The place picked last to hold projects: the one Get a project remembers too (ruling Q7). */
-function rememberedParent(): string | undefined {
+export function rememberedParent(): string | undefined {
   try {
     return globalThis.localStorage?.getItem(REMEMBERED_PARENT) ?? undefined;
   } catch {
@@ -31,7 +31,7 @@ function rememberedParent(): string | undefined {
   }
 }
 
-function rememberParent(parent: string): void {
+export function rememberParent(parent: string): void {
   try {
     globalThis.localStorage?.setItem(REMEMBERED_PARENT, parent);
   } catch {
@@ -382,11 +382,10 @@ export function CreateOnForge({
           <SettingRow
             label="Project template"
             help="Personas, a review checklist and the commands purlis asks you about, for the stack you work in."
-            grouped
             control={(ids) => (
               <Choice
                 ids={ids}
-                kind="radio"
+                kind="select"
                 options={[
                   { value: EMPTY, label: "Empty", says: "Only the steward persona." },
                   ...templates.map((one) => ({
@@ -402,17 +401,17 @@ export function CreateOnForge({
             )}
           />
         )}
-        <p className="get-project-folder">
-          Goes into <code className="where">{folder?.folder ?? "—"}</code>{" "}
-          <Button isDisabled={creating} onPress={choose}>
+        <div className="get-project-end">
+          <p className="get-project-folder">
+            Goes into <code className="where">{folder?.folder ?? "—"}</code>
+          </p>
+          <Button variant="ghost" isDisabled={creating} onPress={choose}>
             Choose a folder…
           </Button>
-        </p>
-        <SettingActions>
-          <Button type="submit" isDisabled={!ready}>
+          <Button variant={ready ? "primary" : "secondary"} type="submit" isDisabled={!ready}>
             Create project
           </Button>
-        </SettingActions>
+        </div>
       </Form>
 
       <div role="status" className="create-on-forge-progress">
@@ -456,22 +455,22 @@ export function WhereItLives({ value, onChange }: { value: Where; onChange: (to:
       control={(ids) => (
         <Choice
           ids={ids}
-          kind="radio"
+          kind="cards"
           options={[
             {
               value: "mac",
               label: "Only this Mac",
-              says: "No account needed. It is kept on this machine only, with no copy anywhere else.",
+              says: "No account needed, and no copy anywhere else.",
             },
             {
               value: "github",
               label: "GitHub",
-              says: "A new repo on GitHub, with your GitHub account.",
+              says: "A new repo on your account.",
             },
             {
               value: "gitlab",
               label: "GitLab",
-              says: "A new project on GitLab, with your GitLab account.",
+              says: "A new project on your account.",
             },
           ]}
           value={value}
