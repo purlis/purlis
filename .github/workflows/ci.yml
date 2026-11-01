@@ -83,6 +83,11 @@ env:
   # The test runner the `rust` job installs, one exact version (`.config/nextest.toml`).
   NEXTEST_VERSION: "0.9.146"
 
+# **Every job that runs on a push to main has chosen what its red means (#4471).** `ci` ending
+# `failure` on main stops both `release.yml` and `tools/land.mjs`, whichever job did it. So a job
+# here that can run on a push is required, or read by a required job (`needs.<job>.result`), or
+# `continue-on-error`, or listed with its reason: `tools/ci-push-jobs.mjs`, in the tools' tests.
+
 jobs:
   # Which scopes this change needs (`tools/ci-scope.mjs`, `.github/actions/change-scope`).
   changes:
@@ -1894,6 +1899,10 @@ jobs:
     # which refuses to land while main's newest finished `ci` run failed. This line goes once #4351
     # and #4352 are fixed, and the job is made required before the flag's flip (#2786).
     continue-on-error: true
+    # Twice the slowest seen (9 to 18 minutes). A timed-out job still turns the run `cancelled`,
+    # which skips the release: this bounds that, and main's queue behind it, from the 6 hours a job
+    # gets by default.
+    timeout-minutes: 40
     if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
     strategy:
       fail-fast: false
