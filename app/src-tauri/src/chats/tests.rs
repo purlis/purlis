@@ -2625,6 +2625,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             skills: None,
             plane_skills: true,
             skills_read: Default::default(),
+            last_prompt: None,
             runs_as: None,
             clones_at_start: None,
             prompt_key: None,
@@ -2703,6 +2704,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                last_prompt: None,
                 runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
@@ -3145,6 +3147,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                last_prompt: None,
                 runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
@@ -7536,6 +7539,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                last_prompt: None,
                 runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
@@ -7981,6 +7985,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                last_prompt: None,
                 runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
@@ -8038,6 +8043,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                last_prompt: None,
                 runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
@@ -8244,6 +8250,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                last_prompt: None,
                 runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
@@ -8521,6 +8528,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 }),
                 plane_skills,
                 skills_read: Default::default(),
+                last_prompt: None,
                 runs_as: None,
                 clones_at_start: None,
                 prompt_key: None,
@@ -9057,4 +9065,104 @@ fn a_reattached_chats_prompt_key_is_the_one_its_host_kept() {
         chats.skills_of(3).and_then(|chat| chat.salt),
         purlis_core::skillspan::PromptSalt::of_key("left-3")
     );
+}
+
+/// A router extension that reads prompts, its question held past the deadline where `slow`, and
+/// its answer an echo of the prompt where it answers.
+struct PromptRouter {
+    slow: bool,
+}
+
+impl purlis_core::skills::router::AskRouter for PromptRouter {
+    fn ask(
+        &self,
+        _: &str,
+        _: &purlis_core::extension::studio::Ask<'_>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        if self.slow {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+        Ok(serde_json::Map::from_iter([(
+            "pointed".to_owned(),
+            serde_json::json!(["release"]),
+        )]))
+    }
+
+    fn reads_prompts(&self, _: &str) -> bool {
+        true
+    }
+}
+
+/// An open chat routed at its start by `relevance`, which reads prompts and has a skill to point at.
+fn a_chat_its_router_reads_the_prompts_of(plane: &Path) -> (Chats, u32) {
+    use purlis_core::skills::router::{Record, Routed};
+    let host = Pretend::default();
+    host.leaves_running(3, None);
+    let chats = restartable_chats_of(plane, host);
+    chats.put_back(&left_running_in(plane, a_resumable_chat_in(plane)), SIZE);
+    let session = 3;
+    lock(&chats.open)
+        .get_mut(&session)
+        .expect("open")
+        .skills_read
+        .routed = Some(Arc::new(Routed {
+        record: Record {
+            routing: "01JROUTING0000000000000000".to_owned(),
+            router: "relevance".to_owned(),
+            ms: 34,
+            fell_back: None,
+            error: None,
+            hidden: Vec::new(),
+            prompt: false,
+            pointed: Vec::new(),
+        },
+        answer: Some(Vec::new()),
+        left_out: vec![("release".to_owned(), "Cuts a release.".to_owned())],
+        reads_prompts: true,
+    }));
+    (chats, session)
+}
+
+/// #4297: what the Routing page and the chat's tab read of a prompt is kept with the chat, each
+/// prompt's over the last's, and holds no word of the prompt. Seen red: only the event log had it.
+#[test]
+fn a_chat_keeps_its_latest_prompt_s_routing_and_no_word_of_the_prompt_4297() {
+    const WORDS: &str = "the-private-words";
+    let plane = tempfile::tempdir().expect("a plane");
+    let (chats, session) = a_chat_its_router_reads_the_prompts_of(plane.path());
+    let last = |chats: &Chats| chats.routings()[0].last_prompt.clone();
+    assert_eq!(last(&chats), None, "no prompt yet");
+
+    chats.asks_routers_with(Arc::new(PromptRouter { slow: false }));
+    assert!(chats.pointed(session, WORDS).is_some());
+    let answered = last(&chats).expect("kept");
+    assert_eq!(answered.fell_back, None);
+    assert_eq!(chats.last_prompt_of(session).as_ref(), Some(&answered));
+
+    chats.asks_routers_with(Arc::new(PromptRouter { slow: true }));
+    assert_eq!(chats.pointed(session, WORDS), None);
+    let slow = last(&chats).expect("kept");
+    assert!(slow.fell_back.is_some(), "the latest prompt's, a slow one");
+    assert!(slow.pointed.is_empty());
+    let kept = format!("{:?}", lock(&chats.open)[&session].last_prompt);
+    assert!(!kept.contains(WORDS), "{kept}");
+    let _ = chats.close(session);
+}
+
+/// #4297: an answer that lands after its chat was started again is not that new start's.
+#[test]
+fn a_prompt_answered_after_its_chat_started_again_is_not_kept_by_the_new_start_4297() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let (chats, session) = a_chat_its_router_reads_the_prompts_of(plane.path());
+    let was = lock(&chats.open)[&session].skills_read.routed.clone();
+    chats.keep_last_prompt(
+        session,
+        &Arc::new(purlis_core::skills::router::Routed {
+            reads_prompts: false,
+            ..(*was.clone().expect("routed")).clone()
+        }),
+        &was.expect("routed").record,
+    );
+    assert_eq!(lock(&chats.open)[&session].last_prompt, None);
+    let _ = chats.close(session);
 }

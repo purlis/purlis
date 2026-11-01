@@ -380,6 +380,52 @@ describe("the Routing page (#3692)", () => {
     expect(within(item).getByText("34 ms", { selector: "dd" })).toBeInTheDocument();
   });
 
+  it("shows a prompt the router was slow on as fallen back on that chat's row and beside it (#4297)", async () => {
+    const said =
+      "Its last prompt went on with no pointer: 'relevance' did not answer within 100 ms.";
+    const [quick, fell] = RELEVANCE.chats;
+    core(() =>
+      studio([], {
+        router: {
+          ...RELEVANCE,
+          chats: [
+            {
+              ...quick,
+              routing: {
+                ...quick.routing,
+                last_prompt: { ms: 101, fell_back: true, said },
+              },
+            },
+            {
+              ...fell,
+              routing: {
+                ...fell.routing,
+                last_prompt: { ms: 4, fell_back: false, said: "Its last prompt took 4 ms." },
+              },
+            },
+          ],
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    renderStudio(inWorkspace("ops"), "routing");
+
+    const row = await screen.findByTestId("routed-chat-3");
+    expect(row).toHaveTextContent("Last prompt fell back");
+    expect(row).not.toHaveTextContent("34 ms");
+    expect(row).toHaveTextContent(said);
+    expect(row).toHaveTextContent("It hid 2 skills at the chat's start.");
+    // The start's fallback is the graver: the list itself is the built-in router's.
+    const other = screen.getByTestId("routed-chat-4");
+    expect(other).toHaveTextContent("Fell back to the built-in router");
+    expect(other).toHaveTextContent("Its last prompt took 4 ms.");
+
+    await user.click(row);
+    const item = await screen.findByTestId("routed-chat-item");
+    expect(within(item).getByText(said, { selector: "dd" })).toBeInTheDocument();
+    expect(within(item).getByText("34 ms", { selector: "dd" })).toBeInTheDocument();
+  });
+
   it("says why a choice that names no router is the built-in one", async () => {
     core(() =>
       studio([], {

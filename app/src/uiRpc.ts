@@ -11233,6 +11233,19 @@ export type SkillPinsTogether = {
 	most: number,
 };
 
+/**
+ *  **How a chat's router did on its latest prompt** (#4297, ADR 0102 §6): the core's routing
+ *  record of it, as the chat's tab and the studio say it. No word of the prompt.
+ */
+export type SkillPromptRouting = {
+	/**  How long its question took, in milliseconds. */
+	ms: number,
+	/**  Whether the prompt went on with no pointer because of how it did. */
+	fell_back: boolean,
+	/**  What a person is told of it, in the core's words. */
+	said: string,
+};
+
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
 /**  purlis's own. */
@@ -11268,6 +11281,11 @@ export type SkillRouting = {
 	fell_back: boolean,
 	/**  What a person is told of it, in the core's words. */
 	said: string,
+	/**
+	 *  How it did on the chat's latest prompt (#4297), where it reads prompts and was asked on
+	 *  one. Optional in the window's type, as most routers never are.
+	 */
+	last_prompt?: SkillPromptRouting | null,
 };
 
 /**  A skill source as the studio shows and adds one. */

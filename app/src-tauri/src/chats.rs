@@ -206,6 +206,8 @@ pub struct ChatRouted {
     pub workspace: Option<String>,
     pub persona: Option<String>,
     pub routed: std::sync::Arc<purlis_core::skills::router::Routed>,
+    /// How its router did on its latest prompt, where it was asked on one (#4297).
+    pub last_prompt: Option<purlis_core::skills::router::Record>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -438,6 +440,10 @@ struct Running {
     /// stamp and Use skill… route it from again, so neither reads its clone a second time and
     /// both see the set it was handed (#3245).
     skills_read: purlis_core::hoststart::ChatSkills,
+    /// **How its router did on its latest prompt** (#4297, ADR 0102 §6): the routing record, which
+    /// holds no word of the prompt, for the Routing page and its tab. Held only while it runs;
+    /// the event log keeps every one.
+    last_prompt: Option<purlis_core::skills::router::Record>,
     /// **A runner chat's workspace clones as its session started here** (#2053): each clone of
     /// the plane's workspaces and its `.git`'s identity, read as this window started it. Only
     /// these name its repos for a GitHub App's token this desktop mints for it. `None` for a
@@ -4524,6 +4530,7 @@ impl Chats {
                 grants_as: grants_persona_of(chat, &self.project),
                 skills: stamp,
                 skills_read: (*skills).clone(),
+                last_prompt: None,
                 plane_skills,
                 clones_at_start: clones_at_start.take(),
                 prompt_key,
@@ -5498,10 +5505,35 @@ impl Chats {
             .clone()?;
         let router = lock(&self.router).clone()?;
         let prompted = routed.on_prompt(prompt, &router)?;
+        self.keep_last_prompt(session, &routed, &prompted.record);
         if let Some(tell) = lock(&self.routed).as_ref() {
             tell(session, &prompted.record);
         }
         prompted.pointer
+    }
+
+    /// Keeps `record` as chat `session`'s latest prompt's routing, where the chat is still the
+    /// start `routed` came from: the router may take its 100 ms while it is started again.
+    fn keep_last_prompt(
+        &self,
+        session: u32,
+        routed: &Arc<purlis_core::skills::router::Routed>,
+        record: &purlis_core::skills::router::Record,
+    ) {
+        if let Some(running) = lock(&self.open).get_mut(&session)
+            && running
+                .skills_read
+                .routed
+                .as_ref()
+                .is_some_and(|now| Arc::ptr_eq(now, routed))
+        {
+            running.last_prompt = Some(record.clone());
+        }
+    }
+
+    /// **How chat `session`'s router did on its latest prompt** (#4297), for its tab.
+    pub fn last_prompt_of(&self, session: u32) -> Option<purlis_core::skills::router::Record> {
+        lock(&self.open).get(&session)?.last_prompt.clone()
     }
 
     /// **Every chat open here that its start routed by a router extension** (SK-15b), by number,
@@ -5516,6 +5548,7 @@ impl Chats {
                     workspace: running.workspace.clone(),
                     persona: running.persona().started_as,
                     routed: running.skills_read.routed.clone()?,
+                    last_prompt: running.last_prompt.clone(),
                 })
             })
             .collect();

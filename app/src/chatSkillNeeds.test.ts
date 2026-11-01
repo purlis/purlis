@@ -85,6 +85,56 @@ describe("a chat's needs as a whole", () => {
     ).toEqual(["3 skills of 30 · 1,234 of 6,000 characters"]);
   });
 
+  it("make a prompt the router fell back on a need, and a prompt it answered a line of the header (#4297)", () => {
+    const start = { router: "acme", ms: 9, fell_back: false, said: "Routed in 9 ms." };
+    const slow = {
+      ms: 101,
+      fell_back: true,
+      said: "Its last prompt went on with no pointer: 'acme' did not answer within 100 ms.",
+    };
+    const [need] = chatNeedsOf(
+      { ...NOTHING, routing: { ...start, last_prompt: slow } },
+      AT_THE_ROOT,
+    );
+    expect(need.id).toBe("routing");
+    expect(need.title).toBe("Its router fell back on a prompt");
+    expect(need.says).toBe(slow.said);
+    expect(need.fix).toMatchObject({ act: "studio", page: "routing" });
+    expect(chatSetSaid({ ...NOTHING, routing: { ...start, last_prompt: slow } })).toEqual([
+      "3 skills of 30 · 1,234 of 6,000 characters",
+      "Routed in 9 ms.",
+    ]);
+
+    const quick = { ms: 4, fell_back: false, said: "Its last prompt took 4 ms." };
+    expect(
+      chatNeedsOf({ ...NOTHING, routing: { ...start, last_prompt: quick } }, AT_THE_ROOT),
+    ).toEqual([]);
+    expect(chatSetSaid({ ...NOTHING, routing: { ...start, last_prompt: quick } })).toEqual([
+      "3 skills of 30 · 1,234 of 6,000 characters",
+      "Routed in 9 ms.",
+      "Its last prompt took 4 ms.",
+    ]);
+  });
+
+  it("say both where a chat's start and its last prompt fell back, in one need (#4297)", () => {
+    const needs = chatNeedsOf(
+      {
+        ...NOTHING,
+        routing: {
+          router: "acme",
+          ms: 9,
+          fell_back: true,
+          said: "acme fell back.",
+          last_prompt: { ms: 101, fell_back: true, said: "Its last prompt went on." },
+        },
+      },
+      AT_THE_ROOT,
+    );
+    expect(needs).toHaveLength(1);
+    expect(needs[0].title).toBe("Its router fell back");
+    expect(needs[0].says).toBe("acme fell back. Its last prompt went on.");
+  });
+
   it("send a persona's missing skills to that persona's studio", () => {
     const [need] = chatNeedsOf(
       {

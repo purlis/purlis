@@ -353,6 +353,19 @@ pub struct Record {
     pub pointed: Vec<String>,
 }
 
+impl Record {
+    /// **What a person is told of a prompt's routing** (#4297, ADR 0102 §6): its timing, or that
+    /// the prompt went on with no pointer and why, in purlis's own words, so never a word of the
+    /// prompt.
+    pub fn prompt_said(&self) -> String {
+        match (&self.fell_back, &self.error) {
+            (None, _) => format!("Its last prompt took {} ms.", self.ms),
+            (Some(_), Some(why)) => format!("Its last prompt went on with no pointer: {why}."),
+            (Some(_), None) => "Its last prompt went on with no pointer.".to_owned(),
+        }
+    }
+}
+
 /// **What came of asking a chat's router at its start**: the record, and the answer the set took,
 /// which every later routing of the chat's set applies again ([`super::PlaneSkills::routed`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
