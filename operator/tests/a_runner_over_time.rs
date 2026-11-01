@@ -92,6 +92,7 @@ fn a_kept_claim_is_noticed_then_deleted_and_never_sooner() {
     let status: &mut ClaimStatus = noticed.status.as_mut().unwrap();
     let mut told = status.conditions[0].clone();
     told.type_ = DELETION_NOTICE.into();
+    told.status = "True".into();
     told.last_transition_time = Time(start + hours(90));
     status.conditions.push(told);
     assert!(matches!(at(&noticed, 99), Retention::Notice { .. }));
