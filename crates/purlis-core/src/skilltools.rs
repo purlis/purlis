@@ -24,6 +24,11 @@
 //! the harness's own skill tool, whose start opens the run. Anywhere else the skill is loaded and
 //! the answer says "Narrowing not applied", never silently.
 //!
+//! **A manual-only skill is loaded only when the person asked for it** (#4529): a harness never
+//! starts one by itself, so neither does this tool, unless the call says [`PERSON_ASKED`]. Without
+//! it the load opens no run, and its answer says when to use it. That word is the model's, so
+//! this stops a skill firing by itself and is no security boundary.
+//!
 //! **`skill_runs` shows the runs of the chat's own copies**: of a skill of its set, of the same
 //! copy (its level), and run in the chat's own place. A run whose row does not say which copy it
 //! is of (written before this) is no copy's, and is not shown.
@@ -49,6 +54,9 @@ pub const SKILL_RUNS: &str = "skill_runs";
 pub const SKILL_FIND: &str = "skill_find";
 /// The tool that loads one of the chat's skills by its name, and opens its run.
 pub const SKILL_LOAD: &str = "skill_load";
+
+/// The argument of [`SKILL_LOAD`] that says the person asked for this skill by name.
+pub const PERSON_ASKED: &str = "person_asked";
 
 /// The most runs one `skill_runs` lists.
 const MOST_RUNS: usize = 20;
@@ -90,12 +98,25 @@ pub static TOOLS: [Tool; 4] = [
         name: SKILL_LOAD,
         description: "Load one of this chat's skills by its name: its instructions, and the \
                       paths of the other files in its folder, which it may tell you to read or \
-                      run. Follow it before acting on the request it matches.",
+                      run. Follow it before acting on the request it matches. A manual-only \
+                      skill is not loaded unless the person named it.",
         schema: || {
-            one_string(
-                "name",
-                "The skill's name, as skill_list or skill_find gives it.",
-            )
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The skill's name, as skill_list or skill_find gives it.",
+                    },
+                    PERSON_ASKED: {
+                        "type": "boolean",
+                        "description": "True only if the person named this skill and asked for \
+                                        it. Never set it because the skill seems to fit.",
+                    },
+                },
+                "required": ["name"],
+                "additionalProperties": false,
+            })
         },
         read_only: true,
     },
@@ -195,7 +216,8 @@ pub fn call(
         SKILL_LOAD => {
             let name = text(args, "name")
                 .ok_or_else(|| "say which skill to load, by its name".to_owned())?;
-            load(chat, &set, name, start)
+            let person_asked = args.get(PERSON_ASKED).and_then(Value::as_bool) == Some(true);
+            load(chat, &set, name, person_asked, start)
         }
         other => Err(format!("purlis has no skill tool {other:?}")),
     }
@@ -262,6 +284,7 @@ fn load(
     chat: &Asking<'_>,
     set: &SkillSet,
     name: &str,
+    person_asked: bool,
     start: &dyn Fn(&str),
 ) -> Result<String, String> {
     let effective = purlis_skills::by_name(set, name).ok_or_else(|| {
@@ -273,6 +296,12 @@ fn load(
     })?;
     let loaded = purlis_skills::load(effective, &chat.honours())?;
     let skill = &effective.skill.name;
+    if loaded.manual && !person_asked {
+        return Ok(format!(
+            "`{skill}` is manual-only, so it was not loaded. Load it again with {PERSON_ASKED} \
+             true only if the person named this skill. Otherwise ask the person to run it."
+        ));
+    }
     if loaded.narrowing.any()
         && let Some(words) = chat.narrowed_start(effective)
     {
