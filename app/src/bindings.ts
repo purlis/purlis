@@ -3138,7 +3138,14 @@ export const commands = {
 	 *  **Where the runner of a chat being started has got to** (#3709), read from the cluster, for the
 	 *  window's Start while it waits. Nothing where there is no stage to say.
 	 */
-	runnerStage: (plane: PlaneId, workspace: string | null) => typedError<RunnerStage | null, string>(__TAURI_INVOKE("runner_stage", { plane, workspace })),
+	runnerStage: (plane: PlaneId, workspace: string | null) => typedError<{
+	/**  The stage, in the words the person reads. */
+	said: string,
+	/**  One line more about it. */
+	more: string,
+	/**  The cluster's own words for why it waits, where it gave them. */
+	cluster_said: string | null,
+} | null, string>(__TAURI_INVOKE("runner_stage", { plane, workspace })),
 	/**
 	 *  **Adds a cluster pool on this machine** (#3292): pins the key the person checked, claims a
 	 *  runner of the cluster's Pool, waits for its operator to vouch for it, pairs it and keeps it.
