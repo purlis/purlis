@@ -1039,13 +1039,17 @@ fn a_profile_row_late_by_the_pools_wait_offers_double_and_no_other_does() {
     use purlis_core::poollimits::{LimitId, hits_said_in};
     let said = late_said(
         "late-on-a-row",
-        30,
+        &purlis_core::poollimits::Chosen::default(),
         crate::runnerlinks::ANSWER_LATE.to_owned(),
     );
     assert!(said.contains("raise it to 60 seconds"), "{said}");
     let hits = hits_said_in("late-on-a-row", &said);
     assert_eq!(hits[0].limit, LimitId::AnswerWait);
-    let other = late_said("other-on-a-row", 30, "the runner said: no".to_owned());
+    let other = late_said(
+        "other-on-a-row",
+        &purlis_core::poollimits::Chosen::default(),
+        "the runner said: no".to_owned(),
+    );
     assert_eq!(other, "the runner said: no");
     assert!(hits_said_in("other-on-a-row", &other).is_empty());
 }

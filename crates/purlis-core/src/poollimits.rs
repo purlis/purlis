@@ -755,13 +755,15 @@ impl Chosen {
     /// limit can't be, says nothing; a default above the highest is dropped. A highest below what
     /// the limit can be holds at the least it can be, so what asked for strictness still gets it.
     /// A limit only a cluster pool has isn't a Pool's to set: it's the wait to be vouched for, and
-    /// the wait for a thing shouldn't be set by that thing. So a Pool can't make a limit more than
+    /// the wait for a thing shouldn't be set by that thing. A limit shaping a runner isn't either:
+    /// a cluster pool's runner is shaped in its cluster. So a Pool can't make a limit more than
     /// purlis can carry.
     #[must_use]
     pub fn under_team(mut self, team: Option<&Value>) -> Chosen {
         self.team_default = [None; ALL.len()];
         self.team_highest = [None; ALL.len()];
-        for limit in all().iter().filter(|limit| !limit.clusters_only) {
+        let a_pools = |limit: &&Limit| !limit.clusters_only && !limit.shapes_runner();
+        for limit in all().iter().filter(a_pools) {
             let Some(entry) = team.and_then(|team| team.get(limit.key)) else {
                 continue;
             };
@@ -1277,7 +1279,9 @@ mod tests {
         let odd = Chosen::default().under_team(Some(&json!({
             "answerWait": {"highest": 3},
             "vouchWait": {"default": 60, "highest": 60},
+            "memory": {"highest": 1024},
         })));
+        assert_eq!(odd.team_highest(LimitId::Memory), None);
         assert_eq!(odd.team_highest(LimitId::AnswerWait), Some(5));
         assert_eq!(odd.in_force(LimitId::VouchWait), 5);
         assert_eq!(odd.team_highest(LimitId::VouchWait), None);
