@@ -41,16 +41,26 @@ pub enum PoolCommand {
     },
 }
 
-/// Runs `command`.
-pub fn run(command: PoolCommand) -> Result<u8, String> {
+/// Runs `command`, and says why not where it can't.
+pub fn run(command: &PoolCommand) -> std::process::ExitCode {
+    match answered(command) {
+        Ok(code) => std::process::ExitCode::from(code),
+        Err(why) => {
+            crate::voice::err(why);
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn answered(command: &PoolCommand) -> Result<u8, String> {
     let config = || {
         purlis_core::machine::config_root()
             .ok_or_else(|| "There is no config home on this machine to keep a pool in.".to_owned())
     };
     match command {
         PoolCommand::Limits { pool, json } => {
-            let held = runners::limits_held_of(&config()?, &pool).map_err(|why| why.to_string())?;
-            if json {
+            let held = runners::limits_held_of(&config()?, pool).map_err(|why| why.to_string())?;
+            if *json {
                 println!("{}", limits_json(&held));
             } else {
                 for line in limits_lines(&held) {
@@ -65,21 +75,22 @@ pub fn run(command: PoolCommand) -> Result<u8, String> {
             value,
             reset: _,
         } => {
-            let limit = poollimits::of_key(&key).ok_or_else(|| {
+            let limit = poollimits::of_key(key).ok_or_else(|| {
                 format!(
                     "a pool has no limit named {}: `purlis pool limits <pool>` lists them",
-                    purlis_core::shown::short(&key)
+                    purlis_core::shown::short(key)
                 )
             })?;
             let value = value
-                .map(|typed| limit.check_typed(&typed, None))
+                .as_deref()
+                .map(|typed| limit.check_typed(typed, None))
                 .transpose()?;
             if crate::memory::in_a_chat() {
-                return crate::brokered::propose_limit(&pool, limit, value);
+                return crate::brokered::propose_limit(pool, limit, value);
             }
-            runners::set_pool_limit(&config()?, &pool, limit.id, value)
+            runners::set_pool_limit(&config()?, pool, limit.id, value)
                 .map_err(|why| why.to_string())?;
-            crate::voice::ok(saved_said(&pool, limit, value));
+            crate::voice::ok(saved_said(pool, limit, value));
             Ok(0)
         }
     }
