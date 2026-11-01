@@ -3162,3 +3162,27 @@ fn a_studio_read_asks_git_nothing_about_a_local_file_with_none_of_its_tables() {
     assert!(old.is_empty());
     assert_eq!(crate::profiles::GIT_ASKS.with(std::cell::Cell::get), asks);
 }
+
+/// A Local file that does hold what a studio reads is still asked about, and once in one read:
+/// a file git would carry decides nothing (charter-app#308).
+#[test]
+fn a_studio_read_asks_git_once_about_a_local_file_with_its_tables() {
+    let dir = tempfile::tempdir().expect("a plane");
+    let root = dir.path();
+    std::fs::write(
+        root.join("charter.local.toml"),
+        "[harness_skills.claude]\n\n[extensions.one]\nenabled = true\n",
+    )
+    .expect("written");
+    let asks = crate::profiles::GIT_ASKS.with(std::cell::Cell::get);
+
+    crate::profiles::git_asked_once(|| {
+        crate::harness_plugin::Choices::read(root);
+        crate::extension::project::Choices::read(root);
+    });
+
+    assert_eq!(
+        crate::profiles::GIT_ASKS.with(std::cell::Cell::get),
+        asks + 1
+    );
+}

@@ -1393,7 +1393,7 @@ thread_local! {
 /// seven times or so, each a `git status` (about 140 ms on a macOS CI runner, most of a New
 /// tab's cost).
 ///
-/// **For one start, never longer.** What git answers changes when the person runs
+/// **For one start, or one list of a project's skills (#4351), never longer.** What git answers changes when the person runs
 /// `git add -f` or `git rm --cached`, so the answer is dropped when `work` returns and the
 /// next start asks again. **And only while nothing it was asked against has changed**
 /// ([`Stamp`]): the local file, or the plane's `.gitignore`, index or exclude file, changed

@@ -35,7 +35,7 @@
 //!
 //! **A `charter.local.toml` git would carry is no layer at all** (charter-app#308): tracked, or
 //! not ignored, it would reach every clone, so [`Choices::read`] takes the two files through
-//! [`crate::settings::layer_text`], which drops such a Local file whole, as the profiles loader
+//! [`crate::settings::layer_text`] and [`crate::settings::local_layer_holding`], which drop such a Local file whole, as the profiles loader
 //! refuses its profiles. The workspace, then Shared, decide instead.
 
 use std::collections::{BTreeMap, BTreeSet};
