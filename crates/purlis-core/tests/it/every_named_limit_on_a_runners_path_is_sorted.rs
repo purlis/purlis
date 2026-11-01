@@ -46,6 +46,7 @@ const TREES: &[&str] = &[
     "app/src-tauri/src/runnercode.rs",
     "crates/session-protocol/src/code.rs",
     "crates/session-protocol/src/link.rs",
+    "crates/session-protocol/src/session.rs",
     "crates/host/src/reach.rs",
     "crates/host/src/relay.rs",
 ];
@@ -61,8 +62,8 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     (
         "app/src-tauri/src/hostedsessions.rs",
         "ANSWER_WITHIN",
-        PoolLimit,
-        "a default in poollimits",
+        Internal,
+        "the wait on this machine's own host: a pool's follows answerWait",
     ),
     (
         "app/src-tauri/src/hostedsessions.rs",
@@ -77,10 +78,82 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
         "how purlis waits or looks",
     ),
     (
+        "app/src-tauri/src/hostedsessions.rs",
+        "MOST_HELD_FRAME_BYTES",
+        Security,
+        "bounds what a runner or a peer can make this machine hold",
+    ),
+    (
+        "app/src-tauri/src/hostedsessions.rs",
+        "MOST_HELD_FRAME_HEIGHT",
+        Security,
+        "bounds what a runner or a peer can make this machine hold",
+    ),
+    (
+        "app/src-tauri/src/hostedsessions.rs",
+        "A_REPLY_IS_AT_MOST",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "app/src-tauri/src/hostedsessions.rs",
+        "MOST_UNCLAIMED_ENDS",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "app/src-tauri/src/hostedsessions.rs",
+        "MIB",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "app/src-tauri/src/hostedsessions.rs",
+        "NAMED_AGAIN_AFTER",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "app/src-tauri/src/hostedsessions.rs",
+        "LOOK_FOR_A_NEW_HOST_EVERY",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
         "app/src-tauri/src/poolprofiles.rs",
         "STEP_WITHIN",
         Internal,
         "how purlis waits or looks",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
+        "MOST_HELD_PAGES",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
+        "ANSWER_WITHIN",
+        Internal,
+        "what a link waits with no pool's limit to hand (#4275's leftovers)",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
+        "KEPT_WITHIN",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
+        "ALL_KEPT_WITHIN",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
+        "SECONDS_KEPT_PER_MIB",
+        Internal,
+        "purlis's own tuning",
     ),
     (
         "crates/host/src/reach.rs",
@@ -193,20 +266,20 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     (
         "crates/purlis-core/src/dockerpool.rs",
         "FEWEST_PIDS",
-        Internal,
-        "what the format or a tool holds",
+        AlreadyALimit,
+        "the floor of a pool's processes, CPUs or memory",
     ),
     (
         "crates/purlis-core/src/dockerpool.rs",
         "FEWEST_MILLICPUS",
-        Internal,
-        "what the format or a tool holds",
+        AlreadyALimit,
+        "the floor of a pool's processes, CPUs or memory",
     ),
     (
         "crates/purlis-core/src/dockerpool.rs",
         "LEAST_MEMORY_MIB",
-        Internal,
-        "what the format or a tool holds",
+        AlreadyALimit,
+        "the floor of a pool's processes, CPUs or memory",
     ),
     (
         "crates/purlis-core/src/dockerpool.rs",
@@ -419,6 +492,78 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
         "how purlis waits or looks",
     ),
     (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "MOST_CODE",
+        Security,
+        "bounds what a login's output or a paste can make purlis hold",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "DRAIN_WITHIN",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "KEPT_LINES",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "MOST_LINE",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "MOST_PARTIAL",
+        Security,
+        "bounds what a login's output or a paste can make purlis hold",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "MOST_SAID",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "NEXT_WITHIN",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "MOST_TYPED",
+        Security,
+        "bounds what a login's output or a paste can make purlis hold",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "MOST_WAITING",
+        Security,
+        "bounds what a login's output or a paste can make purlis hold",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "UNHEARD_WITHIN",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "LEAST_STATE",
+        Security,
+        "bounds what a login's output or a paste can make purlis hold",
+    ),
+    (
+        "crates/purlis-core/src/profilestore/sign_in/driven.rs",
+        "MOST_STATE",
+        Security,
+        "bounds what a login's output or a paste can make purlis hold",
+    ),
+    (
         "crates/purlis-core/src/profilestore/sign_in/held.rs",
         "LOOK",
         Internal,
@@ -462,6 +607,12 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/session-protocol/src/code.rs",
+        "CODE",
+        Internal,
+        "what the format or a tool holds",
+    ),
+    (
+        "crates/session-protocol/src/code.rs",
         "MOST_BUNDLE_BYTES",
         PoolLimit,
         "a default in poollimits",
@@ -487,8 +638,8 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     (
         "crates/session-protocol/src/link.rs",
         "MOST_CONTROL_FRAME_BYTES",
-        Internal,
-        "what the format or a tool holds",
+        Security,
+        "bounds what a runner or a peer can make this machine hold",
     ),
     (
         "crates/session-protocol/src/link.rs",
@@ -498,7 +649,79 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/session-protocol/src/link.rs",
+        "CONTROL_LANE",
+        Internal,
+        "what the format or a tool holds",
+    ),
+    (
+        "crates/session-protocol/src/link.rs",
         "MOST_STREAMS",
+        Security,
+        "bounds what a runner or a peer can make this machine hold",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST",
+        Security,
+        "bounds what a runner or a peer can make this machine hold",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_PROFILE_SETTINGS_BYTES",
+        PoolLimit,
+        "a default in poollimits",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_PROFILE_SETTINGS_FILES",
+        PoolLimit,
+        "a default in poollimits",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_PROFILE_SETTINGS_STAGED_BYTES",
+        Fixed,
+        "the top of what a limit can be",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_PROFILE_SETTINGS_STAGED_FILES",
+        Fixed,
+        "the top of what a limit can be",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_SETTINGS_PATH_BYTES",
+        Security,
+        "bounds what a runner or a peer can make this machine hold",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_BATCH_BYTES",
+        Internal,
+        "what the format or a tool holds",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "PIECE_FRAMING",
+        Internal,
+        "what the format or a tool holds",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "BYTES",
+        Security,
+        "the length of a key",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_CALLS_IN_FLIGHT",
+        Security,
+        "bounds what a runner or a peer can make this machine hold",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_EVENTS_QUEUED",
         Internal,
         "what the format or a tool holds",
     ),
@@ -509,9 +732,7 @@ fn sources(path: &Path, into: &mut Vec<PathBuf>) {
         into.push(path.to_path_buf());
         return;
     }
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return;
-    };
+    let entries = std::fs::read_dir(path).unwrap_or_else(|why| panic!("{path:?}: {why}"));
     for entry in entries.flatten() {
         let path = entry.path();
         let name = path.file_name().unwrap_or_default().to_string_lossy();
@@ -538,16 +759,59 @@ fn numeric_const(line: &str) -> Option<&str> {
         .bytes()
         .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_');
     let kind = rest.split('=').next()?;
-    let numeric = ["Duration", "usize", "u64", "u32", "u16", "i64"]
-        .iter()
-        .any(|word| kind.contains(word));
+    let numeric = [
+        "Duration", "u8", "u16", "u32", "u64", "u128", "usize", "i32", "i64", "isize", "f64",
+        "NonZero",
+    ]
+    .iter()
+    .any(|word| kind.contains(word));
     (upper && numeric).then_some(name)
+}
+
+/// The numeric consts of `text` a shipped build has: up to a `#[cfg(test)] mod`, and leaving out
+/// only the one item `#[cfg(test)]` stands on anywhere else.
+fn shipped_consts(text: &str) -> Vec<&str> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut consts = Vec::new();
+    let mut test_only = false;
+    for (at, line) in lines.iter().enumerate() {
+        let line = line.trim();
+        if line == "#[cfg(test)]" {
+            let next = lines.get(at + 1).map_or("", |next| next.trim());
+            if ["mod ", "pub mod ", "pub(crate) mod "]
+                .iter()
+                .any(|start| next.starts_with(start))
+            {
+                break;
+            }
+            test_only = true;
+        } else if !line.is_empty() && !line.starts_with("//") && !line.starts_with("#[") {
+            if !test_only && let Some(constant) = numeric_const(line) {
+                consts.push(constant);
+            }
+            test_only = false;
+        }
+    }
+    consts
+}
+
+/// The scan's own edges: a test-only item costs that item, and only a test module ends the file.
+#[test]
+fn the_scan_reads_past_a_test_only_item_and_stops_at_a_test_module() {
+    purlis_core::unsteered!();
+    let text = "const A: u8 = 1;\n#[cfg(test)]\nconst B: u8 = 2;\n#[cfg(test)]\nfn c() {}\n\
+                pub(crate) const D: Duration = X;\n#[cfg(test)]\nmod tests {\nconst E: u8 = 3;\n}\n";
+    assert_eq!(shipped_consts(text), ["A", "D"]);
 }
 
 fn found() -> Vec<(String, String)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();
     for tree in TREES {
+        assert!(
+            root.join(tree).exists(),
+            "{tree} is gone: name where it went"
+        );
         sources(&root.join(tree), &mut files);
     }
     assert!(
@@ -564,14 +828,11 @@ fn found() -> Vec<(String, String)> {
             .display()
             .to_string()
             .replace('\\', "/");
-        for line in text.lines() {
-            if line.contains("#[cfg(test)]") {
-                break;
-            }
-            if let Some(constant) = numeric_const(line) {
-                found.push((name.clone(), constant.to_owned()));
-            }
-        }
+        found.extend(
+            shipped_consts(&text)
+                .into_iter()
+                .map(|constant| (name.clone(), constant.to_owned())),
+        );
     }
     found
 }
