@@ -3246,7 +3246,9 @@ fn pool_login_of(
     let taken = grants.take(session, asker.persona.as_deref(), name);
     let (login, identity) = match (&granted, &taken) {
         (Some(_), None) => {
-            return Err(format!("login {name} was used already, so nothing was filled"));
+            return Err(format!(
+                "login {name} was used already, so nothing was filled"
+            ));
         }
         (Some(_), Some(tool)) => purlis_core::secrets::brokered::granted_login(&asker, tool)?,
         (None, _) => purlis_core::secrets::brokered::login_and_identity_for(&asker, name, true)?,

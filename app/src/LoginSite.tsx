@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { LoginShown, Shown } from "./bindings";
 import { TextField } from "./ui/field/Field";
 
@@ -13,10 +13,10 @@ const siteOf = (login: LoginShown) => `${login.domain}${login.path === "/" ? "" 
  * again once the notice is drawn anew, so the field never shows what isn't being asked.
  */
 export function useTypedSite(ask: Shown) {
-  const [typed, setTyped] = useState<string>();
   const shown = ask.answer.via === "browser-login" ? ask.answer.shown : undefined;
-  useEffect(() => setTyped(undefined), [shown]);
-  return [typed, setTyped] as const;
+  const [held, setHeld] = useState<{ shown: string | undefined; text: string }>();
+  const typed = held?.shown === shown ? held?.text : undefined;
+  return [typed, (text: string) => setHeld({ shown, text })] as const;
 }
 
 /**
