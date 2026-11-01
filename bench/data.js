@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793558953807,
+  "lastUpdate": 1793561071820,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35322,6 +35322,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4540845,
             "unit": "ms",
             "extra": "median of 5 runs: 101.365, 101.393, 101.454, 101.580, 101.594 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "42b56cab2d23fb4f5cf01099b4b3f8cc7175abab",
+          "message": "A pool's limits: every named limit on a runner's path has a group (#4449)\n\n* A pool's limits: every named limit on a runner's path has a group\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR0Y7GQFY78BVKK4WHZXYW\nPurlis-Persona: steward\n\n* A pool's limits: the sorted test's module in rustfmt's order\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR0Y7GQFY78BVKK4WHZXYW\nPurlis-Persona: steward\n\n* A pool's limits: the sorted tests shed the shell's steering\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR0Y7GQFY78BVKK4WHZXYW\nPurlis-Persona: steward\n\n* A pool's limits: CI's scope knows the sorted test walks only code\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR0Y7GQFY78BVKK4WHZXYW\nPurlis-Persona: steward\n\n* A pool's limits: the scan reads past a test-only item; session.rs is on the path\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR0Y7GQFY78BVKK4WHZXYW\nPurlis-Persona: steward\n\n* A pool's limits: sort the two named limits main has added since\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AR0Y7GQFY78BVKK4WHZXYW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T18:27:45Z",
+          "tree_id": "9e6dca21bf1a193f514c4cacc8d0e9fe5e205718",
+          "url": "https://github.com/purlis/purlis/commit/42b56cab2d23fb4f5cf01099b4b3f8cc7175abab"
+        },
+        "date": 1793561065430,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5383775000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.537, 0.538, 0.539, 0.543 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3170195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.967, 16.181, 16.317, 16.383, 16.578 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.52885599999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.904, 100.626, 101.529, 102.513, 103.924 ms"
           }
         ]
       }
