@@ -812,6 +812,91 @@ pub fn claim_name(device: &str, pool: &str) -> String {
     format!("{pool}-{}", crate::clusterpool::desktop_label(device))
 }
 
+/// **The claim of the chat `chat`'s fresh runner of a cluster pool** (#3709): [`claim_name`]'s, and
+/// the chat's hash, so a desktop's chats never take each other's.
+pub fn fresh_claim_name(device: &str, pool: &str, chat: &str) -> String {
+    let chat = crate::clusterpool::desktop_label(chat);
+    format!("{}-{}", claim_name(device, pool), &chat[..8])
+}
+
+/// **A runner of the cluster pool `name` for the chat `chat` alone** (#3709), kept only while that
+/// chat runs: a fresh claim is made, waited on for at most `within` until the operator vouches for
+/// it under the pool's pin, paired with no question and kept. What fails deletes the claim, and says so. A chat that has one is given it again.
+pub fn claim_fresh(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    chat: &str,
+    desktop: &Pinned,
+    within: std::time::Duration,
+) -> Result<runners::ClusterKept, Refused> {
+    if let Some((_, kept)) = runners::fresh_runner_of(config_root, chat)? {
+        return Ok(kept);
+    }
+    let pool = runners::cluster_pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| {
+            Refused::Other(format!("no cluster pool named {name} is on this machine"))
+        })?;
+    let kubectl = pool.kubectl(kubectl);
+    let pin = pool.pin()?;
+    let claim = fresh_claim_name(&desktop.device, pool.name(), chat);
+    let label = crate::clusterpool::desktop_label(&desktop.device);
+    let paired = crate::clusterpool::claim_and_pair(
+        &kubectl,
+        &pin,
+        &crate::clusterpool::ClaimTo {
+            pool: pool.pool(),
+            namespace: pool.namespace(),
+            name: &claim,
+            desktop: &label,
+            keeping: crate::clusterpool::Keeping::Fresh,
+        },
+        desktop,
+        within,
+        ASKED_EVERY,
+    )
+    .map_err(|why| Refused::Other(why.to_string()))?;
+    let kept = runners::ClusterKept {
+        name: pool.name().to_owned(),
+        claimed: paired.claimed,
+        pod: paired.vouched.pod,
+        pinned: paired.pinned,
+        paired: runners::now(),
+        chat: Some(chat.to_owned()),
+    };
+    let locked = runners::lock(config_root);
+    match runners::keep_cluster_runner_locked(config_root, &kept, desktop, &locked) {
+        Ok(()) => Ok(kept),
+        Err(why) => Err(match kubectl.delete_claim(pool.namespace(), &claim) {
+            Ok(()) => why,
+            Err(left) => Refused::Other(format!(
+                "{why}; and the claim could not be deleted ({left}): delete the claim {claim} in \
+                 namespace {} with kubectl",
+                pool.namespace()
+            )),
+        }),
+    }
+}
+
+/// **The chat `chat` ended, so its fresh runner goes** (#3709): its claim is deleted, then its
+/// record. A claim that could not be deleted keeps its record, so it is tried again.
+pub fn release_fresh(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    chat: &str,
+) -> Result<(), Refused> {
+    let Some((pool, kept)) = runners::fresh_runner_of(config_root, chat)? else {
+        return Ok(());
+    };
+    pool.kubectl(kubectl)
+        .delete_claim(&kept.claimed.namespace, &kept.claimed.name)
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    let locked = runners::lock(config_root);
+    runners::forget_fresh_runner_locked(config_root, chat, &locked)
+}
+
 /// **The lock an add of the cluster pool `name` holds from start to end** (#3292): a removal of
 /// that pool takes it first, so it waits for the add to finish rather than meet a pool half
 /// made.
@@ -1017,6 +1102,7 @@ pub fn add_cluster(
             namespace: pool.namespace(),
             name: &name,
             desktop: &label,
+            keeping: crate::clusterpool::Keeping::Kept,
         },
         desktop,
         within,
@@ -1030,6 +1116,7 @@ pub fn add_cluster(
             pod: paired.vouched.pod,
             pinned: paired.pinned,
             paired: runners::now(),
+            chat: None,
         };
         let locked = runners::lock(config_root);
         match runners::keep_cluster_runner_locked(config_root, &kept, desktop, &locked) {
@@ -1624,8 +1711,24 @@ pub fn remove_cluster(
         tracing::info!("purlis: pool {name}'s runner was not unpaired: {why}");
     }
     let left = claim_released(&pool, kept.as_ref(), kubectl, device);
+    // Each chat's own runner of the pool goes with it (#3709): those chats' links end with it.
+    if let Some(kubectl) = kubectl {
+        let kubectl = pool.kubectl(kubectl);
+        for fresh in runners::fresh_runners(config_root)?
+            .iter()
+            .filter(|fresh| fresh.name == name)
+        {
+            if let Err(why) = kubectl.delete_claim(&fresh.claimed.namespace, &fresh.claimed.name) {
+                tracing::warn!(
+                    "purlis: claim {} of pool {name} was not deleted: {why}",
+                    fresh.claimed.name
+                );
+            }
+        }
+    }
     {
         let locked = runners::lock(config_root);
+        runners::forget_fresh_runners_of_locked(config_root, name, &locked)?;
         runners::forget_cluster_runner_locked(config_root, name, &locked)?;
         runners::forget_pool_locked(config_root, name, &locked)?;
     }
