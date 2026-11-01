@@ -243,6 +243,8 @@ macro_rules! app_commands {
                 move_chat_now,
                 chat_moves,
                 chat_move_signed_in,
+                poolsignin_confirm::pool_sign_in_asked,
+                poolsignin_confirm::answer_pool_sign_in,
                 put_away_chat_move,
                 handoff::ask_persona_offer,
                 handoff::ask_persona_chat,

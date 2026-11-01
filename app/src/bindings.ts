@@ -1481,6 +1481,15 @@ export const commands = {
 	 */
 	chatMoveSignedIn: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("chat_move_signed_in", { plane, session })),
 	/**
+	 *  The question waiting for the person's answer, if one is.
+	 */
+	poolSignInAsked: () => __TAURI_INVOKE<PoolSignInAsk | null>("pool_sign_in_asked"),
+	/**
+	 *  **The person's answer to the question `id`**: only their press in the window calls this. One
+	 *  no longer waiting is left alone.
+	 */
+	answerPoolSignIn: (id: number, yes: boolean) => __TAURI_INVOKE<null>("answer_pool_sign_in", { id, yes }),
+	/**
 	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
 	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
 	 */
@@ -10583,6 +10592,12 @@ export type PoolLink =
 { state: "on_another_engine" };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
+export type PoolSignInAsk = {
+	id: number;
+	profile: string;
+	pool: string;
+};
+
 export type PoolProfileRow = {
 	name: string,
 	/**  The harness, as a profile's kind names it. */

@@ -14,6 +14,10 @@ fn no_keep(_: &str, _: &str) -> Result<Option<String>, String> {
     panic!("no runner is asked to keep anything")
 }
 
+fn no_approve(_: &str, _: &str) -> Result<Option<String>, String> {
+    panic!("the person is asked nothing")
+}
+
 fn keep(name: &str) -> Asked {
     Asked::KeepOnAPool {
         name: name.to_owned(),
@@ -49,11 +53,11 @@ fn the_window_forgets_only_a_name_this_machine_no_longer_has() {
     let never = |_: &str| -> Result<Option<String>, String> { panic!("no runner is asked") };
 
     assert!(matches!(
-        answer(&config, forget("work"), never, no_keep),
+        answer(&config, forget("work"), never, no_keep, no_approve),
         Said::Refused { why } if why.contains("still a profile")
     ));
     assert!(matches!(
-        answer(&config, forget("../up"), never, no_keep),
+        answer(&config, forget("../up"), never, no_keep, no_approve),
         Said::Refused { .. }
     ));
     assert_eq!(
@@ -61,7 +65,8 @@ fn the_window_forgets_only_a_name_this_machine_no_longer_has() {
             &config,
             forget("gone"),
             |name| Ok(Some(format!("{name} kept"))),
-            no_keep
+            no_keep,
+            no_approve
         ),
         Said::Asked {
             note: Some("gone kept".to_owned())
@@ -78,7 +83,8 @@ fn a_window_that_could_not_ask_says_so() {
             dir.path(),
             forget("gone"),
             |_| Err("no engine".to_owned()),
-            no_keep
+            no_keep,
+            no_approve
         ),
         Said::Refused {
             why: "no engine".to_owned()
@@ -98,24 +104,32 @@ fn the_window_keeps_only_a_profile_this_machine_has() {
     for name in ["gone", "../up"] {
         assert!(
             matches!(
-                answer(&config, keep(name), no_forget, no_keep),
+                answer(&config, keep(name), no_forget, no_keep, no_approve),
                 Said::Refused { .. }
             ),
             "{name}"
         );
     }
     assert_eq!(
-        answer(&config, keep("work"), no_forget, |name, pool| {
-            Ok(Some(format!("{name} on {pool}")))
-        }),
+        answer(
+            &config,
+            keep("work"),
+            no_forget,
+            |name, pool| { Ok(Some(format!("{name} on {pool}"))) },
+            no_approve
+        ),
         Said::Asked {
             note: Some("work on builds".to_owned())
         }
     );
     assert_eq!(
-        answer(&config, keep("work"), no_forget, |_, _| Err(
-            "not yours".to_owned()
-        )),
+        answer(
+            &config,
+            keep("work"),
+            no_forget,
+            |_, _| Err("not yours".to_owned()),
+            no_approve
+        ),
         Said::Refused {
             why: "not yours".to_owned()
         }
@@ -254,6 +268,108 @@ mod on_a_socket {
             beside(Path::new("/run/purlis/purlisd-abc.sock")),
             Path::new("/run/purlis/purlisd-abc-window.sock")
         );
+    }
+}
+
+fn sign_in(name: &str, pool: &str) -> Asked {
+    Asked::ApproveSignIn {
+        name: name.to_owned(),
+        pool: pool.to_owned(),
+    }
+}
+
+/// A `runners.json` under `config` holding the cluster pool `team`.
+fn a_pool_on(config: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let folder = crate::machine::dir(config);
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let file = folder.join(crate::machine::RUNNERS_FILE);
+    let held = serde_json::json!({
+        "version": 1,
+        "pools": [{
+            "name": "team", "kind": "cluster", "kubeconfig": "/nowhere/.kube/config",
+            "context": "team", "pool": "default", "namespace": "ada",
+            "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+            "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+            "holds": ["/opt/homebrew/bin/kubectl"],
+        }],
+        "runners": [],
+    });
+    std::fs::write(&file, held.to_string()).unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+/// **The person is asked only of what the window's own files name**: a profile and a pool of this
+/// machine's. Their answer is what comes back, a no as a refusal with its reason.
+#[test]
+fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    a_profile_on(&config, dir.path(), "work");
+    a_pool_on(&config);
+    let no_forget = |_: &str| -> Result<Option<String>, String> { panic!("nothing is forgotten") };
+
+    for (name, pool) in [("nobody", "team"), ("../up", "team"), ("work", "elsewhere")] {
+        assert!(
+            matches!(
+                answer(&config, sign_in(name, pool), no_forget, no_keep, no_approve),
+                Said::Refused { .. }
+            ),
+            "{name} on {pool}"
+        );
+    }
+    let yes = answer(
+        &config,
+        sign_in("work", "team"),
+        no_forget,
+        no_keep,
+        |name, pool| {
+            assert_eq!((name, pool), ("work", "team"));
+            Ok(None)
+        },
+    );
+    assert_eq!(yes, Said::Asked { note: None });
+    let no = answer(
+        &config,
+        sign_in("work", "team"),
+        no_forget,
+        no_keep,
+        |_, _| Err("you said no".to_owned()),
+    );
+    assert_eq!(
+        no,
+        Said::Refused {
+            why: "you said no".to_owned()
+        }
+    );
+}
+
+/// **Only the window's yes goes on**: no window, no answer in time and a no each stop it, and say
+/// nothing was started.
+#[test]
+fn a_sign_in_goes_on_only_on_the_windows_yes() {
+    let asked = std::cell::Cell::new(None);
+    let yes = approved("team", "work", |what| {
+        asked.set(Some(what.clone()));
+        Answered::Said(Said::Asked { note: None })
+    });
+    assert_eq!(yes, Ok(()));
+    assert_eq!(asked.take(), Some(sign_in("work", "team")));
+
+    for (answered, says) in [
+        (Answered::NoWindow, "none is running"),
+        (Answered::NoAnswer, "did not answer in time"),
+        (
+            Answered::Said(Said::Refused {
+                why: "you said no".to_owned(),
+            }),
+            "you said no",
+        ),
+    ] {
+        let said = approved("team", "work", |_| answered).unwrap_err();
+        assert!(said.contains(says), "{said}");
+        assert!(said.contains("othing was started"), "{said}");
     }
 }
 

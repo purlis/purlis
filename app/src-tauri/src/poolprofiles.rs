@@ -544,6 +544,10 @@ pub fn listen_for_the_command_line() {
                         &|yours, kept| keep_on_as(Ok(yours), &config, pool, kept, Waking::No),
                     )
                 },
+                |name, pool| match APP.get() {
+                    Some(app) => crate::poolsignin_confirm::ask_the_person(app, name, pool),
+                    None => Err("this window is still starting".to_owned()),
+                },
             )
         });
         if let Err(why) = listening {

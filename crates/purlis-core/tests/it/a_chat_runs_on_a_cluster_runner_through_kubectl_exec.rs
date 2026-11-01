@@ -1149,6 +1149,21 @@ fn the_command_signs_in_on_a_cluster_pool_only_marked_and_vouched_and_a_runner_f
     assert!(made, "{said}");
     let sign_in = ["profile", "sign-in", "work", "--pool", "team"];
 
+    // With no window, the command refuses and reaches nothing.
+    let (signed_in, said) = the_command(&purlis, machine.path(), &sign_in);
+    assert!(!signed_in);
+    assert!(said.contains("none is running"), "{said}");
+
+    // The person's window, saying yes.
+    let window = purlis_core::windowline::beside(&purlis_core::hostsocket::here_for(
+        std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
+        Some(&config),
+    ));
+    purlis_core::windowline::serve_on(&window, |_| purlis_core::windowline::Said::Asked {
+        note: None,
+    })
+    .expect("it listens");
+
     // Unmarked: refused, in words.
     let (signed_in, said) = the_command(&purlis, machine.path(), &sign_in);
     assert!(!signed_in);

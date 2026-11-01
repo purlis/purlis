@@ -564,7 +564,8 @@ on the profile's line: it opens the login's page in the browser here, takes the 
 and passes it back, shows the device code a vendor's login gives, or, for a login that waits for
 the browser, carries that one redirect to the runner, and says the profile is **signed in on
 <pool>** once the harness's own status check on the runner says so (spec #4023).
-`purlis profile sign-in <profile> --pool <pool>` takes the same steps in a terminal. As a verb, two
+`purlis profile sign-in <profile> --pool <pool>` takes the same steps in a terminal, once the person
+confirms it in the running window; with no window it refuses. As a verb, two
 words; the noun is "sign-in".
 _Avoid_: log in, login (for the verb), authenticate, authorize, connect (an account), copy a
 sign-in (nothing is copied)

@@ -18,6 +18,10 @@
 //! profile's line would do. It is private to one build and promises nothing across versions: where the words do
 //! not read, the command says what it says with no window. What the window says is marked before
 //! a terminal shows it.
+//!
+//! **A pool sign-in started from the command is confirmed in the window** ([`approved`]): the
+//! command asks before it reaches a runner or its engine, and goes on only on the person's answer
+//! there. With no window it refuses.
 
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -28,6 +32,10 @@ use std::time::{Duration, Instant};
 const THE_WINDOW_ANSWERS_WITHIN: Duration = Duration::from_secs(60);
 /// How long the command waits on the window keeping a profile: a runner may fetch its harness.
 const THE_WINDOW_KEEPS_WITHIN: Duration = Duration::from_secs(180);
+/// How long the person has to answer in the window: then it is taken back, as a no.
+pub const THE_PERSON_HAS: Duration = Duration::from_secs(120);
+/// How much longer than that the command waits, to hear the window say so.
+const THE_WINDOW_SAYS_WITHIN: Duration = Duration::from_secs(10);
 /// The most of one line either side reads: a name, or a note that names pools.
 const LONGEST_LINE: usize = 64 * 1024;
 /// How long the window waits for a peer's whole line, and to write its answer.
@@ -42,6 +50,9 @@ pub enum Asked {
     /// This machine's profile `name` is about to be signed in on pool `pool`: its runner keeps it
     /// first, and the pool names it (#4112).
     KeepOnAPool { name: String, pool: String },
+    /// This machine's profile `name` is about to be signed in on pool `pool`, by the command: the
+    /// person answers in the window.
+    ApproveSignIn { name: String, pool: String },
 }
 
 /// What the window says.
@@ -66,15 +77,20 @@ pub enum Answered {
 
 /// **The window's answer to `asked`**: `forget` runs only for a name this machine, with its
 /// config home at `config`, no longer has among its profiles, so no line takes a live profile's
-/// sign-in off a runner; `keep` only for one it has, so no line puts anything else on one.
+/// sign-in off a runner; `keep` only for one it has, so no line puts anything else on one;
+/// `approve` only for a profile it has on a pool it has, so the person is asked only of what the
+/// window's own files name.
 pub fn answer(
     config: &Path,
     asked: Asked,
     forget: impl FnOnce(&str) -> Result<Option<String>, String>,
     keep: impl FnOnce(&str, &str) -> Result<Option<String>, String>,
+    approve: impl FnOnce(&str, &str) -> Result<Option<String>, String>,
 ) -> Said {
     let name = match &asked {
-        Asked::ForgetOffThePools { name } | Asked::KeepOnAPool { name, .. } => name,
+        Asked::ForgetOffThePools { name }
+        | Asked::KeepOnAPool { name, .. }
+        | Asked::ApproveSignIn { name, .. } => name,
     };
     if !crate::profiles::name_ok(name) {
         return Said::Refused {
@@ -95,7 +111,7 @@ pub fn answer(
             };
         }
         Asked::ForgetOffThePools { name } => forget(name),
-        Asked::KeepOnAPool { .. } if !has_it => {
+        Asked::KeepOnAPool { .. } | Asked::ApproveSignIn { .. } if !has_it => {
             return Said::Refused {
                 why: format!(
                     "this machine has no profile named '{}'",
@@ -104,10 +120,60 @@ pub fn answer(
             };
         }
         Asked::KeepOnAPool { name, pool } => keep(name, pool),
+        Asked::ApproveSignIn { name, pool } => {
+            match crate::runners::pool_names(config) {
+                Ok(pools) if pools.iter().any(|one| one == pool) => {}
+                Ok(_) => {
+                    return Said::Refused {
+                        why: format!(
+                            "this machine has no pool named '{}'",
+                            crate::shown::short(pool)
+                        ),
+                    };
+                }
+                Err(why) => {
+                    return Said::Refused {
+                        why: why.to_string(),
+                    };
+                }
+            }
+            approve(name, pool)
+        }
     };
     match said {
         Ok(note) => Said::Asked { note },
         Err(why) => Said::Refused { why },
+    }
+}
+
+/// **Whether the person approved, in their window, signing `name` in on pool `pool`**: `ask` puts
+/// the question to the running window, and only its yes goes on. With no window running, no answer
+/// in time, or a no, this says so and nothing was started.
+pub fn approved(
+    pool: &str,
+    name: &str,
+    ask: impl FnOnce(&Asked) -> Answered,
+) -> Result<(), String> {
+    let asked = Asked::ApproveSignIn {
+        name: name.to_owned(),
+        pool: pool.to_owned(),
+    };
+    match ask(&asked) {
+        Answered::Said(Said::Asked { .. }) => Ok(()),
+        Answered::NoWindow => Err(format!(
+            "signing '{name}' in on pool {pool} from here is confirmed in the purlis window, and \
+             none is running, so nothing was started. Open purlis and run this again, or sign it \
+             in from its row in Settings › Pools."
+        )),
+        Answered::NoAnswer => Err(format!(
+            "the purlis window did not answer in time, so '{name}' was not signed in on pool \
+             {pool} and nothing was started. Run this again."
+        )),
+        Answered::Said(Said::Refused { why }) => Err(format!(
+            "the purlis window did not confirm signing '{name}' in on pool {pool}: {}. Nothing \
+             was started.",
+            shown(&why)
+        )),
     }
 }
 
@@ -217,7 +283,7 @@ pub fn socket() -> PathBuf {
 }
 
 /// The window's socket beside the host's socket `host`.
-fn beside(host: &Path) -> PathBuf {
+pub fn beside(host: &Path) -> PathBuf {
     let stem = host.file_stem().map_or_else(
         || "purlisd".into(),
         |stem| stem.to_string_lossy().into_owned(),
@@ -230,6 +296,7 @@ pub fn ask(asked: &Asked) -> Answered {
     let within = match asked {
         Asked::ForgetOffThePools { .. } => THE_WINDOW_ANSWERS_WITHIN,
         Asked::KeepOnAPool { .. } => THE_WINDOW_KEEPS_WITHIN,
+        Asked::ApproveSignIn { .. } => THE_PERSON_HAS + THE_WINDOW_SAYS_WITHIN,
     };
     ask_on(&socket(), asked, within)
 }

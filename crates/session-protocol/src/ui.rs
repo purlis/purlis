@@ -299,6 +299,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A move that waited on its profile's sign-in is prepared again (#3477): it may then send
     // the chat's work to the runner, so only the person's own window says it signed in.
     "chat_move_signed_in",
+    // A pool sign-in from the command is confirmed by the person's press here, and by nothing else.
+    "pool_sign_in_asked",
+    "answer_pool_sign_in",
     "start_chat_fresh",
     "ask_chat_restart",
     // Reads what a chat was sent or said to another.

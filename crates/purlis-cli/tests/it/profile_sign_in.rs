@@ -344,13 +344,87 @@ fn a_chat_may_not_sign_a_profile_in_on_a_pool() {
     assert!(said.contains("a chat may not"), "{said}");
 }
 
+/// A window of `machine`'s own that answers a sign-in on a pool with `answer`, and refuses all else.
+#[cfg(unix)]
+fn a_window(machine: &Machine, answer: Result<(), &'static str>) -> AWindow {
+    use purlis_core::windowline::{self, Asked, Said};
+    let config = machine.path("config-home");
+    let socket = windowline::beside(&purlis_core::hostsocket::here_for(
+        std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
+        Some(&config),
+    ));
+    windowline::serve_on(&socket, move |asked| match (asked, answer) {
+        (Asked::ApproveSignIn { .. }, Ok(())) => Said::Asked { note: None },
+        (Asked::ApproveSignIn { .. }, Err(why)) => Said::Refused {
+            why: why.to_owned(),
+        },
+        _ => Said::Refused {
+            why: "asked something else".to_owned(),
+        },
+    })
+    .expect("it listens");
+    AWindow(socket)
+}
+
+/// Its socket, gone with the test.
+#[cfg(unix)]
+struct AWindow(PathBuf);
+
+#[cfg(unix)]
+impl Drop for AWindow {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+/// **A pool's sign-in from the command is confirmed in the window**: with none running, and on a
+/// no, it says so and reaches neither engine nor runner, on either kind of pool.
+#[cfg(unix)]
+#[test]
+fn a_sign_in_on_a_pool_goes_on_only_on_the_windows_yes() {
+    let machine = Machine::new(1);
+    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+    a_cluster_pool_kept(&machine.path("config-home"));
+    purlis_core::runners::set_cluster_owned(&machine.path("config-home"), "team", true).unwrap();
+    let calls = machine.path("calls");
+    for program in ["kubectl", "docker"] {
+        stand_in::program(
+            &machine.path("bin"),
+            program,
+            &format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nexit 1\n",
+                calls.display()
+            ),
+        );
+    }
+
+    for pool in ["team", "builds"] {
+        let args = ["profile", "sign-in", "work", "--pool", pool];
+        let none = machine.purlis(&args);
+        assert!(!none.status.success());
+        let said = String::from_utf8_lossy(&none.stderr);
+        assert!(said.contains("none is running"), "{said}");
+
+        let window = a_window(&machine, Err("you said no"));
+        let no = machine.purlis(&args);
+        drop(window);
+        assert!(!no.status.success());
+        let said = String::from_utf8_lossy(&no.stderr);
+        assert!(said.contains("you said no"), "{said}");
+    }
+    assert!(!calls.exists(), "nothing reached an engine or a runner");
+    assert_eq!(machine.ran(), None);
+}
+
 /// **Only a pool shown to be the person's own is signed in on**: an engine elsewhere is refused
 /// before anything else, and says why.
+#[cfg(unix)]
 #[test]
 fn an_engine_not_shown_to_be_on_this_machine_is_refused() {
     let machine = Machine::new(1);
     machine.said(&["profile", "create", "work", "--harness", "claude"]);
 
+    let _window = a_window(&machine, Ok(()));
     let out = machine.purlis_with(
         &[("DOCKER_HOST", "tcp://10.0.0.1:2375")],
         &["profile", "sign-in", "work", "--pool", "builds"],
@@ -553,6 +627,7 @@ fn a_cluster_pool_is_signed_in_on_only_marked_and_vouched_for_now() {
         ),
     );
 
+    let _window = a_window(&machine, Ok(()));
     let args = ["profile", "sign-in", "work", "--pool", "team"];
     let unmarked = machine.purlis(&args);
     assert!(!unmarked.status.success());
