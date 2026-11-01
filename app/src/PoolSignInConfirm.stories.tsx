@@ -8,7 +8,7 @@ import { PoolSignInConfirm } from "./PoolSignInConfirm";
 import { untilFocused } from "./stories.testkit";
 
 const meta: Meta<typeof PoolSignInConfirm> = {
-  title: "Pools/PoolSignInConfirm",
+  title: "PoolSignInConfirm",
   component: PoolSignInConfirm,
 };
 export default meta;
