@@ -1210,7 +1210,7 @@ jobs:
   # each part took, measured, is in #2468 and #2458.
   macos-tests:
     name: macos (core and app tests, no orphans, evidence only, part ${{ matrix.part }} of 3)
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'pull_request'
     continue-on-error: true
     strategy:
       fail-fast: false
