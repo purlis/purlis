@@ -1871,6 +1871,8 @@ describe("carrying out a row", () => {
         "openSettings:/other",
         "openSaving:/plane",
         "openSaving:/other",
+        "openPoolSetup:/plane",
+        "openPoolSetup:/other",
         "openWorkspaceSettings:alpha",
         "openWorkspaceSettings:beta",
         "switchLive:alpha",

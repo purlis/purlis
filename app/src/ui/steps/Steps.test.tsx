@@ -1,9 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { StepList, type Step } from "./Steps";
 
 const STEPS: Step[] = [
@@ -14,6 +14,8 @@ const STEPS: Step[] = [
 
 const draw = (onGo = vi.fn(), showing = "pool") =>
   render(<StepList aria-label="Steps" steps={STEPS} showing={showing} onGo={onGo} />);
+
+afterEach(cleanup);
 
 describe("StepList", () => {
   it("says how far along the person is", () => {

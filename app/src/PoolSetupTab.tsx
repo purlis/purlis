@@ -108,7 +108,7 @@ function Action({
 function Rechecking() {
   return (
     <p className="pool-setup-recheck" role="status">
-      <Loader2 aria-hidden size={14} className="pool-setup-spin" />
+      <Loader2 aria-hidden size={14} className="spinning" />
       <span>Checking again by itself every few seconds.</span>
     </p>
   );
@@ -338,7 +338,7 @@ function PoolStep({
       />
       {adding.making ? (
         <p className="pool-setup-busy" role="status">
-          <Loader2 aria-hidden size={18} className="pool-setup-spin" />
+          <Loader2 aria-hidden size={18} className="spinning" />
           <span>Making the pool and its runner. The first time, this downloads the runner.</span>
         </p>
       ) : (
@@ -446,7 +446,7 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
     return (
       <div className="pool-setup-alone">
         <p className="pool-setup-busy" role="status">
-          <Loader2 aria-hidden size={18} className="pool-setup-spin" />
+          <Loader2 aria-hidden size={18} className="spinning" />
           <span>Looking at what this machine has. This only reads.</span>
         </p>
       </div>

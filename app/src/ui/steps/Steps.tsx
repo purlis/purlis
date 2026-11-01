@@ -92,7 +92,7 @@ export function StepList({
               aria-current={step.id === showing ? "step" : undefined}
               onPress={() => onGo(step.id)}
             >
-              <span data-scope="steps" data-part="mark">
+              <span data-scope="steps" data-part="mark" aria-hidden="true">
                 {MARK[step.state] ?? at + 1}
               </span>
               <span data-scope="steps" data-part="words">

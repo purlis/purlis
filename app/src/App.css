@@ -8343,19 +8343,6 @@ nav.piece-files-head {
   padding: var(--space-5) 0;
   font-size: var(--font-size-base);
 }
-.pool-setup-spin {
-  animation: pool-setup-spin 1.1s linear infinite;
-}
-@keyframes pool-setup-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pool-setup-spin {
-    animation: none;
-  }
-}
 .pool-setup-command {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
