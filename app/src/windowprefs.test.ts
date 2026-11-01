@@ -193,7 +193,7 @@ describe("the operator's own theme", () => {
     forgetExtensionThemes();
   });
 
-  it("does not ask the core again once the parts of a theme handed without them have landed (#4337)", async () => {
+  it("draws the parts that landed in the frame of a project switch, whatever the core says after (#4337)", async () => {
     const parts = "@layer parts {}";
     handed({ theme: MINE, parts_later: true });
     const theirs = theirThemeOnce();

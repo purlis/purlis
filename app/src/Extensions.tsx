@@ -780,6 +780,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
     const partsLater = atCreation().theme.parts_later;
     const handedMine = mine !== undefined && partsLater ? withPartsOf(mine, theme) : mine;
     const isMine = handedMine !== undefined && sameTheme(theme, handedMine);
+    if (isMine && partsLater) landed = theme;
     const theirs = isMine && path ? path : undefined;
     sayTheFloors(typeof given.floors === "string" ? given.floors : null, { theirs });
     draw(theme);
