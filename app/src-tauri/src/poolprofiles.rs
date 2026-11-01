@@ -805,6 +805,8 @@ pub struct PoolLimitHitRow {
     pub needed: u32,
     /// The value offered, which the person can edit; none where no value would hold it.
     pub suggested: Option<u32>,
+    /// That value is what the team defining the pool suggests (#4287).
+    pub team_suggests: bool,
 }
 
 /// **What a refused start on a pool offers**: the pool, and each limit it was refused on.
@@ -831,6 +833,7 @@ fn offer_of(over: onrunner::OverLimit) -> Option<PoolLimitOffer> {
                     in_force: number(hit.in_force),
                     needed: number(hit.needed),
                     suggested: hit.suggested.map(number),
+                    team_suggests: hit.team_suggested,
                 }
             })
             .collect(),

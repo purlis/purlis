@@ -12,6 +12,7 @@ const hit = {
   plain: "Most a profile may send: files",
   unit: "files",
   in_force: 8192,
+  team_suggests: false,
   needed: 9000,
   suggested: 11264 as number | null,
 };

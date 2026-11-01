@@ -548,6 +548,7 @@ impl Limit {
             suggested: self.suggested(in_force, needed, highest),
             highest,
             by_team: false,
+            team_suggested: false,
         }
     }
 
@@ -587,6 +588,8 @@ pub struct LimitHit {
     pub highest: Option<u64>,
     /// That highest is what the team defining the pool set (#4287).
     pub by_team: bool,
+    /// The value suggested is what the team defining the pool suggests (#4287).
+    pub team_suggested: bool,
 }
 
 impl LimitHit {
@@ -813,14 +816,14 @@ impl Chosen {
         };
         let hit = id.limit().hit(in_force, needed, highest);
         // What the team suggests is offered where it holds what is needed.
-        let suggested = self.team_default[id as usize]
+        let team_says = self.team_default[id as usize]
             .map(u64::from)
             .filter(|team| *team > in_force && *team >= needed)
-            .filter(|team| highest.is_none_or(|top| *team <= top))
-            .or(hit.suggested);
+            .filter(|team| highest.is_none_or(|top| *team <= top));
         LimitHit {
             by_team: team.is_some() && team == highest,
-            suggested,
+            team_suggested: team_says.is_some(),
+            suggested: team_says.or(hit.suggested),
             ..hit
         }
     }
@@ -1305,9 +1308,11 @@ mod tests {
         // Offered where it holds what is needed; the usual suggestion where it doesn't.
         let hit = chosen.hit(LimitId::ProfileSize, 128, 150, None);
         assert_eq!(hit.suggested, Some(256));
+        assert!(hit.team_suggested);
         assert!(hit.said().contains("raise it to 256 MiB"), "{}", hit.said());
         let more = chosen.hit(LimitId::ProfileSize, 128, 300, None);
         assert_eq!(more.suggested, Some(384));
+        assert!(!more.team_suggested);
 
         // Once the person is there, nothing is offered.
         let set = chosen.with(LimitId::ProfileSize, Some(256));

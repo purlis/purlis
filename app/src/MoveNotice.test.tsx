@@ -395,6 +395,7 @@ describe("a move refused by a pool's limit (#4313)", () => {
         plain: "Most a profile may send: size",
         unit: "MiB",
         in_force: 128,
+        team_suggests: false,
         needed: 150,
         suggested: 192,
       },

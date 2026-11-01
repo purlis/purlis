@@ -31,7 +31,7 @@ pub enum PoolCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Set one of a pool's limits, or return it to purlis's default with `--reset`.
+    /// Set one of a pool's limits, or return it to the default with `--reset`.
     ///
     /// In a chat the app started, this writes nothing: the person is asked in the window, and
     /// only they apply it.
@@ -43,7 +43,7 @@ pub enum PoolCommand {
         /// The new value, a whole number in the limit's unit.
         #[arg(allow_hyphen_values = true, required_unless_present = "reset")]
         value: Option<String>,
-        /// Return it to following purlis's default.
+        /// Return it to following the default.
         #[arg(long, conflicts_with = "value")]
         reset: bool,
     },

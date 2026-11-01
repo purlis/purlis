@@ -170,6 +170,7 @@ describe("a pool's limits page", () => {
     expect(set).toEqual([]);
     await userEvent.click(screen.getByRole("button", { name: /^Use 256 MiB/ }));
     await waitFor(() => expect(set).toEqual([{ key: "first", value: 256 }]));
+    await waitFor(() => expect(document.activeElement?.tagName).toBe("INPUT"));
   });
 
   it("says which limit the file got wrong, and Reset puts it right", async () => {
