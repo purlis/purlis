@@ -14,9 +14,10 @@ name: stories
 # **One pinned image draws and compares every picture.** A picture differs by its machine's
 # fonts and rasteriser, so it is taken nowhere but in Playwright's own image for the Playwright
 # version `app/package-lock.json` locks, and the job fails when the two disagree. The image is
-# named by its tag and its digest here and in `stories-baselines.yml`, which draws the baselines
-# this job compares with; the two must name the same digest (`tools/story-image.mjs`). A tag can
-# be pushed again, and a digest cannot, so a baseline is compared in the image it was drawn in.
+# named by its tag and its digest in one file, `app/.storybook/playwright-image/Dockerfile`, which
+# Dependabot's `playwright` group moves with the npm packages (#2956, `tools/story-image.mjs`). A
+# tag can be pushed again, and a digest cannot, so a baseline is compared in the image it was
+# drawn in.
 #
 # **A pull request's run draws the baselines it would need, in the same run.** When a pull
 # request's stories fail on their pictures alone (a story failing any other gate draws nothing),
@@ -56,6 +57,7 @@ jobs:
       contents: read
       actions: read
     outputs:
+      image: ${{ steps.image.outputs.image }}
       stories: ${{ steps.scope.outputs.stories }}
       shards: ${{ steps.parts.outputs.shards }}
       of: ${{ steps.parts.outputs.of }}
@@ -64,6 +66,12 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
+      # Before the scope: a `changes` that fails on the scope still runs the stories, in this image.
+      - name: The image the stories are drawn in
+        id: image
+        run: |
+          image=$(node tools/story-image.mjs ref)
+          echo "image=$image" >> "$GITHUB_OUTPUT"
       - name: The scopes this change needs
         id: scope
         uses: ./.github/actions/change-scope
@@ -87,7 +95,9 @@ jobs:
   shard:
     name: stories (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.of }})
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.stories != 'false' }}
+    # No image, no shard: a job whose container's image is empty runs on the bare runner, and
+    # would draw there. `stories` then says no shard reported.
+    if: ${{ !cancelled() && needs.changes.outputs.stories != 'false' && needs.changes.outputs.image != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -105,7 +115,7 @@ jobs:
         shard: ${{ fromJson(needs.changes.outputs.shards || '[1,2,3]') }}
         of: ${{ fromJson(needs.changes.outputs.of || '[3]') }}
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+      image: ${{ needs.changes.outputs.image }}
       # An init that reaps, and the host's IPC namespace, which Chromium wants for its shared
       # memory (Playwright's own advice for this image).
       options: --init --ipc=host
