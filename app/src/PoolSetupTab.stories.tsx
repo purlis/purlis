@@ -74,7 +74,6 @@ function faked(shown: PoolSetupShown, image: unknown = { state: "ours", image: "
 }
 
 const meta = {
-  title: "Pool setup/Where and Pool",
   component: PoolSetupTab,
   args: { plane: "p" },
   decorators: [
@@ -143,8 +142,8 @@ export const DockerIsStopped: Story = {
         findings: ["Docker needs to be running. purlis found it, and it isn't answering."],
         next: {
           id: "start-docker",
-          label: "Start Docker",
-          does: "Start Docker the way you usually do. purlis checks again by itself.",
+          label: "Open the Docker app",
+          does: "Opens Docker where purlis can. Otherwise, start it the way you usually do. purlis checks again by itself.",
           command: null,
           url: null,
         },

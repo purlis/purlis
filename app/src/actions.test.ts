@@ -278,6 +278,7 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`openSettings:${plane}`);
     }),
     openSaving: note("openSaving"),
+    openPoolSetup: note("openPoolSetup"),
     openWorkspaceSettings: note("openWorkspaceSettings"),
     switchLive: note("switchLive"),
     renameWorkspace: note("renameWorkspace"),

@@ -8,7 +8,6 @@ import { expectFocusInSight } from "../../stories.testkit";
 import { StepList } from "./Steps";
 
 const meta = {
-  title: "Families/Steps",
   component: StepList,
   args: {
     "aria-label": "Steps of a guide",

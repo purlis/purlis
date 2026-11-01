@@ -8271,7 +8271,7 @@ nav.piece-files-head {
   padding-top: var(--space-6);
   color: var(--text-muted);
   font-size: var(--font-size-xs);
-  line-height: 1.5;
+  line-height: var(--line-height-body);
 }
 .pool-setup-main {
   min-height: 0;
@@ -8294,19 +8294,19 @@ nav.piece-files-head {
   margin: 0;
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-strong);
-  line-height: 1.25;
+  line-height: var(--line-height-tight);
   outline: none;
 }
 .pool-setup-lead {
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-md);
-  line-height: 1.5;
+  line-height: var(--line-height-body);
 }
 .pool-setup-p {
   margin: 0 0 var(--space-3);
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: var(--line-height-body);
 }
 .pool-setup-p:last-child {
   margin-bottom: 0;
@@ -8326,7 +8326,7 @@ nav.piece-files-head {
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  line-height: 1.5;
+  line-height: var(--line-height-body);
 }
 .pool-setup-action {
   display: grid;
@@ -8336,11 +8336,11 @@ nav.piece-files-head {
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  line-height: 1.5;
+  line-height: var(--line-height-body);
 }
 .pool-setup-say {
   margin-top: var(--space-1);
-  line-height: 1.5;
+  line-height: var(--line-height-body);
 }
 .pool-setup-say-actions {
   margin-top: var(--space-3);

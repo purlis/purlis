@@ -365,8 +365,9 @@ fn where_reading(facts: &Facts, choices: &Choices) -> Reading {
              names a socket on this machine.",
             action(
                 ActionId::StartDocker,
-                "Start Docker",
-                "Start Docker the way you usually do. purlis checks again by itself.",
+                "Open the Docker app",
+                "Opens Docker where purlis can. Otherwise, start it the way you usually do. \
+                 purlis checks again by itself.",
             ),
         ),
         Engine::Elsewhere => Reading::attention(

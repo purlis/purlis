@@ -6982,6 +6982,7 @@ export const PlaneView = memo(function PlaneView({
       moveProject: windowDoes.moveProject,
       openSettings: windowDoes.openSettings,
       openSaving: windowDoes.openSaving,
+      openPoolSetup: windowDoes.openPoolSetup,
       openWorkspaceSettings,
       switchLive: (workspace: string) => setLiveAsk(workspace),
       renameWorkspace,
