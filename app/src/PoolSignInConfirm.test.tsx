@@ -7,6 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { POOL_SIGN_IN_CONFIRM, PoolSignInConfirm } from "./PoolSignInConfirm";
+import { Dialog } from "./ui/dialog/Dialog";
 
 afterEach(() => {
   cleanup();
@@ -40,6 +41,29 @@ describe("a pool sign-in confirmed in the window", () => {
     });
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(state.answers).toEqual([]);
+  });
+
+  it("waits for a dialog already up to close (#4504)", async () => {
+    core(ASK);
+    const window = (isOpen: boolean) => (
+      <>
+        <Dialog isOpen={isOpen} onClose={() => {}} title="Another" titleId="another">
+          <p>Something else.</p>
+        </Dialog>
+        <PoolSignInConfirm />
+      </>
+    );
+    const { rerender } = render(window(true));
+    await act(async () => {
+      await emit(POOL_SIGN_IN_CONFIRM);
+    });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+
+    rerender(window(false));
+
+    expect(
+      await screen.findByRole("alertdialog", { name: "Sign work in on team?" }),
+    ).toBeInTheDocument();
   });
 
   it("names the profile and the pool, and starts on Cancel", async () => {

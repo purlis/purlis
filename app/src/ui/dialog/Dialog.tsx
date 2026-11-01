@@ -48,6 +48,7 @@ import {
   useEffect,
   useMemo,
   useId,
+  useSyncExternalStore,
   useLayoutEffect,
   useRef,
   useState,
@@ -384,10 +385,29 @@ function useOneAtATime(open: boolean) {
           "(spec #2897): close the first, or answer it in place.",
       );
     up += 1;
+    for (const tell of watching) tell();
     return () => {
       up -= 1;
+      for (const tell of watching) tell();
     };
   }, [open]);
+}
+
+/** Who hears when the count of dialogs up changes. */
+const watching = new Set<() => void>();
+
+/**
+ * **Whether a dialog is up in this window**: for a question that arrives by itself, which holds
+ * until it can open, as no dialog opens over another (#4504).
+ */
+export function useADialogIsUp(): boolean {
+  return useSyncExternalStore(
+    (tell) => {
+      watching.add(tell);
+      return () => watching.delete(tell);
+    },
+    () => up > 0,
+  );
 }
 
 /**
