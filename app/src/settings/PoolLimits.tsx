@@ -229,7 +229,7 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
       setWhy(undefined);
       return;
     }
-    void checkLimit(row.key, to).then((said) => {
+    void checkLimit(pool, row.key, to).then((said) => {
       if (mine === typing.current) setWhy(said.status === "error" ? said.error : undefined);
     });
   };
@@ -254,7 +254,7 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
       else setTyped(undefined);
       return;
     }
-    const checked = await checkLimit(row.key, typed);
+    const checked = await checkLimit(pool, row.key, typed);
     if (mine !== typing.current) return;
     if (checked.status === "error") setWhy(checked.error);
     else if (checked.data === row.set && saving.current === 0) setTyped(undefined);
@@ -319,6 +319,7 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
       <p className="ui-setting-help pool-limit-says" id={says}>
         {isSet && <Badge variant="accent">You set this</Badge>}
         <span>Default {row.default_said}.</span>
+        {row.highest_said !== null && <span>{row.highest_said}</span>}
         {row.applies !== null && <span>{row.applies}</span>}
       </p>
     </div>

@@ -852,6 +852,36 @@ fn a_pools_page_says_which_limit_the_file_got_wrong() {
     }
 }
 
+/// #4287: the page shows the team's default and highest, and says a value kept above it holds to it.
+#[test]
+fn a_pools_page_shows_what_the_team_set() {
+    use purlis_core::poollimits::{Chosen, LimitId};
+    let team = serde_json::json!({"signInWait": {"default": 20, "highest": 40}});
+    let chosen = Chosen::default()
+        .under_team(Some(&team))
+        .with(LimitId::SignInWait, Some(100));
+    let shown = limits_shown(&chosen, &[]);
+    let rows: Vec<&PoolLimitRow> = shown
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .collect();
+    let row = rows.iter().find(|row| row.key == "signInWait").unwrap();
+    assert_eq!(row.default, 20);
+    assert_eq!(
+        row.highest_said.as_deref(),
+        Some("The team allows up to 40 minutes.")
+    );
+    assert!(
+        row.refused
+            .as_deref()
+            .unwrap_or("")
+            .contains("at most 40 minutes")
+    );
+    let other = rows.iter().find(|row| row.key == "profileSize").unwrap();
+    assert_eq!(other.highest_said, None);
+}
+
 /// Q15: the window's check and the file's refusal are one, word for word.
 #[test]
 fn the_windows_check_refuses_as_the_file_does() {
@@ -861,9 +891,7 @@ fn the_windows_check_refuses_as_the_file_does() {
         ("signInWait", "121", serde_json::json!(121)),
         ("codeSize", "lots", serde_json::json!("lots")),
     ] {
-        let by_window =
-            tauri::async_runtime::block_on(pool_limit_check(key.to_owned(), typed.to_owned()))
-                .unwrap_err();
+        let by_window = of_key(key).unwrap().check_typed(typed, None).unwrap_err();
         let row = serde_json::json!({ key: held });
         let (_, refused) = Chosen::read_row(row.as_object().unwrap(), None);
         assert_eq!(by_window, refused[0].why);

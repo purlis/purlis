@@ -281,7 +281,10 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
         "apiVersion": "runners.purlis.dev/v1alpha1",
         "kind": "Pool",
         "metadata": { "name": pool },
-        "spec": { "image": image },
+        "spec": {
+            "image": image,
+            "limits": { "signInWait": { "default": 20, "highest": 40 } },
+        },
     });
     kubectl
         .run(
@@ -290,6 +293,20 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
             64 * 1024,
         )
         .expect("the pool");
+
+    // What the team set reaches a desktop, and holds it to the highest allowed (#4287).
+    {
+        use purlis_core::poollimits::{Chosen, LimitId::SignInWait};
+        let seen = kubectl.pool(&pool).expect("the pool, read");
+        let chosen = Chosen::default().under_team(seen.team_limits.as_ref());
+        assert_eq!(chosen.in_force(SignInWait), 20);
+        let why = SignInWait
+            .limit()
+            .check(41, chosen.team_highest(SignInWait))
+            .unwrap_err();
+        assert!(why.contains("team that defines this pool"), "{why}");
+        assert_eq!(chosen.waited(SignInWait, 30, None).suggested, Some(40));
+    }
 
     // Adding the pool pins the operator's key and the cluster its status names (#3305).
     let operator = eventually("the pool names the operator's key", || {

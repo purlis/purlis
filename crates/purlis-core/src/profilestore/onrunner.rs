@@ -391,7 +391,7 @@ fn limits_hit(kept: &Kept, bytes: u64, files: u64) -> Vec<LimitHit> {
         let highest = kept.highest.get(id);
         let chosen = kept.limits.in_force(id);
         let in_force = highest.map_or(chosen, |highest| highest.min(chosen));
-        (needed > in_force).then(|| id.limit().hit(in_force, needed, highest))
+        (needed > in_force).then(|| kept.limits.hit(id, in_force, needed, highest))
     })
     .collect()
 }

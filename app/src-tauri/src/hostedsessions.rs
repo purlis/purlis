@@ -1533,7 +1533,7 @@ impl HostLink {
         match self.call_timed(command, Duration::from_secs(secs)) {
             Some(answered) => answered.map_err(|refused| refused.why),
             None => {
-                let hit = AnswerWait.limit().waited(secs, None);
+                let hit = self.limits().waited(AnswerWait, secs, None);
                 Err(format!(
                     "the runner did not answer in time: {}",
                     self.limit_said(hit)
@@ -1908,7 +1908,7 @@ impl HostLink {
             .and_then(|bundle| std::fs::metadata(bundle).ok())
             .map_or(0, |file| file.len());
         if size > most {
-            let hit = CodeSize.limit().hit(mib, size.div_ceil(MIB), size_highest);
+            let hit = limits.hit(CodeSize, mib, size.div_ceil(MIB), size_highest);
             return Err(self.limit_said(hit));
         }
         let within = Duration::from_secs(minutes.saturating_mul(60));
@@ -1919,7 +1919,7 @@ impl HostLink {
                 most_bytes: most,
                 within_secs: within.as_secs(),
             }),
-            late: Some(CodeSendTime.limit().waited(minutes, time_highest)),
+            late: Some(limits.waited(CodeSendTime, minutes, time_highest)),
         })
     }
 

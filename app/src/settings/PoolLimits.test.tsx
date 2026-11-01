@@ -22,6 +22,7 @@ const row = (over: Partial<PoolLimitRow> & { key: string }): PoolLimitRow => ({
   set: null,
   applies: null,
   refused: null,
+  highest_said: null,
   ...over,
 });
 
