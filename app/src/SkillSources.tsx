@@ -1210,8 +1210,7 @@ function ClashChoice({
   busy: boolean;
   onSettle: (change: Settling) => void;
 }) {
-  const problem =
-    settling?.how === "rename" ? newNameProblem(skill, settling) : undefined;
+  const problem = settling?.how === "rename" ? newNameProblem(skill, settling) : undefined;
   return (
     <div className="skill-clash" data-testid={`clash-${skill.name}`}>
       <SettingRow

@@ -201,7 +201,7 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
           ],
         };
       case "skill_install_review":
-        if ((args?.names as string[] | undefined)?.[0] === "taken-by-another")
+        if ((args as { names: string[] }).names[0] === "taken-by-another")
           return {
             commit: commit("3"),
             skills: [
@@ -212,7 +212,9 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
                   offered: "superpowers-systematic-debugging",
                   taken: ["systematic-debugging"],
                 },
-                notes: ["The ops skills have a systematic-debugging too: where a chat gets both, the narrowest copy wins."],
+                notes: [
+                  "The ops skills have a systematic-debugging too: where a chat gets both, the narrowest copy wins.",
+                ],
               },
             ],
             accepted: { commit: "3".repeat(40), skills: [] },
@@ -424,12 +426,18 @@ export const InstallReviewClash: Story = {
     const rename = await within(review).findByRole("radio", {
       name: "Install it under a new name",
     });
-    await expect(within(review).getByRole("button", { name: "Install" })).toBeDisabled();
+    await expect(within(review).getByRole("button", { name: "Install" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     await userEvent.click(rename);
     await expect(
       within(review).getByRole("textbox", { name: "New name for systematic-debugging" }),
     ).toHaveValue("superpowers-systematic-debugging");
-    await expect(within(review).getByRole("button", { name: "Install" })).toBeEnabled();
+    await expect(within(review).getByRole("button", { name: "Install" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   },
 };
 

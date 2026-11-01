@@ -3634,6 +3634,8 @@ export type ChatSkill = {
 	 *  the chat to load it.
 	 */
 	hidden: SkillHidden | null,
+	/**  The label of the source it was installed from (ADR 0100, amended 2026-11-01). */
+	source_label: string | null,
 };
 
 /**
@@ -9450,6 +9452,16 @@ export type RestoringChat = {
 	workspace: string | null,
 };
 
+/**  A name that is taken where a skill would land (ADR 0100, amended 2026-11-01). */
+export type ReviewClash = {
+	/**  What holds the name, as the end of a sentence. */
+	held_by: string,
+	/**  The new name offered: `<source>-<name>`. */
+	offered: string,
+	/**  The names at that level, which a new name cannot take. */
+	taken: string[],
+};
+
 /**  One file the review shows, one click away. */
 export type ReviewFile = {
 	path: string,
@@ -9507,6 +9519,10 @@ export type ReviewSkill = {
 	 *  are, not brought along.
 	 */
 	already: string[],
+	/**  Where its name is taken at the level it lands in: the review waits for the person's choice. */
+	clash: ReviewClash | null,
+	/**  A line each for what the review warns of and does not stop on. */
+	notes: string[],
 	summary: ReviewSummary,
 	files: ReviewFile[],
 	left_out: ReviewLeftOut[],
@@ -11250,6 +11266,12 @@ export type SkillPromptRouting = {
 	said: string,
 };
 
+/**  One skill installed under a new name: its name at the source, and the one it lands under. */
+export type SkillRename = {
+	from: string,
+	to: string,
+};
+
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
 /**  purlis's own. */
@@ -12066,6 +12088,8 @@ export type StudioSkill = {
 	 *  own budget: the chat still has it, through the index skill. Empty where every one lists it.
 	 */
 	hidden: SkillHiddenOn[],
+	/**  The label of the source it was installed from (ADR 0100, amended 2026-11-01). */
+	source_label: string | null,
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
 	/**

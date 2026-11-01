@@ -20,6 +20,7 @@ function skill(name: string, description: string, more: Partial<ChatSkill> = {})
   const args = more.arguments ?? [];
   return {
     name,
+    source_label: null,
     level: "project",
     label: "project",
     description,

@@ -26,6 +26,7 @@ afterEach(() => {
 function skill(name: string, more: Partial<ChatSkill> = {}): ChatSkill {
   return {
     name,
+    source_label: null,
     level: "project",
     label: "project",
     description: `Does ${name}.`,
@@ -114,6 +115,13 @@ describe("Use skill…", () => {
     // Its budget, routing and pins are the Skills view's now: none is said here.
     expect(screen.queryByTestId("use-skill-budget")).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("shows where an installed skill came from, as a label beside its name (#4530)", () => {
+    opened(skills([skill("grilling", { source_label: "mattpocock" }), skill("deploy")]));
+    const rows = screen.getAllByTestId("use-skill-row");
+    expect(rows[0]).toHaveTextContent("grilling · mattpocock");
+    expect(rows[1]).not.toHaveTextContent("·");
   });
 
   it("types a skill that takes nothing at once", () => {

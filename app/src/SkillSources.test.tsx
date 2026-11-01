@@ -717,19 +717,19 @@ describe("the install review", () => {
       "The ops skills have a deploy too.",
     );
     const install = within(review).getByRole("button", { name: "Install" });
-    expect(install).toBeDisabled();
+    expect(install).toHaveAttribute("aria-disabled", "true");
 
     await user.click(within(review).getByRole("radio", { name: "Skip it" }));
-    expect(install).toBeDisabled();
+    expect(install).toHaveAttribute("aria-disabled", "true");
 
     await user.click(within(review).getByRole("radio", { name: "Install it under a new name" }));
     const named = within(review).getByRole("textbox", { name: "New name for deploy" });
     expect(named).toHaveValue("example-deploy");
-    expect(install).toBeEnabled();
+    expect(install).not.toHaveAttribute("aria-disabled", "true");
 
     await user.clear(named);
     await user.type(named, "notify");
-    expect(install).toBeDisabled();
+    expect(install).toHaveAttribute("aria-disabled", "true");
 
     await user.clear(named);
     await user.type(named, "acme-deploy");
