@@ -2587,6 +2587,10 @@ body {
   margin: 0;
   white-space: pre-wrap;
 }
+/* Its mark stays by its first line, however many it runs over. */
+.inbox-says:has(> .inbox-said) > .inbox-kind {
+  align-self: start;
+}
 /* A command over several lines, one per line (#3502). */
 .ask-lines {
   display: flex;
