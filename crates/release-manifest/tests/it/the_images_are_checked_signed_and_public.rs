@@ -593,6 +593,8 @@ fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
         for line in [
             "index=$(docker buildx imagetools inspect \"$LINE\" --format '{{json .Manifest}}')",
             "for platform in linux/amd64 linux/arm64; do",
+            "'[.manifests[] | select(\"\\(.platform.os)/\\(.platform.architecture)\" == $platform) | .digest]",
+            "| if length == 1 then .[0] else error(\"the index holds \\(length) images for \\($platform)\") end' \\",
             "docker pull --platform \"$platform\" \"${LINE%@*}@$digest\"",
             "cosign verify \"$LINE\" \\",
         ] {
@@ -602,7 +604,7 @@ fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
             commands
                 .iter()
                 .filter(|l| l.starts_with("docker pull"))
-                .all(|l| !l.ends_with("\"$LINE\"")),
+                .all(|l| !l.contains("\"$LINE\"") && !l.contains("\"${LINE}\"")),
             "{file}: the index itself is never pulled: {commands:#?}"
         );
         // The same exact signer `index` verifies, never a pattern.
