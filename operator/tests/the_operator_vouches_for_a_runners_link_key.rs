@@ -1062,10 +1062,15 @@ fn during_a_roll_a_pools_status_names_the_next_key_and_the_current_keys_word_for
         .unwrap()
     );
     assert_eq!(word.signature, signing().sign(&word.statement));
-    // Looked at again before its last day: the same word, nothing written.
+    // Looked at again before its last day: the same word. (The operator's word for what it does
+    // holds ten minutes, so it alone is signed again by then, #4569.)
     let later = vouch::pool_status(&rolling(), CLUSTER, Some(&status), ROLL_NOW + 5 * DAY);
-    assert_eq!(later, status);
-    assert_eq!(pool_status_patch(Some(&status), &later), None);
+    assert_eq!(later.next_signing_key_vouch, status.next_signing_key_vouch);
+    let unchanged = PoolStatus {
+        capabilities_vouch: status.capabilities_vouch.clone(),
+        ..later.clone()
+    };
+    assert_eq!(pool_status_patch(Some(&status), &unchanged), None);
     // In it: signed again, holding seven days from then.
     let renewed = vouch::pool_status(&rolling(), CLUSTER, Some(&status), ROLL_NOW + 6 * DAY + 1);
     assert_eq!(
