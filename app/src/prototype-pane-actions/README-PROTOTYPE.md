@@ -29,6 +29,13 @@ Scenes: 1 a working chat and its asking task, 2 a shell beside a chat, 3 an ende
 (with "record written" and "stopped without a record" events), 5 a split tab's right-click, 6 three
 narrow panes.
 
-`command-table.md` is the redrawn command table. `screenshots/` holds each variant in scenes 1, 2 and 6,
-plus variant A's menus, palette, tab right-click and Smart close states. Stand-in data in memory; nothing
-calls the core.
+`command-table.md` is the redrawn command table. Stand-in data in memory; nothing calls the core.
+
+## Verdict (the person, 2026-11-02: accepted, all four as recommended)
+
+1. **Variant A.** The pane head shows at most one chat action, chosen by the chat's state: Stop while it works, Answer while a task asks, Cancel smart close while it wraps up, Brief on a quiet task, and nothing on a quiet chat. Everything else is in ⋯. B and C were ruled out.
+2. **A tab's right-click holds tab things only:** Pin tab, Tile all, Keep open, Close other tabs, Close tab. Closing never ends a chat.
+3. **Smart close** stays the third answer in End…'s dialog. Its strip chip goes. Wrapping up is shown as a breathing mark plus Cancel smart close on the pane head and the sidebar row. Once the record is written, it ends like End: Resume, Clear pane, and a link to the record.
+4. **A sidebar row shows ⋯ on hover and focus**, with the same list as the pane.
+
+Screenshots weren't taken, because machine load was high. They can be added later. `command-table.md` is the final table.
