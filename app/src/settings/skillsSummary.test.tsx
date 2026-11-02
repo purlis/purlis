@@ -178,3 +178,20 @@ describe("the skill budget's rows (#4610)", () => {
     );
   });
 });
+
+describe("the palette's Skills rows (#4610)", () => {
+  const offered = (skillStudio: boolean) =>
+    catalogue({
+      tabs: noTabs(),
+      workspaces: [],
+      needsYou: [],
+      nameOf: (session) => String(session),
+      plane: "p",
+      skillStudio,
+    }).some((offer) => offer.id === "settings.group:project.skills");
+
+  it("offers the project's Skills group only while the studio's flag is on", () => {
+    expect(offered(true)).toBe(true);
+    expect(offered(false)).toBe(false);
+  });
+});

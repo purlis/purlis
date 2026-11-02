@@ -255,7 +255,9 @@ impl HarnessAdapter for Codex {
     fn skill_limit_past(&self, budget: crate::skills::Budget) -> Option<String> {
         (budget.chars > LISTING_LIMIT).then(|| {
             format!(
-                "Codex: at {} characters this is past the {} it holds where it doesn't know its                  window (2% of the window otherwise). Past its limit Codex leaves skills out of                  its list.",
+                "Codex: at {} characters this is past the {} it holds where it doesn't know its \
+                 window (2% of the window otherwise). Past its limit Codex leaves skills out of \
+                 its list.",
                 crate::skills::grouped(budget.chars),
                 crate::skills::grouped(LISTING_LIMIT),
             )

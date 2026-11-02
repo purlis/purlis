@@ -1630,6 +1630,7 @@ fn a_chat_out_of_any_plane_is_handed_the_limit_of_the_default_budget() {
 
 #[test]
 fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
+    // 20,000 and 40,000, with 6,848 and a tenth over both.
     let tmp = tempfile::tempdir().unwrap();
     let plane = tmp.path();
     std::fs::write(
@@ -1653,4 +1654,44 @@ fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
     };
     assert_eq!(at(None), "29532");
     assert_eq!(at(Some("alpha")), "51532");
+}
+
+/// **The measured bug** (#4610): a 200k Claude 5 chat's own limit is 6,000 characters, and Claude
+/// Code's own 14 entries take 6,848 of whatever limit it has, so every plane skill's description
+/// was dropped however few there were.
+#[test]
+fn the_limit_holds_claude_codes_own_entries_and_the_list_with_a_margin() {
+    let budget = ADAPTER.skill_budget();
+    assert_eq!(listing_limit(budget.chars), 24_032);
+    assert!(listing_limit(budget.chars) > 6_848 + budget.chars);
+    assert!(listing_limit(0) > 6_848);
+    assert_eq!(listing_limit(usize::MAX), usize::MAX);
+}
+
+/// A pin is never hidden, so a list its pins take past the budget has to fit the limit too.
+#[test]
+fn a_chat_whose_pins_are_past_its_budget_is_handed_a_limit_that_holds_them() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path();
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let skill = plane.join("workspaces/alpha/skills/big");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        format!("---\nname: big\ndescription: {}\n---\n", "d".repeat(5_000)),
+    )
+    .unwrap();
+    std::fs::write(
+        plane.join("workspaces/alpha/workspace.json"),
+        r#"{"name":"alpha","settings":{"skills":{"pinned":["big"],"budget":{"chars":10}}}}"#,
+    )
+    .unwrap();
+    let limit = listing_limit_handed(Some(crate::skills::PlaneSkills {
+        plane,
+        workspace: Some("alpha"),
+        repo: &[],
+        routed: None,
+    }));
+    // Its description, cut at 1,536, its name and its line, not the budget's 10.
+    assert_eq!(limit, listing_limit(1_536 + "big".len() + 23).to_string());
 }

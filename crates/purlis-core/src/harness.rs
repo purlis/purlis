@@ -419,11 +419,6 @@ impl Harness {
         self.adapter().skill_budget()
     }
 
-    /// [`HarnessAdapter::skill_limit_handed`]: the limit this harness is handed for `budget`.
-    pub fn skill_limit_handed(self, budget: crate::skills::Budget) -> Option<usize> {
-        self.adapter().skill_limit_handed(budget)
-    }
-
     /// [`HarnessAdapter::skill_limit_past`]: what this harness would drop at `budget`.
     pub fn skill_limit_past(self, budget: crate::skills::Budget) -> Option<String> {
         self.adapter().skill_limit_past(budget)

@@ -256,14 +256,6 @@ pub trait HarnessAdapter: Sync {
     /// `settings.skills.budget` overrides them ([`crate::skills::budget_in`]).
     fn skill_budget(&self) -> crate::skills::Budget;
 
-    /// **The limit this harness is handed for a chat's listing** where purlis can set one, for a
-    /// chat whose budget is `budget` (ADR 0102 as amended 2026-11-02). `None`, the default, for
-    /// a harness that keeps its own.
-    fn skill_limit_handed(&self, budget: crate::skills::Budget) -> Option<usize> {
-        let _ = budget;
-        None
-    }
-
     /// **What this harness would drop of a chat's listing at `budget`**, in a sentence, where
     /// that is past a limit of its own purlis cannot move. `budget` is a warning, never refused.
     /// `None`, the default, for a harness with no such limit.

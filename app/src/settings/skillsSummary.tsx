@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { commands, type PlaneId } from "../bindings";
 import { counted } from "../dispatches";
-import { usePlaneChanged } from "../planeChanged";
+import { SETTINGS, usePlaneChanged } from "../planeChanged";
 import { OPEN_SKILL_STUDIO, SKILL_NEEDS_IN, SKILL_STUDIO_IN } from "../skillStudio";
 import { budgetSaid } from "../SkillStudioRouting";
 import { Button } from "../ui/button/Button";
@@ -75,7 +75,7 @@ function budgetInForce(id: string, plane: PlaneId, workspace: string | null): Li
     writes: "nothing",
     useControl: () => {
       const [said, setSaid] = useState<{ line: string; past: readonly string[] }>();
-      const changed = usePlaneChanged([plane], undefined);
+      const changed = usePlaneChanged([plane], SETTINGS);
       useEffect(() => {
         let live = true;
         void commands.skillStudio(plane, workspace, null).then((answer) => {
