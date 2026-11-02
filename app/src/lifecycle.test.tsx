@@ -14,7 +14,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import type { Moved, NotStarted, OpenChat } from "./bindings";
+import type { LaidOut, Moved, NotStarted, OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
 
 // The Inbox lists a chat that came back as an update too (#1693), after its Notices (#1695):
@@ -383,12 +383,14 @@ describe("what the window does with the chats the core already has", () => {
 
     await userEvent.click(within(stripNamed("Tabs")).getAllByRole("tab")[1]);
 
-    await vi.waitFor(() =>
-      expect(of("chat_in_front", asked).slice(-1)[0]?.args).toEqual({
-        plane: "/home/dev/plane",
-        session: 8,
-      }),
-    );
+    // Every tab is told with each change (#4751): the front tab is the one holding chat 8.
+    await vi.waitFor(() => {
+      const said = of("window_layout", asked).slice(-1)[0]?.args as
+        | { plane: string; layout: LaidOut }
+        | undefined;
+      expect(said?.plane).toBe("/home/dev/plane");
+      expect(said?.layout.tabs.find((tab) => tab.front)?.tree).toEqual({ kind: "chat", chat: 8 });
+    });
   });
 });
 

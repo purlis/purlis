@@ -19,7 +19,7 @@ use purlis_core::engine::Size;
 use purlis_core::eventlog::{Attributes, Began, RunOf};
 use purlis_core::harness::{Harness, SessionId};
 use purlis_core::hoststart::Armed;
-use purlis_core::reopen::{Chat, Focus, Record, Reopened, View};
+use purlis_core::reopen::{Chat, Focus, Layout, Record, Reopened, View};
 
 use crate::host::{Opening, SessionHost};
 #[cfg(test)]
@@ -817,6 +817,15 @@ pub struct Chats {
     /// The branch the window's sidebar is focused on — its cockpit (FM-5) — as it last said,
     /// or at a launch as the record had it. Held here for [`Self::views`]' reason.
     focus: Mutex<Option<Focus>>,
+    /// **Every tab as a tree of panes, as the window last reported it** (#4751), or at a
+    /// launch as the record had it: what is on screen is derived from it
+    /// ([`Self::looked_at`]). `None` until a record or the window holds one, which is a record
+    /// written before tabs were recorded: that is read the old way, by each chat's `beside`
+    /// and `shows` and the chat in [`Self::front`], until the window reports.
+    ///
+    /// **The window's to say, for the reason [`Self::views`] is**, and held to two rules here
+    /// ([`Self::lay_out`]): no chat in two panes, and no chat that is not open.
+    layout: Mutex<Option<Layout>>,
     /// The order the window's strip draws the chats in, by session, as it last said — or, at
     /// a launch, the order the record listed them in (ADR 0039, as amended by SI-6).
     ///
@@ -1310,6 +1319,7 @@ impl Chats {
             recorded_order: Mutex::new(Vec::new()),
             views: Mutex::new(Vec::new()),
             focus: Mutex::new(None),
+            layout: Mutex::new(None),
             order: Mutex::new(Vec::new()),
             record_it,
             writing: Mutex::new(()),
@@ -4717,26 +4727,38 @@ impl Chats {
         closed
     }
 
-    /// Which chat is in front, or none.
+    /// Which chat is in front, or none: the first chat in the project window's front tab on
+    /// the strip it draws ([`Layout::lead`]), once a layout is held, and the one the window
+    /// last brought to front ([`Self::bring_to_front`]) before that.
     pub fn front(&self) -> Option<u32> {
+        if let Some(layout) = lock(&self.layout).as_ref() {
+            return layout.lead();
+        }
         *lock(&self.front)
     }
 
-    /// **The chats the person is looking at**: every chat on screen in the tab in front, in
-    /// the order of their numbers, and none when no chat's tab is in front.
+    /// **The chats the person is looking at**, in the order of their numbers.
     ///
-    /// A tab is its session's, so "in front" names the tab's own chat whatever its panes
-    /// draw; a tab that opened on a view stands for the first chat beside it, and the window
-    /// says every other chat there is beside that one (#1525). On screen with it is every chat that has a pane in that tab ([`Self::tab_shows`]
-    /// says which, #1489), and each pane draws its own chat or the chat it was switched to
-    /// (#1486). So this is: the chat in front, or the task its pane shows in place of it; and
-    /// for every chat beside it, the same. A task in a tab of its own is in front itself.
+    /// **Once a layout is held** ([`Self::lay_out`], or the record's at a launch, #4751): every
+    /// chat in a pane of the front tab of the drawn strip in the project window, and of the
+    /// front tab of each tab window ([`Layout::on_screen`]). Empty panes and views count as
+    /// nothing. The record's layout stands until the window reports one.
+    ///
+    /// **Before that, the old way**, for a record written before tabs were recorded: the chat in
+    /// front, or the task its pane shows in place of it (#1486); and every chat beside it, the
+    /// same (#1489). A tab that opened on a view stands for the first chat beside it (#1525).
     ///
     /// The one answer for both things that turn on it: a reported task is not ended under the
     /// person reading it (#1485), and no notification is sent about a chat already on screen.
-    /// A chat hidden behind a task its pane shows is not looked at. Whether the window has the
-    /// keyboard is not asked here.
+    /// Whether the window has the keyboard is not asked here: a notification asks that too
+    /// (`asknotify::Looking`), so a stale layout with the window in the background holds none
+    /// back.
     pub fn looked_at(&self) -> Vec<u32> {
+        // **Derived from the tree once there is one** (#4751): every chat in a pane of the front
+        // tab of each window on screen ([`Layout::on_screen`]). Before that, the old way.
+        if let Some(layout) = lock(&self.layout).as_ref() {
+            return layout.on_screen();
+        }
         let Some(front) = self.front() else {
             return Vec::new();
         };
@@ -4834,40 +4856,53 @@ impl Chats {
         Ok(())
     }
 
-    /// **Where chat `session`'s pane is and what it shows** (#1486, #1489): chat `shown` in
-    /// place of its own, or its own again with `None`; and the chat whose tab the pane is in,
-    /// `beside`, or `None` for a chat that is its tab's own or has no pane. The record keeps
-    /// both, so a reloaded window and the next launch put each pane back. Written only when
-    /// one changes, for [`Self::pin`]'s reason.
+    /// **Every tab the window has, as a tree of panes** (#4751): held, and written into the
+    /// record so a relaunch puts each split, its sizes, its views and each strip's front tab
+    /// back. From here on what is on screen is derived from it ([`Self::looked_at`]), and the
+    /// old per-chat `beside` and `shows` are no longer written.
     ///
-    /// **What is kept is the window's word, and it says only where the person is looking**
-    /// ([`Self::looked_at`]): the core starts and allows nothing by these numbers. A reported
-    /// task's end, already due, is held while they say the person is reading it, and no
-    /// notification is sent about a chat they say is on screen. The window shows a chat only
-    /// where the chat named is open and below this one. A chat is never said to show itself,
-    /// or to be beside itself.
-    pub fn tab_shows(
-        &self,
-        session: u32,
-        shown: Option<u32>,
-        beside: Option<u32>,
-    ) -> Result<(), String> {
-        let shown = shown.filter(|other| *other != session);
-        let beside = beside.filter(|other| *other != session);
-        let mut open = lock(&self.open);
-        let Some(one) = open.get_mut(&session) else {
+    /// **Refused whole, saying why**, where it names a chat in two panes, across every tab and
+    /// window (a chat is shown once), or a chat that is not open here: one still being put
+    /// back at a launch is open. A refusal changes nothing. Written only when it changes, for
+    /// [`Self::pin`]'s reason.
+    ///
+    /// **What is kept is the window's word, and it says only where the person is looking**: the
+    /// core starts and allows nothing by these numbers. A reported task's end, already due, is
+    /// held while it says the person is reading it, and no notification is sent about a chat
+    /// it says is on screen.
+    pub fn lay_out(&self, layout: Layout) -> Result<(), String> {
+        if let Some(twice) = layout.named_twice() {
             return Err(format!(
-                "purlis has no chat {session} open to show another in."
+                "That layout shows chat {twice} in two panes, and a chat is shown in one pane at \
+                 a time. Nothing was changed."
             ));
-        };
-        if one.chat.shows == shown && one.chat.beside == beside {
-            return Ok(());
         }
-        one.chat.shows = shown;
-        one.chat.beside = beside;
-        drop(open);
-        self.write_it_down();
+        {
+            // One lock at a time: the ones still to start, then the open ones.
+            let coming: Vec<u32> = lock(&self.coming).iter().map(|one| one.number).collect();
+            let open = lock(&self.open);
+            let is_open = |number: u32| {
+                open.get(&number).is_some_and(|one| !one.chat.graded) || coming.contains(&number)
+            };
+            if let Some(gone) = layout.chats().into_iter().find(|number| !is_open(*number)) {
+                return Err(format!(
+                    "That layout shows chat {gone}, which is not open in this project. Nothing \
+                     was changed."
+                ));
+            }
+        }
+        let held = Some(layout);
+        let changed = std::mem::replace(&mut *lock(&self.layout), held.clone()) != held;
+        if changed {
+            self.write_it_down();
+        }
         Ok(())
+    }
+
+    /// The tabs the window last reported, or at a launch the record's; `None` for a record
+    /// written before tabs were recorded, which the window puts back the old way.
+    pub fn layout(&self) -> Option<Layout> {
+        lock(&self.layout).clone()
     }
 
     /// Gives a chat the name `raw`, or takes the one it was given off when `raw` is blank —
@@ -5258,6 +5293,10 @@ impl Chats {
                 moved = true;
             }
         }
+        // And every pane that showed it shows it still, under its new number (#4751).
+        if let Some(layout) = lock(&self.layout).as_mut() {
+            moved |= layout.renumber(session, started);
+        }
         for starting in lock(&self.reserved).values_mut() {
             if let Some(from) = starting.from.as_mut()
                 && from.chat == session
@@ -5433,6 +5472,9 @@ impl Chats {
         }
         if let Some(focus) = lock(&self.focus).as_mut() {
             changed |= moved.focus(focus);
+        }
+        if let Some(layout) = lock(&self.layout).as_mut() {
+            changed |= moved.layout(layout);
         }
         if changed {
             self.write_it_down();
@@ -5971,8 +6013,26 @@ impl Chats {
             .map(|&session| (session, self.sessions.process_id(session)))
             .collect();
         let models = lock(&self.models).clone();
+        let layout = lock(&self.layout).clone();
+        // Taken before `open`, which `front` does not hold.
+        let front = self.front();
         let open = lock(&self.open);
-        let front = *lock(&self.front);
+        // **Once a layout is held, the old per-chat fields are not written** (#4751): the tree
+        // says what each pane shows, and a record with one is never read the old way. Until
+        // then each chat's are carried as they were read, so a record written before the window
+        // reports loses nothing.
+        let laid_out = layout.is_some();
+        let retired = |chat: Chat| {
+            if laid_out {
+                Chat {
+                    shows: None,
+                    beside: None,
+                    ..chat
+                }
+            } else {
+                chat
+            }
+        };
         // **One chat, once** (NO-3): a chat being retried is waiting and open at once until its
         // start returns, and one being started fresh is open twice, under its old session and
         // its new. The record holds each id once — as the newest session open under it.
@@ -6004,6 +6064,7 @@ impl Chats {
                 // and a start that is not a reattach reads neither.
                 ..chat.clone()
             })
+            .map(retired)
             .collect();
         // The ids written so far, as chats that could not be started. A chat of a launch is
         // listed there before it leaves the ones still to start (`start_what_is_coming`), and
@@ -6032,7 +6093,7 @@ impl Chats {
                 {
                     return None;
                 }
-                return Some(Chat {
+                return Some(retired(Chat {
                     active: front == Some(session),
                     pid: None,
                     model: None,
@@ -6042,7 +6103,7 @@ impl Chats {
                     plane_skills: None,
                     routing: None,
                     ..one.chat.clone()
-                });
+                }));
             };
             let chat = &running.chat;
             if superseded(chat, Some(session)) {
@@ -6062,11 +6123,18 @@ impl Chats {
                 model: models.get(&session).cloned(),
                 ..chat.clone()
             })
+            .map(retired)
         }));
         Record {
             chats,
-            views: lock(&self.views).clone(),
+            // The view tabs are panes of the tree once there is one (#4751).
+            views: if laid_out {
+                Vec::new()
+            } else {
+                lock(&self.views).clone()
+            },
             focus: lock(&self.focus).clone(),
+            layout,
             // What the next launch must not deal again — charter-app#90. It is the high
             // water mark and not the count of what is open, so the numbers of chats that
             // were closed are spent too, and no new chat lands on a pointer one of them
@@ -6130,6 +6198,10 @@ impl Chats {
         // (`reopened_views`) — and written back out with everything else at the next change.
         *lock(&self.views) = record.views.clone();
         *lock(&self.focus) = record.focus.clone();
+        // The stored layout stands until the window reports one (#4751): what is on screen is
+        // read from it meanwhile, so a task the person left in front is not ended under them
+        // before the window is drawn.
+        *lock(&self.layout) = record.layout.clone();
         // Every chat here starts a program. A record with thousands in it — a runaway, or a
         // file nobody meant — would start them all. The cap is far above the fifty the
         // product is for, so it never meets an operator; it is only ever a backstop. What it
@@ -6787,6 +6859,7 @@ impl Chats {
         lock(&self.coming).clear();
         lock(&self.views).clear();
         *lock(&self.focus) = None;
+        *lock(&self.layout) = None;
         *lock(&self.front) = None;
     }
 }

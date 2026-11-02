@@ -157,6 +157,8 @@ function finishedTask(asker: number, name: string, more: Partial<FinishedTask> =
 
 function core(open: Listed[], finished: FinishedTask[] = []) {
   const asked: Asked[] = [];
+  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it. */
+  let laidOut: unknown = null;
   const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
@@ -168,11 +170,12 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open.map(asListed);
-    if (cmd === "tab_shows") {
-      const one = open.find((chat) => chat.session === a.session);
-      if (one) one.shows = (a.shown as number | null) ?? null;
+    if (cmd === "window_layout") {
+      // The core keeps every tab as the window last said it (#4751), and a reload asks for it.
+      laidOut = a.layout;
       return null;
     }
+    if (cmd === "reopened_layout") return laidOut;
     if (cmd === "dispatch_grants_needed") return [];
     // The Brief panel's read (#1494): this core holds no dispatch records.
     if (cmd === "task_brief") throw "This project holds no record of that task.";

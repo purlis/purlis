@@ -42,6 +42,7 @@ import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
 import { SkillsChip } from "./UseSkill";
 import { harnessCardView, type Layout, type ViewRef } from "./tabs";
+import { shareOf, WHOLE } from "./laidOut";
 import { type Crumbs } from "./tabChats";
 import { BriefButton, type BriefAsk } from "./Brief";
 import { PaneCrumbs } from "./PaneCrumbs";
@@ -437,6 +438,7 @@ export function LayoutPanes({
   memory,
   firstTask,
   split,
+  path = "",
 }: {
   /** The chats the launch has still to start (`restoring.rs`): each one's pane says so, in the
    *  place its terminal takes. */
@@ -532,11 +534,16 @@ export function LayoutPanes({
   };
   /** What the first task's tab asks the plane to do (FR-28). */
   firstTask: FirstTaskDoes;
-  /** Where a view's divider was, and where the operator moved it to (FM-2). */
+  /** Where a view's divider was, and where the operator moved it to (FM-2); and where a
+   *  split's handle was dragged to, by the split's path in the tab (#4751). */
   split: {
     of: (view: ViewRef) => number | undefined;
     moved: (view: ViewRef, split: number) => void;
+    shared?: (path: string, share: number) => void;
   };
+  /** This layout's path from its tab's root: `a` for a split's first child, `b` for its
+   *  second. The tab's own layout is `""`. */
+  path?: string;
 }) {
   if (layout.kind === "pane") {
     const content = layout.content;
@@ -774,8 +781,22 @@ export function LayoutPanes({
       </PaneFrame>
     );
   }
+  // **Each side starts at the share the tab holds** (#4751), and a drag is said back by the
+  // split's path, so the record keeps it and a relaunch draws the split as it was. Only a drag
+  // or a resize key is the person saying how big they want it: the library reports a layout
+  // on mount too, which is a measurement purlis caused.
+  const share = shareOf(layout);
+  const sideOf = (side: number) => `${path}${side === 0 ? "a" : "b"}`;
+  const settled = (sizes: Record<string, number>, meta: { isUserInteraction: boolean }) => {
+    if (!meta.isUserInteraction) return;
+    const first = sizes[`pane-${sideOf(0)}`];
+    if (typeof first === "number") split.shared?.(path, Math.round(first * 10));
+  };
   return (
-    <Group orientation={layout.direction === "row" ? "horizontal" : "vertical"}>
+    <Group
+      orientation={layout.direction === "row" ? "horizontal" : "vertical"}
+      onLayoutChanged={settled}
+    >
       {layout.children.map((child, side) => (
         /* **Keyed by which side of the split it is, not by what is in it.**
          *
@@ -795,8 +816,12 @@ export function LayoutPanes({
          */
         <Fragment key={side}>
           {side === 1 && <Separator className="pane-split" aria-label="Resize the split" />}
-          <Panel>
+          <Panel
+            id={`pane-${sideOf(side)}`}
+            defaultSize={`${(side === 0 ? share : WHOLE - share) / 10}%`}
+          >
             <LayoutPanes
+              path={sideOf(side)}
               plane={plane}
               restoring={restoring}
               layout={child}

@@ -955,6 +955,7 @@ fn a_chat_is_announced_with_the_harness_and_conversation_it_was_started_under() 
 }
 use purlis_core::harness::SessionId;
 use purlis_core::reopen::Fresh;
+use purlis_core::reopen::layout::{Direction, EVEN, Layout, Node, Pane, PaneView, Tab};
 
 use super::*;
 use crate::host::pretend::Pretend;
@@ -3686,6 +3687,7 @@ fn putting_a_record_back_writes_it_once_when_every_chat_is_back() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -3965,6 +3967,7 @@ fn the_chat_that_was_in_front_comes_back_in_front() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -3996,6 +3999,7 @@ fn a_record_is_put_back_as_one_session_for_each_chat_it_holds() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4019,6 +4023,7 @@ fn a_chat_put_back_with_a_conversation_is_resumed_by_it() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4056,6 +4061,7 @@ fn the_chat_that_was_in_front_is_the_one_the_window_is_told_to_show() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4081,6 +4087,7 @@ fn a_chat_put_back_with_no_conversation_says_so_and_starts_a_new_one() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4106,6 +4113,7 @@ fn the_record_names_the_process_each_chat_runs_as_now_and_not_the_one_it_was_put
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4170,6 +4178,7 @@ fn a_claude_chat_reopened_after_its_workspace_was_renamed_starts_fresh_and_says_
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     };
     // What `charter workspace rename alpha beta` does to the record.
@@ -4212,6 +4221,7 @@ fn a_chat_that_could_not_be_started_stays_in_the_record_for_the_next_launch() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4253,6 +4263,7 @@ fn a_record_cannot_ask_a_launch_to_start_an_unbounded_number_of_programs() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4285,6 +4296,7 @@ fn a_chat_that_could_not_be_started_is_named_with_the_reason() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4310,6 +4322,7 @@ fn a_chat_that_could_not_be_started_is_still_recorded_after_a_later_change() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4330,6 +4343,7 @@ fn one_recorded(program: &str) -> Record {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     }
 }
@@ -4729,6 +4743,7 @@ fn of_two_waiting_chats_with_one_name_forget_drops_only_the_one_named_by_its_id(
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4776,6 +4791,7 @@ fn a_record_holding_one_id_twice_puts_back_two_chats_with_their_own_ids_and_keep
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4964,6 +4980,7 @@ fn a_chat_whose_program_has_gone_is_left_out_and_the_others_still_come_back() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -5188,6 +5205,7 @@ fn a_record_written_before_chats_kept_their_numbers_is_put_back_as_it_always_was
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -5210,6 +5228,7 @@ fn a_chat_put_back_is_one_the_next_quit_records_again() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -5254,74 +5273,276 @@ fn a_pin_can_be_taken_off_again() {
     let _ = chats.close(session);
 }
 
-// ----- what a session's tab shows (#1486) -----
+// ----- every tab as a tree of panes (#4751) -----
+
+/// A tab on `ops`'s strip in the project window, in front, holding `tree`.
+fn front_tab(tree: Node) -> Tab {
+    Tab {
+        workspace: Some("ops".to_owned()),
+        pinned: false,
+        window: 0,
+        front: true,
+        focused: Vec::new(),
+        tree,
+    }
+}
+
+/// The project window drawing `ops`'s strip, holding `tabs`.
+fn on_ops(tabs: Vec<Tab>) -> Layout {
+    Layout {
+        strip: Some("ops".to_owned()),
+        tabs,
+    }
+}
+
+/// Two chats split side by side, the first holding a third of the tab.
+fn split_of(one: u32, other: u32) -> Layout {
+    on_ops(vec![front_tab(Node::split(
+        Direction::Row,
+        333,
+        Node::chat(one),
+        Node::chat(other),
+    ))])
+}
 
 #[test]
-fn what_a_tab_shows_is_written_into_the_record_and_taken_out_again() {
+fn two_chats_split_together_with_their_sizes_come_back_the_same_after_a_relaunch() {
     let dir = tempfile::tempdir().unwrap();
-    let chats = Chats::new();
-    let session = chats
+    let plane = tempfile::tempdir().unwrap();
+    let before = Chats::new();
+    let one = before
         .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
         .unwrap();
+    let other = before
+        .start(&chat(&a_claude(dir.path()), "ide.8", None), SIZE)
+        .unwrap();
+    before.lay_out(split_of(one, other)).expect("both are open");
+    purlis_core::reopen::write(plane.path(), &before.record()).unwrap();
+    before.end_all();
+
+    let after = Chats::new();
+    let record = purlis_core::reopen::read_or_refusal(plane.path()).unwrap();
+    after.put_back(&record, SIZE);
+
+    assert_eq!(after.layout(), Some(split_of(one, other)));
+    assert_eq!(after.looked_at(), vec![one, other]);
+    after.end_all();
+}
+
+#[test]
+fn a_view_beside_a_chat_comes_back_after_a_relaunch() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let before = Chats::new();
+    let one = before
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let view = Node::Pane(Pane::View(PaneView {
+        from: None,
+        view: "persona".to_owned(),
+        key: "steward".to_owned(),
+        title: "steward".to_owned(),
+        split: None,
+    }));
+    let laid = on_ops(vec![front_tab(Node::split(
+        Direction::Row,
+        EVEN,
+        Node::chat(one),
+        view,
+    ))]);
+    before.lay_out(laid.clone()).unwrap();
+    purlis_core::reopen::write(plane.path(), &before.record()).unwrap();
+    before.end_all();
+
+    let after = Chats::new();
+    let record = purlis_core::reopen::read_or_refusal(plane.path()).unwrap();
+    assert!(record.holds_anything());
+    after.put_back(&record, SIZE);
+
+    assert_eq!(after.layout(), Some(laid));
+    assert_eq!(after.looked_at(), vec![one], "a view counts as nothing");
+    after.end_all();
+}
+
+#[test]
+fn a_layout_that_names_a_chat_twice_is_refused_says_why_and_changes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let one = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    // In a tab window too: a chat is shown once across every window of the project.
+    let mut elsewhere = Tab::of_chat(Some("ops"), one);
+    elsewhere.window = 2;
+    elsewhere.front = true;
+    let twice = on_ops(vec![front_tab(Node::chat(one)), elsewhere]);
+
+    let refused = chats.lay_out(twice).unwrap_err();
+
+    assert!(
+        refused.contains(&format!("chat {one} in two panes")),
+        "{refused}"
+    );
+    assert_eq!(chats.layout(), None);
+    assert_eq!(chats.record().layout, None);
+    let _ = chats.close(one);
+}
+
+#[test]
+fn a_layout_that_names_a_chat_not_open_is_refused_and_says_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let one = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(one))]))
+        .unwrap();
+
+    let refused = chats.lay_out(split_of(one, one + 100)).unwrap_err();
+
+    assert!(
+        refused.contains(&format!("chat {}, which is not open", one + 100)),
+        "{refused}"
+    );
+    assert_eq!(chats.looked_at(), vec![one], "the layout held stands");
+    let _ = chats.close(one);
+}
+
+#[test]
+fn what_is_on_screen_is_every_chat_in_the_front_tab_of_the_drawn_strip_and_each_tab_window() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let mut numbers = Vec::new();
+    for name in ["ide.1", "ide.2", "ide.3", "ide.4", "ide.5"] {
+        numbers.push(
+            chats
+                .start(&chat(&a_claude(dir.path()), name, None), SIZE)
+                .unwrap(),
+        );
+    }
+    let [split_a, split_b, behind, other_strip, torn_off] = numbers[..] else {
+        unreachable!("five chats")
+    };
+    let mut behind_tab = Tab::of_chat(Some("ops"), behind);
+    behind_tab.front = false;
+    let mut other = Tab::of_chat(None, other_strip);
+    other.front = true;
+    let mut window = Tab::of_chat(Some("ops"), torn_off);
+    window.window = 2;
+    window.front = true;
+    let with_empty = front_tab(Node::split(
+        Direction::Column,
+        EVEN,
+        Node::split(
+            Direction::Row,
+            EVEN,
+            Node::chat(split_a),
+            Node::chat(split_b),
+        ),
+        Node::Pane(Pane::Empty),
+    ));
 
     chats
-        .tab_shows(session, Some(41), None)
-        .expect("the chat is open");
-    assert_eq!(chats.record().chats[0].shows, Some(41));
-    assert_eq!(chats.open_now()[0].shows, Some(41));
-
-    chats.tab_shows(session, None, None).unwrap();
-    assert_eq!(chats.record().chats[0].shows, None);
-    let _ = chats.close(session);
-}
-
-#[test]
-fn a_tab_is_never_said_to_show_its_own_chat_and_a_chat_not_open_shows_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let chats = Chats::new();
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .lay_out(on_ops(vec![with_empty, behind_tab, other, window]))
         .unwrap();
 
-    chats.tab_shows(session, Some(session), None).unwrap();
-    assert_eq!(chats.record().chats[0].shows, None);
-    assert!(chats.tab_shows(session + 100, Some(3), None).is_err());
-    let _ = chats.close(session);
+    assert_eq!(chats.looked_at(), vec![split_a, split_b, torn_off]);
+    assert_eq!(
+        chats.front(),
+        Some(split_a),
+        "the first chat of the front tab"
+    );
+    chats.end_all();
 }
 
 #[test]
-fn a_tab_follows_the_chat_it_shows_when_that_chat_is_started_again_under_a_new_number() {
+fn a_pane_follows_its_chat_when_that_chat_is_started_again_under_a_new_number() {
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
-    let session = chats
+    let one = chats
         .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
         .unwrap();
-    chats.tab_shows(session, Some(41), None).unwrap();
+    let other = chats
+        .start(&chat(&a_claude(dir.path()), "ide.8", None), SIZE)
+        .unwrap();
+    chats.lay_out(split_of(one, other)).unwrap();
 
-    chats.followed(41, 52);
+    chats.followed(other, 52);
 
-    assert_eq!(chats.record().chats[0].shows, Some(52));
-    let _ = chats.close(session);
+    assert_eq!(chats.layout(), Some(split_of(one, 52)));
+    assert_eq!(chats.record().layout, Some(split_of(one, 52)));
+    chats.end_all();
 }
 
 #[test]
-fn showing_what_a_tab_already_shows_writes_nothing() {
+fn laying_out_what_is_already_laid_out_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let written = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counting = std::sync::Arc::clone(&written);
     let chats = Chats::recorded_by(Box::new(move |_| {
         counting.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }));
-    let session = chats
+    let one = chats
         .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
         .unwrap();
-    chats.tab_shows(session, Some(41), None).unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(one))]))
+        .unwrap();
     let before = written.load(std::sync::atomic::Ordering::SeqCst);
 
-    chats.tab_shows(session, Some(41), None).unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(one))]))
+        .unwrap();
 
     assert_eq!(written.load(std::sync::atomic::Ordering::SeqCst), before);
-    let _ = chats.close(session);
+    let _ = chats.close(one);
+}
+
+#[test]
+fn a_record_with_no_tabs_list_is_read_the_old_way_until_the_window_reports_and_then_its_old_fields_retire()
+ {
+    // Today's records keep working: a chat beside the one in front is on screen, as before.
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let old = Record {
+        chats: vec![
+            Chat {
+                number: Some(3),
+                active: true,
+                ..chat(&a_claude(dir.path()), "ide.3", None)
+            },
+            Chat {
+                number: Some(4),
+                beside: Some(3),
+                ..chat(&a_claude(dir.path()), "ide.4", None)
+            },
+        ],
+        ..Record::default()
+    };
+    chats.put_back(&old, SIZE);
+    assert_eq!(chats.layout(), None);
+    assert_eq!(chats.looked_at(), vec![3, 4]);
+    assert_eq!(
+        chats.record().chats[1].beside,
+        Some(3),
+        "carried until a layout"
+    );
+
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(4))]))
+        .unwrap();
+
+    assert_eq!(chats.looked_at(), vec![4]);
+    let record = chats.record();
+    assert!(
+        record
+            .chats
+            .iter()
+            .all(|one| one.beside.is_none() && one.shows.is_none())
+    );
+    assert!(record.layout.is_some());
+    chats.end_all();
 }
 
 #[test]
@@ -5445,27 +5666,6 @@ fn a_task_chat_sent_back_out_of_its_tab_has_none_in_the_record_and_is_still_open
     assert!(!chats.record().chats[0].has_tab());
     assert_eq!(chats.open_now().len(), 1, "sending it back ends nothing");
     assert!(!chats.open_now()[0].tab);
-    let _ = chats.close(session);
-}
-
-#[test]
-fn the_tab_a_chat_has_a_pane_in_is_written_into_the_record_and_follows_a_restart() {
-    // #1489: what puts a task back beside its session, and says what is on screen.
-    let dir = tempfile::tempdir().unwrap();
-    let chats = Chats::new();
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
-        .unwrap();
-
-    chats.tab_shows(session, None, Some(41)).unwrap();
-    assert_eq!(chats.record().chats[0].beside, Some(41));
-    assert_eq!(chats.open_now()[0].beside, Some(41));
-    chats.followed(41, 52);
-    assert_eq!(chats.record().chats[0].beside, Some(52));
-
-    // Never beside itself, and its own tab's chat again with none.
-    chats.tab_shows(session, None, Some(session)).unwrap();
-    assert_eq!(chats.record().chats[0].beside, None);
     let _ = chats.close(session);
 }
 
@@ -6575,6 +6775,7 @@ fn a_chat_put_back_keeps_the_name_it_was_given() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -9265,4 +9466,45 @@ fn a_prompt_answered_after_its_chat_started_again_is_not_kept_by_the_new_start_4
     chats.keep_last_prompt(session, &Arc::new((*was).clone()), Some(&was.record));
     assert_eq!(lock(&chats.open)[&session].last_prompt, None);
     let _ = chats.close(session);
+}
+
+#[test]
+fn a_notification_is_not_lost_to_a_stale_layout_while_the_window_is_in_the_background() {
+    // #4751: after a launch the record's layout stands until the window reports one, so it can
+    // say a chat is on screen that nobody has drawn yet. A notification asks the window too.
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let record = Record {
+        chats: vec![Chat {
+            number: Some(3),
+            ..chat(&a_claude(dir.path()), "ide.3", None)
+        }],
+        layout: Some(on_ops(vec![front_tab(Node::chat(3))])),
+        ..Record::default()
+    };
+    chats.put_back(&record, SIZE);
+    assert!(
+        chats.looks_at(3),
+        "the stored layout stands until the window reports"
+    );
+
+    let in_the_background = crate::asknotify::Looking {
+        window_in_front: false,
+        inbox_open: false,
+        chat_on_screen: chats.looks_at(3),
+    };
+
+    assert!(
+        !in_the_background.is_looking(),
+        "a notification about chat 3 is held back by a layout nobody is looking at"
+    );
+    let in_front = crate::asknotify::Looking {
+        window_in_front: true,
+        ..in_the_background
+    };
+    assert!(
+        in_front.is_looking(),
+        "and only held back while the window is in front"
+    );
+    chats.end_all();
 }
