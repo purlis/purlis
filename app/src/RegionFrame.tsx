@@ -13,6 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Group, Panel, usePanelRef, type Layout } from "react-resizable-panels";
+import { P4351 } from "./debug4351"; // DEBUG-4351
 import { Separator as ResizeHandle } from "./ui/panel/Separator";
 import { useProjectShown } from "./projectShown";
 import { X } from "lucide-react";
@@ -669,7 +670,9 @@ function ViewHost({
   const element = useRef<HTMLElement | null>(host);
   useViewScroll(frame, view, region, element);
   return createPortal(
-    <HeadActions.Provider value={actions}>{children}</HeadActions.Provider>,
+    <HeadActions.Provider value={actions}>
+      <P4351 id={`view:${view}`}>{children}</P4351>
+    </HeadActions.Provider>, // DEBUG-4351
     host,
   );
 }
