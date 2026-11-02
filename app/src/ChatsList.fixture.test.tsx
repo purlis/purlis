@@ -18,6 +18,7 @@ import { DoingsHere, fixedDoings } from "./chatDoing";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import { tasksBelowOf } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
+import { QuestionsHere } from "./QuestionsHere";
 import { forgetThisLaunch, SLOTS } from "./regions";
 import { MOST_TEXT } from "./textSize";
 import { stateClock } from "./stateClock";
@@ -78,8 +79,8 @@ const CHATS: ListedChat[] = [
     workspace: "volaticloud",
     branch: "purlis/dispatch/live-check-of-the-staging-cluster",
   }),
-  // Asking a chat whose name has no space to break at.
-  task(3, 2, { name: "devops 3", asking: LONG }),
+  // Asking a chat whose name has no space to break at (its question is in `questions`).
+  task(3, 2, { name: "devops 3" }),
   // Ended without a report: the longest word a state has.
   task(4, 3, { name: "devops 4", report: "failed" }),
   // The same, five levels down, under a name that cannot break.
@@ -206,6 +207,13 @@ const DOINGS = fixedDoings({
   heardAt: {},
 });
 
+/** The asks registry's list (#4564): task 3's question is with its asking chat, which the
+ *  row says with how long it has asked. */
+const questions = () => ({
+  asks: [],
+  with_asking_chat: [{ session: 3, asker: LONG, since: Math.floor(NOW / 1000) - 3 * 60 }],
+});
+
 function markup(): string {
   // **The chats after the first few arrived while the window was open** (#3484): each row ends
   // with the time it came into its state, which the e2e holds whole while the name gives way.
@@ -221,14 +229,16 @@ function markup(): string {
     <ChatsHere.Provider value={fixedChats(states())}>
       <DoingsHere.Provider value={DOINGS}>
         <TasksBelowLent below={tasksBelowOf(CHATS, FINISHED)}>
-          <ChatsSection
-            rows={chatsTree(CHATS)}
-            front={1}
-            onOpen={() => {}}
-            stopping={new Set([6])}
-            finished={FINISHED}
-            clock={clock}
-          />
+          <QuestionsHere.Provider value={questions()}>
+            <ChatsSection
+              rows={chatsTree(CHATS)}
+              front={1}
+              onOpen={() => {}}
+              stopping={new Set([6])}
+              finished={FINISHED}
+              clock={clock}
+            />
+          </QuestionsHere.Provider>
         </TasksBelowLent>
       </DoingsHere.Provider>
     </ChatsHere.Provider>,
