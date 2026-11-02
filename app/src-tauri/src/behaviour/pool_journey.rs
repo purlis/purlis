@@ -1012,3 +1012,87 @@ mod a_chat_on_a_pool_its_workspace_left {
         back.close(id).expect("it closes");
     }
 }
+
+/// **A runner stopped before an update keeps a home that holds a chat's conversation, and the
+/// conversation comes back to the pool's runner** (#4633, ruled 2026-11-02), on real containers:
+/// the home is read by a container of the new image as Docker runs it, and the conversation lands
+/// where Claude Code resumes it on the new runner.
+mod a_stopped_runners_conversation_comes_back {
+    use super::*;
+
+    #[test]
+    fn in_a_docker_pool() {
+        use purlis_core::dockerpool::{Image, PURLIS_RUNNER_IMAGE};
+        let (Ok(image), Ok(next)) = (std::env::var(IMAGE), std::env::var(NEXT_IMAGE)) else {
+            assert!(
+                std::env::var_os(PARITY).is_none(),
+                "{PARITY} is set and {IMAGE} names no runner image: the parity job built none"
+            );
+            return;
+        };
+        let scripts = tempfile::tempdir().expect("a folder for its docker");
+        let docker = a_docker_of_the_jobs_registry(scripts.path());
+        let (_target, machine, pool) =
+            a_window_on_a_pool_of(&format!("{PURLIS_RUNNER_IMAGE}@{image}"), docker);
+        let next =
+            Image::pinned(&format!("{PURLIS_RUNNER_IMAGE}@{next}")).expect("named by digest");
+        let old = the_runner(&machine, &pool);
+        let old_name = purlis_core::runners::runner_for(&machine.config, &pool)
+            .expect("its runner")
+            .name()
+            .to_owned();
+        let conversation = ".claude/projects/-home-purlis-p/0b5e7c1d.jsonl";
+        old.runs(
+            false,
+            &format!(
+                "umask 077 && mkdir -p \"$HOME/{}\" && cat > \"$HOME/{conversation}\"",
+                Path::new(conversation)
+                    .parent()
+                    .expect("a folder")
+                    .display()
+            ),
+            b"{\"type\":\"user\",\"message\":\"what a suspend ended\"}\n",
+        );
+        let stopped = purlis_core::forklock::output(
+            std::process::Command::new(machine.docker.program()).args([
+                "container",
+                "stop",
+                old.container.as_str(),
+            ]),
+        )
+        .expect("docker runs");
+        assert!(stopped.status.success(), "{stopped:?}");
+
+        let said = crate::poolfollow::follow_and_drain(&machine, Some(&next), &|_| {
+            panic!("a stopped runner is not asked")
+        });
+
+        assert!(
+            said.iter().any(|line| line.contains("conversations")),
+            "{said:?}"
+        );
+        let held = purlis_core::runners::named(&machine.config, &old_name)
+            .expect("read")
+            .expect("the old runner is kept");
+        assert!(held.draining && held.held, "{held:?}");
+
+        let brought =
+            purlis_core::pools::bring_back(&machine.config, &machine.docker, &old_name, None)
+                .expect("its conversations are brought back");
+
+        assert_eq!((brought.found, brought.left), (1, 0), "{brought:?}");
+        assert!(brought.removed.is_some_and(|removed| removed.forgotten));
+        let now = the_runner(&machine, &pool);
+        assert_ne!(now.container, old.container, "a runner of its own");
+        assert_eq!(
+            now.prints(&format!("cat \"$HOME/{conversation}\"")),
+            "{\"type\":\"user\",\"message\":\"what a suspend ended\"}\n",
+            "the conversation is where Claude Code resumes it on the new runner"
+        );
+        assert!(
+            purlis_core::runners::named(&machine.config, &old_name)
+                .expect("read")
+                .is_none()
+        );
+    }
+}

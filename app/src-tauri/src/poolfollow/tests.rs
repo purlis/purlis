@@ -357,7 +357,7 @@ fn a_runner_that_stopped_during_its_drain_keeps_its_home() {
     let said = follow_and_drain(&machine, None, &|_| panic!("a stopped runner is not asked"));
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
-    assert!(said[0].contains("removed in Devices"), "{said:?}");
+    assert!(said[0].contains("discarded in Devices"), "{said:?}");
 }
 
 /// **A link started it again, so it runs and lists no chat, and that says nothing**: what the stop

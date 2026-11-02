@@ -475,7 +475,7 @@ pub fn follow_and_drain(
                 said.push(match purlis_core::pools::hold(&machine.config, kept.name()) {
                     Ok(()) => format!(
                         "draining runner {} stopped during its drain, so it stays with its home \
-                         until it is removed in Devices",
+                         until its chats' conversations are brought back or discarded in Devices",
                         kept.name()
                     ),
                     Err(why) => format!("draining runner {} was not held: {why}", kept.name()),

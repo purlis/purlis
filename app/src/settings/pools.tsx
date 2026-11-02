@@ -146,8 +146,8 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
   if (version.held > 0) {
     lines.push(
       version.held === 1
-        ? "1 older runner stopped during its drain. purlis keeps it and what its chats left until you remove it in Devices."
-        : `${version.held} older runners stopped during their drain. purlis keeps them and what their chats left until you remove them in Devices.`,
+        ? "1 older runner stopped with what its chats left in its home. purlis keeps it until you bring their conversations back or discard them in Devices."
+        : `${version.held} older runners stopped with what their chats left in their homes. purlis keeps them until you bring their conversations back or discard them in Devices.`,
     );
   }
   if (version.draining > 0) {
