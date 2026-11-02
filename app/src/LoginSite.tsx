@@ -36,9 +36,9 @@ export function LoginSite({
 }) {
   return (
     <div className="login-site" data-testid="login-site">
-      <p className="login-site-domain">
+      <p className="login-site-domain ui-text-title">
         https://{login.domain}
-        <span className="login-site-page">{login.path}</span>
+        <span className="ui-text-body">{login.path}</span>
       </p>
       <TextField
         aria-label="Change the site this login is filled on"
@@ -56,7 +56,7 @@ export function LoginSite({
         <code>{login.key}</code> from vault <code>{login.vault}</code>, on https only.
       </p>
       {login.warnings.map((warning) => (
-        <p key={warning} className="login-site-warning" role="alert">
+        <p key={warning} className="login-site-warning">
           {warning}
         </p>
       ))}

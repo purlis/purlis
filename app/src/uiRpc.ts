@@ -392,8 +392,8 @@ export const commands = {
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
-	answerBrowserLogin: __WINDOW_ONLY_RESULT,
 	answerPoolLogin: __WINDOW_ONLY_RESULT,
+	answerBrowserLogin: __WINDOW_ONLY_RESULT,
 	answerPoolTool: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
@@ -6489,33 +6489,21 @@ export type LocalModelRow = {
  *  value: purlis hasn't read one.
  */
 export type LoginShown = {
-	/**
-	 *  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`.
-	 */
+	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
 	domain: string,
-	/**
-	 *  The page's path on it.
-	 */
+	/**  The page's path on it. */
 	path: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
-	/**
-	 *  Plain warnings, said above the choices.
-	 */
+	/**  Plain warnings, said above the choices. */
 	warnings: string[],
-	/**
-	 *  The line Always writes, shown before it's pressed, and where.
-	 */
+	/**  The line Always writes, shown before it's pressed, and where. */
 	line: string,
 	under: string,
-	/**
-	 *  Why Always isn't offered, where it isn't.
-	 */
+	/**  Why Always isn't offered, where it isn't. */
 	no_always?: string | null,
-	/**
-	 *  The persona's chats get the vault too with Always.
-	 */
+	/**  The persona's chats get the vault too with Always. */
 	vault_too: boolean,
 };
 
@@ -8674,14 +8662,10 @@ export type PresetsChanged = {
 	now: string[],
 };
 
-/**
- *  A press on a login's notice.
- */
+/**  A press on a login's notice. */
 export type Press = "once" | "chat" | "always" | "keep";
 
-/**
- *  What a press answered.
- */
+/**  What a press answered. */
 export type Pressed = 
 /**  The answer stands: the sentence it leaves. */
 { kind: "done"; said: string } | 

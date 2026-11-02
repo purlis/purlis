@@ -429,7 +429,11 @@ fn always_is_not_offered_while_the_personas_list_waits_for_an_allow() {
 
 #[test]
 fn always_is_held_by_a_project_with_proposals_off_and_the_rest_are_not() {
-    let dir = project("[sandbox]\nmode = \"on\"\nproposed-changes = \"off\"\n");
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    sandbox::policy::set_for_this_test(Locks::parse(
+        r#"{"sandbox": {"proposed-changes": "off"}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
     let grants = Grants::default();
     let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/");
     assert!(grants.waiting()[0].no_always.is_some());

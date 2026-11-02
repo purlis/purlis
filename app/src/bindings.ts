@@ -695,10 +695,6 @@ export const commands = {
 	 */
 	keepChatBrowserOff: (plane: PlaneId, session: number, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_chat_browser_off", { plane, session, reason })),
 	/**
-	 *  **The person's press on a login's notice** (#4595). The window's alone (`ui::WINDOW_ONLY`).
-	 */
-	answerBrowserLogin: (plane: PlaneId, session: number, id: number, press: Press, shown: string, typed: string | null, reason: string | null) => typedError<Pressed, string>(__TAURI_INVOKE("answer_browser_login", { plane, session, id, press, shown, typed, reason })),
-	/**
 	 *  **Allow or Keep off on chat `session`'s pool login Ask** (#2050): with `allow`, its persona's
 	 *  browser logins may be filled on the pool's runner while the app runs and the pool stays as
 	 *  the Ask showed it; Keep off refuses them there until the pool changes, with the reason the
@@ -706,6 +702,8 @@ export const commands = {
 	 *  each is told on its next turn.
 	 */
 	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
+	/**  **The person's press on a login's notice** (#4595). The window's alone (`ui::WINDOW_ONLY`). */
+	answerBrowserLogin: (plane: PlaneId, session: number, id: number, press: Press, shown: string, typed: string | null, reason: string | null) => typedError<Pressed, string>(__TAURI_INVOKE("answer_browser_login", { plane, session, id, press, shown, typed, reason })),
 	/**
 	 *  **Allow or Keep off on run `run` of chat `session`'s tool on its pool** (#2047): with
 	 *  `allow`, this desktop sends the tool its vault values on the pool's runner for that run
@@ -8774,33 +8772,21 @@ export type LocalModelRow = {
  *  value: purlis hasn't read one.
  */
 export type LoginShown = {
-	/**
-	 *  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`.
-	 */
+	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
 	domain: string,
-	/**
-	 *  The page's path on it.
-	 */
+	/**  The page's path on it. */
 	path: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
-	/**
-	 *  Plain warnings, said above the choices.
-	 */
+	/**  Plain warnings, said above the choices. */
 	warnings: string[],
-	/**
-	 *  The line Always writes, shown before it's pressed, and where.
-	 */
+	/**  The line Always writes, shown before it's pressed, and where. */
 	line: string,
 	under: string,
-	/**
-	 *  Why Always isn't offered, where it isn't.
-	 */
+	/**  Why Always isn't offered, where it isn't. */
 	no_always?: string | null,
-	/**
-	 *  The persona's chats get the vault too with Always.
-	 */
+	/**  The persona's chats get the vault too with Always. */
 	vault_too: boolean,
 };
 
@@ -10959,14 +10945,10 @@ export type PresetsChanged = {
 	now: string[],
 };
 
-/**
- *  A press on a login's notice.
- */
+/**  A press on a login's notice. */
 export type Press = "once" | "chat" | "always" | "keep";
 
-/**
- *  What a press answered.
- */
+/**  What a press answered. */
 export type Pressed = 
 /**  The answer stands: the sentence it leaves. */
 { kind: "done"; said: string } | 
