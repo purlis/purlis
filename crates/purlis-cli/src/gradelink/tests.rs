@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use purlis_core::skills::grade::{Check, OutcomeRun, Stat};
+use purlis_core::skills::grade::{Arm, Check, OutcomeRun, Stat};
 use purlis_session_protocol::session::GradeEndTold;
 
 fn plan() -> GradePlanTold {

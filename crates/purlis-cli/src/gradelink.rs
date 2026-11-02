@@ -21,7 +21,7 @@ use std::path::Path;
 
 use purlis_core::counts::counted;
 use purlis_core::hookwire::SOCKET_ENV;
-use purlis_core::skills::grade::{Arm, OutcomeScore};
+use purlis_core::skills::grade::OutcomeScore;
 use purlis_core::skills::grades;
 use purlis_core::skills::verbs::Level;
 use purlis_session_protocol::session::{
