@@ -95,6 +95,31 @@ fn a_surface_keeps_a_fill_only_an_undrawn_look_breaks_on() {
     assert!(broken_on_the_panel(&drawn).is_some());
 }
 
+/// A theme whose panel is the accent's surface, and whose warning button, which holds no consent,
+/// in `state` has no fill of its own and words the colour of that panel.
+fn warning_lost_on_its_panel(state: &str) -> ResolvedTheme {
+    shaped(
+        json!({}),
+        json!({
+            "panel.root.fill": "accent.surface",
+            format!("button.root.warning-soft.{state}.fill"): "transparent",
+            format!("button.root.warning-soft.{state}.text"): "accent.surface",
+        }),
+    )
+}
+
+#[test]
+fn a_surface_keeps_a_fill_only_an_undrawn_look_s_words_are_lost_on() {
+    // No toggle is a warning, so nobody reads those words pressed: the panel keeps its fill.
+    let undrawn = warning_lost_on_its_panel("selected");
+    assert_eq!(broken_on_the_panel(&undrawn), None);
+    assert_eq!(fell(&undrawn), Vec::<String>::new());
+    // Under the pointer they are read, by the reading floors: this button holds no consent.
+    let drawn = warning_lost_on_its_panel("hover");
+    let (floor, _) = broken_on_the_panel(&drawn).expect("words lost on the panel");
+    assert!(floor.contains("the root's words"), "{floor}");
+}
+
 #[test]
 fn a_field_s_error_is_read_only_where_a_field_that_can_refuse_stands() {
     // A look's first broken floor is the one it reports, and its help is read before its error, on
