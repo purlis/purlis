@@ -658,7 +658,7 @@ fn only_a_stop_noted_before_its_drain_began_says_a_stopped_runner_ran_no_chat() 
         (Some(7), ran(true, Some(7)), DrainLook::Ask),
         (None, ran(true, Some(7)), DrainLook::Ask),
         // Had stopped already, and has not run since.
-        (Some(7), ran(false, Some(7)), DrainLook::NoChat),
+        (Some(7), ran(false, Some(7)), DrainLook::StoppedBefore),
         // Stopped since, and still stopped.
         (Some(0), ran(false, Some(9)), DrainLook::Held),
         (Some(7), ran(false, Some(9)), DrainLook::Held),
@@ -742,7 +742,7 @@ fn a_later_drain_leaves_an_earlier_runners_row_as_it_is() {
     )
     .unwrap();
     let before = before_a_drain(config.path(), &fake.docker(), "first");
-    note_drains_began(config.path(), &before, false, &locked);
+    note_drains_began(config.path(), &before, &locked);
     drop(locked);
 
     let kept = runners::named(config.path(), "first").unwrap().unwrap();
@@ -751,9 +751,10 @@ fn a_later_drain_leaves_an_earlier_runners_row_as_it_is() {
     assert!(before.iter().all(|(name, _)| name != "first"), "{before:?}");
 }
 
-/// **Replace holds a runner already stopped**: the person pressed it. An update does not.
+/// **Neither an update nor a Replace holds a runner already stopped on its own** (#4633, ruled
+/// 2026-11-02): each notes its stop, and what its home holds decides.
 #[test]
-fn only_a_press_holds_a_runner_already_stopped() {
+fn no_drain_holds_a_runner_already_stopped_on_its_own() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
     a_pool_draining(config.path(), &fake);
@@ -761,18 +762,14 @@ fn only_a_press_holds_a_runner_already_stopped() {
     let before = [("first".to_owned(), stopped)];
     let locked = runners::lock(config.path());
 
-    note_drains_began(config.path(), &before, false, &locked);
-    assert!(
-        !runners::named(config.path(), "first")
-            .unwrap()
-            .unwrap()
-            .held
-    );
+    note_drains_began(config.path(), &before, &locked);
 
-    note_drains_began(config.path(), &before, true, &locked);
     let kept = runners::named(config.path(), "first").unwrap().unwrap();
-    assert!(kept.held);
-    assert_eq!(drain_look(&kept, ran(true, Some(7))), DrainLook::Held);
+    assert!(!kept.held);
+    assert_eq!(
+        drain_look(&kept, ran(false, Some(7))),
+        DrainLook::StoppedBefore
+    );
 }
 
 /// **A held runner is the person's**: a look's drain refuses it, whatever Docker says now.
@@ -790,10 +787,10 @@ fn a_look_never_removes_a_held_runner() {
     assert!(remove_held(config.path(), &fake.docker(), "first", None).is_ok());
 }
 
-/// **Replace holds the runner it finds stopped, as it was before anything was made**: read then, the
-/// answers after it are of the new runner.
+/// **Replace notes the stop of a runner it finds stopped, as it was before anything was made**:
+/// read then, the answers after it are of the new runner. It is not held: its home decides.
 #[test]
-fn replacing_a_stopped_runner_holds_it() {
+fn replacing_a_stopped_runner_notes_its_stop_and_leaves_it_to_its_home() {
     use crate::poollimits::LimitId;
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
@@ -815,7 +812,7 @@ fn replacing_a_stopped_runner_holds_it() {
         .unwrap();
 
     let kept = runners::named(config.path(), "first").unwrap().unwrap();
-    assert!(kept.draining && kept.held, "{kept:?}");
+    assert!(kept.draining && !kept.held, "{kept:?}");
     assert_eq!(kept.last_stop, Some(1_793_491_200));
 }
 
@@ -3602,4 +3599,165 @@ fn a_start_on_a_pool_at_the_projects_root_is_refused_and_never_runs_here() {
     let chosen = crate::machine::StartChoice::Pool("team".to_owned());
     let refused = chat_place(config.path(), plane, None, Some(&chosen)).unwrap_err();
     assert!(refused.contains("Start it in a workspace"), "{refused}");
+}
+
+/// A pool `first` draining its runner `first`, which had stopped before its drain began, and
+/// whose home Docker says holds `found` conversations. The log is emptied.
+fn a_stopped_runner_draining(config: &std::path::Path, fake: &FakeDocker, found: u32) {
+    a_pool_draining(config, fake);
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    stopped[0]["State"]["FinishedAt"] = "2026-11-01T00:00:00Z".into();
+    fake.set("inspect", &stopped.to_string());
+    fake.set("conversations", &format!("conversations {found} {found}\n"));
+    fake.set("containers", &format!("{ID}\n"));
+    std::fs::write(fake.file_path("log"), "").unwrap();
+}
+
+/// **A stopped runner whose home holds a chat's conversation is held** (#4633, ruled 2026-11-02):
+/// read by a container of the pool's runner's image, its home mounted read-only, and the runner
+/// itself never started.
+#[test]
+fn a_stopped_runner_whose_home_holds_a_conversation_is_held() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 2);
+
+    assert!(held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap());
+
+    assert!(
+        runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .held
+    );
+    let log = fake.file("log");
+    let read = log
+        .lines()
+        .find(|line| line.starts_with("run --rm"))
+        .expect(&log);
+    assert!(read.contains("target=/from,readonly"), "{read}");
+    assert!(read.contains(NEW), "{read}");
+    assert!(!read.contains("target=/to"), "{read}");
+    assert!(!log.contains("start "), "{log}");
+}
+
+/// **A stopped runner whose home holds no conversation is not held**, and goes as it did.
+#[test]
+fn a_stopped_runner_whose_home_holds_none_is_not_held() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 0);
+
+    assert!(!held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap());
+
+    assert!(
+        !runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .held
+    );
+}
+
+/// **A home that could not be read says nothing of it**: refused, and the runner stays as it was,
+/// neither held nor removed.
+#[test]
+fn a_home_that_could_not_be_read_leaves_its_runner_as_it_was() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 0);
+    fake.set("conversations", "");
+
+    assert!(held_for_its_conversations(config.path(), &fake.docker(), "first").is_err());
+
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.draining && !kept.held, "{kept:?}");
+}
+
+/// **A home made of its name since its container went holds nothing of it** (#4167), so it is
+/// not read for its conversations.
+#[test]
+fn a_home_made_since_its_container_went_is_not_read_for_conversations() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
+    a_stopped_runner_draining(config.path(), &fake, 2);
+    fake.set("inspect", "no such container");
+    fake.set("containers", "");
+    fake.set("volumes", "purlis-runner-first-home\n");
+    home_prints(&fake, "2026-01-01T00:00:00Z");
+
+    assert!(!held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap());
+
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// **Bringing back is for a held runner alone**, and only once none of its conversations is left
+/// behind is it removed, with its home; one left keeps it held.
+#[test]
+fn a_held_runner_goes_once_its_conversations_are_all_brought_back() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 2);
+
+    let refused = bring_back(config.path(), &fake.docker(), "first", None).unwrap_err();
+    assert!(refused.to_string().contains("held"), "{refused}");
+
+    hold(config.path(), "first").unwrap();
+    fake.set("conversations", "conversations 2 1\n");
+    let brought = bring_back(config.path(), &fake.docker(), "first", None).unwrap();
+    assert_eq!((brought.found, brought.left), (2, 1));
+    assert!(brought.removed.is_none());
+    assert!(
+        runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .held
+    );
+    let into = fake.file("log");
+    let into = into
+        .lines()
+        .find(|line| line.contains("target=/to"))
+        .expect(&into);
+    assert!(into.contains("first-fedcba98-home,target=/to"), "{into}");
+
+    fake.set("conversations", "conversations 2 0\n");
+    let brought = bring_back(config.path(), &fake.docker(), "first", None).unwrap();
+    assert!(brought.removed.is_some_and(|removed| removed.forgotten));
+    assert!(runners::named(config.path(), "first").unwrap().is_none());
+}
+
+/// **Nothing is brought back from or to a runner a chat ran on without the sandbox**, as no
+/// sign-in is carried: the press is refused, and the runner stays held.
+#[test]
+fn nothing_is_brought_back_across_a_runner_that_ran_without_the_sandbox() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 2);
+    hold(config.path(), "first").unwrap();
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    crate::runnertaint::mark(config.path(), &kept.made.container).unwrap();
+
+    let refused = bring_back(config.path(), &fake.docker(), "first", None).unwrap_err();
+
+    assert!(
+        refused.to_string().contains("without the sandbox"),
+        "{refused}"
+    );
+    assert!(
+        !fake.file("log").contains("target=/to"),
+        "{}",
+        fake.file("log")
+    );
+    assert!(
+        runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .held
+    );
 }

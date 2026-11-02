@@ -135,6 +135,117 @@ exit 0
 /// How long carrying a runner's sign-ins may take before it is ended (#4011): a few small files.
 pub const CARRIED_WITHIN: std::time::Duration = std::time::Duration::from_secs(120);
 
+/// **What a runner's home holds of its chats' conversations, and bringing them back** (#4633,
+/// ruled 2026-11-02): the shell a container of the pool's runner's image runs
+/// ([`Made::conversations_args`]), handed `seen` or `bring`, the old home, the new home (`-` when
+/// only seen), and each place a harness keeps a conversation ([`CONVERSATIONS_IN_A_RUNNER_HOME`]),
+/// under the home, `*` any one name. Only a plain file inside the old home counts, never a link
+/// or what a folder linked out of it holds. It ends by printing `conversations <found> <left>`:
+/// how many it found, and how many of those it did not bring back.
+///
+/// Bringing one back puts it at the same place under the new home, where the harness resumes it
+/// by its id. The new runner serves chats as it runs, so its folders are walked to one at a time,
+/// never through a link, and held by their real path; a file goes only where nothing is (`set
+/// -C`), whole, by a link, and one already there counts as brought back only where it is the
+/// same. A place marked `!` is seen and never brought back: opencode keeps a conversation over
+/// many files a harness's own import reads, so it stays where it is. What it makes is the
+/// runner's user's alone.
+pub const CONVERSATIONS: &str = r#"set -u
+umask 077
+mode=$1 from=$2 to=$3
+shift 3
+from=$(cd -P "$from" && pwd -P) || exit 1
+if [ "$mode" = bring ]; then
+  to=$(cd -P "$to" && pwd -P) || exit 1
+fi
+bring() (
+  rel=$1
+  cd -P "$to" || exit 1
+  here=$to
+  name=${rel##*/}
+  set -f
+  IFS=/
+  for part in ${rel%/*}; do
+    [ -n "$part" ] || continue
+    [ ! -L "./$part" ] || exit 1
+    [ -d "./$part" ] || mkdir "./$part" || exit 1
+    cd -P "./$part" || exit 1
+    here=$here/$part
+    [ "$(pwd -P)" = "$here" ] || exit 1
+  done
+  unset IFS
+  if [ -e "./$name" ] || [ -L "./$name" ]; then
+    [ ! -L "./$name" ] && [ -f "./$name" ] && cmp -s -- "$from/$rel" "./$name"
+    exit
+  fi
+  set -C
+  [ ! -e "./$name.part" ] && [ ! -L "./$name.part" ] || exit 1
+  cat -- "$from/$rel" > "./$name.part" && ln "./$name.part" "./$name"
+  ok=$?
+  rm -f "./$name.part"
+  exit $ok
+)
+found=0 left=0
+for pattern in "$@"; do
+  only_seen=
+  case $pattern in '!'*) only_seen=1 pattern=${pattern#?} ;; esac
+  for at in "$from"/$pattern; do
+    [ -f "$at" ] && [ ! -L "$at" ] || continue
+    rel=${at#"$from/"}
+    [ "$(realpath -- "$at")" = "$from/$rel" ] || continue
+    found=$((found + 1))
+    [ "$mode" = bring ] || continue
+    if [ -n "$only_seen" ] || ! bring "$rel"; then
+      left=$((left + 1))
+      echo "not brought back: $rel" >&2
+    fi
+  done
+done
+echo "conversations $found $left"
+"#;
+
+/// **Where under a runner's home a harness keeps a chat's conversation** (#4633), for
+/// [`CONVERSATIONS`]: Claude Code's transcripts and Codex's rollouts, in a made profile's folder
+/// under either spelling of the data home and in each harness's default folder, and opencode's
+/// sessions, seen alone (`!`). Each harness's own layout, as `harness_declaration` reads it.
+pub const CONVERSATIONS_IN_A_RUNNER_HOME: [&str; 8] = [
+    ".local/share/*/profiles/*/config/projects/*/*.jsonl",
+    ".claude/projects/*/*.jsonl",
+    ".local/share/*/profiles/*/config/sessions/*/*/*/rollout-*.jsonl",
+    ".codex/sessions/*/*/*/rollout-*.jsonl",
+    "!.local/share/*/profiles/*/data/opencode/storage/session/*/*.json",
+    "!.local/share/opencode/storage/session/*/*.json",
+    "!.local/share/*/profiles/*/data/opencode/opencode.db",
+    "!.local/share/opencode/opencode.db",
+];
+
+/// **What [`CONVERSATIONS`] found in a runner's home** (#4633): how many conversations, and how
+/// many of them it did not bring back (all of them, where it only looked).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Conversations {
+    pub found: u32,
+    pub left: u32,
+}
+
+/// [`Conversations`], from what [`CONVERSATIONS`] printed: its last line, or `None` where it did
+/// not end as it does.
+pub fn conversations_said(printed: &str) -> Option<Conversations> {
+    let last = printed.lines().rfind(|line| !line.trim().is_empty())?;
+    let mut words = last.split_whitespace();
+    if words.next() != Some("conversations") {
+        return None;
+    }
+    let found = words.next()?.parse().ok()?;
+    let left = words.next()?.parse().ok()?;
+    words
+        .next()
+        .is_none()
+        .then_some(Conversations { found, left })
+}
+
+/// How long reading or bringing back a home's conversations may take before it is ended (#4633).
+pub const CONVERSATIONS_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
+
 /// The longest runner name: a pool's longest, and the dash and eight hex digits a runner made
 /// beside it after an update adds ([`successor_name`], #2749).
 const MOST_NAME: usize = 49;
@@ -773,6 +884,84 @@ impl Made {
         .map(|word| (*word).to_owned())
         .collect();
         args.extend(crate::profilestore::carried_in_a_runner_home());
+        args
+    }
+
+    /// **`docker`'s arguments that read, or bring back, the conversations in `home`'s home**
+    /// (#4633): as [`Made::copy_profiles_args`] carries sign-ins, a container of this runner's
+    /// image, named and labelled as that carry's is, that mounts `home`'s volume read-only, and
+    /// this runner's home only where `bring_back` says, and runs [`CONVERSATIONS`]. It reads as
+    /// `home`'s user, whose files they are, and brings back as this runner's, the same user
+    /// ([`crate::pools::bring_back`]). It reaches no network, holds no capability and writes
+    /// nothing but this runner's home.
+    pub fn conversations_args(&self, home: &Made, desktop: &str, bring_back: bool) -> Vec<String> {
+        let user = if bring_back {
+            &self.runner
+        } else {
+            &home.runner
+        }
+        .user
+        .spelled();
+        let mut args: Vec<String> = [
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--name",
+            &self.copy_container(),
+            "--label",
+            &format!("{LABEL}={}", self.runner.name()),
+            "--label",
+            &format!("{DESKTOP_LABEL}={desktop}"),
+            "--user",
+            &user,
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--read-only",
+            "--pids-limit",
+            "64",
+            "--memory",
+            "256m",
+            "--cpus",
+            "1",
+            "--mount",
+            &format!(
+                "type=volume,source={},target=/from,readonly",
+                home.runner.volume()
+            ),
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        if bring_back {
+            args.push("--mount".into());
+            args.push(format!(
+                "type=volume,source={},target=/to",
+                self.runner.volume()
+            ));
+        }
+        args.extend(
+            [
+                "--entrypoint",
+                "/bin/sh",
+                self.runner.image.as_str(),
+                "-c",
+                CONVERSATIONS,
+                "sh",
+                if bring_back { "bring" } else { "seen" },
+                "/from",
+                if bring_back { "/to" } else { "-" },
+            ]
+            .iter()
+            .map(|word| (*word).to_owned()),
+        );
+        args.extend(
+            CONVERSATIONS_IN_A_RUNNER_HOME
+                .iter()
+                .map(|at| (*at).to_owned()),
+        );
         args
     }
 
@@ -3080,6 +3269,74 @@ impl Docker {
             );
         }
         ran.map_err(Refused::from)
+    }
+
+    /// **The conversations `home`'s home holds** (#4633), read by a container of `with`'s image,
+    /// `with` the pool's runner now ([`Made::conversations_args`]): nothing of the home passes
+    /// through this machine, and the runner `home` is not started. Refused where it did not end
+    /// as it does, which says nothing of the home.
+    pub fn conversations(
+        &self,
+        home: &Made,
+        with: &Made,
+        desktop: &str,
+    ) -> Result<Conversations, Refused> {
+        self.ran_conversations(
+            &with.conversations_args(home, desktop, false),
+            with,
+            desktop,
+        )
+    }
+
+    /// **Brings back `from`'s conversations into `to`'s home** (#4633), on the Docker host: each
+    /// at the same place there, so a chat that ended with `from` resumes on `to`. What it found
+    /// and what it left.
+    pub fn bring_back(
+        &self,
+        from: &Made,
+        to: &Made,
+        desktop: &str,
+    ) -> Result<Conversations, Refused> {
+        self.ran_conversations(&to.conversations_args(from, desktop, true), to, desktop)
+    }
+
+    /// Runs `args`, a container of `with`'s ([`Made::conversations_args`]), for at most
+    /// [`CONVERSATIONS_WITHIN`], one a run before left going first, as [`Docker::copy_profiles`]
+    /// does.
+    fn ran_conversations(
+        &self,
+        args: &[String],
+        with: &Made,
+        desktop: &str,
+    ) -> Result<Conversations, Refused> {
+        let prepared = self.prepared()?;
+        let _ = self.remove_labelled(with.runner.name(), desktop, &[with.copy_container()]);
+        let ran = self.ran_prepared(
+            &prepared,
+            args,
+            None,
+            MOST_INSPECTED,
+            Some(CONVERSATIONS_WITHIN),
+        );
+        if let Err(Failed::Late(_)) = &ran {
+            let _ = self.run(
+                &[
+                    "container".into(),
+                    "rm".into(),
+                    "--force".into(),
+                    with.copy_container(),
+                ],
+                None,
+                MOST_INSPECTED,
+            );
+        }
+        let printed = ran.map_err(Refused::from)?;
+        conversations_said(&printed).ok_or_else(|| {
+            refused(format!(
+                "the home of a runner of pool {} was not read as purlis reads it",
+                with.runner.name()
+            ))
+        })
     }
 
     /// Remove `made`'s container and its home's volume, whatever state they are in.

@@ -1041,7 +1041,7 @@ impl FakeDocker {
              prev=$a; done; \
              exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$1 $2\" in\n  \
              'run --rm') [ -f '{copy_fails}' ] && \
-             {{ echo 'cp: cannot open' >&2; exit 1; }}; true ;;\n  \
+             {{ echo 'cp: cannot open' >&2; exit 1; }}; cat '{conversations}' 2>/dev/null; true ;;\n  \
              'run '*) [ -f '{run_fails}' ] && \
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') if [ -f '{inspect}-once' ]; then cat '{inspect}-once'; rm '{inspect}-once'; \
@@ -1074,6 +1074,7 @@ impl FakeDocker {
             copy_fails = at("copy-fails"),
             containers = at("containers"),
             holds = at("holds"),
+            conversations = at("conversations"),
             probe = PROBE_ID,
         );
         stand_in::program(dir.path(), "docker", &script);
@@ -3370,4 +3371,218 @@ fn a_runner_is_told_the_image_it_runs() {
         image().as_str()
     );
     assert!(has_pair(&args, "--env", &told), "{args:?}");
+}
+
+/// Runs [`CONVERSATIONS`] by the shell, as in the pool's runner's image: `seen` with `to` as
+/// `None`, `bring` into `to`. What it said, and what it wrote on its error stream.
+#[cfg(unix)]
+fn conversations_run(
+    from: &std::path::Path,
+    to: Option<&std::path::Path>,
+) -> (Option<Conversations>, String) {
+    let mut command = std::process::Command::new("/bin/sh");
+    command
+        .arg("-c")
+        .arg(CONVERSATIONS)
+        .arg("sh")
+        .arg(if to.is_some() { "bring" } else { "seen" })
+        .arg(from)
+        .arg(to.map_or_else(|| "-".into(), |to| to.display().to_string()))
+        .args(CONVERSATIONS_IN_A_RUNNER_HOME);
+    let out = crate::forklock::output(&mut command).unwrap();
+    (
+        conversations_said(&String::from_utf8_lossy(&out.stdout)),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// Writes `text` at `rel` under `home`, its folders made.
+#[cfg(unix)]
+fn put(home: &std::path::Path, rel: &str, text: &str) {
+    let at = home.join(rel);
+    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+    std::fs::write(at, text).unwrap();
+}
+
+const A_CLAUDE_CONVERSATION: &str =
+    ".local/share/purlis/profiles/work/config/projects/-home-purlis-p/0b5e.jsonl";
+const A_CODEX_CONVERSATION: &str =
+    ".codex/sessions/2026/11/02/rollout-2026-11-02T10-00-00-0b5e.jsonl";
+const AN_OPENCODE_CONVERSATION: &str = ".local/share/opencode/storage/session/p1/ses_1.json";
+
+/// **A home says whether it holds a chat's conversation** (#4633): Claude Code's, Codex's and
+/// opencode's each count, and a home with none, or with other files of a harness, holds none.
+#[cfg(unix)]
+#[test]
+fn a_home_says_how_many_conversations_it_holds() {
+    let home = tempfile::tempdir().unwrap();
+    put(home.path(), ".claude/settings.json", "{}");
+    put(
+        home.path(),
+        ".local/share/purlis/profiles/work/config/.credentials.json",
+        "{}",
+    );
+    assert_eq!(
+        conversations_run(home.path(), None).0,
+        Some(Conversations { found: 0, left: 0 })
+    );
+
+    for rel in [
+        A_CLAUDE_CONVERSATION,
+        A_CODEX_CONVERSATION,
+        AN_OPENCODE_CONVERSATION,
+    ] {
+        put(home.path(), rel, "{}\n");
+    }
+
+    assert_eq!(
+        conversations_run(home.path(), None).0,
+        Some(Conversations { found: 3, left: 0 })
+    );
+}
+
+/// **A link is no conversation**: one in the old home, or a folder linked out of it, counts as
+/// none, so nothing outside the home is read as one.
+#[cfg(unix)]
+#[test]
+fn a_link_in_a_home_is_no_conversation() {
+    let (home, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    put(outside.path(), "x/0b5e.jsonl", "{}\n");
+    std::fs::create_dir_all(home.path().join(".claude/projects")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("x"),
+        home.path().join(".claude/projects/p"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(home.path().join(".claude/projects/q")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("x/0b5e.jsonl"),
+        home.path().join(".claude/projects/q/1.jsonl"),
+    )
+    .unwrap();
+
+    assert_eq!(
+        conversations_run(home.path(), None).0,
+        Some(Conversations { found: 0, left: 0 })
+    );
+}
+
+/// **Bringing back puts each conversation at its own place in the new home**, where its harness
+/// resumes it by its id; opencode's stays, said as left.
+#[cfg(unix)]
+#[test]
+fn bringing_back_puts_each_conversation_at_its_place_in_the_new_home() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    for rel in [
+        A_CLAUDE_CONVERSATION,
+        A_CODEX_CONVERSATION,
+        AN_OPENCODE_CONVERSATION,
+    ] {
+        put(from.path(), rel, &format!("{rel}\n"));
+    }
+    put(
+        to.path(),
+        ".claude/projects/-home-purlis-p/other.jsonl",
+        "the new runner's\n",
+    );
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(said, Some(Conversations { found: 3, left: 1 }), "{errors}");
+    for rel in [A_CLAUDE_CONVERSATION, A_CODEX_CONVERSATION] {
+        assert_eq!(
+            std::fs::read_to_string(to.path().join(rel)).unwrap(),
+            format!("{rel}\n")
+        );
+    }
+    assert!(!to.path().join(AN_OPENCODE_CONVERSATION).exists());
+    assert!(errors.contains(AN_OPENCODE_CONVERSATION), "{errors}");
+    assert_eq!(
+        std::fs::read_to_string(
+            to.path()
+                .join(".claude/projects/-home-purlis-p/other.jsonl")
+        )
+        .unwrap(),
+        "the new runner's\n"
+    );
+}
+
+/// **Bringing back overwrites nothing**: one already there counts as brought back only where it
+/// is the same, and another is left as it is and said.
+#[cfg(unix)]
+#[test]
+fn bringing_back_overwrites_nothing() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    put(from.path(), A_CLAUDE_CONVERSATION, "the old one\n");
+    put(from.path(), A_CODEX_CONVERSATION, "the same\n");
+    put(to.path(), A_CLAUDE_CONVERSATION, "another\n");
+    put(to.path(), A_CODEX_CONVERSATION, "the same\n");
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(said, Some(Conversations { found: 2, left: 1 }), "{errors}");
+    assert_eq!(
+        std::fs::read_to_string(to.path().join(A_CLAUDE_CONVERSATION)).unwrap(),
+        "another\n"
+    );
+}
+
+/// **Bringing back writes nothing through a link in the new home**, which a chat on it could have
+/// made: the conversation is left, and said.
+#[cfg(unix)]
+#[test]
+fn bringing_back_writes_nothing_through_a_link_in_the_new_home() {
+    let (from, to, outside) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    put(from.path(), A_CLAUDE_CONVERSATION, "{}\n");
+    std::fs::create_dir_all(to.path().join(".local/share/purlis/profiles/work")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path(),
+        to.path().join(".local/share/purlis/profiles/work/config"),
+    )
+    .unwrap();
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(said, Some(Conversations { found: 1, left: 1 }), "{errors}");
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+}
+
+/// **A home's conversations are read by a container that reaches nothing**: no network, no
+/// capability, the old home read-only, and a new home only to bring them back into.
+#[test]
+fn a_homes_conversations_are_read_by_a_container_that_reaches_nothing() {
+    let held = made();
+    let pools = Made {
+        container: ContainerId::new(&"b".repeat(64)).unwrap(),
+        runner: Runner::new(
+            "first-fedcba98",
+            image(),
+            User::new(10001, 10001).unwrap(),
+            "/home/purlis",
+        )
+        .unwrap(),
+    };
+
+    let seen = pools.conversations_args(&held, "d", false).join(" ");
+    let brought = pools.conversations_args(&held, "d", true).join(" ");
+
+    for args in [&seen, &brought] {
+        for needed in [
+            "--network none",
+            "--cap-drop ALL",
+            "--read-only",
+            "type=volume,source=purlis-runner-first-home,target=/from,readonly",
+        ] {
+            assert!(args.contains(needed), "{needed} in {args}");
+        }
+    }
+    assert!(!seen.contains("target=/to"), "{seen}");
+    assert!(
+        brought.contains("type=volume,source=purlis-runner-first-fedcba98-home,target=/to"),
+        "{brought}"
+    );
 }
