@@ -288,6 +288,12 @@ fn uncommitted(dir: &Path, project: &str, rel: &str) -> Result<Vec<Changed>, Str
     let mut paths = Vec::new();
     for entry in status.out.split('\0').filter(|entry| entry.len() > 3) {
         let path = entry[3..].trim_end_matches('/');
+        // A name that is not text can't be found again, here or there (D-4569-22).
+        if path.contains(char::REPLACEMENT_CHARACTER) {
+            return Err(unread(format!(
+                "a file whose name is not text, `{path}`, can't be compared"
+            )));
+        }
         let untracked = entry.starts_with("?? ") || entry.starts_with("!! ");
         if untracked && repo_kind(&dir.join(path)) != Kind::None {
             continue;

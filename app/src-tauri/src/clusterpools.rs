@@ -363,6 +363,19 @@ pub fn operators_word(config: &Path, pool: &ClusterPool) -> Result<(), String> {
     purlis_core::pools::fresh_runners_stay(pool, &kubectl, now).map_err(|why| why.to_string())
 }
 
+/// **Why a short task of the project at `root` stays on pool `pool`'s own runner, where its folder
+/// is no git repository** (D-4569-21): only a repository's files can be proved home, so what a
+/// task wrote outside its clones there could never be, and its runner would go with it.
+pub fn no_fresh_runner_for_the_project(root: &Path, pool: &str) -> Option<String> {
+    (!purlis_core::codelink::a_repository(root)).then(|| {
+        format!(
+            "This task runs on pool {pool}'s own runner, since this project's folder is not a git \
+             repository, so purlis could not check that a runner of its own holds nothing the \
+             project lacks before letting it go."
+        )
+    })
+}
+
 /// [`why_no_fresh_runner`], of what its operator answered.
 fn no_fresh_runner_said(pool: &str, stays: Result<(), String>) -> Option<String> {
     stays.err().map(|why| {

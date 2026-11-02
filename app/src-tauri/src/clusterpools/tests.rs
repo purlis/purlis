@@ -238,3 +238,16 @@ fn a_task_stays_on_the_pools_runner_unless_its_operator_says_otherwise() {
     assert!(older.contains("gives no word"), "{older}");
     assert!(older.contains("Update the operator"), "{older}");
 }
+
+/// **A project whose folder is no git repository gets no runner of its own** (D-4569-21): what a
+/// task wrote outside its clones could never be proved home. Its tab says why.
+#[test]
+fn a_project_that_is_no_repository_keeps_its_task_on_the_pools_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let said = no_fresh_runner_for_the_project(dir.path(), "team").expect("it says why");
+    assert!(said.contains("pool team's own runner"), "{said}");
+    assert!(said.contains("not a git repository"), "{said}");
+
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    assert_eq!(no_fresh_runner_for_the_project(dir.path(), "team"), None);
+}

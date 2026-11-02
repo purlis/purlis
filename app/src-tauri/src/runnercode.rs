@@ -593,7 +593,7 @@ pub(crate) fn not_home(link: &HostLink, project: &str, root: &Path, runner: &str
         Ok(Some(held)) => held,
         Ok(None) => {
             return vec![format!(
-                "runner {runner} is too old to list what it holds, so purlis can't tell its work                  is here"
+                "runner {runner} is too old to list what it holds, so purlis can't tell its work is here"
             )];
         }
         Err(why) => {

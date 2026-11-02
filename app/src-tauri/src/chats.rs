@@ -1870,7 +1870,9 @@ impl Chats {
         if keeping == Keeping::Kept || to_hand || !held.owned() {
             return Ok(OwnRunnerOrNot::default());
         }
-        if let Some(why) = crate::clusterpools::why_no_fresh_runner(config, &held) {
+        let why = crate::clusterpools::no_fresh_runner_for_the_project(&self.project, held.name())
+            .or_else(|| crate::clusterpools::why_no_fresh_runner(config, &held));
+        if let Some(why) = why {
             return Ok(OwnRunnerOrNot {
                 own: None,
                 stays_because: Some(why),

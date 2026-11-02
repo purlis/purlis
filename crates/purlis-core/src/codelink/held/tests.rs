@@ -469,3 +469,18 @@ fn a_path_that_leaves_the_project_is_never_one_here() {
 
     assert!(says(&missing, "can't be one here"), "{missing:?}");
 }
+
+/// **A file whose name is not text keeps the runner** (D-4569-22): it can't be found again on
+/// either end, so it is never taken for one that matches.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_file_whose_name_is_not_text_keeps_the_runner() {
+    use std::os::unix::ffi::OsStrExt;
+    let world = World::new();
+    let name = std::ffi::OsStr::from_bytes(b"made-\xff.txt");
+    std::fs::write(world.web().join(name), "the task's\n").unwrap();
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "whose name is not text"), "{missing:?}");
+}
