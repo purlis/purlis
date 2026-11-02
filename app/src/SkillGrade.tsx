@@ -570,6 +570,15 @@ export function GradePlanPage({
                 {one.hides && (
                   <span className="honest"> · holds a character no reader would see</span>
                 )}
+                {one.not_text.length > 0 && (
+                  <span className="honest">
+                    {" "}
+                    ·{" "}
+                    {one.not_text.length === 1
+                      ? `${one.not_text[0]} isn't text: purlis couldn't check it for characters no reader would see, and a judge may not be able to read it`
+                      : `${one.not_text.join(", ")} aren't text: purlis couldn't check them for characters no reader would see, and a judge may not be able to read them`}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

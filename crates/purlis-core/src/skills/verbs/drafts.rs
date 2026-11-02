@@ -261,8 +261,19 @@ fn write_at(
     now: &str,
     make_from: usize,
 ) -> Result<(), NotMade> {
+    write_bytes_at(at, rel, was, now.as_bytes(), make_from)
+}
+
+/// [`write_at`] of bytes that need not be text.
+fn write_bytes_at(
+    at: &Path,
+    rel: &str,
+    was: Option<&str>,
+    now: &[u8],
+    make_from: usize,
+) -> Result<(), NotMade> {
     let base = was.and_then(|text| proposed::base_of(Some(text.as_bytes())));
-    proposed::write_pinned_making(at, Path::new(rel), base.as_deref(), now, &|_, index| {
+    proposed::write_pinned_bytes_making(at, Path::new(rel), base.as_deref(), now, &|_, index| {
         index + 1 >= make_from
     })
 }
@@ -690,7 +701,7 @@ pub fn stage(
     root: &Path,
     laid: &Try,
     files: &[String],
-    inputs: &BTreeMap<String, String>,
+    inputs: &BTreeMap<String, Vec<u8>>,
 ) -> Result<(), String> {
     if let Some(path) = files.iter().find(|path| !inputs.contains_key(*path)) {
         return Err(format!(
@@ -708,13 +719,13 @@ pub fn stage(
     .map_err(|why| super::not_written("the grade's record of its folder", why))?;
     drop_granted_tools(root, laid)?;
     for path in files {
-        let text = inputs.get(path).ok_or_else(|| {
+        let bytes = inputs.get(path).ok_or_else(|| {
             format!(
                 "the eval's file {} was not read for the grade",
                 crate::shown::short(path)
             )
         })?;
-        write_at(&laid.piece, path, None, text, 1)
+        write_bytes_at(&laid.piece, path, None, bytes, 1)
             .map_err(|why| super::not_written(&format!("the eval's file {path}"), why))?;
     }
     Ok(())
@@ -782,10 +793,14 @@ fn without_allowed_tools(text: &str) -> String {
 }
 
 /// **What a grade's chat left in its throwaway piece `piece`** in the project at `root`, as it
-/// ended (SK-55): its plain text files, each read pinned, up to [`MOST_FILES`], [`DEEPEST`]
-/// folders deep, no dot-name, as Try it reads a skill. What its judge's piece is laid out from.
-pub fn outcome_of(root: &Path, piece: &Path) -> Vec<(String, String)> {
-    files_below(root, piece)
+/// ended (SK-55): its plain files, text or not (#4230), each read pinned, so of at most
+/// [`proposed::MOST_FILE_BYTES`], up to [`MOST_FILES`], [`DEEPEST`] folders deep, no dot-name. A
+/// file that did not read is here with no bytes, so its judge is told it was there. What its
+/// judge's piece is laid out from.
+pub fn outcome_of(root: &Path, piece: &Path) -> Vec<(String, Option<Vec<u8>>)> {
+    read_below(root, piece, |rel| {
+        Some(proposed::read_pinned(root, Path::new(rel)).ok().flatten())
+    })
 }
 
 /// **Whether `path` names a file a chat program loads as its instructions**, in any case: never
@@ -815,7 +830,7 @@ pub fn answer_as_its_judge_reads(answer: &str, piece: &Path) -> String {
 /// nothing else.
 pub fn lay_out_judge(
     root: &Path,
-    outcome: &[(String, String)],
+    outcome: &[(String, Option<Vec<u8>>)],
     answer: Option<&str>,
     task: &str,
 ) -> Result<Try, String> {
@@ -834,18 +849,25 @@ pub fn lay_out_judge(
         .map_err(|why| super::not_written("the grade's record of its folder", why))?;
         let (withheld, outcome): (Vec<_>, Vec<_>) =
             outcome.iter().partition(|(path, _)| instruction_file(path));
-        let mut listed: String = outcome
+        let (copied, left_there): (Vec<_>, Vec<_>) =
+            outcome.into_iter().partition(|one| one.1.is_some());
+        let mut listed: String = copied
             .iter()
             .map(|(path, _)| format!("{JUDGE_OUTCOME_DIR}/{path}\n"))
             .collect();
+        for (path, _) in left_there {
+            listed.push_str(&format!(
+                "not copied: {path}, past 1 MiB or not a plain file, which purlis does not copy\n"
+            ));
+        }
         for (path, _) in withheld {
             listed.push_str(&format!(
                 "withheld: {path}, a chat's instructions file, which purlis does not copy\n"
             ));
         }
-        let mut files: Vec<(String, &str)> = vec![
-            (JUDGE_TASK_FILE.to_owned(), task),
-            (JUDGE_FILES_FILE.to_owned(), &listed),
+        let mut files: Vec<(String, &[u8])> = vec![
+            (JUDGE_TASK_FILE.to_owned(), task.as_bytes()),
+            (JUDGE_FILES_FILE.to_owned(), listed.as_bytes()),
         ];
         // The hook cuts a last message at its bound: the judge is told, not left to take it whole.
         let cut;
@@ -856,14 +878,13 @@ pub fn lay_out_judge(
             }
             other => other,
         };
-        files.extend(answer.map(|answer| (JUDGE_ANSWER_FILE.to_owned(), answer)));
-        files.extend(
-            outcome
-                .iter()
-                .map(|(path, text)| (format!("{JUDGE_OUTCOME_DIR}/{path}"), text.as_str())),
-        );
-        for (path, text) in files {
-            write_at(&laid.piece, &path, None, text, 1)
+        files.extend(answer.map(|answer| (JUDGE_ANSWER_FILE.to_owned(), answer.as_bytes())));
+        files.extend(copied.iter().filter_map(|(path, bytes)| {
+            let bytes = bytes.as_deref()?;
+            Some((format!("{JUDGE_OUTCOME_DIR}/{path}"), bytes))
+        }));
+        for (path, bytes) in files {
+            write_bytes_at(&laid.piece, &path, None, bytes, 1)
                 .map_err(|why| super::not_written(&format!("the judge's {path}"), why))?;
         }
         Ok::<_, String>(())
@@ -1067,8 +1088,18 @@ fn remove_piece(root: &Path, id: &str) -> Result<(), String> {
 /// The plain files below `folder` in the plane at `plane`, each read pinned: up to
 /// [`MOST_FILES`], [`DEEPEST`] folders deep, no dot-name. What Try it copies of a skill a draft
 /// changes.
-#[cfg(unix)]
 fn files_below(plane: &Path, folder: &Path) -> Vec<(String, String)> {
+    read_below(plane, folder, |rel| read_at(plane, rel).ok().flatten())
+}
+
+/// Each file below `folder` in the plane at `plane` that `read` takes, by its path there: up to
+/// [`MOST_FILES`] of those, [`DEEPEST`] folders deep, no dot-name.
+#[cfg(unix)]
+fn read_below<T>(
+    plane: &Path,
+    folder: &Path,
+    read: impl Fn(&str) -> Option<T>,
+) -> Vec<(String, T)> {
     let mut out = Vec::new();
     let base = rel(plane, folder);
     let mut todo = vec![String::new()];
@@ -1103,8 +1134,8 @@ fn files_below(plane: &Path, folder: &Path) -> Vec<(String, String)> {
                     todo.push(path);
                 }
                 rustix::fs::FileType::RegularFile => {
-                    if let Ok(Some(text)) = read_at(plane, &format!("{base}/{path}")) {
-                        out.push((path, text));
+                    if let Some(read) = read(&format!("{base}/{path}")) {
+                        out.push((path, read));
                     }
                 }
                 _ => {}
@@ -1114,9 +1145,9 @@ fn files_below(plane: &Path, folder: &Path) -> Vec<(String, String)> {
     out
 }
 
-/// [`files_below`] where no folder can be held open: none.
+/// [`read_below`] where no folder can be held open: none.
 #[cfg(not(unix))]
-fn files_below(_: &Path, _: &Path) -> Vec<(String, String)> {
+fn read_below<T>(_: &Path, _: &Path, _: impl Fn(&str) -> Option<T>) -> Vec<(String, T)> {
     Vec::new()
 }
 

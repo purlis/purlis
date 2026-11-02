@@ -7955,6 +7955,8 @@ export type GradeEval = {
 	prompt: string,
 	hides: boolean,
 	files: string[],
+	/**  Those of its files that are not text, which nothing can check for what `hides` says (#4230). */
+	not_text: string[],
 	expectations: number,
 	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
 	on: boolean,

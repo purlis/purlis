@@ -122,6 +122,40 @@ fn the_plan_offers_each_outcome_eval_and_counts_only_those_ticked() {
     assert_eq!(plan.outcomes_left_out[0].id, "9");
 }
 
+/// #4230: a file's name is shown as the prompt beside it is, and one that is not text is named,
+/// so a line warning of what no reader would see cannot be turned round by its own name.
+#[test]
+fn the_plan_marks_a_files_name_and_names_a_file_that_is_not_text() {
+    let mut planned = planned("ship it");
+    let turned = "evals/files/\u{202e}fdp.txt".to_owned();
+    planned.offered = vec![purlis_core::skills::grade::OutcomeEval {
+        id: 4,
+        prompt: "read it".into(),
+        expected_output: None,
+        files: vec![turned.clone()],
+        expectations: vec!["It is read".into()],
+    }];
+    planned.copy = Some(grades::SkillCopy {
+        snapshot: purlis_core::skills::verbs::drafts::Snapshot {
+            name: "deploy".into(),
+            files: std::collections::BTreeMap::new(),
+        },
+        content: purlis_core::skilluse::Content::Uncommitted,
+        commit: None,
+        previous: None,
+        previous_refused: None,
+        inputs: std::collections::BTreeMap::from([(turned, b"%PDF\xFF".to_vec())]),
+    });
+    let plan = SkillGradePlan::of(
+        &planned,
+        None,
+        on(Ok("full sandbox".into()), grades::price::of_model(None)),
+    );
+    let shown = ["evals/files/⟦U+202E⟧fdp.txt"];
+    assert_eq!(plan.evals[0].files, shown);
+    assert_eq!(plan.evals[0].not_text, shown);
+}
+
 #[test]
 fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     let plan = SkillGradePlan::of(
