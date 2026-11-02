@@ -231,6 +231,42 @@ fn a_pool_with_no_runner_is_forgotten_and_one_never_added_is_refused() {
 }
 
 #[test]
+fn a_chat_is_kept_only_on_a_pool_this_machine_keeps_and_goes_with_its_end() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    crate::machine::update(config.path(), |store| store.remember(plane, 1)).unwrap();
+    keep_chat_on_pool(config.path(), plane, 7, "first", "ide").unwrap();
+    assert_eq!(
+        chat_on_pool(config.path(), plane, 7),
+        None,
+        "a keep that lost a race with the pool's removal keeps nothing"
+    );
+
+    let fake = a_docker(&runner_answers());
+    add(
+        config.path(),
+        &fake.docker(),
+        &pool("first", Set::default()),
+        &desktop(),
+    )
+    .unwrap();
+    keep_chat_on_pool(config.path(), plane, 7, "first", "ide").unwrap();
+    assert_eq!(
+        chat_on_pool(config.path(), plane, 7).map(|chat| chat.pool),
+        Some("first".to_owned())
+    );
+
+    leave_chat_on_pool(config.path(), plane, 7).unwrap();
+    assert_eq!(chat_on_pool(config.path(), plane, 7), None);
+    assert_eq!(
+        branches_to_fetch(config.path(), plane)["first"],
+        std::collections::BTreeSet::from(["ide".to_owned()])
+    );
+    branches_fetched(config.path(), plane, "first", "ide").unwrap();
+    assert!(branches_to_fetch(config.path(), plane).is_empty());
+}
+
+#[test]
 fn a_workspace_set_to_run_on_a_pool_runs_there_once_the_pool_is_kept_and_nowhere_before() {
     let config = tempfile::tempdir().unwrap();
     let plane = std::path::Path::new("/planes/a");

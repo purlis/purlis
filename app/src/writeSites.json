@@ -25,6 +25,12 @@
       "why": "The behaviour suite's own fixture: it gives a test service to a test project on the machine its chats run on, as a person would in Settings; no window command calls it."
     },
     {
+      "at": "behaviour/pool_journey.rs in_a_docker_pool",
+      "writes": "this machine's store: the pins",
+      "by": [],
+      "why": "The Docker pool journey's own fixture: it sets where a test workspace's chats run, as a person would in its settings; no window command calls it."
+    },
+    {
       "at": "chatbrowsers.rs allow_chat_browser",
       "writes": "this machine's network record",
       "by": ["allowChatBrowser"]

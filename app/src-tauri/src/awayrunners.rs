@@ -123,7 +123,15 @@ pub async fn runners_away(
     };
     tauri::async_runtime::spawn_blocking(move || {
         let workspaces = config
-            .map(|config| purlis_core::pools::workspaces_on_pools(&config, &root))
+            .map(|config| {
+                let mut on = purlis_core::pools::workspaces_on_pools(&config, &root);
+                let kept = purlis_core::runners::pool_names(&config).unwrap_or_default();
+                let every = purlis_core::workspaces::Plane::open(&root)
+                    .workspaces()
+                    .unwrap_or_default();
+                with_the_pools_they_left(&mut on, &root, &every, &kept);
+                on
+            })
             .unwrap_or_default();
         let logs: BTreeMap<String, RunnerLogNow> = logs.into_iter().collect();
         runners_of(&on_pools, &workspaces, |workspace, pool| {
@@ -138,6 +146,33 @@ pub async fn runners_away(
     })
     .await
     .map_err(|why| format!("the runners could not be read: {why}"))
+}
+
+/// `on`, with each of `workspaces` of the project at `root` under each of `kept` it left branches
+/// of (#4590): what came back from a pool stays to be read once the setting has moved.
+fn with_the_pools_they_left(
+    on: &mut BTreeMap<String, Vec<String>>,
+    root: &Path,
+    workspaces: &[String],
+    kept: &[String],
+) {
+    for pool in kept {
+        for workspace in workspaces {
+            let named = on.get(pool).is_some_and(|named| named.contains(workspace));
+            if !named && left_branches_on(root, workspace, pool) {
+                on.entry(pool.clone()).or_default().push(workspace.clone());
+            }
+        }
+    }
+}
+
+/// Whether any clone of `workspace` keeps branches of `pool`, which it no longer runs on.
+fn left_branches_on(root: &Path, workspace: &str, pool: &str) -> bool {
+    std::fs::read_dir(root.join("workspaces").join(workspace))
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .any(|clone| !purlis_core::codelink::on_a_pool_left(&clone.path(), pool).is_empty())
 }
 
 /// Each chat of a project, by its id, with its number and the pool the window routed it to.
@@ -224,7 +259,7 @@ fn branches_of(root: &Path, workspace: &str, pool: &str) -> Vec<BranchesOfAClone
         .into_iter()
         .filter_map(|repo| {
             let branches: Vec<RunnerBranch> =
-                purlis_core::codelink::on_a_runner(&folder.join(&repo), pool)
+                purlis_core::codelink::on_a_pool_left(&folder.join(&repo), pool)
                     .into_iter()
                     .map(|branch| RunnerBranch {
                         pool: pool.to_owned(),
@@ -246,6 +281,47 @@ mod tests {
     use crate::runnerlog::RunEndLine;
 
     use super::*;
+
+    #[test]
+    fn a_workspace_stays_under_a_pool_it_left_while_it_keeps_branches_of_it() {
+        let dir = tempfile::tempdir().expect("a project");
+        let clone = dir.path().join("workspaces/app/web");
+        std::fs::create_dir_all(&clone).expect("a clone");
+        let git = |args: &[&str]| {
+            let ran = purlis_core::forklock::output(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&clone)
+                    .args([
+                        "-c",
+                        "user.name=t",
+                        "-c",
+                        "user.email=t@example.invalid",
+                        "-c",
+                        "commit.gpgsign=false",
+                    ])
+                    .args(args),
+            )
+            .expect("git runs");
+            assert!(ran.status.success(), "git {args:?}: {ran:?}");
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "one"]);
+        git(&["update-ref", "refs/remotes/old-pool/fix", "HEAD"]);
+
+        let mut on = BTreeMap::new();
+        with_the_pools_they_left(
+            &mut on,
+            dir.path(),
+            &["app".to_owned(), "fleet".to_owned()],
+            &["old-pool".to_owned(), "other".to_owned()],
+        );
+
+        assert_eq!(
+            on,
+            BTreeMap::from([("old-pool".to_owned(), vec!["app".to_owned()])])
+        );
+    }
 
     fn clone_of(workspace: &str, pool: &str) -> BranchesOfAClone {
         BranchesOfAClone {
