@@ -94,6 +94,37 @@ fn only_a_change_to_the_instructions_makes_the_chats_read_their_skills_again() {
     assert_eq!(*forgotten_when_told.lock().expect("heard"), [0, 1, 2, 3]);
 }
 
+#[test]
+fn a_workspaces_skill_settings_changing_makes_the_chats_read_their_skills_again() {
+    // #4813 review: what a chat would start on now reads the workspace's skills turned off,
+    // pinned and budget from its `workspace.json`, so a change there is an instruction change.
+    let dir = tempfile::tempdir().expect("a plane");
+    let root = dir.path().to_path_buf();
+    let settings = root.join("workspaces/beta/workspace.json");
+    std::fs::create_dir_all(settings.parent().expect("a workspace")).expect("a workspace");
+    let model = Arc::new(Mutex::new(Model::read(&root)));
+    let skills_now = Arc::new(crate::chats::SkillsNow::default());
+    let changed = applying(
+        Arc::clone(&model),
+        root.clone(),
+        Arc::clone(&skills_now),
+        Arc::new(|_, _| {}),
+    );
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+
+    std::fs::write(&settings, r#"{"settings":{"skills":{"off":["deploy"]}}}"#)
+        .expect("skills turned off");
+    changed(
+        plane,
+        Some(vec![
+            purlis_core::planechange::classify(&root, &settings).expect("placed"),
+        ]),
+    );
+
+    assert_eq!(skills_now.forgotten(), 1);
+}
+
 use super::*;
 use crate::host::pretend::Pretend;
 
