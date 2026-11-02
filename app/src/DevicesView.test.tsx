@@ -343,8 +343,8 @@ describe("DevicesView", () => {
   it("offers only a held runner's row its removal, asking first", async () => {
     asked = { ...asked, "qa/qa": { ...(asked["qa/qa"] as RunnerAsked), held: true } };
     render(<DevicesView />);
+    await screen.findByRole("button", { name: "Remove runner qa" });
     const held = section("Runner qa of pool qa");
-    await within(held).findByRole("button", { name: "Remove runner qa" });
     expect(held.textContent).toContain("keeps it and what they left until you remove it");
     expect(held.textContent).not.toContain("It starts again when");
     expect(
