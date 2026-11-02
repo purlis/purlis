@@ -4133,7 +4133,7 @@ describe("Answer, for a task that asks its asking chat a question (#1551)", () =
     const offers = catalogue(now({ listed: listedNow }));
 
     expect(ids(offers).filter((id) => id.startsWith("chat.answer:"))).toEqual([answerId(2)]);
-    expect(ids(menuRows({ on: "listed", session: 2 }, catalogued(offers)).above)).toContain(
+    expect(ids(menuRows({ on: "chat", session: 2 }, catalogued(offers)).above)).toContain(
       answerId(2),
     );
   });
