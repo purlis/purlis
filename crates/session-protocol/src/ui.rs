@@ -209,6 +209,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The parts of a window's own first frame (#4410), by the ticket its creation script handed
     // it. A link is handed no first frame, so it has nothing to ask for.
     "first_frame_parts",
+    // The slow-answer and stall log (#4725): the moments this window felt slow, written as it
+    // feels them and read back for the person's diagnostics (#4774). A window's own felt
+    // speed, of its own frames and answers; a link has no frames here to report, and the log
+    // names the commands this machine's window ran, so no link writes or reads it.
+    "record_slow",
+    "slow_log_recent",
     // The theme in force for the window that asks, which also points that window's theme watch
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
