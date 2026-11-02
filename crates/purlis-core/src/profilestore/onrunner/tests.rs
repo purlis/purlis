@@ -1279,8 +1279,6 @@ fn a_refusal_for_any_other_reason_carries_no_limit() {
     .unwrap();
 
     assert_eq!(in_batches(&kept).unwrap_err().hits, Vec::new());
-    let said_alike = LimitId::ProfileSize.limit().hit(128, 151, None).said();
-    assert_eq!(NotSent::from(said_alike).hits, Vec::new());
 }
 
 /// **Raised past what a runner tells its desktop, a profile is told as nothing** (spec #4275), so

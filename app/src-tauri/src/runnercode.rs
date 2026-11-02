@@ -100,12 +100,21 @@ pub(crate) fn send(
     // A send that leaves out what the runner held last may fail where the runner no longer holds
     // it: that send is made again whole, and what the runner held is not known after a send that
     // failed, so the next one is whole too.
-    let (held, left_out) = once(&have)
-        .or_else(|why| if have.is_empty() { Err(why) } else { once(&[]) })
-        .map_err(|why| {
-            lock(sent).remove(rel);
-            format!("the code of {} did not reach the runner: {why}", shown(rel))
-        })?;
+    let (first, hit_by_it) = purlis_core::poollimits::attempt(|| once(&have));
+    let answered = match first {
+        // Sent again, what the first send hit refused nothing: only the send that answers offers.
+        Err(_) if !have.is_empty() => once(&[]),
+        first => {
+            if let Some(hit) = hit_by_it {
+                purlis_core::poollimits::hits_on(&hit.pool, &hit.hits);
+            }
+            first
+        }
+    };
+    let (held, left_out) = answered.map_err(|why| {
+        lock(sent).remove(rel);
+        format!("the code of {} did not reach the runner: {why}", shown(rel))
+    })?;
     // Named where the person looks: Changes, under the clone (`panels::left_out_of_send`).
     if !left_out.is_empty() {
         tracing::info!(

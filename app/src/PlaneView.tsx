@@ -527,7 +527,7 @@ import {
   useChatMoves,
   useChatMovesHeard,
 } from "./chatMoves";
-import { readRunnerStage, saveLimits, usePools } from "./pools";
+import { readRunnerStage, refusedWith, saveLimits, usePools } from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
@@ -3502,11 +3502,8 @@ export const PlaneView = memo(function PlaneView({
           STARTING_SIZE.columns,
           STARTING_SIZE.rows,
         )
-        .catch((err: unknown) => ({
-          status: "error" as const,
-          error: { words: String(err), limit: null },
-        }));
-      if (started.status === "error") return started.error;
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      if (started.status === "error") return refusedWith(started.error);
       const session = started.data.session;
       // `?? []`, as the label's `?? null` below: an older core, or a stand-in, sends none.
       const notes = started.data.notices ?? [];
@@ -6252,18 +6249,21 @@ export const PlaneView = memo(function PlaneView({
         if (movingNow.current.has(session)) continue;
         movingNow.current.add(session);
         const moving = chatMovesOf(plane)[session];
-        const failed = (why: string) =>
+        const failed = (why: string) => {
+          const toldFailed = chatMovesOf(plane)[session];
           heardMove(plane, {
             session,
             from: moving?.from ?? null,
             to: moving?.to ?? null,
             stage: "failed",
             why,
-            // The core tells its own failed move too, in either order: its offer stands.
-            limit: chatMovesOf(plane)[session]?.limit ?? null,
+            // The core tells this same failure too, in either order: its offer stands.
+            limit:
+              toldFailed?.stage === "failed" && toldFailed.why === why ? toldFailed.limit : null,
             with: moving?.with ?? [],
             sign_in: null,
           });
+        };
         void commands
           .moveChatNow(plane, session, STARTING_SIZE.columns, STARTING_SIZE.rows)
           .then((done) => {
