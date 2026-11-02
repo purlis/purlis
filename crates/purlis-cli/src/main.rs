@@ -439,7 +439,7 @@ enum Command {
         from: std::path::PathBuf,
     },
 
-    /// A pool's limits: list them, set one, or return one to purlis's default.
+    /// A pool's limits: list them, set one, or return one to the default.
     #[command(subcommand)]
     Pool(pool::PoolCommand),
 

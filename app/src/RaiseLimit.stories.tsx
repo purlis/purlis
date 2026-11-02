@@ -17,6 +17,7 @@ const SIZE: PoolLimitHitRow = {
   plain: "Most a profile may send: size",
   unit: "MiB",
   in_force: 128,
+  team_suggests: false,
   needed: 150,
   suggested: 192,
 };
@@ -25,6 +26,7 @@ const FILES: PoolLimitHitRow = {
   plain: "Most a profile may send: files",
   unit: "files",
   in_force: 8192,
+  team_suggests: false,
   needed: 9000,
   suggested: 11264,
 };

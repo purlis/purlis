@@ -3201,7 +3201,7 @@ export const commands = {
 	 *  **The value in the words `typed` for limit `key`, or why they aren't one it can be** (#4285):
 	 *  the file's and the command's check, asked as the person types.
 	 */
-	poolLimitCheck: (key: string, typed: string) => typedError<number, string>(__TAURI_INVOKE("pool_limit_check", { key, typed })),
+	poolLimitCheck: (pool: string, key: string, typed: string) => typedError<number, string>(__TAURI_INVOKE("pool_limit_check", { pool, key, typed })),
 	/**
 	 *  **Saves `value` as pool `pool`'s limit `key`, or, `null`, returns it to following purlis's
 	 *  default** (spec #4275), the person's own press in their window: a chat has no way to it, and
@@ -10589,6 +10589,8 @@ export type PoolLimitHitRow = {
 	needed: number,
 	/**  The value offered, which the person can edit; none where no value would hold it. */
 	suggested: number | null,
+	/**  That value is what the team defining the pool suggests (#4287). */
+	team_suggests: boolean,
 };
 
 /**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
@@ -10613,8 +10615,19 @@ export type PoolLimitRow = {
 	set: number | null,
 	/**  When a change applies, where its group doesn't say it for all of its limits. */
 	applies: string | null,
-	/**  Why the value in the pool's file can't be used, where one can't (#4381). */
+	/**
+	 *  Why the value in the pool's file can't be used, where one can't (#4381), or is above what
+	 *  the team defining the pool allows (#4287).
+	 */
 	refused: string | null,
+	/**  The highest the team defining the pool allows, in words, where it set one (#4287). */
+	highest_said: string | null,
+	/**  Whether its default is what the team defining the pool set (#4287). */
+	default_by_team: boolean,
+	/**  The value the team suggests, above what holds: one press sets it, as the person's (#4287). */
+	suggested: number | null,
+	/**  That value in words. */
+	suggested_said: string | null,
 };
 
 /**

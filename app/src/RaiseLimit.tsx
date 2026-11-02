@@ -60,7 +60,7 @@ export function RaiseLimit({
     setChecked((was) => Object.fromEntries(Object.entries(was).filter(([one]) => one !== key)));
     const mine = (asked.current[key] ?? 0) + 1;
     asked.current[key] = mine;
-    void checkLimit(key, to).then((said) => {
+    void checkLimit(offer.pool, key, to).then((said) => {
       if (asked.current[key] !== mine) return;
       setChecked((was) => ({
         ...was,
@@ -87,11 +87,11 @@ export function RaiseLimit({
         <TextField
           key={hit.key}
           label={`${hit.plain} on pool ${offer.pool}, in ${hit.unit}`}
-          help={
+          help={`${
             isATime(hit.unit)
               ? `It took longer than ${hit.in_force} ${hit.unit}.`
               : `It needs ${hit.needed} ${hit.unit}. The limit is ${hit.in_force} ${hit.unit}.`
-          }
+          }${hit.team_suggests ? ` The team suggests ${hit.suggested} ${hit.unit}.` : ""}`}
           inputMode="numeric"
           columns={8}
           value={typed[hit.key] ?? ""}

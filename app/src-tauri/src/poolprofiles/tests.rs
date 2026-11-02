@@ -852,6 +852,43 @@ fn a_pools_page_says_which_limit_the_file_got_wrong() {
     }
 }
 
+/// #4287: the page shows the team's default and highest, and says a value kept above it holds to it.
+#[test]
+fn a_pools_page_shows_what_the_team_set() {
+    use purlis_core::poollimits::{Chosen, LimitId};
+    let team = serde_json::json!({
+        "signInWait": {"default": 10, "highest": 40},
+        "codeSize": {"default": 2048},
+    });
+    let chosen = Chosen::default()
+        .under_team(Some(&team))
+        .with(LimitId::SignInWait, Some(100));
+    let shown = limits_shown(&chosen, &[], false, &[]);
+    let rows: Vec<&PoolLimitRow> = shown
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .collect();
+    let row = rows.iter().find(|row| row.key == "signInWait").unwrap();
+    assert_eq!(row.default, 10);
+    assert_eq!(row.suggested, None);
+    assert_eq!(
+        row.highest_said.as_deref(),
+        Some("The team allows up to 40 minutes.")
+    );
+    assert!(
+        row.refused
+            .as_deref()
+            .unwrap_or("")
+            .contains("at most 40 minutes")
+    );
+    let code = rows.iter().find(|row| row.key == "codeSize").unwrap();
+    assert_eq!(code.default, 1024, "a higher default raises nothing");
+    assert_eq!(code.suggested, Some(2048));
+    let other = rows.iter().find(|row| row.key == "profileSize").unwrap();
+    assert_eq!(other.highest_said, None);
+}
+
 /// Q15: the window's check and the file's refusal are one, word for word.
 #[test]
 fn the_windows_check_refuses_as_the_file_does() {
@@ -861,9 +898,8 @@ fn the_windows_check_refuses_as_the_file_does() {
         ("signInWait", "121", serde_json::json!(121)),
         ("codeSize", "lots", serde_json::json!("lots")),
     ] {
-        let by_window =
-            tauri::async_runtime::block_on(pool_limit_check(key.to_owned(), typed.to_owned()))
-                .unwrap_err();
+        let config = tempfile::tempdir().unwrap();
+        let by_window = limit_checked_on(config.path(), "builds", key, typed).unwrap_err();
         let row = serde_json::json!({ key: held });
         let (_, refused) = Chosen::read_row(row.as_object().unwrap(), None);
         assert_eq!(by_window, refused[0].why);
@@ -916,7 +952,11 @@ fn a_pools_page_lists_every_limit_once_with_what_the_person_set() {
 #[test]
 fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait() {
     use purlis_core::poollimits::{Chosen, LimitId, hits_said_in};
-    let said = sign_in_ran_out("ran-out-signing-in", 15);
+    let said = sign_in_ran_out(
+        "ran-out-signing-in",
+        15,
+        &purlis_core::poollimits::Chosen::default(),
+    );
     assert!(said.starts_with(driven::TOOK_TOO_LONG), "{said}");
     assert!(said.contains("raise it to 30 minutes"), "{said}");
     let hits = hits_said_in("ran-out-signing-in", &said);
@@ -999,13 +1039,17 @@ fn a_profile_row_late_by_the_pools_wait_offers_double_and_no_other_does() {
     use purlis_core::poollimits::{LimitId, hits_said_in};
     let said = late_said(
         "late-on-a-row",
-        30,
+        &purlis_core::poollimits::Chosen::default(),
         crate::runnerlinks::ANSWER_LATE.to_owned(),
     );
     assert!(said.contains("raise it to 60 seconds"), "{said}");
     let hits = hits_said_in("late-on-a-row", &said);
     assert_eq!(hits[0].limit, LimitId::AnswerWait);
-    let other = late_said("other-on-a-row", 30, "the runner said: no".to_owned());
+    let other = late_said(
+        "other-on-a-row",
+        &purlis_core::poollimits::Chosen::default(),
+        "the runner said: no".to_owned(),
+    );
     assert_eq!(other, "the runner said: no");
     assert!(hits_said_in("other-on-a-row", &other).is_empty());
 }

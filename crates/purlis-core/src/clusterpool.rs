@@ -365,6 +365,9 @@ pub struct PoolSeen {
     /// Whether its spec opts the pool in to minting GitHub App tokens in the cluster (#4204):
     /// [`mints_in_cluster`].
     pub mints_in_cluster: bool,
+    /// `spec.limits`: what the team defining the Pool set for its limits (#4287), as written:
+    /// `poollimits::Chosen::under_team` checks it.
+    pub team_limits: Option<serde_json::Value>,
 }
 
 /// **Whether a Pool's `spec` opts it in to minting in the cluster** (#4204), read from the admin's
@@ -398,6 +401,7 @@ impl PoolSeen {
             next_signing_key_vouch: text("/nextSigningKeyVouch/statement")
                 .zip(text("/nextSigningKeyVouch/signature")),
             mints_in_cluster: false,
+            team_limits: None,
         }
     }
 }
@@ -1179,6 +1183,7 @@ impl Kubectl {
         )?;
         Ok(PoolSeen {
             mints_in_cluster: held.get("spec").is_some_and(mints_in_cluster),
+            team_limits: held.pointer("/spec/limits").cloned(),
             ..PoolSeen::from_status(held.get("status").unwrap_or(&serde_json::Value::Null))
         })
     }

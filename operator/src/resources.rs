@@ -70,6 +70,13 @@ pub struct PoolSpec {
     #[serde(default = "fourteen_days")]
     #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"), length(max = 12))]
     pub max_age: String,
+    /// What the team set for the limits of chats on this pool (#4287), by the limit's key
+    /// (docs/plane-format.md): each one's default, and the highest a person may choose. Each
+    /// desktop reads them as the pool is added and at each link, and holds its person to them; a
+    /// key it doesn't know, or a value that limit can't carry, says nothing. No limit is set unless
+    /// the pool says so.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub limits: std::collections::BTreeMap<String, PoolLimit>,
     /// How many runners are kept warm for fresh Claims (#3737), in each runner namespace the
     /// pool has a Claim in; none while the pool is stopped. The operator keeps the warm pool at
     /// this count, 20 at most. They count toward each person's quota. Kept only for a person
@@ -99,6 +106,18 @@ pub struct PoolForge {
     /// the Pool can use these repos through it. False unless set.
     #[serde(default)]
     pub mint_in_cluster: bool,
+}
+
+/// One limit as the team defining a Pool set it (#4287).
+#[derive(KubeSchema, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PoolLimit {
+    /// Holds for a person who chose none where it is below purlis's default; a higher one is only offered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<u32>,
+    /// The highest value a person may choose, in the limit's unit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highest: Option<u32>,
 }
 
 /// A Secret, by name, in the operator's own namespace: it says no namespace.
@@ -151,6 +170,7 @@ impl PoolSpec {
     /// that names only its image.
     pub fn new(image: impl Into<String>) -> PoolSpec {
         PoolSpec {
+            limits: std::collections::BTreeMap::new(),
             image: image.into(),
             kept_volume: KeptVolume::default(),
             stopped: false,

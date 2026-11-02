@@ -230,6 +230,8 @@ spec:
   deleteSuspendedAfter: 720h
   noticeBeforeDelete: 168h
   maxAge: 336h
+  # limits:                # optional; see "What a team sets for a pool's limits"
+  #   signInWait: { default: 20, highest: 60 }
   # forge:                 # optional; see "Minting GitHub App tokens in the cluster"
   #   appKeySecretRef: { name: org-app }
   #   repos: [acme/*]
@@ -430,6 +432,35 @@ above. Upstream's own objects that are not a pool's are left to upstream. This h
 Kubernetes' usual boundary goes: whoever may act as the operator's service account (impersonate
 it, mint its tokens, or run a pod as it in the operator's namespace), or change the policy and its
 binding, passes it. Rights in the operator's namespace are the operator's rights.
+
+
+## What a team sets for a pool's limits
+
+A Pool's `spec.limits` sets the default and the highest allowed of any of a pool's limits, by the key
+each has in `docs/plane-format.md` (`profileSize`, `profileFiles`, `codeSize`, `codeSendTime`,
+`signInWait`, `answerWait`), each in that limit's unit. `vouchWait` isn't a Pool's to set: it is the wait for the cluster to vouch. Each person then chooses within it, in the
+window, in `purlis pool limit`, or in their pool's file.
+
+```yaml
+spec:
+  limits:
+    profileSize: { default: 256, highest: 512 }  # MiB
+    signInWait: { highest: 60 }                  # minutes
+```
+
+- **A `default` only lowers a limit on its own.** Below purlis's default, it holds for anyone who chose
+  no value. Above it, it is an offer: the window says "The team suggests X", the offer on a limit that
+  was hit uses it, and one press sets it as the person's value. Nothing rises unasked.
+- **A desktop reads them as the pool is added and at each link**, so a change reaches a person at their
+  next link. A value above the highest is refused as it is typed and everywhere else, a suggestion stops
+  at it, and a value kept from before holds to it.
+- **At the highest**, the error says the team set it and to ask whoever looks after the Pool.
+- **A value above what a limit can carry, or a key a desktop doesn't know, says nothing**, so a Pool can't
+  make a limit more than purlis can carry. A highest below what a limit can be holds at the least it can
+  be, and a default above the highest is dropped.
+- **These bound a person's own desktop, which they run.** They are an agreement a team keeps, not a
+  boundary against that person. What the cluster itself enforces is the quota and the Pool's other
+  settings. These are the Pool's, not the chart's: the chart installs the operator and defines no Pool.
 
 ## Who the runner is
 

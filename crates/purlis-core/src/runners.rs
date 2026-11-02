@@ -810,10 +810,12 @@ fn limit_may_be(
     id: crate::poollimits::LimitId,
     value: Option<u64>,
 ) -> Result<PoolLimitsHeld, Refused> {
-    if let Some(value) = value {
-        id.limit().check(value, None).map_err(Refused::Other)?;
-    }
     let limits = limits_in(held, name).ok_or_else(|| no_such_pool(name))?;
+    if let Some(value) = value {
+        id.limit()
+            .check(value, limits.chosen.team_highest(id))
+            .map_err(Refused::Other)?;
+    }
     // A runner's own shape is this machine's to make: never a cluster pool's, and checked with
     // the pool's other values, as a new pool's are.
     if id.limit().shapes_runner() {
@@ -2047,6 +2049,13 @@ impl ClusterPool {
         })
     }
 
+    /// This pool, under what its team set for its limits as it was added (#4287).
+    #[must_use]
+    pub fn under_team(mut self, team: Option<&serde_json::Value>) -> ClusterPool {
+        *self.chosen = self.chosen.under_team(team);
+        self
+    }
+
     /// This pool, as the cluster's Pool `opted_in` to minting there as it was added (#4204).
     pub fn minting_in_cluster(self, opted_in: bool) -> ClusterPool {
         ClusterPool {
@@ -2471,6 +2480,26 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
     write(config_root, &held)
 }
 
+/// **Keeps what the team set for the cluster pool `name`'s limits** (#4287), as its Pool says now:
+/// the person's own values stay, and hold to it from the next attempt.
+pub fn keep_cluster_team_limits(
+    config_root: &Path,
+    name: &str,
+    team: Option<&serde_json::Value>,
+) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(pool) = held.clusters.iter_mut().find(|pool| pool.name == name) else {
+        return Ok(());
+    };
+    let under = pool.chosen.under_team(team);
+    if *pool.chosen == under {
+        return Ok(());
+    }
+    *pool.chosen = under;
+    write(config_root, &held)
+}
+
 /// **Keeps whether the cluster pool `name`'s Pool opts in to minting now** (#4330): a Pool may opt in
 /// after it was added. Read only to say whether a chat's repos are sent to the Claim, so it decides
 /// nothing the cluster's own policy and operator do not.
@@ -2549,6 +2578,7 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
         row["profiles"] = profiles.into();
     }
     pool.chosen.to_row(&mut row);
+    pool.chosen.team_to_row(&mut row);
     for refused in &pool.refused_limits {
         refused.to_row(&mut row);
     }
@@ -2569,6 +2599,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "cluster",
         "holds",
         "owned",
+        "teamLimits",
         "mintInCluster",
         "mintNoticeDue",
         "profiles",
@@ -2587,6 +2618,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         return None;
     }
     let (chosen, refused_limits) = crate::poollimits::Chosen::read_row(fields, None);
+    let chosen = chosen.under_team(fields.get("teamLimits"));
     let profiles = match fields.get("profiles") {
         None => None,
         Some(profiles) => Some(profiles_from_row(profiles)?),
