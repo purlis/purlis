@@ -181,7 +181,7 @@ function DeviceSection({
               aria-disabled={removingHeld}
               onPress={removingHeld ? undefined : () => onRemoveHeld(runner.runner)}
             >
-              {removingHeld ? "Removing…" : "Remove runner"}
+              {removingHeld ? "Removing…" : "Remove runner…"}
             </Button>
           )}
         </RowTrail>

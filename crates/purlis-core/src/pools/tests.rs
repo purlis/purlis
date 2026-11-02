@@ -664,6 +664,70 @@ fn a_drain_notes_when_its_runner_last_stopped() {
     assert_eq!(kept.last_stop, Some(1_793_491_200));
 }
 
+/// A pool moved again notes only what this drain took: a row draining since before leaves as it
+/// stands, or the stop that held it would read as one from before its drain.
+#[test]
+fn a_later_drain_leaves_an_earlier_runners_row_as_it_is() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let locked = runners::lock(config.path());
+    runners::note_locked(
+        config.path(),
+        "first",
+        |kept| kept.last_stop = None,
+        &locked,
+    )
+    .unwrap();
+    let before = before_a_drain(config.path(), &fake.docker(), "first");
+    note_drains_began(config.path(), &before, false, &locked);
+    drop(locked);
+
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+
+    assert_eq!(kept.last_stop, None);
+    assert!(before.iter().all(|(name, _)| name != "first"), "{before:?}");
+}
+
+/// **Replace holds a runner already stopped**: the person pressed it. An update does not.
+#[test]
+fn only_a_press_holds_a_runner_already_stopped() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let stopped = Some(ran(false, Some(7)));
+    let before = [("first".to_owned(), stopped)];
+    let locked = runners::lock(config.path());
+
+    note_drains_began(config.path(), &before, false, &locked);
+    assert!(
+        !runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .held
+    );
+
+    note_drains_began(config.path(), &before, true, &locked);
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.held);
+    assert_eq!(drain_look(&kept, ran(true, Some(7))), DrainLook::Held);
+}
+
+/// **A held runner is the person's**: a look's drain refuses it, whatever Docker says now.
+#[test]
+fn a_look_never_removes_a_held_runner() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    hold(config.path(), "first").unwrap();
+
+    let refused = drain(config.path(), &fake.docker(), "first", None).unwrap_err();
+
+    assert!(refused.to_string().contains("is held"), "{refused}");
+    assert!(runners::named(config.path(), "first").unwrap().is_some());
+    assert!(remove_held(config.path(), &fake.docker(), "first", None).is_ok());
+}
+
 /// **The person removes a held runner, and only a held one**: its home goes as a drain's does.
 #[test]
 fn a_held_runner_is_removed_by_the_person_and_any_other_is_refused() {

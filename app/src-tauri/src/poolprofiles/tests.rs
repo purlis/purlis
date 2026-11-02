@@ -654,6 +654,7 @@ fn a_runner_in(container: char, device: &str) -> purlis_core::runners::Kept {
         unpaired: false,
         signed_out: Vec::new(),
         last_stop: None,
+        held: false,
         engine: None,
         home_created: None,
     }

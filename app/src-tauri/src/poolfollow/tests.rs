@@ -381,6 +381,22 @@ fn a_runner_a_link_started_again_during_its_drain_keeps_its_home() {
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
 }
 
+/// **A hold lasts**: a row with nothing noted is held as a look finds it stopped, and it stays
+/// held once a link has started it again and it answers no chat.
+#[test]
+fn a_held_runner_stays_held_once_it_runs_again() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_whose_runners_are_suspended(config.path());
+    a_pool_draining(&machine);
+    follow_and_drain(&machine, None, &|_| panic!("a stopped runner is not asked"));
+
+    let again = a_machine(config.path());
+    let said = follow_and_drain(&again, None, &|_| panic!("its answer says nothing"));
+
+    assert_eq!(names(&again), ["first", "first-fedcba98"], "{said:?}");
+    assert!(said.is_empty(), "a hold is said once: {said:?}");
+}
+
 /// A runner that answered its unpairing cannot be asked, and takes no chat (#4146): the next
 /// look removes what is left without asking it.
 #[test]

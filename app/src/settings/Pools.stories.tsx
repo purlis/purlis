@@ -52,6 +52,7 @@ function theCore(pools: PoolRow[], link: PoolLink = { state: "linked" }) {
           desktop: "0.4.2",
           follows: true,
           draining: 0,
+          held: 0,
           named: true,
           waiting: 0,
         };

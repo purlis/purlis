@@ -140,6 +140,13 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
           : `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. New chats start on a runner of ${version.desktop} once that version's runner image is published.`,
     );
   }
+  if (version.held > 0) {
+    lines.push(
+      version.held === 1
+        ? "1 older runner stopped during its drain. purlis keeps it and what its chats left until you remove it in Devices."
+        : `${version.held} older runners stopped during their drain. purlis keeps them and what their chats left until you remove them in Devices.`,
+    );
+  }
   if (version.draining > 0) {
     lines.push(
       version.draining === 1

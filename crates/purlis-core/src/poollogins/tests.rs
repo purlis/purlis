@@ -157,6 +157,7 @@ fn kept(device: &str, key: u8, of: Image) -> Kept {
         unpaired: false,
         signed_out: Vec::new(),
         last_stop: None,
+        held: false,
         engine: None,
         home_created: None,
     }

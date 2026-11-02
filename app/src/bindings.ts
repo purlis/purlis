@@ -10840,6 +10840,11 @@ export type PoolVersion = {
 	 */
 	draining: number,
 	/**
+	 *  How many of its older runners are held: each stopped during its drain, and stays with its
+	 *  home until the person removes it.
+	 */
+	held: number,
+	/**
 	 *  Whether this version's release named a runner image, as purlis last found it (#2880):
 	 *  one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
 	 *  looked.

@@ -272,6 +272,7 @@ pub fn follow(
     let successor = crate::dockerpool::successor_name(name, image);
     // What a follow that stopped short of keeping its runner left goes first (#2869).
     clear_leftovers_locked(config_root, docker, &successor, &locked)?;
+    let before = before_a_drain(config_root, docker, name);
     let made = docker
         .declared(image)
         .and_then(|(user, home)| Runner::new(&successor, image.clone(), user, &home))
@@ -289,7 +290,7 @@ pub fn follow(
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
         })
         .map(|kept| noted_where_made(config_root, docker, kept, &locked))
-        .inspect(|_| note_last_stops(config_root, docker, name, &locked));
+        .inspect(|_| note_drains_began(config_root, &before, false, &locked));
     match kept {
         Ok(kept) => Ok(Some(kept)),
         Err(why) => Err(match docker.remove(&made) {
@@ -338,6 +339,7 @@ fn replace_as(
         .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
     on_its_engine(docker, &runners::runner_for(config_root, name)?)?;
     clear_leftovers_locked(config_root, docker, next, &locked)?;
+    let before = before_a_drain(config_root, docker, name);
     let made = docker
         .declared(pool.image())
         .and_then(|(user, home)| Runner::new(next, pool.image().clone(), user, &home))
@@ -355,7 +357,8 @@ fn replace_as(
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
         })
         .map(|kept| noted_where_made(config_root, docker, kept, &locked))
-        .inspect(|_| note_last_stops(config_root, docker, name, &locked));
+        // The person pressed it, and what a stop before that ended is theirs to let go of.
+        .inspect(|_| note_drains_began(config_root, &before, true, &locked));
     match kept {
         Ok(kept) => Ok(Some(kept)),
         Err(why) => Err(match docker.remove(&made) {
@@ -664,32 +667,60 @@ fn clear_leftovers_locked(
     }))
 }
 
-/// **Notes when each of pool `pool`'s runners that began to drain last stopped**, as Docker says,
-/// for [`drain_look`]. Docker's own time against Docker's own time, so no clock is compared with
-/// another. One that could not be read stays unnoted, which holds it if it is found stopped.
-fn note_last_stops(config_root: &Path, docker: &Docker, pool: &str, locked: &runners::Locked) {
-    let draining = runners::draining(config_root).unwrap_or_default();
-    for kept in draining
+/// **How each runner of pool `pool` that a drain would take stands now**, as Docker says, read
+/// before anything is made, so a stop while the new runner is made counts as one during its
+/// drain. One that could not be read has none.
+fn before_a_drain(
+    config_root: &Path,
+    docker: &Docker,
+    pool: &str,
+) -> Vec<(String, Option<crate::dockerpool::Ran>)> {
+    runners::read(config_root)
+        .unwrap_or_default()
         .iter()
-        .filter(|kept| kept.pool() == pool && kept.last_stop.is_none())
-    {
-        let Ok(ran) = docker.ran(&kept.made) else {
+        .filter(|kept| kept.pool() == pool && !kept.draining)
+        .map(|kept| (kept.name().to_owned(), docker.ran(&kept.made).ok()))
+        .collect()
+}
+
+/// **Notes how the runners `before` stood as their drain began**, for [`drain_look`]: Docker's own
+/// time against Docker's own time, so no clock is compared with another. Only these: a row that
+/// drained earlier is left as it is, or a stop during its drain would read as one from before it.
+/// With `hold_stopped`, one already stopped is held. One that could not be read stays unnoted,
+/// which holds it if it is found stopped.
+fn note_drains_began(
+    config_root: &Path,
+    before: &[(String, Option<crate::dockerpool::Ran>)],
+    hold_stopped: bool,
+    locked: &runners::Locked,
+) {
+    for (name, ran) in before {
+        let Some(ran) = ran else {
             continue;
         };
         let noted = runners::note_locked(
             config_root,
-            kept.name(),
-            |kept| kept.last_stop = Some(ran.finished.unwrap_or(0)),
+            name,
+            |kept| {
+                kept.last_stop = Some(ran.finished.unwrap_or(0));
+                kept.held = hold_stopped && !ran.running;
+            },
             locked,
         );
         if let Err(why) = noted {
             tracing::warn!(
-                "purlis: when runner {} last stopped was not noted, so it is held if it is \
-                 found stopped: {why}",
-                kept.name()
+                "purlis: how runner {name} stood as its drain began was not noted, so it is held \
+                 if it is found stopped: {why}"
             );
         }
     }
+}
+
+/// **Holds the draining runner `name`** as a look found it ([`DrainLook::Held`]), for good: what
+/// it answers from now on, or a run that starts, changes nothing.
+pub fn hold(config_root: &Path, name: &str) -> Result<(), Refused> {
+    let locked = runners::lock(config_root);
+    runners::note_locked(config_root, name, |kept| kept.held = true, &locked)
 }
 
 /// What a look makes of a draining runner's container ([`drain_look`]).
@@ -711,7 +742,9 @@ pub enum DrainLook {
 /// one: only a stop noted before its drain began says no chat was running on it.
 pub fn drain_look(kept: &Kept, ran: crate::dockerpool::Ran) -> DrainLook {
     let stops_as_noted = kept.last_stop == Some(ran.finished.unwrap_or(0));
-    if kept.unpaired || (!ran.running && (kept.carried || kept.carry_failed)) {
+    if kept.held {
+        DrainLook::Held
+    } else if kept.unpaired || (!ran.running && (kept.carried || kept.carry_failed)) {
         DrainLook::NoChat
     } else if ran.running && (stops_as_noted || kept.last_stop.is_none()) {
         DrainLook::Ask
@@ -768,6 +801,11 @@ pub fn drain(
     unpair: Option<&Unpair<'_>>,
 ) -> Result<Removed, Refused> {
     let locked = runners::lock(config_root);
+    if runners::named(config_root, name)?.is_some_and(|kept| kept.held) {
+        return Err(Refused::Other(format!(
+            "runner {name} is held, so only the person removes it"
+        )));
+    }
     drain_locked(config_root, docker, name, unpair, &locked)
 }
 
@@ -790,7 +828,7 @@ fn drain_locked(
             };
             if matches!(peer, Some(Err(_))) && docker.ran(&kept.made).is_ok_and(|ran| ran.running) {
                 return Err(Refused::Other(format!(
-                    "runner {name} runs and was not unpaired, so it stays until the next look"
+                    "runner {name} runs and was not unpaired, so it stays"
                 )));
             }
             if matches!(peer, Some(Ok(())))
