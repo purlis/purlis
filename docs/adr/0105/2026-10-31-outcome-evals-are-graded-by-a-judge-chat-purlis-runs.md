@@ -88,6 +88,10 @@ says nothing of what a whole turn and its judge spend. Grading after each edit (
 number of chats and now the evals and their files by digest, so a plan whose outcome evals changed
 in any way waits for the person to see it again, even within the chats accepted.
 
+**The scorecard and the Grades tab show them**: each arm's rate over its judged runs, each run's chat
+and judge one click away, what the judges found of each expectation, and why a run failed. A run ended
+by an ask names what it asked for, as a limit of grading and no fault of the skill.
+
 **The record** (§5) gains `report.outcomes` (each eval in each arm, each run's chat, judge,
 verdicts and why it failed), `report.outcome_delta`, and each arm's `outcome_pass_rate`,
 `outcome_chats` and `outcome_not_run`, all absent in a grade with no outcome eval, so a row

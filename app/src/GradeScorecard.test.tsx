@@ -8,7 +8,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { GradeChatPage, GradeScorecardPage, differenceSaid, runsSaid } from "./GradeScorecard";
+import {
+  GradeChatPage,
+  GradeScorecardPage,
+  differenceSaid,
+  evalSaid,
+  keptEvalChats,
+  runsSaid,
+} from "./GradeScorecard";
 import { studioOfSkillTab, skillGrading, AT_THE_ROOT } from "./skillStudio";
 import type { GradeScorecard } from "./bindings";
 
@@ -42,7 +49,9 @@ const CARD: GradeScorecard = {
   asked: 1,
   outcome: "graded",
   arms: { with: 100, without: 0, previous: null },
+  outcome_arms: null,
   spent: { chats: 5, tokens: 40000, cost_usd: 1.92, limit_usd: 3 },
+  evals: [],
   tests: [
     {
       query: "ship it to production",
@@ -204,6 +213,112 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
     expect(about.textContent).toContain("against its previous version fedcba987654");
     expect(await screen.findByRole("columnheader", { name: "Its previous version" })).toBeTruthy();
     expect((await screen.findByTestId("grade-scorecard-previous")).textContent).toContain("2 of 3");
+  });
+
+  it("shows each outcome eval, its chats and judges, what they found, and why a run failed (SK-55)", async () => {
+    const card: GradeScorecard = {
+      ...CARD,
+      tests: [],
+      arms: { with: null, without: null, previous: null },
+      outcome_arms: { with: 100, without: 0, previous: null },
+      evals: [
+        {
+          id: "4",
+          expectations: ["It is filled"],
+          arms: [
+            {
+              arm: "with",
+              runs: 1,
+              points: 100,
+              results: [
+                {
+                  run: 1,
+                  chat: { id: "01E", run: 1, kept: true },
+                  judge: { id: "01J", run: 1, kept: false },
+                  passed: 1,
+                  checks: [{ passed: true, evidence: "form.txt names Ada" }],
+                  failed: null,
+                },
+              ],
+            },
+            {
+              arm: "without",
+              runs: 1,
+              points: 0,
+              results: [
+                {
+                  run: 1,
+                  chat: { id: "01F", run: 1, kept: true },
+                  judge: null,
+                  passed: 0,
+                  checks: [],
+                  failed: "Its chat asked for the tool Bash.",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    mockIPC((cmd) => (cmd === "skill_grade_scorecard" ? card : null));
+    const told = renderCard();
+    const totals = await screen.findByRole("group", {
+      name: "Outcome evals of the grade of deploy",
+    });
+    expect(totals).toHaveTextContent("With it100%of expectations passed");
+    expect(totals).toHaveTextContent("Without it0%+100 points");
+    expect(screen.queryByTestId("grade-scorecard-tests")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Totals of the grade of deploy" })).toBeNull();
+    expect(screen.getByTestId("grade-scorecard-asked")).toHaveTextContent(
+      "an outcome eval's fails that run",
+    );
+    expect(screen.getByTestId("grade-scorecard-eval-why")).toHaveTextContent(
+      "Eval 4, without it, run 1: Its chat asked for the tool Bash.",
+    );
+    const expectation = screen.getByTestId("grade-scorecard-expectation");
+    expect(expectation).toHaveTextContent("It is filled");
+    expect(expectation).toHaveTextContent("With the skill: 1 of 1 passed");
+    expect(expectation).toHaveTextContent("Without it: 0 of 1 passed");
+    expect(expectation).toHaveTextContent("With the skill, run 1: form.txt names Ada");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open with the skill, chat 1, of outcome eval 4" }),
+    );
+    expect(told.onChat).toHaveBeenCalledWith("01E");
+    const judge = screen.getByRole("button", {
+      name: "Open with the skill, judge 1, of outcome eval 4",
+    });
+    expect(judge.hasAttribute("disabled") || judge.getAttribute("aria-disabled") === "true").toBe(
+      true,
+    );
+  });
+
+  it("walks an outcome eval's kept chats, and says a row too long kept no verdicts (SK-55)", () => {
+    const run = {
+      run: 1,
+      chat: { id: "01E", run: 1, kept: true },
+      judge: { id: "01J", run: 1, kept: true },
+      passed: 1,
+      checks: [],
+      failed: null,
+    };
+    const eval4 = {
+      id: "4",
+      expectations: ["It is filled"],
+      arms: [{ arm: "with" as const, runs: 1, points: 100, results: [run] }],
+    };
+    expect(keptEvalChats([eval4]).map((one) => [one.chat.id, one.about])).toEqual([
+      ["01E", "outcome eval 4"],
+      ["01J", "the judge of outcome eval 4"],
+    ]);
+    expect(evalSaid(eval4.arms[0])).toBe("100% over 1 run");
+    expect(evalSaid(undefined)).toBe("Not judged");
+    expect(
+      evalSaid({
+        ...eval4.arms[0],
+        points: 0,
+        results: [{ ...run, passed: 0, failed: "It asked." }],
+      }),
+    ).toBe("0% over 1 run. It asked.");
   });
 
   it("says why a grade it cannot read is not shown", async () => {

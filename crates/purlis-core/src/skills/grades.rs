@@ -577,19 +577,25 @@ pub fn record(root: &Path, level: &Level, graded: &Graded, device: &str) -> Opti
     record_to(root, is_local(root, level), graded, || device.to_owned())
 }
 
-/// `graded` with the credentials in its judges' evidence masked (SK-55): evidence quotes what a
+/// `graded` with the credentials in its judges' evidence and its failure reasons masked (SK-55): evidence quotes what a
 /// chat left, and the record is committed.
 fn masked(graded: &Graded) -> Graded {
     let mut graded = graded.clone();
-    for check in graded
+    for run in graded
         .report
         .outcomes
         .iter_mut()
         .flat_map(|eval| eval.results.iter_mut())
-        .flat_map(|run| run.checks.iter_mut())
     {
-        check.evidence =
-            grade::outcomes::kept_evidence(&crate::secrets::mcpstart::masked(&check.evidence));
+        for check in &mut run.checks {
+            check.evidence =
+                grade::outcomes::kept_evidence(&crate::secrets::mcpstart::masked(&check.evidence));
+        }
+        // It may name what a chat chose to ask for.
+        run.failed = run
+            .failed
+            .take()
+            .map(|why| crate::secrets::mcpstart::masked(&why));
     }
     graded
 }
@@ -1589,12 +1595,25 @@ pub fn planned_with(
                 .get("SKILL.md")
                 .is_some_and(|text| purlis_skills::review::runs_commands_as_it_loads(text))
         };
-        if runs_one(&copy.snapshot)
-            || copy
-                .previous
-                .as_ref()
-                .is_some_and(|previous| runs_one(&previous.snapshot))
-        {
+        let refused = |snapshot: &Snapshot| {
+            snapshot
+                .files
+                .get("SKILL.md")
+                .is_some_and(|text| purlis_skills::handed::parse(text).is_err())
+        };
+        let copies = || {
+            std::iter::once(&copy.snapshot)
+                .chain(copy.previous.as_ref().map(|previous| &previous.snapshot))
+        };
+        if copies().any(refused) {
+            for eval in evals.drain(..) {
+                outcomes_left_out.push(LeftOutEval {
+                    id: eval.id,
+                    why: "its skill's frontmatter is one purlis does not hand a chat".to_owned(),
+                });
+            }
+        }
+        if copies().any(runs_one) {
             for eval in evals.drain(..) {
                 outcomes_left_out.push(LeftOutEval {
                     id: eval.id,
