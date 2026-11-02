@@ -157,6 +157,60 @@ pub fn answer(value: &str) -> String {
     one_line(value, NO_CLIP)
 }
 
+/// `path` as ONE word of a command a hint suggests, which a reader pastes into a shell (#4830).
+///
+/// Never shortened: a clipped path in a command names a different path, or none. And never
+/// the doctor's `~/…` short form, which a shell expands only outside quotes. A path whose every
+/// character has a glyph is `shlex.quote`d ([`crate::shellseg::shell_quote`]), which a POSIX
+/// shell reads back unchanged and which leaves an ordinary path as it is. A path holding a
+/// character with no glyph — a newline, a tab, a direction override — cannot be single-quoted
+/// without that character landing in the line as itself (#449), so it is spelled in `$'…'`
+/// with every byte outside printable ASCII as `\xHH`: bash (3.2 on), zsh and ksh read that
+/// back as the same bytes, whatever the locale.
+pub fn shell_path(path: &std::path::Path) -> String {
+    // A path is bytes on unix, not text: one that is not UTF-8 is spelled from its own bytes,
+    // never through a U+FFFD that would name a different path.
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = path.as_os_str().as_bytes();
+        match std::str::from_utf8(bytes) {
+            Ok(text) => shell_word(text),
+            Err(_) => ansi_c_word(bytes),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        shell_word(&path.to_string_lossy())
+    }
+}
+
+/// `text` as one word of a suggested command, as [`shell_path`] spells a path: a branch name
+/// git allows can hold a `$`, a `;` or a quote as well.
+pub fn shell_word(text: &str) -> String {
+    if one_line(text, NO_CLIP) == text {
+        return crate::shellseg::shell_quote(text);
+    }
+    ansi_c_word(text.as_bytes())
+}
+
+/// `bytes` in `$'…'`, every byte outside printable ASCII as `\xHH` — and `!` too, which bash's
+/// history expansion would otherwise reach inside the quotes of an interactive shell.
+fn ansi_c_word(bytes: &[u8]) -> String {
+    let mut word = String::from("$'");
+    for &byte in bytes {
+        match byte {
+            b'\\' => word.push_str("\\\\"),
+            b'\'' => word.push_str("\\'"),
+            b'!' => word.push_str("\\x21"),
+            b' '..=b'~' => word.push(char::from(byte)),
+            _ => word.push_str(&format!("\\x{byte:02x}")),
+        }
+    }
+    word.push('\'');
+    word
+}
+
 /// charter's own separator, for a sentence naming several things (`charter/contain.py:385`).
 ///
 /// charter's own, for the same reason the template is charter's own text: a line naming
