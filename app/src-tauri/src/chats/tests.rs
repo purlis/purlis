@@ -9578,4 +9578,51 @@ fn a_notification_is_not_lost_to_a_stale_layout_while_the_window_is_in_the_backg
         "and only held back while the window is in front"
     );
     chats.end_all();
+
+/// **A start that chose a pool that is gone starts nothing, and says the pool can't be reached**
+/// (#4536, ruled 2026-11-01): the window then offers this machine for it, and nothing runs here
+/// before that press. A start that chose this machine runs here whatever its workspace names.
+#[cfg(unix)]
+#[test]
+fn a_start_on_a_pool_that_is_gone_starts_nothing_and_one_that_chose_this_machine_runs_here() {
+    use purlis_core::machine::StartChoice;
+    let plane = a_sandboxed_plane();
+    let workspace = plane.path().join("workspaces/w");
+    std::fs::create_dir_all(&workspace).expect("the workspace");
+    let config = tempfile::tempdir().expect("this machine's config");
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(plane.path(), 1);
+        store
+            .set_chats_run_on(plane.path(), "w", Some("builds"))
+            .expect("the workspace names a pool");
+    })
+    .expect("kept");
+    let host = Pretend::default();
+    let mut chats = restartable_chats_of(plane.path(), host.clone());
+    chats.keeping_pools_in(Some(config.path().to_path_buf()));
+
+    let on_a_gone_pool = Chat {
+        runs_on: Some(StartChoice::Pool("gone".to_owned())),
+        ..a_resumable_chat_in(&workspace)
+    };
+    let refused = crate::poolprofiles::offering_limits(|| chats.start(&on_a_gone_pool, SIZE))
+        .expect_err("a pool that is gone starts nothing");
+    assert_eq!(refused.pool_unavailable.as_deref(), Some("gone"), "{refused:?}");
+    assert!(refused.words.contains("pool gone"), "{}", refused.words);
+    assert!(host.running().is_empty(), "never run here in its place");
+
+    let by_its_workspace = crate::poolprofiles::offering_limits(|| {
+        chats.start(&a_resumable_chat_in(&workspace), SIZE)
+    })
+    .expect_err("its workspace's pool is not kept either");
+    assert_eq!(by_its_workspace.pool_unavailable.as_deref(), Some("builds"));
+
+    // A shell, which writes no harness settings: what is asked here is only where it runs.
+    let here = Chat {
+        runs_on: Some(StartChoice::ThisMachine),
+        ..a_chat_in(&workspace, "/bin/sh")
+    };
+    let session = crate::poolprofiles::offering_limits(|| chats.start(&here, SIZE))
+        .expect("this machine, chosen for this start");
+    assert_eq!(host.running(), vec![session]);
 }

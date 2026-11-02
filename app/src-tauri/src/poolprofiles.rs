@@ -891,7 +891,6 @@ pub struct LimitRefused {
     /// and Run on this machine this once. Never set by a runner's words: only where this machine
     /// found the pool missing or its link down ([`unavailable`]). Absent for every other refusal.
     #[specta(optional)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub pool_unavailable: Option<String>,
 }
 

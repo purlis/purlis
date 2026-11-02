@@ -1687,6 +1687,7 @@ async fn start_chat(
     tauri::async_runtime::spawn_blocking(move || {
         let named = label.clone();
         let show_footer = boxes.show_footer;
+        let runs_on = boxes.runs_on.map(RunsOnPick::choice).transpose()?;
         let without_sandbox = boxes
             .without_sandbox
             .map(|asked| purlis_core::sandbox::OptOut {
@@ -1713,6 +1714,7 @@ async fn start_chat(
                                 Picked {
                                     show_footer,
                                     without_sandbox,
+                                    runs_on,
                                 },
                                 columns,
                                 rows,
@@ -1754,6 +1756,32 @@ struct Boxes {
     /// opt-out is made: it reaches the core here, on the window's own human scope, and nothing
     /// a chat, a file or the CLI sends can carry one.
     without_sandbox: Option<WithoutSandbox>,
+    /// Where the person chose to run this chat, for this start only (#4536): a pool, or this
+    /// machine (a null pool), before its workspace's and its project's own. Absent follows them.
+    /// It never writes a setting.
+    #[specta(optional)]
+    runs_on: Option<RunsOnPick>,
+}
+
+/// The Runs on row's choice for one start (#4536): `pool` names a pool this machine keeps, and
+/// null is this machine.
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+struct RunsOnPick {
+    pool: Option<String>,
+}
+
+impl RunsOnPick {
+    /// The start's choice, or why a name can't be one.
+    fn choice(self) -> Result<purlis_core::machine::StartChoice, String> {
+        use purlis_core::machine::StartChoice;
+        match self.pool {
+            None => Ok(StartChoice::ThisMachine),
+            Some(pool) => {
+                purlis_core::runners::usable_pool_name(&pool)?;
+                Ok(StartChoice::Pool(pool))
+            }
+        }
+    }
 }
 
 /// A person's opt-out, as the picker sends it.
@@ -1767,6 +1795,7 @@ struct WithoutSandbox {
 struct Picked {
     show_footer: bool,
     without_sandbox: Option<purlis_core::sandbox::OptOut>,
+    runs_on: Option<purlis_core::machine::StartChoice>,
 }
 
 /// The start itself, in the directory `on_a_branch` settled on.
@@ -1781,6 +1810,7 @@ fn start_chat_in(
     Picked {
         show_footer,
         without_sandbox,
+        runs_on,
     }: Picked,
     columns: u16,
     rows: u16,
@@ -1823,6 +1853,7 @@ fn start_chat_in(
         label: label.clone(),
         from: None,
         renamed_from: None,
+        runs_on,
         ..Default::default()
     };
     let session = held

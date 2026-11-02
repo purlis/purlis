@@ -1662,6 +1662,8 @@ export const commands = {
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
 	followProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	projectChatsRunOn: __WINDOW_ONLY_RESULT,
+	/**  **Where a new chat in `workspace` would run, and why**, for Start chat's Runs on row (#4536). */
+	startRunsOn: (plane: PlaneId, workspace: string | null) => typedError<StartRunsOn, string>(__TAURI_INVOKE("start_runs_on", { plane, workspace })),
 	setProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	poolNamedBy: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
@@ -3140,6 +3142,12 @@ export type Boxes = {
 	 *  a chat, a file or the CLI sends can carry one.
 	 */
 	without_sandbox: WithoutSandbox | null,
+	/**
+	 *  Where the person chose to run this chat, for this start only (#4536): a pool, or this
+	 *  machine (a null pool), before its workspace's and its project's own. Absent follows them.
+	 *  It never writes a setting.
+	 */
+	runs_on?: RunsOnPick | null,
 };
 
 /**  What `branch-changed` carries: the branches, of those this window listens to, that moved. */
@@ -6666,6 +6674,13 @@ export type LevelWaiting = {
 export type LimitRefused = {
 	words: string,
 	limit: PoolLimitOffer | null,
+	/**
+	 *  **The pool a start was to run on, where that pool is gone, stopped or not reached**
+	 *  (#4536, ruled 2026-11-01): nothing started, and the window offers Try again, Pool setup
+	 *  and Run on this machine this once. Never set by a runner's words: only where this machine
+	 *  found the pool missing or its link down ([`unavailable`]). Absent for every other refusal.
+	 */
+	pool_unavailable?: string | null,
 };
 
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
@@ -10523,6 +10538,23 @@ export type RunnerWriteWhole = {
 	why: string | null,
 };
 
+/**  **Which level decides where a new chat runs** (#4536), as Start chat's Runs on row says why. */
+export type RunsOnLevel = 
+/**  The workspace's own setting. */
+"workspace" | 
+/**  The project's setting, which the workspace follows. */
+"project" | 
+/**  No level names a pool, or the chat starts at the project's root. */
+"this_machine";
+
+/**
+ *  The Runs on row's choice for one start (#4536): `pool` names a pool this machine keeps, and
+ *  null is this machine.
+ */
+export type RunsOnPick = {
+	pool: string | null,
+};
+
 /**  What the picker says about the sandbox for one profile, before anything starts. */
 export type SandboxAhead = {
 	/**  `sandboxed`, `unsandboxed` (this system has no backend) or `refused`. */
@@ -12372,6 +12404,19 @@ export type StartRefused = {
 	 *  before any start was tried, or on a profile with nothing to approve.
 	 */
 	approval: NeedsApproval | null,
+};
+
+/**
+ *  **Where a new chat in a workspace would run, and why** (#4536): what Start chat's Runs on row
+ *  shows before the person picks anything, and every pool this machine keeps, which the row
+ *  offers for this start only. `at_root` is a chat at the project's root, which runs here and is
+ *  offered no pool. Nothing here is checked against the pool's runner: the start does that.
+ */
+export type StartRunsOn = {
+	pool: string | null,
+	level: RunsOnLevel,
+	at_root: boolean,
+	pools: string[],
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */
