@@ -465,6 +465,7 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
         What::Deliver { id } => {
             deliver_queued(held, asker, Some(id)).unwrap_or_else(|| what_became_of(held, asker, id))
         }
+        What::Carried { id, message } => carried(held, asker, id, message),
         What::Question { text } => send_up(held, asker, Kind::Question, text).unwrap_or_else(no),
         What::Route { text } => route(held, asker, text),
         What::Answer { to, text } => answer_it(held, asker, *to, text).unwrap_or_else(no),
@@ -863,6 +864,12 @@ fn drain(held: &Held, sender: u32, fresh: Option<&str>, how: Drain) -> Option<An
     if !purlis_core::dispatchqueue::holds(&socket, sender) {
         return None;
     }
+    waking_after(held, || drain_locked(held, &socket, sender, fresh, how))
+}
+
+/// **`deliver`, with the chats it wakes woken once it returns** (the rule at the top of this
+/// module): what a drain, or a carried message, delivers under chat `sender`'s drain lock.
+fn waking_after<T>(held: &Held, deliver: impl FnOnce() -> T) -> T {
     // **Nothing is typed into a pane while the drain lock is held** (the rule at the top of this
     // module): the chats each delivery wakes are collected, and woken once it is let go. A
     // closing chat's drain collects them already, for after the close's hold ([`sender_ending`]).
@@ -874,7 +881,7 @@ fn drain(held: &Held, sender: u32, fresh: Option<&str>, how: Drain) -> Option<An
         }
         outer
     });
-    let answered = drain_locked(held, &socket, sender, fresh, how);
+    let answered = deliver();
     if collects {
         let wakes = WAKES
             .with(|wakes| wakes.borrow_mut().take())
@@ -965,7 +972,7 @@ fn drain_locked(
             }
             Err(why) if is_fresh => answered = Some(no(why)),
             Err(why) if how == Drain::Closing => not_delivered(held, sender, &message, why),
-            Err(why) => undeliverable(held, sender, &message, why),
+            Err(why) => undeliverable(held, sender, &message.id, &message.what, why),
         }
     }
     answered
@@ -990,6 +997,56 @@ fn delivered_now(
         Queued::Question { text } => send_up(held, sender, Kind::Question, text),
         Queued::Answer { to, text } => answer_it(held, sender, *to, text),
     }
+}
+
+/// **Delivers message `id`, which chat `sender` queued on a pool's runner** (#4804), carried by
+/// that runner's host, which reads the queue there and removes the message once this answers.
+///
+/// Delivered as a drain here delivers one, under the same drain lock, **once by its id**: one
+/// this app holds a record of was delivered already, its answer lost with the link, and is
+/// answered with what became of it, not delivered again. One a limit holds back is answered
+/// still queued, and stays on the runner, with every one after it. One that cannot be
+/// delivered is recorded undeliverable, for `purlis dispatch list`, and refused with why.
+fn carried(
+    held: &Held,
+    sender: u32,
+    id: &str,
+    message: &purlis_core::dispatchqueue::Queued,
+) -> Answer {
+    waking_after(held, || {
+        let lock = draining(sender);
+        let _one = lock.lock().unwrap_or_else(PoisonError::into_inner);
+        let sender_key = key(held, sender);
+        let delivered_before = ledger(held)
+            .talk
+            .records(&sender_key)
+            .iter()
+            .any(|record| record.id.as_deref() == Some(id));
+        if delivered_before {
+            return what_became_of(held, sender, id);
+        }
+        if held_back(held, sender, message).is_some() {
+            return task(Answered::Queued {
+                id: id.to_owned(),
+                delivered: false,
+            });
+        }
+        let before = ledger(held).talk.recorded(&sender_key);
+        match delivered_now(held, sender, message) {
+            Ok(answer) => {
+                let mut ledger = ledger(held);
+                // Only where this delivery kept a record: an acknowledgement alone keeps none.
+                if ledger.talk.recorded(&sender_key) > before {
+                    ledger.talk.mark_last_queued(&sender_key, id);
+                }
+                answer
+            }
+            Err(why) => {
+                undeliverable(held, sender, id, message, why.clone());
+                no(why)
+            }
+        }
+    })
 }
 
 /// **What became of queued message `id` of chat `sender`'s**, where no drain of this ask found
@@ -1063,10 +1120,11 @@ fn queued_to(what: &purlis_core::dispatchqueue::Queued) -> (Kind, Option<u32>) {
 fn undeliverable(
     held: &Held,
     sender: u32,
-    message: &purlis_core::dispatchqueue::Waiting,
+    id: &str,
+    what: &purlis_core::dispatchqueue::Queued,
     why: String,
 ) {
-    let (kind, to) = queued_to(&message.what);
+    let (kind, to) = queued_to(what);
     let name = to
         .and_then(|to| held.chats().shown_name(to))
         .or_else(|| {
@@ -1081,17 +1139,14 @@ fn undeliverable(
         sender,
         kind,
         None,
-        matches!(
-            message.what,
-            purlis_core::dispatchqueue::Queued::TellAll { .. }
-        ),
+        matches!(what, purlis_core::dispatchqueue::Queued::TellAll { .. }),
         vec![(
             to.unwrap_or(0),
             name,
             dispatchtalk::Delivered::Undeliverable { why },
         )],
     );
-    ledger(held).talk.mark_last_queued(&sender_key, &message.id);
+    ledger(held).talk.mark_last_queued(&sender_key, id);
     held.tasks().changed();
 }
 

@@ -118,6 +118,27 @@ pub(super) fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Heari
                             ..Default::default()
                         }),
                     },
+                    // A message a runner's host carried (#4804): one saying it is held back
+                    // stays queued, as a limit between two chats holds one.
+                    Ask::Task(asked) => match asked.what {
+                        crate::dispatched::What::Carried { id, message } => {
+                            let text = message.text().unwrap_or_default().to_owned();
+                            window.said(format!("carried {id} {text}"));
+                            if text == "held back" {
+                                Answer::Task(Box::new(crate::dispatched::Answered::Queued {
+                                    id,
+                                    delivered: false,
+                                }))
+                            } else {
+                                Answer::Ticket {
+                                    ticket: format!("t{connection}"),
+                                }
+                            }
+                        }
+                        _ => Answer::Ticket {
+                            ticket: format!("t{connection}"),
+                        },
+                    },
                     _ => Answer::Ticket {
                         ticket: format!("t{connection}"),
                     },
@@ -1922,3 +1943,7 @@ fn an_ask_the_host_holds_no_pulse_for_is_replied_only_its_answer() {
         [Replied::Answer(Answer::Ticket { ticket: "t".into() })]
     );
 }
+
+/// A runner's host carries what its chats queued to the window itself (#4804).
+#[cfg(unix)]
+mod carrying;

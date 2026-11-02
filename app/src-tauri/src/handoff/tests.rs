@@ -12011,6 +12011,9 @@ mod task_questions;
 /// A task's question on its route from a pool's runner (#4560).
 mod task_questions_on_runners;
 
+/// A message a chat on a pool's runner queued there, carried by the runner's host (#4804).
+mod carried_from_runners;
+
 /// A task started fresh is handed its brief again, or not started at all (#1609).
 mod started_fresh;
 
