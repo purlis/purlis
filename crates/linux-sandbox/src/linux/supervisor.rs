@@ -42,6 +42,7 @@ use nix::sys::uio::{RemoteIoVec, process_vm_readv};
 use nix::unistd::{Pid, UnlinkatFlags, linkat, symlinkat, unlinkat};
 
 use super::notify;
+use super::terminal::OwnTerminals;
 use super::walk::{self, Chat, Found, World, named, named_in};
 use crate::loopback::{self, Picked, PoolPort};
 use crate::profile::{FileOp, Kind, Op, Profile, Remote};
@@ -95,6 +96,8 @@ pub(super) struct Supervisor {
     listener: OwnedFd,
     profile: Profile,
     world: World,
+    /// The terminals this chat started on.
+    terminals: OwnTerminals,
     changing: Mutex<()>,
     told: Option<Arc<Teller>>,
     /// The ports picked for the chat's test servers, and the socket made on each (#3396).
@@ -112,6 +115,7 @@ impl Supervisor {
             listener,
             profile,
             world: World::new()?,
+            terminals: OwnTerminals::of_this_process(),
             changing: Mutex::new(()),
             told,
             picked,
@@ -329,6 +333,10 @@ impl Supervisor {
         // Wherever a walk arrived from, a process outside the sandbox is read for its `stat`
         // alone.
         if !outside_process_stat_only(chat, path) {
+            return false;
+        }
+        // Whatever the profile says of the rest of `/dev`: only its own terminals are a chat's.
+        if !self.terminals.allow(&self.world, path) {
             return false;
         }
         let one = |path: &Path| {
@@ -1251,7 +1259,7 @@ fn port_of(name: &SockaddrStorage) -> Option<u16> {
 }
 
 /// What purlis's own profile language has no word for on Linux, and every wrapped chat needs:
-/// its terminal and the system's character devices, POSIX semaphores (Seatbelt's
+/// its terminal ([`OwnTerminals`] says which) and the system's character devices, POSIX semaphores (Seatbelt's
 /// `ipc-posix-sem`), and the files of its own processes in `/proc`. None is ever a path a
 /// denial class names.
 fn linux_own(chat: &Chat<'_>, what: FileOp, path: &Path, kind: Kind) -> bool {

@@ -18,7 +18,7 @@
  * - **A grade running** shows its chats done, what it has spent against its dollar limit and its
  *   tokens against its cap, with Stop fixed at the bottom. A grade's chats are drawn nowhere.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   commands,
@@ -949,9 +949,9 @@ export function RunningGradePage<Step extends RunningStepShown>({
   const [stopRefused, setStopRefused] = useState<string>();
   // The latest of each, used as an event lands: the listener is not attached anew with them, so
   // no step is lost while it would be.
-  const latest = useRef({ isOurs, read, opensItsScorecard, onEnded });
-  useEffect(() => {
-    latest.current = { isOurs, read, opensItsScorecard, onEnded };
+  const latest = useRef({ isOurs, read, onEnded });
+  useLayoutEffect(() => {
+    latest.current = { isOurs, read, onEnded };
   });
 
   // Listened to first, then the app's word on whether it runs and its latest step: an end told
@@ -960,9 +960,10 @@ export function RunningGradePage<Step extends RunningStepShown>({
     let live = true;
     const listening = listen<Step>(event, (told) => {
       const now = told.payload;
+      // A page left is told nothing: its listener lets go only once the listen under way settles.
+      if (!live) return;
       if (now.plane !== plane || now.grade !== grade || !latest.current.isOurs(now)) return;
       setStep(now);
-      if (latest.current.opensItsScorecard(now)) latest.current.onEnded();
     }).catch(() => undefined);
     void listening
       .then(() => latest.current.read())
@@ -975,10 +976,12 @@ export function RunningGradePage<Step extends RunningStepShown>({
         setUnread(undefined);
         const now = answer.data;
         setRuns(now !== null);
-        // A step told since is newer than the one the read says.
-        if (now !== null) setStep((told) => told ?? now);
-        // Ended before this page listened: the event is gone, and its end is read here.
-        if (now !== null && latest.current.opensItsScorecard(now)) latest.current.onEnded();
+        // A step told since is newer than the one the read says, unless the read says the end:
+        // ended before this page listened, the event is gone, and its end is read here.
+        if (now !== null)
+          setStep((told) =>
+            told === undefined || (told.ended === null && now.ended !== null) ? now : told,
+          );
       })
       .catch((err: unknown) => {
         if (live) setUnread(String(err));
@@ -988,6 +991,14 @@ export function RunningGradePage<Step extends RunningStepShown>({
       void listening.then((stop) => stop?.()).catch(() => undefined);
     };
   }, [event, plane, grade, again]);
+
+  // The one place an end opens its scorecard, however it came to: told, read, or an end that stayed
+  // on the page until what the scorecard needs held (its router chosen again). Once, for all three.
+  const opens = step !== undefined && opensItsScorecard(step);
+  // Before the browser paints, so a dead page with no notice never flashes before its scorecard.
+  useLayoutEffect(() => {
+    if (opens) latest.current.onEnded();
+  }, [opens]);
 
   const graded = of(step);
   // A read that failed with no step told says so in place, never "Reading…" for good.
@@ -1016,7 +1027,7 @@ export function RunningGradePage<Step extends RunningStepShown>({
       />
     );
   const over = step !== undefined && step.ended !== null;
-  const end = over && !opensItsScorecard(step) ? endWords(step) : undefined;
+  const end = over && !opens ? endWords(step) : undefined;
   return (
     <ReviewPage
       label={`Grading ${graded}`}

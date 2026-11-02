@@ -57,6 +57,20 @@ mod probe {
         }
     }
 
+    /// The terminal at `path`, never taken as a controlling one and never waited for.
+    fn terminal(path: &str, writes: bool) -> std::io::Result<std::fs::File> {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .read(!writes)
+            .write(writes)
+            .custom_flags(libc::O_NOCTTY | libc::O_NONBLOCK)
+            .open(path)
+    }
+
+    fn name_of(at: &std::path::Path, why: &std::io::Error) -> String {
+        format!("{}: {}", at.display(), name(why))
+    }
+
     fn io<T>(got: std::io::Result<T>) -> Result<(), String> {
         got.map(drop).map_err(|why| name(&why))
     }
@@ -329,6 +343,38 @@ mod probe {
                 Some(nix::unistd::getuid()),
                 Some(nix::unistd::getgid()),
             )),
+            // The terminal at a name, for writing or for reading, as a program opens one it does
+            // not mean to take as its own.
+            "terminal-write" => io(terminal(word(1), true).and_then(|mut it| it.write_all(b"x"))),
+            "terminal-read" => io(terminal(word(1), false)),
+            // The terminal on standard input by its name, then as `/dev/tty`.
+            "own-terminal" => {
+                let name = std::fs::read_link("/proc/self/fd/0").map_err(|why| name(&why))?;
+                for at in [name.as_path(), std::path::Path::new("/dev/tty")] {
+                    let mut it = terminal(&at.display().to_string(), true)
+                        .map_err(|why| name_of(at, &why))?;
+                    nix(nix::sys::termios::tcgetattr(&it))?;
+                    io(it.write_all(b"own\r\n"))?;
+                }
+                Ok(())
+            }
+            // A terminal of the program's own, its far end opened by name as `openpty` may.
+            "terminal-of-its-own" => {
+                use nix::fcntl::OFlag;
+                use nix::pty::{grantpt, posix_openpt, ptsname_r, unlockpt};
+                let mut near = posix_openpt(OFlag::O_RDWR | OFlag::O_NOCTTY)
+                    .map_err(|why| format!("{why:?}"))?;
+                nix(grantpt(&near))?;
+                nix(unlockpt(&near))?;
+                let at = ptsname_r(&near).map_err(|why| format!("{why:?}"))?;
+                let mut far = terminal(&at, true).map_err(|why| name(&why))?;
+                io(far.write_all(b"m"))?;
+                let mut got = [0u8; 1];
+                io(near.read_exact(&mut got))?;
+                (got == *b"m")
+                    .then_some(())
+                    .ok_or_else(|| "nothing came through".to_owned())
+            }
             "exit" => std::process::exit(word(1).parse().unwrap_or(0)),
             other => Err(format!("no probe {other}")),
         }

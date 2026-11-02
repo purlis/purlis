@@ -840,7 +840,7 @@ impl Workspace {
                 ),
             ));
         }
-        let held = crate::rewrite::Lock::on(&self.dir);
+        let held = crate::rewrite::Lock::bounded(&self.dir)?;
         if self.is_the_folder_locked(&held) {
             return Ok(held);
         }

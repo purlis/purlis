@@ -904,7 +904,7 @@ fn save_as(
     text: &str,
     may_mend: Mends,
 ) -> Result<(), Vec<String>> {
-    let _held = crate::rewrite::Lock::on(root);
+    let _held = crate::rewrite::Lock::bounded(root).map_err(|why| vec![why.to_string()])?;
     let (exists, now) = unchanged(root, which, base)?;
     if which == Which::Shared
         && let Some(why) = crate::compat::read_only(root)
@@ -1019,7 +1019,7 @@ pub fn move_keys(
     paths: &[Vec<Step>],
 ) -> Result<String, Vec<String>> {
     let from = to.other();
-    let _held = crate::rewrite::Lock::on(root);
+    let _held = crate::rewrite::Lock::bounded(root).map_err(|why| vec![why.to_string()])?;
     // One of the two is the Shared file, whichever way the value moves: refused on a read-only
     // project, an unreadable manifest included (only [`save`] mends one).
     writable(root).map_err(|why| vec![why])?;

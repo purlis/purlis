@@ -208,7 +208,14 @@ pub const ALLOWED: [Allowed; 3] = [
         kind: "codex",
         files: &["config.toml", "AGENTS.md"],
         folders: &["prompts"],
-        loaded_unsent: &["AGENTS.override.md", "hooks.json", "rules", "skills"],
+        // `.env`: what Codex sets in its own environment as it starts, before anything else.
+        loaded_unsent: &[
+            ".env",
+            "AGENTS.override.md",
+            "hooks.json",
+            "rules",
+            "skills",
+        ],
         sent_only: &[],
     },
     Allowed {

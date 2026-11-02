@@ -465,7 +465,7 @@ pub fn before_its_start(record: &Record) -> bool {
 /// place (#1472). `false` where there is none, or the record is any other.
 pub fn withdraw(root: &Path, id: &str) -> io::Result<bool> {
     let dir = dir(root);
-    let _held = crate::rewrite::Lock::on(&dir);
+    let _held = crate::rewrite::Lock::bounded(&dir)?;
     let Some(record) = read(root, id) else {
         return Ok(false);
     };
@@ -640,7 +640,7 @@ pub fn open_as(
     let record = capped(&record);
     let dir = dir(root);
     crate::rewrite::create_dir_all(&dir)?;
-    let _held = crate::rewrite::Lock::on(&dir);
+    let _held = crate::rewrite::Lock::bounded(&dir)?;
     if read(root, &record.id).is_some_and(|there| !before_its_start(&there)) {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
@@ -1654,7 +1654,15 @@ pub fn task_worked_by(root: &Path, worker: &str) -> Option<Record> {
 /// app's record of the chat that wrote it. How many records changed.
 pub fn session_recorded(root: &Path, chat: &ChatRef, path: &str) -> usize {
     let dir = dir(root);
-    let _held = crate::rewrite::Lock::on(&dir);
+    // A folder held past the wait: the record's links stay as they are, and nothing is written
+    // unlocked.
+    let _held = match crate::rewrite::Lock::bounded(&dir) {
+        Ok(held) => held,
+        Err(why) => {
+            tracing::warn!("purlis: a session record was not linked to its dispatches ({why})");
+            return 0;
+        }
+    };
     let path = cut(path, MOST_PATH_BYTES);
     let mut changed = 0;
     for mut record in list(root) {
@@ -2623,7 +2631,7 @@ impl Running {
 /// the store's lock. `false` for no record, or one `edit` left alone.
 fn change(root: &Path, id: &str, edit: impl FnOnce(&mut Record) -> bool) -> io::Result<bool> {
     let dir = dir(root);
-    let _held = crate::rewrite::Lock::on(&dir);
+    let _held = crate::rewrite::Lock::bounded(&dir)?;
     let Some(mut record) = read(root, id) else {
         return Ok(false);
     };
