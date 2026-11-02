@@ -63,7 +63,12 @@ describe("BrowserLoginNotice", () => {
       <BrowserLoginNotice
         plane="p"
         session={7}
-        asks={[ask({ warnings: ["This password is also used on https://a.test."], no_always: "Not now" })]}
+        asks={[
+          ask({
+            warnings: ["This password is also used on https://a.test."],
+            no_always: "Not now",
+          }),
+        ]}
       />,
     );
     expect(screen.getByRole("alert")).toHaveTextContent("also used on https://a.test");
