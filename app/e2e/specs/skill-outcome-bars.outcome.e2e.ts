@@ -263,7 +263,7 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       { timeout: 40_000, interval: 500, timeoutMsg: "the restarted chat never came back" },
     );
 
-    await fromThePalette("Use skill", "palette-row-tab.useskill:", effort);
+    await fromThePalette("Use skill", "palette-row-chat.useskill:", effort);
     await $('[data-testid="use-skill"]').waitForDisplayed({ timeout: 20_000 });
     await browser.waitUntil(
       async () => {

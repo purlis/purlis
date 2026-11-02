@@ -38,7 +38,7 @@ async function openThePickerFromThePalette(): Promise<void> {
   await browser.waitUntil(
     async () =>
       browser.execute(() => {
-        const row = document.querySelector<HTMLElement>('[id^="palette-row-tab.useskill:"]');
+        const row = document.querySelector<HTMLElement>('[id^="palette-row-chat.useskill:"]');
         row?.click();
         return row !== null;
       }),

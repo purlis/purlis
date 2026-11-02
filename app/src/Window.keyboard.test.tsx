@@ -412,9 +412,10 @@ describe("the window's tab order", () => {
       "tab steward two",
       "button New tab",
       // The focused pane's own controls, drawn in its top corners left to right — the harness
-      // it runs (HP-19), then split and end — then its terminal. From here Tab is the shell's,
-      // and Ctrl+Tab is the way on.
+      // it runs (HP-19), then the chat's ⋯ (#4753), split and end — then its terminal. From
+      // here Tab is the shell's, and Ctrl+Tab is the way on.
       "button What Claude Code can do here",
+      "button More for steward two",
       "button Split right",
       "button Split down",
       "button End this pane's chat",

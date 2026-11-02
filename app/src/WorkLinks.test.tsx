@@ -5,7 +5,6 @@ import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
-  fireEvent,
   render as renderBare,
   screen,
   waitFor,
@@ -20,7 +19,7 @@ import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * A chat's work link, against the whole window (V60, ADR 0088 §3, §4): **Link to work item…**
- * and **Unlink work item** on the chat tab's menu and in the palette, and **Work item: `<key>`**
+ * and **Unlink work item** on the chat's list (its pane's ⋯ and its row) and in the palette, and **Work item: `<key>`**
  * in a linked chat's tab tooltip and its pane's corner. A chat at the project root is offered
  * neither. The rules are the core's (`chat_work_link`, `chat_work_unlink`), so a refusal is its
  * sentence, unchanged.
@@ -122,9 +121,15 @@ const strip = () => stripNamed("Tabs");
 const theTab = () => within(strip()).getAllByRole("tab")[0];
 const asked = (asks: Asked[], cmd: string) => asks.filter((one) => one.cmd === cmd);
 
+/** The chat's one list (#4753), from its pane's ⋯: the list its sidebar row and the palette
+ *  have too. A tab's own menu has none of a chat's rows. */
+async function chatList() {
+  await userEvent.click(await screen.findByRole("button", { name: /^More for / }));
+  return screen.findByRole("menu");
+}
+
 async function fromTheMenu(row: string) {
-  await waitFor(() => expect(theTab()).toBeTruthy());
-  fireEvent.contextMenu(theTab());
+  await chatList();
   await userEvent.click(await screen.findByRole("menuitem", { name: row }));
 }
 
@@ -192,9 +197,11 @@ describe("a chat's work link", () => {
     render(<App />);
     await waitFor(() => expect(theTab()).toBeTruthy());
 
+    // The menu's words with the chat's name put in (#4753): `Link <chat> to a work item…`.
+    const name = theTab().querySelector(".tab-name")?.textContent ?? "";
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
-    await userEvent.keyboard("link to work item{Enter}");
+    await userEvent.keyboard(`link ${name} to a work item{Enter}`);
 
     expect(await screen.findByRole("dialog", { name: "Link to work item" })).toBeTruthy();
   });
@@ -202,9 +209,7 @@ describe("a chat's work link", () => {
   it("is not offered to a chat at the project root", async () => {
     core({ atRoot: true });
     render(<App />);
-    await waitFor(() => expect(theTab()).toBeTruthy());
-
-    fireEvent.contextMenu(theTab());
+    await chatList();
     await screen.findByRole("menuitem", { name: "Rename…" });
     expect(screen.queryByRole("menuitem", { name: "Link to work item…" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Unlink work item" })).not.toBeInTheDocument();

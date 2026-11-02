@@ -15,6 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { chatList } from "./menus.testkit";
 import type {
   ChatBlocked,
   DispatchPending,
@@ -973,9 +974,9 @@ describe("a pane never shows a task without its breadcrumb", () => {
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
-    // steward 1 is restarted from its tab's menu: it is chat 21 now. The tabs know at once;
+    // steward 1 is restarted from its list (#4753): it is chat 21 now. The tabs know at once;
     // the core's list still says talk is a task of chat 1.
-    fireEvent.contextMenu(tab("steward 1"));
+    await chatList("steward 1");
     await userEvent.click(await screen.findByRole("menuitem", { name: "Restart" }));
     await waitFor(() => expect(open[0].session).toBe(21));
     await userEvent.click(tab("steward 1"));
@@ -1678,7 +1679,7 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
     expect(await cardOf(tree, "talk")).not.toContain("from steward 1");
   });
 
-  it("is gone to from the keyboard: the row's menu has a row for each chat the work went to", async () => {
+  it("is gone to from the row's menu, which has a row for each chat the work went to", async () => {
     const { tree } = await drawn([
       ...moved(),
       chat(5, "alpha", { label: "release notes", from: handoffFrom(1) }),
@@ -1696,7 +1697,7 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
         .map((item) => item.getAttribute("aria-label"))
         .filter((said) => said?.startsWith("Go to ")),
     ).toEqual(["Go to release notes", "Go to drop commons"]);
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Go to drop commons" }));
 
     await waitFor(() => expect(onScreen()).toEqual([3]));
     expect(inFront()).toBe("drop commons");
