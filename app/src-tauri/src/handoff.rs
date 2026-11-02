@@ -215,7 +215,7 @@ pub fn answer(
                 if let Err(why) = would_start(held, &wanted) {
                     return no(why);
                 }
-                return crate::runnerdispatches::hold(held, &pool, wanted);
+                return crate::runnerdispatches::hold(held, Some(&pool), wanted);
             }
             match dispatch_it(held, plane, &wanted, STARTING) {
                 Ok(Dispatched::Started { it, note, .. }) => {
@@ -270,7 +270,18 @@ pub fn answer(
                 {
                     return no(why);
                 }
-                return crate::runnerdispatches::hold(held, &pool, wanted);
+                return crate::runnerdispatches::hold(held, Some(&pool), wanted);
+            }
+            // **A chat's dispatch that moves work needs the person's Ask** (#4536, the person's
+            // ruling of 2026-11-02): one that names a place to run other than where its target's
+            // own levels put it waits for their Approve, whatever grant or persona covers it.
+            if moves_work(held, &wanted) {
+                if let Err(why) = dispatchdecision::task_name(&wanted.name)
+                    .and_then(|_| would_start(held, &wanted).map(|_| ()))
+                {
+                    return no(why);
+                }
+                return crate::runnerdispatches::hold(held, None, wanted);
             }
             task_dispatched(held, plane, &wanted, arrived)
         }
@@ -2987,6 +2998,12 @@ fn dispatch_noting(
                         asking_profile: asking.profile.clone(),
                         named_profile: wanted.profile.clone(),
                         handoff: wanted.mode() == Mode::Handoff,
+                        runs_on: wanted.runs_on.as_ref().map(|choice| match choice {
+                            purlis_core::machine::StartChoice::ThisMachine => {
+                                "This machine".to_owned()
+                            }
+                            purlis_core::machine::StartChoice::Pool(pool) => format!("Pool {pool}"),
+                        }),
                     },
                 ) {
                     Requested::Covered(its) => Some(*its),
@@ -3634,6 +3651,36 @@ pub(crate) struct WouldStart {
     pub profile: Option<String>,
     /// Where it would work, in words.
     pub works: String,
+    /// The workspace it would work in, none at the project's root (#4536): what its levels
+    /// of where it runs are read for.
+    pub workspace: Option<String>,
+}
+
+/// **Whether `wanted` moves work** (#4536): it names a place to run other than where its target
+/// workspace's own levels put it now. Where those can't be read, or the target can't be found,
+/// it does: the person is asked rather than the chat's word taken.
+pub(crate) fn moves_work(held: &Held, wanted: &Wanted) -> bool {
+    use purlis_core::machine::StartChoice;
+    let Some(asked) = &wanted.runs_on else {
+        return false;
+    };
+    let Ok(would) = would_start(held, wanted) else {
+        return true;
+    };
+    // Where the levels put it: this machine at the project's root, or with no pools here.
+    let levels = match (held.chats().pools_in(), would.workspace.as_deref()) {
+        (Some(config), Some(workspace)) => {
+            purlis_core::machine::read(&config)
+                .store
+                .chat_place(held.root(), workspace, None)
+                .pool
+        }
+        _ => None,
+    };
+    match asked {
+        StartChoice::ThisMachine => levels.is_some(),
+        StartChoice::Pool(pool) => levels.as_ref() != Some(pool),
+    }
 }
 
 /// [`WouldStart`] of `wanted`, in project `held`, or why it would be refused.
@@ -3646,13 +3693,18 @@ pub(crate) fn would_start(held: &Held, wanted: &Wanted) -> Result<WouldStart, St
         .ok_or_else(|| format!("chat {} is not one this app has open", wanted.chat))?;
     let default = purlis_core::start::persona_for_a_new_chat(root);
     let pair = dispatchdecision::pair_of(&asking, wanted.to.as_deref(), default.as_deref());
-    let works = match &wanted.moved {
+    let at_the_asker = asking
+        .cwd
+        .as_deref()
+        .and_then(|cwd| workspace_of(root, cwd));
+    let (works, workspace) = match &wanted.moved {
         Some(moved) => {
             moving(root, wanted.chat, moved)?;
-            match moved.create_vision {
+            let works = match moved.create_vision {
                 Some(_) => format!("workspace {}, which it creates", moved.workspace),
                 None => format!("workspace {}", moved.workspace),
-            }
+            };
+            (works, Some(moved.workspace.clone()))
         }
         None => match dispatchplace::asked(wanted.place.as_deref())
             .and_then(|asked| {
@@ -3660,12 +3712,18 @@ pub(crate) fn would_start(held: &Held, wanted: &Wanted) -> Result<WouldStart, St
             })
             .map_err(|refused| refused.say())?
         {
-            Ground::Asker { fell_back: false } => "the asking chat's folder".to_owned(),
-            Ground::Asker { fell_back: true } => {
-                "the asking chat's folder (the persona's own worktree gives way)".to_owned()
+            Ground::Asker { fell_back: false } => {
+                ("the asking chat's folder".to_owned(), at_the_asker)
             }
-            Ground::Workspace { name, .. } => format!("workspace {name}"),
-            Ground::Worktree(repo) => format!("a new worktree and branch of {}", repo.repo),
+            Ground::Asker { fell_back: true } => (
+                "the asking chat's folder (the persona's own worktree gives way)".to_owned(),
+                at_the_asker,
+            ),
+            Ground::Workspace { name, .. } => (format!("workspace {name}"), Some(name)),
+            Ground::Worktree(repo) => (
+                format!("a new worktree and branch of {}", repo.repo),
+                at_the_asker,
+            ),
         },
     };
     let profile = profile_for(
@@ -3681,6 +3739,7 @@ pub(crate) fn would_start(held: &Held, wanted: &Wanted) -> Result<WouldStart, St
         to: pair.to,
         profile,
         works,
+        workspace,
     })
 }
 

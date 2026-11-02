@@ -25,7 +25,7 @@ fn its_row_names_the_pool_the_persona_and_the_brief_and_offers_open_or_refuse() 
     let held = RunnerDispatches::default();
     let id = held
         .note(
-            "builds",
+            Some("builds"),
             Some("devops".to_owned()),
             a_task(4, "check prod", "look at the cluster"),
             100,
@@ -64,8 +64,13 @@ fn its_row_names_the_pool_the_persona_and_the_brief_and_offers_open_or_refuse() 
 #[test]
 fn its_row_draws_a_brief_that_hides_or_reverses_characters_inertly() {
     let held = RunnerDispatches::default();
-    held.note("builds", None, a_task(4, "t", "run\u{202e}gol\nnext"), 100)
-        .expect("held");
+    held.note(
+        Some("builds"),
+        None,
+        a_task(4, "t", "run\u{202e}gol\nnext"),
+        100,
+    )
+    .expect("held");
     let shown = crate::asking::runner_dispatch(&held.every()[0]);
     assert!(!shown.says.contains('\u{202e}'), "{}", shown.says);
     assert!(!shown.says.contains('\n'), "{}", shown.says);
@@ -76,32 +81,18 @@ fn a_chat_holds_at_most_eight_and_its_close_takes_them() {
     let held = RunnerDispatches::default();
     for _ in 0..AT_MOST_PER_CHAT {
         assert!(
-            held.note("builds", None, a_task(4, "t", "b"), 100)
+            held.note(Some("builds"), None, a_task(4, "t", "b"), 100)
                 .is_some()
         );
     }
     assert!(
-        held.note("builds", None, a_task(4, "t", "b"), 100)
+        held.note(Some("builds"), None, a_task(4, "t", "b"), 100)
             .is_none()
     );
     assert!(
-        held.note("builds", None, a_task(5, "t", "b"), 100)
+        held.note(Some("builds"), None, a_task(5, "t", "b"), 100)
             .is_some()
     );
     held.forget(4);
     assert_eq!(held.every().len(), 1);
-}
-
-#[test]
-fn where_a_held_task_would_run_is_said_before_the_person_approves_it() {
-    use purlis_core::machine::StartChoice;
-    assert_eq!(
-        runs_on_said(Some(&StartChoice::ThisMachine)),
-        "This machine, as the chat asks"
-    );
-    assert_eq!(
-        runs_on_said(Some(&StartChoice::Pool("builds".to_owned()))),
-        "Pool builds, as the chat asks"
-    );
-    assert_eq!(runs_on_said(None), "Where its workspace runs its chats");
 }

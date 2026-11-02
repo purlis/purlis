@@ -63,6 +63,7 @@ fn a_dispatch(id: u32, session: u32, target: &str, levels: Vec<GrantLevel>) -> D
         task_cut: false,
         profile: None,
         mode: "task".to_owned(),
+        runs_on: None,
     }
 }
 

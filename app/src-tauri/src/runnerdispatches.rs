@@ -28,7 +28,14 @@ use crate::planes::{Held, PlaneId, Planes};
 pub const AT_MOST_PER_CHAT: usize = 8;
 
 /// What a refused dispatch's chat is told, after the task's name.
-pub fn refused_said(pool: &str) -> String {
+pub fn refused_said(pool: Option<&str>) -> String {
+    let Some(pool) = pool else {
+        return "the person refused it: it asked to run somewhere other than where its \
+                workspace runs its chats, and that waits for the person's Approve. Nothing was \
+                started. Do not ask again for it; dispatch it without naming where it runs, or \
+                tell the person it waits."
+            .to_owned();
+    };
     format!(
         "the person refused it: this chat runs on pool {pool}'s runner, and a chat there starts \
          a chat on the person's machine only with their Approve. Nothing was started. Do not \
@@ -45,8 +52,9 @@ const WAITS_NO_MORE: &str = "That dispatch waits no more: it was answered alread
 pub struct HeldDispatch {
     pub id: u32,
     pub session: u32,
-    /// The pool the chat runs on.
-    pub pool: String,
+    /// The pool the asking chat runs on, where that is why it is held. `None` where it is held
+    /// because it names a place to run other than its target's own levels (#4536).
+    pub pool: Option<String>,
     /// The persona the chat runs as, by the app's own record of it.
     pub from: Option<String>,
     /// The ask as it arrived, which Approve decides.
@@ -76,7 +84,10 @@ impl HeldDispatch {
             ),
         };
         let brief = purlis_core::shown::one_line(&self.wanted.brief, 240);
-        format!("Asks, from pool {}, {what}: {brief}", self.pool)
+        match &self.pool {
+            Some(pool) => format!("Asks, from pool {pool}, {what}: {brief}"),
+            None => format!("Asks {what}, {}: {brief}", moves_said(&self.wanted)),
+        }
     }
 }
 
@@ -93,7 +104,13 @@ impl RunnerDispatches {
 
     /// Holds `wanted`, of a chat running as `from` on `pool`: its id, or none where the chat
     /// has [`AT_MOST_PER_CHAT`] held already.
-    pub fn note(&self, pool: &str, from: Option<String>, wanted: Wanted, now: u64) -> Option<u32> {
+    pub fn note(
+        &self,
+        pool: Option<&str>,
+        from: Option<String>,
+        wanted: Wanted,
+        now: u64,
+    ) -> Option<u32> {
         let mut held = self.lock();
         let (next, list) = &mut *held;
         if list.iter().filter(|one| one.session == wanted.chat).count() >= AT_MOST_PER_CHAT {
@@ -104,7 +121,7 @@ impl RunnerDispatches {
         list.push(HeldDispatch {
             id,
             session: wanted.chat,
-            pool: pool.to_owned(),
+            pool: pool.map(str::to_owned),
             from,
             wanted,
             since: now,
@@ -138,7 +155,7 @@ pub fn heard_from_a_pool(held: &Held, chat: u32) -> Option<String> {
 
 /// **Holds `wanted`, heard from `pool`, for the person**, and answers what the chat is told:
 /// held, as a dispatch waiting on the person is ([`Answer::NeedsGrant`]). Nothing starts.
-pub fn hold(held: &Held, pool: &str, wanted: Wanted) -> Answer {
+pub fn hold(held: &Held, pool: Option<&str>, wanted: Wanted) -> Answer {
     let from = held
         .chats()
         .recorded_chat(wanted.chat)
@@ -148,17 +165,24 @@ pub fn hold(held: &Held, pool: &str, wanted: Wanted) -> Answer {
         .clone()
         .or_else(|| from.clone())
         .unwrap_or_else(|| "a chat".to_owned());
+    let runs_on = wanted
+        .runs_on
+        .as_ref()
+        .map(purlis_core::machine::StartChoice::word);
     match held
         .runner_dispatches()
         .note(pool, from.clone(), wanted, crate::sandboxing::now_secs())
     {
         Some(_) => {
             held.chats().asks_may_have_moved();
-            Answer::NeedsGrant {
-                from,
-                to,
-                waiting: None,
-                held_by: Some(pool.to_owned()),
+            match (pool, runs_on) {
+                (None, Some(runs_on)) => Answer::HeldToMove { to, runs_on },
+                (pool, _) => Answer::NeedsGrant {
+                    from,
+                    to,
+                    waiting: None,
+                    held_by: pool.map(str::to_owned),
+                },
             }
         }
         None => Answer::No {
@@ -178,8 +202,9 @@ pub struct RunnerDispatchWhole {
     /// The chat that asked, by its number and as its tab names it.
     pub session: u32,
     pub chat: String,
-    /// The pool it runs on.
-    pub pool: String,
+    /// The pool the asking chat runs on, where that is why it is held; null where it is held
+    /// because it names a place to run other than its workspace's own (#4536).
+    pub pool: Option<String>,
     /// The persona the new chat would run as, none for a chat on no persona.
     pub persona: Option<String>,
     /// Whether it hands the chat's work off, rather than asking for a task that reports back.
@@ -211,25 +236,57 @@ pub fn whole_of(held: &Held, one: &HeldDispatch) -> Result<RunnerDispatchWhole, 
                 .shown_name(one.session)
                 .unwrap_or_else(|| one.session.to_string()),
         ),
-        pool: inert(&one.pool),
+        pool: one.pool.as_deref().map(inert),
         persona: would.to.as_deref().map(inert),
         handoff: one.wanted.moved.is_some(),
         name: inert(&one.wanted.name),
         works: inert(&would.works),
         profile: would.profile.as_deref().map(inert),
         long: one.wanted.long,
-        runs_on: runs_on_said(one.wanted.runs_on.as_ref()),
+        runs_on: inert(&runs_on_said(
+            held,
+            one.wanted.runs_on.as_ref(),
+            would.workspace.as_deref(),
+        )),
         brief: inert(&one.wanted.brief),
     })
 }
 
 /// **Where a held dispatch would run, in words** (#4536): what the person reads before Approve.
-pub(crate) fn runs_on_said(runs_on: Option<&purlis_core::machine::StartChoice>) -> String {
-    use purlis_core::machine::StartChoice;
+/// The chat's own choice, else where its target workspace's levels put it now.
+pub(crate) fn runs_on_said(
+    held: &Held,
+    runs_on: Option<&purlis_core::machine::StartChoice>,
+    workspace: Option<&str>,
+) -> String {
+    use purlis_core::machine::{PlaceLevel, StartChoice};
     match runs_on {
-        Some(StartChoice::ThisMachine) => "This machine, as the chat asks".to_owned(),
-        Some(StartChoice::Pool(pool)) => format!("Pool {pool}, as the chat asks"),
-        None => "Where its workspace runs its chats".to_owned(),
+        Some(StartChoice::ThisMachine) => return "This machine, as the chat asks".to_owned(),
+        Some(StartChoice::Pool(pool)) => return format!("Pool {pool}, as the chat asks"),
+        None => {}
+    }
+    let place = held.chats().pools_in().and_then(|config| {
+        purlis_core::pools::chat_place(&config, held.root(), workspace, None).ok()
+    });
+    match place {
+        Some(place) => match (place.pool, place.level) {
+            (Some(pool), PlaceLevel::Project) => format!("Pool {pool}, as its project's chats run"),
+            (Some(pool), _) => format!("Pool {pool}, as its workspace's chats run"),
+            (None, PlaceLevel::Workspace) => {
+                "This machine, as its workspace's chats run".to_owned()
+            }
+            (None, _) => "This machine".to_owned(),
+        },
+        None => "Where its workspace runs its chats, which can't be read now".to_owned(),
+    }
+}
+
+/// What a dispatch held because it moves work asks, in words: where it asks to run.
+fn moves_said(wanted: &Wanted) -> String {
+    use purlis_core::machine::StartChoice;
+    match &wanted.runs_on {
+        Some(StartChoice::Pool(pool)) => format!("on pool {pool}"),
+        Some(StartChoice::ThisMachine) | None => "on this machine".to_owned(),
     }
 }
 
@@ -330,7 +387,7 @@ pub fn refused(held: &Held, id: u32) -> Result<(), String> {
         .runner_dispatches()
         .take(id)
         .ok_or_else(|| WAITS_NO_MORE.to_owned())?;
-    crate::handoff::tell_refused(held, &one.wanted, &refused_said(&one.pool));
+    crate::handoff::tell_refused(held, &one.wanted, &refused_said(one.pool.as_deref()));
     // Listed on the Dispatches tab with the ones kept blocked, as a refused grant is (#1456).
     held.held_dispatches().kept_blocked(one.wanted);
     held.chats().asks_may_have_moved();

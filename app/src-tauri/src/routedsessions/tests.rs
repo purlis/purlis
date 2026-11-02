@@ -1186,3 +1186,20 @@ fn a_move_is_asked_of_the_pool_it_goes_to_or_comes_from_and_never_of_this_machin
         "a pool this machine does not keep moves nothing"
     );
 }
+
+/// **A chat whose start chose a pool is looked for there after a restart** (#4536), where no
+/// record of it was kept: its own choice, never its workspace's this machine.
+#[test]
+fn a_chat_its_start_put_on_a_pool_is_taken_back_from_that_pool() {
+    use purlis_core::machine::StartChoice;
+    let world = a_world();
+    world.builds.leaves_running(7, None);
+    assert!(!world.sessions.left_running_in(7, Some("fleet")));
+    assert!(world.sessions.left_running_as_started(
+        7,
+        Some("fleet"),
+        Some(&StartChoice::Pool("builds".to_owned())),
+    ));
+    assert_eq!(world.sessions.reattach(7, &|_| {}).unwrap(), 7);
+    assert_eq!(world.builds.reattached(), vec![7]);
+}

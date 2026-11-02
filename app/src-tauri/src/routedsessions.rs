@@ -1248,6 +1248,15 @@ impl SessionHost for RoutedSessions {
     /// asking sends a pool no code. One found with no record at all is kept as it is taken back
     /// ([`Self::reattach`], #4683).
     fn left_running_in(&self, number: u32, workspace: Option<&str>) -> bool {
+        self.left_running_as_started(number, workspace, None)
+    }
+
+    fn left_running_as_started(
+        &self,
+        number: u32,
+        workspace: Option<&str>,
+        start: Option<&StartChoice>,
+    ) -> bool {
         if self.here.left_running(number) {
             self.chats_kept.leave(number);
             return true;
@@ -1259,7 +1268,7 @@ impl SessionHost for RoutedSessions {
         if let Some(chat) = kept {
             return self.found_on(number, chat.pool);
         }
-        let Ok(Some(pool)) = self.route(workspace, None) else {
+        let Ok(Some(pool)) = self.route(workspace, start) else {
             return false;
         };
         let found = self.found_on(number, pool);

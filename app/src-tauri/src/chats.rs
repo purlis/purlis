@@ -2365,7 +2365,8 @@ impl Chats {
             return true;
         }
         let workspace = workspace_at_start(Some(&self.project), chat.cwd.as_deref());
-        self.sessions.left_running_in(number, workspace.as_deref())
+        self.sessions
+            .left_running_as_started(number, workspace.as_deref(), chat.runs_on.as_ref())
     }
 
     /// Reattaches `chat` as its record has it, where what a start reads of it now refuses
@@ -4100,18 +4101,14 @@ impl Chats {
                 chat.runs_on.as_ref(),
             )
             .map_err(|why| {
-                let named = workspace.as_deref().map_or_else(
-                    || match &chat.runs_on {
-                        Some(purlis_core::machine::StartChoice::Pool(pool)) => Some(pool.clone()),
-                        _ => None,
-                    },
-                    |workspace| {
-                        purlis_core::machine::read(config)
-                            .store
-                            .chat_place(&self.project, workspace, chat.runs_on.as_ref())
-                            .pool
-                    },
-                );
+                // In a workspace, a refusal here is the pool its level names not being kept. At
+                // the project's root it is the root's own rule, and no pool is unavailable.
+                let named = workspace.as_deref().and_then(|workspace| {
+                    purlis_core::machine::read(config)
+                        .store
+                        .chat_place(&self.project, workspace, chat.runs_on.as_ref())
+                        .pool
+                });
                 match named {
                     Some(pool) => crate::poolprofiles::unavailable(&pool, why),
                     None => why,
@@ -4872,17 +4869,24 @@ impl Chats {
         let mut clones_at_start = (on_the_runner && !reattaching)
             .then(|| purlis_core::forge::apptoken::clones_now(&self.project));
         // Before the program is started, so its first mint covers them (#4331).
+        // **A start's own choice widens a Claim only where the person made it in the window**
+        // (#4536, the person's ruling of 2026-11-02): a dispatched chat that names where it runs
+        // puts nothing on any Claim, and its mints go to the person.
         #[cfg(unix)]
-        self.puts_its_repos_on_its_claim(
-            workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
-            chat.runs_on.as_ref(),
-            chat.cwd.as_deref(),
-            own_runner.as_deref(),
-            // A start its runner is sure to refuse adds nothing to the Claim.
-            clones_at_start
-                .as_deref()
-                .filter(|_| !runner_without_sandbox),
-        );
+        let made_by_the_person = chat.runs_on.is_none() || chat.from.is_none();
+        #[cfg(unix)]
+        if made_by_the_person {
+            self.puts_its_repos_on_its_claim(
+                workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
+                chat.runs_on.as_ref(),
+                chat.cwd.as_deref(),
+                own_runner.as_deref(),
+                // A start its runner is sure to refuse adds nothing to the Claim.
+                clones_at_start
+                    .as_deref()
+                    .filter(|_| !runner_without_sandbox),
+            );
+        }
         let opened = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.reattach(number, &announce),
             _ if on_the_runner => self

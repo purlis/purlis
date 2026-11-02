@@ -693,6 +693,7 @@ fn in_the_app(
             | Answer::Working(_)
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
+            | Answer::HeldToMove { .. }
             | Answer::Task(_),
         )
         | Err(_) => Host::None,
@@ -743,6 +744,7 @@ pub(crate) fn ticketed() -> Ticketed {
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }
+            | Answer::HeldToMove { .. }
             | Answer::WaitingOnMemory { .. }
             | Answer::Task(_),
         )

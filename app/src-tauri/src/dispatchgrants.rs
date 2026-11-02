@@ -292,6 +292,9 @@ pub struct Task {
     /// the app's own record of the request's mode, so the Notice says "hand off" for a
     /// handoff. False, a task, for every request that is not a handoff.
     pub handoff: bool,
+    /// **Where the dispatch asked its chat to run** (#4536): `Pool <name>` or `This machine`,
+    /// as the app read the request's one word. None where it named none.
+    pub runs_on: Option<String>,
 }
 
 impl Task {
@@ -1743,6 +1746,10 @@ pub struct DispatchPending {
     /// `task` or `handoff` (#1471): whether the asking chat waits on a report or hands its
     /// work off. The Notice says "hand off" for a handoff.
     pub mode: String,
+    /// **Where the dispatch asked its chat to run** (#4536, the person's ruling of 2026-11-02):
+    /// `Pool <name>` or `This machine`, read before any Allow. Null where it named none, and it
+    /// runs where its workspace's levels say.
+    pub runs_on: Option<String>,
 }
 
 /// What a dispatch's question draws its answers from, read from the project at `root`: the
@@ -1854,6 +1861,7 @@ fn told_of(plane: &PlaneId, held: &Pending, facts: Facts) -> DispatchPending {
         }
         .word()
         .to_owned(),
+        runs_on: held.task.runs_on.clone(),
     }
 }
 

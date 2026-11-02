@@ -625,6 +625,18 @@ pub trait SessionHost: Send + Sync {
         self.left_running(number)
     }
 
+    /// [`Self::left_running_in`], of a chat whose start chose where it runs (#4536): the pool it
+    /// chose is the one asked where no record names one, never the one its workspace names.
+    fn left_running_as_started(
+        &self,
+        number: u32,
+        workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
+    ) -> bool {
+        let _ = start;
+        self.left_running_in(number, workspace)
+    }
+
     /// [`Self::left_running`], `None` where this host could not say (#4590): what settles a
     /// record of a chat, which an unanswered question must not.
     fn left_known(&self, number: u32) -> Option<bool> {

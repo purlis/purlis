@@ -2333,6 +2333,12 @@ pub enum Answer {
     },
     /// What became of an ask after a dispatched task (#1441).
     Task(Box<crate::dispatched::Answered>),
+    /// **Held for the person's Approve because it moves work** (#4536, the person's ruling of
+    /// 2026-11-02): a chat's dispatch named a place to run, `runs_on` in
+    /// [`crate::machine::StartChoice::word`]'s word, other than where its target's own levels
+    /// put it. Nothing has started; the person approves or refuses it in the window. `to` is the
+    /// persona it is for.
+    HeldToMove { to: String, runs_on: String },
 }
 
 /// How long a ticket lives unspent.

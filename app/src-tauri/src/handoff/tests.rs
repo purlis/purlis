@@ -12488,3 +12488,47 @@ fn where_a_dispatch_asked_its_chat_to_run_is_kept_and_a_word_purlis_cannot_read_
     );
     assert_eq!(held.chats().record().chats.len(), before, "nothing started");
 }
+
+/// **A chat's dispatch that moves work waits for the person's Approve** (#4536, the person's
+/// ruling of 2026-11-02): one to no persona, which no grant asks about, that names a pool its
+/// workspace doesn't run on, starts nothing and is held for the person, saying where it would run.
+#[test]
+fn a_chats_dispatch_that_names_another_place_than_its_workspaces_waits_for_the_person() {
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+    let ticket = ticket(&held, &id, &tickets, asking);
+    let Ask::Dispatch(mut ask) = a_task_into_alpha(asking, &ticket, Some("lint")) else {
+        unreachable!("a dispatch");
+    };
+    ask.runs_on = Some("pool:builds".to_owned());
+    let before = held.chats().record().chats.len();
+
+    let answered = answer(&held, &id, &tickets, 1, Ask::Dispatch(ask), &|_| {});
+
+    assert_eq!(
+        answered,
+        Answer::HeldToMove {
+            to: "a chat".to_owned(),
+            runs_on: "pool:builds".to_owned(),
+        }
+    );
+    assert_eq!(held.chats().record().chats.len(), before, "nothing started");
+    let waiting = held.runner_dispatches().every();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(
+        waiting[0].pool, None,
+        "held for the move, not for a pool's chat"
+    );
+    let whole = crate::runnerdispatches::whole_of(&held, &waiting[0]).expect("drawn");
+    assert_eq!(whole.runs_on, "Pool builds, as the chat asks");
+    assert!(
+        waiting[0].said().contains("on pool builds"),
+        "{}",
+        waiting[0].said()
+    );
+}

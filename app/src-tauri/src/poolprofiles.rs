@@ -907,16 +907,17 @@ impl From<String> for LimitRefused {
 std::thread_local! {
     /// The pool the attempt running on this thread could not start on: outside
     /// [`offering_limits`], nothing is kept, so an earlier refusal never marks a later one.
-    static UNAVAILABLE: std::cell::RefCell<Option<Option<String>>> =
+    static UNAVAILABLE: std::cell::RefCell<Option<Option<(String, String)>>> =
         const { std::cell::RefCell::new(None) };
 }
 
 /// **`why`, a start's refusal because pool `pool` is gone, stopped or not reached** (#4536),
-/// kept for the attempt it refused so the window offers this machine for this start alone.
+/// kept for the attempt it refused so the window offers this machine for this start alone. Kept
+/// with its words: a step the attempt got past offers nothing beside a later refusal.
 pub(crate) fn unavailable(pool: &str, why: String) -> String {
     UNAVAILABLE.with_borrow_mut(|now| {
         if let Some(kept) = now {
-            *kept = Some(pool.to_owned());
+            *kept = Some((pool.to_owned(), why.clone()));
         }
     });
     why
@@ -929,7 +930,7 @@ pub(crate) fn offering_limits<T>(
     work: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, LimitRefused> {
     /// Puts back the attempt this one is inside, however it ends.
-    struct Ends(Option<Option<String>>);
+    struct Ends(Option<Option<(String, String)>>);
     impl Drop for Ends {
         fn drop(&mut self) {
             UNAVAILABLE.set(self.0.take());
@@ -937,12 +938,18 @@ pub(crate) fn offering_limits<T>(
     }
     let ends = Ends(UNAVAILABLE.replace(Some(None)));
     let (done, refused) = purlis_core::poollimits::attempt(work);
-    let pool_unavailable = UNAVAILABLE.with_borrow_mut(|now| now.as_mut().and_then(Option::take));
+    let marked = UNAVAILABLE.with_borrow_mut(|now| now.as_mut().and_then(Option::take));
     drop(ends);
-    done.map_err(|words| LimitRefused {
-        words,
-        limit: refused.map(offer_of),
-        pool_unavailable,
+    done.map_err(|words| {
+        // Only the refusal the mark was made for: one said in other words came of another step.
+        let pool_unavailable = marked
+            .filter(|(_, said)| words.contains(said.as_str()))
+            .map(|(pool, _)| pool);
+        LimitRefused {
+            words,
+            limit: refused.map(offer_of),
+            pool_unavailable,
+        }
     })
 }
 

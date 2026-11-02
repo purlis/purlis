@@ -480,6 +480,7 @@ pub fn send(
             waiting: None,
             held_by: None,
         }) => Ok(held_for_the_person(from.as_deref(), &to, &ask_name(&ask))),
+        Ok(Answer::HeldToMove { runs_on, .. }) => Ok(held_to_move(&runs_on, &ask_name(&ask))),
         // Not held: the person is already being asked about this pair for another task, and
         // this one was dropped. Nothing of it will start, so it is a refusal.
         Ok(Answer::NeedsGrant {
@@ -570,6 +571,25 @@ fn held_for_the_person(from: Option<&str>, to: &str, task: &str) -> String {
          with other work, and do not dispatch it again.",
         who_asks(from),
         one(to),
+        one(task)
+    )
+}
+
+/// What a chat is told where its task waits for the person's Approve because it names a place
+/// to run other than its workspace's own (#4536).
+fn held_to_move(runs_on: &str, task: &str) -> String {
+    use purlis_core::machine::StartChoice;
+    let one = purlis_core::personas::one_line;
+    let place = match StartChoice::read(runs_on) {
+        Some(StartChoice::Pool(pool)) => format!("on pool '{}'", one(&pool)),
+        Some(StartChoice::ThisMachine) | None => "on this machine".to_owned(),
+    };
+    format!(
+        "{SAYS} held for the person. It asks to run {place}, which is not where its workspace \
+         runs its chats, so the person approves it in the window, with this brief in front of \
+         them. Nothing has started. If they approve it, '{}' is decided then, and this chat is \
+         told what became of it; if they refuse it, this chat is told on its next turn. Carry \
+         on with other work, and do not dispatch it again.",
         one(task)
     )
 }
@@ -756,6 +776,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }
+            | Answer::HeldToMove { .. }
             | Answer::WaitingOnMemory { .. }
             | Answer::Task(_)
             | Answer::Browsed { .. }
