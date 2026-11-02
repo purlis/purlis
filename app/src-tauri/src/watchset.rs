@@ -13,7 +13,8 @@
 //! each path on its own clock, ticked a quarter of its timeout apart, so writes spread over
 //! more than a tick by a busy machine came out as several batches rather than one. A burst
 //! here is every change from its first event until [`bursts`]' `quiet_for` after it, whatever
-//! its paths did in between.
+//! its paths did in between; or, for [`trailing_bursts`], until `quiet_for` passes with no
+//! event, and at most its `longest` after the first.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -254,8 +255,9 @@ pub(crate) fn bursts(
 /// [`bursts`] for a watch of several trees (#4740): `tree` names the tree a path lies in, or
 /// none, and the burst holds at most `most` paths of each tree and `most` × [`TREES_IN_ALL`]
 /// of all trees together. Past either, a tree's paths are held by the entry at its top they lie
-/// in ([`Burst::crowded`]), so one tree's flood leaves what the others named as it was. Past `most` paths in no tree, or `most` crowded entries,
-/// the burst is everything, as [`bursts`]' is. Its timing is [`bursts`]'.
+/// in ([`Burst::crowded`]), so one tree's flood leaves what the others named as it was. Past
+/// `most` paths in no tree, or `most` crowded entries, the burst is everything, as [`bursts`]'
+/// is. Its timing is [`bursts`]'.
 pub(crate) fn bursts_by_tree(
     events: Receiver<notify::Event>,
     quiet_for: Duration,
@@ -268,7 +270,29 @@ pub(crate) fn bursts_by_tree(
             &events,
             first,
             quiet_for,
+            quiet_for,
             &mut Holding::new(most, &mut tree),
+        )
+    })
+}
+
+/// [`bursts`], each burst closing once `quiet_for` has passed with no event, and at most
+/// `longest` after its first event (#4741): a trailing debounce, so a writer that never pauses
+/// is told about once a `longest`, and a single write within `quiet_for`.
+pub(crate) fn trailing_bursts(
+    events: Receiver<notify::Event>,
+    quiet_for: Duration,
+    longest: Duration,
+    most: usize,
+) -> impl Iterator<Item = Burst> {
+    std::iter::from_fn(move || {
+        let first = events.recv().ok()?;
+        fold(
+            &events,
+            first,
+            quiet_for,
+            longest,
+            &mut Holding::new(most, |_: &Path| None),
         )
     })
 }
@@ -301,27 +325,39 @@ pub(crate) fn rest_of_burst(
         events,
         first,
         quiet_for,
+        quiet_for,
         &mut Holding::new(most, |_: &Path| None),
     )
 }
 
-/// [`rest_of_burst`], holding paths as `holding` says.
+/// The burst `first` begins: everything received until `quiet_for` passes with nothing, or
+/// `longest` after `first`, whichever is sooner, holding paths as `holding` says; `None` when
+/// the watcher is dropped before then. A `longest` of `quiet_for` is [`bursts`]' fixed burst.
+///
+/// **One `holding` folds the whole burst**, so what it has counted of each tree carries from
+/// one event to the next: a holding made afresh for each event would never find a tree full.
 fn fold<T: FnMut(&Path) -> Option<PathBuf>>(
     events: &Receiver<notify::Event>,
     first: notify::Event,
     quiet_for: Duration,
+    longest: Duration,
     holding: &mut Holding<T>,
 ) -> Option<Burst> {
     let mut burst = Burst::default();
     burst.add_holding(first, holding);
-    let until = Instant::now() + quiet_for;
+    let began = Instant::now();
+    let at_most = began + longest;
+    let mut until = (began + quiet_for).min(at_most);
     loop {
         let left = until.saturating_duration_since(Instant::now());
         if left.is_zero() {
             return Some(burst);
         }
         match events.recv_timeout(left) {
-            Ok(more) => burst.add_holding(more, holding),
+            Ok(more) => {
+                burst.add_holding(more, holding);
+                until = (Instant::now() + quiet_for).min(at_most);
+            }
             Err(RecvTimeoutError::Timeout) => return Some(burst),
             Err(RecvTimeoutError::Disconnected) => return None,
         }
@@ -811,5 +847,126 @@ mod tests {
         assert_eq!(burst.paths, HashSet::from([PathBuf::from("/p/a")]));
         drop(tx);
         assert_eq!(bursts.next(), None, "a dropped watcher ends them");
+    }
+
+    #[test]
+    fn a_trailing_burst_stays_open_while_writes_keep_coming_inside_its_quiet() {
+        let (tx, rx) = mpsc::channel();
+        let quiet = Duration::from_millis(250);
+        let writer = std::thread::spawn(move || {
+            for n in 0..8 {
+                tx.send(on(EventKind::Create(CreateKind::File), &format!("/p/{n}")))
+                    .unwrap();
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            tx
+        });
+        let mut bursts = trailing_bursts(rx, quiet, Duration::from_secs(10), 256);
+
+        let burst = bursts.next().expect("a burst");
+        assert_eq!(
+            burst.paths.len(),
+            8,
+            "every write 50 ms apart is in one burst"
+        );
+        drop(writer.join().unwrap());
+        assert_eq!(bursts.next(), None);
+    }
+
+    #[test]
+    fn a_trailing_burst_under_writes_that_never_pause_closes_at_its_longest() {
+        let (tx, rx) = mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            let mut n: u64 = 0;
+            while tx
+                .send(on(EventKind::Create(CreateKind::File), &format!("/p/{n}")))
+                .is_ok()
+            {
+                n += 1;
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        let longest = Duration::from_millis(300);
+        let (told, closed) = mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            for _ in trailing_bursts(rx, Duration::from_millis(200), longest, 100_000) {
+                if told.send(Instant::now()).is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut opened = Instant::now();
+        for _ in 0..2 {
+            let at = closed
+                .recv_timeout(Duration::from_millis(1500))
+                .expect("a burst stayed open under the writes");
+            let took = at - opened;
+            assert!(
+                took >= longest,
+                "a burst closed before its longest: {took:?}"
+            );
+            opened = at;
+        }
+        // Hanging up ends the reader, whose receiver going ends the writer.
+        drop(closed);
+        reader.join().unwrap();
+        writer.join().unwrap();
+    }
+
+    #[test]
+    fn a_single_write_is_a_trailing_burst_once_its_quiet_has_passed() {
+        let (tx, rx) = mpsc::channel();
+        let quiet = Duration::from_millis(100);
+        let longest = Duration::from_secs(1);
+        let mut bursts = trailing_bursts(rx, quiet, longest, 256);
+        tx.send(on(EventKind::Create(CreateKind::File), "/p/a"))
+            .unwrap();
+
+        let started = Instant::now();
+        let burst = bursts.next().expect("a burst");
+        let took = started.elapsed();
+        assert_eq!(burst.paths, HashSet::from([PathBuf::from("/p/a")]));
+        assert!(
+            took < longest,
+            "a single write waited out the longest: {took:?}"
+        );
+    }
+
+    /// The review of #4817 and #4838: a branch burst folded over many receives keeps what it
+    /// counted of each tree, so a tree past its cap is crowded however its events arrived.
+    #[test]
+    fn a_tree_burst_over_many_receives_still_crowds_a_tree_past_its_cap() {
+        let (tx, rx) = mpsc::channel();
+        for n in 0..20 {
+            let path = format!("/a/target/debug/{n}");
+            tx.send(on(EventKind::Create(CreateKind::File), &path))
+                .unwrap();
+        }
+        tx.send(on(EventKind::Create(CreateKind::File), "/b/src/lib.rs"))
+            .unwrap();
+        let tree = |path: &Path| {
+            ["/a", "/b"]
+                .into_iter()
+                .map(PathBuf::from)
+                .find(|tree| path.starts_with(tree))
+        };
+
+        let burst = bursts_by_tree(rx, Duration::from_millis(200), 8, tree)
+            .next()
+            .expect("a burst");
+        assert!(!burst.everything);
+        assert_eq!(
+            burst
+                .paths
+                .iter()
+                .filter(|path| path.starts_with("/a"))
+                .count(),
+            8,
+            "the first tree's count carried across receives"
+        );
+        assert!(burst.paths.contains(Path::new("/b/src/lib.rs")));
+        assert_eq!(burst.crowded, set(&["/a/target"]));
+        drop(tx);
     }
 }
