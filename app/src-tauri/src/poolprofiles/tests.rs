@@ -917,12 +917,13 @@ fn a_pools_page_lists_every_limit_once_with_what_the_person_set() {
 /// lists a value that would change nothing.
 #[test]
 fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait() {
-    use purlis_core::poollimits::{Chosen, LimitId, hits_said_in};
-    let said = sign_in_ran_out("ran-out-signing-in", 15);
+    use purlis_core::poollimits::{Chosen, LimitId, attempt};
+    let (said, refused) = attempt(|| sign_in_ran_out("ran-out-signing-in", 15));
     assert!(said.starts_with(driven::TOOK_TOO_LONG), "{said}");
     assert!(said.contains("raise it to 30 minutes"), "{said}");
-    let hits = hits_said_in("ran-out-signing-in", &said);
-    assert_eq!(hits[0].limit, LimitId::SignInWait);
+    let refused = refused.expect("the wait it ran out of");
+    assert_eq!(refused.pool, "ran-out-signing-in");
+    assert_eq!(refused.hits[0].limit, LimitId::SignInWait);
 
     let page = limits_shown(&Chosen::default(), &[], true, &[]);
     let keys: Vec<&str> = page
@@ -998,18 +999,49 @@ fn a_keep_the_command_asks_is_held_to_the_strips_gate_and_named_on_the_pool() {
 /// other reason offers nothing.
 #[test]
 fn a_profile_row_late_by_the_pools_wait_offers_double_and_no_other_does() {
-    use purlis_core::poollimits::{LimitId, hits_said_in};
-    let said = late_said(
-        "late-on-a-row",
-        30,
-        crate::runnerlinks::ANSWER_LATE.to_owned(),
-    );
+    use purlis_core::poollimits::{LimitId, attempt};
+    let (said, refused) =
+        attempt(|| late_said("late-on-a-row", 30, crate::runnerlinks::ANSWER_LATE.into()));
     assert!(said.contains("raise it to 60 seconds"), "{said}");
-    let hits = hits_said_in("late-on-a-row", &said);
-    assert_eq!(hits[0].limit, LimitId::AnswerWait);
-    let other = late_said("other-on-a-row", 30, "the runner said: no".to_owned());
+    let refused = refused.expect("the wait it ran out of");
+    assert_eq!(refused.pool, "late-on-a-row");
+    assert_eq!(refused.hits[0].limit, LimitId::AnswerWait);
+    let (other, refused) =
+        attempt(|| late_said("other-on-a-row", 30, "the runner said: no".into()));
     assert_eq!(other, "the runner said: no");
-    assert!(hits_said_in("other-on-a-row", &other).is_empty());
+    assert_eq!(refused, None);
+}
+
+/// **Only what purlis measured offers anything** (spec #4275), whatever a refusal's words are.
+#[test]
+fn a_refusal_in_a_limits_words_with_no_hit_offers_nothing() {
+    use purlis_core::poollimits::{LimitId, attempt};
+    let said_alike = LimitId::ProfileSize.limit().hit(128, 151, None).said();
+    let (said, refused) = attempt(|| late_said("alike-on-a-row", 30, said_alike.clone().into()));
+    assert_eq!(said, said_alike);
+    assert_eq!(refused, None);
+}
+
+/// **A limit of the profile's settings offers on the pool it was kept for** (#4397): the hits come
+/// with the refusal, however long ago a sentence like it was said.
+#[test]
+fn a_profile_over_its_pools_limit_offers_what_it_hit_on_that_pool() {
+    use purlis_core::poollimits::{LimitId, attempt};
+    let hit = LimitId::ProfileSize.limit().hit(128, 151, None);
+    let (said, refused) = attempt(|| {
+        late_said(
+            "over-on-a-row",
+            30,
+            onrunner::NotSent {
+                said: hit.said(),
+                hits: vec![hit],
+            },
+        )
+    });
+    assert_eq!(said, hit.said());
+    let offer = offer_of(refused.expect("the limit it hit"));
+    assert_eq!(offer.pool, "over-on-a-row");
+    assert_eq!(offer.hits[0].suggested, hit.suggested.map(|n| n as u32));
 }
 
 /// **A cluster pool's runner is its team's** (#4286): its page has no limit shaping one, and what

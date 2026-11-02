@@ -258,20 +258,24 @@ pub async fn cluster_pool_key(
 /// What fails is taken back.
 #[tauri::command]
 #[specta::specta]
-pub async fn add_cluster_pool(adding: ClusterPoolAdding) -> Result<ClusterPoolRow, String> {
+pub async fn add_cluster_pool(
+    adding: ClusterPoolAdding,
+) -> Result<ClusterPoolRow, crate::poolprofiles::LimitRefused> {
     crate::off_the_window("adding a cluster pool", move || {
-        usable(&adding.context, &adding.pool)?;
-        let config = config_root()?;
-        let within = vouch_wait_of(&adding)?;
-        add_on(
-            &config,
-            &kubectl(&config)?,
-            &adding,
-            home().as_deref(),
-            within,
-        )
+        Ok(crate::poolprofiles::offering_limits(|| {
+            usable(&adding.context, &adding.pool)?;
+            let config = config_root()?;
+            let within = vouch_wait_of(&adding)?;
+            add_on(
+                &config,
+                &kubectl(&config)?,
+                &adding,
+                home().as_deref(),
+                within,
+            )
+        }))
     })
-    .await
+    .await?
 }
 
 /// How long adding this pool waits for the operator: the value it was raised to, checked as any
@@ -350,8 +354,7 @@ fn add_refused(
     }
 }
 
-/// An add that ran out of the wait `within`, in words the window can ask of for what to raise it
-/// to (spec #4275).
+/// An add that ran out of the wait `within` (spec #4275).
 fn ran_out_vouching(name: &str, within: std::time::Duration, said: &str) -> String {
     let limit = purlis_core::poollimits::LimitId::VouchWait.limit();
     let minutes = within.as_secs().div_ceil(60);

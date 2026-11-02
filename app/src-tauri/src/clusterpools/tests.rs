@@ -181,14 +181,18 @@ fn a_context_or_pool_purlis_cannot_name_is_refused_before_kubectl_runs() {
 /// **An add out of its wait offers double it, on the pool being added** (spec #4275).
 #[test]
 fn an_add_that_ran_out_says_its_limit_and_offers_double_on_that_pool() {
-    use purlis_core::poollimits::{LimitId, hits_said_in};
-    let said = ran_out_vouching(
-        "ran-out-of-vouching",
-        std::time::Duration::from_secs(300),
-        "the cluster operator did not vouch.",
-    );
+    use purlis_core::poollimits::{LimitId, attempt};
+    let (said, refused) = attempt(|| {
+        ran_out_vouching(
+            "ran-out-of-vouching",
+            std::time::Duration::from_secs(300),
+            "the cluster operator did not vouch.",
+        )
+    });
     assert!(said.contains("raise it to 10 minutes"), "{said}");
-    let hits = hits_said_in("ran-out-of-vouching", &said);
+    let refused = refused.expect("the wait it ran out of");
+    assert_eq!(refused.pool, "ran-out-of-vouching");
+    let hits = refused.hits;
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].limit, LimitId::VouchWait);
     assert_eq!(hits[0].suggested, Some(10));
@@ -198,23 +202,24 @@ fn an_add_that_ran_out_says_its_limit_and_offers_double_on_that_pool() {
 /// itself, however long it took to come.
 #[test]
 fn a_definite_refusal_after_the_whole_wait_offers_nothing() {
-    use purlis_core::poollimits::hits_said_in;
+    use purlis_core::poollimits::attempt;
     use purlis_core::runners::Refused;
     let within = std::time::Duration::ZERO;
-    let refused = add_refused(
-        "refused-definitely",
-        within,
-        &Refused::Other("the cluster's policy refuses this claim".to_owned()),
-    );
-    assert!(
-        hits_said_in("refused-definitely", &refused).is_empty(),
-        "{refused}"
-    );
+    let (refused, hit) = attempt(|| {
+        add_refused(
+            "refused-definitely",
+            within,
+            &Refused::Other("the cluster's policy refuses this claim".to_owned()),
+        )
+    });
+    assert_eq!(hit, None, "{refused}");
     assert!(!refused.contains("raise it"), "{refused}");
-    let ran_out = add_refused(
-        "ran-out-by-its-outcome",
-        std::time::Duration::from_secs(300),
-        &Refused::WaitRanOut("the cluster operator did not vouch.".to_owned()),
-    );
-    assert_eq!(hits_said_in("ran-out-by-its-outcome", &ran_out).len(), 1);
+    let (_, hit) = attempt(|| {
+        add_refused(
+            "ran-out-by-its-outcome",
+            std::time::Duration::from_secs(300),
+            &Refused::WaitRanOut("the cluster operator did not vouch.".to_owned()),
+        )
+    });
+    assert_eq!(hit.expect("the wait it ran out of").hits.len(), 1);
 }

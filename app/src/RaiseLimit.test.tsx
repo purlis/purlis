@@ -100,11 +100,10 @@ describe("OfferToRaise (#4397)", () => {
     ],
   };
   let saved: unknown[];
-  const theCore = (offered: typeof OFFER | null, refuseSave?: string) => {
+  const theCore = (refuseSave?: string) => {
     saved = [];
     mockIPC((cmd, args) => {
       const asked = args as { pool: string; key: string; value: number; typed: string };
-      if (cmd === "pool_limit_offer_for_move") return offered;
       if (cmd === "pool_limit_check") return Number(asked.typed);
       if (cmd === "pool_limit_set") {
         if (refuseSave !== undefined) throw refuseSave;
@@ -120,21 +119,12 @@ describe("OfferToRaise (#4397)", () => {
     clearMocks();
   });
 
-  it("draws nothing for a refusal that hit no limit", async () => {
-    theCore(null);
-    const { container } = render(
-      <OfferToRaise pool="builds" refused="no" action="Save" onRaised={() => undefined} />,
-    );
-    await waitFor(() => expect(container.textContent).toBe(""));
-  });
-
   it("saves the offered value to the pool, then goes again", async () => {
-    theCore(OFFER);
+    theCore();
     let again = 0;
     render(
       <OfferToRaise
-        pool="builds"
-        refused="the runner did not answer in time"
+        offer={OFFER}
         action="Save to the pool and ask again"
         onRaised={() => (again += 1)}
       />,
@@ -145,16 +135,9 @@ describe("OfferToRaise (#4397)", () => {
   });
 
   it("says why a save was refused, and does not go again", async () => {
-    theCore(OFFER, "the pool's file could not be written");
+    theCore("the pool's file could not be written");
     let again = 0;
-    render(
-      <OfferToRaise
-        pool="builds"
-        refused="the runner did not answer in time"
-        action="Save"
-        onRaised={() => (again += 1)}
-      />,
-    );
+    render(<OfferToRaise offer={OFFER} action="Save" onRaised={() => (again += 1)} />);
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
     expect((await screen.findByRole("alert")).textContent).toContain("could not be written");
     expect(again).toBe(0);

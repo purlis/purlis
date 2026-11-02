@@ -2982,7 +2982,7 @@ export const commands = {
 	 *  cut one at a time, by `chatpiece`'s lock per clone. Starting a session off the main thread
 	 *  is what a relaunch's put-back already does.
 	 */
-	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, string>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
+	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, LimitRefused>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
 	/**
 	 *  **The person pressed Cancel while a chat started in this project** (#4264): it stops waiting
 	 *  for the session host, and a chat that comes up after is closed.
@@ -3254,7 +3254,7 @@ export const commands = {
 	 *  runner of the cluster's Pool, waits for its operator to vouch for it, pairs it and keeps it.
 	 *  What fails is taken back.
 	 */
-	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
+	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, LimitRefused>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
 	 *  **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071, the
 	 *  person's ruling of 2026-10-30). The window's alone (`ui::WINDOW_ONLY`): no chat, Pool or
@@ -3287,22 +3287,6 @@ export const commands = {
 	 *  runner keeps it the next time the pool's profiles are asked.
 	 */
 	poolProfileAdd: (pool: string, name: string, open: OpenProject) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, open })),
-	/**
-	 *  **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
-	 *  Start a chat offers beside that refusal. Asked of the core, never read from the words.
-	 */
-	poolLimitOffer: (profile: string, refused: string, root: string | null, cwd: string | null) => __TAURI_INVOKE<{
-	pool: string,
-	hits: PoolLimitHitRow[],
-} | null>("pool_limit_offer", { profile, refused, root, cwd }),
-	/**
-	 *  **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
-	 *  move's line offers beside that refusal, as [`pool_limit_offer`] does for a start.
-	 */
-	poolLimitOfferForMove: (pool: string, refused: string) => __TAURI_INVOKE<{
-	pool: string,
-	hits: PoolLimitHitRow[],
-} | null>("pool_limit_offer_for_move", { pool, refused }),
 	/**  **Pool `pool`'s limits** (#4285), as its page draws them. */
 	poolLimits: (pool: string) => typedError<PoolLimitsPage, string>(__TAURI_INVOKE("pool_limits", { pool })),
 	/**
@@ -3377,9 +3361,10 @@ export const commands = {
 { at: "could-not-follow"; said: string } | 
 /**
  *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
- *  ending so, and the page it opened is no use now (#4367).
+ *  ending so, and the page it opened is no use now (#4367); what to raise where the pool's
+ *  limit ended it.
  */
-{ at: "failed"; why: string; stopped: boolean } | 
+{ at: "failed"; why: string; stopped: boolean; limit: PoolLimitOffer | null } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
 	/**
@@ -5974,6 +5959,8 @@ export type ChatMove = {
 	stage: string,
 	/**  Why it failed, in a sentence: where it is `failed`. */
 	why: string | null,
+	/**  What to raise, where a pool's limit is why it failed (#4313). */
+	limit: PoolLimitOffer | null,
 	/**  The profile it waits on to sign in on the runner: where it is `signing-in` (#3477). */
 	sign_in: MoveSignIn | null,
 	/**  The other chats of its workspace that move with it, by name (#3453). */
@@ -8895,6 +8882,16 @@ export type LevelWaiting = {
 	level: string,
 };
 
+/**
+ *  **Why something the window asked of a pool did not happen** (spec #4275): the core's
+ *  sentence, and what to raise where a pool's limit refused it, which comes with the refusal as
+ *  data.
+ */
+export type LimitRefused = {
+	words: string,
+	limit: PoolLimitOffer | null,
+};
+
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
 export type LineRange = {
 	first: number,
@@ -10930,6 +10927,8 @@ export type PoolProfileRow = {
 	standing: string | null,
 	/**  Why it is not kept on the runner, in words, where it is not. */
 	not_kept: string | null,
+	/**  What to raise, where a limit of the pool is why it is not kept (#4397). */
+	limit: PoolLimitOffer | null,
 	/**  The plans Sign in offers there, where purlis names the provider. */
 	plans: PlanRow[],
 };
@@ -11063,9 +11062,10 @@ export type PoolSignInStep =
 { at: "could-not-follow"; said: string } | 
 /**
  *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
- *  ending so, and the page it opened is no use now (#4367).
+ *  ending so, and the page it opened is no use now (#4367); what to raise where the pool's
+ *  limit ended it.
  */
-{ at: "failed"; why: string; stopped: boolean } | 
+{ at: "failed"; why: string; stopped: boolean; limit: PoolLimitOffer | null } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" };
 

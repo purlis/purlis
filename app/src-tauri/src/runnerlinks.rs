@@ -662,7 +662,7 @@ pub struct ProfileKept {
 
 /// What a runner answered each profile it was asked to keep: [`ProfileKept`], or why it was not
 /// kept.
-pub type ProfilesKept = Vec<Result<ProfileKept, String>>;
+pub type ProfilesKept = Vec<Result<ProfileKept, purlis_core::profilestore::onrunner::NotSent>>;
 
 /// `why` a runner did not take a call: its own words marked as its and cut short, where it said.
 fn refused_by_the_runner(why: &purlis_session_protocol::session::CallError) -> String {
@@ -755,7 +755,7 @@ async fn sent_what_differs(
     client: &purlis_session_protocol::session::Client,
     version: purlis_session_protocol::version::Version,
     kept: &purlis_core::profilestore::onrunner::Kept,
-) -> Result<ProfileKept, String> {
+) -> Result<ProfileKept, purlis_core::profilestore::onrunner::NotSent> {
     let held = held_by(client, version, kept).await?;
     let sending = {
         let kept = kept.clone();
@@ -781,9 +781,9 @@ async fn sent_what_differs(
                 let kept = kept.clone();
                 read_off_the_link(move || for_a_runner_of(version, &kept)).await?
             };
-            keep_one(client, sending, wait).await
+            Ok(keep_one(client, sending, wait).await?)
         }
-        answer => answer,
+        answer => Ok(answer?),
     }
 }
 
@@ -804,7 +804,7 @@ pub fn keep_profiles(
             let mut said = Vec::with_capacity(profiles.len());
             for kept in &profiles {
                 let answer = sent_what_differs(&client, version, kept).await;
-                let gone = matches!(&answer, Err(why) if stopped_answering(why));
+                let gone = matches!(&answer, Err(why) if stopped_answering(&why.said));
                 said.push(answer);
                 // A runner that stopped answering is asked nothing more.
                 if gone {
@@ -848,7 +848,8 @@ pub fn sign_in_redirect(to: &ToARunner, target: &str) -> Result<(), String> {
 pub fn for_a_runner_of(
     version: purlis_session_protocol::version::Version,
     kept: &purlis_core::profilestore::onrunner::Kept,
-) -> Result<purlis_core::profilestore::onrunner::ToKeep, String> {
+) -> Result<purlis_core::profilestore::onrunner::ToKeep, purlis_core::profilestore::onrunner::NotSent>
+{
     use purlis_core::profilestore::onrunner::{ToKeep, in_batches, to_send};
     use purlis_session_protocol::session::{KNOWS_PROFILE_SETTINGS, KNOWS_SETTINGS_IN_BATCHES};
     if version >= KNOWS_SETTINGS_IN_BATCHES {
@@ -1038,8 +1039,8 @@ const ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 /// **`read`, off the thread the link's liveness runs on** (#4314): reading a profile near the top
 /// of its limit takes longer than the far end waits on a silent link, which it then closes.
 async fn read_off_the_link<T: Send + 'static>(
-    read: impl FnOnce() -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
+    read: impl FnOnce() -> Result<T, purlis_core::profilestore::onrunner::NotSent> + Send + 'static,
+) -> Result<T, purlis_core::profilestore::onrunner::NotSent> {
     tokio::task::spawn_blocking(read)
         .await
         .map_err(|why| format!("the profile's settings could not be read: {why}"))?

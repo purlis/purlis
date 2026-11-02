@@ -514,8 +514,6 @@ macro_rules! app_commands {
                 clusterpools::put_away_pool_minting_notice,
                 poolprofiles::pool_profiles,
                 poolprofiles::pool_profile_add,
-                poolprofiles::pool_limit_offer,
-                poolprofiles::pool_limit_offer_for_move,
                 poolprofiles::pool_limits,
                 poolprofiles::pool_limit_check,
                 poolprofiles::pool_limit_set,

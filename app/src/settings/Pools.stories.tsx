@@ -66,6 +66,7 @@ function theCore(pools: PoolRow[], link: PoolLink = { state: "linked" }) {
               harness: "Claude Code",
               standing: "signed-in",
               not_kept: null,
+              limit: null,
               plans: [],
             },
           ],
