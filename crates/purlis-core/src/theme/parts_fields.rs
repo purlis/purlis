@@ -6,7 +6,7 @@
 //! `app/src/ui/field/`.
 
 use super::{
-    CONTROL_GROUNDS, FIELD_ERROR_GROUNDS, Family, Length, Part, Prop, State, box_look, field_look,
+    CONTROL_GROUNDS, FIELD_ERROR_GROUNDS, FIELD_HELP_GROUNDS, Family, Length, Part, Prop, State, box_look, field_look,
 };
 
 pub(super) const FIELD: Family = Family {
@@ -56,7 +56,7 @@ pub(super) const FIELD: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
-    under: &[("error", FIELD_ERROR_GROUNDS)],
+    under: &[("help", FIELD_HELP_GROUNDS), ("error", FIELD_ERROR_GROUNDS)],
 };
 
 pub(super) const TEXT_INPUT: Family = Family {

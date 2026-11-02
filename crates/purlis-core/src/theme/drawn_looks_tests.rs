@@ -122,8 +122,8 @@ fn a_surface_keeps_a_fill_only_an_undrawn_look_s_words_are_lost_on() {
 
 #[test]
 fn a_field_s_error_is_read_only_where_a_field_that_can_refuse_stands() {
-    // Its help, left as it is, reads on every ground a field stands on (#4648), so what falls is
-    // the part the theme sets.
+    // Its help, left as it is, reads on every ground a field's help is drawn on (#4648), so what
+    // falls is the part the theme sets.
     let field_fell = |part: &str, colour: &str| -> Vec<String> {
         let parts = json!({ part: colour });
         fallen(&shaped(json!({}), parts))

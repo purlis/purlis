@@ -73,12 +73,48 @@ fn stood_on(theme: &ResolvedTheme, tokens: &[&str]) -> Vec<String> {
     on
 }
 
+/// Each of `base`'s dark and light appearances, under a theme over it that sets `parts` alone,
+/// untinted, as read.
+fn over(base: &str, parts: Value) -> Vec<ResolvedTheme> {
+    let loaded = load(&json!({
+        "name": "Shaped",
+        "extends": base,
+        "appearances": [
+            { "id": "dark", "appearance": "dark", "tokens": {} },
+            { "id": "light", "appearance": "light", "tokens": {} },
+        ],
+        "parts": parts,
+        "tint": { "on": false },
+    }));
+    assert!(!loaded.refused, "{:?}", loaded.complaints);
+    let read: Vec<ResolvedTheme> = loaded
+        .theme
+        .appearances
+        .iter()
+        .filter(|one| one.id == "dark" || one.id == "light")
+        .cloned()
+        .collect();
+    assert_eq!(read.len(), 2, "{base}");
+    read
+}
+
 #[test]
 fn a_theme_that_sets_only_a_field_s_error_keeps_its_colour() {
     // Danger's colour clears 4.5:1 on every ground a field that can refuse stands on; the field's
-    // help, left as it is, clears it on every ground a field stands on.
-    let theme = shaped(json!({}), json!({ "field.error.text": "danger.base" }));
-    assert_eq!(field_fell(&theme), Vec::<String>::new());
+    // help, left as it is, clears it on every ground a help is drawn on (`FIELD_HELP_GROUNDS`).
+    // Over Purlis that help is the quiet words, which miss 4.5:1 on the danger wash (about 3.8:1
+    // over a dialog's ground in dark), a line's colour and a trouble Notice's fill: no field's
+    // help is drawn on any of them, so it is not read there.
+    for base in ["purlis", "purlis-classic"] {
+        for theme in over(base, json!({ "field.error.text": "danger.base" })) {
+            assert_eq!(
+                field_fell(&theme),
+                Vec::<String>::new(),
+                "{base} {}",
+                theme.id
+            );
+        }
+    }
 }
 
 #[test]

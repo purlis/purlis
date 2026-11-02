@@ -18,14 +18,9 @@
  * its line here.
  */
 
-/// <reference types="node" />
-import { readdirSync, readFileSync } from "node:fs";
-import { join, posix, relative } from "node:path";
-import ts from "typescript";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-
-const SRC = join(process.cwd(), "src");
-const PARTS = join(process.cwd(), "..", "crates", "purlis-core", "src", "theme", "parts.rs");
+import { handed, listed, PARTS, SRC, sources } from "./fieldCalls.testkit";
 
 /** Every file that draws a field that can refuse, the grounds that field stands on, and where. */
 const REFUSING: Record<string, { grounds: string[]; where: string }> = {
@@ -56,16 +51,6 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
 /** The ground the whole copy of a refusal cut short is drawn on, wherever its field stands. */
 const WHOLE_COPY = "surface.overlay";
 
-function sources(dir: string): { name: string; text: string }[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) return sources(path);
-    return /\.tsx$/.test(entry.name) && !/\.(test|stories)\.tsx$/.test(entry.name)
-      ? [{ name: relative(SRC, path), text: readFileSync(path, "utf8") }]
-      : [];
-  });
-}
-
 /**
  * **The components that draw a field and may hand it a refusal**, by the module that defines
  * them (under `src/`, without its extension): the field family's own two, and each wrapper that
@@ -84,107 +69,14 @@ const DRAWS_A_FIELD: Record<string, string[]> = {
 /** The props that hand a field a refusal. */
 const REFUSALS = ["validate", "error"];
 
-/** Whether a spread may carry a refusal: anything but an object written in place that names
- *  neither prop and spreads nothing (`{...{ [RENAMES_ON_F2]: "" }}`). */
-function mayRefuse(spread: ts.Expression, source: ts.SourceFile): boolean {
-  let at = spread;
-  while (ts.isParenthesizedExpression(at)) at = at.expression;
-  if (!ts.isObjectLiteralExpression(at)) return true;
-  return at.properties.some(
-    (one) =>
-      ts.isSpreadAssignment(one) ||
-      ts.isShorthandPropertyAssignment(one) ||
-      (one.name !== undefined &&
-        !ts.isComputedPropertyName(one.name) &&
-        REFUSALS.includes(one.name.getText(source).replace(/["']/g, ""))),
-  );
-}
-
-/** `spec` imported from `file`, as a module under `src/` without its extension; `undefined` for
- *  a package. */
-function resolved(file: string, spec: string): string | undefined {
-  if (!spec.startsWith(".")) return undefined;
-  return posix.normalize(posix.join(posix.dirname(file), spec)).replace(/\.tsx?$/, "");
-}
-
-/** The name of the component a node is drawn in: its function's, or its variable's. */
-function drawnIn(node: ts.Node): string | undefined {
-  for (let at: ts.Node | undefined = node.parent; at !== undefined; at = at.parent) {
-    if (ts.isFunctionDeclaration(at) && at.name !== undefined) return at.name.text;
-    if (ts.isVariableDeclaration(at) && ts.isIdentifier(at.name)) return at.name.text;
-  }
-  return undefined;
-}
-
 /** What `files` say about refusals: each file that draws a field that can refuse, and each
  *  element that forwards a refusal from a component not listed in `DRAWS_A_FIELD`. */
 function read(files: { name: string; text: string }[]): {
   refusing: string[];
   forwarders: string[];
 } {
-  const refusing = new Set<string>();
-  const forwarders: string[] = [];
-  for (const file of files) {
-    const module = file.name.replace(/\.tsx?$/, "");
-    const own = DRAWS_A_FIELD[module] ?? [];
-    const source = ts.createSourceFile(
-      file.name,
-      file.text,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
-    // Each member this file names, as it names it: imported (under any name), or its own.
-    const members = new Set<string>(own);
-    for (const statement of source.statements) {
-      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
-        continue;
-      const from = resolved(file.name, statement.moduleSpecifier.text);
-      const names = from === undefined ? undefined : DRAWS_A_FIELD[from];
-      const bindings = statement.importClause?.namedBindings;
-      if (names === undefined || bindings === undefined) continue;
-      if (ts.isNamespaceImport(bindings))
-        for (const name of names) members.add(`${bindings.name.text}.${name}`);
-      else
-        for (const one of bindings.elements)
-          if (names.includes((one.propertyName ?? one.name).text)) members.add(one.name.text);
-    }
-    const visit = (node: ts.Node) => {
-      if (
-        (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
-        members.has(node.tagName.getText(source))
-      ) {
-        const handed = node.attributes.properties.filter((one) =>
-          ts.isJsxSpreadAttribute(one)
-            ? mayRefuse(one.expression, source)
-            : ts.isJsxAttribute(one) && REFUSALS.includes(one.name.getText(source)),
-        );
-        // A refusal handed on from the component's own props, rather than decided here.
-        const forwarded = handed.some(
-          (one) => ts.isJsxSpreadAttribute(one) || /\bprops\b/.test(one.getText(source)),
-        );
-        const inside = drawnIn(node);
-        if (forwarded && inside !== undefined && own.includes(inside)) {
-          // The wrapper's own forwarding: its callers are read where they stand.
-        } else if (forwarded && !own.includes(inside ?? "")) {
-          const tag = node.tagName.getText(source);
-          if (/\bprops\b/.test(handed.map((one) => one.getText(source)).join(" ")))
-            forwarders.push(`${file.name}: ${inside ?? "?"} hands <${tag}> a refusal`);
-          // A spread may carry one: the call is read as refusing where it stands.
-          refusing.add(file.name);
-        } else if (handed.length > 0) refusing.add(file.name);
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
-  }
-  return { refusing: [...refusing].sort(), forwarders };
-}
-
-/** The grounds the manifest lists for a field's error. */
-function listed(source: string): string[] | undefined {
-  const list = /\nconst FIELD_ERROR_GROUNDS: &\[&str\] = &\[([^\]]*)\];/.exec(source);
-  return list === null ? undefined : [...list[1].matchAll(/"([^"]+)"/g)].map(([, one]) => one);
+  const { found, forwarders } = handed(files, DRAWS_A_FIELD, REFUSALS, "a refusal");
+  return { refusing: found, forwarders };
 }
 
 describe("a field that can refuse", () => {
@@ -278,6 +170,8 @@ describe("a field that can refuse", () => {
 
   it("has its error held on exactly the grounds the parts manifest lists for it", () => {
     const grounds = new Set([WHOLE_COPY, ...Object.values(REFUSING).flatMap((one) => one.grounds)]);
-    expect(listed(readFileSync(PARTS, "utf8"))?.sort()).toEqual([...grounds].sort());
+    expect(listed(readFileSync(PARTS, "utf8"), "FIELD_ERROR_GROUNDS")?.sort()).toEqual(
+      [...grounds].sort(),
+    );
   });
 });

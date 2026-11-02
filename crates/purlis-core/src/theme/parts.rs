@@ -529,7 +529,8 @@ pub struct Family {
     /// drawn on other grounds than the family's (#3099, #3384). One ground is what its parent
     /// paints: a tab's count on the counts button, a switcher's row on the popover it is drawn in.
     /// Several are the fewer the window draws it on: a field's error, on where a field that can
-    /// refuse stands ([`FIELD_ERROR_GROUNDS`]). Its words are held to these, but a fallback never
+    /// refuse stands ([`FIELD_ERROR_GROUNDS`]), and its help, on where a field given help stands
+    /// ([`FIELD_HELP_GROUNDS`]). Its words are held to these, but a fallback never
     /// paints them, since the part does not.
     under: &'static [(&'static str, &'static [&'static str])],
 }
@@ -786,16 +787,23 @@ const PART_LAID_ON: &[(&str, &str, &str)] = &[("titlebar", "count", "surface.dee
 /// the ground it stands on, and holds this list to them.
 const FIELD_ERROR_GROUNDS: &[&str] = &["surface.base", "surface.raised", "surface.overlay"];
 
+/// **Where a field's help is drawn** (#4648): on a view's page and on a raised ground of its own,
+/// and in a dialog. Its words are the quiet ones, which Purlis draws under 4.5:1 on some grounds
+/// a field may stand on (a danger wash, a trouble Notice's fill, a line's colour), so read on
+/// every ground a field stands on, a theme that set only a field's error lost it to a help nobody
+/// sees there. `app/src/ui/field/fieldHelp.guard.test.ts` holds this list to the files that hand
+/// a field its help, as `refusingFields.guard.test.ts` holds [`FIELD_ERROR_GROUNDS`].
+const FIELD_HELP_GROUNDS: &[&str] = &["surface.raised", "surface.overlay"];
+
 /// **What the window draws each see-through ground on** (#4648), by ground: the danger wash is
-/// a refusal's or an unrun command's box in a dialog (`App.css`), the approval of what an
-/// extension runs as you, and a pane's trouble Notice over the terminal's fill (`paneFrame.css`).
+/// a refusal's or an unrun command's box in a dialog and the approval of what an extension runs
+/// as you, also a dialog (`App.css`; a dialog's content is `surface.overlay`, `dialog.css`), and a
+/// pane's trouble Notice over the terminal's fill (`paneFrame.css`).
 /// The check reads a family on a wash laid over these alone, never over every opaque ground the
 /// family stands on (an active tab, a chosen row), since no wash is drawn there. A ground a theme
 /// makes see-through that is not here is read over each opaque ground its family names.
-const WASH_LAID_ON: &[(&str, &[&str])] = &[(
-    "danger.wash",
-    &["surface.base", "surface.overlay", "terminal.background"],
-)];
+const WASH_LAID_ON: &[(&str, &[&str])] =
+    &[("danger.wash", &["surface.overlay", "terminal.background"])];
 
 /// A part of a family in a look, as a sentence names it: `button.root.primary`, or
 /// `text-input.root` for a family that has no variants.
