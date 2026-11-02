@@ -1685,6 +1685,25 @@ impl Store {
         }
     }
 
+    /// **Forgets where a workspace of `plane` that isn't in `there` runs its chats** (#4591).
+    /// Answers whether anything changed.
+    ///
+    /// A folder removed or renamed outside purlis leaves its setting under a name nothing has,
+    /// and a workspace made later under that name would take it up unasked. What a chat on a
+    /// pool left, its record and its branches still owed, stays: a put-back settles it (#4590).
+    pub fn tidy_workspaces(&mut self, plane: &Path, there: &[String]) -> bool {
+        let Some(entry) = self.recents.iter_mut().find(|one| one.plane == plane) else {
+            return false;
+        };
+        let is_there = |workspace: &String| there.contains(workspace);
+        let before = entry.chats_run_on.len() + entry.chats_run_here.len();
+        entry
+            .chats_run_on
+            .retain(|workspace, _| is_there(workspace));
+        entry.chats_run_here.retain(is_there);
+        before != entry.chats_run_on.len() + entry.chats_run_here.len()
+    }
+
     /// **The pools `plane`'s settings run a chat of one of its `workspaces` on** (#4591): each a
     /// workspace names, and the project's while one of `workspaces` follows it. A project's pool
     /// nothing follows runs nothing. `None` is a list of workspaces that could not be read, and

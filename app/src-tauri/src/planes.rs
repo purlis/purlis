@@ -4018,9 +4018,15 @@ impl Planes {
         };
         let when = now();
         let plane = root.to_path_buf();
+        // A workspace removed or renamed outside purlis leaves its Runs on under a name no
+        // folder has: it is forgotten, and a workspace made under it later starts afresh (#4591).
+        let there = purlis_core::workspaces::Plane::open(root).workspaces().ok();
         if let Err(why) = machine::update(config, move |store| {
             store.remember(&plane, when);
             store.pin_the_most_active(&plane);
+            if let Some(there) = &there {
+                store.tidy_workspaces(&plane, there);
+            }
         }) && why.kind() != std::io::ErrorKind::Unsupported
         {
             tracing::warn!(

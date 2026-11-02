@@ -2965,3 +2965,30 @@ fn removing_a_pool_clears_it_from_the_project_and_every_workspace() {
         Some("other")
     );
 }
+
+#[test]
+fn where_a_workspace_no_folder_is_named_for_runs_its_chats_is_forgotten() {
+    use PlaceLevel::{Project, Workspace};
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    store.set_project_chats_run_on(plane, Some("team")).unwrap();
+    store.set_chats_run_here(plane, "old").unwrap();
+    store.set_chats_run_on(plane, "gone", Some("mine")).unwrap();
+    store.set_chats_run_here(plane, "kept").unwrap();
+    let there = ["kept".to_owned(), "new".to_owned()];
+
+    assert!(store.tidy_workspaces(plane, &there));
+    assert!(
+        !store.tidy_workspaces(plane, &there),
+        "nothing more to forget"
+    );
+    assert_eq!(store.every_chats_run_on(plane), vec![]);
+    assert_eq!(store.chat_place(plane, "kept", None).level, Workspace);
+    // A workspace made later under a name that was forgotten follows the project.
+    assert_eq!(store.chat_place(plane, "old", None).level, Project);
+    assert_eq!(store.chat_place(plane, "gone", None).level, Project);
+    assert_eq!(
+        store.recents[0].project_chats_run_on.as_deref(),
+        Some("team")
+    );
+}

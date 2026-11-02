@@ -7496,3 +7496,33 @@ fn a_secret_exec_heard_over_a_pools_link_never_reaches_the_run_on_this_desktop()
         "this desktop's own words for its own chats: {here:?}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn opening_a_plane_forgets_where_a_workspace_no_longer_there_ran_its_chats() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let config = dir.path().join("config");
+    let root = a_plane(&dir.path().join("plane"));
+    std::fs::create_dir_all(root.join("workspaces").join("kept")).expect("a workspace");
+    let resolved = root.canonicalize().expect("the plane resolves");
+    machine::update(&config, |store| {
+        store.remember(&resolved, 1);
+        store.set_chats_run_here(&resolved, "renamed").expect("set");
+        store.set_chats_run_here(&resolved, "kept").expect("set");
+    })
+    .expect("written");
+    let planes = planes_keeping(&config);
+    let shown = asking(planes.open_if_approved(&root).expect("it is a plane")).contributes;
+
+    planes.approve_and_open(&root, &shown).expect("yes");
+
+    let store = planes.remembered().store;
+    assert_eq!(
+        store.workspace_place(&resolved, "renamed"),
+        machine::WorkspacePlace::Project
+    );
+    assert_eq!(
+        store.workspace_place(&resolved, "kept"),
+        machine::WorkspacePlace::ThisMachine
+    );
+}
