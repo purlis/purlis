@@ -2908,6 +2908,39 @@ fn removing_a_pool_forgets_its_chats_and_what_was_owed_from_it() {
 }
 
 #[test]
+fn what_names_a_pool_is_what_removing_it_sets_back_to_this_machine() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    assert!(store.recents[0].naming_pool("team").is_empty());
+    store.set_project_chats_run_on(plane, Some("team")).unwrap();
+    store.set_chats_run_on(plane, "web", Some("team")).unwrap();
+    store.set_chats_run_on(plane, "api", Some("team")).unwrap();
+    store
+        .set_chats_run_on(plane, "docs", Some("other"))
+        .unwrap();
+    store.set_chats_run_here(plane, "ops").unwrap();
+    let naming = store.recents[0].naming_pool("team");
+    assert_eq!(
+        naming,
+        NamingPool {
+            project: true,
+            workspaces: vec!["api".to_owned(), "web".to_owned()],
+        }
+    );
+    assert!(!naming.is_empty());
+    // Exactly what removing it changes: afterwards nothing names it.
+    store.recents[0].forget_pool("team");
+    assert!(store.recents[0].naming_pool("team").is_empty());
+    assert_eq!(
+        store.recents[0].naming_pool("other"),
+        NamingPool {
+            project: false,
+            workspaces: vec!["docs".to_owned()],
+        }
+    );
+}
+
+#[test]
 fn removing_a_pool_clears_it_from_the_project_and_every_workspace() {
     let plane = Path::new("/planes/a");
     let mut store = remembering(&["/planes/a"]);

@@ -3916,6 +3916,23 @@ body {
   color: var(--text-secondary);
 }
 
+/* What Remove pool's question names (`settings/pools.tsx`, #4678): the line that leads the list
+   runs on into it, and each project and workspace is a bullet of its own. */
+.came-back.pool-named-lead {
+  border-bottom: none;
+  padding-block-end: 0;
+}
+
+.came-back.pool-named-by {
+  padding-inline-start: calc(var(--space-5) * 2);
+  list-style: disc;
+}
+
+.came-back.pool-named-by li {
+  margin: var(--space-1) 0;
+  overflow-wrap: anywhere;
+}
+
 /* **While you were away** (`AwaySummary.tsx`, #1514): each part of the sentence is a link to
    the chats it counts, drawn as a link in the line's own colour, as the line's own ways out are. */
 .away-part {
