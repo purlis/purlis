@@ -288,8 +288,8 @@ async function erase(): Promise<void> {
 }
 
 /**
- * Makes pane `pane`'s own controls what a pane showing a task draws: the two splits, and no
- * close (`PaneDoing`, `task`). Then waits until the header has laid them out, the line ending
+ * Makes pane `pane`'s own controls what a pane showing a task draws: the chat's ⋯ (#4753) and
+ * the two splits, and no close (`PaneDoing`, `task`). Then waits until the header has laid them out, the line ending
  * before them. Answers how many are drawn.
  */
 async function asATaskPane(pane: number): Promise<number> {
@@ -528,8 +528,8 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
     check("Brief is taller than the line", brief.height, "atMost", (seen.line as Box).height + 1);
   });
 
-  // Each narrow pane twice: with the controls a pane showing a task draws (the two splits),
-  // and with the three every other pane draws. The line reserves what is there, measured, so
+  // Each narrow pane twice: with the controls a pane showing a task draws (the chat's ⋯ and
+  // the two splits, #4753), and with the four every other pane draws. The line reserves what is there, measured, so
   // neither is a number this file or the stylesheet has to know.
   for (const [pane, task] of [
     [0, true],
@@ -537,11 +537,11 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
     [0, false],
     [1, false],
   ] as const) {
-    it(`cuts the middle of a long path in narrow pane ${pane} with ${task ? "a task pane's two" : "three"} controls, keeps the state whole, and overflows nothing`, async () => {
+    it(`cuts the middle of a long path in narrow pane ${pane} with ${task ? "a task pane's three" : "four"} controls, keeps the state whole, and overflows nothing`, async () => {
       // 1024 px is the narrowest window purlis supports (ADR 0054), and with two panes side by
       // side each is a few hundred pixels.
       await windowIs(1024, 768);
-      if (task) expect(await asATaskPane(pane)).toBe(2);
+      if (task) expect(await asATaskPane(pane)).toBe(3);
       else await untilReserved(pane);
       expect(
         await draw(pane, { path: LONG_PATH, state: LONGEST_STATE, elsewhere: "release-train" }),
@@ -769,10 +769,10 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
 
   // **The state word is the last thing on the line to be cut** (#1494). The hardest line there
   // is: the longest state a task shows, a long path, Brief and the two word buttons beside
-  // the breadcrumb, and four controls in the pane's corner taking room from the line.
-  it("keeps the longest state whole in a narrow pane with Brief, two word buttons and four pane controls, by cutting everything else first", async () => {
+  // the breadcrumb, and five controls in the pane's corner taking room from the line.
+  it("keeps the longest state whole in a narrow pane with Brief, two word buttons and five pane controls, by cutting everything else first", async () => {
     await windowIs(1024, 768);
-    expect(await oneMoreControl(1)).toBe(4);
+    expect(await oneMoreControl(1)).toBe(5);
     expect(
       await draw(1, {
         path: LONG_PATH,
@@ -829,7 +829,7 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
       if (button.box.top < (ends?.group.bottom ?? 0) - 1)
         check(`"${button.words}" is cut mid-word`, button.cut, "is", false);
 
-    // The corner's four controls are clear of the line, and the line is still one row.
+    // The corner's five controls are clear of the line, and the line is still one row.
     check("the pane draws no controls", seen.controls !== null, "is", true);
     if (seen.controls !== null) {
       check(

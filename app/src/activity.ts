@@ -10,7 +10,7 @@ import type { ViewRef } from "./tabs";
  * and report, and the tasks of its tasks — oldest first.
  *
  * It is a view tab, `{ from: null, view: "activity", key: "<session>" }`: one per chat, opened
- * from the chat tab's menu and from the palette (`tab.activity:<tab>`). The lines are read once
+ * from the chat's list and from the palette (`chat.activity:<session>`). The lines are read once
  * from the app's own dispatch records (`purlis_core::activity`), and each line the app records
  * after that arrives as an `activity-line` event and is folded in here ({@link heard}), so an
  * open tab follows the work without reading the records again.

@@ -154,7 +154,7 @@ function OnRows() {
           <MenuTrigger>
             <Button>Tab steward 4</Button>
             <Menu aria-label="Tab steward 4" onAction={(key) => setSaid(`Chose ${String(key)}`)}>
-              <MenuItem id="rename" textValue="Rename…" shortcut="tab.rename:4">
+              <MenuItem id="rename" textValue="Rename…" shortcut="chat.rename:4">
                 <MenuWords said="Rename…" />
               </MenuItem>
               <MenuItem id="shell" textValue="New shell" shortcut="shell.new">

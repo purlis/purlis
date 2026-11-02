@@ -118,8 +118,11 @@ pub struct Said {
 }
 
 /// **How far apart a question's line in its task's record and its `question.asked` may be
-/// written** for the one to be the other's: both are written as the task asks, within moments.
-pub const SAME_QUESTION_MS: u64 = 60_000;
+/// written** for the one to be the other's: both are written as the task asks, `question.asked`
+/// under a second before the line (#4841). Kept that tight because writing to the log is best
+/// effort: a question whose `question.asked` was never written has no trail, and a wider window
+/// would lend it the trail of the next question asked within it.
+pub const SAME_QUESTION_MS: u64 = 5_000;
 
 /// The step `event` records, where it is one of a question's, read back from its kind and body.
 fn step_of(event: &Event) -> Option<Step> {
@@ -456,6 +459,18 @@ mod trail_tests {
 
         assert!(trail_of(&events, TASK, AT - 3_600_000).is_empty());
         assert!(trail_of(&events, OTHER, AT).is_empty());
+    }
+
+    #[test]
+    fn a_question_whose_asking_was_never_written_has_no_trail_not_the_next_ones() {
+        // Question 3's `question.asked` was never written; question 4 was asked 10 s later.
+        let events = [written(AT + 10_000, TASK, Step::Asked { number: 4 })];
+
+        assert!(trail_of(&events, TASK, AT).is_empty());
+        assert_eq!(
+            steps(&trail_of(&events, TASK, AT + 10_900)),
+            vec![(AT + 10_000, Step::Asked { number: 4 })]
+        );
     }
 
     #[test]

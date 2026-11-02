@@ -6,7 +6,7 @@ import { QueueRead } from "./QueueRead";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { SquareTerminal } from "lucide-react";
-import { workItemSaid, RENAMES_ON_F2, type Offer, type Catalogued } from "./actions";
+import { renameId, workItemSaid, RENAMES_ON_F2, type Offer, type Catalogued } from "./actions";
 import { Menued } from "./Menus";
 import {
   ALONG_THE_STRIP,
@@ -151,6 +151,12 @@ export function ChatStrip({
 }: ChatStripProps) {
   // The tabs drawn, as React Aria's tablist knows them (`ui/tabs/TabStrip`): not a tab being
   // renamed, whose name box is drawn in its place and is not a tab.
+  /** The Rename… row of the tab's own chat (#4753): a double-click on its name and F2 on it
+   *  press the chat's row, which the chat's list and the palette list. A view's tab has none. */
+  const renameOf = (id: number) => {
+    const own = chatOf(tabs, id);
+    return own === undefined ? undefined : by(renameId(own));
+  };
   const drawn = shown.filter((id) => !nameBoxFor(id)).map(String);
   const along = useTabStrip({
     keys: drawn,
@@ -221,7 +227,9 @@ export function ChatStrip({
                      nothing to scroll a tab into and nothing measuring tabs through the
                      markup. */
                   <Menued
-                    on={{ on: "chat", tab: id, session: chatOf(tabs, id) }}
+                    // The tab's own rows, never a chat's (#4753): a chat's are its pane's ⋯ and
+                    // its sidebar row's, so a split tab never acts on the wrong chat.
+                    on={{ on: "tab", tab: id }}
                     offers={found}
                     onPress={press}
                   >
@@ -349,7 +357,7 @@ export function ChatStrip({
                             }
                             // F2 renames here rather than opening the palette (`RENAMES_ON_F2`), on a
                             // tab that has a rename row — a chat's, and never a view's.
-                            {...(by(`tab.rename:${id}`) ? { [RENAMES_ON_F2]: "" } : {})}
+                            {...(renameOf(id) ? { [RENAMES_ON_F2]: "" } : {})}
                             {...sortable.listeners}
                             onKeyDown={(event) => {
                               // A tab that is up is being carried: its keys are the drag's.
@@ -357,7 +365,7 @@ export function ChatStrip({
                               sortable.listeners?.onKeyDown?.(event);
                               if (sortable.isDragging) return;
                               closeOnDelete(event, by(`tab.close:${id}`), press);
-                              renameOnF2(event, by(`tab.rename:${id}`), press);
+                              renameOnF2(event, renameOf(id), press);
                               // **Down on a tab with tasks opens their menu** (#1487),
                               // as Down opens the menu under an item of a menu bar. The
                               // strip runs across, so Down was nothing's.
@@ -385,7 +393,7 @@ export function ChatStrip({
                               // Not a press to go back to the main chat (#1486).
                               notGoingBack();
                               // …and keeps a preview tab, VS Code's double-click (SI-9b).
-                              const offer = by(`tab.rename:${id}`) ?? by(`tab.keep:${id}`);
+                              const offer = renameOf(id) ?? by(`tab.keep:${id}`);
                               if (offer?.available) press(offer);
                             }}
                           >

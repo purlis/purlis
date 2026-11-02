@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { focusedChat } from "../menus.js";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { showView } from "../opening.js";
@@ -35,13 +36,15 @@ async function openThePickerFromThePalette(): Promise<void> {
   const box = await $("#palette-query");
   await box.waitForDisplayed({ timeout: 10_000 });
   await box.addValue("Use skill");
+  // The chat in front's own row: every chat has one now (#4753).
+  const chat = await focusedChat();
   await browser.waitUntil(
     async () =>
-      browser.execute(() => {
-        const row = document.querySelector<HTMLElement>('[id^="palette-row-tab.useskill:"]');
+      browser.execute((own: string) => {
+        const row = document.getElementById(`palette-row-chat.useskill:${own}`);
         row?.click();
         return row !== null;
-      }),
+      }, chat),
     { timeout: 10_000, interval: 100, timeoutMsg: "the palette never offered Use skill…" },
   );
 }

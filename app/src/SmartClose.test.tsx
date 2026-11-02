@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
-  fireEvent,
   render as renderBare,
   screen,
   waitFor,
@@ -279,15 +278,19 @@ describe("a chat wrapping up", () => {
     expect(tabOf("steward 1")).toBeUndefined();
   });
 
-  it("offers Cancel smart close on its tab's menu, and cancelling asks the core", async () => {
+  it("offers Cancel smart close first on its list, and cancelling asks the core (#4753)", async () => {
     const { asked: log } = core();
     render(<App />);
     await openAChat();
     await step(1, "queued");
     await waitFor(() => expect(chipOf("steward 1")).toBeDefined());
 
-    fireEvent.contextMenu(theChip("steward 1"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Cancel smart close" }));
+    // On the chat's own list, not its tab's (#4753): first, as the row for its state now.
+    await userEvent.click(await screen.findByRole("button", { name: "More for steward 1" }));
+    const menu = await screen.findByRole("menu");
+    const first = within(menu).getAllByRole("menuitem")[0];
+    expect(first).toHaveAccessibleName("Cancel smart close");
+    await userEvent.click(first);
 
     await vi.waitFor(() =>
       expect(asked(log, "cancel_smart_close")).toEqual([{ plane: PLANE, session: 1 }]),
