@@ -588,6 +588,7 @@ export type Does =
   /** Opens that project's Saving tab (charter-app#294) — bringing the project to the front
    *  first when it is not. It saves nothing by itself: the save is the tab's button. */
   | { verb: "openSaving"; plane: string }
+  | { verb: "openPoolSetup"; plane: string }
   /** Opens Settings at that workspace's level (SE-20; charter-app#280), on that workspace's
    *  strip. It writes nothing by itself: a write is the tab's, through the core's own checks. */
   | { verb: "openWorkspaceSettings"; workspace: string }
@@ -1133,6 +1134,7 @@ export type Doing = {
   openSettings: (plane: string) => void;
   /** Brings that project to the front and opens its Saving tab. */
   openSaving: (plane: string) => void;
+  openPoolSetup: (plane: string) => void;
   /** Opens that workspace's settings tab on its strip, or brings forward the one already open. */
   openWorkspaceSettings: (workspace: string) => void;
   /** Asks whether to make that workspace LIVE or LOCAL, in a confirmation. */
@@ -1235,6 +1237,7 @@ export function projectRows(
   pin: Offer[];
   settings: Offer[];
   saving: Offer[];
+  poolSetup: Offer[];
   /** Into a new window of its own, one row per project (charter#126). */
   window: Offer[];
   /** Back to the main window — only in a split window, so empty in the main one. */
@@ -1307,6 +1310,13 @@ export function projectRows(
         plane: project.plane,
       }),
       note: `${project.name}: charter.toml, for the team, and charter.local.toml, for this machine.`,
+    })),
+    poolSetup: projects.map((project) => ({
+      ...can(`project.pool-setup:${project.plane}`, "Pool setup…", {
+        verb: "openPoolSetup",
+        plane: project.plane,
+      }),
+      note: `${project.name}: run chats on another machine, step by step.`,
     })),
     saving: projects.map((project) => ({
       ...can(`project.saving:${project.plane}`, "Saving…", {
@@ -2413,6 +2423,7 @@ export function catalogue(now: Now): Offer[] {
     ...projects.pin,
     ...projects.settings,
     ...projects.saving,
+    ...projects.poolSetup,
     ...projects.window,
     ...projects.back,
   );
@@ -3615,6 +3626,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "openSaving":
       doing.openSaving(does.plane);
+      return DID;
+    case "openPoolSetup":
+      doing.openPoolSetup(does.plane);
       return DID;
     case "openWorkspaceSettings":
       doing.openWorkspaceSettings(does.workspace);

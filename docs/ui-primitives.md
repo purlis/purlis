@@ -833,6 +833,14 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
   Inbox's list, a Notice alone, what needs a decision in all three places, every badge and count, the hosts' statuses, a badge's hint, and a
   line across a card and down a strip, each walked by the keyboard and checked by axe.
+## The steps family
+
+**A guide's list of steps is the steps family** (`app/src/ui/steps/`, #4480, on React Aria's
+`Button`): `StepList`, how far along the person is, each step's state, and a way back to any step
+reached. A step's variant is its state (`done`, `current`, `attention`, `skipped`, `waiting`,
+`later`), told apart by its mark and its words as well as its colour. A `later` step can't be
+pressed. Pool setup's Where and Pool steps are its first user (`PoolSetupTab.stories.tsx`).
+
 ## The meter family
 
 **A value drawn as a bar is the meter family** (`app/src/ui/meter/`, #3674, on React Aria's
