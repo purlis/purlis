@@ -66,20 +66,94 @@ describe("what a workspace has on", () => {
   });
 
   it("asks once more after a question that failed, and keeps that answer (#4822)", async () => {
-    let failures = 1;
-    const asked = vi.fn();
-    mockIPC((cmd, args) => {
-      if (cmd !== "extensions_on") return undefined;
-      asked(args);
-      if (failures-- > 0) throw new Error("could not read");
-      return ["acme"];
-    });
-    const project = renderHook(() => useExtensionsOn(PLANE));
-    const unread = renderHook(() => useExtensionsOnUnread(PLANE));
+    vi.useFakeTimers();
+    try {
+      let failures = 1;
+      const asked = vi.fn();
+      mockIPC((cmd, args) => {
+        if (cmd !== "extensions_on") return undefined;
+        asked(args);
+        if (failures-- > 0) throw new Error("could not read");
+        return ["acme"];
+      });
+      const project = renderHook(() => useExtensionsOn(PLANE));
+      const unread = renderHook(() => useExtensionsOnUnread(PLANE));
 
-    await waitFor(() => expect(project.result.current).toEqual(new Set(["acme"])));
-    expect(asked).toHaveBeenCalledTimes(2);
-    expect(unread.result.current).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toHaveBeenCalledTimes(1);
+      expect(project.result.current).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(EXTENSIONS_ON_ASKED_AGAIN_AFTER);
+      expect(asked).toHaveBeenCalledTimes(2);
+      expect(project.result.current).toEqual(new Set(["acme"]));
+      expect(unread.result.current).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not ask once more when a newer question overtook the one that failed (#4822)", async () => {
+    vi.useFakeTimers();
+    try {
+      let fail = true;
+      const asked = vi.fn();
+      mockIPC((cmd, args) => {
+        if (cmd !== "extensions_on") return undefined;
+        asked(args);
+        if (fail) throw new Error("could not read");
+        return ["acme"];
+      });
+      const project = renderHook(() => useExtensionsOn(PLANE));
+      const unread = renderHook(() => useExtensionsOnUnread(PLANE));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toHaveBeenCalledTimes(1);
+
+      // A save while the failed one waits to be asked again: its answer is the one kept.
+      fail = false;
+      extensionsChanged(PLANE);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toHaveBeenCalledTimes(2);
+      expect(project.result.current).toEqual(new Set(["acme"]));
+
+      // And the wait ends asking nothing, and taking nothing back.
+      fail = true;
+      await vi.advanceTimersByTimeAsync(EXTENSIONS_ON_ASKED_AGAIN_AFTER * 2);
+      expect(asked).toHaveBeenCalledTimes(2);
+      expect(project.result.current).toEqual(new Set(["acme"]));
+      expect(unread.result.current).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a project's failure to that project when the window switches to another (#4822)", async () => {
+    vi.useFakeTimers();
+    try {
+      const OTHER = "/home/dev/other";
+      mockIPC((cmd, args) => {
+        if (cmd !== "extensions_on") return undefined;
+        if ((args as { plane: string }).plane === PLANE) throw new Error("could not read");
+        return ["acme"];
+      });
+      const inFront = renderHook(
+        ({ plane }) => ({ on: useExtensionsOn(plane), unread: useExtensionsOnUnread(plane) }),
+        { initialProps: { plane: PLANE } },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Switched while the first project's question waits to be asked again.
+      inFront.rerender({ plane: OTHER });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(inFront.result.current.on).toEqual(new Set(["acme"]));
+
+      await vi.advanceTimersByTimeAsync(EXTENSIONS_ON_ASKED_AGAIN_AFTER);
+      expect(inFront.result.current.on).toEqual(new Set(["acme"]));
+      expect(inFront.result.current.unread).toBeUndefined();
+      // The first project's failure is still its own, said when it is in front again.
+      inFront.rerender({ plane: PLANE });
+      expect(inFront.result.current.unread).toContain("could not read");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says why once the second question failed too, and asks no more until a save (#4822)", async () => {

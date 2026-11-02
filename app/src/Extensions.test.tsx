@@ -1110,6 +1110,8 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
       const said = aboutThisMachine().filter((one) => one.subject === "extensions unread");
       expect(said).toHaveLength(1);
       expect(said[0].detail).toContain("the record is unreadable");
+      // Its pick is an extension's theme, so that theme is surely not drawn.
+      expect(said[0].detail).toContain("The extension's theme this project picked is not drawn");
       expect(said[0].severity).toBe("warn");
     });
 

@@ -593,6 +593,10 @@ describe("a window holding more than one project", () => {
       expect(unread.map((one) => one.detail)).toEqual([
         expect.stringContaining("the record is unreadable"),
       ]);
+      // Its pick is a built-in, so an extension's theme only may not be drawn: none is said to
+      // be missing.
+      expect(unread[0].detail).toContain("may not be drawn");
+      expect(unread[0].detail).not.toContain("is not drawn");
       // Asked once more before it gave up on them, and then the theme with none of them on.
       expect(asked.filter(ofTheProjectAlone)).toHaveLength(2);
       expect(

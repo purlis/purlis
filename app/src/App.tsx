@@ -1378,7 +1378,7 @@ function App() {
    *  thing that is the window's and not a project's to draw: the theme. */
   const onInFront = useExtensionsOn(settledInFront, workspaceInFront);
   /** Why that could not be read, asked twice (#4822): the theme is still asked for, with none of
-   *  its extensions on, and the window says why an extension's theme is not drawn. */
+   *  its extensions on, and the window says why an extension's theme may not be drawn. */
   const unreadInFront = useExtensionsOnUnread(settledInFront, workspaceInFront);
   /** The theme the project in front picked there (charter-app#273, #281): `null` when nothing
    *  picked one. */
