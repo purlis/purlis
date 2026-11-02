@@ -1625,7 +1625,7 @@ fn listing_limit_handed(skills: Option<crate::skills::PlaneSkills<'_>>) -> Strin
 
 #[test]
 fn a_chat_out_of_any_plane_is_handed_the_limit_of_the_default_budget() {
-    assert_eq!(listing_limit_handed(None), "30000");
+    assert_eq!(listing_limit_handed(None), "40000");
 }
 
 #[test]
@@ -1652,7 +1652,7 @@ fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
             routed: None,
         }))
     };
-    assert_eq!(at(None), "30000");
+    assert_eq!(at(None), "40000");
     assert_eq!(at(Some("alpha")), "51532");
 }
 
@@ -1661,8 +1661,8 @@ fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
 /// was dropped however few there were.
 #[test]
 fn the_limit_holds_claude_codes_own_entries_and_the_list_with_a_margin() {
-    // A 1M Claude 5 chat's own limit, which no handed one goes below.
-    assert_eq!(listing_limit(0), 30_000);
+    // The largest limit any model has of its own, which no handed one goes below.
+    assert_eq!(listing_limit(0), 40_000);
     let budget = ADAPTER.skill_budget();
     assert!(listing_limit(budget.chars) > (6_848 + budget.chars) * 11 / 10);
     assert_eq!(listing_limit(30_000), 40_532);
