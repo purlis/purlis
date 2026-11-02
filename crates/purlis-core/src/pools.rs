@@ -379,8 +379,12 @@ pub fn branches_to_fetch(
 }
 
 /// **Every pool a workspace of the plane at `plane` runs its chats on**, with those
-/// workspaces, as this machine's store names them (#2046). Whether each pool is kept is asked
-/// as each is reached ([`runs_on`]).
+/// workspaces, as this machine's store names them (#2046): what fetch-back, the away list and a
+/// put-back ask about. Whether each pool is kept is asked as each is reached ([`runs_on`]).
+///
+/// A workspace that follows the project's pool is listed once it has run a chat there: one is
+/// kept there, or its branches are still owed from there (#4590). Never before, since nothing of
+/// it is there to ask about (#4591).
 pub fn workspaces_on_pools(
     config_root: &Path,
     plane: &Path,
@@ -405,6 +409,7 @@ pub fn workspaces_on_pools(
             let place = loaded.store.chat_place(plane, &workspace, None);
             if place.level == crate::machine::PlaceLevel::Project
                 && let Some(pool) = place.pool
+                && loaded.store.ran_on(plane, &workspace, &pool)
             {
                 on.entry(pool).or_default().push(workspace);
             }

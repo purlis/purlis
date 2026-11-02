@@ -1685,6 +1685,21 @@ impl Store {
         }
     }
 
+    /// **Whether `workspace` of `plane` has something on `pool` still to ask about** (#4591): a
+    /// chat kept there, or branches still owed from there (#4590).
+    pub fn ran_on(&self, plane: &Path, workspace: &str, pool: &str) -> bool {
+        self.recent(plane).is_some_and(|entry| {
+            entry
+                .chats_on_pools
+                .values()
+                .any(|chat| chat.pool == pool && chat.workspace == workspace)
+                || entry
+                    .branches_to_fetch
+                    .get(pool)
+                    .is_some_and(|owed| owed.contains(workspace))
+        })
+    }
+
     /// What `workspace` of `plane` itself says of where its chats run (#4536).
     pub fn workspace_place(&self, plane: &Path, workspace: &str) -> WorkspacePlace {
         let Some(entry) = self.recent(plane) else {

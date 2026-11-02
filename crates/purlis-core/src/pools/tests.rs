@@ -3751,13 +3751,10 @@ fn a_project_pool_this_machine_does_not_keep_starts_nothing_and_never_runs_here(
     assert_eq!(runs_on(config.path(), plane, Some("here")), Ok(None));
     // A chat at the project's root moves no clone, so it stays here.
     assert_eq!(runs_on(config.path(), plane, None), Ok(None));
+    // `ide` follows the project, and is asked about there only once it has run a chat there.
     assert_eq!(
         workspaces_on_pools(config.path(), plane),
-        [
-            ("first".to_owned(), vec!["ide".to_owned()]),
-            ("second".to_owned(), vec!["web".to_owned()]),
-        ]
-        .into()
+        [("second".to_owned(), vec!["web".to_owned()])].into()
     );
     let chosen = crate::machine::StartChoice::Pool("gone".to_owned());
     let refused = chat_place(config.path(), plane, Some("here"), Some(&chosen)).unwrap_err();
@@ -3986,4 +3983,50 @@ fn a_held_runner_that_runs_again_is_stopped_before_its_conversations_come_back()
     let stopped = log.find(&format!("container stop {ID}")).expect(&log);
     let copied = log.find("target=/to").expect(&log);
     assert!(stopped < copied, "{log}");
+}
+
+#[test]
+fn fetch_back_asks_a_workspace_following_the_projects_pool_only_once_it_ran_there() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let plane = plane.path();
+    for workspace in ["ide", "web", "docs", "named"] {
+        std::fs::create_dir_all(plane.join("workspaces").join(workspace)).unwrap();
+    }
+    let on = |workspace: &str| crate::machine::ChatOnPool {
+        pool: "first".to_owned(),
+        workspace: workspace.to_owned(),
+    };
+    crate::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store
+            .set_project_chats_run_on(plane, Some("first"))
+            .unwrap();
+        store
+            .set_chats_run_on(plane, "named", Some("second"))
+            .unwrap();
+        // A chat of `ide` runs on the pool now, and one of `web` ran there and ended.
+        store.keep_chat_on_pool(plane, 1, on("ide"));
+        store.keep_chat_on_pool(plane, 2, on("web"));
+        store.leave_chat_on_pool(plane, 2);
+    })
+    .unwrap();
+    // `docs` follows the project too, and never ran a chat there.
+    assert_eq!(
+        workspaces_on_pools(config.path(), plane),
+        [
+            ("first".to_owned(), vec!["ide".to_owned(), "web".to_owned()]),
+            ("second".to_owned(), vec!["named".to_owned()]),
+        ]
+        .into()
+    );
+    // Once `web`'s branches came back, nothing more of it is owed from there.
+    crate::machine::update(config.path(), |store| {
+        store.branches_fetched(plane, "first", "web");
+    })
+    .unwrap();
+    assert_eq!(
+        workspaces_on_pools(config.path(), plane)["first"],
+        vec!["ide".to_owned()]
+    );
 }
