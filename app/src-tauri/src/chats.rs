@@ -10,7 +10,7 @@
 //! It is a layer of its own so that the record is written from what the app itself did, and
 //! not from anything a harness said. Nothing here reads a session's output.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -927,6 +927,12 @@ pub struct Chats {
     fresh_ending: Arc<Mutex<std::collections::HashSet<String>>>,
     /// When the fresh runners were last swept ([`Self::sweeps_fresh_runners`]).
     fresh_swept: Mutex<Option<std::time::Instant>>,
+    /// **The fresh runners kept since their work is not all here**, by their chat's id (#4569):
+    /// what the window's Notice offers Fetch again and Discard for. **In memory only**: each
+    /// sweep finds them again from their records.
+    fresh_kept: Arc<Mutex<BTreeMap<String, crate::freshkept::FreshKept>>>,
+    /// Told the kept runners each time they change.
+    fresh_told: Arc<Mutex<Option<crate::freshkept::Tell>>>,
     /// Whether the chats of the last launch have come back, or could not (#4569).
     put_back_settled: std::sync::atomic::AtomicBool,
     /// What decides the sandbox of a chat on no profile in a test, in place of
@@ -1254,6 +1260,30 @@ impl LetGo {
     }
 }
 
+/// How a fresh runner goes (#4569).
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Going {
+    /// Only once this project is proved to hold all of its work.
+    OnProof,
+    /// A start made it and failed: nothing ran there.
+    NothingRan,
+    /// The person discarded what it holds.
+    Discarded,
+}
+
+/// Tells `told` the kept fresh runners in `kept` as they are now.
+#[cfg(unix)]
+fn tell_fresh_kept(
+    kept: &Mutex<BTreeMap<String, crate::freshkept::FreshKept>>,
+    told: &Mutex<Option<crate::freshkept::Tell>>,
+) {
+    let now: Vec<crate::freshkept::FreshKept> = lock(kept).values().cloned().collect();
+    if let Some(tell) = lock(told).clone() {
+        tell(now);
+    }
+}
+
 /// The least time between two sweeps of a project's fresh runners (#4569).
 #[cfg(unix)]
 const FRESH_SWEPT_AT_MOST_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
@@ -1409,6 +1439,8 @@ impl Chats {
             fresh_starting: Arc::default(),
             fresh_ending: Arc::default(),
             fresh_swept: Mutex::new(None),
+            fresh_kept: Arc::default(),
+            fresh_told: Arc::default(),
             put_back_settled: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
             deciding: None,
@@ -1621,13 +1653,28 @@ impl Chats {
     }
 
     /// **The chat `id` is over, so what its fresh runner holds comes back, and then it goes**
-    /// (#3818, #4569). A runner whose work did not come stays, with its record, for
-    /// [`Self::sweeps_fresh_runners`]; one on its way already is left to that. `ran` is false for
-    /// a start that made a runner and failed: it holds nothing, and asking it could fail as that
-    /// start did. Said to be ending before a start's word is read, as a start says its word before
-    /// it reads this one, so one of the two always sees the other.
+    /// (#3818, #4569), **only on proof** that this project holds every commit and change it holds.
+    /// A runner whose work is not all here stays, with its record, and the window's Notice says
+    /// what is missing and offers Fetch again and Discard ([`Self::fresh_runners_kept`]); one on
+    /// its way already is left to that. `ran` is false for a start that made a runner and failed:
+    /// it holds nothing, and asking it could fail as that start did. Said to be ending before a
+    /// start's word is read, as a start says its word before it reads this one, so one of the two
+    /// always sees the other.
     #[cfg(unix)]
     fn fresh_runner_ends(&self, id: &str, ran: bool) {
+        self.fresh_runner_goes(
+            id,
+            if ran {
+                Going::OnProof
+            } else {
+                Going::NothingRan
+            },
+        );
+    }
+
+    /// [`Self::fresh_runner_ends`], or let go of with no proof where `going` says so.
+    #[cfg(unix)]
+    fn fresh_runner_goes(&self, id: &str, going: Going) {
         let (Some(config), Some((runner, workspace))) = (&self.pools_in, self.own_runner_of(id))
         else {
             return;
@@ -1643,13 +1690,78 @@ impl Chats {
             return;
         }
         let config = config.clone();
+        let (kept, told) = (Arc::clone(&self.fresh_kept), Arc::clone(&self.fresh_told));
+        let (runner_named, workspace_named) = (runner.clone(), workspace.clone());
         self.sessions.take_back_fresh(
             &runner,
-            ran.then_some(workspace.as_str()),
-            Box::new(move |failed| {
-                crate::clusterpools::fresh_runner_ended(&config, &ending.id, &failed)
+            (going == Going::OnProof).then_some(workspace.as_str()),
+            Box::new(move |missing| {
+                let end = crate::clusterpools::fresh_runner_ended(&config, &ending.id, &missing);
+                let went = matches!(end, crate::clusterpools::FreshEnd::Went);
+                {
+                    let mut kept = lock(&kept);
+                    match end {
+                        crate::clusterpools::FreshEnd::Went => {
+                            kept.remove(&ending.id);
+                        }
+                        crate::clusterpools::FreshEnd::Kept { why, gone } => {
+                            kept.insert(
+                                ending.id.clone(),
+                                crate::freshkept::FreshKept {
+                                    chat: ending.id.clone(),
+                                    runner: runner_named,
+                                    workspace: workspace_named,
+                                    why,
+                                    gone,
+                                },
+                            );
+                        }
+                    }
+                }
+                tell_fresh_kept(&kept, &told);
+                went
             }),
         );
+    }
+
+    /// **The fresh runners of this project kept since their work is not all here** (#4569).
+    pub(crate) fn fresh_runners_kept(&self) -> Vec<crate::freshkept::FreshKept> {
+        lock(&self.fresh_kept).values().cloned().collect()
+    }
+
+    /// Tells `tell` the kept fresh runners each time they change (#4569).
+    pub(crate) fn tells_fresh_kept(&self, tell: crate::freshkept::Tell) {
+        *lock(&self.fresh_told) = Some(tell);
+    }
+
+    /// **Fetch again** (#4569): the kept runner of chat `id` is asked again for its work, and goes
+    /// once all of it is here. Refused for a runner that is not kept.
+    pub(crate) fn fetches_fresh_runner_again(&self, id: &str) -> Result<(), String> {
+        if !lock(&self.fresh_kept).contains_key(id) {
+            return Err("That runner is no longer kept, so there is nothing to fetch.".to_owned());
+        }
+        #[cfg(unix)]
+        self.fresh_runner_goes(id, Going::OnProof);
+        Ok(())
+    }
+
+    /// **Discard** (#4569): the person lets the kept runner of chat `id` go with what it holds
+    /// that is not here. Refused for a runner that is not kept, or whose chat is open again.
+    pub(crate) fn discards_fresh_runner(&self, id: &str) -> Result<(), String> {
+        if !lock(&self.fresh_kept).contains_key(id) {
+            return Err(
+                "That runner is no longer kept, so there is nothing to discard.".to_owned(),
+            );
+        }
+        if self.holds_a_chat(id) {
+            return Err(
+                "That task is open again, so its runner stays. Close the task first.".to_owned(),
+            );
+        }
+        tracing::info!("purlis: the person discards chat {id}'s fresh runner and what it holds");
+        #[cfg(unix)]
+        self.fresh_runner_goes(id, Going::Discarded);
+        Ok(())
     }
 
     /// **Every fresh runner of this project whose chat is gone goes** (#4569): a release that

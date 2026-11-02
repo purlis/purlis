@@ -861,6 +861,18 @@ export const commands = {
 	 *  from.
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
+	/**  The fresh runners of `plane` kept now: what the window's Notice starts from. */
+	freshRunnersKept: (plane: PlaneId) => typedError<FreshKept[], string>(__TAURI_INVOKE("fresh_runners_kept", { plane })),
+	/**
+	 *  **Fetch again**: the kept runner of chat `chat` is asked again for its work, off the window,
+	 *  and goes once all of it is here. The Notice hears how it came out on [`EVENT`].
+	 */
+	fetchFreshRunnerAgain: (plane: PlaneId, chat: string) => typedError<null, string>(__TAURI_INVOKE("fetch_fresh_runner_again", { plane, chat })),
+	/**
+	 *  **Discard**: the person lets the kept runner of chat `chat` go with what it holds that is not
+	 *  here. The Notice hears it went on [`EVENT`].
+	 */
+	discardFreshRunner: (plane: PlaneId, chat: string) => typedError<null, string>(__TAURI_INVOKE("discard_fresh_runner", { plane, chat })),
 	/**
 	 *  **Each runner of `plane`'s chats, for the away summary** (#2051): of `sessions`, the chats
 	 *  that run on each pool's runner, and the branches each runner has, as this machine last
@@ -7950,6 +7962,26 @@ export type FoundFile = {
 	 *  points, not bytes or UTF-16 units), ascending: what the row marks.
 	 */
 	matched: number[],
+};
+
+/**  One fresh runner kept since its work is not all here. */
+export type FreshKept = {
+	/**  Its chat's stable id, which Fetch again and Discard name it by. */
+	chat: string,
+	/**  The runner, `<pool>/fresh-<hash>`. */
+	runner: string,
+	/**  The workspace its work goes back to. */
+	workspace: string,
+	/**  What is not here, in sentences. */
+	why: string[],
+	/**  Whether its cluster says the runner is gone already, with what it held. */
+	gone: boolean,
+};
+
+/**  A plane's kept fresh runners, as they are now. */
+export type FreshRunnersKept = {
+	plane: PlaneId,
+	kept: FreshKept[],
 };
 
 /**

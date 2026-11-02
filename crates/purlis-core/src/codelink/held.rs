@@ -151,8 +151,13 @@ fn repo_kind(dir: &Path) -> Kind {
         return Kind::WorkTree;
     }
     let is = |name: &str, dir_wanted: bool| {
-        std::fs::symlink_metadata(dir.join(name))
-            .is_ok_and(|meta| if dir_wanted { meta.is_dir() } else { meta.is_file() })
+        std::fs::symlink_metadata(dir.join(name)).is_ok_and(|meta| {
+            if dir_wanted {
+                meta.is_dir()
+            } else {
+                meta.is_file()
+            }
+        })
     };
     if is("HEAD", false) && is("objects", true) && is("refs", true) {
         return Kind::Bare;
@@ -291,7 +296,9 @@ fn uncommitted(dir: &Path, project: &str, rel: &str) -> Result<Vec<Changed>, Str
     paths.sort();
     paths.dedup();
     if paths.len() > MOST_CHANGED {
-        return Err(unread(format!("it has more than {MOST_CHANGED} changed files")));
+        return Err(unread(format!(
+            "it has more than {MOST_CHANGED} changed files"
+        )));
     }
     paths
         .into_iter()
@@ -326,7 +333,8 @@ fn file_now(repo: &Path, path: &str) -> Result<Option<String>, String> {
         Err(e) => return Err(format!("{path} could not be read: {e}")),
     };
     if meta.file_type().is_symlink() {
-        let target = std::fs::read_link(&at).map_err(|e| format!("{path} could not be read: {e}"))?;
+        let target =
+            std::fs::read_link(&at).map_err(|e| format!("{path} could not be read: {e}"))?;
         return Ok(Some(format!("link:{}", target.to_string_lossy())));
     }
     if !meta.is_file() {
@@ -379,8 +387,9 @@ pub fn not_home(root: &Path, project: &str, held: &[Held], unread: &[String]) ->
             .changed
             .iter()
             .filter(|change| {
-                path_here(&here, &change.path)
-                    .is_none_or(|_| file_now(&here, &change.path).ok().as_ref() != Some(&change.now))
+                path_here(&here, &change.path).is_none_or(|_| {
+                    file_now(&here, &change.path).ok().as_ref() != Some(&change.now)
+                })
             })
             .map(|change| change.path.as_str())
             .collect();
@@ -417,7 +426,11 @@ fn path_here(root: &Path, path: &str) -> Option<std::path::PathBuf> {
     }
     let mut at = root.to_path_buf();
     for part in path.split('/') {
-        if part.is_empty() || part == "." || part == ".." || part.contains('\\') || part.contains('\0')
+        if part.is_empty()
+            || part == "."
+            || part == ".."
+            || part.contains('\\')
+            || part.contains('\0')
         {
             return None;
         }
@@ -431,8 +444,8 @@ fn reached_here(repo: &Path, oid: &str) -> bool {
     if !super::an_oid(oid) {
         return false;
     }
-    let is_commit = run(repo, &["cat-file", "-e", &format!("{oid}^{{commit}}")])
-        .is_ok_and(|ran| ran.ok());
+    let is_commit =
+        run(repo, &["cat-file", "-e", &format!("{oid}^{{commit}}")]).is_ok_and(|ran| ran.ok());
     if !is_commit {
         return false;
     }

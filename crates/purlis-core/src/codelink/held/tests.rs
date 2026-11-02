@@ -123,7 +123,10 @@ fn a_commit_on_a_branch_the_desktop_never_fetched_keeps_the_runner() {
     let missing = world.not_home();
 
     assert!(
-        says(&missing, "refs/heads/main of the repository workspaces/app/web"),
+        says(
+            &missing,
+            "refs/heads/main of the repository workspaces/app/web"
+        ),
         "{missing:?}"
     );
 }
@@ -162,7 +165,10 @@ fn a_clone_stopped_mid_rebase_is_listed_and_keeps_the_runner() {
             "main",
         ],
     );
-    assert!(!stopped.ok(), "the rebase was meant to stop on its conflict");
+    assert!(
+        !stopped.ok(),
+        "the rebase was meant to stop on its conflict"
+    );
 
     let (held, unread) = repos_held(&world.projects);
     let missing = not_home(&world.desktop, PROJECT, &held, &unread);
@@ -173,7 +179,10 @@ fn a_clone_stopped_mid_rebase_is_listed_and_keeps_the_runner() {
         .expect("the clone mid-rebase is listed");
     assert!(listed.refs.iter().any(|one| one.name == "refs/heads/fix"));
     assert!(
-        says(&missing, "refs/heads/fix of the repository workspaces/app/web"),
+        says(
+            &missing,
+            "refs/heads/fix of the repository workspaces/app/web"
+        ),
         "{missing:?}"
     );
 }
@@ -204,7 +213,10 @@ fn a_repository_nested_in_a_clone_keeps_the_runner() {
 #[test]
 fn a_work_tree_whose_git_folder_is_elsewhere_is_listed() {
     let world = World::new();
-    git(&world.web(), &["worktree", "add", "-q", "-b", "side", "side"]);
+    git(
+        &world.web(),
+        &["worktree", "add", "-q", "-b", "side", "side"],
+    );
     commit(
         &world.web().join("side"),
         "side.txt",

@@ -431,6 +431,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "put_away_lost_chat",
             // Which chats are reconnecting to their runner (#2496): in memory.
             "chats_reconnecting",
+            // A task's fresh runners kept (#4569): in memory.
+            "fresh_runners_kept",
             // Whether the session host is failing, and Try again (#2007): in memory, and a
             // wake of the supervisor's thread.
             "session_host_failing",

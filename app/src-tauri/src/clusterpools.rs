@@ -241,31 +241,60 @@ pub fn fresh_runner(
         .map_err(|why| why.to_string())
 }
 
-/// **The chat `chat` ended and its fresh runner's work came back, or `failed` says why not**
-/// (#3818, #4569). Only then does the runner go: where its work did not come, the claim stays with
-/// its record, for the sweep to try again, unless the cluster says that work is gone already.
-/// Answers whether it went.
-pub fn fresh_runner_ended(config: &Path, chat: &str, failed: &[String]) -> bool {
-    let released = kubectl(config).and_then(|kubectl| {
-        if !failed.is_empty() {
-            let lost = purlis_core::pools::fresh_runner_lost(config, &kubectl, chat)
-                .map_err(|why| why.to_string())?;
-            if !lost {
-                return Err(failed.join(" "));
-            }
-            tracing::warn!(
-                "purlis: a chat's fresh runner is gone from its cluster, and what it held with \
-                 it: {}",
-                failed.join(" ")
-            );
+/// How a chat's fresh runner's end came out (#4569).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FreshEnd {
+    /// It went: its work was proved here, or the person discarded it.
+    Went,
+    /// It stays, with its record, and `why` says what is not here. `gone` where its cluster says
+    /// its runner is gone already, with what it held: the record stays until the person forgets
+    /// it, so that is never silent.
+    Kept { why: Vec<String>, gone: bool },
+}
+
+/// **The chat `chat` ended, and `missing` says what of its fresh runner's work is not here**
+/// (#3818, #4569): none only on proof, or where nothing is asked for (a start that failed, or the
+/// person's Discard). Only then does the runner go. Otherwise its claim stays with its record,
+/// for Fetch again, the sweep or Discard, and the window says so.
+pub fn fresh_runner_ended(config: &Path, chat: &str, missing: &[String]) -> FreshEnd {
+    let kubectl = match kubectl(config) {
+        Ok(kubectl) => kubectl,
+        Err(why) => {
+            return FreshEnd::Kept {
+                why: missing
+                    .iter()
+                    .cloned()
+                    .chain([format!("purlis could not reach its cluster: {why}")])
+                    .collect(),
+                gone: false,
+            };
         }
-        purlis_core::pools::release_fresh(config, &kubectl, chat).map_err(|why| why.to_string())
-    });
-    match released {
-        Ok(()) => true,
+    };
+    if !missing.is_empty() {
+        // Never given up on the cluster's word alone: the person forgets it.
+        let gone = matches!(
+            purlis_core::pools::fresh_runner_lost(config, &kubectl, chat),
+            Ok(true)
+        );
+        tracing::warn!(
+            "purlis: a chat's fresh runner stays, since its work is not all here: {}",
+            missing.join(" ")
+        );
+        return FreshEnd::Kept {
+            why: missing.to_vec(),
+            gone,
+        };
+    }
+    match purlis_core::pools::release_fresh(config, &kubectl, chat) {
+        Ok(()) => FreshEnd::Went,
         Err(why) => {
             tracing::warn!("purlis: a chat's fresh runner stays for now: {why}");
-            false
+            FreshEnd::Kept {
+                why: vec![format!(
+                    "Its work is all here, but its claim could not be deleted: {why}"
+                )],
+                gone: false,
+            }
         }
     }
 }
