@@ -606,7 +606,7 @@ fn settings_too_large_to_send_refuse_no_chat_on_a_runner_before_1_50() {
 
     assert!(for_a_runner_of(version(49), &kept).is_ok());
     assert!(for_a_runner_of(version(43), &kept).is_ok());
-    let refused = for_a_runner_of(version(50), &kept).unwrap_err();
+    let refused = for_a_runner_of(version(50), &kept).unwrap_err().said;
     assert!(refused.contains("larger than"), "{refused}");
 }
 
@@ -622,7 +622,7 @@ fn a_runner_of_1_56_takes_settings_too_large_for_one_keep_in_batches() {
     .unwrap();
     let kept = work_with_settings_in(folder.path());
 
-    let refused = for_a_runner_of(version(55), &kept).unwrap_err();
+    let refused = for_a_runner_of(version(55), &kept).unwrap_err().said;
     assert!(refused.contains("larger than"), "{refused}");
 
     let sent = for_a_runner_of(version(56), &kept).unwrap();
@@ -646,7 +646,7 @@ fn a_raised_limit_is_held_to_what_a_runner_before_1_64_stages() {
     let mut kept = work_with_settings_in(folder.path());
     kept.limits = Chosen::default().with(LimitId::ProfileFiles, Some(9000));
 
-    let refused = for_a_runner_of(version(63), &kept).unwrap_err();
+    let refused = for_a_runner_of(version(63), &kept).unwrap_err().said;
     assert!(refused.contains("send less than 8192 files"), "{refused}");
     assert!(!refused.contains("raise it"), "{refused}");
 
@@ -774,7 +774,10 @@ async fn sent_to_a_runner(
     speaks: u16,
     holds: impl FnOnce(session::HeldSetting) -> Holds,
     refuses_changes: bool,
-) -> (Vec<session::Command>, Result<ProfileKept, String>) {
+) -> (
+    Vec<session::Command>,
+    Result<ProfileKept, purlis_core::profilestore::onrunner::NotSent>,
+) {
     let folder = tempfile::tempdir().unwrap();
     std::fs::write(folder.path().join("CLAUDE.md"), "Be brief.").unwrap();
     let kept = work_with_settings_in(folder.path());

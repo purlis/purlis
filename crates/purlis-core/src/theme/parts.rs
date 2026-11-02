@@ -525,11 +525,13 @@ pub struct Family {
     /// The fill of a part that is not the root's, by the part's name: an activity item's count on
     /// its own pill (#2917). Its words are held to this fill, and a fallback draws it again.
     fills: &'static [(&'static str, &'static str)],
-    /// The ground a part's words are read on where the part paints none of its own and it is
-    /// not the root's, by the part's name (#3099): a tab's count on the counts button its parent
-    /// paints, a switcher's row on the popover it is drawn in. Its words are held to this ground,
-    /// but a fallback never paints it, since the part does not.
-    under: &'static [(&'static str, &'static str)],
+    /// **Where a part's words stand without a fill of their own**, by the part's name, for a part
+    /// drawn on other grounds than the family's (#3099, #3384). One ground is what its parent
+    /// paints: a tab's count on the counts button, a switcher's row on the popover it is drawn in.
+    /// Several are the fewer the window draws it on: a field's error, on where a field that can
+    /// refuse stands ([`FIELD_ERROR_GROUNDS`]). Its words are held to these, but a fallback never
+    /// paints them, since the part does not.
+    under: &'static [(&'static str, &'static [&'static str])],
 }
 
 impl Family {
@@ -572,15 +574,21 @@ impl Family {
     }
 
     /// What `part`'s words are read on by default, when it is not the root's fill: its own fill,
-    /// or the ground it stands on ([`Family::under`]).
+    /// or the one ground its parent paints ([`Family::under`]).
     fn own_ground(&self, part: usize) -> Option<&'static str> {
-        let name = self.parts.get(part)?.name;
-        self.own_fill(part).or_else(|| {
-            self.under
-                .iter()
-                .find(|(one, _)| *one == name)
-                .map(|(_, token)| *token)
+        self.own_fill(part).or(match self.stands_on(part) {
+            Some([ground]) => Some(*ground),
+            _ => None,
         })
+    }
+
+    /// The grounds [`Family::under`] says `part`'s words stand on, where it says.
+    fn stands_on(&self, part: usize) -> Option<&'static [&'static str]> {
+        let name = self.parts.get(part)?.name;
+        self.under
+            .iter()
+            .find(|(one, _)| *one == name)
+            .map(|(_, grounds)| *grounds)
     }
 
     /// The colour `part`'s words are drawn in by default, when it is not the root's.
@@ -593,14 +601,10 @@ impl Family {
     }
 
     /// **The grounds `part`'s words are read on with no fill of their own**: the family's, or
-    /// fewer where the window draws the part on fewer ([`PART_GROUNDS`], #3254).
+    /// those [`Family::under`] says (#3254, #3384).
     #[cfg(test)]
     pub(super) fn grounds_of(&self, part: usize) -> &'static [&'static str] {
-        let name = self.parts.get(part).map(|one| one.name);
-        PART_GROUNDS
-            .iter()
-            .find(|(family, one, _)| *family == self.name && Some(*one) == name)
-            .map_or(self.grounds, |(_, _, grounds)| *grounds)
+        self.stands_on(part).unwrap_or(self.grounds)
     }
 
     /// **The opaque ground `part`'s own wash is laid on**, whatever the root's fill, where the
@@ -617,7 +621,6 @@ impl Family {
 
     /// **Whether the window draws `variant` while `states` hold** (#3255): every look a key may
     /// name, unless one of its states is one only some variants are drawn in ([`DRAWN_ONLY`]).
-    #[cfg(test)]
     pub(super) fn draws(&self, variant: &str, states: &[State]) -> bool {
         DRAWN_ONLY.iter().all(|(family, state, variants)| {
             *family != self.name || !states.contains(state) || variants.contains(&variant)
@@ -627,8 +630,9 @@ impl Family {
 
 /// **The states only some of a family's variants are drawn in** (#3255), by family: a key may
 /// still name the others (a theme's `button.root.danger.selected` is valid), but the window never
-/// draws them, so the guards that walk the looks the window draws (`state_words_tests.rs`) leave
-/// them out, and no pair holds a colour on a ground it is never drawn on.
+/// draws them. The parts check and the fallback of a surface's fill leave them out (#3384), so
+/// does the guard that walks the looks the window draws (`state_words_tests.rs`), and no pair
+/// holds a colour on a ground it is never drawn on.
 /// - **A toggle is a plain or a ghost button** (ADR 0097 §6, #2958): the suggested answer, the
 ///   consent answers and the soft, warning and link looks are never pressed as one.
 ///   `ToggleButton` takes only these, and `app/src/theme/consentToggles.test.ts` holds every
@@ -636,7 +640,6 @@ impl Family {
 /// - **A row that opens a submenu is a plain row**: the ways to end something are inside the
 ///   submenu, never the row that opens it (`docs/ui-primitives.md`, "Menus"), so a danger row is
 ///   never open. `app/src/ui/menu/submenuRows.guard.test.ts` holds every `Submenu`'s row to it.
-#[cfg(test)]
 const DRAWN_ONLY: &[(&str, State, &[&str])] = &[
     ("button", State::Selected, &["secondary", "ghost"]),
     ("menu", State::Open, &["default"]),
@@ -770,11 +773,6 @@ fn apart_sets(carried: &[State]) -> Vec<Vec<State>> {
     sets
 }
 
-/// **The grounds a part's words are read on, where they are fewer than its family's** (#3254), by
-/// family and part: what the window draws the part on, not every ground the family stands on.
-#[cfg(test)]
-const PART_GROUNDS: &[(&str, &str, &[&str])] = &[("field", "error", FIELD_ERROR_GROUNDS)];
-
 /// **A part whose own wash is laid on a ground of its own** (D-3345-3), by family and part: the
 /// title bar's waiting count is backed by the bar's own ground (`titlebar.css`), so its amber
 /// reads the same on a chip at rest, under the pointer and chosen, whatever the chip's fill.
@@ -786,7 +784,6 @@ const PART_LAID_ON: &[(&str, &str, &str)] = &[("titlebar", "count", "surface.dee
 /// pane and a dialog; the whole copy of a refusal cut short is drawn on the overlay surface
 /// (#3033). `app/src/ui/field/refusingFields.guard.test.ts` lists every field that can refuse with
 /// the ground it stands on, and holds this list to them.
-#[cfg(test)]
 const FIELD_ERROR_GROUNDS: &[&str] = &["surface.base", "surface.raised", "surface.overlay"];
 
 /// A part of a family in a look, as a sentence names it: `button.root.primary`, or
@@ -929,11 +926,18 @@ mod rest_kept_tests;
 mod part_fills_tests;
 
 #[cfg(test)]
+#[path = "drawn_looks_tests.rs"]
+mod drawn_looks_tests;
+
+#[cfg(test)]
 #[path = "hot_count_tints_tests.rs"]
 mod hot_count_tints_tests;
 #[cfg(test)]
 #[path = "see_through_tints_tests.rs"]
 mod see_through_tints_tests;
+#[cfg(test)]
+#[path = "shipped_parts_tests.rs"]
+mod shipped_parts_tests;
 #[cfg(test)]
 #[path = "surface_grounds_tests.rs"]
 mod surface_grounds_tests;
@@ -1072,11 +1076,6 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
         Some(State::Selected) => {
             look.fill = "accent.surface";
             look.border = "accent.base";
-            // The primary's words are its fill's, so on the accent's surface they are the
-            // primary words (#3177).
-            if variant == "primary" {
-                look.text = "text.primary";
-            }
         }
         _ => {}
     }
@@ -2661,7 +2660,9 @@ const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count")];
 /// `on`, so a see-through part fill is measured where it is. A part with no ground of its own
 /// reads the root's fill itself, and one drawn around the root, on a ground of its own or on its
 /// variant's stands on `on` alone. A part with a fill of a theme's own over what its parent paints
-/// ([`Family::under`]) is laid over that too (#4406): a tab's count over its counts button.
+/// ([`Family::under`]) is laid over that too (#4406): a tab's count over its counts button. A
+/// part drawn on fewer grounds than its family stands on those in place of `on` (#3384), which
+/// keeps it off any surface a theme fills: no such family is in [`STANDS_ON`].
 fn under_part(
     theme: &ResolvedTheme,
     on: &[String],
@@ -2672,11 +2673,16 @@ fn under_part(
 ) -> Vec<String> {
     let name = family.parts[at].name;
     let ground = look.grounds[at];
-    if let Some((_, parent)) = family.under.iter().find(|(part, _)| *part == name)
+    let stands_on = family.stands_on(at);
+    if let Some([parent]) = stands_on
         && ground != *parent
     {
         return laid_over(theme, parent, &laid_over(theme, look.fill, on));
     }
+    let fewer = stands_on
+        .filter(|grounds| grounds.len() > 1)
+        .map(|grounds| laid(theme, grounds));
+    let on = fewer.as_deref().unwrap_or(on);
     if at == 0
         || ground == look.fill
         || family.around.contains(&name)
@@ -2912,7 +2918,8 @@ fn consent_broken(
 /// are held in every state but disabled and every set of them, whatever the theme changed, as
 /// written and in each workspace tint the theme's recipe draws (ADR 0097 §6). A variant that
 /// breaks one draws its family default there, said in the [`Fell`]s; where that is not enough, so
-/// does the variant it is held apart from.
+/// does the variant it is held apart from. A look the window never draws holds nothing
+/// ([`Family::draws`], #3384).
 fn held(theme: &ResolvedTheme) -> (Vec<Rule>, Vec<Fell>) {
     held_from(theme, rules(&theme.parts), Vec::new())
 }
@@ -3101,13 +3108,22 @@ fn every_tinted(theme: &ResolvedTheme) -> Vec<ResolvedTheme> {
     if theme.tint.tabs().is_empty() {
         return Vec::new();
     }
-    theme
-        .tint
-        .hues
-        .iter()
-        .map(|one| tint::tinted(theme, one.name))
-        .chain((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))))
-        .collect()
+    counted(
+        theme
+            .tint
+            .hues
+            .iter()
+            .map(|one| tint::tinted(theme, one.name))
+            .chain((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))))
+            .collect(),
+    )
+}
+
+/// The tinted looks `built`, counted on this thread under test (`measured_afresh`).
+fn counted(built: Vec<ResolvedTheme>) -> Vec<ResolvedTheme> {
+    #[cfg(test)]
+    TINTED.with(|it| it.set(it.get() + built.len()));
+    built
 }
 
 /// The looks a family is first read in: at rest and in each state it names but disabled, which is
@@ -3138,17 +3154,19 @@ fn coarsely_tinted(theme: &ResolvedTheme) -> Vec<ResolvedTheme> {
     if theme.tint.tabs().is_empty() {
         return Vec::new();
     }
-    theme
-        .tint
-        .hues
-        .iter()
-        .map(|one| tint::tinted(theme, one.name))
-        .chain(
-            (0..360)
-                .step_by(COARSE_DEGREES)
-                .map(|degree| tint::tinted_at(theme, f64::from(degree))),
-        )
-        .collect()
+    counted(
+        theme
+            .tint
+            .hues
+            .iter()
+            .map(|one| tint::tinted(theme, one.name))
+            .chain(
+                (0..360)
+                    .step_by(COARSE_DEGREES)
+                    .map(|degree| tint::tinted_at(theme, f64::from(degree))),
+            )
+            .collect(),
+    )
 }
 
 /// **Whether a look of `family` the theme changed draws a see-through colour** (#4257). A tint
@@ -3452,12 +3470,17 @@ fn sets_read(rules: &[Rule], family: &Family) -> Vec<Vec<State>> {
 /// A variant's look on a surface's fill, and the states it is drawn in.
 type LookOn<'s> = (&'static str, &'s [State], Drawn);
 
-/// **Each look `family` draws in `sets`, once.** Two sets that draw a variant alike read alike, but
-/// for a refused box's edge.
+/// **Each look `family` draws in `sets`, once**, of the looks the window draws
+/// ([`Family::draws`]). Two sets that draw a variant alike read alike, but for a refused box's
+/// edge.
 fn looks_in<'s>(rules: &[Rule], family: &Family, sets: &'s [Vec<State>]) -> Vec<LookOn<'s>> {
     let mut looks: Vec<LookOn<'s>> = Vec::new();
     for states in sets {
-        for variant in family.looks() {
+        for variant in family
+            .looks()
+            .into_iter()
+            .filter(|one| family.draws(one, states))
+        {
             let look = drawn(rules, family, variant, states);
             let refused = states.contains(&State::Invalid);
             if !looks.iter().any(|(name, others, one)| {
@@ -3546,7 +3569,11 @@ fn broken_on(
     for one in drawn_in {
         let on = surface_ground(one, surface, set);
         for states in &sets {
-            for variant in family.variants.iter().filter(|one| one.consent.is_some()) {
+            for variant in family
+                .variants
+                .iter()
+                .filter(|one| one.consent.is_some() && family.draws(one.name, states))
+            {
                 match consent_broken(one, &on, rules, family, variant, states) {
                     Some(Consented::Own(floor, ratio)) => return Some((floor, ratio)),
                     Some(Consented::Both(floor, _)) => return Some((floor, None)),
@@ -3739,8 +3766,9 @@ fn combined(family: &Family) -> Vec<Vec<State>> {
 }
 
 /// What decides how a family is drawn while `states` hold: which of them its rules name, and
-/// its defaults in each variant. Two sets alike in it draw every variant alike.
-type Alike = (Vec<State>, Vec<Look>);
+/// its defaults in each variant the window draws then. Two sets alike in it draw every variant
+/// alike, and in the same variants.
+type Alike = (Vec<State>, Vec<Option<Look>>);
 
 fn alike_as(rules: &[Rule], family: &Family, states: &[State]) -> Alike {
     let named: Vec<State> = states
@@ -3755,7 +3783,11 @@ fn alike_as(rules: &[Rule], family: &Family, states: &[State]) -> Alike {
     let defaults = family
         .looks()
         .into_iter()
-        .map(|variant| (family.defaults)(variant, states))
+        .map(|variant| {
+            family
+                .draws(variant, states)
+                .then(|| (family.defaults)(variant, states))
+        })
         .collect();
     (named, defaults)
 }
@@ -3783,6 +3815,9 @@ impl Held<'_> {
         states: &[State],
     ) {
         for variant in self.family.looks() {
+            if !self.family.draws(variant, states) {
+                continue;
+            }
             let look = drawn(self.rules, self.family, variant, states);
             // A refused box's edge is held whether or not the theme names its refused state: a
             // rule at rest or in another state reaches it too (#3110). What tells it from the
@@ -3886,10 +3921,15 @@ impl Held<'_> {
         fell.len() > before
     }
 
-    /// Each consent variant while `states` hold, held to the consent floors in every drawn theme.
+    /// Each consent variant the window draws while `states` hold, held to the consent floors in
+    /// every drawn theme.
     fn consented(&mut self, drawn_in: &[ResolvedTheme], states: &[State]) {
         let family = self.family;
-        for variant in family.variants.iter().filter(|one| one.consent.is_some()) {
+        for variant in family
+            .variants
+            .iter()
+            .filter(|one| one.consent.is_some() && family.draws(one.name, states))
+        {
             for one in drawn_in {
                 // A variant already drawn as its default is held by the token floors; a
                 // fallback would change nothing, so what it is held apart from falls back.
@@ -4809,6 +4849,24 @@ pub(super) fn drawn_in() -> usize {
 #[cfg(test)]
 pub(super) fn passes() -> usize {
     PASSES.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many tinted looks of a theme were built on this thread: every tint a consent floor or a
+    /// surface is held in, and the coarse tints a see-through colour is read in (#4257).
+    static TINTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// **`theme`'s parts measured afresh on this thread, kept measure or not** (#4410): the looks the
+/// consent floors were held in ([`drawn_in`]) and how many tinted looks the measure built. A theme
+/// whose parts reach no tint answers `(1, 0)`: one look as written, nothing tinted.
+#[cfg(test)]
+pub(super) fn measured_afresh(theme: &ResolvedTheme) -> (usize, usize) {
+    DRAWN_IN.with(|it| it.set(1));
+    TINTED.with(|it| it.set(0));
+    let _ = held(theme);
+    (drawn_in(), TINTED.with(std::cell::Cell::get))
 }
 
 // --- The stylesheet --------------------------------------------------------------------------

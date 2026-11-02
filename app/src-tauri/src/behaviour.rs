@@ -453,6 +453,11 @@ impl AWindowAgain {
 
     /// The project at `root` as the window started again routes it, every start on the pool.
     pub(crate) fn sessions_of(&self, root: &Path) -> crate::routedsessions::RoutedSessions {
+        self.routed_sessions_of(root).every_start_on(&self.pool)
+    }
+
+    /// The project at `root` as the window started again routes it, as the settings say (#4590).
+    pub(crate) fn routed_sessions_of(&self, root: &Path) -> crate::routedsessions::RoutedSessions {
         let connection = (self.connection)();
         crate::routedsessions::RoutedSessions::of_the_project(
             Box::new(HostedSessions::new(Arc::clone(&connection), root)),
@@ -460,7 +465,6 @@ impl AWindowAgain {
             &self.config,
             root,
         )
-        .every_start_on(&self.pool)
         .taking_back_from({
             let (docker, config) = (self.docker.clone(), self.config.clone());
             Arc::new(move |pool: &str| {
@@ -2049,7 +2053,7 @@ fn a_plane_saved_after_a_second(root: &Path) {
     git(root, &["commit", "-q", "-m", "one"]);
 }
 
-fn git(dir: &Path, args: &[&str]) {
+fn git(dir: &Path, args: &[&str]) -> String {
     let mut command = std::process::Command::new("git");
     command
         .arg("-C")
@@ -2064,6 +2068,7 @@ fn git(dir: &Path, args: &[&str]) {
         "git {args:?}: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
 }
 
 /// What the window was told each look did.

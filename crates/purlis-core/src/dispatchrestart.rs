@@ -70,8 +70,8 @@ use crate::reopen::{self, Chat, Mode, Owed};
 pub const CARRY_ON: &str = "purlis: purlis was restarted while this task was under way, and \
     this is its conversation brought back. Carry on from where it stopped. The tasks this chat \
     dispatched before the restart are still running: `purlis dispatch list` shows them, so \
-    dispatch none of them again. A question this chat asked the chat it works for may have \
-    been lost: ask it again if the work waits on the answer. When the work is done, send the \
+    dispatch none of them again. Any question this chat asked the chat it works for stays open, \
+    and its answer is handed to this chat when it is given. When the work is done, send the \
     report with `purlis dispatch report`, as the brief said.";
 
 /// What a launch makes of the tasks in the record of open chats ([`at_launch`]).

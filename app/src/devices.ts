@@ -130,6 +130,7 @@ const UNANSWERED: RunnerAsked = {
   contacted: null,
   holds: { open: [], browsers_open: [], chats: 0, browsers: 0 },
   ran_this_week: null,
+  held: false,
 };
 
 /** Asks runner `one` how it is, or waits on the ask of it in flight; at most {@link answerWithinMs}. */
@@ -316,7 +317,9 @@ export function healthSaid(asked: Asked | undefined): Health {
   if (standing.state === "suspended")
     return {
       badge: "suspended",
-      line: "Its container is stopped and its home is kept. It starts again when one of its chats is next used.",
+      line: asked.held
+        ? "Its container is stopped and its home is kept."
+        : "Its container is stopped and its home is kept. It starts again when one of its chats is next used.",
     };
   if (standing.state === "unknown")
     return {

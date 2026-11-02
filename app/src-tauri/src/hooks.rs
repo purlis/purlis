@@ -2509,11 +2509,21 @@ impl Hooks {
                 let hear_block = Arc::clone(&hear_block);
                 Box::new(move |block| hear_block(block))
             },
-            permission: crate::asking::permitting(
-                plane.clone(),
-                Arc::clone(&asks),
-                Arc::clone(&asks_told),
-            ),
+            permission: {
+                let held = crate::asking::permitting(
+                    plane.clone(),
+                    Arc::clone(&asks),
+                    Arc::clone(&asks_told),
+                );
+                let skill_runs = Arc::clone(&skill_runs);
+                Box::new(move |asked| {
+                    // A grade's chat ends here, and its grade says what it asked for (SK-55).
+                    if let Some(what) = asked.asks_for() {
+                        skill_runs.asks_for(asked.chat, what);
+                    }
+                    held(asked)
+                })
+            },
             // What a chat's tool hook says the chat is doing (#1493): kept in memory for the
             // one line under its name, and never recorded. A helper's tool is not the chat's
             // own work, so its line is left as it was.
@@ -2962,6 +2972,29 @@ impl Hooks {
                 plane: root.to_path_buf(),
                 number,
                 said,
+            })
+            .map_err(|why| why.to_string())
+    }
+
+    /// **Writes a step of a question of task `number`'s** (#4557): metadata alone. Refused where
+    /// this machine has no event log open, or the log refused it.
+    pub fn record_question(
+        &self,
+        root: &Path,
+        number: u32,
+        step: purlis_core::eventlog::questions::Step,
+    ) -> Result<(), String> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| "purlis's event log is not open on this machine".to_owned())?;
+        events
+            .record(Entry::Question {
+                plane: root.to_path_buf(),
+                number,
+                step,
             })
             .map_err(|why| why.to_string())
     }

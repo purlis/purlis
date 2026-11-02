@@ -42,6 +42,9 @@ export type Onboarding = {
   harnessMissing: boolean;
   /** Why the steps' place could not be kept, in the core's words. */
   trouble: string | undefined;
+  /** Whether the kept place has answered, or could not be read. Until it has, `progress` is the
+   *  default, not this machine's, so nothing that depends on it can be said as fact. */
+  placeKnown: boolean;
   /** Whether the steps guide this window now: a window that holds no project, a machine that
    *  has never been through them, or a project held at their harness step. A window full of
    *  projects on a machine that finished them adds one with the plain welcome, and nothing it
@@ -146,6 +149,7 @@ export function useOnboarding({
     counted: stepsOf(progress, { harnessMissing }),
     harnessMissing,
     trouble,
+    placeKnown: read,
     guiding,
     holding: progress.step === "harness" ? progress.made?.plane : undefined,
     awaiting: guiding && (progress.step === "project" || progress.step === "git"),

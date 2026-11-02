@@ -238,16 +238,19 @@ impl FirstFrame {
         // One read for every frame: a face is hashed once for all of them (#2696).
         let measured = on.map_or_else(theme::Measured::default, |on| on.measured.clone());
         let folders = theme::Folders::of_measured(config_root, plane, workspace, measured);
+        // A frame that stands in for an extension's theme is drawn over by the window's ask of
+        // what is in force: its parts are not asked for apart, which would land them only for
+        // that answer to draw another theme, two changes at every launch where one is due (#4410).
         let drawn = |system, contrast| {
-            theme::first_frame(&theme::LevelInputs {
+            let (one, stands_in) = theme::first_frame_standing_in(&theme::LevelInputs {
                 levels: &levels,
                 folders: &folders,
                 theirs,
                 on: theme::On::Every,
                 system,
                 contrast,
-            })
-            .under(person)
+            });
+            (one.under(person), stands_in)
         };
         let contrasts: &[Contrast] = match contrast {
             Some(Contrast::More) => &[Contrast::More],
@@ -260,12 +263,12 @@ impl FirstFrame {
         for &contrast in contrasts {
             let more = contrast == Contrast::More;
             let dark = drawn(theme::Appearance::Dark, contrast);
-            follows_system = dark.follows_system;
+            follows_system = dark.0.follows_system;
             let mut each = vec![(false, dark)];
             if follows_system {
                 each.push((true, drawn(theme::Appearance::Light, contrast)));
             }
-            for (light, one) in each {
+            for (light, (one, stands_in)) in each {
                 let resolved = one.theme.as_ref().unwrap_or_else(|| theme::default_theme());
                 // The window is created in the first: for the contrast read, or the standard
                 // one where none was, and for a dark system, where nothing says which.
@@ -277,7 +280,7 @@ impl FirstFrame {
                     theme,
                     floors: one.held.map(|held| held.said()),
                     mine: said(one.mine),
-                    parts_later: later.then(|| parts_later(resolved)),
+                    parts_later: (later && !stands_in).then(|| parts_later(resolved)),
                 };
                 // A frame that more contrast draws the same as the standard one is handed once.
                 let same = frames.iter().any(|was| {
@@ -492,8 +495,10 @@ fn created_by(
     let (person, layer) = PersonInForce::read(appearance);
     let theirs = kept.get(config_root);
     // First: it waits for each of its measures, and costs the same whenever it runs. So the
-    // default and Purlis Classic are kept before the deadline starts, and a frame of either has
-    // its parts however busy the machine is.
+    // default and Purlis Classic's dark are kept before the deadline starts, and a frame of
+    // either has its parts however busy the machine is. Purlis's light and high contrast and
+    // Classic's light are measured inside the wait like any other theme: each is measured as
+    // written alone, nothing tinted, which a purlis-core test holds (`shipped_parts_tests.rs`).
     let Handed {
         built_in,
         built_in_mine,
@@ -539,11 +544,10 @@ pub(crate) const HANDED_AT_LOAD: [&str; 2] = ["built_in", "default_theme"];
 /// under the person's `layer`. What a pick of one draws in the frame it is made, without asking
 /// the core.
 ///
-/// **Only what costs the first frame nothing more**: the default is drawn anyway, and Classic
-/// draws no parts. Purlis's light is not handed: its parts are measured across every workspace
-/// tint before they are drawn (`theme::parts`), which is a pass a launch should not make for a
-/// pick that is not there, so a pick of `purlis-light` asks the core as any other theme's does
-/// (ADR 0026).
+/// **Only what costs the first frame nothing more**: the default is drawn anyway, and Classic's
+/// dark is one measure as written. The other shipped appearances are not handed: a launch should
+/// not measure a pick that is not there, so a pick of `purlis-light` asks the core as any other
+/// theme's does (ADR 0026), and its frame is measured inside the wait.
 #[cfg(test)]
 pub(crate) fn handed_built_ins(
     layer: &theme::Layer,
@@ -1049,6 +1053,33 @@ mod tests {
         let ticket = u32::try_from(frame["parts_later"].as_u64().unwrap()).unwrap();
         let parts = first_frame_parts(ticket).expect("the frame's parts");
         assert!(parts.contains("@layer parts"), "{parts}");
+    }
+
+    #[test]
+    fn a_heavy_frame_standing_in_for_an_extension_s_theme_asks_for_no_parts() {
+        // #4410: a project on an extension's theme is drawn the person's own until the window
+        // asks what is in force, which answers the extension's. Landing the stand-in's parts
+        // first would change the window twice at every launch: once for the parts, once for the
+        // answer. A theme nothing else in this process measures, so the wait runs out.
+        let places = Places::new("[theme]\nuse = \"acme/sharp\"\n");
+        let written = MEASURED_IN_TINTS.replace("#ff000040", "#ff000042");
+        std::fs::write(
+            purlis_core::machine::dir(&places.config).join(windowprefs::THEME),
+            &written,
+        )
+        .unwrap();
+        let on = places.on(None);
+        let created = created_within(
+            std::time::Duration::ZERO,
+            &TheirsKept::new(),
+            Some(&places.config),
+            Some(&on),
+            Some(Contrast::Standard),
+        );
+        let frame = &defined(&created.script)["first"]["frames"][0];
+        assert_eq!(frame["theme"]["name"], "Heavy");
+        assert_eq!(frame["theme"]["parts"], "");
+        assert_eq!(frame["parts_later"], serde_json::Value::Null);
     }
 
     #[test]

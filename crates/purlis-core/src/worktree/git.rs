@@ -458,6 +458,12 @@ const SIGNER_IN_REPO: &str = "this repo's own git config names a signing program
     run programs a repo's config names. Set the signer in your global git config (use includeIf \
     for a per-folder signer) and purlis will use it.";
 
+/// What a `worktree add` is answered where its checkout may read a config the runner's listing
+/// did not ([`checkout_reads_another_config`]).
+const ANOTHER_CONFIG: &str = "this repository's git config has an include whose answer depends on \
+    where git runs, so purlis cannot tell what a new branch folder's checkout would read, and git \
+    was not run there. Remove that include, or run git yourself";
+
 /// The verbs that make a commit, and so sign it when `commit.gpgSign` or `-S` says to.
 const COMMIT_VERBS: [&str; 8] = [
     "commit",
@@ -593,8 +599,8 @@ fn reaches_a_remote(from: &[&str]) -> bool {
 /// names a program LFS itself would run (its transfer agents and extensions, a credential
 /// helper, an ssh or askpass program): then every `filter.lfs` program is held, the
 /// operator's own included, so `git-lfs` is never started there. The helper purlis's own git
-/// policy writes into a clone is not such a program, because the filter never gets to ask it
-/// ([`lfs_filter_offline`]).
+/// policy writes into a clone is not such a program, because a filter that is kept never gets to
+/// ask one ([`lfs_filter_offline`]).
 fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
     let listing = String::from_utf8_lossy(listing);
     let mut held: Vec<String> = Vec::new();
@@ -736,6 +742,35 @@ fn repo_names_a_recent_objects_hook(listing: &str) -> bool {
     })
 }
 
+/// Whether the call whose verb starts `from` is a `worktree add` whose checkout may read a config
+/// that `listing`, read in the folder the call is run in, did not (#4401).
+///
+/// The checkout runs in the new branch folder, on the new branch, with a git directory of its own.
+/// A conditional include in the repository's own config can hold there and not here (`onbranch:`
+/// and `gitdir:`, measured on git 2.50.1), and a listing here shows the include and none of what
+/// it would read: a filter there would run, unheld. A path in a worktree config is read from where
+/// the new folder's copy of it is. So where the repository's own scopes hold either, the runner
+/// cannot tell, and the call is refused. What it can tell is left alone: a plain include in the
+/// repository's config is the same file wherever git runs, a worktree config is copied to the new
+/// folder, and what your global and system files include is yours, held or not. The same goes for
+/// any verb that stays in its folder: a `switch` reads its config before it moves.
+fn checkout_reads_another_config(from: &[&str], listing: &str) -> bool {
+    let adds = match from.split_first() {
+        Some((&"worktree", rest)) => {
+            rest.iter().find(|word| !word.starts_with('-')) == Some(&"add")
+        }
+        _ => false,
+    };
+    adds && listed_entries(listing).any(|(scope, key, _)| {
+        let key = key.to_ascii_lowercase();
+        match scope {
+            "local" => key.starts_with("includeif."),
+            "worktree" => key.starts_with("includeif.") || key.starts_with("include."),
+            _ => false,
+        }
+    })
+}
+
 /// Whether the repository's own config at `dir` names a program `git-lfs` itself would start, or
 /// moves its store: what refuses an upload before a push ([`crate::lfsupload`], #4399). Your
 /// global and system files are yours, and what the command line gives is the caller's. A listing
@@ -806,37 +841,35 @@ fn lfs_names_a_program(section: &str, sub: Option<&str>, variable: &str, value: 
 /// also leaves a pointer where the object is here, measured on git-lfs 3.8.1.
 const LFS_SKIP_SMUDGE: &str = "GIT_LFS_SKIP_SMUDGE";
 
-/// Whether the filter is kept in a clone only because the helper in the repository's own config
-/// (`listing`, as [`listed_entries`] reads it) is the one purlis's git policy wrote (#4380), and
-/// so has to be kept off the network: a clone purlis wired reads its LFS files through the clean
-/// filter, or git takes their content for a change, and stores it whole in a commit.
+/// Whether the filter is kept here (#4380, #4400): the repository's own config (`listing`, as
+/// [`listed_entries`] reads it) names no program LFS would run, so [`held_programs`] leaves it to
+/// run. A clone needs its clean filter to read its LFS files as unchanged, and to keep them out of
+/// a commit whole.
 ///
-/// The filter gains nothing by it while the wiring stands (a repository with no helper of its
-/// own has the person's filter and helpers, as any clone of theirs does). [`programs_held`] tells it never to download
-/// ([`LFS_SKIP_SMUDGE`]), so no credential is asked for and no `.netrc` read, and a call off the
-/// network also resets every helper on the command line, which git-lfs's own `git credential`
-/// inherits. A call on the network has only the one helper [`NETWORK_RULE`] names, and still
-/// downloads nothing. So a download in such a clone is `git lfs pull`, under that rule. A store
-/// that is not the repository's own holds the filter instead ([`lfs_store_is_its_own`]).
+/// **A filter that is kept stays off the network, in any repository.** The call runs outside any
+/// sandbox, and a chat can commit the `.lfsconfig` that says where a filter goes, so one that may
+/// download reaches a host a chat chose, with whatever it asks. Wiring has nothing to do with it:
+/// the person's own helpers, and their `.netrc`, are as much there in a repository no policy
+/// wired. [`programs_held`] tells the filter never to download ([`LFS_SKIP_SMUDGE`]), so no
+/// credential is asked for and no `.netrc` read, and a call off the network also resets every
+/// helper on the command line, which git-lfs's own `git credential` inherits. A call on the
+/// network has only the one helper [`NETWORK_RULE`] names, and still downloads nothing. So a
+/// download is `git lfs pull`, in your own terminal or under that rule. A store that is not the
+/// repository's own holds the filter instead ([`lfs_store_is_its_own`]).
 fn lfs_filter_offline(listing: &str) -> bool {
-    let mut wired = false;
-    for (scope, key, value) in listed_entries(listing) {
+    !listed_entries(listing).any(|(scope, key, value)| {
         if matches!(scope, "global" | "system" | "unknown" | "command") {
-            continue;
+            return false;
         }
         let Some((section, rest)) = key.split_once('.') else {
-            continue;
+            return false;
         };
         let (sub, variable) = match rest.rsplit_once('.') {
             Some((sub, variable)) => (Some(sub), variable),
             None => (None, rest),
         };
-        if lfs_names_a_program(section, sub, variable, value) {
-            return false;
-        }
-        wired |= section == "credential" && sub.is_none() && variable == "helper";
-    }
-    wired
+        lfs_names_a_program(section, sub, variable, value)
+    })
 }
 
 /// What holds the whole of the LFS filter, the person's own included.
@@ -895,9 +928,55 @@ fn common_git_dir(dir: &Path, link: Option<&(PathBuf, PathBuf)>) -> Option<PathB
         .ancestors()
         .map(|folder| folder.join(".git"))
         .find(|git| git.symlink_metadata().is_ok())
-        .filter(|git| {
-            git.symlink_metadata().is_ok_and(|found| found.is_dir()) && git.join("HEAD").is_file()
-        })
+        .filter(|git| git_takes(git))
+}
+
+/// Whether git takes the folder `git` for a repository as it climbs to it, by what git itself
+/// requires (`is_git_directory`, #4402): a `HEAD` it reads as one, and `objects` and `refs` it can
+/// search. **Never more than git takes, and in places less**: a link at any of those, or a
+/// `commondir` (whose repository would be another folder's, store and all), answers no, as
+/// anything else this cannot read does. A no only holds the LFS filter.
+fn git_takes(git: &Path) -> bool {
+    let searchable = |name: &str| {
+        let folder = git.join(name);
+        folder.symlink_metadata().is_ok_and(|found| found.is_dir())
+            && rustix::fs::access(&folder, rustix::fs::Access::EXEC_OK).is_ok()
+    };
+    let shared = git.join("commondir").symlink_metadata();
+    git.symlink_metadata().is_ok_and(|found| found.is_dir())
+        && shared.is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound)
+        && reads_as_a_head(&git.join("HEAD"))
+        && searchable("objects")
+        && searchable("refs")
+}
+
+/// Whether `head` is a plain file that says what a `HEAD` says: a ref under `refs/`, or an id. It
+/// is read following no link and never waiting on a pipe, and as git reads one: its first 255
+/// bytes, and past `ref:` only git's own white space, which is narrower than Unicode's.
+fn reads_as_a_head(head: &Path) -> bool {
+    use rustix::fs::{Mode, OFlags, open};
+    let how = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+    let Ok(opened) = open(head, how, Mode::empty()) else {
+        return false;
+    };
+    let file = std::fs::File::from(opened);
+    if !file.metadata().is_ok_and(|found| found.is_file()) {
+        return false;
+    }
+    let mut read = Vec::new();
+    if file.take(255).read_to_end(&mut read).is_err() {
+        return false;
+    }
+    let Ok(text) = std::str::from_utf8(&read) else {
+        return false;
+    };
+    let text = text.trim_end();
+    match text.strip_prefix("ref:") {
+        Some(named) => named
+            .trim_start_matches([' ', '\t', '\r', '\n'])
+            .starts_with("refs/"),
+        None => matches!(text.len(), 40 | 64) && text.bytes().all(|b| b.is_ascii_hexdigit()),
+    }
 }
 
 /// Whether `folder`, down `depth` folders, holds no symbolic link and can all be read.
@@ -972,6 +1051,9 @@ fn programs_held(
     }
     if collects_garbage_with_a_hook(&args[at..], &said) {
         return Ok(Err(refused_raw(UNHELD_PROGRAM)));
+    }
+    if checkout_reads_another_config(&args[at..], &said) {
+        return Ok(Err(refused_raw(ANOTHER_CONFIG)));
     }
     match held_programs(reaches_a_remote(&args[at..]), &listed) {
         Some(settings) => {
@@ -2218,15 +2300,25 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
 ///
 /// The deadline is [`NETWORK`]. A clone is not run this way: every clone lands whole, with no
 /// total deadline ([`spawn_network`], #4079, #4080).
+///
+/// **A `clone` here is told to leave its files as pointers** ([`LFS_SKIP_SMUDGE`]): it reads no
+/// repository's config, so [`programs_held`] never tells its filter, and a repository it brings
+/// can name where that filter goes in its own `.lfsconfig` (#4400).
 pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     if let Some(helper) = helper {
         config.push(format!("credential.helper={helper}"));
     }
+    let pass = if verb(args) == Some("clone") {
+        vec![(LFS_SKIP_SMUDGE.to_owned(), "1".into())]
+    } else {
+        Vec::new()
+    };
     let extra = Extra {
         config,
         credentials: true,
         network: true,
+        pass,
         ..Extra::default()
     };
     let extra = match held(dir, args, extra)? {
@@ -2243,6 +2335,61 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
         crate::netlog::git_call(operation, &remote, run.ok(), started.elapsed());
     }
     Ok(run)
+}
+
+/// The commit `name` is at in `dir`, or `None` where it names none: not there, holding garbage,
+/// or an id with no commit behind it, all zeros included. What [`push_refspec`] is given.
+pub(crate) fn commit_at(dir: &Path, name: &str) -> Option<String> {
+    let commit = format!("{name}^{{commit}}");
+    run(dir, &["rev-parse", "--verify", "--quiet", &commit], READ)
+        .ok()
+        .filter(Run::ok)
+        .map(|run| run.line().trim().to_owned())
+        .filter(|id| !id.is_empty())
+}
+
+/// **The refspec of every push that names a commit** (#4515): `<commit>^{commit}:<to>`, with `to`
+/// a full ref and `commit` from [`commit_at`].
+///
+/// git takes a local ref holding garbage or zeros for one that is not there, and a push of that
+/// name for a push of nothing, which deletes the remote's branch and exits 0. **A bare id does not
+/// escape it**: a push reads a source of forty hex digits as a ref's name first, so a planted
+/// `refs/heads/<id>` holding garbage deletes the branch again, and one holding another commit sends
+/// that commit, unscanned (both measured on git 2.50.1). `^{commit}` cannot be a ref's name, so
+/// the source is the commit and nothing else.
+pub(crate) fn push_refspec(commit: &str, to: &str) -> String {
+    format!("{commit}^{{commit}}:{to}")
+}
+
+/// Whether git's own grammar takes `name` for a ref. What reaches a push from a committed file or
+/// a `HEAD` a chat can write may not be one: a refspec reads a `:` in it as syntax, and would end
+/// at another branch.
+pub(crate) fn is_a_ref_name(dir: &Path, name: &str) -> bool {
+    run(dir, &["check-ref-format", name], READ).is_ok_and(|run| run.ok())
+}
+
+/// What a push of something that names no commit answers.
+const NAMES_NO_COMMIT: &str = "what would be pushed names no commit here, so nothing was pushed";
+
+/// `git push <options> <url>` ([`run_network`]) of `commit`, the one a caller scanned, to `to`
+/// ([`push_refspec`]). `to` is a full ref: git cannot tell what an id makes of a short name a
+/// remote does not have.
+pub(crate) fn push_commit(
+    dir: &Path,
+    helper: Option<&str>,
+    options: &[&str],
+    url: &str,
+    commit: &str,
+    to: &str,
+) -> Result<Run, GitUnavailable> {
+    let Some(commit) = commit_at(dir, commit) else {
+        return Ok(refused(NAMES_NO_COMMIT));
+    };
+    let refspec = push_refspec(&commit, to);
+    let mut args = vec!["push"];
+    args.extend_from_slice(options);
+    args.extend([url, refspec.as_str()]);
+    run_network(dir, helper, &args)
 }
 
 /// [`run_network`] for a skill source (SK-10, #2773; ADR 0100 §5): `config` after the

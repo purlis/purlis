@@ -95,7 +95,7 @@ fn an_opencode_chat_is_handed_charter_s_mcp_server_in_its_session_config() {
         .unwrap_or_default();
     allowed.sort();
     assert_eq!(allowed, wanted);
-    assert_eq!(crate::chattools::run_on_the_dispatch_grant().count(), 11);
+    assert_eq!(crate::chattools::run_on_the_dispatch_grant().count(), 12);
 }
 
 #[test]

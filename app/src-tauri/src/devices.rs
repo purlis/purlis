@@ -935,6 +935,9 @@ pub struct RunnerAsked {
     /// The seconds it ran this week (the ISO week in local time), as this machine recorded it
     /// (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
     pub ran_this_week: Option<u32>,
+    /// It stopped during its drain, so it stays with its home until the person removes it
+    /// ([`purlis_core::pools::DrainLook::Held`]).
+    pub held: bool,
 }
 
 /// **Everything the window has open**, in one walk of the projects it holds: each chat and
@@ -1259,6 +1262,7 @@ pub fn unanswered(last: Option<u64>) -> RunnerAsked {
         contacted: last.and_then(|at| u32::try_from(at).ok()),
         holds: NotOpenHere::default(),
         ran_this_week: None,
+        held: false,
     }
 }
 
@@ -1280,8 +1284,14 @@ fn ask_runner(
         .into_iter()
         .find(|one| one.pool() == pool && one.name() == runner)
         .ok_or_else(|| format!("No runner {runner} of pool {pool} is on this machine."))?;
+    let ran = machine.ran(&kept).map_err(|why| why.0);
+    let held = kept.held
+        || kept.draining
+            && ran.as_ref().is_ok_and(|ran| {
+                purlis_core::pools::drain_look(&kept, *ran) == purlis_core::pools::DrainLook::Held
+            });
     let asked = answered(
-        machine.running(&kept).map_err(|why| why.0),
+        ran.map(|ran| ran.running),
         || {
             // As it is: a runner is never woken to be asked.
             let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)
@@ -1307,6 +1317,7 @@ fn ask_runner(
     );
     Ok(RunnerAsked {
         ran_this_week: Some(u32::try_from(ran).unwrap_or(u32::MAX)),
+        held,
         holds: not_open_here(&asked.holds, open, pool),
         standing: asked.standing,
         link: asked.link,

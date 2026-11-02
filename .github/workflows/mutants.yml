@@ -296,7 +296,7 @@ jobs:
       # caught, by a test that fails whatever the mutant does.
       # Cached and bounded, as in `ci.yml` (#1477).
       - name: The sandbox's programs
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           packages: bubblewrap socat
@@ -354,7 +354,7 @@ jobs:
       # caught, by a test that fails whatever the mutant does.
       # Cached and bounded, as in `ci.yml` (#1477).
       - name: The sandbox's programs
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           packages: bubblewrap socat

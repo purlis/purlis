@@ -1,6 +1,6 @@
 ### Added
 
-- **The `building-purlis-ui` skill.** An agent changing purlis's own window loads it for the
+- **The `purlis-building-ui` skill.** An agent changing purlis's own window loads it for the
   component families, their parts and states, the prototype and accessibility rules, the stories
   and the checks that make UI work done (#2928).
 

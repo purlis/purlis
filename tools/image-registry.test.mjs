@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { anonymousPull, ensurePrivate, mainTag, packageOf, visibility } from "./image-registry.mjs";
+import { anonymousPull, mainTag, packageOf, visibility } from "./image-registry.mjs";
 
 const PACKAGE = { org: "purlis", name: "purlis-runner" };
 
@@ -30,23 +30,19 @@ function api(answers) {
 
 const packageAt = /^orgs\/purlis\/packages\/container\/purlis-runner$/;
 
-test("a private package is private, and a missing one is absent", () => {
-  assert.equal(visibility({ ...PACKAGE, api: api([[packageAt, { visibility: "private" }]]) }), "private");
-  assert.equal(
-    visibility({ ...PACKAGE, api: api([[packageAt, new Error("gh api: Package not found. (HTTP 404)")]]) }),
-    "absent",
-  );
+test("a public package is public", () => {
+  assert.equal(visibility({ ...PACKAGE, api: api([[packageAt, { visibility: "public" }]]) }), "public");
 });
 
-test("a package that is public or internal, or that cannot be asked about, is refused", () => {
-  for (const shown of ["public", "internal", undefined]) {
+test("a package that is private or internal, missing, or cannot be asked about, is refused", () => {
+  for (const shown of ["private", "internal", undefined]) {
     assert.throws(
       () => visibility({ ...PACKAGE, api: api([[packageAt, { visibility: shown }]]) }),
-      /not private/,
+      /not public/,
       String(shown),
     );
   }
-  for (const failure of ["HTTP 403", "HTTP 500", "connection reset"]) {
+  for (const failure of ["Package not found. (HTTP 404)", "HTTP 403", "HTTP 500", "connection reset"]) {
     assert.throws(
       () => visibility({ ...PACKAGE, api: api([[packageAt, new Error(`gh api: ${failure}`)]]) }),
       /cannot tell/,
@@ -66,31 +62,52 @@ function registry({ token, manifest }) {
   };
 }
 
-test("an image the registry refuses to an anonymous puller passes", async () => {
+test("an image the registry serves to an anonymous puller passes", async () => {
+  const get = registry({ token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 200, digest: DIGEST } });
+  assert.equal(await anonymousPull({ repository: "purlis/purlis-runner", digests: [DIGEST], get }), "served");
+});
+
+test("an image the registry refuses to an anonymous puller stops the run", async () => {
   for (const status of [401, 403, 404]) {
     const get = registry({ token: { status: 200, body: '{"token":"anon"}' }, manifest: { status } });
-    assert.equal(await anonymousPull({ repository: "purlis/purlis-runner", digests: [DIGEST], get }), "refused");
+    await assert.rejects(
+      anonymousPull({ repository: "purlis/purlis-runner", digests: [DIGEST], get }),
+      /without signing in/,
+      String(status),
+    );
   }
-  // A token endpoint that denies anonymous access outright is a refusal too.
   for (const status of [401, 403]) {
     const get = registry({ token: { status, body: "{}" }, manifest: { status: 200 } });
-    assert.equal(await anonymousPull({ repository: "purlis/purlis-runner", digests: [DIGEST], get }), "refused");
+    await assert.rejects(
+      anonymousPull({ repository: "purlis/purlis-runner", digests: [DIGEST], get }),
+      /without signing in/,
+      String(status),
+    );
   }
 });
 
-test("an image an anonymous puller gets is refused", async () => {
-  const get = registry({ token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 200 } });
-  await assert.rejects(anonymousPull({ repository: "purlis/purlis-runner", digests: [DIGEST], get }), /without signing in/);
+test("one digest refused among several stops the run", async () => {
+  const other = `sha256:${"b".repeat(64)}`;
+  const get = async (url) => {
+    if (url.startsWith("https://ghcr.io/token")) return { status: 200, body: '{"token":"anon"}' };
+    return url.endsWith(other) ? { status: 404 } : { status: 200, digest: DIGEST };
+  };
+  await assert.rejects(
+    anonymousPull({ repository: "purlis/purlis-runner", digests: [DIGEST, other], get }),
+    /without signing in/,
+  );
 });
 
 test("the anonymous check fails closed when the registry's answer is unclear", async () => {
   const cases = [
-    // No token: a manifest request without one is refused for every package, public or not.
-    { token: { status: 200, body: "{}" }, manifest: { status: 401 } },
-    { token: { status: 200, body: "not json" }, manifest: { status: 401 } },
-    { token: { status: 500, body: "" }, manifest: { status: 401 } },
-    { token: { status: 429, body: "" }, manifest: { status: 401 } },
-    { token: new Error("ECONNRESET"), manifest: { status: 401 } },
+    { token: { status: 200, body: "{}" }, manifest: { status: 200 } },
+    { token: { status: 200, body: "not json" }, manifest: { status: 200 } },
+    { token: { status: 500, body: "" }, manifest: { status: 200 } },
+    { token: { status: 429, body: "" }, manifest: { status: 200 } },
+    { token: new Error("ECONNRESET"), manifest: { status: 200 } },
+    // A 200 that does not name the digest asked for.
+    { token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 200 } },
+    { token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 200, digest: `sha256:${"c".repeat(64)}` } },
     // A token, and an answer that is neither a pull nor a refusal.
     { token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 500 } },
     { token: { status: 200, body: '{"token":"anon"}' }, manifest: { status: 429 } },
@@ -182,87 +199,4 @@ test("an IMAGE that is not a package of the repository's owner on ghcr.io is ref
   ]) {
     assert.throws(() => packageOf({ image, owner: "purlis" }), /IMAGE/, String(image));
   }
-});
-
-const operatorAt = /^orgs\/purlis\/packages\/container\/purlis-cluster-operator$/;
-const OPERATOR = { org: "purlis", name: "purlis-cluster-operator" };
-
-/** A forge whose package answers each visibility question with the next of `answers`. */
-function changing(answers) {
-  const left = [...answers];
-  const asked = { count: 0 };
-  const forgeApi = (args) => {
-    asked.count += 1;
-    const answer = left.length > 1 ? left.shift() : left[0];
-    return api([[operatorAt, answer]])(args);
-  };
-  return { forgeApi, asked };
-}
-
-const notFound = () => new Error("gh api: Package not found. (HTTP 404)");
-
-test("a private package is left as it is, and nothing is pushed into it first", async () => {
-  const { forgeApi } = changing([{ visibility: "private" }]);
-  let pushed = 0;
-  const shown = await ensurePrivate({ ...OPERATOR, api: forgeApi, pushPlaceholder: () => (pushed += 1), wait: async () => {} });
-  assert.equal(shown, "private");
-  assert.equal(pushed, 0);
-});
-
-test("a missing package is made with a placeholder and shown private before purlis goes in", async () => {
-  const { forgeApi } = changing([notFound(), notFound(), { visibility: "private" }]);
-  let pushed = 0;
-  const shown = await ensurePrivate({ ...OPERATOR, api: forgeApi, pushPlaceholder: () => (pushed += 1), wait: async () => {} });
-  assert.equal(shown, "private");
-  assert.equal(pushed, 1);
-});
-
-test("a package that is not shown private, before or after the placeholder, stops the push", async () => {
-  const stops = [
-    [{ visibility: "public" }],
-    [new Error("gh api: HTTP 500")],
-    [notFound(), { visibility: "public" }],
-    [notFound(), { visibility: "internal" }],
-    [notFound(), new Error("gh api: HTTP 403")],
-  ];
-  for (const answers of stops) {
-    const { forgeApi } = changing(answers);
-    await assert.rejects(
-      ensurePrivate({ ...OPERATOR, api: forgeApi, pushPlaceholder: () => {}, wait: async () => {} }),
-      /not private|cannot tell/,
-      String(answers.map((a) => a.message ?? a.visibility)),
-    );
-  }
-});
-
-test("a package still missing after the placeholder stops the push once the tries are spent", async () => {
-  const { forgeApi, asked } = changing([notFound()]);
-  let waited = 0;
-  await assert.rejects(
-    ensurePrivate({
-      ...OPERATOR,
-      api: forgeApi,
-      pushPlaceholder: () => {},
-      wait: async () => (waited += 1),
-      tries: 3,
-    }),
-    /still not there/,
-  );
-  assert.equal(waited, 3);
-  assert.equal(asked.count, 4, "once before the placeholder, then once per try");
-});
-
-test("a placeholder that cannot be pushed stops the push", async () => {
-  const { forgeApi } = changing([notFound()]);
-  await assert.rejects(
-    ensurePrivate({
-      ...OPERATOR,
-      api: forgeApi,
-      pushPlaceholder: () => {
-        throw new Error("docker buildx: denied");
-      },
-      wait: async () => {},
-    }),
-    /denied/,
-  );
 });

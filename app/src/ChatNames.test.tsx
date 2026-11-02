@@ -113,7 +113,7 @@ function core({
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "start_options") return START_OPTIONS;
     if (cmd === "start_chat") {
-      if (refuse !== undefined) throw refuse;
+      if (refuse !== undefined) throw { words: refuse, limit: null };
       const typed = (args as { label: string | null }).label?.trim() ?? "";
       return { session: ++started, label: typed === "" ? null : typed };
     }

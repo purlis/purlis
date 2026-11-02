@@ -179,7 +179,7 @@ export function PoolSignIn({
         if (next.status === "error") {
           // Refused only once it is over: nothing it opened is any use now.
           setPage(undefined);
-          setStep({ at: "failed", why: next.error, stopped: true });
+          setStep({ at: "failed", why: next.error, stopped: true, limit: null });
           return;
         }
         if (next.data === null) continue;
@@ -204,15 +204,7 @@ export function PoolSignIn({
           return;
         }
         if (now.at === "signed-in") signedIn.current?.();
-        if (now.at === "failed") {
-          const why = now.why;
-          void commands
-            .poolLimitOfferForMove(pool, why)
-            .catch(() => null)
-            .then((offer) => {
-              if (!left) setLimitOffer(offer ?? undefined);
-            });
-        }
+        if (now.at === "failed") setLimitOffer(now.limit ?? undefined);
         if (["signed-in", "port-taken", "failed", "cancelled"].includes(now.at)) {
           flow.current = undefined;
           return;

@@ -281,12 +281,16 @@ pub struct Held {
     activity: crate::activity::Teller,
     /// Told each task's quiet Notice as it comes or goes (#1981).
     quiet: crate::silence::Teller,
+    /// Told each Update a task's question makes (#4556, #4557).
+    question_updates: crate::dispatched::UpdateTeller,
     /// The Asks that wait on the person to take a chat's browser over (#2015).
     needs_you: crate::browserneedsyou::NeedsYou,
     /// How many brokered writes each chat has made lately (#1333).
     brokered: purlis_core::brokered::Rate,
     /// The vaults each chat was refused for its persona, until the person answers (#1430).
     vault_refusals: crate::vaultroute::Refusals,
+    /// The browser logins the person is asked about, and allowed from their notice (#4595).
+    login_grants: crate::loginasks::Grants,
     /// The workspaces each chat asked the person to remove, until they answer (qw356).
     removal_asks: crate::removalasks::Asked,
     /// Each chat's browsers, and what the person said they may reach (#2013).
@@ -570,6 +574,11 @@ impl Held {
         &self.vault_refusals
     }
 
+    /// The browser logins the person is asked about, and allowed from their notice (#4595).
+    pub fn login_grants(&self) -> &crate::loginasks::Grants {
+        &self.login_grants
+    }
+
     /// The Asks that wait on the person to take a chat's browser over (#2015).
     pub fn needs_you(&self) -> &crate::browserneedsyou::NeedsYou {
         &self.needs_you
@@ -695,6 +704,11 @@ impl Held {
             plane: self.id.clone(),
             line,
         });
+    }
+
+    /// Keeps an Update a task's question made (#4556, #4557).
+    pub fn tell_question_update(&self, update: purlis_core::inboxupdates::Update) {
+        (self.question_updates)(self.root(), update);
     }
 
     /// Tells the window task `session`'s quiet note (#1981): `said`, or none where it came
@@ -1142,6 +1156,7 @@ impl Held {
         self.closing.forget(session);
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
+        self.login_grants.forget(session);
         self.removal_asks.forget(session);
         // What its runner's commands wait on goes with it (#2047).
         self.pool_tools.forget(session);
@@ -2170,6 +2185,8 @@ pub struct Planes {
     activity: crate::activity::Teller,
     /// Told each task's quiet Notice as it comes or goes (#1981).
     quiet: crate::silence::Teller,
+    /// Told each Update a task's question makes (#4556, #4557).
+    question_updates: crate::dispatched::UpdateTeller,
     /// Told a plane's permission asks each time they change (HP-6).
     asks: crate::asking::Teller,
     /// The launch's question and its answer — see [`Relaunching`].
@@ -2439,6 +2456,7 @@ impl Planes {
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
             quiet: Arc::new(|_| {}),
+            question_updates: Arc::new(|_, _| {}),
             asks: Arc::new(|_| {}),
             relaunching: Mutex::new(Relaunching::default()),
             hosting: Arc::new(|reporting, _: &Path| Box::new(Sessions::reporting_to(reporting))),
@@ -2780,6 +2798,12 @@ impl Planes {
     /// a chat is stopping and take its tab away when it has ended (#1448).
     pub fn telling_stops(mut self, stops: crate::stopping::Teller) -> Self {
         self.stops = stops;
+        self
+    }
+
+    /// Who is told each Update a task's question makes (#4556, #4557).
+    pub fn telling_question_updates(mut self, told: crate::dispatched::UpdateTeller) -> Self {
+        self.question_updates = told;
         self
     }
 
@@ -4545,9 +4569,11 @@ impl Planes {
             changes: Arc::clone(&self.changes),
             activity: Arc::clone(&self.activity),
             quiet: Arc::clone(&self.quiet),
+            question_updates: Arc::clone(&self.question_updates),
             needs_you,
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
+            login_grants: crate::loginasks::Grants::default(),
             removal_asks: crate::removalasks::Asked::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
                 .noting(self.browser_driver.clone(), &browsers_root)

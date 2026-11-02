@@ -231,11 +231,10 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                     : standingOnPool(pool, row)}
             </span>
             {/* Where a limit kept it off the runner, the form is here, and asks again (#4397). */}
-            {row.not_kept !== null && (
+            {row.not_kept !== null && row.limit !== null && (
               <OfferToRaise
                 key={row.not_kept}
-                pool={pool}
-                refused={row.not_kept}
+                offer={row.limit}
                 action="Save to the pool and ask again"
                 onRaised={() => void askProfiles(pool, plane)}
               />

@@ -60,8 +60,8 @@ pub fn judge_prompt() -> String {
          holds everything to read, and nothing outside it is to be read: {JUDGE_TASK_FILE} has \
          the task it was given, what success looks like, and the expectations to check; \
          {JUDGE_ANSWER_FILE} has the chat's final answer, where it gave one; {JUDGE_OUTCOME_DIR}/ \
-         has its folder as it ended, each file of it listed in {JUDGE_FILES_FILE}: only its plain \
-         text files are copied here, at most 32, so a file not listed may not have been copied. A path in its answer that names another folder means the same \
+         has its folder as it ended, each file of it listed in {JUDGE_FILES_FILE}: only its files of \
+         at most 1 MiB are copied here, at most 32, so a file not listed may not have been copied, and one listed as not copied was there and is not here. A path in its answer that names another folder means the same \
          file under {JUDGE_OUTCOME_DIR}/, if it is there. \
          Check each expectation, in the order given. The burden of proof is on the expectation: \
          mark it passed only where you found clear evidence, and fail a surface match, such as \

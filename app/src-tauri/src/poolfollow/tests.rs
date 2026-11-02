@@ -274,6 +274,22 @@ fn a_removed_pools_waiting_chats_are_let_go_of() {
     assert_eq!(waiting_on(&machine.config, "first"), 0);
 }
 
+/// When every container [`a_machine_whose_runners_are_suspended`] says stopped did, and in seconds.
+const STOPPED_AT: &str = "2026-11-01T00:00:00Z";
+const STOPPED_AT_SECS: u64 = 1_793_491_200;
+
+/// Notes that the runner `first` last stopped at `at` as its drain began.
+fn drained_having_stopped_at(machine: &Machine, at: u64) {
+    let locked = runners::lock(&machine.config);
+    runners::note_locked(
+        &machine.config,
+        "first",
+        |kept| kept.last_stop = Some(at),
+        &locked,
+    )
+    .unwrap();
+}
+
 /// A machine in `config` whose `docker` says every container is stopped, as a suspended
 /// runner's is, and removes whatever it is asked to.
 fn a_machine_whose_runners_are_suspended(config: &std::path::Path) -> Machine {
@@ -282,7 +298,8 @@ fn a_machine_whose_runners_are_suspended(config: &std::path::Path) -> Machine {
         config.join("docker"),
         format!(
             "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in\n  'container inspect') \
-             echo '[{{\"State\":{{\"Running\":false}}}}]' ;;\nesac\nexit 0\n",
+             echo '[{{\"State\":{{\"Running\":false,\"FinishedAt\":\"{STOPPED_AT}\"}}}}]' ;;\n\
+             esac\nexit 0\n",
             config.join("log").display()
         ),
     )
@@ -290,13 +307,15 @@ fn a_machine_whose_runners_are_suspended(config: &std::path::Path) -> Machine {
     machine
 }
 
-/// A suspended draining runner runs no chat (#2051): it is removed without being woken to ask.
-/// Seen red: with the look at its container taken out, the runner is asked.
+/// A runner that had stopped before its drain began ran no chat then, and starts none since
+/// (#2051): it is removed without being woken to ask. Seen red: with the look at its container
+/// taken out, the runner is asked.
 #[test]
-fn a_suspended_draining_runner_is_removed_without_being_asked() {
+fn a_runner_that_stopped_before_its_drain_began_is_removed_without_being_asked() {
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine_whose_runners_are_suspended(config.path());
     a_pool_draining(&machine);
+    drained_having_stopped_at(&machine, STOPPED_AT_SECS);
 
     let said = follow_and_drain(&machine, None, &|_| {
         panic!("a suspended runner is not asked")
@@ -305,6 +324,77 @@ fn a_suspended_draining_runner_is_removed_without_being_asked() {
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(!log.contains("start "), "{log}");
+}
+
+/// **A stopped runner is not an empty one**: found stopped with nothing to say it stopped before
+/// its drain began, it may have run chats until then, so it stays with its home, and is not
+/// woken to be asked.
+#[test]
+fn a_draining_runner_found_stopped_keeps_its_home() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_whose_runners_are_suspended(config.path());
+    a_pool_draining(&machine);
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("a stopped runner is not asked"));
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    let log = std::fs::read_to_string(config.path().join("log")).unwrap();
+    assert!(!log.contains("rm "), "{log}");
+    assert!(!log.contains("start "), "{log}");
+}
+
+/// **A runner that stopped during its drain stays**, though it ran when its drain began.
+#[test]
+fn a_runner_that_stopped_during_its_drain_keeps_its_home() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_whose_runners_are_suspended(config.path());
+    a_pool_draining(&machine);
+    drained_having_stopped_at(&machine, 0);
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("a stopped runner is not asked"));
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    assert!(said[0].contains("removed in Devices"), "{said:?}");
+}
+
+/// **A link started it again, so it runs and lists no chat, and that says nothing**: what the stop
+/// ended is not listed by the host that came after it, so it stays with its home.
+#[test]
+fn a_runner_a_link_started_again_during_its_drain_keeps_its_home() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    std::fs::write(
+        config.path().join("docker"),
+        format!(
+            "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in\n  'container inspect') \
+             echo '[{{\"State\":{{\"Running\":true,\"FinishedAt\":\"{STOPPED_AT}\"}}}}]' ;;\n\
+             esac\nexit 0\n",
+            config.path().join("log").display()
+        ),
+    )
+    .unwrap();
+    a_pool_draining(&machine);
+    drained_having_stopped_at(&machine, 0);
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("its answer says nothing"));
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+}
+
+/// **A hold lasts**: a row with nothing noted is held as a look finds it stopped, and it stays
+/// held once a link has started it again and it answers no chat.
+#[test]
+fn a_held_runner_stays_held_once_it_runs_again() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_whose_runners_are_suspended(config.path());
+    a_pool_draining(&machine);
+    follow_and_drain(&machine, None, &|_| panic!("a stopped runner is not asked"));
+
+    let again = a_machine(config.path());
+    let said = follow_and_drain(&again, None, &|_| panic!("its answer says nothing"));
+
+    assert_eq!(names(&again), ["first", "first-fedcba98"], "{said:?}");
+    assert!(said.is_empty(), "a hold is said once: {said:?}");
 }
 
 /// A runner that answered its unpairing cannot be asked, and takes no chat (#4146): the next
@@ -365,6 +455,33 @@ fn a_runner_with_only_its_home_left_is_only_removed() {
 
     assert!(said[0].contains("had no chat left"), "{said:?}");
     assert_eq!(names(&machine), ["first-fedcba98"]);
+}
+
+/// **A held runner with only its home left stays the person's**, though a carry had begun: a look
+/// neither removes it nor says so again.
+#[test]
+fn a_held_runner_with_only_its_home_left_is_left_alone() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_with_only_a_home_left(config.path());
+    a_pool_draining(&machine);
+    let locked = purlis_core::runners::lock(config.path());
+    purlis_core::runners::note_locked(
+        config.path(),
+        "first",
+        |kept| {
+            kept.carried = true;
+            kept.held = true;
+        },
+        &locked,
+    )
+    .unwrap();
+    drop(locked);
+    std::fs::remove_file(config.path().join("volume-stays")).unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("it is not asked"));
+
+    assert!(said.is_empty(), "{said:?}");
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
 }
 
 /// **A Docker that lists neither its container nor its home may be another engine** (#4149): a row

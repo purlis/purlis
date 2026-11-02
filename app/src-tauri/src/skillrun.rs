@@ -77,6 +77,8 @@ pub enum Watched {
     /// handed it (#1981), heard just before the turn's end. What an outcome eval's judge reads,
     /// and what a judge answers with.
     Said(String),
+    /// **It asks to use `what`** (SK-55): `the tool Bash`, as its permission hook said.
+    AsksFor(String),
     /// **Its read guard refused a call of it** (SK-55): in a judge, a reach past what it may read.
     /// Told as it happens.
     ReadPast,
@@ -144,6 +146,11 @@ impl SkillRuns {
     /// where one does: no other chat's last message goes anywhere from here.
     pub fn said(&self, chat: u32, text: String) {
         self.tell_watching(chat, Watched::Said(text));
+    }
+
+    /// **What chat `chat` asks to use** (SK-55), told to the grade watching it.
+    pub fn asks_for(&self, chat: u32, what: String) {
+        self.tell_watching(chat, Watched::AsksFor(what));
     }
 
     /// Who is told each change from now on.

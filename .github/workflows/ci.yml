@@ -82,6 +82,14 @@ env:
   RUSTFLAGS: -D warnings
   # The test runner the `rust` job installs, one exact version (`.config/nextest.toml`).
   NEXTEST_VERSION: "0.9.146"
+  # Cargo's network retries, 10 instead of its default 3, for every cargo run in every job, the
+  # `cargo metadata` that `npm run build:e2e`'s notices plugin runs among them. On 2026-11-02
+  # (job 125136983810, macOS scenario part 2, in the merge queue) the runner could not resolve
+  # index.crates.io: cargo tried each index file 4 times inside a few seconds, gave up, and the
+  # queue started its 5 pull requests again, about 45 minutes each. Cargo's pause grows by 3.5 s a
+  # try up to 10 s, so 10 tries ride out about a minute of a dead resolver; a run with a network
+  # that works never waits on it.
+  CARGO_NET_RETRY: "10"
 
 # **Every job that runs on a push to main has chosen what its red means (#4471).** `ci` ending
 # `failure` on main stops both `release.yml` and `tools/land.mjs`, whichever job did it. So a job
@@ -153,7 +161,7 @@ jobs:
       # From a cache of their .deb files, and bounded: a slow mirror fails the step in minutes,
       # and the job summary says how long the install took (#1477, `.github/actions/linux-packages`).
       - name: Tauri's Linux build dependencies, and the sandbox's programs
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -278,6 +286,8 @@ jobs:
   # port. Named, and `#[ignore]`d everywhere else, so no other job needs git-lfs; `--no-tests fail`
   # and the tests' own check of `CI` make a lost test or a lost git-lfs red, never a skip. No
   # outside network: the package comes from the runner's cache or mirror, and the server is ours.
+  # Any test in a module named `real_lfs` is run here, wherever it lives: a push from a wired clone,
+  # `change push` and a first publish, end to end with a fake `gh` first on `PATH` (#4516).
   git-lfs:
     name: real git-lfs (a clone's large files)
     needs: changes
@@ -287,7 +297,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: git-lfs
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           packages: git-lfs
@@ -325,7 +335,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tauri's Linux build dependencies
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -383,7 +393,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tauri's Linux build dependencies
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -421,8 +431,9 @@ jobs:
   # The local targets of the same suite run in `rust` on every pull request. A pull request that
   # touches the host, the protocol, the sandbox or the browsers is gated on both; any other runs a
   # check of a few seconds and nothing else, scoped like `bench`, so the check's name is posted on
-  # every pull request and can be required. A push to `main` is scoped the same way; each night
-  # runs it whole.
+  # every pull request, and it is one of main's required checks (#4335, 2026-11-02: it passed 60 of
+  # 60 merge-queue runs and 40 of 40 pushes on 11-01 and 11-02, and always ended before the
+  # slowest other job). A push to `main` is scoped the same way; each night runs it whole.
   #
   # The runner image is `runner-image/Dockerfile` around the `purlis` this job built, with the
   # fake harness and `purlis` added at the folder the tests' build keeps them in
@@ -467,7 +478,7 @@ jobs:
           fi
       - name: Tauri's Linux build dependencies, and the sandbox's programs
         if: steps.scope.outputs.run == 'true'
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -942,7 +953,7 @@ jobs:
       # Cached and bounded, as the `rust` job's (#1477).
       - name: Tauri's Linux build dependencies, an X server and i3 to start it in, and the sandbox's programs
         if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -1212,15 +1223,28 @@ jobs:
   # with no parent-death signal, is where an engine outliving its host would show (#2009).
   #
   # **In three parts, as `rust` is in two (#2458).** One runner ran out of its 45 minutes on
-  # 2026-10-13, -14, -16 and -17: the build alone took 9 to 22 minutes, since no night had ever
-  # saved a cache (rust-cache saves after a green job only, and this one was never green), and
-  # the tests are some 6,000 s of test time on a runner that runs three at once. Each part
-  # builds every test binary and runs a third of each one's tests (`count:`), and a red night
-  # still saves its build (`cache-on-failure`), so the next night starts from it.
+  # 2026-10-13, -14, -16 and -17: the tests are some 6,000 s of test time on a runner that runs
+  # three at once. Each part builds every test binary and runs a third of each one's tests
+  # (`count:`).
   #
-  # Each part has 60 minutes, and the app's `behaviour` tests are left out here until #2464: on
-  # macOS each takes some 160 s where Linux takes under 10, and the Linux `rust` job runs them
-  # on every pull request. What each part took, measured, is in #2468.
+  # **One build job at a time, on a 7 GB machine (#2458).** `macos-latest` is one of two machines,
+  # by lot: an M1 with 3 CPUs and 7 GB, or an M2 Pro with 5 and 15. In the week to 2026-11-01 the
+  # build took 24 to 53 minutes where the runner was the M1, and 5 where it was the M2 Pro, on
+  # one commit. The third-party crates are 3 of those minutes. The rest is the workspace's own test
+  # targets, each `rustc` of them 2 to 4 GB: side by side they swap (70-80 % of the CPU in the
+  # system, 1.2 million swapouts, 41 to 56 minutes, with `-j 2` or `debug = none` as well). One at a
+  # time they do not (5,900 swapouts, 26 to 34 minutes), and Spotlight is off because it has nothing
+  # to find here. So `CARGO_BUILD_JOBS` is 1, and each part has 100 minutes: on 2026-11-01 three
+  # parts on the M1 took 69, 72 and 80, the last ended by a limit of 80 as its final test passed.
+  # `The machine` says which of the two a part drew.
+  #
+  # **No build is kept.** The nights' caches were saved and never restored: they are read once a
+  # day, and the repository's caches are over their 10 GB, so the next night found none. Saving one
+  # pushed out caches that the jobs a pull request waits on do read.
+  #
+  # The app's `behaviour` tests are left out here until #2464: on macOS each takes some 160 s
+  # where Linux takes under 10, and the Linux `rust` job runs them on every pull request. What
+  # each part took, measured, is in #2468 and #2458.
   macos-tests:
     name: macos (core and app tests, no orphans, evidence only, part ${{ matrix.part }} of 3)
     if: github.event_name == 'schedule'
@@ -1230,14 +1254,19 @@ jobs:
       matrix:
         part: [1, 2, 3]
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 100
+    env:
+      CARGO_BUILD_JOBS: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          cache-on-failure: true
+          save-if: false
+      - name: The machine
+        run: sysctl hw.ncpu hw.memsize machdep.cpu.brand_string
+      - name: Spotlight off
+        run: sudo mdutil -a -i off
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
       - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
@@ -1547,7 +1576,7 @@ jobs:
       # 2026-10-07 and held `main` for over an hour.
       - name: Tauri's Linux build dependencies, a display to run in, and the sandbox's programs
         if: runner.os == 'Linux'
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true

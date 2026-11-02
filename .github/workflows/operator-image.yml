@@ -7,12 +7,13 @@ run-name: ${{ github.event_name == 'workflow_run' && format('cluster operator {0
 
 # purlis's cluster operator image (#2238, spec #2041), made the way `runner-image.yml` makes the
 # runner image: for linux/amd64 and linux/arm64, kept in the GitHub Container Registry as a
-# PRIVATE package of this organisation, recorded by digest and signed by keyless cosign through
+# public package of this organisation, recorded by digest and signed by keyless cosign through
 # this run's GitHub OIDC identity. No signing key is stored anywhere; the signature's entry in
-# Sigstore's public transparency log names the image and its digest, which the operator accepted
-# (ruling of 2026-10-15). The package stays private until the operator rules to publish it
-# (ruling of 2026-10-14): `image` pushes only into a package the packages API shows private, and
-# `index` tags and signs only when that still holds and the registry refuses an anonymous pull.
+# Sigstore's public transparency log names the image and its digest.
+# The package is public (the person's ruling of 2026-11-01, #4498):
+# `image` pushes only into a package the packages API shows public, `index` tags and signs only
+# when that still holds and the registry serves both images to a puller who has not signed in,
+# and `outside` then pulls and checks the image with no sign-in at all.
 #
 # Two ways in, and what each makes:
 #
@@ -66,7 +67,7 @@ permissions: {}
 env:
   CARGO_TERM_COLOR: always
   # Where the image lives: the name `operator/deploy/operator.yaml` gives it. The organisation's
-  # own registry, so the package is the organisation's and private until it is made otherwise.
+  # own registry; the package is public (#4498).
   IMAGE: ghcr.io/${{ github.repository_owner }}/purlis-cluster-operator
 
 jobs:
@@ -186,15 +187,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # **No image is pushed into a package that is not private.** The packages API says so
-      # immediately before the push. On the first run there is no package yet: a placeholder
-      # (one small text file, nothing of purlis) is pushed to create it, and the package is
-      # shown private before the image's own bytes go in. Anything else stops the job here.
-      - name: The package is private before anything of purlis is pushed
+      # **No image is pushed into a package that is not public.** The packages API says so
+      # immediately before the push, so a release never names an image a newcomer cannot pull
+      # (#4498). A package that is not there is refused too: a new one starts private, and
+      # someone has to choose to publish it. Anything else stops the job here.
+      - name: The package is public before the image is pushed
         if: env.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node tools/image-registry.mjs ensure-private "$ARCH"
+        run: node tools/image-registry.mjs visibility
 
       - name: Build the operator's image, to check it here
         if: env.PUBLISH != 'true'
@@ -266,6 +267,8 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    outputs:
+      image: ${{ steps.line.outputs.image }}
     env:
       SHA: ${{ needs.plan.outputs.sha }}
       SIGNER: ${{ github.server_url }}/${{ github.repository }}
@@ -296,18 +299,17 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      # The package stays private until the operator rules to publish it. Before anything is
-      # tagged or signed, the packages API has to say `private` and the registry has to refuse
-      # both images to a puller who has not signed in. An answer that shows neither stops the
-      # run (`tools/image-registry.mjs` fails closed).
-      - name: The images are private
+      # Before anything is tagged or signed, the packages API has to say `public` and the
+      # registry has to serve both images to a puller who has not signed in. An answer that shows
+      # neither stops the run (`tools/image-registry.mjs` fails closed).
+      - name: The images are public
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           state=$(node tools/image-registry.mjs visibility)
-          if [ "$state" != private ]; then
-            echo "::error::the package is $state, not private"
+          if [ "$state" != public ]; then
+            echo "::error::the package is $state, not public"
             exit 1
           fi
           node tools/image-registry.mjs anonymous \
@@ -349,6 +351,11 @@ jobs:
         env:
           DIGEST: ${{ steps.index.outputs.digest }}
         run: cosign sign --yes --recursive "$IMAGE@$DIGEST"
+      - name: The image's line, for the check from outside
+        id: line
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+        run: echo "image=$IMAGE@$DIGEST" >> "$GITHUB_OUTPUT"
       - name: The signature verifies as this workflow's on main
         env:
           DIGEST: ${{ steps.index.outputs.digest }}
@@ -391,3 +398,28 @@ jobs:
             ${{ runner.temp }}/record/install/
           if-no-files-found: error
           retention-days: 90
+
+  # **What someone outside does, done here** (#4498): no registry login, no permission on the
+  # package, no token at all. The image is pulled and its signature checked by the commands
+  # docs/cluster-operator.md gives.
+  outside:
+    name: pulled and checked with no sign-in
+    needs: [plan, index]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Both architectures pull and the signature verifies, with no token
+        env:
+          LINE: ${{ needs.index.outputs.image }}
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 "$LINE"
+          docker pull --platform linux/arm64 "$LINE"
+          cosign verify "$LINE" \
+            --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/operator-image.yml@refs/heads/main" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /dev/null

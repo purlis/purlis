@@ -271,6 +271,32 @@ test("main is red when its newest finished push run ended red", () => {
   assert.equal(redRun([ciRun({ event: "schedule", conclusion: "failure" })]), undefined);
 });
 
+test("a cancelled or skipped push run gives no verdict: the run before it decides (#4578)", () => {
+  // A newer push cancels the run waiting behind it, so a cancelled run says nothing about main.
+  const red = ciRun({ conclusion: "failure" });
+  assert.equal(
+    redRun([red, ciRun({ run_number: 2, conclusion: "cancelled" })]),
+    red,
+    "a cancelled newest run must not clear a red main",
+  );
+  assert.equal(
+    redRun([
+      red,
+      ciRun({ run_number: 2, conclusion: "cancelled" }),
+      ciRun({ run_number: 3, conclusion: "skipped" }),
+      ciRun({ run_number: 4, conclusion: "cancelled" }),
+    ]),
+    red,
+  );
+  assert.equal(
+    redRun([ciRun(), ciRun({ run_number: 2, conclusion: "cancelled" })]),
+    undefined,
+    "a cancelled newest run after a green one leaves main green",
+  );
+  // Only cancelled runs: no verdict at all.
+  assert.equal(redRun([ciRun({ conclusion: "cancelled" })]), undefined);
+});
+
 test("checks sort into still going and failed, by gh's bucket", () => {
   const sorted = sortChecks([
     check("a", "pass"),
@@ -436,10 +462,30 @@ test("a red main is refused, naming its run, read from the newest finished push 
   assert.match(got.stderr, /fixes-main/);
   assert.equal(enqueueCall(got.calls), undefined);
   // Main's colour is asked of its finished push runs, not of its head's run, which may still be
-  // going while the one before it is red.
+  // going while the one before it is red. It reads a page of them, not one: the newest few may be
+  // cancelled, and a cancelled run gives no verdict (#4578).
   const asked = got.calls.find((args) => args.join(" ").includes("workflows/ci.yml/runs"));
-  for (const query of ["branch=main", "event=push", "status=completed", "per_page=1"])
+  for (const query of ["branch=main", "event=push", "status=completed", "per_page=30"])
     assert.ok(asked.includes(query), query);
+});
+
+test("a red main behind a cancelled run is still refused (#4578)", () => {
+  const got = land(["7", "--sha", HEAD], {
+    mainCi: {
+      match: "workflows/ci.yml/runs",
+      replies: [
+        {
+          out: runs([
+            ciRun({ run_number: 2, conclusion: "cancelled" }),
+            ciRun({ conclusion: "failure" }),
+          ]),
+        },
+      ],
+    },
+  });
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /main is red: .* ended failure/);
+  assert.equal(enqueueCall(got.calls), undefined);
 });
 
 test("main going red while the checks are waited for is refused before the enqueue", () => {

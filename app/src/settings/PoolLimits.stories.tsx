@@ -30,6 +30,10 @@ const row = (
   set: null,
   applies: null,
   refused: null,
+  highest_said: null,
+  default_by_team: false,
+  suggested: null,
+  suggested_said: null,
   ...over,
 });
 
@@ -92,6 +96,7 @@ function theCore(
   refusedInFile?: string,
   waiting?: readonly string[],
   refuseReplace?: string,
+  teamHighest?: string,
 ) {
   mockIPC((cmd, args) => {
     const asked = (args ?? {}) as { key: string; typed: string; value: number | null };
@@ -99,14 +104,22 @@ function theCore(
       if (unread === "never") return new Promise(() => undefined);
       if (unread !== undefined) throw unread;
       const page = LIMITS(set, waiting);
-      return refusedInFile === undefined
+      return refusedInFile === undefined && teamHighest === undefined
         ? page
         : {
             ...page,
             groups: page.groups.map((group) => ({
               ...group,
               limits: group.limits.map((one) =>
-                one.key === "profileSize" ? { ...one, refused: refusedInFile } : one,
+                one.key === "profileSize"
+                  ? {
+                      ...one,
+                      refused: refusedInFile ?? null,
+                      highest_said: teamHighest ?? null,
+                      suggested: teamHighest === undefined ? null : 256,
+                      suggested_said: teamHighest === undefined ? null : "256 MiB",
+                    }
+                  : one,
               ),
             })),
           };
@@ -138,6 +151,7 @@ const meta = {
       parameters.refusedInFile as string | undefined,
       parameters.waiting as readonly string[] | undefined,
       parameters.refuseReplace as string | undefined,
+      parameters.teamHighest as string | undefined,
     );
     // The window's limits are held once for every story drawn in this page.
     if (parameters.unread !== "never") await askLimits("builds");
@@ -266,6 +280,16 @@ export const RefusedInTheFile: Story = {
     await expect(
       canvas.getByRole("button", { name: /Reset to .*Most a profile may send: size/ }),
     ).toBeEnabled();
+  },
+};
+
+/** **A cluster pool's team set a highest and suggests a value** (#4287): said under the limit. */
+export const TeamHighest: Story = {
+  parameters: { teamHighest: "The team allows up to 512 MiB." },
+  play: async ({ canvas }) => {
+    await open(canvas);
+    await canvas.findByText("The team allows up to 512 MiB.");
+    await canvas.findByRole("button", { name: /^Use 256 MiB/ });
   },
 };
 
