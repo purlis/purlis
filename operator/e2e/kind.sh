@@ -275,9 +275,11 @@ step "a short task on a runner of its own, and its commits back before its claim
 # The desktop's whole path (#4569), through the app's own chats: this runner image with a stand-in
 # `claude` that signs in and waits, since no model answers here.
 harness_image=$(mktemp -d "${TMPDIR:-/tmp}/purlis-operator-e2e-harness.XXXXXX")
-cat >"$harness_image/claude" <<'STAND_IN'
+supported=$(cat "$repo/tests/fixtures/harness-versions/claude.txt")
+cat >"$harness_image/claude" <<STAND_IN
 #!/bin/sh
-[ "$1" = auth ] && [ "$2" = status ] && exit 0
+[ "\$1" = --version ] && { echo '$supported'; exit 0; }
+[ "\$1" = auth ] && [ "\$2" = status ] && exit 0
 exec sleep 3600
 STAND_IN
 chmod 0755 "$harness_image/claude"
