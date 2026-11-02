@@ -267,6 +267,38 @@ describe("the readers of the plane, told what changed", () => {
     expect(count(asked, "workspace_panels")).toBe(panels);
   });
 
+  it("ask nothing that hangs off the sidebar when its read answers what it did before (#4351)", async () => {
+    // Every tab opened reads the sidebar again. An answer with nothing new in it was a new object
+    // all the same, and asked the pins and the finished tasks again, whose answers drew the whole
+    // window again, on the way to the tab's first row.
+    const { asked, changed } = core();
+    render(<App />);
+    await waitFor(() => expect(todoRows()).toHaveLength(2));
+    await settle();
+    const before = asked.length;
+
+    changed(PLANE, [{ answer: "sidebar" }]);
+
+    await waitFor(() => expect(asked.slice(before)).toContain("plane_sidebar"));
+    await settle();
+    expect(asked.slice(before)).not.toContain("plane_pins");
+    expect(asked.slice(before)).not.toContain("finished_tasks");
+  });
+
+  it("reads what hangs off the sidebar when its read answers something new (#4351)", async () => {
+    const { asked, changed } = core();
+    render(<App />);
+    await waitFor(() => expect(todoRows()).toHaveLength(2));
+    await settle();
+    const before = asked.length;
+
+    workspacesOnDisk = [...workspacesOnDisk, "gamma"];
+    changed(PLANE, [{ answer: "sidebar" }]);
+
+    await waitFor(() => expect(asked.slice(before)).toContain("plane_pins"));
+    expect(asked.slice(before)).toContain("finished_tasks");
+  });
+
   it("draw nothing again and ask git nothing for a memory or record of a workspace not in front", async () => {
     // A memory an agent saves is the commonest write there is. The window in front is on
     // `alpha`; one saved in `beta` concerns no panel on screen, and redrawing the whole window

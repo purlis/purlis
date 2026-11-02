@@ -1916,7 +1916,9 @@ export const PlaneView = memo(function PlaneView({
           setSidebar(undefined);
           return;
         }
-        setSidebar(next);
+        // **An answer with nothing new in it changes nothing** (#4351): every tab opened reads the
+        // sidebar again, and the pins, the finished tasks and most of this window hang off it.
+        setSidebar((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
         // Focus follows the plane rather than being guessed: whichever workspace was picked,
         // while it still exists — and otherwise **the workspace of the chat in front**,
         // because the strip below shows that workspace's chats and a strip that opened on
