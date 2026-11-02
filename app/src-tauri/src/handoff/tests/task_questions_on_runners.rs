@@ -231,3 +231,29 @@ fn a_question_whose_asking_chat_went_with_its_runner_reaches_the_person_at_once(
         }
     ));
 }
+
+#[test]
+fn a_message_an_older_runner_host_handed_on_is_refused_saying_nothing_was_sent() {
+    // A runner's host from before #4804 does not carry its chats' queues: it hands a chat's
+    // `Deliver` on, and the message stays on the runner's disk, where this app does not read
+    // it (#4560). A host since carries each message itself, and never hands a `Deliver` on.
+    let (_plane, _host, _planes, id, held, _steward, task) = a_task_on_a_runner();
+
+    let said = over_the_link(
+        &held,
+        &id,
+        task,
+        What::Deliver {
+            id: "0123456789abcdef0123456789abcdef".to_owned(),
+        },
+    );
+
+    let Answer::No { why } = said else {
+        panic!("refused, not {said:?}")
+    };
+    assert!(
+        why.contains("nothing was sent") && why.contains(POOL),
+        "says plainly that nothing was sent, and why: {why}"
+    );
+    assert_eq!(held.tasks().ledger().talk.asks(task), None);
+}

@@ -462,9 +462,9 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
         What::Tell { to, text } => tell(held, asker, *to, text).unwrap_or_else(no),
         What::TellAll { text } => tell_all(held, asker, text).unwrap_or_else(no),
         What::Note { text, ack } => note(held, asker, text, *ack).unwrap_or_else(no),
-        What::Deliver { id } => {
-            deliver_queued(held, asker, Some(id)).unwrap_or_else(|| what_became_of(held, asker, id))
-        }
+        What::Deliver { id } => deliver_queued(held, asker, Some(id))
+            .or_else(|| queued_on_an_older_runner(held, asker))
+            .unwrap_or_else(|| what_became_of(held, asker, id)),
         What::Carried { id, message } => carried(held, asker, id, message),
         What::Question { text } => send_up(held, asker, Kind::Question, text).unwrap_or_else(no),
         What::Route { text } => route(held, asker, text),
@@ -1086,6 +1086,19 @@ fn what_became_of(held: &Held, sender: u32, id: &str) -> Answer {
             delivered: true,
         }),
     }
+}
+
+/// **What a `Deliver` from a chat on a pool's runner is told** (#4560): only a runner's host
+/// from before #4804 hands one on, as a host since carries each message itself
+/// ([`What::Carried`]). The message stays on the runner's disk, where this app does not read
+/// it: said plainly, so the chat does not wait on a message that never left.
+fn queued_on_an_older_runner(held: &Held, sender: u32) -> Option<Answer> {
+    let pool = crate::hooks::heard_from_a_pool().or_else(|| held.chats().pool_of(sender))?;
+    Some(no(format!(
+        "nothing was sent: this chat runs on pool {pool}'s runner, whose purlis is too old to \
+         carry a message queued there to the app. Do not wait for an answer to it; carry on with \
+         what you can, and put what you would have sent in your report"
+    )))
 }
 
 /// The kind of a queued message, and the chat it names, where it names one.

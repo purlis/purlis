@@ -15,7 +15,8 @@
 //! it; one the window holds back ([`Answered::Queued`] `delivered: false`), or that nobody heard
 //! or answered, stays, and so does every message after it. One whose answer was lost with the
 //! link is carried again, and the app answers a message it delivered under that id as delivered,
-//! without delivering it again. Each chat's queue is carried by one drain at a time.
+//! without delivering it again. Each chat's queue is carried by one drain at a time; a `Deliver`
+//! whose message a drain before it carried is told what the window answered there, kept for it.
 //!
 //! **What waited goes when the window is back**, as a browser login that waited does: a drain
 //! that found nobody there marks the queues as waiting, and the next line a window hears of
@@ -27,6 +28,7 @@
 //! nothing was sent (#4560's refusal), and a chat of a host before this one ended with it.
 //! Delivering either now would send what its chat was told was not sent.
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -38,7 +40,14 @@ use crate::dispatchqueue::{self, Found};
 
 /// How long the window is waited on to answer one carried message; past it the message stays
 /// queued, and is carried again.
+#[cfg(not(test))]
 const A_CARRIED_MESSAGE_IS_ANSWERED_WITHIN: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const A_CARRIED_MESSAGE_IS_ANSWERED_WITHIN: Duration = Duration::from_millis(500);
+
+/// How many of the window's answers to messages a drain carried, ahead of their own `Deliver`,
+/// are kept for that `Deliver` to be told: the newest, as a chat waits on its own at once.
+const ANSWERS_KEPT: usize = 64;
 
 /// What a host that carries its chats' queues keeps.
 #[derive(Default)]
@@ -47,6 +56,11 @@ pub(super) struct Carrying {
     socket: Mutex<Option<PathBuf>>,
     /// One drain at a time, so a chat's messages go in the order it queued them.
     draining: Mutex<()>,
+    /// What the window answered of each message a drain carried that was not its own `Deliver`'s
+    /// (chat, id, answer), newest last: what that `Deliver`, finding it gone, is told.
+    answered: Mutex<VecDeque<(u32, String, Answer)>>,
+    /// How many drains of every chat's queue run on a thread of their own: one at most.
+    drains: std::sync::atomic::AtomicUsize,
 }
 
 /// How one carried message came out.
@@ -71,6 +85,12 @@ impl Relaying {
             .unwrap_or_else(PoisonError::into_inner);
         retire_what_is_queued(socket);
         *lock(&self.carrying.socket) = Some(socket.to_path_buf());
+    }
+
+    /// How many drains of every chat's queue run on threads of their own now.
+    #[cfg(test)]
+    pub(super) fn drains_running(&self) -> usize {
+        self.carrying.drains.load(Ordering::SeqCst)
     }
 
     /// Where the queues it carries are, where it carries them.
@@ -124,6 +144,8 @@ impl Relaying {
                     dispatchqueue::delivered(socket, chat, &message);
                     if is_fresh {
                         answered = Some(answer);
+                    } else {
+                        self.keep_answer(chat, message.id, answer);
                     }
                 }
                 Came::HeldBack(answer) => {
@@ -142,14 +164,39 @@ impl Relaying {
                 }
             }
         }
+        if answered.is_none() {
+            // Carried by a drain before this one: told what the window answered it there.
+            answered = fresh.and_then(|fresh| self.answer_kept(chat, fresh));
+        }
         answered.unwrap_or_else(|| {
             let id = fresh.unwrap_or_default().to_owned();
-            // Not reached, it waits behind one that stayed; not found, a drain before took it.
+            // Not reached, it waits behind one that stayed; not found and no answer of the
+            // window's kept for it, a drain before took it.
             Answer::Task(Box::new(Answered::Queued {
                 delivered: !stayed,
                 id,
             }))
         })
+    }
+
+    /// Keeps what the window answered of chat `chat`'s message `id`, carried ahead of its own
+    /// `Deliver`, for that `Deliver`.
+    fn keep_answer(&self, chat: u32, id: String, answer: Answer) {
+        let mut answered = lock(&self.carrying.answered);
+        if answered.len() == ANSWERS_KEPT {
+            answered.pop_front();
+        }
+        answered.push_back((chat, id, answer));
+    }
+
+    /// What the window answered of chat `chat`'s message `id`, where a drain carried it ahead of
+    /// its own `Deliver`: told once.
+    fn answer_kept(&self, chat: u32, id: &str) -> Option<Answer> {
+        let mut answered = lock(&self.carrying.answered);
+        let at = answered
+            .iter()
+            .position(|(of, kept, _)| *of == chat && kept == id)?;
+        answered.remove(at).map(|(_, _, answer)| answer)
     }
 
     /// Sends one message on, and waits for the window's answer to it.
@@ -192,13 +239,29 @@ impl Relaying {
     /// **Carries every chat's queue once the window hears this host again**, where a drain
     /// found nobody there, or none has looked since this host started: on a thread of its own.
     pub(super) fn carry_what_waited(self: &Arc<Self>) {
-        if self.carries().is_none() || !self.carry_waits.swap(false, Ordering::SeqCst) {
+        if self.carries().is_none() {
+            return;
+        }
+        // One drain at a time (#4892): one that runs carries what waits, or marks it waiting
+        // again for the line after it ends. Each waits up to a while on an app that never
+        // answers a carried message, one from before #4804, so a drain a line set off while one
+        // ran would only queue behind it, one more thread for every line.
+        let drains = &self.carrying.drains;
+        if drains
+            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+        if !self.carry_waits.swap(false, Ordering::SeqCst) {
+            drains.fetch_sub(1, Ordering::SeqCst);
             return;
         }
         let relaying = Arc::clone(self);
         let spawned = std::thread::Builder::new()
             .name("purlisd-carry-queued".into())
             .spawn(move || {
+                let _gone = Gone(&relaying.carrying.drains);
                 let Some(socket) = relaying.carries() else {
                     return;
                 };
@@ -209,9 +272,19 @@ impl Relaying {
                 }
             });
         if let Err(why) = spawned {
+            drains.fetch_sub(1, Ordering::SeqCst);
             self.carry_waits.store(true, Ordering::SeqCst);
             tracing::warn!("purlisd: what chats queued was not carried: {why}");
         }
+    }
+}
+
+/// Counts a drain's thread gone, however it ends.
+struct Gone<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl Drop for Gone<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 

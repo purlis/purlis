@@ -124,11 +124,24 @@ pub(super) fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Heari
                         crate::dispatched::What::Carried { id, message } => {
                             let text = message.text().unwrap_or_default().to_owned();
                             window.said(format!("carried {id} {text}"));
+                            if text == "slow" {
+                                // Answered, but only once a drain has been holding it a while.
+                                std::thread::sleep(Duration::from_millis(150));
+                            }
+                            if text == "never answered" {
+                                // As an app before #4804 does, which does not know the ask:
+                                // no answer comes while the host waits for one.
+                                std::thread::sleep(Duration::from_secs(3));
+                            }
                             if text == "held back" {
                                 Answer::Task(Box::new(crate::dispatched::Answered::Queued {
                                     id,
                                     delivered: false,
                                 }))
+                            } else if text == "refused" {
+                                Answer::No {
+                                    why: format!("{id} has no question left to answer"),
+                                }
                             } else {
                                 Answer::Ticket {
                                     ticket: format!("t{connection}"),

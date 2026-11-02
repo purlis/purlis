@@ -226,3 +226,77 @@ fn a_host_that_does_not_carry_hands_a_deliver_on_as_it_came() {
     );
     assert_eq!(still_queued(&socket), [id], "the window delivers it");
 }
+
+#[test]
+fn a_message_a_drain_carried_first_and_the_window_refused_is_answered_refused() {
+    // The drain that runs once the window is back holds the queue while it carries; the chat's
+    // `Deliver` waits on it, and finds its message gone: it is told what the window said of it.
+    let (window, holding) = a_window();
+    let here = Arc::new(AtomicBool::new(false));
+    let (_root, socket, token) = a_runner_project();
+    let host = a_runner_host(&window, &holding, &here, &socket);
+    let slow = queues(&socket, &token, "slow");
+    let _ = (host.answer)(42, deliver(&slow));
+    here.store(true, Ordering::SeqCst);
+    let refused = queues(&socket, &token, "refused");
+    (host.each)(report(CHAT)).expect("the window is back and takes the report");
+    until_carried(&window, 1);
+
+    let answer = (host.answer)(43, deliver(&refused));
+
+    assert_eq!(
+        carried(&window),
+        [
+            format!("carried {slow} slow"),
+            format!("carried {refused} refused")
+        ],
+        "the drain carried both"
+    );
+    assert_eq!(
+        answer,
+        Answer::No {
+            why: format!("{refused} has no question left to answer")
+        }
+    );
+    assert!(still_queued(&socket).is_empty());
+}
+
+#[test]
+fn a_window_that_never_answers_a_carried_message_is_drained_by_one_thread_at_a_time() {
+    // An app from before #4804 does not know a carried message and never answers it: every
+    // line the window hears must not set off one more drain, each waiting on the last.
+    const OTHER: u32 = 4;
+    let (window, holding) = a_window();
+    let here = Arc::new(AtomicBool::new(false));
+    let (root, socket, token) = a_runner_project();
+    let other = ChatToken::from("tok-four");
+    crate::hookwire::spool::remember(&root.path().join(".purlis/app/spool"), OTHER, &other)
+        .expect("the key");
+    let (host, relaying, _tokens) = now_and_then_with(&window, &holding, &here);
+    relaying.carrying_queues_beside(&socket);
+    let first = queues(&socket, &token, "never answered");
+    let _ = (host.answer)(42, deliver(&first));
+    let second = Queued::Note {
+        text: Some("never answered".into()),
+        ack: None,
+    };
+    let second = dispatchqueue::queue(&socket, OTHER, &other, second, 10).expect("queued");
+    let _ = (host.answer)(
+        43,
+        Ask::Task(Box::new(Asked {
+            chat: OTHER,
+            what: What::Deliver { id: second },
+        })),
+    );
+    here.store(true, Ordering::SeqCst);
+
+    let mut most = 0;
+    let start = std::time::Instant::now();
+    while start.elapsed() < Duration::from_millis(2_500) {
+        (host.each)(report(CHAT)).expect("the window takes the report");
+        most = most.max(relaying.drains_running());
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    assert!(most <= 1, "{most} drains ran at once");
+}
