@@ -438,7 +438,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("offers Try again, not the page, for a sign-in purlis stopped (#4367)", async () => {
     const opened = await strip();
     says({ at: "open", url: PAGE });
-    says({ at: "failed", why: "the sign-in was stopped", stopped: true });
+    says({ at: "failed", why: "the sign-in was stopped", stopped: true, limit: null });
 
     expect(await within(opened).findByRole("alert")).toHaveTextContent("the sign-in was stopped");
     expect(within(opened).queryByRole("button", { name: "Open the page again" })).toBeNull();
