@@ -662,7 +662,12 @@ pub fn report_of(record: &dispatchrecord::Record) -> Option<Handback> {
     if record.ended_by == Some(EndedBy::Unreported) {
         return Some(whole(
             name,
-            handback::UNREPORTED.to_owned(),
+            if record.ended_with_its_runner() {
+                handback::ENDED_WITH_ITS_RUNNER
+            } else {
+                handback::UNREPORTED
+            }
+            .to_owned(),
             Some(
                 handback::Task::unreported(session_record, by_person).on_branch(branch_of(record)),
             ),

@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { commands, type PoolSignInAsk } from "./bindings";
 import { listen } from "./here";
-import { AlertDialog } from "./ui/dialog/Dialog";
+import { AlertDialog, useADialogIsUp } from "./ui/dialog/Dialog";
 
 /** The event the core sends each time the question changes. */
 export const POOL_SIGN_IN_CONFIRM = "pool-sign-in-confirm";
@@ -79,21 +79,28 @@ function useAsked(): [PoolSignInAsk | null, () => void] {
  * and its yes is pressed or not taken (`variant: "grants"`), and only once nothing has been typed
  * for a moment. Escape declines too. It shows the code the command's terminal shows, to tell one
  * command from another. Each window draws it, and the question going takes it from all of them.
+ * It arrives by itself, so it waits for a dialog already up to close (#4504); its two minutes run
+ * in the core all the same.
  */
 export function PoolSignInConfirm() {
   const [asked, answered] = useAsked();
-  const armed = useArmed(asked);
-  if (!asked) return null;
+  const anotherIsUp = useADialogIsUp();
+  const [opened, setOpened] = useState<number>();
+  // Only until it opens: from then on the dialog up is this one.
+  if (asked && !anotherIsUp && opened !== asked.id) setOpened(asked.id);
+  const drawn = asked?.id === opened ? asked : null;
+  const armed = useArmed(drawn);
+  if (!drawn) return null;
   const answer = (yes: boolean) => {
     answered();
-    void commands.answerPoolSignIn(asked.id, yes).catch(() => {
+    void commands.answerPoolSignIn(drawn.id, yes).catch(() => {
       // Taken back already: the core says so, and the dialog goes with it.
     });
   };
   return (
     <AlertDialog
       onClose={() => answer(false)}
-      title={`Sign ${asked.profile} in on ${asked.pool}?`}
+      title={`Sign ${drawn.profile} in on ${drawn.pool}?`}
       titleId="pool-sign-in-confirm"
       aria-describedby="pool-sign-in-confirm-said"
       initialFocus="cancel"
@@ -107,7 +114,7 @@ export function PoolSignInConfirm() {
       <p id="pool-sign-in-confirm-said">
         The <code>purlis profile sign-in</code> command asks to sign this profile in on this
         pool&apos;s runner. Sign in only if you ran it and your terminal shows the code{" "}
-        <code>{asked.code}</code>. Otherwise, cancel and nothing starts.
+        <code>{drawn.code}</code>. Otherwise, cancel and nothing starts.
       </p>
     </AlertDialog>
   );

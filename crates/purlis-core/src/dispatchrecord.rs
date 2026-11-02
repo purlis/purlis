@@ -538,6 +538,17 @@ impl Record {
     pub fn running(&self) -> bool {
         self.ended.is_none()
     }
+
+    /// **Whether it ended with a pool's runner gone for good** (#4420), so its conversation went
+    /// with that runner. Only where the app ended it ([`EndedBy::Unreported`]): a task reporting
+    /// the same words has said nothing about its record.
+    pub fn ended_with_its_runner(&self) -> bool {
+        self.ended_by == Some(EndedBy::Unreported)
+            && self
+                .report
+                .as_ref()
+                .is_some_and(|report| report.text == crate::handback::ENDED_WITH_ITS_RUNNER)
+    }
 }
 
 /// What the app knows of a dispatch as it starts one.
