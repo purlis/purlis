@@ -944,16 +944,7 @@ mod a_chat_on_a_pool_its_workspace_left {
             .expect("it starts on the runner");
         Pane::of(&window, id).shows_within("on the pool.", LONG);
         window.chats_kept_settled();
-        let head = || {
-            let said = purlis_core::forklock::output(
-                std::process::Command::new("git")
-                    .arg("-C")
-                    .arg(&root)
-                    .args(["rev-parse", "HEAD"]),
-            )
-            .expect("git runs");
-            String::from_utf8_lossy(&said.stdout).trim().to_owned()
-        };
+        let head = || git(&root, &["rev-parse", "HEAD"]);
         let sent = head();
 
         step("the setting moves off the pool, and the project moves on here");

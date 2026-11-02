@@ -2053,7 +2053,7 @@ fn a_plane_saved_after_a_second(root: &Path) {
     git(root, &["commit", "-q", "-m", "one"]);
 }
 
-fn git(dir: &Path, args: &[&str]) {
+fn git(dir: &Path, args: &[&str]) -> String {
     let mut command = std::process::Command::new("git");
     command
         .arg("-C")
@@ -2068,6 +2068,7 @@ fn git(dir: &Path, args: &[&str]) {
         "git {args:?}: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
 }
 
 /// What the window was told each look did.
