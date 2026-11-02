@@ -1197,9 +1197,10 @@ jobs:
   # one commit. The third-party crates are 3 of those minutes. The rest is the workspace's own test
   # targets, each `rustc` of them 2 to 4 GB: side by side they swap (70-80 % of the CPU in the
   # system, 1.2 million swapouts, 41 to 56 minutes, with `-j 2` or `debug = none` as well). One at a
-  # time they do not (5,900 swapouts, 26 minutes), and Spotlight is off because it has nothing to
-  # find here. So `CARGO_BUILD_JOBS` is 1, and each part has 80 minutes: 26 to build, some 35 to
-  # test on the M1, and room for a slow night. `The machine` says which of the two a part drew.
+  # time they do not (5,900 swapouts, 26 to 34 minutes), and Spotlight is off because it has nothing
+  # to find here. So `CARGO_BUILD_JOBS` is 1, and each part has 100 minutes: on 2026-11-01 three
+  # parts on the M1 took 69, 72 and 80, the last ended by a limit of 80 as its final test passed.
+  # `The machine` says which of the two a part drew.
   #
   # **No build is kept.** The nights' caches were saved and never restored: they are read once a
   # day, and the repository's caches are over their 10 GB, so the next night found none. Saving one
@@ -1217,7 +1218,7 @@ jobs:
       matrix:
         part: [1, 2, 3]
     runs-on: macos-latest
-    timeout-minutes: 80
+    timeout-minutes: 100
     env:
       CARGO_BUILD_JOBS: 1
     steps:
