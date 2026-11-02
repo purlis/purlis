@@ -23,6 +23,7 @@ function machine({
   failUpdates = 0,
   failInstalls = 0,
   failOffline = false,
+  offlineTimesOut = false,
   manyInstalled = false,
   osRelease = "ID=ubuntu\nVERSION_CODENAME=noble\n",
   offlineHas = "socat bubblewrap",
@@ -52,7 +53,8 @@ case "$*" in *update*) kind=update ;; *--no-download*) kind=offline ;; esac
 n=$(cat "${root}/$kind.n" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > "${root}/$kind.n"
 case $kind in
   update) [ $n -le ${failUpdates} ] && exit 124 ;;
-  offline) [ ${failOffline ? 1 : 0} = 1 ] && { echo "E: Unable to correct problems, you have held broken packages." >&2; exit 100; }
+  offline) [ ${offlineTimesOut ? 1 : 0} = 1 ] && { echo "Unpacking libfoo:amd64 (1.0-1) ..."; exit 124; }
+    [ ${failOffline ? 1 : 0} = 1 ] && { echo "E: Unable to correct problems, you have held broken packages." >&2; exit 100; }
     # As apt does: a .deb named on the command line counts as downloaded only when it lies in
     # the archives directory. Anywhere else apt queues it as a download, which --no-download
     # drops, and the install fails (#1477: every warm run on 2026-10-10 failed this way).
@@ -75,6 +77,8 @@ case $kind in
 esac
 exit 0`,
   );
+  // dpkg itself, asked only to finish what an install it ran left half done.
+  write("dpkg", `echo "dpkg $*" >> "${log}"`);
   // What is installed: the two the install brought, and not the stale one.
   // With `manyInstalled`, thousands more after them, as on a runner image: more than a pipe holds.
   write(
@@ -255,6 +259,38 @@ test("a cache the image no longer fits falls back to the mirror", () => {
   assert.ok(r.apt.some((l) => l.includes("update")));
   assert.match(r.stdout + r.stderr, /::warning[^\n]*apt-get said: E: Unable to correct problems/);
   assert.match(r.summary, /from the mirror/);
+});
+
+test("an offline install cut off mid-unpack has dpkg finish it before the mirror is asked", () => {
+  // 2026-11-02, job 125101772698: the offline install of 184 packages hit its 60 s limit with 151
+  // unpacked, and both mirror attempts then failed at once on "dpkg was interrupted, you must
+  // manually run 'sudo dpkg --configure -a'", a failure blamed on the mirror.
+  const { root, run } = machine({ offlineTimesOut: true });
+  const cache = join(root, "cache");
+  mkdirSync(cache);
+  writeFileSync(join(cache, "libfoo_1.0-1_amd64.deb"), "");
+  const r = run("install", "--cache", cache, "socat");
+  assert.equal(r.status, 0, r.stderr);
+  const offline = r.apt.findIndex((l) => l.includes("--no-download"));
+  const configure = r.apt.findIndex((l) => l === "dpkg --configure -a");
+  const update = r.apt.findIndex((l) => l.startsWith("apt-get") && l.includes("update"));
+  assert.ok(offline >= 0 && offline < configure && configure < update, r.apt.join("\n"));
+  assert.match(r.stdout, /::warning[^\n]*the cached \.deb files did not install in \d+ s/);
+});
+
+test("a mirror install that fails has dpkg finish what it left before the second attempt", () => {
+  const { run } = machine({ failInstalls: 1 });
+  const r = run("install", "socat");
+  assert.equal(r.status, 0, r.stderr);
+  const configure = r.apt.findIndex((l) => l === "dpkg --configure -a");
+  const updates = r.apt.flatMap((l, i) => (l.startsWith("apt-get") && l.includes("update") ? [i] : []));
+  assert.equal(updates.length, 2, r.apt.join("\n"));
+  assert.ok(updates[0] < configure && configure < updates[1], r.apt.join("\n"));
+});
+
+test("an install that works never asks dpkg to finish anything", () => {
+  const { run } = machine();
+  assert.ok(run("install", "socat").apt.every((l) => !l.startsWith("dpkg")));
 });
 
 test("a mirror that hangs once is tried once more", () => {

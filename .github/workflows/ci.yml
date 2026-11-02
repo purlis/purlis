@@ -148,7 +148,7 @@ jobs:
       # From a cache of their .deb files, and bounded: a slow mirror fails the step in minutes,
       # and the job summary says how long the install took (#1477, `.github/actions/linux-packages`).
       - name: Tauri's Linux build dependencies, and the sandbox's programs
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -272,7 +272,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: git-lfs
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           packages: git-lfs
@@ -310,7 +310,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tauri's Linux build dependencies
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -368,7 +368,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tauri's Linux build dependencies
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -452,7 +452,7 @@ jobs:
           fi
       - name: Tauri's Linux build dependencies, and the sandbox's programs
         if: steps.scope.outputs.run == 'true'
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -917,7 +917,7 @@ jobs:
       # Cached and bounded, as the `rust` job's (#1477).
       - name: Tauri's Linux build dependencies, an X server and i3 to start it in, and the sandbox's programs
         if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -1522,7 +1522,7 @@ jobs:
       # 2026-10-07 and held `main` for over an hour.
       - name: Tauri's Linux build dependencies, a display to run in, and the sandbox's programs
         if: runner.os == 'Linux'
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
