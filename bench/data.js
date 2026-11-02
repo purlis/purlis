@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793598626805,
+  "lastUpdate": 1793599946958,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35868,6 +35868,48 @@ window.BENCHMARK_DATA = {
             "value": 101.037124,
             "unit": "ms",
             "extra": "median of 5 runs: 100.348, 100.962, 101.037, 101.827, 102.251 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5b657f762d063fc3fed3a2dadb601077768a4ea4",
+          "message": "One held folder can be allowed for one chat on a Seatbelt profile; .claude/rules held (#4615)\n\n* A person may lift one held folder for one chat under a Seatbelt profile; .claude/rules held\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAJSYNRZWZNW1906D64YEX\nPurlis-Persona: steward\n\n* A refused grant's words stay as they were said, by the copy check's reading\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAJSYNRZWZNW1906D64YEX\nPurlis-Persona: steward\n\n* The press keeps the write's own refusal, as the copy check reads it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAJSYNRZWZNW1906D64YEX\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T03:47:02Z",
+          "tree_id": "af37f019ca0448eb43a4bdb80e58a018f1bcaf36",
+          "url": "https://github.com/purlis/purlis/commit/5b657f762d063fc3fed3a2dadb601077768a4ea4"
+        },
+        "date": 1793599942302,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6715990000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.655, 0.661, 0.672, 0.682, 0.686 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5294715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.365, 16.409, 16.529, 16.616, 16.725 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2017725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.407, 101.464, 102.202, 102.307, 102.871 ms"
           }
         ]
       }
