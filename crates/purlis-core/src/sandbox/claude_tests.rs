@@ -9,7 +9,7 @@ use serde_json::json;
 use super::grant::{Grants, What};
 use super::hosts::Host;
 use super::reach::Decision;
-use super::{Compiled, Machine, Os, Plane, applied_of, claude, compiler};
+use super::{Compiled, Level, Machine, Os, Plane, applied_of, claude, compiler};
 use crate::harness::Harness;
 
 mod deny_prefix;
@@ -693,6 +693,38 @@ fn a_hook_socket_in_the_per_user_fallback_folder_is_never_the_chat_s_to_write() 
         settings.sandbox["network"]["allowUnixSockets"],
         json!([socket.display().to_string()])
     );
+}
+
+/// On macOS a chat's commands read no terminal at either level, and write none at the floor, where
+/// every folder is otherwise written; Linux's settings say nothing of them.
+#[test]
+fn on_macos_a_claude_code_chats_commands_keep_to_its_own_terminal() {
+    let root = tempfile::tempdir().expect("a project");
+    let compiled = compiled_at(root.path(), None, &Grants::default());
+    let terminals = json!("/dev/ttys*");
+    let held = |level, os| {
+        let settings = claude::rules(&Compiled {
+            level,
+            os,
+            ..compiled.clone()
+        });
+        let listed = |key: &str| settings.sandbox["filesystem"][key].as_array().cloned();
+        (
+            listed("denyRead").expect("a list").contains(&terminals),
+            listed("denyWrite").expect("a list").contains(&terminals),
+            settings.deny.contains(&"Read(//dev/ttys*)".to_owned()),
+            settings.deny.contains(&"Edit(//dev/ttys*)".to_owned()),
+        )
+    };
+
+    assert_eq!(
+        held(Level::Full, Os::MacOs),
+        (true, false, true, true),
+        "the full sandbox writes no device but its own already"
+    );
+    assert_eq!(held(Level::Floor, Os::MacOs), (true, true, true, true));
+    assert_eq!(held(Level::Full, Os::Linux), (false, false, false, false));
+    assert_eq!(held(Level::Floor, Os::Linux), (false, false, false, false));
 }
 
 /// #3316: a Claude Code chat allowed to listen on a port compiles the very settings it would
