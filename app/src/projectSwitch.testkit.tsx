@@ -7,7 +7,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
 import { panes } from "./countedPane.testkit";
-import { counts } from "./reactCommits.testkit";
+import { counts, renderedBy } from "./reactCommits.testkit";
 import { stripNamed } from "./test-strips";
 import { themeInForce } from "./theme/inForce.testkit";
 
@@ -195,6 +195,8 @@ export type Switch = {
   /** How many times React committed for it, until everything it started had settled. */
   commits: number;
   rendered: number;
+  /** How many times each component was drawn for it, by name. */
+  renderedBy: Record<string, number>;
   mounted: number;
   unmounted: number;
   nodesAdded: number;
@@ -307,6 +309,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     });
     watching.observe(document.body, { childList: true, subtree: true });
     Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });
+    renderedBy.clear();
     Object.assign(panes, { started: 0, stopped: 0 });
     watchLayoutReads();
     reads.clear();
@@ -336,6 +339,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       syncMs,
       commits: counts.commits,
       rendered: counts.rendered,
+      renderedBy: Object.fromEntries(renderedBy),
       mounted: counts.mounted,
       unmounted: counts.unmounted,
       nodesAdded: nodes.added,
