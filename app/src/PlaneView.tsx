@@ -252,7 +252,6 @@ import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
 import { StatusLine, projectName, runningIn, todoCount, type Alerts } from "./StatusLine";
 import {
-  byLastActivity,
   closeChat,
   closeFocusedPane,
   closeTab,
@@ -302,7 +301,6 @@ import {
   workspaceOf,
   type Direction,
   type FiledIn,
-  type LastMoved,
   sendToBackground,
   focusedChat,
   focusedContent,
@@ -501,7 +499,6 @@ import {
   backSaid,
   inItsTurn,
   isShell,
-  movedAt,
   quietChats,
   sameList,
   sameQuiet,
@@ -510,7 +507,6 @@ import {
   useChats,
   useChatsHere,
   useChatsSelect,
-  type ChatStates,
   type FailedBelow,
   type State,
 } from "./chatState";
@@ -2983,34 +2979,6 @@ export const PlaneView = memo(function PlaneView({
     [chatTabId, frontPlace],
   );
 
-  /**
-   * When each chat last moved, as the CORE counts it (ADR 0039).
-   *
-   * The window cannot work this out: the strip is an opening order and the needs-you queue
-   * is oldest-first, and neither is "when did this chat last do something". The count comes
-   * down on `chat-moved` and in the first snapshot, so two windows on one plane agree and a
-   * relaunch does not invent an order out of whatever it happened to draw first.
-   */
-  const lastMoved =
-    (states: ChatStates): LastMoved =>
-    (session) =>
-      movedAt(states, session);
-
-  /**
-   * What the show-more menu lists: the tabs the strip has no room for, **most recently moved
-   * first** — and nothing else.
-   *
-   * **The menu is not a find surface** (ADR 0039). It lists what the strip is hiding, not
-   * every chat: the palette lists every chat with a search and a ranking over it, it is
-   * better at finding than any menu will be, and a menu built as a second one of those is a
-   * menu that should not have been built.
-   *
-   * **And now it is the only pointer route to a hidden tab, which is what the amendment to
-   * ADR 0039 had to argue for.** Its rows bring a tab forward, and the tab it brings forward
-   * is drawn on the strip with its own `×` (`fits.ts`, the selected tab is always drawn). So
-   * ending a chat is still two presses and never one from a menu under the cursor, which is
-   * the rule this menu was built with and did not have to change.
-   */
   /** How many of a tab's chats need you: every one of its panes' that is in the queue, split
    *  or not. Its share of the chat strip's show-more count when the strip is not drawing it. */
   const waitingOn = (queue: readonly number[], id: number) =>
@@ -3020,14 +2988,6 @@ export const PlaneView = memo(function PlaneView({
     hiddenNeeding(tabs, id, askedBy, queue).filter(
       (session) => !panesOf(tabs, id).some((pane) => pane.session === session),
     ).length;
-
-  // Read as an order and redrawn only when the order changes: a move by a chat the strip is
-  // drawing changes nothing in a menu of the ones it is not.
-  const notShowing = useChatsSelect(
-    chats,
-    (states) => byLastActivity(hidden, tabs, lastMoved(states)),
-    sameList,
-  );
 
   // The tab that was in front on this strip, remembered so that coming back to a workspace
   // comes back to the chat that was on screen there.
@@ -9824,7 +9784,8 @@ export const PlaneView = memo(function PlaneView({
                   colourOf={colourOf}
                   tintOf={tintOf}
                   shown={shown}
-                  notShowing={notShowing}
+                  hidden={hidden}
+                  chats={chats}
                   chatTabId={chatTabId}
                   strip={strip}
                   chatControls={chatControls}
