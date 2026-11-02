@@ -146,6 +146,9 @@ pub const SANDBOXED_ON_A_RUNNER: &str = "a chat on a runner starts in its sandbo
 /// How long a start waits for the host's link to be ready, before it says why there is none.
 const LINK_WITHIN: Duration = Duration::from_secs(30);
 
+/// Every repository a runner holds, and what it could not look through (1.68, #4569).
+pub(crate) type ReposHeld = (Vec<purlis_session_protocol::session::RepoHeld>, Vec<String>);
+
 /// How long a command waits for the host's answer.
 pub(crate) const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
@@ -1911,10 +1914,7 @@ impl HostLink {
 
     /// **Every repository the host holds in the projects it keeps** (1.68, #4569), with what it
     /// could not look through: `None` from a host before 1.68, which cannot say.
-    pub(crate) fn repos_held(
-        &self,
-    ) -> Result<Option<(Vec<purlis_session_protocol::session::RepoHeld>, Vec<String>)>, String>
-    {
+    pub(crate) fn repos_held(&self) -> Result<Option<ReposHeld>, String> {
         if self.version() < session::KNOWS_REPOS_HELD {
             return Ok(None);
         }

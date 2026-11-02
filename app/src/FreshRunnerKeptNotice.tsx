@@ -134,7 +134,7 @@ export function FreshRunnerKeptNotice({ plane }: { plane: PlaneId }) {
           onDismiss={dismiss}
         >
           A task's runner in workspace {runner.workspace} is kept, since some of its work is not
-          here yet. {missingSaid(runner.why)}
+          here. {missingSaid(runner.why)}
           {asked && <> Its work that is not here is lost once you discard it.</>}
           {refusal}
         </Notice>
