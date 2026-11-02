@@ -220,9 +220,10 @@ pub fn relative_to_the_folder(
 }
 
 /// `purlis worktree commit`: hands the commit to the app that started this sandboxed chat
-/// (#1055), prints what it answers, and answers the exit status. Nothing is committed by this
-/// process: a chat that is not sandboxed is told to use git. Run inside a branch folder, its
-/// paths are taken from where it runs there and the ask names that folder (#3927).
+/// (#1055), prints what it answers, and answers the exit status. A chat that is not sandboxed,
+/// and a terminal, commit here by themselves with their own git (#4534), unless the project
+/// refuses that ([`broker::refuses_unsandboxed`]). Run inside a branch folder, its paths are
+/// taken from where it runs there and the ask names that folder (#3927).
 pub fn commit(
     run_in: &RunIn<'_>,
     message: Option<String>,
@@ -249,11 +250,14 @@ pub fn commit(
             return 2;
         }
     };
-    if !purlis_core::sandbox::chat_is_sandboxed() {
-        say(Say::Fail(broker::PLAIN_GIT.into()));
-        return 1;
-    }
     let folder = folder.map(|(named, _, _)| named);
+    if !purlis_core::sandbox::chat_is_sandboxed() {
+        if broker::refuses_unsandboxed(run_in.root) {
+            say(Say::Fail(broker::PLAIN_GIT.into()));
+            return 1;
+        }
+        return committed_by_itself(run_in, &message, &stage, folder.as_ref(), say);
+    }
     let forwarded = asked(
         |chat| {
             hookwire::Ask::Commit(Box::new(CommitAsk {
@@ -274,6 +278,50 @@ pub fn commit(
         ));
         1
     })
+}
+
+/// How long a commit waits on the app's word about who holds the branch folder: no answer lets
+/// it run, as it does for a chat's plain git (#3931).
+const A_CLAIM_TAKES_AT_MOST: Duration = Duration::from_secs(2);
+
+/// The commit of a process nothing holds, by its own git ([`broker::plain`]): refused where
+/// another live chat holds the branch folder, as its plain git would be (#3931).
+fn committed_by_itself(
+    run_in: &RunIn<'_>,
+    message: &str,
+    stage: &Stage,
+    folder: Option<&FolderName>,
+    say: &mut dyn FnMut(Say),
+) -> u8 {
+    let placed = match broker::plain::placed(run_in.root, run_in.cwd, folder, stage) {
+        Ok(placed) => placed,
+        Err(why) => {
+            say(Say::Fail(why.into()));
+            return 1;
+        }
+    };
+    let claim = GitWork::WorktreeClaim {
+        repo: placed.at.repo.clone(),
+        piece: placed.at.piece.clone(),
+        act: hookwire::ClaimAct::Commit,
+    };
+    if let Forwarded::Said { code, lines } =
+        forwarded(&placed.at.workspace, claim, A_CLAIM_TAKES_AT_MOST)
+        && code == hookwire::CLAIM_HELD
+    {
+        lines.into_iter().for_each(&mut *say);
+        return 1;
+    }
+    match broker::plain::commit(&placed, message) {
+        Ok(lines) => {
+            lines.into_iter().for_each(&mut *say);
+            0
+        }
+        Err(why) => {
+            say(Say::Fail(why.into()));
+            1
+        }
+    }
 }
 
 /// What the app's answer, or the way asking failed, makes of a git action handed to it.

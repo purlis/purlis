@@ -1657,6 +1657,33 @@ fn a_handoff_with_no_name_goes_by_where_the_work_went_within_a_names_length() {
 }
 
 #[test]
+fn a_chat_the_app_started_with_no_sandbox_in_a_sandboxed_project_is_told_so() {
+    // #4534: a dispatched chat can start at a person's level below its parent's.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(crate::names::manifest(root), "[sandbox]\nmode = \"on\"\n").unwrap();
+    let env = |socket: Option<&'static str>, mark: Option<&'static str>| {
+        move |name: &str| {
+            match name {
+                crate::hookwire::SOCKET_ENV => socket,
+                crate::hookwire::SANDBOXED_ENV => mark,
+                _ => None,
+            }
+            .map(str::to_owned)
+        }
+    };
+    assert_eq!(
+        unsandboxed_note(root, &env(Some("/s"), None)),
+        Some(UNSANDBOXED_NOTE)
+    );
+    assert_eq!(unsandboxed_note(root, &env(Some("/s"), Some("1"))), None);
+    // A harness started in a terminal, and a project with no sandbox on, are not told.
+    assert_eq!(unsandboxed_note(root, &env(None, None)), None);
+    std::fs::write(crate::names::manifest(root), "").unwrap();
+    assert_eq!(unsandboxed_note(root, &env(Some("/s"), None)), None);
+}
+
+#[test]
 fn only_the_exact_mark_the_app_sets_reads_as_a_sandboxed_chat() {
     // The same decision as above, without a plane on disk (a sandbox that refuses writing a
     // manifest can still run this one).

@@ -1419,9 +1419,8 @@ mod tests {
             let said = refused.said();
             assert!(
                 said.contains(
-                    "`purlis worktree add <repo> <piece>`, then commit and push from it: in a \
-                     sandboxed chat with `purlis worktree commit` and `purlis worktree push`, \
-                     in any other chat with plain `git commit` and `git push`."
+                    "`purlis worktree add <repo> <piece>`, then commit and push from it with \
+                     `purlis worktree commit` and `purlis worktree push`."
                 ),
                 "{sandboxed}: {said}"
             );
