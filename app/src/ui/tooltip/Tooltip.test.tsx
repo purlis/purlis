@@ -428,6 +428,87 @@ describe("a hint that comes and goes on a target (#4659)", () => {
   });
 });
 
+describe("a hint that comes and goes on a family button (#4671)", () => {
+  type Hinted = { tip?: string; isDisabled?: boolean };
+  type Drawn = { tooltip?: string; isDisabled?: boolean };
+  const families: [string, (props: Drawn) => ReactElement][] = [
+    ["a button", (props) => <Button {...props}>Move left</Button>],
+    ["a toggle button", (props) => <ToggleButton {...props}>Move left</ToggleButton>],
+    [
+      "a status item",
+      (props) => (
+        <StatusItem {...props} onPress={() => {}}>
+          Move left
+        </StatusItem>
+      ),
+    ],
+  ];
+
+  describe.each(families)("on %s", (_, Drawn) => {
+    const Row = ({ tip, isDisabled }: Hinted) => (
+      <>
+        <Drawn tooltip={tip} isDisabled={isDisabled} />
+        <button type="button">Next</button>
+      </>
+    );
+
+    it("keeps the target and its focus, and shows a hint that comes under the keyboard", async () => {
+      const { rerender } = render(<Row />);
+      const target = screen.getByRole("button", { name: "Move left" });
+      await user.tab();
+      expect(target).toHaveFocus();
+      rerender(<Row tip="Already first" />);
+      expect(screen.getByRole("button", { name: "Move left" })).toBe(target);
+      expect(target).toHaveFocus();
+      expect(shownTip()).toHaveTextContent("Already first");
+      await user.tab();
+      await wait(TOOLTIP_CLOSE_DELAY + 50);
+      expect(shownTip()).toBeNull();
+    });
+
+    it("says why when it turns unavailable under the keyboard", async () => {
+      const { rerender } = render(<Row />);
+      const target = screen.getByRole("button", { name: "Move left" });
+      await user.tab();
+      rerender(<Row tip="Already first" isDisabled />);
+      expect(target).toHaveFocus();
+      expect(target).toHaveAttribute("aria-disabled", "true");
+      expect(shownTip()).toHaveTextContent("Already first");
+      expect(target).toHaveAccessibleDescription("Already first");
+    });
+
+    it("shows nothing for the pointer's focus", async () => {
+      const { rerender } = render(<Row />);
+      await pointerIn();
+      await user.click(screen.getByRole("button", { name: "Move left" }));
+      await user.unhover(screen.getByRole("button", { name: "Move left" }));
+      rerender(<Row tip="Already first" />);
+      await wait(TOOLTIP_DELAY + 50);
+      expect(shownTip()).toBeNull();
+    });
+
+    it("does not show a hint that comes with the keyboard elsewhere", async () => {
+      const { rerender } = render(<Row />);
+      await user.tab();
+      await user.tab();
+      rerender(<Row tip="Already first" />);
+      expect(shownTip()).toBeNull();
+    });
+
+    it("does not bring back a hint that went while it was open", async () => {
+      const { rerender } = render(<Row tip="Already first" />);
+      await user.tab();
+      expect(shownTip()).not.toBeNull();
+      rerender(<Row />);
+      await wait(TOOLTIP_CLOSE_DELAY + 50);
+      expect(shownTip()).toBeNull();
+      await user.tab();
+      rerender(<Row tip="Already first" />);
+      expect(shownTip()).toBeNull();
+    });
+  });
+});
+
 describe("a status item's tooltip", () => {
   it("is a pill's hint, shown by the keyboard, and a cell's, which makes it a Tab stop", () => {
     render(

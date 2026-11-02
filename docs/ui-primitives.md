@@ -945,11 +945,11 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
   whose hint is its own name take none, because the control or the name says what it means. A
   hint that only repeats an element's words (a name cut short) is the pointer's: no focus opens
   it. While it is shown, a hint is its target's description.
-- **A hint that comes keeps its target** (#4659). A target stands in its tooltip's trigger with or
-  without a hint, a menu's `MenuItem` included, so a hint that comes or goes draws nothing afresh
+- **A hint that comes keeps its target** (#4659, #4671). A target stands in its tooltip's trigger
+  with or without a hint, a menu's `MenuItem` and the button family's `Tipped` included, so a hint that comes or goes draws nothing afresh
   and the focus stays. One that comes while the keyboard is on the target opens at once, because
-  no later focus would open it: a menu's row that turns unavailable says why where the keyboard
-  is. The pointer's way stays coming onto the target: one already resting on it sees the hint when
+  no later focus would open it: a menu's row or a button that turns unavailable says why where
+  the keyboard is. The pointer's way stays coming onto the target: one already resting on it sees the hint when
   it next comes back.
 - **An icon button's tooltip and its name agree by construction**: the tooltip shows the
   `aria-label`, its hint a second line under it, and is not heard a second time. A raw icon-only
