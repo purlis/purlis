@@ -4,6 +4,7 @@
 import {
   askRows,
   curateRows,
+  moveChatRows,
   curateSubjectOf,
   menuRows,
   moveRows,
@@ -154,6 +155,13 @@ export function unnamed(offer: Offer): string {
     .trim();
 }
 
+/** A Move to ▸ row's words (#2048): the place alone, as the submenu says where it moves. */
+function movedToSaid(offer: Offer): string {
+  const does = offer.does;
+  if (does.verb !== "moveChat") return offer.title;
+  return does.to === null ? SAID.thisMachine : `Pool ${does.to}`;
+}
+
 /** Whether a pin row's thing is pinned now: the row would unpin it. */
 function pinnedNow(offer: Offer): boolean {
   const does = offer.does;
@@ -187,32 +195,37 @@ const stopped = (warns: string, said: Dress["said"] = unnamed): Dress => ({
  * never lost; `menuModel.test.ts` lists the ones that are meant to be.
  */
 const DRESS: Readonly<Record<string, Dress>> = {
-  // A chat's tab, and a chat's row in the Chats list.
-  "tab.smartclose.cancel": { said: SAID.cancelSmartClose, slot: "first" },
-  "tab.select": { said: SAID.switchTo, slot: "first", quiet: true },
-  "tab.rename": { said: SAID.rename, slot: "first", keys: () => RENAME_KEY_SAID },
-  "tab.pin": pin,
-  "tab.worklink": { said: SAID.linkWorkItem, slot: "first" },
-  "tab.workunlink": { said: SAID.unlinkWorkItem, slot: "first" },
+  // A chat's one list (#4753): its pane head's ⋯, its sidebar row's ⋯ and right-click.
+  "chat.smartclose.cancel": { said: SAID.cancelSmartClose, slot: "first" },
+  "needs.dismiss": { said: SAID.dismiss, slot: "first" },
+  "chat.rename": { said: SAID.rename, slot: "first", keys: () => RENAME_KEY_SAID },
+  "chat.useskill": { said: SAID.useSkill, slot: "first" },
+  "chat.worklink": { said: SAID.linkWorkItem, slot: "first" },
+  "chat.workunlink": { said: SAID.unlinkWorkItem, slot: "first" },
   "needs.show": { said: SAID.show, slot: "first" },
-  "chat.handed": { said: (offer) => `Go to ${offer.name ?? ""}`.trim(), slot: "first" },
+  "chat.handed": { said: (offer) => `Go to ${offer.name ?? ""}`.trim(), slot: "open" },
   "chat.own": { said: SAID.ownTab, slot: "open" },
   "chat.beside": { said: unnamed, slot: "open" },
   "chat.back": { said: unnamed, slot: "open" },
   "chat.brief": { said: SAID.brief, slot: "open" },
-  "chat.answer": { said: SAID.answer, slot: "open" },
-  "tab.activity": { said: SAID.activity, slot: "open", under: "open" },
-  "tab.network": { said: SAID.network, slot: "open", under: "open" },
-  // The row's own words: Use skill…, and the chat's budget where it is known (#2775).
-  "tab.useskill": { said: (offer) => offer.title, slot: "open" },
-  "tab.restart": { said: SAID.restart, midTurn: SAID.restartMidTurn, slot: "run" },
+  "chat.answer": { said: SAID.answer, slot: "first" },
+  "chat.activity": { said: SAID.activity, slot: "open", under: "open" },
+  "chat.network": { said: SAID.network, slot: "open", under: "open" },
+  "needs.ignore": { said: SAID.ignore, slot: "open" },
   "chat.restart": { said: SAID.restart, midTurn: SAID.restartMidTurn, slot: "run" },
+  // It ends the program, so it is with what ends, as the menus' rule 4 keeps the danger colour.
+  "chat.fresh": { said: SAID.startFresh, slot: "end", danger: true, warns: WARNS.fresh },
   "chat.stop": stopped(WARNS.stops),
   "chat.stop.below": stopped(WARNS.stopsBelow),
   "chat.stop.tasks": stopped(WARNS.stopsTasks, SAID.stopAllTasks),
+  "chat.end": { said: SAID.end, slot: "end", danger: true, warns: WARNS.ends },
   "task.stop": { said: SAID.taskStop, slot: "end", danger: true, warns: WARNS.taskStops },
   "task.close": { said: SAID.taskClose, slot: "end", danger: true, warns: WARNS.taskCloses },
-  "tab.fresh": { said: SAID.startFresh, slot: "end", danger: true, warns: WARNS.fresh },
+
+  // A tab's own rows (#4753): what a tab is, and never a chat's.
+  "tab.select": { said: SAID.switchTo, slot: "first", quiet: true },
+  "tab.pin": pin,
+  "tab.keep": { said: SAID.keepOpen, slot: "first" },
   "tab.close": {
     said: unnamed,
     // A task's own tab keeps the close's id for its minimise (#1489), which sends it back and
@@ -439,8 +452,8 @@ function curateSub(subject: string, offers: Catalogued): SubDrawn | undefined {
 /** What the thing a menu was opened on is called, with its name: the menu's accessible name. */
 function aboutOf(what: MenuOn, name: string | undefined): string | undefined {
   const kind: Partial<Record<MenuOn["on"], string>> = {
-    chat: "Tab",
-    listed: "Chat",
+    chat: "Chat",
+    tab: "Tab",
     workspace: "Workspace",
     project: "Project",
     persona: "Persona",
@@ -542,15 +555,21 @@ export function menuOf(what: MenuOn, offers: Catalogued): MenuDrawn {
   above.forEach((offer) => place(offer, false));
   below.forEach((offer) => place(offer, true));
 
-  // **Ask ▸**, on a chat's tab: one row per persona this chat may ask, named by the persona
+  // **Ask ▸**, on a chat's list: one row per persona this chat may ask, named by the persona
   // alone. What asking does is the same for each, so the submenu's own tooltip says it once.
+  // **Move to ▸** (#2048): one row per place the chat can move, under its restart.
   if (what.on === "chat") {
-    const asks = askRows(what.tab, offers);
+    const asks = askRows(what.session, offers);
     if (asks.length > 0)
-      folded("ask", "open").groups[0].entries.push(
+      folded("ask", "first").groups[0].entries.push(
         ...asks.map((offer) =>
           plain(offer, offer.does.verb === "askPersona" ? offer.does.persona : offer.title, true),
         ),
+      );
+    const moves = moveChatRows(what.session, offers);
+    if (moves.length > 0)
+      folded("moveTo", "run").groups[0].entries.push(
+        ...moves.map((offer) => plain(offer, movedToSaid(offer))),
       );
   }
   const curating = curateSubjectOf(what);

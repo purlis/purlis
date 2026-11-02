@@ -3,12 +3,22 @@
 
 import type { RowMenu } from "./ui/list/List";
 import { useEffect, useId, type ReactNode } from "react";
-import { noteOf, type Catalogued, type MenuOn, type Offer } from "./actions";
+import { Ellipsis } from "lucide-react";
+import { noteOf, renameId, type Catalogued, type MenuOn, type Offer } from "./actions";
 import { turnStateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { menuIsEmpty, menuOf, type GroupDrawn, type RowDrawn, type SubDrawn } from "./menuModel";
 import { landSettingsFocus } from "./settings/entering";
 import { ContextMenu } from "./ui/menu/ContextMenu";
-import { Menu, MenuItem, MenuSection, MenuSeparator, MenuWords, Submenu } from "./ui/menu/Menu";
+import { IconButton } from "./ui/button/Button";
+import {
+  Menu,
+  MenuItem,
+  MenuSection,
+  MenuSeparator,
+  MenuTrigger,
+  MenuWords,
+  Submenu,
+} from "./ui/menu/Menu";
 import { MenuTip, useRested } from "./ui/menu/MenuTip";
 
 /**
@@ -84,6 +94,43 @@ export function catalogueMenu(
     // A row that went into Settings sent the keyboard there, not back to the row (#1206).
     onClosed: landSettingsFocus,
   };
+}
+
+/**
+ * **A chat's ⋯** (#4753): its one list, the same `menuOf({ on: "chat" })` its sidebar row's
+ * right-click and ⋯ open, from a button of its own, on its pane's head. Named for the chat, so
+ * two panes side by side have two names. Nothing is drawn for a chat with no row at all.
+ */
+export function ChatMenuButton({
+  session,
+  offers,
+  onPress,
+  variant = "quiet",
+}: {
+  session: number;
+  offers: Catalogued;
+  onPress: (offer: Offer) => void;
+  variant?: "quiet" | "ghost";
+}) {
+  const on: MenuOn = { on: "chat", session };
+  if (menuIsEmpty(on, offers)) return null;
+  const name = offers.get(renameId(session))?.name;
+  const said = name === undefined ? "More for this chat" : `More for ${name}`;
+  return (
+    // A row that went into Settings sent the keyboard there, not back to the button (#1206).
+    <MenuTrigger onClosed={landSettingsFocus}>
+      <IconButton
+        variant={variant}
+        size="sm"
+        aria-label={said}
+        tooltip={said}
+        icon={<Ellipsis aria-hidden="true" />}
+      />
+      {/* A pane's head is drawn once per pane, never per tab of a strip, so the model is made
+          with it: a handful of scans, not fifty. */}
+      <CatalogueMenu on={on} offers={offers} onPress={onPress} />
+    </MenuTrigger>
+  );
 }
 
 /**

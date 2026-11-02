@@ -82,6 +82,8 @@ import { BrowserRows, type BrowserShown } from "./ChatBrowsersShown";
 import { HeadingOffer } from "./PanelSection";
 import { tasksIn } from "./taskBuckets";
 import { Menued } from "./Menus";
+import { menuIsEmpty } from "./menuModel";
+import { askForAMenu } from "./ui/menu/ContextMenu";
 import { useRevealedTask, type Reveal } from "./revealTask";
 import { useTabStop } from "./roving";
 import { stateClock, useStateSince, type StateClock } from "./stateClock";
@@ -1554,7 +1556,7 @@ const Row = memo(function Row({
   });
   return (
     <li role="none" data-level={level}>
-      <Menued on={{ on: "listed", session, handed: handedAll }} offers={offers} onPress={onPress}>
+      <Menued on={{ on: "chat", session, handed: handedAll }} offers={offers} onPress={onPress}>
         <RovingFocusGroup.Item asChild tabStopId={rowId(session)}>
           <button
             type="button"
@@ -1642,6 +1644,26 @@ const Row = memo(function Row({
           </button>
         </RovingFocusGroup.Item>
       </Menued>
+      {/* **The row's ⋯** (#4753, the person's ruling on #4585): the chat's one list, the menu a
+          right-click, Shift+F10 or the menu key on the row opens, asked for at the row so the
+          two are never two menus. Drawn on hover and while the row has the keyboard, in room
+          kept for it, so nothing moves. **The pointer's and the eye's, as the at-limit line
+          is**: what the row's `li` holds is the tree's, so it is out of the accessibility tree
+          and the tab order, and the keyboard opens the same list with Shift+F10 on the row. */}
+      {!menuIsEmpty({ on: "chat", session, handed: handedAll }, offers) && (
+        <span className="chat-more" aria-hidden="true">
+          <IconButton
+            size="sm"
+            variant="ghost"
+            aria-label={`More for ${name}`}
+            excludeFromTabOrder
+            icon={<Ellipsis aria-hidden="true" />}
+            onPress={() => {
+              if (self.current !== null) askForAMenu(self.current);
+            }}
+          />
+        </span>
+      )}
       {/* The popover family's card, held up by the row and standing beside it, never opened
           by a press: a press on a row opens its chat. Beside the row, over the centre, in the
           default arrangement; it turns to the other side where there is no room, as a region
