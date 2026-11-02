@@ -793,6 +793,22 @@ fn judged(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
 pub const LIFT_SAID: &str = "A later program loads code or settings from it, outside any \
      sandbox, so allow it only for a change you asked for. It lasts for this chat alone.";
 
+/// [`LIFT_SAID`] for a chat in Claude Code's own sandbox, whose `denyWrite` globs can't be written
+/// past one path: the Allow on `folder` drops the name's glob, so the chat may write that name
+/// anywhere for its run (ADR 0067, amended 2026-11-02).
+pub fn lift_said_by_name(folder: &Path) -> String {
+    let name = super::MAY_LIFT
+        .iter()
+        .find(|name| folder.ends_with(name))
+        .map_or_else(|| folder.display().to_string(), |name| (*name).to_owned());
+    format!(
+        "A later program loads code or settings from it, outside any sandbox, so allow it only \
+         for a change you asked for. Claude Code's sandbox can't allow one folder alone, so for \
+         its run this chat may write any {name}, in any folder. It can only be allowed for this \
+         chat, never always."
+    )
+}
+
 /// **The held folder of [`super::MAY_LIFT`] that `path` is, or is in**, below the home alone.
 pub fn liftable(path: &Path, place: &Place<'_>) -> Option<PathBuf> {
     let home = place.home?;

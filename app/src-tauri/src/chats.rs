@@ -5409,6 +5409,12 @@ impl Chats {
         lock(&self.open).get(&session)?.harness
     }
 
+    /// What `session` was started as, where charter has it open: its harness, or `None` inside
+    /// for a shell. The outer `None` is a chat charter does not have open.
+    pub fn started_as(&self, session: u32) -> Option<Option<Harness>> {
+        lock(&self.open).get(&session).map(|one| one.harness)
+    }
+
     /// What chat `session`'s pane sends for Shift+Enter (SI-4): the `[terminal] newline` of the
     /// declaration it started on, a project's or this machine's (#967, #968), else its
     /// harness's newline ([`Harness::newline`]), and none for a shell, a declaration that names

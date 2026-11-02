@@ -1052,13 +1052,22 @@ pub type BlockTeller = Arc<dyn Fn(ChatBlocked) + Send + Sync + 'static>;
 /// What the window is told of a block a chat's hook sent on `plane`'s socket, or a brokered
 /// run's proxy refused. A harness word the app does not start is no harness: the line is the
 /// chat's own. `has_check`: whether the chat's sandbox was compiled with the system's
-/// certificate check, by the app's own record of its start ([`blocked_on`]).
-pub fn blocked_holding(plane: &PlaneId, heard: &HeardBlock, has_check: bool) -> ChatBlocked {
+/// certificate check, and `started`: what it started as (a harness, or a shell), each by the
+/// app's own record of its start ([`blocked_on`]). Where the app has the chat open, the line's
+/// word is never read: what a Notice says an Allow reaches turns on it.
+pub fn blocked_holding(
+    plane: &PlaneId,
+    heard: &HeardBlock,
+    has_check: bool,
+    started: Option<Option<purlis_core::harness::Harness>>,
+) -> ChatBlocked {
     let blocked = &heard.line;
-    let harness = blocked
-        .harness
-        .as_deref()
-        .and_then(purlis_core::harness::Harness::of_kind);
+    let harness = started.unwrap_or_else(|| {
+        blocked
+            .harness
+            .as_deref()
+            .and_then(purlis_core::harness::Harness::of_kind)
+    });
     let told = blocked_on(
         plane,
         blocked.chat,
@@ -1099,7 +1108,7 @@ fn suggested_port(told: &ChatBlocked, suggested: Option<&str>) -> Option<String>
 /// [`blocked_holding`] for a chat that started without the certificate check.
 #[cfg(test)]
 pub fn blocked(plane: &PlaneId, heard: &HeardBlock) -> ChatBlocked {
-    blocked_holding(plane, heard, false)
+    blocked_holding(plane, heard, false, None)
 }
 
 /// **What the window is told of `block`, refused chat `session` of `harness` on `target`**: what
@@ -1666,8 +1675,9 @@ fn kept_in_place(
 
 /// **A refused write of a held folder a person may lift** ([`purlis_core::sandbox::grant::lift`]):
 /// Allow, naming the folder whole, for this chat alone, where purlis can write that into the
-/// chat's sandbox: a Seatbelt profile, which can name one path. `None` for any other block, for
-/// a wrap on Linux, and for Claude Code's own sandbox, whose globs can't.
+/// chat's sandbox. A Seatbelt profile lifts that one path; Claude Code's own sandbox drops the
+/// name's glob, so its Notice says the chat may write that name anywhere. `None` for any other
+/// block, and where a wrap on Linux holds the chat.
 fn lifted_here(
     harness: Option<purlis_core::harness::Harness>,
     root: &Path,
@@ -1682,17 +1692,21 @@ fn lifted_here(
         || block.kind != Kind::ProtectedFile
         || !matches!(block.operation, Operation::Write | Operation::File)
         || machine.purlis_wraps(harness)
-        || harness == purlis_core::harness::Harness::ClaudeCode
     {
         return None;
     }
     let ground = grant::Ground::of(root, root, &machine);
     let folder = grant::liftable(Path::new(target?), &ground.place())?;
     let folder = grant::lift(&folder.display().to_string(), &ground).ok()?;
+    let said = if harness == purlis_core::harness::Harness::ClaudeCode {
+        grant::lift_said_by_name(&folder)
+    } else {
+        grant::LIFT_SAID.to_owned()
+    };
     Some((
         BlockOffer::Write,
         Some(folder.display().to_string()),
-        Some(grant::LIFT_SAID.to_owned()),
+        Some(said),
     ))
 }
 
