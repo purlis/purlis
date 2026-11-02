@@ -84,7 +84,7 @@ import { tasksIn } from "./taskBuckets";
 import { Menued } from "./Menus";
 import { useRevealedTask, type Reveal } from "./revealTask";
 import { useTabStop } from "./roving";
-import { stateClock, useStateSince, type StateClock } from "./stateClock";
+import { stateClock, useNow, useStateSince, type StateClock } from "./stateClock";
 import { deletes } from "./tabKeys";
 import { askSettingsLink } from "./settings/links";
 import { DISPATCH } from "./settings/dispatch";
@@ -92,6 +92,14 @@ import { Button, IconButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
+import { useQuestionStanding, useQuestionsHere } from "./QuestionsHere";
+import {
+  askingBelow,
+  askingSaid,
+  questionWord,
+  waitingOnYou,
+  type QuestionStanding,
+} from "./taskQuestions";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { useWindowLeft } from "./ui/windowLeft";
 import { useHeldStill } from "./heldStill";
@@ -103,7 +111,6 @@ type ShownFacts = {
   shell: boolean;
   report: TaskFacts["report"] | null;
   outcome: string | null;
-  asking: string | null;
   harness: string | null;
 };
 
@@ -621,8 +628,19 @@ export function ChatsSection({
     }
     return of;
   }, [drawn]);
-  const needsYou = useChatsSelect(chats, (states) => states.needsYou);
+  const queue = useChatsSelect(chats, (states) => states.needsYou);
+  /** The project's task questions, as the asks registry lists them (#4564). */
+  const questions = useQuestionsHere();
+  /** **Who waits on the person**: the core's queue, and each task question that has reached
+   *  them. A question with its asking chat is in neither, so it draws no hand above its row
+   *  and opens no fold. */
+  const needsYou = useMemo(() => {
+    const reached = waitingOnYou(questions).filter((session) => !queue.includes(session));
+    return reached.length === 0 ? queue : [...queue, ...reached];
+  }, [queue, questions]);
   const leads = useMemo(() => needing(rows, needsYou), [rows, needsYou]);
+  /** How many task questions are with their asking chat under each row: a folded row says so. */
+  const askingUnder = useMemo(() => askingBelow(rows, questions), [rows, questions]);
   const byNumber = useMemo(() => new Map(rows.map((row) => [row.session, row])), [rows]);
   /**
    * **A task that comes to need you opens the rows above it** (#1675, B-6), so it is never
@@ -1112,7 +1130,6 @@ export function ChatsSection({
                       shell={row.shell}
                       report={row.report}
                       outcome={row.outcome}
-                      asking={row.asking}
                       harness={row.harness}
                       runsOn={row.runsOn}
                       level={row.level}
@@ -1137,6 +1154,7 @@ export function ChatsSection({
                       current={row.session === front}
                       open={open ?? null}
                       needs={lead === undefined ? null : lead}
+                      askingUnder={askingUnder.get(row.session) ?? 0}
                       needsName={
                         lead === undefined || lead === row.session
                           ? null
@@ -1343,7 +1361,6 @@ const Row = memo(function Row({
   shell,
   report,
   outcome,
-  asking,
   harness,
   runsOn,
   level,
@@ -1359,6 +1376,7 @@ const Row = memo(function Row({
   current,
   open,
   needs,
+  askingUnder,
   needsName,
   stopping,
   restartSaid,
@@ -1390,7 +1408,6 @@ const Row = memo(function Row({
   /** What its state is derived from beside the board's word for it (`ChatShownState`). */
   report: TaskFacts["report"] | null;
   outcome: string | null;
-  asking: string | null;
   harness: string | null;
   /** What it runs on (`ListedChat.runsOn`), said in its card (#1673). */
   runsOn?: string | null;
@@ -1417,6 +1434,8 @@ const Row = memo(function Row({
   open: boolean | null;
   /** The chat its hand leads to: itself, a chat below it, or none when it wears no hand. */
   needs: number | null;
+  /** How many task questions under it are with their asking chat (#4564): said while folded. */
+  askingUnder: number;
   /** That chat's name, when it is a chat below this one. */
   needsName: string | null;
   stopping: boolean;
@@ -1470,7 +1489,7 @@ const Row = memo(function Row({
   // A task's tokens, in its card (#1500): read as the pointer or the keyboard rests on the
   // row, never polled.
   const used = useTokensOnHover({ chat: session });
-  const state: ShownFacts = { session, shell, report, outcome, asking, harness };
+  const state: ShownFacts = { session, shell, report, outcome, harness };
   // **What the row says** (#3658, #3759, #3886): a chat below it needs you, its task limit, its
   // dispatches waiting on memory and where they are named, and what its restart says. Said in
   // the row's description, which is where a screen reader is, since what is drawn beside it
@@ -1634,10 +1653,13 @@ const Row = memo(function Row({
                 <>
                   {" "}
                   <TasksFolded session={session} />
+                  {askingUnder > 0 && (
+                    <span className="question-asking ui-text-meta">{askingSaid(askingUnder)}</span>
+                  )}
                 </>
               )}
               {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
-              <RowTime clock={clock} session={session} />
+              <QuestionOrTime clock={clock} session={session} />
             </span>
           </button>
         </RovingFocusGroup.Item>
@@ -1891,6 +1913,32 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
  * row. Seen and not heard: the row's card says how long in words (`StateSince`). None where the
  * window did not see the chat come into its state.
  */
+/**
+ * **What a task's question waits on, and for how long** (#4564), where it has one: `asking
+ * steward 2 · 1m` or `needs you · now`, timed from when it was asked or reached the person, on
+ * the row's own clock. Otherwise how long the chat has been in its state ({@link RowTime}).
+ */
+const QuestionOrTime = memo(function QuestionOrTime({
+  clock,
+  session,
+}: {
+  clock: StateClock;
+  session: number;
+}) {
+  const question = useQuestionStanding(session);
+  if (question === undefined) return <RowTime clock={clock} session={session} />;
+  return <QuestionWaits question={question} />;
+});
+
+function QuestionWaits({ question }: { question: QuestionStanding }) {
+  const now = useNow();
+  return (
+    <span className="question-waits chat-time ui-text-meta" aria-hidden="true">
+      {questionWord(question, new Date(now))}
+    </span>
+  );
+}
+
 const RowTime = memo(function RowTime({ clock, session }: { clock: StateClock; session: number }) {
   const seconds = useStateSince(clock, session);
   if (seconds === null) return null;

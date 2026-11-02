@@ -1399,7 +1399,6 @@ fn a_handoff_opens_a_chat_on_the_asking_chats_profile_with_the_brief_as_its_firs
                 reported: false,
                 unreported: false,
                 outcome: None,
-                asking: None,
                 by_person: None,
                 asker_waiting: None,
             }),
@@ -2615,7 +2614,6 @@ fn the_new_chat_knows_its_parent_by_the_name_the_operator_gave_it() {
             reported: false,
             unreported: false,
             outcome: None,
-            asking: None,
             by_person: None,
             asker_waiting: None,
         })
@@ -3940,7 +3938,6 @@ fn a_task_for_the_asking_chats_own_persona_starts_one_chat_beside_it_on_the_stam
             reported: false,
             unreported: false,
             outcome: None,
-            asking: None,
             by_person: None,
             asker_waiting: None,
         })
@@ -10781,8 +10778,12 @@ fn a_listed_task_says_how_it_reported_in_its_dispatch_records_word() {
         let task = a_task_of(&held, &id, steward, "check the queue");
         let working = listed_from(&held, task);
         assert_eq!(
-            (working.reported, working.outcome, working.asking),
-            (false, None, None),
+            (
+                working.reported,
+                working.outcome,
+                asks_its_asker_listed(&held, task)
+            ),
+            (false, None, false),
             "a working task has no outcome, and asks nothing"
         );
 
@@ -10859,12 +10860,12 @@ fn the_window_is_told_the_rows_changed_when_a_question_opens_is_answered_and_a_r
     asks(&held, &id, task, question("Which queue?"));
     let asked = rows_changed();
     assert!(asked > before, "a question opening is told");
-    assert_eq!(listed_from(&held, task).asking, Some(true));
+    assert!(asks_its_asker_listed(&held, task));
 
     asks(&held, &id, asking, the_answer(task, "The slow one."));
     let answered = rows_changed();
     assert!(answered > asked, "its answer is told");
-    assert_eq!(listed_from(&held, task).asking, None);
+    assert!(!asks_its_asker_listed(&held, task));
 
     tasks_report(
         &held,
@@ -10879,6 +10880,15 @@ fn the_window_is_told_the_rows_changed_when_a_question_opens_is_answered_and_a_r
     assert_eq!(listed_from(&held, task).outcome.as_deref(), Some("done"));
 }
 
+/// Whether the asks registry lists task `task`'s question as with its asking chat (#4564):
+/// what its row says, read where the window reads it.
+fn asks_its_asker_listed(held: &Held, task: u32) -> bool {
+    crate::asking::every_ask(held)
+        .with_asking_chat
+        .iter()
+        .any(|one| one.session == task)
+}
+
 #[test]
 fn a_listed_task_says_it_is_asking_while_its_question_is_open_and_not_after() {
     let plane = a_plane_with_personas();
@@ -10888,7 +10898,7 @@ fn a_listed_task_says_it_is_asking_while_its_question_is_open_and_not_after() {
     let task = a_task_of(&held, &id, asking, "check the queue");
 
     asks(&held, &id, task, question("Which queue?"));
-    assert_eq!(listed_from(&held, task).asking, Some(true));
+    assert!(asks_its_asker_listed(&held, task));
 
     asks(
         &held,
@@ -10899,7 +10909,7 @@ fn a_listed_task_says_it_is_asking_while_its_question_is_open_and_not_after() {
             text: "The slow one.".to_owned(),
         },
     );
-    assert_eq!(listed_from(&held, task).asking, None);
+    assert!(!asks_its_asker_listed(&held, task));
 }
 
 #[test]

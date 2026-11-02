@@ -144,3 +144,15 @@ export function useStateSince(clock: StateClock, session: number): number | null
   );
   return at === null ? null : Math.max(0, Math.floor((now - at) / 1000));
 }
+
+/**
+ * **The row's clock, now** (#4564): the same one beat every row's time is read on, twice a
+ * minute, so what a row says in minutes changes at most once a minute.
+ */
+export function useNow(): number {
+  return useSyncExternalStore(
+    everyTick,
+    () => nowMs,
+    () => nowMs,
+  );
+}

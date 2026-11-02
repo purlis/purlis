@@ -191,3 +191,28 @@ fn the_asking_chats_not_yet_handed_a_question_are_the_ones_told_again() {
 
     assert!(talk.askers_not_handed().is_empty());
 }
+
+#[test]
+fn a_question_with_its_asking_chat_is_listed_with_who_is_asked_until_it_reaches_the_person() {
+    let clock = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("after 1970")
+            .as_secs()
+    };
+    let before = clock();
+    let mut talk = a_task_that_asked();
+
+    let with = talk.with_asking_chat();
+    assert_eq!(with.len(), 1);
+    assert_eq!((with[0].task, with[0].asker), (TASK, ASKER));
+    assert!(
+        (before..=clock()).contains(&with[0].since),
+        "since is when it was asked, by the clock: {}",
+        with[0].since
+    );
+
+    talk.look(NOW, &HashSet::from([ASKER]), &nobody());
+    assert_eq!(talk.with_asking_chat(), vec![]);
+    assert_eq!(talk.reached().len(), 1);
+}

@@ -2726,6 +2726,7 @@ function App() {
               awayRefused={awayRefusals.held[plane]}
               onAway={answerAway}
               waiting={registry.held[plane]}
+              questions={registry.questions[plane]}
               inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
               inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
               elsewhere={elsewhere}
