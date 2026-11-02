@@ -1193,6 +1193,7 @@ fn a_claim_never_vouched_for_is_deleted_and_says_what_the_claim_says() {
             namespace: "ada",
             name: "team-1",
             desktop: "0123456789abcdef",
+            keeping: Keeping::Kept,
         },
         &desktop,
         std::time::Duration::ZERO,

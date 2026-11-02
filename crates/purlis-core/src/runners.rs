@@ -388,6 +388,9 @@ struct Held {
     clusters: Vec<ClusterPool>,
     /// The cluster pools' runners, after the Docker runners in the file.
     cluster_runners: Vec<ClusterKept>,
+    /// Each chat's own fresh runner of a cluster pool (#3709): never the pool's own runner, so
+    /// nothing that asks for a pool's runner finds one.
+    fresh_runners: Vec<ClusterKept>,
 }
 
 impl Held {
@@ -407,6 +410,7 @@ impl Held {
             .chain(
                 self.cluster_runners
                     .iter()
+                    .chain(&self.fresh_runners)
                     .map(|kept| (kept.name.as_str(), &kept.pinned)),
             )
     }
@@ -455,6 +459,10 @@ fn load(config_root: &Path) -> Result<Held, Refused> {
     };
     let (cluster_runners, runners): (Vec<&serde_json::Value>, Vec<&serde_json::Value>) =
         rows("runners")?.iter().partition(|row| kind(row, "pool"));
+    let (fresh_runners, cluster_runners): (Vec<&serde_json::Value>, Vec<&serde_json::Value>) =
+        cluster_runners
+            .into_iter()
+            .partition(|row| row.get("chat").is_some());
     let (clusters, pools): (Vec<&serde_json::Value>, Vec<&serde_json::Value>) =
         rows("pools")?.iter().partition(|row| kind(row, "kind"));
     let runner_rows = runners;
@@ -463,6 +471,10 @@ fn load(config_root: &Path) -> Result<Held, Refused> {
         .map(|row| from_row(row).ok_or_else(unreadable))
         .collect::<Result<Vec<_>, _>>()?;
     let cluster_runners = cluster_runners
+        .into_iter()
+        .map(|row| cluster_runner_from_row(row).ok_or_else(unreadable))
+        .collect::<Result<Vec<_>, _>>()?;
+    let fresh_runners = fresh_runners
         .into_iter()
         .map(|row| cluster_runner_from_row(row).ok_or_else(unreadable))
         .collect::<Result<Vec<_>, _>>()?;
@@ -496,8 +508,15 @@ fn load(config_root: &Path) -> Result<Held, Refused> {
     // A cluster runner is kept only as the runner of its pool, under the pool's name.
     if cluster_runners
         .iter()
+        .chain(&fresh_runners)
         .any(|kept| !clusters.iter().any(|pool| pool.name() == kept.name))
     {
+        return Err(unreadable());
+    }
+    // A chat has one fresh runner.
+    let mut chats: Vec<_> = fresh_runners.iter().map(|kept| &kept.chat).collect();
+    chats.sort_unstable();
+    if chats.windows(2).any(|two| two[0] == two[1]) {
         return Err(unreadable());
     }
     Ok(Held {
@@ -505,6 +524,7 @@ fn load(config_root: &Path) -> Result<Held, Refused> {
         runners,
         clusters,
         cluster_runners,
+        fresh_runners,
     })
 }
 
@@ -1201,6 +1221,7 @@ fn keep_in(
         .chain(
             held.cluster_runners
                 .iter()
+                .chain(&held.fresh_runners)
                 .map(|kept| (kept.name.as_str(), &kept.pinned)),
         )
         .find(|(_, pinned)| {
@@ -1515,7 +1536,12 @@ fn write(config_root: &Path, held: &Held) -> Result<(), Refused> {
         .runners
         .iter()
         .map(|kept| to_row_beside(kept, &held.pools))
-        .chain(held.cluster_runners.iter().map(cluster_runner_to_row))
+        .chain(
+            held.cluster_runners
+                .iter()
+                .chain(&held.fresh_runners)
+                .map(cluster_runner_to_row),
+        )
         .collect();
     let mut text = serde_json::json!({ "version": 1, "runners": rows });
     if !held.pools.is_empty() || !held.clusters.is_empty() {
@@ -2202,16 +2228,37 @@ pub struct ClusterKept {
     pub pinned: Pinned,
     /// When it was paired, in seconds since the epoch.
     pub paired: u64,
+    /// The chat this is the fresh runner of, by its stable id (#3709); none on the pool's own
+    /// runner, which keeps its work and every other chat's.
+    pub chat: Option<String>,
 }
 
 impl ClusterKept {
+    /// The runner's own name under its pool: the pool's, or `fresh-<hash of the chat>`.
+    pub fn runner_name(&self) -> String {
+        match &self.chat {
+            Some(chat) => format!("fresh-{}", clusterpool::desktop_label(chat)),
+            None => self.name.clone(),
+        }
+    }
+
+    /// **What a link to this runner names it by** (#3709): its pool's name, or `<pool>/<runner>`
+    /// for a chat's fresh runner.
+    pub fn link_name(&self) -> String {
+        match &self.chat {
+            Some(_) => format!("{}/{}", self.name, self.runner_name()),
+            None => self.name.clone(),
+        }
+    }
+
     /// **The name a link to this runner reports** (`relay_to`'s answer, #4071): `<pool>/<runner>`
     /// with the link key it was pinned with, so a link made to a runner since forgotten never
     /// reads as the one kept under its name now.
     pub fn reached(&self) -> String {
         format!(
-            "{name}/{name}@{key}",
+            "{name}/{runner}@{key}",
             name = self.name,
+            runner = self.runner_name(),
             key = crate::runnerlink::hex_of(self.pinned.key.as_bytes())
         )
     }
@@ -2235,13 +2282,59 @@ pub fn cluster_runners(config_root: &Path) -> Result<Vec<ClusterKept>, Refused> 
     Ok(load(config_root)?.cluster_runners)
 }
 
+/// Every chat's fresh runner kept under `config_root` (#3709).
+pub fn fresh_runners(config_root: &Path) -> Result<Vec<ClusterKept>, Refused> {
+    Ok(load(config_root)?.fresh_runners)
+}
+
+/// The cluster pool and fresh runner of the chat `chat`, where it has one (#3709).
+pub fn fresh_runner_of(
+    config_root: &Path,
+    chat: &str,
+) -> Result<Option<(ClusterPool, ClusterKept)>, Refused> {
+    let held = load(config_root)?;
+    let Some(kept) = held
+        .fresh_runners
+        .into_iter()
+        .find(|kept| kept.chat.as_deref() == Some(chat))
+    else {
+        return Ok(None);
+    };
+    let pool = held
+        .clusters
+        .into_iter()
+        .find(|pool| pool.name() == kept.name);
+    // `load` holds every fresh runner to a pool.
+    Ok(pool.map(|pool| (pool, kept)))
+}
+
 /// The cluster pool `name` and its runner, where both are kept here; `None` where no cluster
 /// pool is called `name`, and refused where one is but its runner is not.
+///
+/// `<pool>/fresh-…` names that pool's fresh runner ([`ClusterKept::link_name`], #3709), so what a
+/// link checks of a runner holds for a chat's own runner just as it does for its pool's.
 pub fn cluster_runner_for(
     config_root: &Path,
     name: &str,
 ) -> Result<Option<(ClusterPool, ClusterKept)>, Refused> {
     let held = load(config_root)?;
+    if let Some((pool_name, _)) = name.split_once('/').filter(|(pool, runner)| pool != runner) {
+        let Some(pool) = held.clusters.iter().find(|pool| pool.name() == pool_name) else {
+            return Ok(None);
+        };
+        pool.pin()?;
+        let kept = held
+            .fresh_runners
+            .iter()
+            .find(|kept| kept.link_name() == name)
+            .ok_or_else(|| {
+                Refused::Other(format!(
+                    "cluster pool {pool_name} has no runner {name} on this machine, so nothing \
+                     was reached"
+                ))
+            })?;
+        return Ok(Some((pool.clone(), kept.clone())));
+    }
     let Some(pool) = held.clusters.into_iter().find(|pool| pool.name() == name) else {
         return Ok(None);
     };
@@ -2336,7 +2429,16 @@ pub fn keep_cluster_runner_locked(
             "no cluster pool named {name} is on this machine"
         )));
     }
-    if let Some(there) = held.cluster_runners.iter().find(|one| one.name == name) {
+    // A chat has one fresh runner, on whichever pool: a second would refuse the whole file.
+    let there = held
+        .cluster_runners
+        .iter()
+        .chain(&held.fresh_runners)
+        .find(|one| match &kept.chat {
+            Some(_) => one.chat == kept.chat,
+            None => one.chat.is_none() && one.name == name,
+        });
+    if let Some(there) = there {
         return if there.claimed == kept.claimed
             && there.pod == kept.pod
             && same_pin(&there.pinned, &kept.pinned)
@@ -2363,8 +2465,28 @@ pub fn keep_cluster_runner_locked(
              not keep it; remove the pool and add it again"
         )));
     }
-    held.cluster_runners.push(kept.clone());
+    if kept.chat.is_some() {
+        held.fresh_runners.push(kept.clone());
+    } else {
+        held.cluster_runners.push(kept.clone());
+    }
     write(config_root, &held)
+}
+
+/// Forgets the fresh runner of the chat `chat`, under `_locked`; nothing where it has none.
+pub fn forget_fresh_runner_locked(
+    config_root: &Path,
+    chat: &str,
+    _locked: &Locked,
+) -> Result<(), Refused> {
+    let mut held = load(config_root)?;
+    let before = held.fresh_runners.len();
+    held.fresh_runners
+        .retain(|kept| kept.chat.as_deref() != Some(chat));
+    if held.fresh_runners.len() != before {
+        write(config_root, &held)?;
+    }
+    Ok(())
 }
 
 /// Forgets the cluster runner kept as `name`, under `_locked`; nothing where none is.
@@ -2377,6 +2499,21 @@ pub fn forget_cluster_runner_locked(
     let before = held.cluster_runners.len();
     held.cluster_runners.retain(|kept| kept.name != name);
     if held.cluster_runners.len() != before {
+        write(config_root, &held)?;
+    }
+    Ok(())
+}
+
+/// Forgets every fresh runner of the cluster pool `name`, under `_locked`: its pool is going.
+pub fn forget_fresh_runners_of_locked(
+    config_root: &Path,
+    name: &str,
+    _locked: &Locked,
+) -> Result<(), Refused> {
+    let mut held = load(config_root)?;
+    let before = held.fresh_runners.len();
+    held.fresh_runners.retain(|kept| kept.name != name);
+    if held.fresh_runners.len() != before {
         write(config_root, &held)?;
     }
     Ok(())
@@ -2647,7 +2784,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
 /// A cluster runner's row (#3292): `{"name", "pool": "cluster", "namespace", "claim",
 /// "claimUid", "requester", "pod", "device", "key", "paired"}`.
 fn cluster_runner_to_row(kept: &ClusterKept) -> serde_json::Value {
-    serde_json::json!({
+    let mut row = serde_json::json!({
         "name": kept.name,
         "pool": CLUSTER,
         "namespace": kept.claimed.namespace,
@@ -2658,12 +2795,24 @@ fn cluster_runner_to_row(kept: &ClusterKept) -> serde_json::Value {
         "device": kept.pinned.device,
         "key": crate::runnerlink::hex_of(kept.pinned.key.as_bytes()),
         "paired": kept.paired,
-    })
+    });
+    if let Some(chat) = &kept.chat {
+        row["chat"] = serde_json::Value::String(chat.clone());
+    }
+    row
 }
 
 /// [`cluster_runner_to_row`]'s row read, exactly those keys, each as it writes them.
 fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
     let fields = row.as_object()?;
+    let chat = match fields.get("chat") {
+        Some(chat) => Some(
+            chat.as_str()
+                .filter(|chat| plain_text(chat) && !chat.is_empty() && chat.len() <= 128)?
+                .to_owned(),
+        ),
+        None => None,
+    };
     let known = [
         "name",
         "pool",
@@ -2676,7 +2825,10 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         "key",
         "paired",
     ];
-    if fields.len() != known.len() || fields.keys().any(|key| !known.contains(&key.as_str())) {
+    let mut rest = fields.keys().filter(|key| key.as_str() != "chat");
+    if fields.len() - usize::from(chat.is_some()) != known.len()
+        || rest.any(|key| !known.contains(&key.as_str()))
+    {
         return None;
     }
     let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
@@ -2713,6 +2865,7 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         pod: pod.to_owned(),
         pinned,
         paired: fields.get("paired")?.as_u64()?,
+        chat,
     })
 }
 
