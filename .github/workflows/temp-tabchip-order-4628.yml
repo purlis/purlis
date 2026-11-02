@@ -40,3 +40,12 @@ jobs:
       - name: the leave audit's tests
         if: ${{ !cancelled() }}
         run: npx vitest run --project unit src/ThemeDraftStrip.test.tsx src/ui/field/Field.test.tsx src/ui/activity/ActivityItem.test.tsx src/ui/menu/MenuTip.test.tsx src/ChatsSection.window.test.tsx
+      - name: field hover, alone, no move first
+        if: ${{ !cancelled() }}
+        run: npx vitest run --project unit src/ui/field/Field.test.tsx -t "stops drawing the hover once"
+      - name: field hover, alone, a move first
+        if: ${{ !cancelled() }}
+        run: npx vitest run --project unit src/ui/field/Field.test.tsx -t "moved on the box"
+      - name: the leave audit's tests, shuffled
+        if: ${{ !cancelled() }}
+        run: npx vitest run --project unit src/ThemeDraftStrip.test.tsx src/ui/field/Field.test.tsx src/ui/activity/ActivityItem.test.tsx src/ui/menu/MenuTip.test.tsx src/ChatsSection.window.test.tsx --sequence.shuffle.tests --sequence.seed=1

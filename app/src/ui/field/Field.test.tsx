@@ -939,4 +939,16 @@ describe("a field the pointer left the window from", () => {
 
     expect(box.dataset.hovered).toBeUndefined();
   });
+
+  it("stops drawing the hover of a pointer that moved on the box, then left the window (#4628)", async () => {
+    render(<Held label="Name" />);
+    const box = screen.getByLabelText("Name").closest('[data-part="root"]') as HTMLElement;
+    fireEvent.pointerEnter(box);
+    fireEvent.pointerMove(box);
+    expect(box.dataset.hovered).toBe("true");
+
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
+
+    expect(box.dataset.hovered).toBeUndefined();
+  });
 });
