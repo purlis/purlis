@@ -190,7 +190,10 @@ fn a_personas_skill_is_drafted_and_accepted_as_one_commit_of_its_files() {
     let (subject, paths) = last_commit(root);
     assert!(subject.ends_with("skill new lint"), "{subject}");
     assert_eq!(paths, ["personas/reviewer/skills/lint/SKILL.md"]);
-    assert!(asking(&Level::persona("reviewer"), "").contains("a new skill in personas/reviewer/skills."));
+    assert!(
+        asking(&Level::persona("reviewer"), "")
+            .contains("a new skill in personas/reviewer/skills.")
+    );
 }
 
 #[cfg(unix)]
@@ -1225,7 +1228,12 @@ fn every_skill_studio_prompt_reads_whole_in_every_harness_it_is_typed_into() {
         said.push(improving_from_runs(root, &level, &name).unwrap());
         said.push(asking(&level, &"x".repeat(2_000)));
         said.push(asking(&level, ""));
-        let stale = ["SKILL.md", "evals/evals.json", "evals/triggers.json", "scripts/run.sh"];
+        let stale = [
+            "SKILL.md",
+            "evals/evals.json",
+            "evals/triggers.json",
+            "scripts/run.sh",
+        ];
         said.push(redoing(&level, &name, &stale, true));
         said.push(redoing(&level, &name, &stale, false));
     }

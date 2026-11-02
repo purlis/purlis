@@ -99,7 +99,7 @@ chat, then a judge chat checks what it left against the eval's expectations. Wri
 - `id`: a whole number, each once.
 - `files`: input files the task needs, as paths from the skill's folder, such as
   `evals/files/input.csv`, at most 16. Leave it out where the task needs none. Write each file
-  you name too: purlis hands them to the eval's chat in its folder.
+  you name too: the eval's chat finds them in its folder.
 - `expectations`: at most 32 per eval, each one a statement a judge can check from the files the
   chat left and its final answer.
 
