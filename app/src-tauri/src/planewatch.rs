@@ -40,8 +40,10 @@
 //!
 //! # One event per burst
 //!
-//! The platform's events are folded into bursts ([`crate::watchset::bursts`]) — `git pull`
-//! landing ten todos, an editor's write-then-rename — and a burst is one `plane-changed` carrying the plane
+//! The platform's events are folded into bursts ([`crate::watchset::trailing_bursts`]) — `git pull`
+//! landing ten todos, an editor's write-then-rename. A burst closes once [`QUIET_FOR`] passes with
+//! no event, and at most [`LONGEST`] after it began, so agents writing without pause are told about
+//! once a second (#4741). A burst is one `plane-changed` carrying the plane
 //! **and what changed in it**: each path, and what it is part of
 //! ([`purlis_core::planechange`]) — a todo of `alpha`, a memory of `steward`, the root's
 //! session records. A panel reads again only on a change its answer is made of (FD-10), so a
@@ -226,9 +228,14 @@ pub type What = Option<Vec<Change>>;
 /// Told whenever a plane changes on disk, whichever plane it is, and what changed in it.
 pub type Changed = Arc<dyn Fn(PlaneId, What) + Send + Sync + 'static>;
 
-/// How long a burst is folded for. Short enough that a todo closed in a terminal is off the
-/// panel within the second #264 asks for; long enough that a `git pull` is one read, not ten.
+/// How long a burst waits for the plane to go quiet. Short enough that a todo closed in a
+/// terminal is off the panel within the second #264 asks for; long enough that a `git pull` is
+/// one read, not ten.
 const QUIET_FOR: Duration = Duration::from_millis(250);
+
+/// The longest a burst stays open while writes keep coming (#4741): agents writing the plane
+/// without pause are one `plane-changed` a second, not one each [`QUIET_FOR`].
+const LONGEST: Duration = Duration::from_secs(1);
 
 /// The most changed paths one burst holds. Past it the burst is told as "anything may have
 /// moved": a flood costs a fixed amount of memory, and every reader reads again.
@@ -772,7 +779,9 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
             std::thread::Builder::new()
                 .name("charter-plane-watch".into())
                 .spawn(move || {
-                    for burst in crate::watchset::bursts(events, QUIET_FOR, MOST_PATHS) {
+                    for burst in
+                        crate::watchset::trailing_bursts(events, QUIET_FOR, LONGEST, MOST_PATHS)
+                    {
                         tell(burst);
                     }
                 })
