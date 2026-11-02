@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793594698727,
+  "lastUpdate": 1793596068832,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35784,6 +35784,48 @@ window.BENCHMARK_DATA = {
             "value": 101.293657,
             "unit": "ms",
             "extra": "median of 5 runs: 101.035, 101.215, 101.294, 101.962, 102.259 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3cddfa349eeccda8d75cea86466d11302d0356a5",
+          "message": "Skills: purlis skill grade --run --eval runs the outcome evals it names (#4312) (#4625)\n\n* Skills: the window plans the outcome evals a terminal names (#4312)\n\nThe window's plan and start take --eval's ids through planned_named, which\nrefuses an id the plan would not run, saying why, and a named eval on a\nprofile it cannot run on is refused before the yes. The terminal's side\nfollows, so CI shows the new scenarios red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CJQWMC09H5WQP2S13PB5TE\nPurlis-Persona: steward\n\n* Skills: a terminal runs the outcome evals it names, on a yes typed there (#4312)\n\npurlis skill grade <name> --run --eval <id> puts the named evals in the\nplan the person consents to and starts them as the window's ticks do. A\nrun naming an eval takes its yes only from a real terminal: --yes and\npiped answers are refused before the window is asked. The plan says each\neval, on or off; the scorecard says each eval in each arm and which\nexpectations failed; a stopped grade says what stopped it. ADR 0105 is\namended, the plane format and CONTEXT say ticked or named.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CJQWMC09H5WQP2S13PB5TE\nPurlis-Persona: steward\n\n* Skills: the import a review fix left unused (#4312)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CJQWMC09H5WQP2S13PB5TE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T02:31:58Z",
+          "tree_id": "ab6e087306ca26c64cc12384ed0133d4b3ccbbd2",
+          "url": "https://github.com/purlis/purlis/commit/3cddfa349eeccda8d75cea86466d11302d0356a5"
+        },
+        "date": 1793596064709,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.429326,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.422, 0.425, 0.429, 0.430, 0.453 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5185945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.453, 16.496, 16.519, 16.541, 16.607 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.115879,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.211, 101.445, 102.116, 102.402, 103.561 ms"
           }
         ]
       }
