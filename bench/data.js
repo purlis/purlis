@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793593319446,
+  "lastUpdate": 1793594698727,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35742,6 +35742,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5106745,
             "unit": "ms",
             "extra": "median of 5 runs: 100.504, 101.326, 101.511, 103.004, 103.575 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3fcf773fe105f7acf93171caa34a781775869921",
+          "message": "Capabilities v1: three studio words frozen, three stay experimental (#4640)\n\n* Capabilities v1: three studio words frozen, three stay experimental (#2786)\n\ngrader, studio-panel and skill-router are version 1 of the public extension\nAPI. skill-source, skill-lint and skill-template stay experimental until\n#3089-#3092, by the operator's ruling of 2026-10-31. The contract is\ndocs/extension-api.md, and tests hold every message to\ntests/fixtures/extension-api/v1.json.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CT4RNPGS3JYVSHFAR8SGZK\nPurlis-Persona: steward\n\n* Capabilities v1: hold the whole contract, from the review\n\nA new studio word is experimental until it is named in VERSION_ONE. The\ncontract now records settings, every chat end, a chat not run and the limits,\nand states what a grade report must hold. Answers are read as real ones are,\nand the grade test runs on the recorded request. Panel blocks follow the same\nprotocol rule as everything else.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CT4RNPGS3JYVSHFAR8SGZK\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T02:27:56Z",
+          "tree_id": "7338858764c7e4d7dd8b3257e079f0c0874d3e10",
+          "url": "https://github.com/purlis/purlis/commit/3fcf773fe105f7acf93171caa34a781775869921"
+        },
+        "date": 1793594694536,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.352609,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.317, 0.349, 0.353, 0.360, 0.364 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4119985,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.380, 16.392, 16.412, 16.608, 16.635 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.293657,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.035, 101.215, 101.294, 101.962, 102.259 ms"
           }
         ]
       }
