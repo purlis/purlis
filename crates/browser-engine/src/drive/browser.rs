@@ -306,8 +306,11 @@ fn at_web_address(address: &str) -> bool {
 }
 
 /// **Where frame `frame` of `page` is judged**: at its document's origin, or for one that
-/// takes the origin around it, the nearest ancestor's that has one of its own, up to the
-/// page's.
+/// takes the origin around it, or shows the engine's own page, the nearest ancestor's that has
+/// one of its own, up to the page's. A document that takes the origin around it shares the
+/// process, and so the session, of the document around it; one held by another session, or
+/// whose own context's word may not have been kept, is [`Unjudged::Unread`] until that word
+/// is read.
 fn judged_at(page: &Page, frame: &str, origins: &DocumentOrigins) -> Result<Judged, Unjudged> {
     let Some(mut at) = page.frames.get(frame) else {
         return Ok(Judged::Lost);
@@ -319,9 +322,19 @@ fn judged_at(page: &Page, frame: &str, origins: &DocumentOrigins) -> Result<Judg
         }
         match at.origin(origins.origin(&at.session, id)) {
             Origin::Web(address) => return Ok(Judged::At(address)),
-            Origin::Engine => return Ok(Judged::Nowhere),
             Origin::Opaque => return Err(Unjudged::Opaque),
-            Origin::Inherited => {}
+            Origin::Engine => {}
+            Origin::Inherited => {
+                let around = match at.parent.as_deref() {
+                    Some(parent) if parent != page.target => {
+                        page.frames.get(parent).map(|up| up.session.as_str())
+                    }
+                    _ => page.session.as_deref(),
+                };
+                if around != Some(at.session.as_str()) || !origins.all_kept(&at.session) {
+                    return Err(Unjudged::Unread);
+                }
+            }
         }
         match at.parent.as_deref() {
             Some(parent) if parent == page.target => break,
@@ -342,8 +355,6 @@ fn judged_at(page: &Page, frame: &str, origins: &DocumentOrigins) -> Result<Judg
 enum Judged {
     /// At this address.
     At(String),
-    /// Nowhere: it shows the engine's own page, which sends nothing.
-    Nowhere,
     /// Not known: a frame on the way to the page is not one the driver knows.
     Lost,
 }
@@ -378,13 +389,13 @@ impl Frame {
     }
 
     /// **The origin this frame's document has**, by the web's rules for its address. A web
-    /// address is its own; the engine's own page for a load that failed sends nothing.
+    /// address is its own; the engine's own page for a load that failed has none of its own.
     /// `about:blank` and `about:srcdoc` (or no address yet) take the origin of the document
     /// around them, unless the document is sandboxed: `document`, the origin the engine gave
-    /// the document's own context where it gave one, says which, and short of it the origin
-    /// around is taken. Otherwise the engine's word of the address's origin, where it gave one.
-    /// Short of that, a `blob:` address carries the origin of the document that made it. Any
-    /// other address (`data:` among them) has no web origin: it is opaque.
+    /// the document's own context where it gave one, says which, and short of it the frame is
+    /// [`Origin::Inherited`]. Otherwise the engine's word of the address's origin, where it
+    /// gave one. Short of that, a `blob:` address carries the origin of the document that made
+    /// it. Any other address (`data:` among them) has no web origin: it is opaque.
     fn origin(&self, document: Option<&str>) -> Origin {
         if at_web_address(&self.url) {
             return Origin::Web(self.url.clone());
@@ -433,10 +444,15 @@ fn web_origin(origin: &str) -> Origin {
 /// session that holds the frame and the frame's id; with that context's id, so the word of a
 /// context that ended takes only its own entry away.
 #[derive(Default)]
-struct DocumentOrigins(HashMap<(String, String), (i64, String)>);
+struct DocumentOrigins {
+    kept: HashMap<(String, String), (i64, String)>,
+    /// The sessions on which a context's word came while [`FRAME_ORIGINS_KEPT`] were kept, and
+    /// was not kept: there a frame with no entry may have a context all the same.
+    unkept: HashSet<String>,
+}
 
-/// The most documents' origins remembered; past it every one is forgotten, and a frame that
-/// takes the origin around it is judged by that origin until its document says otherwise.
+/// The most documents' origins kept. Past it a new one is not kept, and its session is
+/// [`DocumentOrigins::all_kept`] no longer until its contexts are cleared.
 const FRAME_ORIGINS_KEPT: usize = 1024;
 
 impl DocumentOrigins {
@@ -453,31 +469,37 @@ impl DocumentOrigins {
         if aux["isDefault"] != true {
             return;
         }
-        if self.0.len() >= FRAME_ORIGINS_KEPT {
-            self.0.clear();
+        let key = (session.to_owned(), frame.to_owned());
+        if self.kept.len() >= FRAME_ORIGINS_KEPT && !self.kept.contains_key(&key) {
+            self.unkept.insert(session.to_owned());
+            return;
         }
-        self.0.insert(
-            (session.to_owned(), frame.to_owned()),
-            (id, origin.to_owned()),
-        );
+        self.kept.insert(key, (id, origin.to_owned()));
     }
 
     /// The engine ended context `id` on `session`.
     fn ended(&mut self, session: &str, id: i64) {
-        self.0
+        self.kept
             .retain(|(on, _), (context, _)| on != session || *context != id);
     }
 
     /// Every context on `session` is gone: they were cleared, or the session ended.
     fn cleared(&mut self, session: &str) {
-        self.0.retain(|(on, _), _| on != session);
+        self.kept.retain(|(on, _), _| on != session);
+        self.unkept.remove(session);
     }
 
     /// The origin of the document `frame` shows on `session`, where the engine gave it.
     fn origin(&self, session: &str, frame: &str) -> Option<&str> {
-        self.0
+        self.kept
             .get(&(session.to_owned(), frame.to_owned()))
             .map(|(_, origin)| origin.as_str())
+    }
+
+    /// Whether every context's word on `session` was kept, so a frame there with no entry has
+    /// no context.
+    fn all_kept(&self, session: &str) -> bool {
+        !self.unkept.contains(session)
     }
 }
 
@@ -486,9 +508,9 @@ impl DocumentOrigins {
 enum Origin {
     /// A web origin, as an address on it (the root of its site, where the engine named it).
     Web(String),
-    /// The origin of the document around it.
+    /// The origin of the document around it, where no context of its own says otherwise.
     Inherited,
-    /// The engine's own page for a load that failed, which sends nothing.
+    /// The engine's own page for a load that failed: judged as the document around it.
     Engine,
     /// No web origin.
     Opaque,
@@ -775,7 +797,8 @@ impl State {
 
     /// **The addresses what is in document `frame` of `target`'s page goes to** (#2018): the
     /// address of its document's origin ([`Frame::origin`]); for a document that takes the
-    /// origin around it, its nearest ancestor's; and for a frame the driver does not know,
+    /// origin around it, or the engine's own page, its nearest ancestor's ([`judged_at`]); and
+    /// for a frame the driver does not know,
     /// every document the page shows. [`Unjudged::Unread`] where a frame on the way is
     /// [`Frame::unknown`]: an ancestor's address says nothing of it (#4472).
     /// [`Unjudged::Opaque`] where the document has no web origin.
@@ -788,13 +811,13 @@ impl State {
         }
         match judged_at(page, frame, &self.document_origins)? {
             Judged::At(address) => Ok(vec![address]),
-            Judged::Nowhere => Ok(Vec::new()),
             Judged::Lost => self.every_document(target),
         }
     }
 
     /// Every document `target`'s page shows, by the address of its origin, its own first; an
-    /// error where one of them is unread or opaque, as [`State::documents_of`] says.
+    /// error where one of them is unread or opaque, as [`State::documents_of`] says, or stands
+    /// in a frame the driver does not know.
     fn every_document(&self, target: &str) -> Result<Vec<String>, Unjudged> {
         let Some(page) = self.page(target) else {
             return Ok(Vec::new());
@@ -804,8 +827,9 @@ impl State {
         }
         let mut every = Vec::new();
         for frame in page.frames.keys() {
-            if let Judged::At(address) = judged_at(page, frame, &self.document_origins)? {
-                every.push(address);
+            match judged_at(page, frame, &self.document_origins)? {
+                Judged::At(address) => every.push(address),
+                Judged::Lost => return Err(Unjudged::Unread),
             }
         }
         every.sort();

@@ -463,19 +463,38 @@ fn a_frame_that_attached_at_no_address_goes_by_the_address_its_tree_reads() {
 }
 
 #[test]
-fn a_frame_read_at_about_blank_goes_by_the_page_it_sits_in() {
-    let (judge, told) = judge(&["http://fixture.test/"]);
+fn a_blank_frame_in_a_session_of_its_own_is_not_known_until_its_document_says_its_origin() {
+    let (judge, told) = judge(&["http://third.test/"]);
     let (browser, engine) = browser_judged(judge);
     frame_moves(&engine, "", "about:blank", Duration::from_millis(1));
     frame_read(&browser);
     assert_eq!(frame_address(&browser, "PAYMENT-FRAME"), "about:blank");
+    assert_eq!(
+        typed_into_the_frame(&browser).err(),
+        Some(crate::drive::Refusal::FrameUnread)
+    );
+    assert!(engine.sent("Input.insertText").is_empty());
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context": {
+            "id": 72,
+            "origin": "http://third.test",
+            "name": "",
+            "uniqueId": "U-72",
+            "auxData": {"isDefault": true, "type": "default", "frameId": "PAYMENT-FRAME"},
+        }}),
+        Some(MOVED),
+    );
+    wait_for("the document's origin is seen", || {
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .origin(MOVED, "PAYMENT-FRAME")
+            .is_some()
+    });
     let answer = typed_into_the_frame(&browser).unwrap();
     assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
     assert!(engine.sent("Input.insertText").is_empty());
-    assert_eq!(
-        whys(&told).last().unwrap().0,
-        "http://fixture.test/frames.html"
-    );
+    assert_eq!(whys(&told).last().unwrap().0, "http://third.test/");
 }
 
 #[test]
@@ -1116,10 +1135,10 @@ fn a_srcdoc_frame_is_judged_by_the_origin_its_document_has() {
 }
 
 #[test]
-fn a_srcdoc_frame_whose_document_has_ended_is_judged_by_the_page_around_it() {
-    let (judge, told) = judge(&["http://fixture.test/"]);
+fn a_srcdoc_frame_in_a_session_of_its_own_whose_document_has_ended_is_not_known() {
+    let (judge, _) = judge(&["http://fixture.test/"]);
     let (browser, engine) = browser_judged(judge);
-    chrome_shows_a_srcdoc_frame(&engine, &browser, "://");
+    chrome_shows_a_srcdoc_frame(&engine, &browser, "http://fixture.test");
     engine.emit(
         "Runtime.executionContextDestroyed",
         json!({"executionContextId": 71, "executionContextUniqueId": "U-71"}),
@@ -1131,12 +1150,11 @@ fn a_srcdoc_frame_whose_document_has_ended_is_judged_by_the_page_around_it() {
             .origin("S-PAYMENT", "PAYMENT-FRAME")
             .is_none()
     });
-    let answer = typed_into_the_frame(&browser).unwrap();
-    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
     assert_eq!(
-        whys(&told).last().unwrap().0,
-        "http://fixture.test/frames.html"
+        typed_into_the_frame(&browser).err(),
+        Some(crate::drive::Refusal::FrameUnread)
     );
+    assert!(engine.sent("Input.insertText").is_empty());
 }
 
 #[test]
@@ -1162,16 +1180,215 @@ fn a_blob_frame_is_judged_by_the_origin_that_made_it() {
 }
 
 #[test]
-fn a_srcdoc_frame_with_no_word_of_its_origin_is_judged_by_the_page_around_it() {
+fn a_srcdoc_frame_in_a_session_of_its_own_with_no_word_of_its_origin_is_not_known() {
     let (judge, told) = judge(&["http://fixture.test/"]);
     let (browser, engine) = browser_judged(judge);
     the_frame_shows(&engine, &browser, "about:srcdoc", None);
+    assert_eq!(
+        typed_into_the_frame(&browser).err(),
+        Some(crate::drive::Refusal::FrameUnread)
+    );
+    assert!(engine.sent("Input.insertText").is_empty());
+    assert!(
+        !whys(&told)
+            .iter()
+            .any(|(address, ..)| address == "http://fixture.test/frames.html"),
+        "the page around it is not taken for it"
+    );
+}
+
+/// The page shows a frame `id` in its own session at `url`, and the driver has seen it.
+fn the_page_shows_a_frame(
+    engine: &super::Engine,
+    browser: &crate::drive::Browser,
+    id: &str,
+    parent: &str,
+    url: &str,
+) {
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": id, "parentId": parent, "url": url}}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the frame is seen", || {
+        super::super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .is_some_and(|page| page.frames.get(id).is_some_and(|frame| frame.url == url))
+    });
+}
+
+/// The page's session makes the own context of frame `frame`'s document, at `origin`.
+fn the_pages_frame_has(
+    engine: &super::Engine,
+    browser: &crate::drive::Browser,
+    frame: &str,
+    id: i64,
+    origin: &str,
+) {
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context": {
+            "id": id,
+            "origin": origin,
+            "name": "",
+            "uniqueId": format!("U-{id}"),
+            "auxData": {"isDefault": true, "type": "default", "frameId": frame},
+        }}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the document's origin is seen", || {
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .origin("S-PAGE-1", frame)
+            == Some(origin)
+    });
+}
+
+#[test]
+fn a_srcdoc_frame_in_the_pages_session_whose_document_has_ended_is_judged_by_the_page() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
+    the_pages_frame_has(&engine, &browser, "SRCDOC", 81, "://");
+    assert_eq!(
+        super::super::lock(&browser.inner.state).documents_of("PAGE-1", "SRCDOC"),
+        Err(Unjudged::Opaque)
+    );
+    engine.emit(
+        "Runtime.executionContextDestroyed",
+        json!({"executionContextId": 81, "executionContextUniqueId": "U-81"}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the document's context is gone", || {
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .origin("S-PAGE-1", "SRCDOC")
+            .is_none()
+    });
+    assert_eq!(
+        super::super::lock(&browser.inner.state)
+            .documents_of("PAGE-1", "SRCDOC")
+            .unwrap(),
+        ["http://fixture.test/frames.html"]
+    );
+}
+
+#[test]
+fn past_the_most_origins_kept_none_kept_is_forgotten_and_a_blank_frame_with_none_is_not_known() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows_a_frame(&engine, &browser, "KEPT", "PAGE-1", "about:blank");
+    the_pages_frame_has(&engine, &browser, "KEPT", 90, "http://kept.test");
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
+    assert_eq!(
+        super::super::lock(&browser.inner.state)
+            .documents_of("PAGE-1", "SRCDOC")
+            .unwrap(),
+        ["http://fixture.test/frames.html"]
+    );
+    {
+        let mut state = super::super::lock(&browser.inner.state);
+        let mut id = 1000;
+        while state.document_origins.kept.len() < super::super::FRAME_ORIGINS_KEPT {
+            id += 1;
+            state.document_origins.told(
+                "S-ELSEWHERE",
+                &json!({"id": id, "origin": "http://else.test", "auxData": {"isDefault": true, "frameId": format!("F-{id}")}}),
+            );
+        }
+    }
+    the_page_shows_a_frame(&engine, &browser, "LATE", "PAGE-1", "about:blank");
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context": {
+            "id": 91,
+            "origin": "://",
+            "name": "",
+            "uniqueId": "U-91",
+            "auxData": {"isDefault": true, "type": "default", "frameId": "LATE"},
+        }}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the late context's word is taken in", || {
+        !super::super::lock(&browser.inner.state)
+            .document_origins
+            .all_kept("S-PAGE-1")
+    });
+    let state = super::super::lock(&browser.inner.state);
+    assert_eq!(
+        state.documents_of("PAGE-1", "KEPT").unwrap(),
+        ["http://kept.test/"],
+        "what was kept stays"
+    );
+    assert_eq!(state.documents_of("PAGE-1", "LATE"), Err(Unjudged::Unread));
+    assert_eq!(
+        state.documents_of("PAGE-1", "SRCDOC"),
+        Err(Unjudged::Unread)
+    );
+    assert!(
+        state.document_origins.all_kept("S-ELSEWHERE"),
+        "only the session whose word was not kept"
+    );
+}
+
+#[test]
+fn a_session_whose_contexts_are_cleared_has_every_new_one_kept_again() {
+    let mut origins = super::super::DocumentOrigins::default();
+    for id in 0..=super::super::FRAME_ORIGINS_KEPT as i64 {
+        origins.told(
+            "S-PAGE-1",
+            &json!({"id": id, "origin": "http://else.test", "auxData": {"isDefault": true, "frameId": format!("F-{id}")}}),
+        );
+    }
+    assert!(!origins.all_kept("S-PAGE-1"));
+    assert_eq!(origins.kept.len(), super::super::FRAME_ORIGINS_KEPT);
+    origins.told(
+        "S-PAGE-1",
+        &json!({"id": 5000, "origin": "http://moved.test", "auxData": {"isDefault": true, "frameId": "F-1"}}),
+    );
+    assert_eq!(
+        origins.origin("S-PAGE-1", "F-1"),
+        Some("http://moved.test"),
+        "a frame already kept takes its new document's word"
+    );
+    origins.cleared("S-PAGE-1");
+    assert!(origins.all_kept("S-PAGE-1"));
+    assert!(origins.kept.is_empty());
+}
+
+#[test]
+fn a_frame_showing_the_engines_own_page_is_judged_by_the_document_around_it() {
+    let (judge, told) = judge(&["http://fixture.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_frame_shows(
+        &engine,
+        &browser,
+        "chrome-error://chromewebdata/",
+        Some("null"),
+    );
     let answer = typed_into_the_frame(&browser).unwrap();
     assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert!(engine.sent("Input.insertText").is_empty());
     assert_eq!(
         whys(&told).last().unwrap().0,
         "http://fixture.test/frames.html"
     );
+}
+
+#[test]
+fn every_document_is_not_known_while_a_frame_stands_on_one_the_driver_does_not_know() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows_a_frame(
+        &engine,
+        &browser,
+        "ERROR",
+        "GONE",
+        "chrome-error://chromewebdata/",
+    );
+    let state = super::super::lock(&browser.inner.state);
+    assert_eq!(state.every_document("PAGE-1"), Err(Unjudged::Unread));
+    assert_eq!(state.documents_of("PAGE-1", "ERROR"), Err(Unjudged::Unread));
 }
 
 #[test]
