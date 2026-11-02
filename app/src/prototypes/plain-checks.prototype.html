@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plain checks prototype</title>
+<!-- PROTOTYPE, throwaway, never merged. Question: what should a skill's Grades tab look like for
+     someone who is not an expert, once trigger tests and outcome evals become one "Checks" with
+     two kinds, "Does it get picked?" and "Does it do the job?", and one guided start writes both
+     (operator's rulings, 2026-11-02)? Three layouts, switched by the bar at the foot (or ← →),
+     each in five states. Nothing is real: all state is in this page's memory. -->
+<style>
+:root{
+  --bg:#f6f7f9;--panel:#fff;--fg:#1b1f27;--muted:#5d6675;--line:#d9dde4;--accent:#2f5fd0;--accent-fg:#fff;
+  --with:#2f5fd0;--without:#9aa3b2;--prev:#c9cfda;--good:#1d7a46;--good-bg:#e3f4ea;--bad:#b3261e;--bad-bg:#fbe7e5;
+  --warn-bg:#fdf3df;--warn-fg:#7a4b00;--chip:#eceff4;--news-bg:#e8eefc;--news-fg:#1f3f8f;
+  --ui:ui-sans-serif,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171c;--panel:#1c2027;--fg:#e7eaf0;--muted:#9aa4b3;--line:#323844;--accent:#7ea2f5;--accent-fg:#10131a;--with:#7ea2f5;--without:#6b7486;--prev:#434b59;--good:#7fd3a0;--good-bg:#173325;--bad:#f2968f;--bad-bg:#3a1c1a;--warn-bg:#3a2d12;--warn-fg:#f1cf8a;--chip:#2a303a;--news-bg:#1d2a45;--news-fg:#b9cdfa;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171c;--panel:#1c2027;--fg:#e7eaf0;--muted:#9aa4b3;--line:#323844;--accent:#7ea2f5;--accent-fg:#10131a;--with:#7ea2f5;--without:#6b7486;--prev:#434b59;--good:#7fd3a0;--good-bg:#173325;--bad:#f2968f;--bad-bg:#3a1c1a;--warn-bg:#3a2d12;--warn-fg:#f1cf8a;--chip:#2a303a;--news-bg:#1d2a45;--news-fg:#b9cdfa;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--ui);padding:20px 16px 96px}
+h1{font-size:20px;margin:0 0 4px;text-wrap:balance}h2{font-size:15px;margin:0}h3{font-size:14px;margin:0}
+p{margin:0}code{font:12.5px var(--mono)}
+.wrap{max-width:1120px;margin:0 auto;display:grid;gap:18px}
+.lede{color:var(--muted);max-width:75ch}
+.seg{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.seg .k{color:var(--muted);font-size:13px;margin-right:4px}
+button{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.sm{padding:3px 8px;font-size:13px}
+.ghost{border-color:transparent;background:transparent}
+.link{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline;text-underline-offset:2px;font-size:13px}
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:16px;align-items:start}
+@media (max-width:860px){.stage{grid-template-columns:minmax(0,1fr)}}
+.studio{background:var(--panel);border:1px solid var(--line);border-radius:8px;min-width:0;overflow:hidden}
+.crumbs{padding:8px 16px;border-bottom:1px solid var(--line);color:var(--muted);font-size:13px}
+.crumbs b{color:var(--fg);font-weight:600}
+.tabsbar{display:flex;gap:16px;padding:0 16px;border-bottom:1px solid var(--line);font-size:13px;overflow-x:auto}
+.tabsbar span{padding:8px 0;color:var(--muted);white-space:nowrap}
+.tabsbar span.on{color:var(--fg);border-bottom:2px solid var(--accent);font-weight:600}
+.body{padding:16px;display:grid;gap:18px;min-width:0}
+.sub{color:var(--muted);font-size:13px}
+.tech{color:var(--muted);font:11.5px var(--mono)}
+.row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between}
+.left{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sect{display:grid;gap:10px;min-width:0}
+.sect>.title{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:6px}
+.sect>.title h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.card{border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:10px;align-content:start;min-width:0}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px}
+.empty{border:1px dashed var(--line);border-radius:8px;padding:20px;display:grid;gap:10px;justify-items:start}
+.empty.center{justify-items:center;text-align:center;padding:28px 20px}
+.empty h3{font-size:15px}
+.kinds{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.kinds li{display:grid;gap:2px}
+.meters{display:grid;gap:6px}
+.meter{display:grid;grid-template-columns:96px minmax(0,1fr) 44px;gap:8px;align-items:center;font-size:13px}
+.meter .track{height:10px;background:var(--chip);border-radius:99px;overflow:hidden}
+.meter .fill{height:100%;border-radius:99px}
+.meter .v{text-align:right;font-variant-numeric:tabular-nums}
+.f-with{background:var(--with)}.f-without{background:var(--without)}.f-prev{background:var(--prev)}
+.chip{display:inline-block;background:var(--chip);color:var(--muted);border-radius:99px;padding:0 8px;font-size:12px;white-space:nowrap}
+.badge{display:inline-block;border-radius:99px;padding:0 8px;font-size:12px;white-space:nowrap}
+.b-good{background:var(--good-bg);color:var(--good)}.b-warn{background:var(--warn-bg);color:var(--warn-fg)}.b-news{background:var(--news-bg);color:var(--news-fg)}
+.notice{background:var(--news-bg);color:var(--news-fg);border-radius:6px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between}
+.notice.warn{background:var(--warn-bg);color:var(--warn-fg)}
+.notice button{color:var(--fg)}
+.list{margin:0;padding:0;list-style:none;display:grid;gap:4px;font-size:13px}
+.list li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.list .q{font-family:var(--mono);font-size:12.5px}
+.yes{color:var(--good)}.no{color:var(--bad)}
+details summary{cursor:pointer;color:var(--accent);font-size:13px}
+details[open] summary{margin-bottom:6px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:720px}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600;background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.verdict{display:grid;gap:12px}
+.verdict .line{display:grid;grid-template-columns:minmax(0,1fr);gap:4px}
+.verdict .big{font-size:16px;font-weight:600}
+.pair{display:grid;gap:3px}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.step{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;padding:12px 0;border-top:1px solid var(--line)}
+.step:first-child{border-top:0}
+.dot{width:24px;height:24px;border-radius:99px;display:grid;place-items:center;font-size:12px;font-weight:700;border:2px solid var(--line);color:var(--muted)}
+.dot.done{background:var(--good-bg);border-color:var(--good);color:var(--good)}
+.dot.now{border-color:var(--accent);color:var(--accent)}
+.step .head{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;justify-content:space-between}
+.step .content{display:grid;gap:10px;margin-top:8px}
+.ktabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.ktabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:6px 8px;color:var(--muted)}
+.ktabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
+.perq{display:grid;gap:6px}
+.perq .item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 12px;align-items:baseline;font-size:13px;border-bottom:1px solid var(--line);padding:4px 0}
+.side{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:8px;min-width:0}
+.side pre{margin:0;font:12px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.qbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:grid;gap:8px}
+.qbox ol{margin:0;padding-left:20px;display:grid;gap:6px;max-width:80ch}
+.bar{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;background:var(--fg);color:var(--bg);border-radius:12px;padding:6px;display:flex;gap:6px;align-items:center;box-shadow:0 4px 18px rgba(0,0,0,.25);max-width:calc(100vw - 32px)}
+.bar button{background:transparent;color:var(--bg);border-color:transparent;font-size:16px;padding:4px 10px}
+.bar .lab{font-weight:600;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>Checks, in plain words: the Grades tab</h1>
+    <p class="lede">Prototype for the Skill studio's Grades tab (operator's rulings, 2026-11-02). One heading, <b>Checks</b>, with two kinds: <b>Does it get picked?</b> (today's trigger tests) and <b>Does it do the job?</b> (today's outcome evals). One button writes both. Flip layouts with the bar at the foot or the ← → keys, then pick a state. The skill is <code>deploy</code>. Nothing here runs or writes anything.</p>
+  </div>
+  <div class="seg" id="states" role="group" aria-label="State"></div>
+  <div class="stage">
+    <div class="studio">
+      <div class="crumbs">Skills › <b>deploy</b> › Grades</div>
+      <div class="tabsbar" aria-hidden="true"><span>Overview</span><span>Files</span><span>Runs</span><span class="on">Grades</span></div>
+      <div class="body" id="view"></div>
+    </div>
+    <aside class="side" aria-label="What this state is"><h3>What this state is</h3><pre id="state"></pre></aside>
+  </div>
+  <div class="qbox">
+    <h2>For the operator</h2>
+    <ol>
+      <li><strong>Which layout?</strong> My pick is <b>A, Two questions</b>. Each kind is a card with its question as its title, so the words do the teaching, and an empty kind sits beside a filled one with its own way to fill it. It keeps today's grade table and Scorecard as they are. From B I would take its one-sentence answer above the cards, once a grade exists.</li>
+      <li><strong>B, Answer first</strong> is the plainest when graded, but its empty and ungraded states are weaker: the page leads with a verdict it does not have yet.</li>
+      <li><strong>C, Three steps</strong> teaches the order (write, grade, read) best for a first skill, and costs every later visit two collapsed steps above the results.</li>
+      <li><strong>The guided start writes one draft.</strong> In every layout the chat's write comes back as one draft holding both files, accepted or discarded whole. The draft says which checks are of which kind.</li>
+      <li><strong>The technical names</strong> stay as a small grey label under each question (<code>trigger tests · evals/triggers.json</code>). Drop them, or keep them for the person who reads the files?</li>
+    </ol>
+  </div>
+</div>
+<div class="bar" role="group" aria-label="Prototype layout">
+  <button id="prev" aria-label="Previous layout">←</button>
+  <span class="lab" id="lab" aria-live="polite"></span>
+  <button id="next" aria-label="Next layout">→</button>
+</div>
+<script>
+const SKILL = "deploy";
+const PICKED = [
+  { q: "deploy the api to staging", start: true },
+  { q: "what changed since the last release?", start: false },
+  { q: "ship svc to production with a tag", start: true },
+  { q: "roll back yesterday's deploy", start: true },
+];
+const JOB = [
+  { task: "Deploy svc to staging from a branch with a failing test", checks: ["It stops before deploying", "It names the failing test"] },
+  { task: "Deploy the api to production", checks: ["It runs the tests first", "It writes a changelog entry", "It tags the release"] },
+];
+// Per-check results of the latest grade, with it and without it.
+const PICKED_RES = [[3, 3], [3, 1], [3, 1], [2, 0]]; // right of 3 runs
+const JOB_RES = [[2, 0], [4, 1]]; // statements passed of (checks × runs)
+const STATES = [
+  { id: "none", label: "No checks yet" },
+  { id: "draft", label: "A chat writes them" },
+  { id: "ungraded", label: "Checks, never graded" },
+  { id: "graded", label: "Graded, both kinds" },
+  { id: "picked", label: "Only “picked” checks" },
+];
+const VARIANTS = [
+  { id: "a", name: "Two questions" },
+  { id: "b", name: "Answer first" },
+  { id: "c", name: "Three steps" },
+];
+const RESULTS = {
+  graded: { picked: { with: 92, without: 58, prev: 83 }, job: { with: 75, without: 20, prev: null }, when: "2026-11-01 16:20 UTC", spent: "$2.84" },
+  picked: { picked: { with: 86, without: 68, prev: 80 }, job: null, when: "2026-10-28 10:00 UTC", spent: "$1.92" },
+};
+const ROWS = {
+  graded: [
+    { when: "2026-11-01 16:20 UTC", v: "0123456789ab", on: "Claude Code · sonnet", p: [92, 58], j: [75, 20], spent: "$2.84", ended: "Graded", b: "b-good" },
+    { when: "2026-10-28 10:00 UTC", v: "fedcba987654", on: "Claude Code · sonnet", p: [86, 68], j: null, spent: "$1.92", ended: "Graded", b: "b-good" },
+    { when: "2026-10-22 09:00 UTC", v: "fedcba987654", on: "Claude Code · haiku", p: [80, 69], j: null, spent: "$1.71", ended: "Stopped at its dollar limit", b: "b-warn" },
+  ],
+  picked: [
+    { when: "2026-10-28 10:00 UTC", v: "fedcba987654", on: "Claude Code · sonnet", p: [86, 68], j: null, spent: "$1.92", ended: "Graded", b: "b-good" },
+    { when: "2026-10-22 09:00 UTC", v: "fedcba987654", on: "Claude Code · haiku", p: [80, 69], j: null, spent: "$1.71", ended: "Stopped at its dollar limit", b: "b-warn" },
+  ],
+};
+
+let state = "none";
+let chatDone = true; // in "A chat writes them": has the draft come back yet?
+let kindTab = "picked"; // C's results tab
+let accepted = false;
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const variant = () => VARIANTS.find((v) => "#" + v.id === location.hash) ?? VARIANTS[0];
+const has = { picked: () => ["ungraded", "graded", "picked"].includes(state) || (state === "draft" && accepted), job: () => ["ungraded", "graded"].includes(state) || (state === "draft" && accepted) };
+
+// ---- shared bits (shared words, never a shared layout) ----
+const KIND = {
+  picked: { q: "Does it get picked?", tech: "trigger tests · evals/triggers.json", short: "Picked?",
+    what: `Things a person might type, each with whether ${SKILL} should start for it.` },
+  job: { q: "Does it do the job?", tech: "outcome evals · evals/evals.json", short: "Does the job?",
+    what: `Tasks, each with what a good result has. Another chat checks each result.` },
+};
+function meters(r, kind) {
+  if (!r) return "";
+  const m = (lab, v, cls) => `<div class="meter"><span>${lab}</span><div class="track" role="meter" aria-label="${esc(KIND[kind].q)} ${lab}" aria-valuenow="${v}" aria-valuemin="0" aria-valuemax="100"><div class="fill ${cls}" style="width:${v}%"></div></div><span class="v">${v}%</span></div>`;
+  return `<div class="meters">${m("With it", r.with, "f-with")}${m("Without it", r.without, "f-without")}${r.prev === null ? "" : m("Last version", r.prev, "f-prev")}</div>`;
+}
+function checkList(kind) {
+  if (kind === "picked")
+    return `<ul class="list">${PICKED.map((t) => `<li><span class="q">“${esc(t.q)}”</span><span class="${t.start ? "yes" : "no"}">${t.start ? "should start it" : "should not"}</span></li>`).join("")}</ul>`;
+  return `<ul class="list">${JOB.map((t) => `<li><span>${esc(t.task)}</span><span class="sub">· ${t.checks.length} things to check</span></li>`).join("")}</ul>`;
+}
+const count = (kind) => (kind === "picked" ? PICKED.length : JOB.length);
+const countSaid = (kind) => (kind === "picked" ? `${PICKED.length} prompts` : `${JOB.length} tasks`);
+function table(rows) {
+  return `<div class="tablewrap"><table aria-label="Grades of ${SKILL}"><thead><tr><th>Graded</th><th>Version</th><th>Ran on</th><th class="n">Picked, with it</th><th class="n">Without</th><th class="n">Does the job, with it</th><th class="n">Without</th><th class="n">Spent</th><th>Ended</th><th><span class="sub">Scorecard</span></th></tr></thead><tbody>${rows
+    .map((r) => `<tr><td>${r.when}</td><td><code>${r.v.slice(0, 7)}</code></td><td>${r.on}</td><td class="n">${r.p[0]}%</td><td class="n">${r.p[1]}%</td><td class="n">${r.j ? r.j[0] + "%" : "—"}</td><td class="n">${r.j ? r.j[1] + "%" : "—"}</td><td class="n">${r.spent}</td><td><span class="badge ${r.b}">${r.ended}</span></td><td><button class="sm">Scorecard</button></td></tr>`)
+    .join("")}</tbody></table></div>`;
+}
+const afterEdit = () => `<div class="row"><div><b>Grade after each edit</b><p class="sub">Off. When it's on, each edit you save is graded once, within a limit you accept first.</p></div><button class="sm">Turn on…</button></div>`;
+const gradeBtn = (again) => `<button class="${again ? "" : "primary"}">${again ? "Grade again…" : `Grade ${SKILL}…`}</button>`;
+const askBtn = (label = "Ask a chat to write checks") => `<button class="primary" data-act="ask">${label}</button>`;
+const byHand = () => `<button class="link">or write them yourself</button>`;
+function draftBlock() {
+  if (!chatDone)
+    return `<div class="notice"><span>Chat 14 is writing checks for ${SKILL}: both kinds, in one draft.</span><span class="left"><button class="sm">Show the chat</button><button class="sm" data-act="arrive">(prototype: the draft comes back)</button></span></div>`;
+  if (accepted) return `<div class="notice"><span>Draft accepted: 4 “picked” checks and 2 “job” checks are now kept with ${SKILL}.</span><button class="sm" data-act="undo">(prototype: back to the draft)</button></div>`;
+  return `<div class="card" style="border-color:var(--accent)">
+    <div class="row"><div class="left"><span class="badge b-news">Draft from chat 14</span><b>6 new checks for ${SKILL}</b></div><span class="tech">writes evals/triggers.json and evals/evals.json</span></div>
+    <div class="two">
+      <div class="sect"><h3>${KIND.picked.q} <span class="sub">· 4 prompts</span></h3>${checkList("picked")}</div>
+      <div class="sect"><h3>${KIND.job.q} <span class="sub">· 2 tasks</span></h3>${checkList("job")}</div>
+    </div>
+    <p class="sub">Nothing is kept until you accept it. Accept takes both kinds together.</p>
+    <div class="left"><button class="primary" data-act="accept">Accept checks</button><button>Ask the chat to redo them</button><button class="ghost">Discard</button></div>
+  </div>`;
+}
+function readout() {
+  const v = variant();
+  const s = STATES.find((x) => x.id === state);
+  const lines = [
+    `layout:  ${v.id.toUpperCase()}, ${v.name}`,
+    `state:   ${s.label}`,
+    `picked:  ${has.picked() ? count("picked") + " checks" : "none"}`,
+    `job:     ${has.job() ? count("job") + " checks" : "none"}`,
+    `graded:  ${RESULTS[state] ? RESULTS[state].when : "never"}`,
+  ];
+  if (state === "draft") lines.push(`draft:   ${!chatDone ? "chat still writing" : accepted ? "accepted" : "waiting for you"}`);
+  return lines.join("\n");
+}
+
+// ---- A: Two questions, side by side ----
+function variantA() {
+  if (state === "none" || (state === "draft" && !accepted)) {
+    return `<section class="sect"><div class="title"><h2>Checks</h2></div>
+      ${state === "draft" ? draftBlock() : `<div class="empty"><h3>${SKILL} has no checks yet</h3>
+        <p class="sub" style="max-width:62ch">Checks are how you find out whether ${SKILL} helps. A grade runs each one in chats with ${SKILL} and without it, and shows the difference.</p>
+        <ul class="kinds"><li><b>${KIND.picked.q}</b><span class="sub">${KIND.picked.what}</span></li><li><b>${KIND.job.q}</b><span class="sub">${KIND.job.what}</span></li></ul>
+        <div class="left">${askBtn()}${byHand()}</div></div>`}
+    </section>${afterEdit()}`;
+  }
+  const r = RESULTS[state];
+  const card = (kind) => {
+    const any = has[kind]();
+    const res = r ? r[kind] : null;
+    return `<div class="card"><div><h3>${KIND[kind].q}</h3><span class="tech">${KIND[kind].tech}</span></div>
+      ${any ? `<p class="sub">${KIND[kind].what}</p>
+        ${res ? meters(res, kind) : `<p class="sub">${r ? "Not in the latest grade." : "Not graded yet."}</p>`}
+        <details><summary>${countSaid(kind)}</summary>${checkList(kind)}</details>
+        <div class="left"><button class="link">Edit these checks</button></div>`
+      : `<p class="sub">None yet. ${KIND[kind].what}</p><div class="left"><button class="sm" data-act="ask">Ask a chat to write these</button><button class="link">or write them yourself</button></div>`}
+    </div>`;
+  };
+  return `${state === "draft" ? draftBlock() : ""}
+    <section class="sect"><div class="title"><h2>Checks</h2><div class="left">${r ? `<span class="sub">Latest grade ${r.when} · ${r.spent}</span>` : ""}${gradeBtn(!!r)}</div></div>
+      ${r ? `<div class="legend"><span><i class="f-with"></i>With ${SKILL}</span><span><i class="f-without"></i>Without it</span><span><i class="f-prev"></i>Its last version</span></div>` : `<p class="sub">Grade runs every check in chats with ${SKILL} and without it. You see what it may spend before it starts.</p>`}
+      <div class="two">${card("picked")}${card("job")}</div>
+    </section>
+    ${r ? `<section class="sect"><div class="title"><h2>Grades</h2></div>${table(ROWS[state])}</section>` : ""}
+    ${afterEdit()}`;
+}
+
+// ---- B: Answer first ----
+function sentence(kind, res) {
+  if (kind === "picked") {
+    const word = res.with - res.without >= 15 ? "Yes" : res.with > res.without ? "A little" : "No";
+    return `<b class="big">${word}.</b> It started when it should, and stayed out when it should, ${res.with}% of the time. Without ${SKILL}, ${res.without}%.`;
+  }
+  const word = res.with - res.without >= 15 ? "Mostly" : res.with > res.without ? "Somewhat" : "No better than without it";
+  return `<b class="big">${word}.</b> ${res.with}% of what a good result has was there with ${SKILL}; ${res.without}% without it.`;
+}
+function pair(res) {
+  const b = (v, cls, lab) => `<div class="meter" style="grid-template-columns:72px minmax(0,1fr) 44px"><span class="sub">${lab}</span><div class="track"><div class="fill ${cls}" style="width:${v}%"></div></div><span class="v">${v}%</span></div>`;
+  return `<div class="pair">${b(res.with, "f-with", "With it")}${b(res.without, "f-without", "Without")}${res.prev === null ? "" : b(res.prev, "f-prev", "Last")}</div>`;
+}
+let bFilter = "all";
+function variantB() {
+  if (state === "none" || (state === "draft" && !accepted)) {
+    return `${state === "draft" ? draftBlock() : `<div class="empty center">
+      <h3 style="font-size:18px">Does ${SKILL} help?</h3>
+      <p class="sub" style="max-width:56ch">To find out, purlis needs a few checks: some things a person might type (<b>does it get picked?</b>) and some tasks with what a good result has (<b>does it do the job?</b>). A chat can write both for you to look over.</p>
+      ${askBtn()}${byHand()}</div>`}`;
+  }
+  const r = RESULTS[state];
+  const verdict = r
+    ? `<section class="card verdict" aria-label="The latest grade"><div class="row"><span class="sub">Latest grade · ${r.when} · ${r.spent}</span><div class="left"><button class="sm">Scorecard</button>${gradeBtn(true)}</div></div>
+        <div class="line"><span class="sub">${KIND.picked.q}</span><p>${sentence("picked", r.picked)}</p>${pair(r.picked)}</div>
+        <div class="line"><span class="sub">${KIND.job.q}</span>${r.job ? `<p>${sentence("job", r.job)}</p>${pair(r.job)}` : `<p><b class="big">Not checked.</b> ${SKILL} has no tasks to check it on yet.</p><div class="left"><button class="sm" data-act="ask">Ask a chat to write some</button></div>`}</div>
+      </section>`
+    : `<section class="card verdict"><span class="sub">Not graded yet</span><p class="big">${count("picked") + count("job")} checks are ready. Grade ${SKILL} to see whether it helps.</p><p class="sub">A grade runs each check in chats with ${SKILL} and without it. You see what it may spend before it starts.</p><div class="left">${gradeBtn(false)}</div></section>`;
+  const items = [
+    ...(has.picked() ? PICKED.map((t, i) => ({ kind: "picked", text: `“${t.q}”`, note: t.start ? "should start it" : "should not", res: r && r.picked ? PICKED_RES[i] : null, of: 3 })) : []),
+    ...(has.job() ? JOB.map((t, i) => ({ kind: "job", text: t.task, note: `${t.checks.length} things to check`, res: r && r.job ? JOB_RES[i] : null, of: t.checks.length })) : []),
+  ].filter((x) => bFilter === "all" || x.kind === bFilter);
+  return `${state === "draft" ? draftBlock() : ""}${verdict}
+    <section class="sect"><div class="title"><h2>Checks</h2><div class="seg" role="group" aria-label="Show">${["all", "picked", "job"].map((f) => `<button class="sm" data-filter="${f}" aria-pressed="${bFilter === f}">${f === "all" ? "All" : KIND[f].short}</button>`).join("")}</div></div>
+      <ul class="list" style="gap:6px">${items.map((x) => `<li style="justify-content:space-between"><span class="left"><span class="chip">${KIND[x.kind].short}</span><span class="${x.kind === "picked" ? "q" : ""}">${esc(x.text)}</span><span class="sub">${x.note}</span></span>${x.res ? `<span class="sub">with ${x.res[0]}/${x.of} · without ${x.res[1]}/${x.of}</span>` : ""}</li>`).join("")}</ul>
+      <div class="left">${!has.job() ? `<button class="sm" data-act="ask">Ask a chat for “does it do the job?” checks</button>` : `<button class="sm" data-act="ask">Ask a chat to add checks</button>`}<button class="link">Edit the files</button></div>
+      <p class="tech">trigger tests: evals/triggers.json · outcome evals: evals/evals.json</p>
+    </section>
+    ${r ? `<details><summary>Every grade (${ROWS[state].length})</summary>${table(ROWS[state])}</details>` : ""}
+    ${afterEdit()}`;
+}
+
+// ---- C: Three steps ----
+function variantC() {
+  const any = has.picked() || has.job();
+  const r = RESULTS[state];
+  const s1done = any, s2done = !!r;
+  const step = (n, done, now, title, summary, content) => `<li class="step"><span class="dot ${done ? "done" : now ? "now" : ""}" aria-hidden="true">${done ? "✓" : n}</span><div><div class="head"><h3>${n}. ${title}</h3>${summary}</div>${content ? `<div class="content">${content}</div>` : ""}</div></li>`;
+  const s1 = s1done
+    ? step(1, true, false, "Write checks", `<span class="left"><span class="sub">${has.picked() ? count("picked") + " “picked”" : "no “picked”"} · ${has.job() ? count("job") + " “job”" : "no “job”"}</span><button class="link">Edit</button></span>`,
+        !has.job() && state !== "draft" ? `<div class="notice warn"><span>${SKILL} has no “does it do the job?” checks, so a grade only tells you whether it gets picked.</span><button class="sm" data-act="ask">Ask a chat to write them</button></div>` : "")
+    : step(1, false, true, "Write checks", "", state === "draft" ? draftBlock() : `<p class="sub" style="max-width:64ch">Two kinds. <b>${KIND.picked.q}</b> ${KIND.picked.what} <b>${KIND.job.q}</b> ${KIND.job.what}</p><div class="left">${askBtn()}${byHand()}</div><p class="tech">trigger tests · outcome evals, kept in ${SKILL}/evals/</p>`);
+  const s2 = step(2, s2done, s1done && !s2done, "Grade", s2done ? `<span class="left"><span class="sub">${r.when} · ${r.spent}</span>${gradeBtn(true)}</span>` : "",
+    s1done && !s2done ? `<p class="sub">Runs every check in chats with ${SKILL} and without it. You see what it may spend before it starts.</p><div class="left">${gradeBtn(false)}</div>` : "");
+  let s3content = "";
+  if (r) {
+    const kinds = ["picked", "job"];
+    const res = r[kindTab];
+    s3content = `<div class="ktabs" role="tablist">${kinds.map((k) => `<button role="tab" data-kind="${k}" aria-selected="${kindTab === k}">${KIND[k].q}</button>`).join("")}</div>
+      ${res ? `${meters(res, kindTab)}<div class="perq">${(kindTab === "picked" ? PICKED : JOB).map((t, i) => {
+        const rr = (kindTab === "picked" ? PICKED_RES : JOB_RES)[i], of = kindTab === "picked" ? 3 : t.checks.length;
+        return `<div class="item"><span class="${kindTab === "picked" ? "q" : ""}">${esc(kindTab === "picked" ? "“" + t.q + "”" : t.task)}</span><span class="sub">with ${rr[0]}/${of}</span><span class="sub">without ${rr[1]}/${of}</span></div>`;
+      }).join("")}</div><div class="left"><button class="sm">Scorecard</button></div>`
+      : `<p class="sub">Nothing to show: ${SKILL} has no “does it do the job?” checks.</p>`}
+      <details><summary>Every grade (${ROWS[state].length})</summary>${table(ROWS[state])}</details>`;
+  }
+  const s3 = step(3, false, !!r, "Read the results", "", s3content);
+  return `<section class="sect"><div class="title"><h2>Checks</h2></div><ol class="steps">${s1}${s2}${s3}</ol></section>${afterEdit()}`;
+}
+
+// ---- wiring ----
+function render() {
+  const v = variant();
+  document.getElementById("view").innerHTML = v.id === "a" ? variantA() : v.id === "b" ? variantB() : variantC();
+  document.getElementById("state").textContent = readout();
+  document.getElementById("lab").textContent = `${v.id.toUpperCase()} · ${v.name}`;
+  document.getElementById("states").innerHTML = `<span class="k">State</span>` + STATES.map((s) => `<button class="sm" data-state="${s.id}" aria-pressed="${s.id === state}">${s.label}</button>`).join("");
+}
+function go(step) {
+  const i = VARIANTS.indexOf(variant());
+  location.hash = VARIANTS[(i + step + VARIANTS.length) % VARIANTS.length].id;
+}
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.dataset.state) { state = t.dataset.state; chatDone = state !== "draft" ? true : false; accepted = false; }
+  else if (t.dataset.act === "ask") { state = "draft"; chatDone = false; accepted = false; }
+  else if (t.dataset.act === "arrive") chatDone = true;
+  else if (t.dataset.act === "accept") accepted = true;
+  else if (t.dataset.act === "undo") accepted = false;
+  else if (t.dataset.filter) bFilter = t.dataset.filter;
+  else if (t.dataset.kind) kindTab = t.dataset.kind;
+  else if (t.id === "prev") return go(-1);
+  else if (t.id === "next") return go(1);
+  else return;
+  render();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input,textarea,[contenteditable]")) return;
+  if (e.key === "ArrowLeft") go(-1);
+  if (e.key === "ArrowRight") go(1);
+});
+addEventListener("hashchange", render);
+render();
+</script>
+</body>
+</html>
