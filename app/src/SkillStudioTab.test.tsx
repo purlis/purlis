@@ -1,13 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { forgetStudio, openSkill, renderStudio } from "./SkillStudioTab.testkit";
+import { forgetStudio, openSkill, renderStudio, renderStudioAt } from "./SkillStudioTab.testkit";
 import {
   AT_THE_ROOT,
+  skillRowNamed,
+  skillRowId,
   SKILL_STUDIO_TITLE,
   asPersona,
   inWorkspace,
@@ -33,6 +35,19 @@ function answering(studio: unknown) {
     if (cmd === "skills_deleted") return [];
     throw new Error(`unexpected ${cmd}`);
   });
+}
+
+/** Holds every animation frame asked for from here; the answer lets them go, and later ones run. */
+function holdTheFrames(): () => void {
+  const held: FrameRequestCallback[] = [];
+  const spy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((run) => {
+    held.push(run);
+    return held.length;
+  });
+  return () => {
+    spy.mockRestore();
+    for (const run of held) run(performance.now());
+  };
 }
 
 describe("the Skill studio", () => {
@@ -83,7 +98,7 @@ describe("the Skill studio", () => {
           written: "secrets",
           named: false,
           unchecked: null,
-          folder: "/app/plugin/skills/secrets",
+          folder: "/app/plugin/skills/purlis-secrets",
           compat: [],
           lint: [],
           hidden: [],
@@ -132,6 +147,62 @@ describe("the Skill studio", () => {
         "Left out: a built-in skill has this name, and a built-in skill is never replaced",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("draws the Library's first screen of rows at once and the rest straight after (#4351)", async () => {
+    const names = Array.from({ length: 60 }, (_, n) => `crowd-${String(n).padStart(2, "0")}`);
+    answering(studio(names.map((name) => skill(name))));
+    const letTheFrameGo = holdTheFrames();
+    renderStudio();
+
+    await screen.findByTestId("skill-crowd-00");
+    expect(screen.queryByTestId("skill-crowd-59")).toBeNull();
+
+    letTheFrameGo();
+    expect(await screen.findByTestId("skill-crowd-59")).toBeTruthy();
+  });
+
+  it("draws a chosen row past the Library's first screen on the tab's first frame (#4351)", async () => {
+    const skills = Array.from({ length: 60 }, (_, n) =>
+      skill(`crowd-${String(n).padStart(2, "0")}`),
+    );
+    answering(studio(skills));
+    renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowId(skills[50]) });
+
+    await screen.findByTestId("skill-crowd-00");
+    expect(screen.queryByTestId("skill-crowd-50")).toBeTruthy();
+  });
+
+  it("draws a chosen row known only by its name on the tab's first frame (#4351)", async () => {
+    const skills = Array.from({ length: 60 }, (_, n) =>
+      skill(`crowd-${String(n).padStart(2, "0")}`),
+    );
+    answering(studio(skills));
+    renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowNamed("crowd-50") });
+
+    await screen.findByTestId("skill-crowd-00");
+    expect(screen.queryByTestId("skill-crowd-50")).toBeTruthy();
+  });
+
+  it("draws the first screen first each time the Library comes back to a tab (#4351)", async () => {
+    const skills = Array.from({ length: 60 }, (_, n) =>
+      skill(`crowd-${String(n).padStart(2, "0")}`),
+    );
+    answering(studio(skills));
+    renderStudio();
+    await screen.findByTestId("skill-crowd-59");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+    const library = await screen.findByRole("button", { name: "Library" });
+    const letTheFrameGo = holdTheFrames();
+    await user.click(library);
+
+    await screen.findByTestId("skill-crowd-00");
+    expect(screen.queryByTestId("skill-crowd-59")).toBeNull();
+
+    letTheFrameGo();
+    expect(await screen.findByTestId("skill-crowd-59")).toBeTruthy();
   });
 
   it("keeps the Library's tools to search and chips, with New skill… the one way in (#4041)", async () => {
@@ -656,7 +727,7 @@ function withClaudeCode(offLangfuse: boolean) {
         level: "built-in",
         label: "built-in",
         description: "Keeps secrets.",
-        folder: "/app/plugin/skills/secrets",
+        folder: "/app/plugin/skills/purlis-secrets",
         compat: [],
         lint: [],
         hidden: [],

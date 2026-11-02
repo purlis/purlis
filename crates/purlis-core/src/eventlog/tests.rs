@@ -3676,7 +3676,7 @@ fn a_skill_typed_into_claude_code_opens_its_run_on_the_expansion_that_names_it_a
 fn a_curation_prompt_held_before_its_chat_begins_makes_the_skill_its_turn_starts_the_actions() {
     use crate::state::Event::Stop;
     use std::time::Instant;
-    const CURATION: &str = "Use purlis's compact skill to compact and improve the persona ops.";
+    const CURATION: &str = "Use the purlis-compact skill to compact and improve the persona ops.";
     let dir = tempfile::tempdir().unwrap();
     let plane = a_plane();
     let mut host = recorder(dir.path());

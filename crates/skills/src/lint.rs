@@ -59,9 +59,9 @@ pub enum Lint {
         name: String,
         project: bool,
     },
-    /// A harness or repo skill with the name of one of purlis's built-in skills (SK-37): its
-    /// program loads it beside purlis's, and purlis cannot stop it.
-    BuiltInName,
+    /// A harness or repo skill with a name of purlis's own ([`crate::name_reserved`], SK-37): its
+    /// program loads it, beside any built-in skill of that name, and purlis cannot stop it.
+    ReservedName,
     /// A program it calls that this machine does not have, and where it calls it.
     Missing { tool: String, place: Place },
     /// A script its text names, by its path inside the folder, that its folder does not have
@@ -172,9 +172,11 @@ impl Finding {
                     "purlis has"
                 }
             ),
-            Lint::BuiltInName => "it has the name of one of purlis's built-in skills, so a chat \
-                                  gets purlis's too and may use either: rename it"
-                .to_owned(),
+            Lint::ReservedName => {
+                "a name starting with purlis- is purlis's own, so a chat may get \
+                                   purlis's skill of this name too and use either: rename it"
+                    .to_owned()
+            }
             Lint::Said { by, says } => format!("{by}: {says}"),
             Lint::Missing { tool, place } => format!(
                 "{} calls {tool}, which this machine does not have",
@@ -255,9 +257,6 @@ pub struct BuiltInLints<'a> {
     pub plane: &'a std::collections::HashSet<String>,
     /// The names of the built-in skills.
     pub built_in: &'a std::collections::HashSet<String>,
-    /// The names the program a skill from outside the plane is read by knows purlis's own
-    /// skills by ([`crate::Route::built_in_names`]): what such a skill named so loads beside.
-    pub known_as: &'a std::collections::HashSet<String>,
     /// Whether this machine has the program named, on its `PATH` or at the path given.
     pub has: &'a (dyn Fn(&str) -> bool + 'a),
 }
@@ -268,7 +267,6 @@ impl std::fmt::Debug for BuiltInLints<'_> {
             .field("namespace", &self.namespace)
             .field("plane", &self.plane)
             .field("built_in", &self.built_in)
-            .field("known_as", &self.known_as)
             .finish_non_exhaustive()
     }
 }
@@ -288,7 +286,7 @@ impl SkillLint for BuiltInLints<'_> {
             return out;
         }
         out.extend(short_description(skill.text));
-        out.extend(built_in_name(skill, self.known_as));
+        out.extend(reserved_name(skill));
         out.extend(keys(skill));
         out.extend(references(skill, self));
         out.extend(tools_missing(skill, self.has));
@@ -316,16 +314,13 @@ fn short_description(text: &str) -> Option<Finding> {
     (length < FEWEST_DESCRIPTION).then(|| warns(Lint::ShortDescription(length)))
 }
 
-/// A skill purlis does not hand, named as its program knows one of purlis's own skills
-/// (`known_as`): it reads it beside purlis's, which no copy replaces and purlis never turns off
-/// ([`crate::SkillSet::with_outside`]). A plugin's skill is known by its plugin's name too, so
-/// it never takes one of those names.
-fn built_in_name(
-    skill: &SkillFiles<'_>,
-    known_as: &std::collections::HashSet<String>,
-) -> Option<Finding> {
-    (!skill.origin.handed() && skill.plugin.is_none() && known_as.contains(skill.name))
-        .then(|| warns(Lint::BuiltInName))
+/// A skill purlis does not hand, with a name of purlis's own ([`crate::name_reserved`]): its
+/// harness reads it all the same, beside any built-in skill of that name, which no copy replaces
+/// and purlis never turns off ([`crate::SkillSet::with_outside`]). A plugin's skill is known by its
+/// plugin's name too, so it never takes one of those names.
+fn reserved_name(skill: &SkillFiles<'_>) -> Option<Finding> {
+    (!skill.origin.handed() && skill.plugin.is_none() && crate::name_reserved(skill.name))
+        .then(|| warns(Lint::ReservedName))
 }
 
 /// What its frontmatter, read as YAML, says: refused where purlis cannot read it (which blocks a

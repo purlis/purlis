@@ -21,7 +21,7 @@
 //!   `-p` run that called Bash. `${CLAUDE_PLUGIN_ROOT}` is the directory as given.
 //! - A plane whose `.claude/settings.json` enables `charter@charter`, with that plugin
 //!   installed at project scope, loads BOTH plugins under `--plugin-dir`: two sets of hooks on
-//!   every event and two `handoff` skills. `--settings '{"enabledPlugins":{"charter@charter":
+//!   every event and two `purlis-handoff` skills. `--settings '{"enabledPlugins":{"charter@charter":
 //!   false}}'` on the same command line turns the installed one off for that session — none of
 //!   its hooks fired and its skills were not offered — while the project file still enables it
 //!   for every other session. It wins over `.claude/settings.local.json` too. That is the
@@ -79,7 +79,7 @@
 use crate::hookreg::Handler;
 use crate::names::{PLUGIN_INSTALLED_AS, PLUGIN_LOADED_AS, PLUGIN_NAME};
 
-/// The plugin's name, which is also how its skills are namespaced (`purlis:handoff`) and what
+/// The plugin's name, which is also how its skills are namespaced (`purlis:purlis-handoff`) and what
 /// its MCP server is called ([`crate::chattools::SERVER`]).
 ///
 /// The product is purlis, so its plugin is (#1266, V93m). It was `charter` (#406, ADR 0056),

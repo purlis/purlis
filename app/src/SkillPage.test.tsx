@@ -808,7 +808,7 @@ describe("a built-in skill's page", () => {
     label: "built-in",
     grant: null,
     granted: null,
-    folder: "/app/plugin/skills/secrets",
+    folder: "/app/plugin/skills/purlis-secrets",
   });
 
   it("says it can't be edited, moved or turned off, and offers only what it can do", async () => {

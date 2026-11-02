@@ -254,7 +254,7 @@ fn keep_end(step: &RouterGradeStep) {
 }
 
 /// **The latest step of the router's grade `grade` in `plane`** (#4222): what its page starts
-/// from when it opens, as a skill's grade's page starts from `skill_grades`: where it runs, or
+/// from when it opens, as a skill's grade's page starts from `skill_grade_running`: where it runs, or
 /// its end where it is the project's last. `None` for any other.
 pub(crate) fn step_of_running(plane: &PlaneId, grade: &str) -> Option<RouterGradeStep> {
     let running_now = running()
@@ -490,9 +490,6 @@ pub(crate) async fn router_grade_start(
                 id.clone(),
                 Running {
                     plane: plane.clone(),
-                    // No skill's: a router's grade is stopped by its id alone.
-                    skill: String::new(),
-                    level: None,
                     stop: Arc::clone(&stop),
                     after_edit: None,
                     // Held from the start: a page opened before its first chat ends finds it.

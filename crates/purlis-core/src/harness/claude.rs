@@ -87,7 +87,6 @@ impl HarnessAdapter for ClaudeCode {
             skills_off: crate::skills::skills_off_for(kit, Harness::ClaudeCode, plugins)
                 .into_iter()
                 .collect(),
-            own_index: plugins.own_index,
         };
         let mut args = words(["--plugin-dir", &plugin.display().to_string()]);
         // The plane's skills, as a plugin of their own (ADR 0063 as amended 2026-10-20).
@@ -646,7 +645,7 @@ fn settings(
     // ([`crate::harness_plugin::CLAUDE_CODE`] holds them and says why). The operator's ruling of
     // 2026-09-23: a chat the app starts turns the Python charter's plugin off for itself, so the
     // project files that enable it for the operator's own terminal sessions do not give an app
-    // chat two sets of hooks and two `handoff` skills. And the bundled plugin pinned on: a
+    // chat two sets of hooks and two `purlis-handoff` skills. And the bundled plugin pinned on: a
     // project file can turn a `--plugin-dir` plugin off by its id, a chat can write that file,
     // and the plugin carries the Bash guard. Measured on 2.1.280: this `true` wins over a
     // project's `false`.
@@ -1397,7 +1396,7 @@ pub const DISPATCH_TASK_ALLOW: [&str; 11] = [
 ///
 /// **Each spelling by name, and no bare trailing wildcard**, for [`DISPATCH_ALLOW`]'s reason
 /// (D-T59-18): `purlis handoff *` would also allow whatever the command grows later. So the
-/// spelling the handoff skill writes puts a flag first,
+/// spelling the purlis-handoff skill writes puts a flag first,
 /// `purlis handoff --name "<task>" <workspace>`, and a line that starts with the workspace is
 /// the harness's own to ask about, as any command it has no rule for is. A project that still
 /// carries the `ask` rule an older `init` wrote keeps being asked until the `handoff-rule` fix

@@ -174,7 +174,7 @@ pub fn remove(
         // Every workspace that ran its chats on it runs them on this machine again.
         crate::machine::update(config_root, |store| {
             for recent in &mut store.recents {
-                recent.chats_run_on.retain(|_, pool| pool != name);
+                recent.forget_pool(name);
             }
         })
         .map_err(|why| {
@@ -191,28 +191,67 @@ pub fn remove(
 pub const SETTING: &str = "Settings › This machine › Pools";
 
 /// **Which pool `workspace` of the plane at `plane` runs its chats on, on this machine**
-/// (#2679, #2046): `None` for this machine, the pool where this machine's store names one it
-/// keeps with its runner, and refused, in words, where it names one this machine does not keep:
-/// such a chat starts nowhere, and is never started here in its place.
+/// (#2679, #2046): `None` for this machine, the pool where the order of [`chat_place`] names one
+/// this machine keeps with its runner, and refused, in words, where it names one it does not
+/// keep: such a chat starts nowhere, and is never started here in its place.
 pub fn runs_on(
     config_root: &Path,
     plane: &Path,
     workspace: Option<&str>,
 ) -> Result<Option<String>, String> {
+    Ok(chat_place(config_root, plane, workspace, None)?.pool)
+}
+
+/// **Where a chat runs and why, with the pool it names checked** (#4536, ruled 2026-11-01): the
+/// order is [`crate::machine::Store::chat_place`]'s. A chat at the project's root runs on this
+/// machine, since code moves to a runner by a workspace's clones, and a start that chose a pool
+/// for one is refused and never run here in its place.
+pub fn chat_place(
+    config_root: &Path,
+    plane: &Path,
+    workspace: Option<&str>,
+    start: Option<&crate::machine::StartChoice>,
+) -> Result<crate::machine::ChatPlace, String> {
+    use crate::machine::{ChatPlace, PlaceLevel, StartChoice};
     let Some(workspace) = workspace else {
-        return Ok(None);
+        return match start {
+            Some(StartChoice::Pool(pool)) => Err(format!(
+                "A chat at the project's root runs on this machine, so it can't start on pool \
+                 {pool}. Start it in a workspace."
+            )),
+            Some(StartChoice::ThisMachine) => Ok(ChatPlace {
+                pool: None,
+                level: PlaceLevel::Start,
+            }),
+            None => Ok(ChatPlace {
+                pool: None,
+                level: PlaceLevel::Default,
+            }),
+        };
     };
-    let loaded = crate::machine::read(config_root);
-    let Some(pool) = loaded.store.chats_run_on(plane, workspace) else {
-        return Ok(None);
+    let place = crate::machine::read(config_root)
+        .store
+        .chat_place(plane, workspace, start);
+    let Some(pool) = &place.pool else {
+        return Ok(place);
     };
     if let Err(missing) = runners::runner_of(config_root, pool) {
-        return Err(format!(
-            "Workspace {workspace} runs its chats on pool {pool}: {missing}. Choose where its \
-             chats run in its settings, or add the pool again in {SETTING}."
-        ));
+        return Err(match place.level {
+            PlaceLevel::Project => format!(
+                "This project runs its chats on pool {pool}: {missing}. Choose where its chats \
+                 run in its settings, or add the pool again in {SETTING}."
+            ),
+            PlaceLevel::Start => format!(
+                "This chat was to start on pool {pool}: {missing}. Choose another place, or add \
+                 the pool again in {SETTING}."
+            ),
+            PlaceLevel::Workspace | PlaceLevel::Default => format!(
+                "Workspace {workspace} runs its chats on pool {pool}: {missing}. Choose where \
+                 its chats run in its settings, or add the pool again in {SETTING}."
+            ),
+        });
     }
-    Ok(Some(pool.to_owned()))
+    Ok(place)
 }
 
 /// **Every pool a workspace of the plane at `plane` runs its chats on**, with those
@@ -228,6 +267,24 @@ pub fn workspaces_on_pools(
         on.entry(pool.to_owned())
             .or_default()
             .push(workspace.to_owned());
+    }
+    // A workspace that says nothing runs its chats on the project's pool (#4536).
+    if loaded
+        .store
+        .recent(plane)
+        .is_some_and(|recent| recent.project_chats_run_on.is_some())
+    {
+        for workspace in crate::workspaces::Plane::open(plane)
+            .workspaces()
+            .unwrap_or_default()
+        {
+            let place = loaded.store.chat_place(plane, &workspace, None);
+            if place.level == crate::machine::PlaceLevel::Project
+                && let Some(pool) = place.pool
+            {
+                on.entry(pool).or_default().push(workspace);
+            }
+        }
     }
     on
 }
@@ -877,6 +934,98 @@ pub fn claim_name(device: &str, pool: &str) -> String {
     format!("{pool}-{}", crate::clusterpool::desktop_label(device))
 }
 
+/// **The claim of the chat `chat`'s fresh runner of a cluster pool** (#3709): [`claim_name`]'s, and
+/// the chat's hash, so a desktop's chats never take each other's.
+pub fn fresh_claim_name(device: &str, pool: &str, chat: &str) -> String {
+    let chat = crate::clusterpool::desktop_label(chat);
+    format!("{}-{}", claim_name(device, pool), &chat[..8])
+}
+
+/// **A runner of the cluster pool `name` for the chat `chat` alone** (#3709), kept only while that
+/// chat runs: a fresh claim is made, waited on for at most `within` until the operator vouches for
+/// it under the pool's pin, paired with no question and kept. What fails deletes the claim, and says so. A chat that has one is given it again.
+pub fn claim_fresh(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    chat: &str,
+    desktop: &Pinned,
+    within: std::time::Duration,
+) -> Result<runners::ClusterKept, Refused> {
+    if let Some((_, kept)) = runners::fresh_runner_of(config_root, chat)? {
+        return Ok(kept);
+    }
+    // Only of a pool whose add finished: one that fails forgets its pool, and a fresh runner with
+    // no pool would refuse the whole file. No lock across the wait: tasks start side by side.
+    if runners::cluster_runner_for(config_root, name)?.is_none() {
+        return Err(Refused::Other(format!(
+            "no cluster pool named {name} is on this machine"
+        )));
+    }
+    let pool = runners::cluster_pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| {
+            Refused::Other(format!("no cluster pool named {name} is on this machine"))
+        })?;
+    let kubectl = pool.kubectl(kubectl);
+    let pin = pool.pin()?;
+    let claim = fresh_claim_name(&desktop.device, pool.name(), chat);
+    let label = crate::clusterpool::desktop_label(&desktop.device);
+    let paired = crate::clusterpool::claim_and_pair(
+        &kubectl,
+        &pin,
+        &crate::clusterpool::ClaimTo {
+            pool: pool.pool(),
+            namespace: pool.namespace(),
+            name: &claim,
+            desktop: &label,
+            keeping: crate::clusterpool::Keeping::Fresh,
+        },
+        desktop,
+        within,
+        ASKED_EVERY,
+    )
+    .map_err(|why| Refused::Other(why.to_string()))?;
+    let kept = runners::ClusterKept {
+        name: pool.name().to_owned(),
+        claimed: paired.claimed,
+        pod: paired.vouched.pod,
+        pinned: paired.pinned,
+        paired: runners::now(),
+        chat: Some(chat.to_owned()),
+    };
+    let locked = runners::lock(config_root);
+    match runners::keep_cluster_runner_locked(config_root, &kept, desktop, &locked) {
+        Ok(()) => Ok(kept),
+        Err(why) => Err(match kubectl.delete_claim(pool.namespace(), &claim) {
+            Ok(()) => why,
+            Err(left) => Refused::Other(format!(
+                "{why}; and the claim could not be deleted ({left}): delete the claim {claim} in \
+                 namespace {} with kubectl",
+                pool.namespace()
+            )),
+        }),
+    }
+}
+
+/// **The chat `chat` ended, so its fresh runner goes** (#3709): its claim is deleted, then its
+/// record. A claim that could not be deleted keeps its record, so it is tried again.
+pub fn release_fresh(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    chat: &str,
+) -> Result<(), Refused> {
+    let Some((pool, kept)) = runners::fresh_runner_of(config_root, chat)? else {
+        return Ok(());
+    };
+    pool.kubectl(kubectl)
+        .delete_claim(&kept.claimed.namespace, &kept.claimed.name)
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    let locked = runners::lock(config_root);
+    runners::forget_fresh_runner_locked(config_root, chat, &locked)
+}
+
 /// **The lock an add of the cluster pool `name` holds from start to end** (#3292): a removal of
 /// that pool takes it first, so it waits for the add to finish rather than meet a pool half
 /// made.
@@ -1082,6 +1231,7 @@ pub fn add_cluster(
             namespace: pool.namespace(),
             name: &name,
             desktop: &label,
+            keeping: crate::clusterpool::Keeping::Kept,
         },
         desktop,
         within,
@@ -1098,6 +1248,7 @@ pub fn add_cluster(
             pod: paired.vouched.pod,
             pinned: paired.pinned,
             paired: runners::now(),
+            chat: None,
         };
         let locked = runners::lock(config_root);
         match runners::keep_cluster_runner_locked(config_root, &kept, desktop, &locked) {
@@ -1160,7 +1311,7 @@ pub fn before_cluster_link(
         now,
     );
     if pin != was
-        && let Err(why) = runners::keep_cluster_pin(config_root, name, &pin)
+        && let Err(why) = runners::keep_cluster_pin(config_root, pool.name(), &pin)
     {
         tracing::warn!("purlis: pool {name}'s cluster operator key moved, and was not kept: {why}");
     }
@@ -1292,7 +1443,7 @@ fn told_at_a_link(
     };
     let reached = pool.kubectl(&kubectl.clone().within(VOUCHED_NOW_WITHIN));
     let seen = reached.pool(pool.pool()).map_err(|why| why.to_string())?;
-    let moved = runners::keep_cluster_minting(config_root, name, seen.mints_in_cluster)
+    let moved = runners::keep_cluster_minting(config_root, pool.name(), seen.mints_in_cluster)
         .map_err(|why| why.to_string())?;
     if moved && let Some(tell) = TOLD_OF_MINTING.get() {
         tell();
@@ -1691,16 +1842,33 @@ pub fn remove_cluster(
         // to stop.
         tracing::info!("purlis: pool {name}'s runner was not unpaired: {why}");
     }
-    let left = claim_released(&pool, kept.as_ref(), kubectl, device);
+    let mut left = claim_released(&pool, kept.as_ref(), kubectl, device);
+    // Each chat's own runner of the pool goes with it (#3709): those chats' links end with it.
+    for fresh in runners::fresh_runners(config_root)?
+        .iter()
+        .filter(|fresh| fresh.name == name)
+    {
+        let (namespace, claim) = (&fresh.claimed.namespace, &fresh.claimed.name);
+        let deleted = kubectl
+            .is_some_and(|kubectl| pool.kubectl(kubectl).delete_claim(namespace, claim).is_ok());
+        if !deleted {
+            let said = format!(
+                "The claim {claim} may still hold a runner in the cluster: delete it with \
+                 kubectl delete claims.runners.purlis.dev {claim} --namespace {namespace}."
+            );
+            left = Some(left.map_or(said.clone(), |left| format!("{left} {said}")));
+        }
+    }
     {
         let locked = runners::lock(config_root);
+        runners::forget_fresh_runners_of_locked(config_root, name, &locked)?;
         runners::forget_cluster_runner_locked(config_root, name, &locked)?;
         runners::forget_pool_locked(config_root, name, &locked)?;
     }
     runners::forget_kubeconfig(config_root, name)?;
     crate::machine::update(config_root, |store| {
         for recent in &mut store.recents {
-            recent.chats_run_on.retain(|_, pool| pool != name);
+            recent.forget_pool(name);
         }
     })
     .map_err(|why| {

@@ -385,7 +385,7 @@ describe("a chat wrapping up", () => {
     const notice = keptOpenNotice(1) as HTMLElement;
     expect(notice).toHaveTextContent(
       "steward 1 saved its session record. purlis did not see " +
-        "/smart-close typed in it, so its tab stayed open.",
+        "/purlis-smart-close typed in it, so its tab stayed open.",
     );
     expect(tabOf("steward 1")).toBeDefined();
     expect(asked(log, "close_session")).toEqual([]);

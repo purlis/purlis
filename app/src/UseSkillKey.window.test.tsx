@@ -60,9 +60,13 @@ const CHAT = {
 const SKILLS: ChatSkills = {
   on: true,
   known: true,
+  program: [],
+  plugins_off: [],
+  own: null,
   skills: [
     {
       name: "deploy",
+      source_label: null,
       level: "project",
       label: "project",
       description: "Deploys.",

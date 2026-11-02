@@ -232,15 +232,16 @@ the command line, for that session alone, and writes nothing into any config fol
 
 - **Claude Code** gets `--plugin-dir <the bundled plugin>`: the app's own plugin,
   `purlis`, with every hook purlis answers — the state hooks and the Bash guard — and
-  the `handoff`, `working-in-a-clone`, `update`, `persona`, `secrets`, `browser`,
-  `safe-remove`, `compact`, `add-curation-action`, `smart-close`, `theme` and
-  `building-purlis-ui` skills, which reach the model as
-  `purlis:<skill>`, and the app's MCP server, `purlis` (tools `mcp__purlis__<tool>`).
+  the `purlis-handoff`, `purlis-working-in-a-clone`, `purlis-update`, `purlis-persona`,
+  `purlis-secrets`, `purlis-browser`, `purlis-safe-remove`, `purlis-compact`,
+  `purlis-add-curation-action`, `purlis-smart-close`, `purlis-theme` and
+  `purlis-building-purlis-ui` skills, which reach the model as
+  `purlis:purlis-<skill>`, and the app's MCP server, `purlis` (tools `mcp__purlis__<tool>`).
   Beside it, `--settings` carries `enabledPlugins` with
   `purlis@inline` pinned on — a project file a chat can write could otherwise turn it
   off — and a plugin named `charter@charter` turned off, so a plane whose settings enable an
   older purlis plugin for your terminal sessions does not give an app chat two sets of hooks
-  and two `handoff` skills. The Python charter's plugin is *named* `charter` too, and Claude
+  and two `purlis-handoff` skills. The Python charter's plugin is *named* `charter` too, and Claude
   Code loads one plugin per name: turned off, it cannot take the bundled one's place, and the
   bundled one pinned on cannot be swapped for it (measured on claude 2.1.282). Every id
   the plugin had before it was renamed `purlis` — `charter@inline`, `charter-app@inline` and
@@ -260,12 +261,10 @@ the command line, for that session alone, and writes nothing into any config fol
 - **opencode** gets purlis's shim, named in `OPENCODE_CONFIG_CONTENT` with a folder of
   purlis's skills as its option: the shim carries every hook, and adds that directory to the
   skills opencode discovers, beside the operator's own `skills.paths` (ADR 0058, ADR 0063).
-  The folder is laid out for the chat in purlis's data folder, and holds the built-in skills
-  under names of their own, `purlis-handoff`, `purlis-working-in-a-clone`, `purlis-secrets` and
-  so on, as Claude Code knows them as `purlis:<skill>` (ADR 0099 as amended 2026-10-26).
-  opencode reads every skill by its bare name, the ones a repo holds in `.agents/skills` and
-  your own alike, so a skill of yours named `secrets` is another skill beside
-  `purlis-secrets`. A chat types one as `/purlis-<skill>`.
+  It is told the bundle's own `skills/`, and a folder laid out for the chat in purlis's data
+  folder for the project's skills. opencode reads every skill by its bare name, the ones a repo
+  holds in `.agents/skills` and your own alike, so a skill of yours named `secrets` is another
+  skill beside `purlis-secrets`. A chat types one as `/purlis-<skill>`.
 
 **Every chat is also handed purlis's MCP server**, `purlis mcp`, the same way on each harness
 and for that chat alone: Claude Code on `--mcp-config`, Codex on

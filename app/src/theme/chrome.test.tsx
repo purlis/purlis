@@ -396,6 +396,7 @@ const LAND: LandQuestion = {
 /** A project skill, for the dialogs that change one (#3685). */
 const SKILL: StudioSkill = {
   name: "deploy",
+  source_label: null,
   level: "project",
   label: "project",
   local: false,
@@ -717,8 +718,12 @@ const DIALOGS: Opened[] = [
           skills={{
             on: true,
             known: true,
+            program: [],
+            plugins_off: [],
+            own: null,
             skills: [
               {
+                source_label: null,
                 name: "review",
                 level: "project",
                 label: "project",
@@ -730,6 +735,7 @@ const DIALOGS: Opened[] = [
                 hidden: null,
               },
               {
+                source_label: null,
                 name: "release",
                 level: "workspace",
                 label: "workspace",
@@ -1336,7 +1342,6 @@ const DIALOGS: Opened[] = [
           skill={SKILL}
           level={{ at: "project", local: false }}
           taken={["review"]}
-          builtIns={["secrets"]}
           busy={false}
           refused="the project is opened read-only"
           onEdit={nothing}
@@ -1405,7 +1410,6 @@ const DIALOGS: Opened[] = [
           levels={[{ level: { at: "project", local: false }, label: "project" }]}
           start={{ at: "project", local: false }}
           takenAt={() => []}
-          builtIns={["secrets"]}
           busy={false}
           onEdit={nothing}
           onMake={nothing}

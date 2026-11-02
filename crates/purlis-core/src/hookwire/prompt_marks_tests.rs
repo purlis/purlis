@@ -10,7 +10,7 @@ use crate::skillspan::{PromptMarks, PromptSalt};
 
 const ID: &str = "01JB00000000000000000000C7";
 const KEY: &str = "5f1c0e3a9b7d2468ace013579bdf2468ace013579bdf2468ace013579bdf2468";
-const PROMPT: &str = "Use purlis's compact skill on the persona ops\n$deploy env: prod";
+const PROMPT: &str = "Use the purlis-compact skill on the persona ops\n$deploy env: prod";
 
 fn env_of(harness: &str) -> impl Fn(&str) -> Option<String> + use<> {
     let pairs = [

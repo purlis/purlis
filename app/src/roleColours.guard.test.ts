@@ -145,7 +145,7 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
   // one does (`UpdateItem`).
   "Inbox.tsx": [
     '.inbox-update[data-read] .ask-says on "ask-says ask-lines inbox-primary ui-text-body ui-text-strong"',
-    '.inbox-update[data-read] .ask-says on "`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`"',
+    '.inbox-update[data-read] .ask-says on "`ask-says inbox-primary ui-text-body${shape.message ? " inbox-said" : ` ui-text-strong${whole ? "" : " inbox-clamped"}`}`"',
     '.inbox-update[data-read] .ask-says on "`ask-says inbox-primary${update.read ? "" : " ui-text-body ui-text-strong"}${answers.some((one) => one.allows) ? "" : " inbox-clamped"}`"',
   ],
   // These are asks, never an `.inbox-update`.

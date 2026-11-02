@@ -66,6 +66,21 @@ function card(level: SkillLevel): GradeScorecard {
  *  the copy at `level`, and a grade `01RUN` running; each ask kept. */
 function core(root: StudioSkill[], ops: StudioSkill[], level: SkillLevel) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
+  const running = {
+    plane: "p",
+    skill: "deploy",
+    level,
+    grade: "01RUN",
+    ran: 1,
+    of: 12,
+    tokens: null,
+    cost_usd: null,
+    limit_usd: 3,
+    cap: 200000,
+    asked: 0,
+    ended: null,
+    said: null,
+  };
   mockIPC(
     (cmd, args) => {
       const given = (args ?? {}) as Record<string, unknown>;
@@ -86,22 +101,10 @@ function core(root: StudioSkill[], ops: StudioSkill[], level: SkillLevel) {
             tests: 2,
             evals: 0,
             tests_refused: null,
-            running: {
-              plane: "p",
-              skill: "deploy",
-              level,
-              grade: "01RUN",
-              ran: 1,
-              of: 12,
-              tokens: null,
-              cost_usd: null,
-              limit_usd: 3,
-              cap: 200000,
-              asked: 0,
-              ended: null,
-              said: null,
-            },
+            running,
           };
+        case "skill_grade_running":
+          return running;
         case "skill_grade_after_edit":
           return null;
         case "skill_details":

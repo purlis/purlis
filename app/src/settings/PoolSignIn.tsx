@@ -177,7 +177,9 @@ export function PoolSignIn({
         const next = await commands.poolSignInNext(which).catch(said);
         if (left) return;
         if (next.status === "error") {
-          setStep({ at: "failed", why: next.error });
+          // Refused only once it is over: nothing it opened is any use now.
+          setPage(undefined);
+          setStep({ at: "failed", why: next.error, stopped: true });
           return;
         }
         if (next.data === null) continue;
@@ -192,6 +194,7 @@ export function PoolSignIn({
           setPage(now.url);
           void openUrl(now.url).catch(() => undefined);
         }
+        if (now.at === "failed" && now.stopped) setPage(undefined);
         setStep(now);
         if (now.at === "could-not-follow") {
           flow.current = undefined;

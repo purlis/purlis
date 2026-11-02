@@ -594,6 +594,29 @@ describe("a preview never outlives its card (#2331 review)", () => {
     Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
   });
 
+  it("puts yours back when the pointer leaves the window with no leave on the card (#3095)", async () => {
+    core();
+    render(<Group at={null} />);
+    await cards();
+    const before = inForce();
+    fireEvent.pointerEnter(named("Dusk"));
+    await waitFor(() => expect(inForce()).toBe(LIGHT));
+    fireEvent.pointerOut(document, { relatedTarget: null });
+    await waitFor(() => expect(inForce()).toBe(before));
+  });
+
+  it("keeps the card drawn while the keyboard is on it when the pointer leaves the window (#3095)", async () => {
+    core();
+    render(<Group at={null} />);
+    await cards();
+    act(() => named("Dusk").focus());
+    await waitFor(() => expect(inForce()).toBe(LIGHT));
+    fireEvent.pointerEnter(named("Dusk"));
+    fireEvent.pointerOut(document, { relatedTarget: null });
+    await new Promise((done) => setTimeout(done, 5));
+    expect(inForce()).toBe(LIGHT);
+  });
+
   it("keeps the card drawn while the keyboard is still on it after the pointer leaves", async () => {
     core();
     render(<Group at={null} />);

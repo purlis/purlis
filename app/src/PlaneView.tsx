@@ -110,7 +110,16 @@ import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { AddVision } from "./AddVision";
-import { cloneRepos, settleRepoClones, stopRepoClones, useRepoClones } from "./repoClones";
+import { failedNotNamed } from "./NotCloned";
+import {
+  cloneRepos,
+  forgetEndedClones,
+  forgetFailedClone,
+  forgetLandedClones,
+  settleRepoClones,
+  stopRepoClones,
+  useRepoClones,
+} from "./repoClones";
 import { StartChat } from "./StartChat";
 import {
   handedSaid,
@@ -192,6 +201,7 @@ import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
+  clonesRefused,
   reposCloned,
   reposCloning,
   reposNotCloned,
@@ -272,6 +282,8 @@ import {
   followRename,
   renamedViewKey,
   SAVING_TITLE,
+  POOL_SETUP_TITLE,
+  POOL_SETUP_VIEW,
   SAVING_VIEW,
   LICENCES_VIEW,
   SETTINGS_TAB_TITLE,
@@ -514,7 +526,7 @@ import {
   useChatMoves,
   useChatMovesHeard,
 } from "./chatMoves";
-import { saveLimits, usePools } from "./pools";
+import { readRunnerStage, saveLimits, usePools } from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
@@ -726,6 +738,7 @@ export const PlaneView = memo(function PlaneView({
   commands: surveyedCommands = NONE,
   settingsAsked,
   savingAsked,
+  poolSetupAsked,
   licencesAsked,
   focusMode = false,
   settingsTabAsked,
@@ -789,6 +802,8 @@ export const PlaneView = memo(function PlaneView({
   settingsAsked?: number;
   /** The same, for THIS project's Saving tab (`WindowDoing.openSaving`, charter-app#294). */
   savingAsked?: number;
+  /** The same, for the Pool setup tab (spec #4469). */
+  poolSetupAsked?: number;
   /** The same, for the Licences tab About opens in the project in front (#1719). */
   licencesAsked?: number;
   /** Focus mode is on (#2921): its palette row says it brings the window's parts back. */
@@ -3520,6 +3535,7 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the picker's start is in flight: the ref is the guard, the state is the button. */
   const startingNow = useRef(false);
   const [starting, setStarting] = useState(false);
+  const readStage = useCallback(() => readRunnerStage(plane, ofWorkspace), [plane, ofWorkspace]);
   /** The person cancelled the start in flight: what it answers is said to nobody. */
   const startLeft = useRef(false);
   /** Which start is the dialog's: one the person cancelled may still be winding down. */
@@ -4150,6 +4166,14 @@ export const PlaneView = memo(function PlaneView({
     savingHandled.current = savingAsked;
     showView(SAVING_VIEW, SAVING_TITLE);
   }, [savingAsked, showView]);
+
+  /** The Pool setup tab (spec #4469), opened from the palette for now. */
+  const poolSetupHandled = useRef(poolSetupAsked);
+  useEffect(() => {
+    if (poolSetupAsked === undefined || poolSetupHandled.current === poolSetupAsked) return;
+    poolSetupHandled.current = poolSetupAsked;
+    showView(POOL_SETUP_VIEW, POOL_SETUP_TITLE);
+  }, [poolSetupAsked, showView]);
 
   /** The Licences tab, asked from About (#1719) while this project is in front, as Saving is. */
   const licencesHandled = useRef(licencesAsked);
@@ -4833,19 +4857,16 @@ export const PlaneView = memo(function PlaneView({
           },
           (_, moved) => setReport(reposCloning(name, repos, done, track, { moved, onCancel })),
         );
-        // Only the ones that did not land, on the same notice.
-        const retry = () => void run(failed.map((one) => one.repo));
+        // Only the ones that did not land, on the same notice. Those the person stopped go again
+        // with the refused ones that are left (#4394).
         const refused = failed.filter((one) => one.stopped !== true);
+        const stopped = failed.filter((one) => one.stopped === true).map((one) => one.repo);
+        const retry = (still: string[]) => void run([...still, ...stopped]);
         setReport(
           failed.length === 0
             ? reposCloned(name, repos, track)
             : refused.length === 0
-              ? reposStopped(
-                  name,
-                  failed.map((one) => one.repo),
-                  retry,
-                  track,
-                )
+              ? reposStopped(name, stopped, () => retry([]), track)
               : reposNotCloned(name, refused, retry, track),
         );
         setReplan((asked) => asked + 1);
@@ -4876,6 +4897,7 @@ export const PlaneView = memo(function PlaneView({
       }
       setMakingWorkspace(false);
       setWorkspaceTrouble(undefined);
+      forgetEndedClones(plane, name);
       // **Made here, so pinned** (ADR 0054): the operator made it in order to work in it, and
       // the workspace strip draws what is pinned. A pin the store refused leaves the
       // workspace made and says why, beside what charter said about making it.
@@ -6843,13 +6865,7 @@ export const PlaneView = memo(function PlaneView({
       const ended = await cloneRepos(plane, workspace, repos, rereadPanels);
       // A clone the person stopped is what they asked for: no failure to report.
       const failed = ended.filter((one) => one.stopped !== true);
-      if (failed.length > 0)
-        return {
-          ok: false,
-          refused:
-            `Could not clone ${failed.map((f) => f.repo).join(", ")} into ${workspace} — ` +
-            failed.map((f) => f.said).join(" "),
-        };
+      if (failed.length > 0) return clonesRefused(workspace, failed);
       return ended.length === 0
         ? { ok: true, said: `Cloned ${repos.join(", ")} into ${workspace}.` }
         : { ok: true };
@@ -6947,6 +6963,8 @@ export const PlaneView = memo(function PlaneView({
       newBranch,
       cloneMissing,
       askDropMembership: (workspace: string, repo: string) => setMembershipAsk({ workspace, repo }),
+      forgetFailedClone: (workspace: string, repo: string) =>
+        forgetFailedClone(plane, workspace, repo),
       newChatIn: newTabIn,
       sendKey,
       openProject: windowDoes.openProject,
@@ -6969,6 +6987,7 @@ export const PlaneView = memo(function PlaneView({
       moveProject: windowDoes.moveProject,
       openSettings: windowDoes.openSettings,
       openSaving: windowDoes.openSaving,
+      openPoolSetup: windowDoes.openPoolSetup,
       openWorkspaceSettings,
       switchLive: (workspace: string) => setLiveAsk(workspace),
       renameWorkspace,
@@ -7654,10 +7673,19 @@ export const PlaneView = memo(function PlaneView({
     () => [...cloning].filter(([, one]) => one.state !== "failed").map(([repo]) => repo),
     [cloning],
   );
+  const failedHere = useMemo(
+    () => failedNotNamed(absentHere, cloneNames, cloning),
+    [absentHere, cloneNames, cloning],
+  );
   useEffect(() => {
     if (ofWorkspace !== undefined && cloneNames !== undefined)
       settleRepoClones(plane, ofWorkspace, cloneNames);
   }, [plane, ofWorkspace, cloneNames, cloning]);
+  // One that landed while another workspace was focused was never going to be settled: the panels
+  // this focus asks for are later than it, and may never list it (#4466).
+  useEffect(() => {
+    if (ofWorkspace !== undefined) forgetLandedClones(plane, ofWorkspace);
+  }, [plane, ofWorkspace]);
 
   /** The repo whose clone the chat being picked would start in, if it would: what the picker's
    *  branch box names (GL-1). The same directory `startOn` sends, compared with the path the
@@ -7746,6 +7774,7 @@ export const PlaneView = memo(function PlaneView({
             pieces,
             clones,
             absent: absentHere,
+            failedNotNamed: failedHere,
             cloning: cloningNow,
             startsIn: spot?.path,
             personas,
@@ -7824,6 +7853,7 @@ export const PlaneView = memo(function PlaneView({
       clones,
       cloningNow,
       absentHere,
+      failedHere,
       curations,
       focused,
       inFront,
@@ -9309,7 +9339,7 @@ export const PlaneView = memo(function PlaneView({
         </Notice>
       )}
       {/* **A Smart close that saved its record with no pass** (#1361): the chat ran it, and
-          purlis did not see /smart-close typed in its pane, so its tab stayed open. Never a
+          purlis did not see /purlis-smart-close typed in its pane, so its tab stayed open. Never a
           silent miss: one press closes it, as Close would. Only while its tab is there. */}
       {keptOpen.map(({ session, name }) => (
         <Notice
@@ -9318,8 +9348,8 @@ export const PlaneView = memo(function PlaneView({
           fixes={[{ label: "Close tab", onPress: () => closeKeptOpen(session) }]}
           onDismiss={() => forgetKeptOpen(session)}
         >
-          {name} saved its session record. purlis did not see <code>/smart-close</code> typed in it,
-          so its tab stayed open.
+          {name} saved its session record. purlis did not see <code>/purlis-smart-close</code> typed
+          in it, so its tab stayed open.
         </Notice>
       ))}
 
@@ -10462,6 +10492,7 @@ export const PlaneView = memo(function PlaneView({
                 // Where it starts, by name (R8): the workspace in front, else the project.
                 place={ofWorkspace ?? projectName(plane)}
                 starting={starting}
+                readStage={readStage}
                 prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
                 trouble={pickerTrouble}
                 // Only beside the refusal it was asked for, never beside a later one.

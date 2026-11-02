@@ -235,6 +235,8 @@ pub struct StudioSkill {
     /// Each harness whose chats a router hid it from the list of, and why (SK-15), each by its
     /// own budget: the chat still has it, through the index skill. Empty where every one lists it.
     pub hidden: Vec<SkillHiddenOn>,
+    /// The label of the source it was installed from (ADR 0100, amended 2026-11-01).
+    pub source_label: Option<String>,
     /// Whether that chat's workspace or persona pins it, so no router hides it.
     pub pinned: bool,
     /// Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
@@ -453,6 +455,8 @@ pub struct StudioHarness {
     /// budget. Null for a harness that finds none of its own, and where the studio was read only
     /// for a count of its needs.
     pub own: Option<String>,
+    /// The plugins on this machine a new chat here would not have (#4477).
+    pub plugins_off: Vec<crate::useskill::PluginOffShown>,
 }
 
 /// A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
@@ -561,6 +565,7 @@ fn plane_shown(
         compat: row.compat.iter().map(Into::into).collect(),
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
+        source_label: row.source_label.clone(),
         pinned: row.pinned,
         pinned_by,
     }
@@ -1049,6 +1054,7 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         compat: row.compat.iter().map(Into::into).collect(),
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
+        source_label: row.source_label.clone(),
         pinned: row.pinned,
         pinned_by: Vec::new(),
     }
@@ -1088,6 +1094,13 @@ fn harnesses(
                     .iter()
                     .cloned()
                     .map(outside_shown)
+                    .collect(),
+                plugins_off: one
+                    .plugins_off
+                    .iter()
+                    .map(|plugin| {
+                        crate::useskill::PluginOffShown::of(plugin, adapter.title(), false)
+                    })
                     .collect(),
                 own: one.own.and_then(|own| own.said(adapter.title())),
             }

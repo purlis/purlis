@@ -956,7 +956,7 @@ function AllowNotice({
         ) : (
           <>
             Allow writing {hosts.length > 0 ? drawn(asking) : <Target of={block.target} />} and
-            everything in it
+            everything in it{block.route === null ? "" : `. ${block.route}`}
           </>
         )}
       </p>

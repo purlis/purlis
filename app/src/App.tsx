@@ -87,6 +87,7 @@ import { useAlertFix } from "./alertFix";
 import { waitingAsk, type Elsewhere } from "./InboxElsewhere";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
+import { WindowLinesAt } from "./DoorPage";
 import { Onboarding } from "./Onboarding";
 import { useGitPresence } from "./gitPresence";
 import { useOnboarding } from "./useOnboarding";
@@ -330,6 +331,7 @@ function App() {
   useJumpAsks(jumped);
   /** The last ask for a project's Saving tab (charter-app#294), the same shape as `settingsAsk`. */
   const [savingAsk, setSavingAsk] = useState<{ plane: PlaneId; at: number }>();
+  const [poolSetupAsk, setPoolSetupAsk] = useState<{ plane: PlaneId; at: number }>();
   /** The last ask for the Licences tab from About (#1719): the project in front when it was
    *  asked, which opens it, as Saving's ask is. */
   const [licencesAsk, setLicencesAsk] = useState<{ plane: PlaneId; at: number }>();
@@ -839,7 +841,7 @@ function App() {
       setMakingProject(true);
       setCreateForgeAsk(undefined);
       const answer = await commands
-        .createProject(path, planeIsThisRepo, adopt === "" ? null : adopt, forge)
+        .createProject(path, planeIsThisRepo, adopt === "" ? null : adopt, forge, null)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       setMakingProject(false);
       if (answer.status === "error") {
@@ -960,13 +962,16 @@ function App() {
    * Create a project on this Mac: a project with no repo, in the folder its name gave it, with its
    * refusal kept on the page that asked. It comes through the trust gate, and the guided steps
    * take it up as they take up a repo opened there.
+   *
+   * **It lives only on this Mac, so nothing asks which forge** (#1810 story 8): with no repo to read
+   * one from, the project is written with the first run's default (publishing leaves it: #4627).
    */
-  const firstRunMake = useCallback((folder: string) => {
+  const firstRunMake = useCallback((folder: string, template: string | null, forge: ForgeWord) => {
     setRepoTrouble(undefined);
     setRepoForgeAsk(undefined);
     setOpeningRepo(true);
     void commands
-      .createProject(folder, false, null, null)
+      .createProject(folder, false, null, forge, template)
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
       .then((answer) => {
         setOpeningRepo(false);
@@ -975,7 +980,13 @@ function App() {
           return;
         }
         const made = answer.data.opened;
-        if (made === null) return;
+        if (made === null) {
+          setRepoForgeAsk({
+            why: answer.data.asks_forge ?? "",
+            answer: (named) => firstRunMake(folder, template, named),
+          });
+          return;
+        }
         if (made.plane === null) {
           const ask = made.ask;
           if (ask)
@@ -1076,6 +1087,10 @@ function App() {
         setShowing({ at: "plane", plane });
         setSavingAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
       },
+      openPoolSetup: (plane: string) => {
+        setShowing({ at: "plane", plane });
+        setPoolSetupAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
+      },
       openSettingsTab: () => {
         const plane = inFrontNow.current;
         if (plane === undefined) showSettingsAlone(setSettingsAlone);
@@ -1139,6 +1154,7 @@ function App() {
       openSettings: openSettingsAt,
       openProject: (path: string) => void openInto(path, true),
       openSaving: windowDoes.openSaving,
+      openPoolSetup: windowDoes.openPoolSetup,
       reread: rereadAlerts,
       openInboxOf: (plane: PlaneId) => {
         setShowing({ at: "plane", plane });
@@ -1724,6 +1740,7 @@ function App() {
       newBranch: () => undefined,
       cloneMissing: async () => nowhere(),
       askDropMembership: () => undefined,
+      forgetFailedClone: () => undefined,
       newChatIn: () => undefined,
       // Both are rows the catalogue marks unavailable with no plane — there is nowhere to make
       // a workspace and no workspace to delete — so `perform` refuses them before either of
@@ -1799,6 +1816,7 @@ function App() {
       moveProject: windowDoes.moveProject,
       openSettings: windowDoes.openSettings,
       openSaving: windowDoes.openSaving,
+      openPoolSetup: windowDoes.openPoolSetup,
       // A workspace is a project's, and there is no project here to have one.
       openWorkspaceSettings: () => undefined,
       switchLive: () => undefined,
@@ -2639,32 +2657,33 @@ function App() {
             {openerUp && !settingsAlone && (
               <div className="body">
                 <div className="panes">
-                  <div className="window-notices-at" ref={setWindowLinesAt} />
-                  <Onboarding
-                    steps={steps}
-                    gate={gitGate}
-                    holdsMade={steps.holding !== undefined && planes.includes(steps.holding)}
-                    reopen={(path) => void openInto(path, true)}
-                    here={!heldSomething && (launch?.here ?? false)}
-                    reason={launch?.reason ?? ""}
-                    adding={planes.length > 0}
-                    onOpen={(path) => void openInto(path, true)}
-                    onGoneListed={setOpenerGone}
-                    onGoneSettled={goneSettled}
-                    goneChanged={goneChanged}
-                    trouble={openTrouble}
-                    // Create a project's act, on every window: a repo into this machine's project
-                    // (FR-4), laid out from the template picked beside it (FR-17).
-                    onOpenRepo={firstRunRepo}
-                    onMakeProject={firstRunMake}
-                    onSignInToForge={(row) => {
-                      setRepoTrouble(undefined);
-                      void signInToForge(row).then(setRepoTrouble);
-                    }}
-                    openingRepo={openingRepo}
-                    repoTrouble={repoTrouble}
-                    repoForgeAsk={repoForgeAsk}
-                  />
+                  <WindowLinesAt.Provider value={setWindowLinesAt}>
+                    <Onboarding
+                      steps={steps}
+                      gate={gitGate}
+                      holdsMade={steps.holding !== undefined && planes.includes(steps.holding)}
+                      reopen={(path) => void openInto(path, true)}
+                      here={!heldSomething && (launch?.here ?? false)}
+                      reason={launch?.reason ?? ""}
+                      adding={planes.length > 0}
+                      onOpen={(path) => void openInto(path, true)}
+                      onGoneListed={setOpenerGone}
+                      onGoneSettled={goneSettled}
+                      goneChanged={goneChanged}
+                      trouble={openTrouble}
+                      // Create a project's act, on every window: a repo into this machine's project
+                      // (FR-4), laid out from the template picked beside it (FR-17).
+                      onOpenRepo={firstRunRepo}
+                      onMakeProject={(folder, template) => firstRunMake(folder, template, "github")}
+                      onSignInToForge={(row) => {
+                        setRepoTrouble(undefined);
+                        void signInToForge(row).then(setRepoTrouble);
+                      }}
+                      openingRepo={openingRepo}
+                      repoTrouble={repoTrouble}
+                      repoForgeAsk={repoForgeAsk}
+                    />
+                  </WindowLinesAt.Provider>
                 </div>
               </div>
             )}
@@ -2693,6 +2712,7 @@ function App() {
               commands={extensionCommands}
               settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
               savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
+              poolSetupAsked={poolSetupAsk?.plane === plane ? poolSetupAsk.at : undefined}
               licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
               focusMode={focusMode.on}
               settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}

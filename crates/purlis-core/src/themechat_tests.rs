@@ -59,7 +59,7 @@ fn new_theme_is_purlis_s_own_create_a_theme_on_the_level_the_gallery_is_at() {
     assert_eq!(in_workspace.cwd, root.join("workspaces/web"));
     assert_eq!(
         in_workspace.prompt,
-        "Use purlis's theme skill to create a theme for the workspace web."
+        "Use the purlis-theme skill to create a theme for the workspace web."
     );
 
     let at_root = chat(root, None, Asked::New).unwrap();
@@ -74,7 +74,7 @@ fn new_theme_is_purlis_s_own_create_a_theme_on_the_level_the_gallery_is_at() {
     assert!(
         at_root
             .prompt
-            .starts_with("Use purlis's theme skill to create a theme for the plane "),
+            .starts_with("Use the purlis-theme skill to create a theme for the plane "),
         "{}",
         at_root.prompt
     );
@@ -88,7 +88,7 @@ fn edit_with_a_chat_names_the_theme_by_the_id_the_list_gives_it_and_works_where_
     assert_eq!(edit.label, EDIT_LABEL);
     assert_eq!(
         edit.prompt,
-        "Use purlis's theme skill to edit the theme \"project:dusk\" for the workspace web."
+        "Use the purlis-theme skill to edit the theme \"project:dusk\" for the workspace web."
     );
     let new = chat(root, Some("web"), Asked::New).unwrap();
     assert_eq!(

@@ -1170,6 +1170,18 @@ pub async fn theme_font(asset: String) -> Result<String, String> {
         .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
+/// **The parts of a first frame drawn before they were measured** (#4410): the stylesheet of the
+/// theme a frame's `parts_later` names, waiting for the measure its creation left running. What
+/// the window asks as it starts, with no project known, so its parts land whatever the restore
+/// does. The window's alone: a link is handed no first frame.
+#[tauri::command]
+#[specta::specta]
+pub async fn first_frame_parts(ticket: u32) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::windowprefs::first_frame_parts(ticket))
+        .await
+        .map_err(|err| format!("measuring a first frame's parts did not finish: {err}"))?
+}
+
 /// What [`theme_person`] answers: the person's layer, and what reading it had to put right.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
 pub struct PersonInForce {

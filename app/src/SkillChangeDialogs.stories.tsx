@@ -20,6 +20,7 @@ const PROJECT: SkillLevel = { at: "project", local: false };
 
 /** The prototype's `deploy`, a project skill. */
 const DEPLOY: StudioSkill = {
+  source_label: null,
   name: "deploy",
   level: "project",
   label: "project",
@@ -65,7 +66,6 @@ function Shown({ which }: { which: Which }) {
         skill={DEPLOY}
         level={PROJECT}
         taken={["review-pr"]}
-        builtIns={["browser", "secrets"]}
         busy={false}
         onEdit={nothing}
         onRename={nothing}
@@ -138,7 +138,7 @@ export const Rename: Story = {
     const box = within(dialog).getByLabelText("New name");
     await untilFocusWithin(() => box, "the dialog starts on its field");
     await userEvent.clear(box);
-    await userEvent.type(box, "secrets");
+    await userEvent.type(box, "purlis-secrets");
     await expect(within(dialog).getByTestId("skill-rename-problem")).toHaveTextContent(
       NAME_RESERVED,
     );

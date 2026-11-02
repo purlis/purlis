@@ -170,7 +170,7 @@ export function askProfileSignIn(
 
 /**
  * **New theme** and **Edit with a chat** (#2333): the project's window opens a chat at the level
- * Settings › Theme is at, with a prompt that names purlis's theme skill typed into it and never
+ * Settings › Theme is at, with a prompt that names purlis's purlis-theme skill typed into it and never
  * sent (`theme_chat`, ADR 0061). Settings' gallery sends it; `PlaneView` hears it. The window
  * names the level and, for Edit, the card's theme and its folder's level; the core writes the
  * prompt.

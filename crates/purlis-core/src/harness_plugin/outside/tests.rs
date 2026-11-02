@@ -78,7 +78,7 @@ fn claude_code_finds_the_persons_own_skills_and_each_installed_plugins_by_its_na
     let chat = [("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
     let choices = Choices::from_text(Some("[harness_skills.claude]\nlangfuse = false\n"), None);
 
-    let found = harness_skills(&CLAUDE_CODE, &env(&chat, tmp.path()), &choices);
+    let found = harness_skills_but(&CLAUDE_CODE, &env(&chat, tmp.path()), &choices, &[]);
 
     assert_eq!(
         rows(&found),
@@ -135,7 +135,7 @@ fn codex_finds_the_persons_own_and_each_plugins_newest_version() {
         None,
     );
 
-    let found = harness_skills(&CODEX, &env(&chat, tmp.path()), &choices);
+    let found = harness_skills_but(&CODEX, &env(&chat, tmp.path()), &choices, &[]);
 
     assert_eq!(
         rows(&found),
@@ -162,7 +162,7 @@ fn opencode_finds_the_skills_of_its_own_config_folder() {
     skill(&config.join("opencode/skills"), "two", "two");
     let chat = [("XDG_CONFIG_HOME".to_owned(), config.display().to_string())];
 
-    let found = harness_skills(&OPENCODE, &env(&chat, tmp.path()), &Choices::default());
+    let found = harness_skills_but(&OPENCODE, &env(&chat, tmp.path()), &Choices::default(), &[]);
 
     assert_eq!(
         rows(&found),
@@ -390,7 +390,12 @@ fn the_persons_own_folder_of_more_names_than_purlis_reads_is_listed_once_unread(
     }
     let chat = [("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
 
-    let found = harness_skills(&CLAUDE_CODE, &env(&chat, tmp.path()), &Choices::default());
+    let found = harness_skills_but(
+        &CLAUDE_CODE,
+        &env(&chat, tmp.path()),
+        &Choices::default(),
+        &[],
+    );
 
     assert_eq!(found.len(), 1, "{:?}", rows(&found));
     assert_eq!(found[0].unread, Some(Unread::Crowded));
@@ -421,7 +426,12 @@ fn the_persons_own_skill_md_that_is_a_hard_link_is_read() {
     .unwrap();
     let chat = [("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
 
-    let found = harness_skills(&CLAUDE_CODE, &env(&chat, tmp.path()), &Choices::default());
+    let found = harness_skills_but(
+        &CLAUDE_CODE,
+        &env(&chat, tmp.path()),
+        &Choices::default(),
+        &[],
+    );
 
     assert_eq!(
         rows(&found),
@@ -444,7 +454,12 @@ fn the_persons_own_skill_md_larger_than_purlis_reads_is_listed_unread() {
     .unwrap();
     let chat = [("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
 
-    let found = harness_skills(&CLAUDE_CODE, &env(&chat, tmp.path()), &Choices::default());
+    let found = harness_skills_but(
+        &CLAUDE_CODE,
+        &env(&chat, tmp.path()),
+        &Choices::default(),
+        &[],
+    );
 
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].skill.name, "big");

@@ -36,6 +36,7 @@ const row = (one: StudioSkill, more: Partial<ListedSkill> = {}): ListedSkill => 
 
 /** A skill of a chat's set, as Use skill… reads it. */
 const given = (name: string, level: ChatSkill["level"] = "project"): ChatSkill => ({
+  source_label: null,
   name,
   level,
   label: level,
@@ -195,6 +196,7 @@ describe("the rows of a studio answer", () => {
           title: "Claude Code",
           skills: [skill("pdf", { level: "installed", folder: "" }), repo],
           repo_left_out: [],
+          plugins_off: [],
           own: null,
         },
         {
@@ -202,6 +204,7 @@ describe("the rows of a studio answer", () => {
           title: "Codex",
           skills: [repo],
           repo_left_out: [],
+          plugins_off: [],
           own: null,
         },
       ],
@@ -607,5 +610,56 @@ describe("a repo skill in a branch folder (#4326)", () => {
     const short = skill("fmt", { level: "repo", folder: "workspaces/ops/.worktrees/web/fix" });
     expect(filePlaceOf(short)).toHaveProperty("reason");
     expect(explorerPlaceOf(short, "ops")).toHaveProperty("reason");
+  });
+});
+
+describe("a plugin the chat does not have (#4477)", () => {
+  const CLAUDE_CHAT = { persona: null, harness: "claude" as const, repos: [] };
+  const installed = (name: string, plugin: string): ListedSkill => ({
+    key: name,
+    harness: "claude",
+    program: "Claude Code",
+    skill: skill(name, {
+      level: "installed",
+      owner: { kind: "plugin", name: plugin },
+    }),
+  });
+  const OFF = { name: "superpowers", said: "It is off.", line: "Off", command: null };
+
+  it("lists its skills under Left out, and the other plugin's under In this chat", () => {
+    const rows = narrowedTo(
+      [installed("superpowers:brainstorming", "superpowers"), installed("pdf:merge", "pdf")],
+      [],
+      { ...CLAUDE_CHAT, pluginsOff: [OFF] },
+    );
+    const groups = groupsOf(rows);
+    expect(groups.leftOut.map((row) => row.skill.name)).toEqual(["superpowers:brainstorming"]);
+    expect(groups.leftOut[0]?.pluginOff).toEqual(OFF);
+    expect(groups.inChat.map((row) => row.skill.name)).toEqual(["pdf:merge"]);
+  });
+
+  it("offers no Use in its menu", () => {
+    const [row] = narrowedTo([installed("superpowers:brainstorming", "superpowers")], [], {
+      ...CLAUDE_CHAT,
+      pluginsOff: [OFF],
+    });
+    const at: MenuAt = { workspace: "ops", chat: true, explorer: "ops" };
+    expect(menuRowsOf(row as ListedSkill, at)[0]?.available).toBe(false);
+  });
+
+  it("takes the chat's word over the studio's, which reads for a new chat", () => {
+    const studiosWord = {
+      ...installed("superpowers:brainstorming", "superpowers"),
+      skill: {
+        ...skill("superpowers:brainstorming", {
+          level: "installed",
+          owner: { kind: "plugin", name: "superpowers" },
+        }),
+        on: false,
+        left_out: "A new chat here would not have it.",
+      },
+    };
+    const [row] = narrowedTo([studiosWord], [], { ...CLAUDE_CHAT, pluginsOff: [] });
+    expect(markOf(row as ListedSkill)).toBeUndefined();
   });
 });

@@ -2241,6 +2241,13 @@ fn env_ok(name: &str) -> Result<(), String> {
             "it reaches purlis's own variables, which purlis sets itself. Remove it.".to_owned(),
         );
     }
+    if crate::hookwire::harness_internal(name) {
+        return Err(
+            "it is a harness's internal variable, which stays out of a chat's environment. \
+             Remove it."
+                .to_owned(),
+        );
+    }
     if crate::profiles::named_like_a_credential(base)
         || crate::chatenv::CREDENTIALS
             .iter()
