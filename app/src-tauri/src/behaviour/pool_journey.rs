@@ -982,7 +982,11 @@ mod a_chat_on_a_pool_its_workspace_left {
         step("the window is cut and started again");
         again.cut();
         let back = again.routed_sessions_of(&root);
-        assert_eq!(back.pool_for(Some(WORKSPACE), None), None, "it runs here now");
+        assert_eq!(
+            back.pool_for(Some(WORKSPACE), None),
+            None,
+            "it runs here now"
+        );
         let deadline = Instant::now() + Duration::from_secs(60);
         while !back.left_running_in(id, Some(WORKSPACE)) {
             assert!(

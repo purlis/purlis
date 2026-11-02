@@ -54,9 +54,8 @@ use crate::host::{
 /// Which pool a chat of a workspace runs on, with what its start chose (#4536), as this machine's
 /// store orders the levels now: `None` for this machine, or the refusal where the level that
 /// decides names a pool this machine does not keep.
-pub type RunsOn = Arc<
-    dyn Fn(Option<&str>, Option<&StartChoice>) -> Result<Option<String>, String> + Send + Sync,
->;
+pub type RunsOn =
+    Arc<dyn Fn(Option<&str>, Option<&StartChoice>) -> Result<Option<String>, String> + Send + Sync>;
 
 /// Every pool and the workspaces of this project that run their chats on it, as the store says
 /// them now.

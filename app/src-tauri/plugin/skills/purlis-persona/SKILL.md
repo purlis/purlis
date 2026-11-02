@@ -88,6 +88,11 @@ shows who exists.
   (`--in worktree:<repo>`). Two tasks in one folder share every file, so give each writer its
   own.
 
+  **Where the task runs** follows its workspace's Runs on, then its project's, then this
+  machine. Name it only when the work needs it: `pool: <name>` (`--pool <name>`) or
+  `this_machine: true` (`--this-machine`). From a chat on a pool's runner, every dispatch waits
+  for the person's Approve.
+
   **Before you dispatch, check what is already open**: the roster purlis adds to each turn
   while this chat has open tasks, or `dispatch_list`. A task still at work is waited on
   (`dispatch_wait`), told more (`dispatch_tell`) or cancelled (`dispatch_cancel`), never

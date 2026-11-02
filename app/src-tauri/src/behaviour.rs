@@ -398,6 +398,7 @@ const PARITY: &str = "PURLIS_PARITY";
 mod fresh_runner;
 mod pool_journey;
 mod pool_setup;
+mod runs_on_order;
 
 /// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
 /// the window adds one ([`a_pool_on`]). The window speaks to its own host, which relays to the

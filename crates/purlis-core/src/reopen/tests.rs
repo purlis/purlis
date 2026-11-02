@@ -2971,11 +2971,7 @@ fn where_a_start_chose_to_run_survives_a_quit_and_a_word_it_cannot_read_follows_
     assert_eq!(read_back.chats[2].runs_on, None);
 
     for unreadable in ["pool:Not A Pool", "pool:", "here", "pool:../x"] {
-        fs::write(
-            path(plane.path()),
-            text.replace("pool:gpu-1", unreadable),
-        )
-        .unwrap();
+        fs::write(path(plane.path()), text.replace("pool:gpu-1", unreadable)).unwrap();
         assert_eq!(read(plane.path()).chats[0].runs_on, None, "{unreadable}");
     }
 }

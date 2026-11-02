@@ -22,9 +22,9 @@ fn runs_on() -> RunsOn {
     Arc::new(|workspace, start| match (start, workspace) {
         (Some(StartChoice::ThisMachine), _) => Ok(None),
         (Some(StartChoice::Pool(pool)), _) if pool == "builds" => Ok(Some(pool.clone())),
-        (Some(StartChoice::Pool(pool)), _) => {
-            Err(format!("This chat was to start on pool {pool}: it is not kept"))
-        }
+        (Some(StartChoice::Pool(pool)), _) => Err(format!(
+            "This chat was to start on pool {pool}: it is not kept"
+        )),
         (None, Some("app")) => Ok(Some("builds".to_owned())),
         (None, Some("stale")) => {
             Err("Workspace stale runs its chats on pool gone: it is not kept".to_owned())
@@ -655,8 +655,16 @@ fn a_put_back_on_a_pool_a_workspace_runs_on_still_closes_all_it_did_not_take_bac
 #[test]
 fn a_chat_in_a_workspace_set_to_a_pool_starts_on_its_runner_and_every_command_follows_it() {
     let world = a_world();
-    assert!(world.sessions.composes_its_harness_chats_in(Some("app"), None));
-    assert!(!world.sessions.composes_its_harness_chats_in(Some("fleet"), None));
+    assert!(
+        world
+            .sessions
+            .composes_its_harness_chats_in(Some("app"), None)
+    );
+    assert!(
+        !world
+            .sessions
+            .composes_its_harness_chats_in(Some("fleet"), None)
+    );
     assert!(
         world.made.lock().unwrap().is_empty(),
         "no runner is reached to say so"
@@ -732,7 +740,10 @@ fn a_start_that_chose_where_it_runs_runs_there_whatever_its_workspace_says() {
         .expect("started on the pool it chose")
         .number;
     assert_eq!(world.builds.named().len(), 1, "the runner composed it");
-    assert_eq!(world.sessions.pool_of(on_the_runner).as_deref(), Some("builds"));
+    assert_eq!(
+        world.sessions.pool_of(on_the_runner).as_deref(),
+        Some("builds")
+    );
 
     let chose_here = Named {
         runs_on: here,
@@ -744,7 +755,11 @@ fn a_start_that_chose_where_it_runs_runs_there_whatever_its_workspace_says() {
         .open_named(None, &chose_here, Default::default(), &|_| {})
         .expect_err("this machine's stand-in composes none");
     assert_eq!(went_here, crate::host::NOT_COMPOSED_HERE);
-    assert_eq!(world.builds.named().len(), 1, "nothing more went to the runner");
+    assert_eq!(
+        world.builds.named().len(),
+        1,
+        "nothing more went to the runner"
+    );
 
     let chose_a_gone_pool = Named {
         runs_on: Some(StartChoice::Pool("gone".to_owned())),
@@ -755,7 +770,10 @@ fn a_start_that_chose_where_it_runs_runs_there_whatever_its_workspace_says() {
         .open_named(None, &chose_a_gone_pool, Default::default(), &|_| {})
         .expect_err("a pool that is gone starts nothing");
     assert!(refused.contains("pool gone"), "{refused}");
-    assert!(world.here.named().is_empty(), "never started here in its place");
+    assert!(
+        world.here.named().is_empty(),
+        "never started here in its place"
+    );
 }
 
 #[test]

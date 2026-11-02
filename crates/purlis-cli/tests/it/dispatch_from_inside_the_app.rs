@@ -263,7 +263,10 @@ fn a_task_is_dispatched_on_one_ticket_and_the_request_says_only_what_the_agent_c
     } = the_dispatch(&asked);
     assert_eq!(profile, None, "no profile asked for");
     assert_eq!(place, None, "no place asked for: the asking chat's folder");
-    assert_eq!(runs_on, None, "no place to run asked for: the levels decide");
+    assert_eq!(
+        runs_on, None,
+        "no place to run asked for: the levels decide"
+    );
     assert_eq!(chat, ASKING, "the chat whose token the line carries");
     assert_eq!(to, None, "no persona named: the asking chat's own");
     assert_eq!(name, "check the queue", "trimmed");

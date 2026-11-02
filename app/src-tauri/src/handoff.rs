@@ -1982,11 +1982,13 @@ impl Wanted {
     fn of(ask: &DispatchAsk) -> Result<Self, String> {
         let runs_on = match ask.runs_on.as_deref() {
             None => None,
-            Some(word) => Some(purlis_core::machine::StartChoice::read(word).ok_or_else(|| {
-                "purlis could not read where this task was to run, so nothing was started: \
+            Some(word) => Some(
+                purlis_core::machine::StartChoice::read(word).ok_or_else(|| {
+                    "purlis could not read where this task was to run, so nothing was started: \
                  name a pool this machine keeps with --pool, or --this-machine."
-                    .to_owned()
-            })?),
+                        .to_owned()
+                })?,
+            ),
         };
         Ok(Self {
             chat: ask.chat,

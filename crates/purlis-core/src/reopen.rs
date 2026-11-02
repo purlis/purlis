@@ -1996,4 +1996,3 @@ impl From<ChatOnDisk> for Chat {
 
 #[cfg(test)]
 pub(crate) mod tests;
-

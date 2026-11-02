@@ -9607,7 +9607,11 @@ fn a_start_on_a_pool_that_is_gone_starts_nothing_and_one_that_chose_this_machine
     };
     let refused = crate::poolprofiles::offering_limits(|| chats.start(&on_a_gone_pool, SIZE))
         .expect_err("a pool that is gone starts nothing");
-    assert_eq!(refused.pool_unavailable.as_deref(), Some("gone"), "{refused:?}");
+    assert_eq!(
+        refused.pool_unavailable.as_deref(),
+        Some("gone"),
+        "{refused:?}"
+    );
     assert!(refused.words.contains("pool gone"), "{}", refused.words);
     assert!(host.running().is_empty(), "never run here in its place");
 

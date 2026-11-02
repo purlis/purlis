@@ -336,7 +336,9 @@ fn where_a_new_chat_would_run_is_said_with_the_level_that_decides_it() {
     let plane = std::path::Path::new("/planes/a");
     purlis_core::machine::update(config.path(), |store| {
         store.remember(plane, 1);
-        store.set_project_chats_run_on(plane, Some("builds")).unwrap();
+        store
+            .set_project_chats_run_on(plane, Some("builds"))
+            .unwrap();
         store.set_chats_run_here(plane, "local").unwrap();
         store.set_chats_run_on(plane, "gpu", Some("gpus")).unwrap();
     })
