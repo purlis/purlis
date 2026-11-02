@@ -87,6 +87,8 @@ pub struct Own {
     pub deny: Vec<String>,
     /// Whole rules last of all: a read given back inside a folder denied above.
     pub after: Vec<String>,
+    /// At the floor, the held folders a person let this chat write ([`floor_planted_rules_but`]).
+    pub lifted: Vec<PathBuf>,
 }
 
 /// `text` as an SBPL string, or [`CONTROL`].
@@ -331,6 +333,7 @@ pub const TRUST: &str = "(allow mach-lookup (global-name \"com.apple.trustd.agen
 /// `hooks` never written. And the certificate check, unless the project or policy turned it off
 /// (D-1337-7, R1).
 pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str> {
+    own.lifted.extend(widened.lifted.iter().cloned());
     if let Some(caches) = &widened.caches {
         for tree in &caches.trees {
             own.allow.push(format!("(subpath {})", quote(tree)?));
@@ -681,7 +684,7 @@ pub fn floor_profile(
             }
         }
     }
-    for rule in floor_planted_rules()? {
+    for rule in floor_planted_rules_but(&own.lifted)? {
         line(rule);
     }
     line(
@@ -852,6 +855,12 @@ pub const FLOOR_HELD: &str = "(deny appleevent-send)
 /// The rules that keep every [`PLANTED`] name from being written, at any depth anywhere: the
 /// floor lets a chat write every folder, so each name is held wherever it is.
 pub fn floor_planted_rules() -> Result<Vec<String>, &'static str> {
+    floor_planted_rules_but(&[])
+}
+
+/// [`floor_planted_rules`], with each of `lifted` written past its own name's rule alone: that
+/// folder and no other copy of the name, and every other name still held inside it.
+pub fn floor_planted_rules_but(lifted: &[PathBuf]) -> Result<Vec<String>, &'static str> {
     PLANTED
         .iter()
         .map(|planted| {
@@ -874,10 +883,20 @@ pub fn floor_planted_rules() -> Result<Vec<String>, &'static str> {
             // Each letter either case: the disk compares names case-folded, so a name spelled
             // another way is the same file.
             let regex = format!("^/(.*/)?{}{tail}", either_case(&body));
-            Ok(format!(
-                "(deny file-write* file-link (regex {}))",
-                string(&regex)?
-            ))
+            let lifted = lifted
+                .iter()
+                .find(|folder| folder.ends_with(planted.path) && !planted.path.contains("**"));
+            Ok(match lifted {
+                Some(folder) => format!(
+                    "(deny file-write* file-link (require-all (regex {}) (require-not (subpath {}))))",
+                    string(&regex)?,
+                    string(&folder.to_string_lossy())?
+                ),
+                None => format!(
+                    "(deny file-write* file-link (regex {}))",
+                    string(&regex)?
+                ),
+            })
         })
         .collect()
 }

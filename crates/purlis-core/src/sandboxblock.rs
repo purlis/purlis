@@ -1328,10 +1328,12 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
             Kind::ProjectFiles | Kind::Home | Kind::ToolchainCache | Kind::System,
         ) => Some(lexical(&place.cwd.join(named)).display().to_string()),
         // A branch folder's own git record (#1476): no grant names it, and its path lets the
-        // Notice name the command that commits there ([`way_out`]).
+        // Notice name the command that commits there ([`way_out`]). A name a person may lift for
+        // one chat: the path its Allow names.
         (Operation::Write | Operation::File, Kind::ProtectedFile) => {
             let path = lexical(&place.cwd.join(named));
-            in_a_branch_folders_record(&path).then(|| path.display().to_string())
+            (in_a_branch_folders_record(&path) || crate::sandbox::names_what_may_be_lifted(&path))
+                .then(|| path.display().to_string())
         }
         _ => None,
     }
