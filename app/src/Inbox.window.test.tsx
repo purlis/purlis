@@ -21,6 +21,7 @@ import {
   type UpdateRow,
   type Updates,
 } from "./Inbox";
+import { AnswerOpener } from "./AnswerPanel";
 import { Notice } from "./Notice";
 import { IN_ANOTHER_WINDOW, OTHER_PROJECTS, type Elsewhere } from "./InboxElsewhere";
 import type { Needing, Quiet } from "./NeedsYou";
@@ -234,6 +235,36 @@ describe("the asks, grouped by chat", () => {
 
     expect(screen.getByText("Which host?")).toBeTruthy();
     expect(screen.getByText("steward 6 passed this on. Its note: Your call.")).toBeTruthy();
+  });
+
+  it("opens the Answer form on a task's question, for the task that asked (ADR 0107)", async () => {
+    const question: Shown = {
+      session: 9,
+      ask: "task-question:9:4",
+      says: "Which host?",
+      options: [],
+      source: "task-question",
+      chain: ["steward 6", "check prod"],
+      answer: { via: "task-question", why: "no-reply", from: "steward 6", note: null },
+    };
+    core();
+    const opened = vi.fn();
+    render(
+      <AnswerOpener value={opened}>
+        <Inbox
+          plane={PLANE}
+          asks={[question]}
+          onGo={vi.fn()}
+          onLeave={vi.fn()}
+          onAnswered={vi.fn()}
+        />
+      </AnswerOpener>,
+    );
+    read();
+
+    await userEvent.click(screen.getByRole("button", { name: /^Answer / }));
+
+    expect(opened).toHaveBeenCalledWith({ chat: 9, name: "check prod" });
   });
 
   it("draws what an ask says as text: no word of it is ever a control", () => {

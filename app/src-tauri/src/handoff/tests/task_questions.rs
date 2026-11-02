@@ -227,8 +227,7 @@ fn a_question_whose_asking_chat_has_closed_reaches_the_person_with_that_reason()
                 ..
             } if !from.is_empty()
         ),
-        "the row names the chat that closed: {:?}",
-        listed[0].answer
+        "the row names the chat that closed"
     );
 }
 
@@ -254,7 +253,7 @@ fn a_handoff_asks_the_person_as_it_always_did() {
     let held = planes.held(&id).expect("held");
     let (said, _) = a_handoff(&held, &id, steward, None, None, INTO_ALPHA);
     let Answer::Opened { chat, .. } = said else {
-        panic!("opened, not {said:?}")
+        panic!("a handoff opens a chat")
     };
 
     let said = routed(&held, &id, chat, "Which one?");
