@@ -4537,8 +4537,8 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the
    * name of the tab whose pane it is in, which is the first pane's; a chat with a tab of its
-   * own by that tab's name, which a rename sets. A view is called what it is, as the record
-   * titles a view that is not a tab's first pane.
+   * own by that tab's name, which a rename sets. A view beside another, as DevTools is beside
+   * its browser, has no title of its own, and is called what its tab is.
    */
   const naming = useMemo<Naming>(() => {
     const known = new Map(
@@ -4555,7 +4555,8 @@ export const PlaneView = memo(function PlaneView({
         const chat = known.get(session);
         return chat === undefined ? nameOf(session) : untabbedName(chat);
       },
-      view: (view) => view.view,
+      // A view beside another has no title of its own: its tab's name is said (`tabFace`).
+      view: () => undefined,
     };
   }, [nameOf, reopened, sidebar, tabs]);
 

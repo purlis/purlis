@@ -86,6 +86,48 @@ describe("a tab's face", () => {
     ]);
   });
 
+  it("names a view pane with no name of its own by its tab, as DevTools beside a browser", () => {
+    const tabs = splitFocusedPane(openTab(noTabs(), 1, "steward 1"), "row", 2);
+    const unnamed: Naming = { ...naming, chat: () => "devops 2", view: () => undefined };
+    const browser = openView(
+      noTabs(),
+      { from: null, view: "browser", key: "B1" },
+      "Browser",
+      "alpha",
+    );
+    const id = front(browser);
+    const lead = browser.byId[id].layout;
+    if (lead.kind !== "pane") throw new Error("one pane");
+    const beside: Tabs = {
+      ...browser,
+      byId: {
+        ...browser.byId,
+        [id]: {
+          ...browser.byId[id],
+          focused: 99,
+          layout: {
+            kind: "split",
+            direction: "row",
+            children: [
+              lead,
+              {
+                kind: "pane",
+                pane: 99,
+                content: {
+                  kind: "view",
+                  view: { from: null, view: "devtools", key: "B1" },
+                  workspace: "alpha",
+                },
+              },
+            ],
+          },
+        },
+      },
+    };
+    expect(faceOf(beside, id, unnamed).name).toBe("Browser");
+    expect(faceOf(tabs, front(tabs), unnamed).name).toBe("devops 2");
+  });
+
   it("says New chat for a tab that is not there to read", () => {
     // An empty pane's tab, and the frame between a close and the strip following it.
     expect(faceOf(noTabs(), 9, naming)).toEqual({

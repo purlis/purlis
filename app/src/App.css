@@ -1734,19 +1734,21 @@ body {
   height: 0.75rem;
 }
 
-/* **A tab wears its focused pane's chat's combined icon** (#4762, `chatPersona.css`): at the
-   strip's mark size, its badge ringed in a ground the theme engine holds every state's mark
-   against (`state.*` on `surface.base` and `surface.raised`, `theme/check.rs`): the strip's own,
-   and the raised one under a chosen tab. */
+/* **A tab wears its focused pane's chat's combined icon** (#4762, `chatPersona.css`): the tab's
+   own marks, its persona's or its shell's at the strip's mark size, with its state's mark on the
+   lower end corner, as the sidebar wears it. A chat with no persona wears the state mark alone,
+   where it stands. */
 .tabs .tab {
   /* Equal shares of the row up to 230px each (ADR 0039, amended 2026-11-02). */
   --most: calc(230rem / 14);
   --chat-persona-size: var(--space-6);
-  --chat-badge-ground: var(--surface-base);
 }
 
-.tabs .tab[data-selected] {
-  --chat-badge-ground: var(--surface-raised);
+.tabs .tab-persona > .state:not(:only-child) {
+  position: absolute;
+  inset-block-end: calc(-1 * var(--space-1));
+  inset-inline-end: calc(-1 * var(--space-1));
+  margin: 0;
 }
 
 /* **`⊟+N`, a split's other panes** (#4762): after the name, and never cut. The name gives way
@@ -1756,7 +1758,7 @@ body {
   flex: none;
   align-items: center;
   gap: var(--space-1);
-  color: var(--text-faint);
+  color: var(--text-quiet);
   font-variant-numeric: tabular-nums;
 }
 

@@ -3,13 +3,14 @@
 
 import { SandboxMark, type SandboxSaid } from "./SandboxMark";
 import { memo, useMemo, type ReactNode } from "react";
-import { Columns2, Hand, ListTodo, Plus } from "lucide-react";
+import { Columns2, Hand, ListTodo, Plus, SquareTerminal } from "lucide-react";
+import { PersonaMark } from "./PersonaMark";
 import { ChatMark, StoppingMark, WrappingUp } from "./NeedsYou";
 import { markOf, ownWorkOf, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { PlaneUpdatedMark, type PlaneUpdates } from "./PlaneUpdated";
 import { contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
 import type { TabFace } from "./tabFace";
-import { ChatPersonaState, sameShown } from "./ChatPersonaState";
+import { sameShown } from "./ChatPersonaState";
 import { ViewMark } from "./Views";
 import { shownState, type Shown, type TaskFacts } from "./shownState";
 import { StateShown } from "./StateShown";
@@ -202,18 +203,25 @@ export function TabMarks({
     <>
       {/* **A pinned tab shows its pin before its icon** (#4762), and the pin is the tab's. */}
       {pin}
-      {/* **The focused pane's chat's combined persona and state icon** (#4762), the sidebar
-          row's own: who it runs as, with its state on it. A task's own tab wears the task
-          mark (#1489), whose state is said after its name. */}
+      {/* **The focused pane's chat's combined icon** (#4762): who it runs as, a persona's
+          mark or a shell's terminal (#1449), with its state's mark on its corner, in the
+          sidebar's look (`chatPersona.css`). The marks are the tab's own, as before: the state
+          is the board's (`ChatStateMark`). The badge is only seen: the tab says its state after
+          its name, below, as it always has. A chat with neither wears the state mark alone. A
+          task's own tab wears the task mark (#1489), whose state is said after its name. */}
       {taskOf !== undefined ? (
         <ListTodo className="tab-mark" data-mark="task" aria-hidden="true" />
       ) : (
-        <ChatPersonaState
-          persona={shell ? null : (personaOf(chat) ?? null)}
-          session={chat}
-          shell={shell}
-          harness={null}
-        />
+        <span className="chat-persona tab-persona">
+          {shell ? (
+            <SquareTerminal className="tab-mark" data-mark="shell" aria-hidden="true" />
+          ) : (
+            personaOf(chat) != null && (
+              <PersonaMark persona={personaOf(chat) as string} className="tab-mark" />
+            )
+          )}
+          <StateBadge session={chat} shell={shell} />
+        </span>
       )}
       <span className="tab-name" {...tabPart("label")}>
         {face.name}
@@ -221,9 +229,17 @@ export function TabMarks({
       <SplitMore more={face.more} />
       <SandboxMark level={sandbox?.level} why={sandbox?.why} sites={sandbox?.sites} />
       <PlaneUpdatedMark files={updates?.[chat]} />
-      {/* A task's own tab says its state after its name, as before (#1489): its mark is the
-          task mark, not the combined icon that carries a chat's state. */}
-      {taskOf !== undefined && <ChatStateMark session={chat} shell={shell} />}
+      {/* **What the tab is doing, said after what it is**: its own element, so a tab whose text
+          changed every time a turn began would not be unreadable, and before the task's name
+          where it shows one (#1486). A task's own tab draws it here (#1489); any other tab wears
+          it as the icon's badge, so here it is heard and not seen. */}
+      {taskOf !== undefined ? (
+        <ChatStateMark session={chat} shell={shell} />
+      ) : (
+        <span className="hidden-words">
+          <ChatStateMark session={chat} shell={shell} />
+        </span>
+      )}
       {/* **`talk · steward 4`, on a task's own tab** (#1489): whose task it is, dimmer. To a
           screen reader the separator is the words it stands for. */}
       {taskOf !== undefined && (
@@ -273,6 +289,24 @@ export function TabMarks({
     </>
   );
 }
+
+/**
+ * **The state's dot on a tab's icon** (#4762): seen and not heard, since the tab says its state
+ * after its name (`ChatStateMark`, in hidden words). A dot of its own, read off the chat's
+ * state as that mark reads it, so a move redraws the two and no other row (SC-3). A chat with
+ * no mark to draw (`markOf`) wears none.
+ */
+const StateBadge = memo(function StateBadge({
+  session,
+  shell,
+}: {
+  session: number;
+  shell: boolean;
+}) {
+  const state = useChatsSelect(useChatsHere(), (states) => markOf(states, session, shell));
+  if (state === undefined) return null;
+  return <span className={`state state-${state}`} data-state={state} aria-hidden="true" />;
+});
 
 /**
  * **`⊟+N`: how many other panes share a split tab** (#4762), after its name and never giving way

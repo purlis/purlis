@@ -98,7 +98,7 @@ const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "uns
  */
 const READ_BY_HAND: readonly string[] = [
   // A chat's state badge (#3342) is ringed in the ground of the row it stands on: the panel's
-  // fill, the hover's or the chosen row's, or the tab's (`--chat-badge-ground`). Its mark is a state token the
+  // fill, the hover's or the chosen row's (`--chat-badge-ground`). Its mark is a state token the
   // engine holds at 3:1 on each of those grounds in `PAIRS`.
   ".chat-persona > .shown-state .shape | background-color: var(--chat-badge-ground)",
   '[data-scope="panel-section"][data-part="top"] | background-color: var(--panel-fill)',

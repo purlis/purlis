@@ -27,10 +27,12 @@ export type TabFace = {
   panes: string[];
 };
 
-/** What a pane is called: a chat as its row names it, a view by its title. */
+/** What a pane is called: a chat as its row names it, a view by its title. A view with no
+ *  name of its own, such as DevTools beside its browser, answers nothing, and is called what
+ *  its tab is. */
 export type Naming = {
   chat: (session: number) => string;
-  view: (view: ViewRef, pane: number) => string;
+  view: (view: ViewRef, pane: number) => string | undefined;
 };
 
 /** What an empty pane's tab says. */
@@ -57,7 +59,7 @@ export function faceOf(tabs: Tabs, id: number, naming: Naming): TabFace {
       : lead.kind === "chat"
         ? naming.chat(lead.session)
         : lead.kind === "view"
-          ? naming.view(lead.view, pane)
+          ? (naming.view(lead.view, pane) ?? tab?.name ?? lead.view.view)
           : NEW_CHAT;
   const focused = panes.find((one) => one.pane === tab?.focused) ?? panes[0];
   if (focused === undefined)
