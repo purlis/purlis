@@ -40,13 +40,13 @@ pub mod widen;
 mod write;
 
 pub use fetch::{Fetched, Found, MOST_SKILL_BYTES, NotASkill, SourceFile, fetch, newest};
-pub use install::install;
+pub use install::{Renames, install, install_named};
 pub use listed::{Listed, TABLE, add, confirm, remove, sources};
 pub use lock::{Kept, Locked, Lockfile};
 pub use outgoing::{Outgoing, Purpose, Stop, export_folder, export_zip, gather};
 pub use review::{
-    Accepted, AcceptedSkill, Browse, Offered, Review, ReviewFile, SetReview, SkillReview, TooMuch,
-    browse, review, review_all, review_set,
+    Accepted, AcceptedSkill, Browse, Clash, Offered, Review, ReviewFile, SetReview, SkillReview,
+    TooMuch, browse, review, review_all, review_set,
 };
 pub use update::{
     Changed, FileChange, Offer, Unasked, Unconfirmed, UpdateReview, Updates, line_diff, update,
@@ -133,6 +133,37 @@ impl Remote {
         match &self.branch {
             Some(branch) => format!("refs/heads/{branch}"),
             None => "HEAD".to_owned(),
+        }
+    }
+
+    /// **The short word a person knows it by** (ADR 0100, amended 2026-11-01): the owner in an
+    /// `https://` URL (`mattpocock` of `https://github.com/mattpocock/skills`), its host where the
+    /// path names none, or a folder's own name, as a skill's name may spell it. Shown beside a
+    /// skill in a list, and the start of the new name a clash offers. Never told to a chat.
+    pub fn label(&self) -> String {
+        let url = self.url.trim_end_matches('/');
+        let word = match url.strip_prefix("https://") {
+            Some(rest) => {
+                let mut parts = rest.split('/');
+                let host = parts.next().unwrap_or_default();
+                parts.next().unwrap_or(host)
+            }
+            None => url
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .trim_end_matches(".git"),
+        };
+        let spelled: Vec<String> = word
+            .to_ascii_lowercase()
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .filter(|part| !part.is_empty())
+            .map(str::to_owned)
+            .collect();
+        if spelled.is_empty() {
+            "source".to_owned()
+        } else {
+            spelled.join("-")
         }
     }
 
