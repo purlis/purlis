@@ -383,7 +383,7 @@ pub fn hits_against(limits: &Chosen, highest: &Chosen, bytes: u64, files: u64) -
         let highest = highest.get(id);
         let chosen = limits.in_force(id);
         let in_force = highest.map_or(chosen, |highest| highest.min(chosen));
-        (needed > in_force).then(|| kept.limits.hit(id, in_force, needed, highest))
+        (needed > in_force).then(|| limits.hit(id, in_force, needed, highest))
     })
     .collect()
 }
