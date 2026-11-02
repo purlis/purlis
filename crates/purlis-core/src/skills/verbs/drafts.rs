@@ -1419,23 +1419,13 @@ pub fn asking_for_outcome_evals(root: &Path, level: &Level, name: &str) -> Resul
 /// **The prompt "Ask a chat to write checks" types** (ruling of 2026-11-02), unsent: both kinds
 /// of a skill's checks, its trigger tests ("does it get picked?") and its outcome evals ("does it
 /// do the job?"), asked of one chat, so both files come back in the skill's one draft, which the
-/// person accepts whole. It fits every harness purlis types into for a long name at every level
-/// (#4714), so it says each format in as few words as a chat can still follow.
+/// person accepts whole. It names the job, the skill and its folder, and [`STUDIO_SKILL`], whose
+/// Checks section holds both formats and what makes a good check (#4714). One line, which the
+/// person may add to.
 pub fn asking_for_checks(root: &Path, level: &Level, name: &str) -> Result<String, String> {
     let at = told_folder(root, level, name, "write its checks")?;
-    let picked = purlis_skills::grade::triggers_path();
-    let job = purlis_skills::grade::outcomes_path();
-    // The folder is named once, and each file inside it, and the name only where the format
-    // holds it: a long name at a persona's local level is the longest this gets, 785 characters.
     Ok(format!(
-        "Write checks for the skill whose folder is {at}. In that folder, read SKILL.md, then \
-         write {picked}, a JSON array of {{\"query\": \"<a request>\", \"should_trigger\": true \
-         or false}} with requests it should start for and near misses, and {job}, \
-         {{\"skill_name\": \"{name}\", \"evals\": [{{\"id\": 1, \"prompt\": \"<a task>\", \
-         \"expected_output\": \"<success>\", \"files\": [<input paths, if any>], \
-         \"expectations\": [\"<a fact a judge can check>\"]}}]}} with a few real tasks that doing \
-         the job passes and skipping it fails. Keep existing entries. If you can't write there, \
-         use purlis propose --from. purlis keeps both files as one draft for me to accept."
+        "Use the {STUDIO_SKILL} skill to write checks for the {name} skill in {at}."
     ))
 }
 
