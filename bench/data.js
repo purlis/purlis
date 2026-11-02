@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793647783522,
+  "lastUpdate": 1793657178545,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36666,6 +36666,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4616975,
             "unit": "ms",
             "extra": "median of 5 runs: 100.500, 101.192, 101.462, 102.123, 102.839 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d112467404c515bafa38e1dd31f638aaf02cd0c3",
+          "message": "Move async-executor off the yanked 1.14.0 to 1.14.1 (#4873)\n\ncargo deny's advisories check refuses yanked crates, and crates.io yanked\nasync-executor 1.14.0, so rust (licences, advisories) failed on every PR\nand in the merge queue. cargo update -p async-executor moves only that\ncrate, to the next patch; its dependency list is unchanged.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EVB5SYWGBK613XG3NBSATN\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T20:35:01Z",
+          "tree_id": "297907d871842c3b667e07df8e82442824c5ef96",
+          "url": "https://github.com/purlis/purlis/commit/d112467404c515bafa38e1dd31f638aaf02cd0c3"
+        },
+        "date": 1793657173510,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.660678,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.656, 0.660, 0.661, 0.661, 0.679 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5550735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.449, 16.549, 16.555, 16.588, 16.875 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.183345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.463, 102.021, 102.183, 102.500, 102.554 ms"
           }
         ]
       }
