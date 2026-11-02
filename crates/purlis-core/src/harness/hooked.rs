@@ -276,6 +276,34 @@ pub fn decision(source: Source, payload: &Value, chosen: &str) -> Option<String>
     )
 }
 
+/// **A harness's own question, as a task's asking chat is to read it** (#4555), or none where
+/// this is no question or the harness has no adapter: then its prompt stays in the pane and the
+/// Inbox, and its limit is honest (ADR 0107). Each harness's reader is its own to add.
+pub fn asked_text(source: Source, payload: &Value) -> Option<String> {
+    match source {
+        Source::ClaudeCode => super::asked::question::asked_text(payload),
+        Source::Codex | Source::Opencode => None,
+    }
+}
+
+/// **The hook's refusal of a question it redirected**, in `message` (#4555): the harness's own
+/// `deny`, which the model reads as the tool's result, with no `interrupt`, so its turn goes on.
+/// None for a harness with no adapter ([`asked_text`]).
+pub fn refused_with(source: Source, message: &str) -> Option<String> {
+    if source != Source::ClaudeCode {
+        return None;
+    }
+    Some(
+        serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": { "behavior": "deny", "message": message },
+            }
+        })
+        .to_string(),
+    )
+}
+
 /// Codex's `decision` for `choice`: `allow` or `deny` and nothing else, since codex-cli
 /// 0.147.0's schema fails closed on `updatedPermissions` and on `interrupt` (#1691).
 fn codex_decision(choice: &Choice) -> Value {
