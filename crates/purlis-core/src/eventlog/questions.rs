@@ -4,6 +4,8 @@
 //! **A task question's trail in the event log** (#4557, ADR 0107): each step of its life, as an
 //! audit entry under the task's chat, and what telemetry counts (ADR 0083 derives its OTel logs
 //! from this log, so how many reach the person, why, and how long they wait come from here).
+//! Which fields an exporter reads of a step, as which attributes, is ADR 0083's amendment of
+//! 2026-11-02 (#4634), and a test below holds the steps to its table.
 //!
 //! **A closed set, with no field for words** (ADR 0075): a [`Step`] holds the question's number,
 //! closed sets of reasons and who answered, and whole seconds. There is nowhere in it for the
@@ -242,6 +244,90 @@ mod tests {
         assert_eq!(event.body["number"], 7);
         assert_eq!(event.body["why"], "passed_on");
         assert_eq!(event.body["waited_secs"], 40);
+    }
+
+    /// One of each step, every value in it a word of a closed set, a flag or a number. The match
+    /// has no wildcard, so a new step does not compile until it is added here.
+    fn one_of_each() -> Vec<Step> {
+        let steps = vec![
+            Step::Asked { number: 1 },
+            Step::Shown { number: 1 },
+            Step::PassedOn {
+                number: 1,
+                noted: true,
+            },
+            Step::Reached {
+                number: 1,
+                why: Reached::NoReply,
+                waited_secs: 100,
+            },
+            Step::Answered {
+                number: 1,
+                by: By::Person,
+                waited_secs: 30,
+            },
+            Step::Closed {
+                number: 1,
+                by: By::Nobody,
+            },
+            Step::Failed {
+                what: Failure::NotReadBack,
+            },
+        ];
+        for step in &steps {
+            match step {
+                Step::Asked { .. }
+                | Step::Shown { .. }
+                | Step::PassedOn { .. }
+                | Step::Reached { .. }
+                | Step::Answered { .. }
+                | Step::Closed { .. }
+                | Step::Failed { .. } => {}
+            }
+        }
+        steps
+    }
+
+    /// The fields ADR 0083's amendment of 2026-11-02 names in its table's last column: all a
+    /// later exporter reads of a question's step.
+    fn the_fields_the_exporter_reads() -> std::collections::BTreeSet<String> {
+        let record = include_str!(
+            "../../../../docs/adr/0083/2026-11-02-a-task-question-is-counted-from-its-steps-and-never-read.md"
+        );
+        record
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("| `charter.question."))
+            .filter_map(|row| row.trim_end_matches('|').rsplit('|').next())
+            .flat_map(|from| from.split('`').skip(1).step_by(2).map(str::to_owned))
+            .collect()
+    }
+
+    #[test]
+    fn telemetry_can_read_of_a_question_only_the_fields_its_record_names_none_of_them_words() {
+        let named = the_fields_the_exporter_reads();
+        assert!(!named.is_empty(), "the amendment's table names no field");
+
+        let mut written = std::collections::BTreeSet::new();
+        for step in one_of_each() {
+            let body = step.body();
+            for (field, value) in body.as_object().expect("a body is an object") {
+                written.insert(field.clone());
+                let a_word_of_a_closed_set = value
+                    .as_str()
+                    .is_some_and(|word| word.chars().all(|c| c.is_ascii_lowercase() || c == '_'));
+                assert!(
+                    value.is_u64() || value.is_boolean() || a_word_of_a_closed_set,
+                    "{} {field}: {value} is not a count, a flag or a closed word",
+                    step.kind()
+                );
+            }
+        }
+
+        assert_eq!(
+            written, named,
+            "a question's steps write exactly the fields ADR 0083's amendment names"
+        );
     }
 }
 
