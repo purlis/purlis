@@ -33,13 +33,12 @@ step. This page is the reference behind it.
 
 ## Its image
 
-- **Where:** `ghcr.io/purlis/purlis-cluster-operator`, a private package of the `purlis`
-  organisation on GitHub, kept private exactly as the [runner image](runner-image.md) is: the
-  workflow checks through GitHub's packages API that the package is private before each push,
-  and again, with the registry refusing both images to anyone who has not signed in, before
-  any tag or signature. If either check cannot get a clear answer, the run stops. It stays
-  private until the maintainer rules to publish it, so pulling it needs a GitHub sign-in with
-  read access to the package: give the cluster an image pull secret for it.
+- **Where:** `ghcr.io/purlis/purlis-cluster-operator`, a public package of the `purlis`
+  organisation on GitHub, as the [runner image](runner-image.md) is. Pulling it needs no
+  sign-in, so a cluster needs no image pull secret. The workflow checks through GitHub's
+  packages API that the package is public before each push, and again, with the registry
+  serving both images to anyone who has not signed in, before any tag or signature. If either
+  check cannot get a clear answer, the run stops.
 - **When:** `.github/workflows/operator-image.yml` builds it for every change to the operator
   on `main`, once the operator's own checks and kind tests (`operator.yml`) passed on that
   commit. A pull request that changes the operator builds and checks it the same way, and
@@ -61,7 +60,8 @@ step. This page is the reference behind it.
 - **Signed:** keyless with [cosign](https://docs.sigstore.dev/), by the `operator-image.yml`
   workflow on `main`, through GitHub's OIDC identity, as the runner image is: no key is stored
   anywhere, and the signature's entry in Sigstore's public transparency log names the image
-  and its digest (ruled 2026-10-15). Check an image before you install it:
+  and its digest. Check an image before you install it, with no sign-in (cosign 3, the version
+  the workflow uses):
 
   ```bash
   cosign verify ghcr.io/purlis/purlis-cluster-operator@sha256:<digest> \
@@ -143,8 +143,7 @@ openssl genpkey -algorithm ed25519 |
 # 4. purlis's definitions, the policy on Claims, and the operator.
 helm install purlis-cluster-operator operator/charts/purlis-cluster-operator \
   --namespace purlis-system \
-  --set image.digest=sha256:<digest> \
-  --set 'imagePullSecrets[0].name=<a secret that pulls ghcr.io/purlis>'
+  --set image.digest=sha256:<digest>
 ```
 
 **The definitions are a step of their own.** Helm installs the chart's `crds/` (Pool and
@@ -171,7 +170,7 @@ The chart's values, all in its
 |---|---|---|
 | `image.repository` | where the image is pulled from, without a tag or digest | `ghcr.io/purlis/purlis-cluster-operator` |
 | `image.digest` | the image's digest, `sha256:` and 64 hex digits; required | none |
-| `imagePullSecrets` | secrets in the release's namespace that pull the image | none |
+| `imagePullSecrets` | secrets in the release's namespace that pull the image, for a mirror that needs one | none |
 | `resources` | the operator's CPU and memory | requests 10m CPU and 32Mi, limit 256Mi |
 | `forge.keySecretNames` | the Secrets in the release's namespace holding a GitHub App's key, which the Role `purlis-forge-key-reader` lets the operator `get` ([below](#minting-github-app-tokens-in-the-cluster)); empty, there is no such Role and it may read no Secret. The one value that changes what the operator may do, and never its own signing key | `[]` |
 | `perPerson.quota` | what each person's runners may hold at once, in their namespace's quota `purlis-person` ([below](#each-persons-namespace)): `claims` (a count), `cpu`, `memory` and `ephemeralStorage` (what their runners' pods ask for), `memoryLimit` (the most those pods may use), `storage` (what their kept runners' volumes ask for); a key left out is not limited | `claims: 5`, `cpu: "4"`, `memory: 8Gi`, `memoryLimit: 64Gi`, `ephemeralStorage: 16Gi`, `storage: 50Gi` |
