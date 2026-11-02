@@ -469,7 +469,7 @@ fn an_answer_to_a_task_brought_back_after_a_restart_says_its_question_was_not_ke
     std::fs::write(&path, b"not json").expect("written");
     let mut talk = Talk::default();
     talk.keep_at(&path);
-    talk.restored(TASK, "task-id", folder.path(), 0);
+    talk.restored(TASK, "task-id", folder.path(), 0, &|| true);
 
     assert_eq!(
         talk.answer(TASK, ASKER, "check the queue", an_answer()),
@@ -492,7 +492,7 @@ fn an_answer_to_a_task_brought_back_after_a_restart_says_its_question_was_not_ke
     );
 
     // A task brought back that has reported will ask nothing again, and is not said to.
-    talk.restored(TASK, "task-id", folder.path(), 0);
+    talk.restored(TASK, "task-id", folder.path(), 0, &|| true);
     talk.close(TASK);
     assert_eq!(
         talk.nothing_to_answer("check the queue", TASK),

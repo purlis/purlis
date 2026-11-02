@@ -96,7 +96,11 @@ fn a_question_that_reaches_the_person_by_itself_says_why_and_how_long_it_had_wai
     talk.questions.get_mut(&TASK).expect("open").asked_at = NOW;
     talk.handed(&["q.json".to_owned()], NOW + 10);
 
-    talk.look(NOW + 10 + A_QUESTION_WAITS_SECS, &HashSet::new());
+    talk.look(
+        NOW + 10 + A_QUESTION_WAITS_SECS,
+        &HashSet::new(),
+        &HashSet::new(),
+    );
 
     assert!(steps(&mut talk).iter().any(|step| matches!(
         step,
@@ -174,8 +178,8 @@ fn a_question_that_does_not_read_back_is_a_failure_said_once() {
     let mut talk = Talk::default();
     talk.keep_at(&path);
 
-    talk.restored(TASK, "task-id", folder.path(), NOW);
-    talk.restored(TASK, "task-id", folder.path(), NOW);
+    talk.restored(TASK, "task-id", folder.path(), NOW, &|| true);
+    talk.restored(TASK, "task-id", folder.path(), NOW, &|| true);
 
     assert_eq!(
         steps(&mut talk),

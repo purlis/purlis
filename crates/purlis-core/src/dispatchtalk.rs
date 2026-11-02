@@ -371,6 +371,9 @@ struct Known {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct KeptQuestion {
     number: u32,
+    /// The task, by the app's number, which a restart keeps: what its closing is said under.
+    #[serde(default)]
+    task: u32,
     text: String,
     /// The chat asked, by the app's number, which a restart keeps.
     asker: u32,
@@ -571,10 +574,11 @@ impl Question {
         self.answer.is_none() && self.standing == Standing::WithAskingChat
     }
 
-    /// What is written of it, for a task that asks `asker` ([`KeptQuestion`]).
-    fn kept(&self, asker: u32) -> KeptQuestion {
+    /// What is written of it, for `task`, which asks `asker` ([`KeptQuestion`]).
+    fn kept(&self, task: u32, asker: u32) -> KeptQuestion {
         KeptQuestion {
             number: self.number,
+            task,
             text: crate::dispatchrecord::masked(&self.text),
             asker,
             standing: self.standing.clone(),
@@ -775,6 +779,7 @@ impl Talk {
         }
         self.messages = match std::fs::read(path) {
             Ok(bytes) => match serde_json::from_slice::<Sent>(&bytes) {
+                // A record from a build that kept no questions, read as one that did not read.
                 Ok(sent) => {
                     self.questions_unread = sent.v < SENT_VERSION;
                     sent
@@ -813,7 +818,7 @@ impl Talk {
             let Some(known) = self.known.get(task) else {
                 continue;
             };
-            let kept = question.kept(known.asker);
+            let kept = question.kept(*task, known.asker);
             if let Ok(value) = serde_json::to_value(&kept) {
                 self.messages.questions.insert(known.key.clone(), value);
             }
@@ -1092,8 +1097,20 @@ impl Talk {
         }
     }
 
+    /// The asking chats of the questions still with them and not handed to a turn: each is told
+    /// again after a restart, since the line it was due died with the last run.
+    pub fn askers_not_handed(&self) -> HashSet<u32> {
+        self.questions
+            .iter()
+            .filter(|(_, question)| {
+                question.waits_on_its_asking_chat() && question.handed_at.is_none()
+            })
+            .filter_map(|(task, _)| self.known.get(task).map(|known| known.asker))
+            .collect()
+    }
+
     /// The asking chats of every question still with its asking chat: which of them have gone
-    /// is the app's to say ([`Talk::look`]).
+    /// or cannot take a turn is the app's to say ([`Talk::look`]).
     pub fn askers(&self) -> HashSet<u32> {
         self.questions
             .iter()
@@ -1105,19 +1122,29 @@ impl Talk {
     /// **Looks at each question still with its asking chat, at `now`** (#4556, ADR 0107): one
     /// whose asking chat is among `gone` reaches the person at once, whether or not that chat
     /// saw it, and one [`A_QUESTION_WAITS_SECS`] past the turn it was handed to reaches them too.
-    /// **A question no turn has been handed waits**: a stuck turn is not counted against it.
-    /// Answers each that moved. Once it has reached the person nothing moves it again: there is
-    /// no time limit and no automatic answer.
-    pub fn look(&mut self, now: u64, gone: &HashSet<u32>) -> Vec<(u32, Reached)> {
+    /// **A question no turn has been handed waits**: a slow turn is not counted against it. **But
+    /// an asking chat among `stuck` can take no turn**, stopped on a prompt or a usage limit, so
+    /// its time starts here and it cannot strand the question. Answers each that moved. Once it
+    /// has reached the person nothing moves it again: there is no time limit and no automatic
+    /// answer.
+    pub fn look(
+        &mut self,
+        now: u64,
+        gone: &HashSet<u32>,
+        stuck: &HashSet<u32>,
+    ) -> Vec<(u32, Reached)> {
         let mut moved = Vec::new();
+        let mut started = false;
         for (task, question) in &mut self.questions {
             if !question.waits_on_its_asking_chat() {
                 continue;
             }
-            let asker_gone = self
-                .known
-                .get(task)
-                .is_some_and(|known| gone.contains(&known.asker));
+            let asker = self.known.get(task).map(|known| known.asker);
+            let asker_gone = asker.is_some_and(|asker| gone.contains(&asker));
+            if question.handed_at.is_none() && asker.is_some_and(|asker| stuck.contains(&asker)) {
+                question.handed_at = Some(now);
+                started = true;
+            }
             let waited = question
                 .handed_at
                 .is_some_and(|at| now.saturating_sub(at) >= A_QUESTION_WAITS_SECS);
@@ -1141,7 +1168,7 @@ impl Talk {
             self.trail.push((*task, step));
             moved.push((*task, why));
         }
-        if !moved.is_empty() {
+        if started || !moved.is_empty() {
             self.save();
         }
         moved
@@ -1200,11 +1227,19 @@ impl Talk {
     /// **What does not read back is said once, and not left to look like an empty record**: the
     /// task is handed a word of purlis's to ask again ([`PersonSaid::QuestionLost`]), the log
     /// has a line, and an answer from its asking chat says why it reached nothing
-    /// ([`asked_before_the_restart`]). A question lost with the record's own loss is told the
-    /// same way, to each task brought back.
-    pub fn restored(&mut self, task: u32, key: &str, root: &Path, now: u64) -> Restored {
+    /// ([`asked_before_the_restart`]). Where the record itself could not be read, or was written
+    /// by a build that kept no questions, **only a task `asked` says really had one is told**:
+    /// its dispatch's own record is what knows ([`crate::dispatchrecord::asked_and_unanswered`]).
+    pub fn restored(
+        &mut self,
+        task: u32,
+        key: &str,
+        root: &Path,
+        now: u64,
+        asked: &dyn Fn() -> bool,
+    ) -> Restored {
         let Some(value) = self.unclaimed.remove(key) else {
-            if !self.questions_unread {
+            if !self.questions_unread || !asked() {
                 return Restored::Nothing;
             }
             self.question_lost(task);
@@ -1262,9 +1297,28 @@ impl Talk {
     }
 
     /// The questions kept for tasks that are not among `keys`, the tasks a launch put back or
-    /// may still start, are dropped: their tasks have ended (#4553).
+    /// may still start, closed unanswered: their tasks have ended (#4553). Each is said as any
+    /// such question is ([`Talk::take_closed_unanswered`]). Only for a launch that settles: one
+    /// whose record of chats was not read has not heard that those tasks ended.
     pub fn only_these_came_back(&mut self, keys: &[String]) {
-        self.unclaimed.retain(|key, _| keys.contains(key));
+        let gone: Vec<String> = self
+            .unclaimed
+            .keys()
+            .filter(|key| !keys.contains(key))
+            .cloned()
+            .collect();
+        for key in gone {
+            let Some(value) = self.unclaimed.remove(&key) else {
+                continue;
+            };
+            if let Ok(kept) = serde_json::from_value::<KeptQuestion>(value) {
+                let (task, number) = (kept.task, kept.number);
+                self.closed_unanswered
+                    .push(ClosedUnanswered { task, number });
+                let by = By::Nobody;
+                self.trail.push((task, Step::Closed { number, by }));
+            }
+        }
         self.save();
     }
 

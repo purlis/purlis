@@ -212,19 +212,75 @@ fn a_redirect_the_app_refuses_leaves_the_question_to_the_person() {
 fn a_question_whose_asking_chat_has_closed_reaches_the_person_with_that_reason() {
     let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_a_working_task();
     routed(&held, &id, task, "Which one?");
-    held.close_chat(steward).expect("closed");
 
-    crate::dispatched::look_at_questions(&held);
+    // The close itself moves it: nothing waits for the clock.
+    held.close_chat(steward).expect("closed");
 
     let listed = asks_of(&held, task);
     assert_eq!(listed.len(), 1, "{listed:?}");
-    assert!(matches!(
-        &listed[0].answer,
-        AnswerPath::TaskQuestion {
-            why: ReachedWhy::AskerGone,
-            ..
-        }
-    ));
+    assert!(
+        matches!(
+            &listed[0].answer,
+            AnswerPath::TaskQuestion {
+                why: ReachedWhy::AskerGone,
+                from,
+                ..
+            } if !from.is_empty()
+        ),
+        "the row names the chat that closed: {:?}",
+        listed[0].answer
+    );
+}
+
+#[test]
+fn a_quit_is_no_asking_chat_going_and_a_question_keeps_its_route() {
+    let (_plane, _host, _planes, id, held, _steward, task) = a_steward_and_a_working_task();
+    routed(&held, &id, task, "Which one?");
+
+    held.chats().end_all();
+    crate::dispatched::look_at_questions(&held);
+
+    assert_eq!(
+        held.tasks().ledger().talk.standing(task),
+        Some(&purlis_core::dispatchtalk::Standing::WithAskingChat)
+    );
+}
+
+#[test]
+fn a_handoff_asks_the_person_as_it_always_did() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let (said, _) = a_handoff(&held, &id, steward, None, None, INTO_ALPHA);
+    let Answer::Opened { chat, .. } = said else {
+        panic!("opened, not {said:?}")
+    };
+
+    let said = routed(&held, &id, chat, "Which one?");
+
+    assert!(
+        matches!(&said, Answer::Task(answered) if matches!(**answered, Answered::ToThePerson)),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn a_task_the_person_started_from_a_tab_asks_the_person_as_it_always_did() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let theirs = ask_from_the_tab(&held, &id, steward, "devops", "check prod")
+        .expect("the person's ask starts")
+        .session;
+
+    let said = routed(&held, &id, theirs, "Which one?");
+
+    assert!(
+        matches!(&said, Answer::Task(answered) if matches!(**answered, Answered::ToThePerson)),
+        "{said:?}"
+    );
 }
 
 #[test]
@@ -241,7 +297,11 @@ fn a_question_a_turn_was_handed_waits_its_time_and_then_reaches_the_person() {
         .as_secs();
     held.tasks().ledger().talk.show(task);
     let gone = std::collections::HashSet::new();
-    let moved = held.tasks().ledger().talk.look(now + long_ago, &gone);
+    let moved = held
+        .tasks()
+        .ledger()
+        .talk
+        .look(now + long_ago, &gone, &gone);
 
     assert_eq!(moved.len(), 1, "{moved:?}");
     assert_eq!(asks_of(&held, task).len(), 1);
