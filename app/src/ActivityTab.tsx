@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Activity as ActivityMark, LoaderCircle, TriangleAlert } from "lucide-react";
 import { AnswerQuestion } from "./AnswerQuestion";
+import { QuestionTrail } from "./QuestionTrail";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
 import {
@@ -13,6 +14,7 @@ import {
   type ActivityHeard,
   type ActivityLine,
   type PlaneId,
+  type QuestionStep,
 } from "./bindings";
 import {
   ACTIVITY_HEARD,
@@ -39,6 +41,13 @@ import { useReferenceChats } from "./references";
 import { useTasksBelow } from "./TasksBelow";
 import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+
+/** The steps of the question `line` stands for, as the core reads them from the audit (#4567). */
+async function trailOf(plane: PlaneId, line: ActivityLine): Promise<QuestionStep[]> {
+  const read = await commands.questionTrail(plane, line.from_key, line.at);
+  if (read.status === "error") throw new Error(read.error);
+  return read.data;
+}
 
 /** A count as the tab says it: `2,000`. */
 const count = (n: number) => n.toLocaleString("en-US");
@@ -558,6 +567,10 @@ export function ActivityTab({
                 <p className="activity-text activity-absent" role="status">
                   {`Your answer was sent to ${line.from}.`}
                 </p>
+              )}
+              {/* What happened to it (#4567): folded, and read from the audit as it opens. */}
+              {line.kind === "question" && (
+                <QuestionTrail task={line.from} asker={line.to} read={() => trailOf(plane, line)} />
               )}
               {line.files.length > 0 &&
                 (also.get(line.dispatch) ?? []).map((one) => (

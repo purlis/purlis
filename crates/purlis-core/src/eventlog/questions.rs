@@ -108,6 +108,81 @@ impl Step {
     }
 }
 
+/// One step of a question's trail, as the log holds it: the step, and when it was written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Said {
+    pub at_ms: u64,
+    pub step: Step,
+}
+
+/// **How far apart a question's line in its task's record and its `question.asked` may be
+/// written** for the one to be the other's: both are written as the task asks, within moments.
+pub const SAME_QUESTION_MS: u64 = 60_000;
+
+/// The step `event` records, where it is one of a question's, read back from its kind and body.
+fn step_of(event: &Event) -> Option<Step> {
+    let step = event.kind.strip_prefix("question.")?;
+    let mut body = event.body.as_object()?.clone();
+    body.insert("step".to_owned(), serde_json::Value::from(step));
+    serde_json::from_value(serde_json::Value::Object(body)).ok()
+}
+
+/// The question a step is of, where it names one: a failure names none.
+fn number_of(step: Step) -> Option<u32> {
+    match step {
+        Step::Asked { number }
+        | Step::Shown { number }
+        | Step::PassedOn { number, .. }
+        | Step::Reached { number, .. }
+        | Step::Answered { number, .. }
+        | Step::Closed { number, .. } => Some(number),
+        Step::Failed { .. } => None,
+    }
+}
+
+/// **The trail of the question chat `chat` asked at `asked_ms`** (#4567), from `events`, the
+/// log oldest first: each step of that question, in the order written, and each failure written
+/// under that chat while it was open. The question is the one whose `question.asked` was
+/// written nearest `asked_ms`, within [`SAME_QUESTION_MS`]: its number is the app's, never the
+/// record's, so the time is what joins a line of the record to its steps. Empty for a question
+/// asked before its steps were recorded, and for one of another device's log.
+pub fn trail_of(events: &[Event], chat: &str, asked_ms: u64) -> Vec<Said> {
+    let said: Vec<Said> = events
+        .iter()
+        .filter(|event| event.chat.as_deref() == Some(chat))
+        .filter_map(|event| {
+            Some(Said {
+                at_ms: super::written_at_ms(&event.ulid)?,
+                step: step_of(event)?,
+            })
+        })
+        .collect();
+    let Some(number) = said
+        .iter()
+        .filter(|one| matches!(one.step, Step::Asked { .. }))
+        .filter(|one| one.at_ms.abs_diff(asked_ms) <= SAME_QUESTION_MS)
+        .min_by_key(|one| one.at_ms.abs_diff(asked_ms))
+        .and_then(|one| number_of(one.step))
+    else {
+        return Vec::new();
+    };
+    let mut open = false;
+    let mut trail = Vec::new();
+    for one in said {
+        match number_of(one.step) {
+            Some(its) if its == number => {
+                open = !matches!(one.step, Step::Closed { .. });
+                trail.push(one);
+            }
+            // Another question of the same chat's: this one was closed by then.
+            Some(_) => open = false,
+            None if open => trail.push(one),
+            None => {}
+        }
+    }
+    trail
+}
+
 impl Recorder {
     /// **Writes a step of a question of task `number`'s** ([`Step`]), under that chat's current
     /// run, made durable before it answers.
@@ -167,5 +242,169 @@ mod tests {
         assert_eq!(event.body["number"], 7);
         assert_eq!(event.body["why"], "passed_on");
         assert_eq!(event.body["waited_secs"], 40);
+    }
+}
+
+#[cfg(test)]
+mod trail_tests {
+    use super::super::Event;
+    use super::*;
+
+    const TASK: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7E";
+    const OTHER: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7G";
+    const AT: u64 = 1_800_000_000_000;
+
+    fn written(at_ms: u64, chat: &str, step: Step) -> Event {
+        Event {
+            v: 1,
+            device_id: "device".to_owned(),
+            seq: at_ms,
+            ulid: ulid::Ulid::from_parts(at_ms, 7).to_string(),
+            chat: Some(chat.to_owned()),
+            run: None,
+            parent_run: None,
+            kind: step.kind().to_owned(),
+            body: step.body(),
+        }
+    }
+
+    fn steps(trail: &[Said]) -> Vec<(u64, Step)> {
+        trail.iter().map(|said| (said.at_ms, said.step)).collect()
+    }
+
+    #[test]
+    fn a_question_s_trail_is_its_own_steps_in_the_order_they_were_written() {
+        let events = [
+            written(AT - 3_600_000, TASK, Step::Asked { number: 2 }),
+            written(
+                AT - 3_500_000,
+                TASK,
+                Step::Closed {
+                    number: 2,
+                    by: By::AskingChat,
+                },
+            ),
+            written(AT, TASK, Step::Asked { number: 4 }),
+            written(AT + 10, OTHER, Step::Asked { number: 5 }),
+            written(AT + 20, TASK, Step::Shown { number: 4 }),
+            written(
+                AT + 30,
+                TASK,
+                Step::PassedOn {
+                    number: 4,
+                    noted: true,
+                },
+            ),
+            written(
+                AT + 40,
+                TASK,
+                Step::Reached {
+                    number: 4,
+                    why: Reached::PassedOn,
+                    waited_secs: 1,
+                },
+            ),
+            written(
+                AT + 50,
+                TASK,
+                Step::Answered {
+                    number: 4,
+                    by: By::Person,
+                    waited_secs: 1,
+                },
+            ),
+            written(
+                AT + 60,
+                TASK,
+                Step::Closed {
+                    number: 4,
+                    by: By::Person,
+                },
+            ),
+        ];
+
+        let trail = trail_of(&events, TASK, AT + 900);
+
+        assert_eq!(
+            steps(&trail),
+            vec![
+                (AT, Step::Asked { number: 4 }),
+                (AT + 20, Step::Shown { number: 4 }),
+                (
+                    AT + 30,
+                    Step::PassedOn {
+                        number: 4,
+                        noted: true
+                    }
+                ),
+                (
+                    AT + 40,
+                    Step::Reached {
+                        number: 4,
+                        why: Reached::PassedOn,
+                        waited_secs: 1
+                    }
+                ),
+                (
+                    AT + 50,
+                    Step::Answered {
+                        number: 4,
+                        by: By::Person,
+                        waited_secs: 1
+                    }
+                ),
+                (
+                    AT + 60,
+                    Step::Closed {
+                        number: 4,
+                        by: By::Person
+                    }
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_question_asked_before_its_steps_were_recorded_has_no_trail() {
+        let events = [written(AT, TASK, Step::Asked { number: 4 })];
+
+        assert!(trail_of(&events, TASK, AT - 3_600_000).is_empty());
+        assert!(trail_of(&events, OTHER, AT).is_empty());
+    }
+
+    #[test]
+    fn a_failure_is_in_the_trail_of_the_question_open_when_it_happened() {
+        let failed = Step::Failed {
+            what: Failure::NotRedirected,
+        };
+        let events = [
+            written(AT - 100, TASK, failed),
+            written(AT, TASK, Step::Asked { number: 4 }),
+            written(AT + 10, TASK, failed),
+            written(
+                AT + 20,
+                TASK,
+                Step::Closed {
+                    number: 4,
+                    by: By::Nobody,
+                },
+            ),
+            written(AT + 30, TASK, failed),
+        ];
+
+        assert_eq!(
+            steps(&trail_of(&events, TASK, AT)),
+            vec![
+                (AT, Step::Asked { number: 4 }),
+                (AT + 10, failed),
+                (
+                    AT + 20,
+                    Step::Closed {
+                        number: 4,
+                        by: By::Nobody
+                    }
+                ),
+            ]
+        );
     }
 }

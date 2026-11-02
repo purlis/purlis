@@ -5605,6 +5605,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "ulid",
  "webkit2gtk",
  "zbus",
 ]

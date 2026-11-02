@@ -17,7 +17,7 @@ import { pressMenuPath } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
-import type { Activity, ActivityLine, OpenChat, ViewTab } from "./bindings";
+import type { Activity, ActivityLine, OpenChat, QuestionStep, ViewTab } from "./bindings";
 import { stripNamed } from "./test-strips";
 import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
@@ -142,6 +142,8 @@ function core(
     unfound?: string;
     /** The chats open now, asked at each read: a test closes one by changing what this says. */
     open?: () => OpenChat[];
+    /** A question's trail, as the core reads it from the audit (#4567), or its refusal. */
+    trail?: QuestionStep[] | { refuses: string };
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -196,6 +198,11 @@ function core(
       if (cmd === "answer_task_question") {
         if (on.refuses !== undefined) throw on.refuses;
         return null;
+      }
+      if (cmd === "question_trail") {
+        const trail = on.trail ?? [];
+        if ("refuses" in trail) throw trail.refuses;
+        return trail;
       }
       if (cmd === "activity_chat" && on.unfound !== undefined) throw on.unfound;
       if (cmd === "activity_chat") {
@@ -1229,5 +1236,99 @@ describe("answering a task's question from the Activity tab (#1496)", () => {
     await waitFor(() => expect(answerControl(list)).toBeNull());
     expect(within(list).queryByRole("form")).toBeNull();
     expect(asked("answer_task_question")).toEqual([]);
+  });
+});
+
+describe("a question's trail in its task's Activity (#4567)", () => {
+  const step = (at: string, over: Partial<QuestionStep> & Pick<QuestionStep, "step">) => ({
+    at: `2026-10-08T${at}:00Z`,
+    noted: false,
+    why: null,
+    by: null,
+    what: null,
+    ...over,
+  });
+  const TRAIL: QuestionStep[] = [
+    step("09:02", { step: "asked" }),
+    step("09:02", { step: "shown" }),
+    step("09:04", { step: "reached", why: "no_reply" }),
+    step("09:05", { step: "answered", by: "person" }),
+    step("09:05", { step: "closed", by: "person" }),
+  ];
+  const question = (list: HTMLElement) =>
+    within(list)
+      .getAllByRole("listitem")
+      .find((item) => item.dataset.kind === "question") as HTMLElement;
+
+  it("is folded under each question's line, and read only when it is opened", async () => {
+    const { asked } = core({ trail: TRAIL });
+    render(<App />);
+    const list = await opened();
+
+    const folds = within(list).getAllByRole("button", { name: "What happened" });
+    expect(folds).toHaveLength(1);
+    expect(within(question(list)).getByRole("button", { name: "What happened" })).toBe(folds[0]);
+    expect(folds[0]).toHaveAttribute("aria-expanded", "false");
+    expect(asked("question_trail")).toEqual([]);
+  });
+
+  it("opens from What happened, read from the audit, in the trail's words and none of the question's", async () => {
+    const { asked } = core({ trail: TRAIL });
+    render(<App />);
+    const list = await opened();
+
+    await userEvent.click(within(question(list)).getByRole("button", { name: "What happened" }));
+
+    const trail = await within(question(list)).findByRole("list", {
+      name: "What happened to this question",
+    });
+    expect(asked("question_trail")).toEqual([
+      { plane: PLANE, key: TALK_KEY, at: "2026-10-08T09:02:00+00:00" },
+    ]);
+    expect(
+      within(trail)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "09:02talk asked",
+      "09:02Handed to steward 3",
+      "09:04steward 3 did not reply in 100 seconds",
+      "09:04Reached you",
+      "09:05You answered",
+    ]);
+    expect(trail.textContent).not.toContain("Which host?");
+    expect(
+      within(question(list)).getByText(
+        "The trail holds who did what and when, never the question's words.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says so where nothing of the question was recorded", async () => {
+    core({ trail: [] });
+    render(<App />);
+    const list = await opened();
+
+    await userEvent.click(within(question(list)).getByRole("button", { name: "What happened" }));
+
+    expect(
+      await within(question(list)).findByText(/purlis has no record of what happened/),
+    ).toBeInTheDocument();
+  });
+
+  it("says why it could not be read, and reads again on request", async () => {
+    const { asked } = core({ trail: { refuses: "the log is locked" } });
+    render(<App />);
+    const list = await opened();
+
+    await userEvent.click(within(question(list)).getByRole("button", { name: "What happened" }));
+    expect(
+      await within(question(list)).findByText(
+        "purlis could not read what happened to this question: the log is locked",
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(within(question(list)).getByRole("button", { name: "Read again" }));
+
+    await waitFor(() => expect(asked("question_trail")).toHaveLength(2));
   });
 });

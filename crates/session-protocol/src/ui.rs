@@ -319,6 +319,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Reads what a chat was sent or said to another.
     "task_brief",
     "activity",
+    // A question's trail, opened from its line in the Activity above (#4567).
+    "question_trail",
     "task_question",
     // Answers as the person.
     "answer_task_question",
