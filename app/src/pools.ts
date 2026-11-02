@@ -10,6 +10,7 @@ import {
   type LimitRefused,
   type PlaneId,
   type RunnerStage,
+  type RunsOnPick,
   type PoolAdding,
   type PoolLink,
   type PoolLimitRow,
@@ -210,8 +211,9 @@ export async function addPool(adding: PoolAdding): Promise<string | undefined> {
 export async function readRunnerStage(
   plane: PlaneId,
   workspace: string | undefined,
+  runsOn: RunsOnPick | null = null,
 ): Promise<RunnerStage | undefined> {
-  const said = await caught(commands.runnerStage(plane, workspace ?? null));
+  const said = await caught(commands.runnerStage(plane, workspace ?? null, runsOn));
   return said.status === "ok" && said.data !== null ? said.data : undefined;
 }
 

@@ -1766,13 +1766,13 @@ struct Boxes {
 /// The Runs on row's choice for one start (#4536): `pool` names a pool this machine keeps, and
 /// null is this machine.
 #[derive(Debug, Clone, serde::Deserialize, specta::Type)]
-struct RunsOnPick {
+pub(crate) struct RunsOnPick {
     pool: Option<String>,
 }
 
 impl RunsOnPick {
     /// The start's choice, or why a name can't be one.
-    fn choice(self) -> Result<purlis_core::machine::StartChoice, String> {
+    pub(crate) fn choice(self) -> Result<purlis_core::machine::StartChoice, String> {
         use purlis_core::machine::StartChoice;
         match self.pool {
             None => Ok(StartChoice::ThisMachine),

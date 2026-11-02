@@ -3000,9 +3000,9 @@ fn dispatch_noting(
                         handoff: wanted.mode() == Mode::Handoff,
                         runs_on: wanted.runs_on.as_ref().map(|choice| match choice {
                             purlis_core::machine::StartChoice::ThisMachine => {
-                                "This machine".to_owned()
+                                "this machine".to_owned()
                             }
-                            purlis_core::machine::StartChoice::Pool(pool) => format!("Pool {pool}"),
+                            purlis_core::machine::StartChoice::Pool(pool) => format!("pool {pool}"),
                         }),
                     },
                 ) {

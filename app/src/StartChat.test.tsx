@@ -2020,6 +2020,8 @@ describe("a start waiting for its runner (#3709)", () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
 
+    // A start that chose nothing reads the stage where its levels put it (#4536).
+    expect(readStage).toHaveBeenCalledWith(null);
     const line = screen.getByTestId("start-chat-stage");
     expect(line).toHaveTextContent("Waiting for room in the cluster");
     expect(line).toHaveTextContent("0/4 nodes are available");

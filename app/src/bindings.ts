@@ -3289,14 +3289,16 @@ export const commands = {
 	 *  **Where the runner of a chat being started has got to** (#3709), read from the cluster, for the
 	 *  window's Start while it waits. Nothing where there is no stage to say.
 	 */
-	runnerStage: (plane: PlaneId, workspace: string | null) => typedError<{
+	runnerStage: (plane: PlaneId, workspace: string | null, runsOn: {
+	pool: string | null,
+} | null) => typedError<{
 	/**  The stage, in the words the person reads. */
 	said: string,
 	/**  One line more about it. */
 	more: string,
 	/**  The cluster's own words for why it waits, where it gave them. */
 	cluster_said: string | null,
-} | null, string>(__TAURI_INVOKE("runner_stage", { plane, workspace })),
+} | null, string>(__TAURI_INVOKE("runner_stage", { plane, workspace, runsOn })),
 	/**
 	 *  **Adds a cluster pool on this machine** (#3292): pins the key the person checked, claims a
 	 *  runner of the cluster's Pool, waits for its operator to vouch for it, pairs it and keeps it.
@@ -6945,6 +6947,12 @@ export type DispatchPending = {
 	 *  work off. The Notice says "hand off" for a handoff.
 	 */
 	mode: string,
+	/**
+	 *  **Where the dispatch asked its chat to run** (#4536, the person's ruling of 2026-11-02):
+	 *  `pool <name>` or `this machine`, read before any Allow. Null where it named none, and it
+	 *  runs where its workspace's levels say.
+	 */
+	runs_on: string | null,
 };
 
 /**  One dispatch, as the Dispatches tab draws its row. */
@@ -12791,8 +12799,11 @@ export type RunnerDispatchWhole = {
 	/**  The chat that asked, by its number and as its tab names it. */
 	session: number,
 	chat: string,
-	/**  The pool it runs on. */
-	pool: string,
+	/**
+	 *  The pool the asking chat runs on, where that is why it is held; null where it is held
+	 *  because it names a place to run other than its workspace's own (#4536).
+	 */
+	pool: string | null,
 	/**  The persona the new chat would run as, none for a chat on no persona. */
 	persona: string | null,
 	/**  Whether it hands the chat's work off, rather than asking for a task that reports back. */

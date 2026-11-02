@@ -9630,3 +9630,38 @@ fn a_start_on_a_pool_that_is_gone_starts_nothing_and_one_that_chose_this_machine
         .expect("this machine, chosen for this start");
     assert_eq!(host.running(), vec![session]);
 }
+
+/// **A move takes a chat's one-off choice of where it runs** (#4536): the record then follows its
+/// workspace, which the move just set, and the choice comes back where the move doesn't happen.
+#[test]
+fn a_chats_one_off_choice_of_where_it_runs_is_taken_and_given_back() {
+    use purlis_core::machine::StartChoice;
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let session = chats
+        .start(
+            &Chat {
+                runs_on: Some(StartChoice::ThisMachine),
+                ..a_chat_in(plane.path(), "/bin/sh")
+            },
+            SIZE,
+        )
+        .expect("a shell starts");
+    let recorded = |chats: &Chats| {
+        chats
+            .record()
+            .chats
+            .into_iter()
+            .find(|chat| chat.number == Some(session))
+            .and_then(|chat| chat.runs_on)
+    };
+    assert_eq!(recorded(&chats), Some(StartChoice::ThisMachine));
+
+    let was = chats.choose_runs_on(session, None);
+    assert_eq!(was, Some(StartChoice::ThisMachine));
+    assert_eq!(recorded(&chats), None, "it follows its workspace now");
+
+    chats.choose_runs_on(session, was);
+    assert_eq!(recorded(&chats), Some(StartChoice::ThisMachine));
+    let _ = chats.close(session);
+}

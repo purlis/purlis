@@ -4153,8 +4153,8 @@ impl Chats {
         // composes its own line, and would start it with none of them.
         if on_the_runner && chat.graded {
             return Err(
-                "A grade's chat runs on this machine alone, and this project's chats are started \
-                 by a runner, so nothing was started."
+                "A grade's chat runs on this machine alone, and this chat would start on a \
+                 pool's runner, so nothing was started."
                     .to_owned(),
             );
         }
@@ -5474,6 +5474,18 @@ impl Chats {
             (None, Some(harness)) => Some(harness.newline().to_owned()),
             (None, None) => None,
         }
+    }
+
+    /// **Sets where chat `session`'s start chose to run it**, answering what it was (#4536): a
+    /// move takes a chat where its workspace now runs, so its one-off choice goes with the move.
+    pub fn choose_runs_on(
+        &self,
+        session: u32,
+        runs_on: Option<purlis_core::machine::StartChoice>,
+    ) -> Option<purlis_core::machine::StartChoice> {
+        let mut open = lock(&self.open);
+        let chat = &mut open.get_mut(&session)?.chat;
+        std::mem::replace(&mut chat.runs_on, runs_on)
     }
 
     /// The handoff `session` was opened by, where one opened it.

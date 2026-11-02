@@ -67,11 +67,19 @@ export function RunnerDispatchTab({ plane, id }: { plane: PlaneId; id: number })
   const persona = read.persona ?? "no persona";
   return (
     <section className="runner-write" aria-label="The dispatch a runner chat asked for">
-      <p>
-        {read.chat} (chat {read.session}), on pool {read.pool}, asks to{" "}
-        {read.handoff ? "hand its work off to" : "start a task as"} a chat on this machine. Only you
-        start it; it is told what you did on its next turn.
-      </p>
+      {read.pool !== null ? (
+        <p>
+          {read.chat} (chat {read.session}), on pool {read.pool}, asks to{" "}
+          {read.handoff ? "hand its work off to" : "start a task as"} a chat on this machine. Only
+          you start it; it is told what you did on its next turn.
+        </p>
+      ) : (
+        <p>
+          {read.chat} (chat {read.session}) asks to start a task that runs somewhere other than
+          where its workspace runs its chats. Only you start it; it is told what you did on its next
+          turn.
+        </p>
+      )}
       <dl className="runner-dispatch-facts" data-testid="runner-dispatch-facts">
         <dt>Runs as</dt>
         <dd>{persona}</dd>

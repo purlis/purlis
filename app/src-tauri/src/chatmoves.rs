@@ -1069,10 +1069,28 @@ impl crate::planes::Held {
         // Every chat starts where it moved before any run where it was ends, so one that does
         // not start leaves them all where they were (#3453).
         let mut started: Vec<(u32, u32)> = Vec::new();
+        // **A move takes each chat where its workspace now runs** (#4536): a start's one-off
+        // choice would put it back where it was, so it goes, and comes back if the move doesn't.
+        let chosen: Vec<(u32, Option<purlis_core::machine::StartChoice>)> = movers
+            .chats
+            .iter()
+            .map(|(member, _)| {
+                (
+                    member.session,
+                    self.chats().choose_runs_on(member.session, None),
+                )
+            })
+            .collect();
+        let chosen_back = || {
+            for (session, runs_on) in &chosen {
+                self.chats().choose_runs_on(*session, runs_on.clone());
+            }
+        };
         for (member, _) in &movers.chats {
             match self.chats().start_again_held(member.session, size) {
                 Ok(new) => started.push((member.session, new)),
                 Err(why) => {
+                    chosen_back();
                     for (was, new) in &started {
                         self.chats().let_go_of_start(*was, *new);
                     }
@@ -1095,6 +1113,7 @@ impl crate::planes::Held {
         // conversations moved would have it cut off (#3814). Every start is let go of, and every
         // chat runs where it was.
         if let Err(why) = still_at_a_pause(&one.group, at_a_pause) {
+            chosen_back();
             for (was, new) in &started {
                 self.chats().let_go_of_start(*was, *new);
             }

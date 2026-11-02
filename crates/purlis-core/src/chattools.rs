@@ -1535,7 +1535,9 @@ pub fn dispatch_long(args: &Map<String, Value>) -> Result<bool, String> {
 pub fn dispatch_runs_on(args: &Map<String, Value>) -> Result<(Option<String>, bool), String> {
     let pool = match args.get("pool") {
         None | Some(Value::Null) => None,
-        Some(Value::String(pool)) if pool.trim().is_empty() => None,
+        Some(Value::String(pool)) if pool.trim().is_empty() => {
+            return Err("`pool` is a pool's name: leave it out to follow the levels".to_owned());
+        }
         Some(Value::String(pool)) => Some(pool.trim().to_owned()),
         Some(_) => return Err("`pool` is a pool's name".to_owned()),
     };

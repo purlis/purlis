@@ -5,6 +5,6 @@
   this machine for that start only, without changing a setting. When the pool is gone, stopped
   or not reached, nothing starts: it says why and offers Try again, Pool setup, or Run on this
   machine this once (#4536).
-- **`purlis dispatch --pool <name>` and `--this-machine`** start a task where you name, before
-  its workspace's and its project's own. A chat on a pool's runner still waits for your Approve
-  for any dispatch, and the held ask says where the task would run (#4536).
+- **`purlis dispatch --pool <name>` and `--this-machine`** name where a task runs, before its
+  workspace's and its project's own. When a chat names a place other than its workspace's, the
+  task waits for your Approve, and the ask and any grant Notice say where it would run (#4536).

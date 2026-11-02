@@ -180,10 +180,15 @@ pub struct RunnerStage {
 }
 
 /// **Where the runner a chat in `workspace` of the project at `root` starts on has got to**
-/// (#3709): nothing where its chats run here, on a Docker pool, or on a runner not on its way.
-pub fn stage_of(root: &Path, workspace: Option<&str>) -> Result<Option<RunnerStage>, String> {
+/// (#3709), where its `start` chose where it runs or its levels say (#4536): nothing where it
+/// runs here, on a Docker pool, or on a runner not on its way.
+pub fn stage_of(
+    root: &Path,
+    workspace: Option<&str>,
+    start: Option<&purlis_core::machine::StartChoice>,
+) -> Result<Option<RunnerStage>, String> {
     let config = config_root()?;
-    let Some(pool) = purlis_core::pools::runs_on(&config, root, workspace)? else {
+    let Some(pool) = purlis_core::pools::chat_place(&config, root, workspace, start)?.pool else {
         return Ok(None);
     };
     let Ok(Some((cluster, kept))) = purlis_core::runners::cluster_runner_for(&config, &pool) else {
@@ -210,10 +215,12 @@ pub async fn runner_stage(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     workspace: Option<String>,
+    runs_on: Option<crate::RunsOnPick>,
 ) -> Result<Option<RunnerStage>, String> {
     let held = planes.held(&plane)?;
+    let start = runs_on.map(crate::RunsOnPick::choice).transpose()?;
     crate::off_the_window("reading where the runner has got to", move || {
-        stage_of(held.root(), workspace.as_deref())
+        stage_of(held.root(), workspace.as_deref(), start.as_ref())
     })
     .await
 }

@@ -105,26 +105,46 @@ fn in_a_docker_pool() {
         "the start's this machine, over the project"
     );
 
-    step("a start that chose the pool, in the workspace set to this machine, runs on its runner");
+    step("each chat runs where the order says, read from inside it");
     let bin = tempfile::tempdir().expect("a folder for the harness");
+    // Docker writes `/.dockerenv` in every container it runs, and the parity job's machine runs
+    // none of these chats in one but the runner's.
     let harness = stand_in::claude_code(
         bin.path(),
         "claude",
-        "#!/bin/sh\nprintf 'RUNS ON %s.' \"$(cat /etc/hostname)\"\nread line\n",
+        "#!/bin/sh\nif [ -e /.dockerenv ]; then printf 'RUNS IN A CONTAINER.'; \
+         else printf 'RUNS ON THE HOST.'; fi\nread line\n",
     );
     a_profile(&target, "work", &harness);
-    let chose_the_pool = Named {
-        workspace: Some(HERE.to_owned()),
-        runs_on: on_the_pool.clone(),
-        ..named("hello", false)
-    };
-    let id = window
-        .open_named(None, &chose_the_pool, Hearing::default(), &|_| {})
-        .expect("it starts on the pool it chose")
-        .number;
-    assert_eq!(window.pool_of(id).as_deref(), Some(pool.as_str()));
-    Pane::of(&window, id).shows_within("RUNS ON ", Duration::from_secs(120));
-    window.close(id).expect("it closes");
+    for (workspace, start, on_its_runner, said) in [
+        (FOLLOWS, None, true, "the project's pool"),
+        (HERE, None, false, "the workspace's this machine"),
+        (
+            HERE,
+            on_the_pool.clone(),
+            true,
+            "the start's pool, over the workspace",
+        ),
+    ] {
+        step(said);
+        let chat = Named {
+            workspace: Some(workspace.to_owned()),
+            runs_on: start,
+            ..named("hello", false)
+        };
+        let id = window
+            .open_named(None, &chat, Hearing::default(), &|_| {})
+            .unwrap_or_else(|why| panic!("{said}: it starts: {why}"))
+            .number;
+        let (pool_of, shows) = if on_its_runner {
+            (Some(pool.as_str()), "RUNS IN A CONTAINER.")
+        } else {
+            (None, "RUNS ON THE HOST.")
+        };
+        assert_eq!(window.pool_of(id).as_deref(), pool_of, "{said}");
+        Pane::of(&window, id).shows_within(shows, Duration::from_secs(120));
+        window.close(id).expect("it closes");
+    }
 
     step("a start that chose a pool that is gone starts nothing, here or there");
     let gone = Named {

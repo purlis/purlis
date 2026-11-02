@@ -86,3 +86,16 @@ describe("a runner chat's dispatch in its own tab", () => {
     expect(await screen.findByTestId("runner-dispatch-gone")).toHaveTextContent("waits no more");
   });
 });
+
+describe("a chat's dispatch that moves work, in its own tab", () => {
+  it("says it runs somewhere other than its workspace, and where", async () => {
+    core(whole({ pool: null, runs_on: "Pool builds, as the chat asks" }));
+    render(<RunnerDispatchTab plane={PLANE} id={2} />);
+    expect(
+      await screen.findByText(/asks to start a task that runs somewhere other than/),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("runner-dispatch-facts")).toHaveTextContent(
+      "Runs onPool builds, as the chat asks",
+    );
+  });
+});

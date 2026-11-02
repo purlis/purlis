@@ -1662,8 +1662,7 @@ export const commands = {
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
 	followProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	projectChatsRunOn: __WINDOW_ONLY_RESULT,
-	/**  **Where a new chat in `workspace` would run, and why**, for Start chat's Runs on row (#4536). */
-	startRunsOn: (plane: PlaneId, workspace: string | null) => typedError<StartRunsOn, string>(__TAURI_INVOKE("start_runs_on", { plane, workspace })),
+	startRunsOn: __WINDOW_ONLY_RESULT,
 	setProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	poolNamedBy: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
@@ -4589,6 +4588,12 @@ export type DispatchPending = {
 	 *  work off. The Notice says "hand off" for a handoff.
 	 */
 	mode: string,
+	/**
+	 *  **Where the dispatch asked its chat to run** (#4536, the person's ruling of 2026-11-02):
+	 *  `pool <name>` or `this machine`, read before any Allow. Null where it named none, and it
+	 *  runs where its workspace's levels say.
+	 */
+	runs_on: string | null,
 };
 
 /**  One dispatch, as the Dispatches tab draws its row. */
@@ -10435,8 +10440,11 @@ export type RunnerDispatchWhole = {
 	/**  The chat that asked, by its number and as its tab names it. */
 	session: number,
 	chat: string,
-	/**  The pool it runs on. */
-	pool: string,
+	/**
+	 *  The pool the asking chat runs on, where that is why it is held; null where it is held
+	 *  because it names a place to run other than its workspace's own (#4536).
+	 */
+	pool: string | null,
 	/**  The persona the new chat would run as, none for a chat on no persona. */
 	persona: string | null,
 	/**  Whether it hands the chat's work off, rather than asking for a task that reports back. */

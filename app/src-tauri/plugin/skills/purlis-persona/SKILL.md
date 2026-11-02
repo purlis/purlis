@@ -90,8 +90,8 @@ shows who exists.
 
   **Where the task runs** follows its workspace's Runs on, then its project's, then this
   machine. Name it only when the work needs it: `pool: <name>` (`--pool <name>`) or
-  `this_machine: true` (`--this-machine`). From a chat on a pool's runner, every dispatch waits
-  for the person's Approve.
+  `this_machine: true` (`--this-machine`). A place other than the workspace's own waits for the
+  person's Approve in the window, and so does every dispatch from a chat on a pool's runner.
 
   **Before you dispatch, check what is already open**: the roster purlis adds to each turn
   while this chat has open tasks, or `dispatch_list`. A task still at work is waited on

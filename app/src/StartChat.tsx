@@ -192,7 +192,7 @@ export function StartChat({
    *  because a second press was a second chat (GL-1). */
   starting?: boolean;
   /** Where the runner of this start has got to, asked while it waits (#3709). */
-  readStage?: () => Promise<RunnerStage | undefined>;
+  readStage?: (runsOn: RunsOnPick | null) => Promise<RunnerStage | undefined>;
   /**
    * The harness (a profile's `kind`) to start on, when something already knows which one is
    * wanted — a harness started by hand in a shell tab, opened as a chat instead (ADR 0062).
@@ -369,12 +369,15 @@ export function StartChat({
     };
   }, [starting]);
   const [stage, setStage] = useState<RunnerStage | undefined>();
+  /** Where the start in flight chose to run, which its stage line is read for. */
+  const [startedOn, setStartedOn] = useState<RunsOnPick | undefined>();
   useEffect(() => {
     if (!hostSlow || readStage === undefined) return;
     let left = false;
     let next: number | undefined;
     const ask = async () => {
-      const read = await readStage();
+      // Of the place this start chose (#4536), or the levels' where it chose none.
+      const read = await readStage(startedOn ?? null);
       if (left) return;
       setStage(read);
       // The next is asked after this one answers: a slow cluster is never asked twice at once.
@@ -386,7 +389,7 @@ export function StartChat({
       window.clearTimeout(next);
       setStage(undefined);
     };
-  }, [hostSlow, readStage]);
+  }, [hostSlow, readStage, startedOn]);
   // **Runs on, for this start alone** (#4536): the levels' answer until the person picks a pool
   // or this machine here. It never writes a setting, and is not remembered between chats. A chat
   // at the project's root runs here, so it is offered no choice.
@@ -404,6 +407,7 @@ export function StartChat({
   // goes with this press alone and leaves the row's choice as it was.
   const start = (thisOnce?: RunsOnPick) => {
     const pick = thisOnce ?? runsOnPick;
+    setStartedOn(pick);
     // Left out while the row follows the levels, so a start that chose nothing says nothing.
     const where: [] | [RunsOnPick] = pick === undefined ? [] : [pick];
     if (picked?.approval) {

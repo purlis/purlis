@@ -292,7 +292,7 @@ pub struct Task {
     /// the app's own record of the request's mode, so the Notice says "hand off" for a
     /// handoff. False, a task, for every request that is not a handoff.
     pub handoff: bool,
-    /// **Where the dispatch asked its chat to run** (#4536): `Pool <name>` or `This machine`,
+    /// **Where the dispatch asked its chat to run** (#4536): `pool <name>` or `this machine`,
     /// as the app read the request's one word. None where it named none.
     pub runs_on: Option<String>,
 }
@@ -1747,7 +1747,7 @@ pub struct DispatchPending {
     /// work off. The Notice says "hand off" for a handoff.
     pub mode: String,
     /// **Where the dispatch asked its chat to run** (#4536, the person's ruling of 2026-11-02):
-    /// `Pool <name>` or `This machine`, read before any Allow. Null where it named none, and it
+    /// `pool <name>` or `this machine`, read before any Allow. Null where it named none, and it
     /// runs where its workspace's levels say.
     pub runs_on: Option<String>,
 }

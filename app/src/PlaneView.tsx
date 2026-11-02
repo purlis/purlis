@@ -3640,7 +3640,10 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the picker's start is in flight: the ref is the guard, the state is the button. */
   const startingNow = useRef(false);
   const [starting, setStarting] = useState(false);
-  const readStage = useCallback(() => readRunnerStage(plane, ofWorkspace), [plane, ofWorkspace]);
+  const readStage = useCallback(
+    (runsOn: RunsOnPick | null) => readRunnerStage(plane, ofWorkspace, runsOn),
+    [plane, ofWorkspace],
+  );
   /** The person cancelled the start in flight: what it answers is said to nobody. */
   const startLeft = useRef(false);
   /** Which start is the dialog's: one the person cancelled may still be winding down. */

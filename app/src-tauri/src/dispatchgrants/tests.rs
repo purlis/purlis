@@ -258,7 +258,7 @@ fn the_notice_names_the_task_and_the_profile_its_chat_would_start_on() {
     );
     let moving = Pending {
         task: Task {
-            runs_on: Some("Pool builds".to_owned()),
+            runs_on: Some("pool builds".to_owned()),
             ..Task::default()
         },
         ..none
@@ -267,7 +267,7 @@ fn the_notice_names_the_task_and_the_profile_its_chat_would_start_on() {
         told(&PlaneId::for_tests(world.root()), world.root(), &moving)
             .runs_on
             .as_deref(),
-        Some("Pool builds")
+        Some("pool builds")
     );
 }
 

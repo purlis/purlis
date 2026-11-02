@@ -1338,5 +1338,9 @@ fn a_dispatch_names_where_it_runs_as_the_command_does() {
         Ok((None, true))
     );
     assert!(dispatch_runs_on(&args(json!({"pool": 3}))).is_err());
+    assert!(
+        dispatch_runs_on(&args(json!({"pool": "  "}))).is_err(),
+        "a blank name is no pool"
+    );
     assert!(dispatch_runs_on(&args(json!({"this_machine": "yes"}))).is_err());
 }
