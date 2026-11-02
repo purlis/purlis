@@ -4,6 +4,7 @@
 import type {
   ChatSkill,
   HarnessKind,
+  PluginOffShown,
   PersonaSkills,
   SkillHidden,
   SkillPinsRefused,
@@ -36,6 +37,9 @@ export type ListedSkill = {
   /** Why a router hid it from the chat in front, where that chat's set was read: `null` for one
    *  the chat lists. */
   hiddenInChat?: SkillHidden | null;
+  /** The plugin it comes with, where this chat does not have that plugin (#4477): its skills are
+   *  drawn as one run under Left out, and say why once. */
+  pluginOff?: PluginOffShown;
 };
 
 /** **The Skills view's groups** (spec #3679 S7), in their order, and the built-in skills' run
@@ -210,6 +214,10 @@ function keyOf(skill: StudioSkill, persona?: string, program?: string): string {
  * a repo's skill once however many programs find it.
  */
 export function listedOf(studio: Studio): ListedSkill[] {
+  const offOf = (harness: Studio["harnesses"][number], { owner }: StudioSkill) =>
+    owner?.kind === "plugin"
+      ? harness.plugins_off.find((one) => one.name === owner.name)
+      : undefined;
   const plane = studio.skills.map((skill): ListedSkill => ({ key: keyOf(skill), skill }));
   const seen = new Set<string>();
   const outside = studio.harnesses.flatMap((harness) =>
@@ -218,8 +226,17 @@ export function listedOf(studio: Studio): ListedSkill[] {
       const key = keyOf(skill, undefined, program);
       if (seen.has(key)) return [];
       seen.add(key);
+      const pluginOff = offOf(harness, skill);
       return [
-        program === undefined ? { key, skill } : { key, skill, program, harness: harness.harness },
+        program === undefined
+          ? { key, skill }
+          : {
+              key,
+              skill,
+              program,
+              harness: harness.harness,
+              ...(pluginOff === undefined ? {} : { pluginOff }),
+            },
       ];
     }),
   );
@@ -298,13 +315,27 @@ const PLANE_LEVELS: readonly string[] = ["built-in", "project", "workspace", "pe
 export function narrowedTo(
   rows: readonly ListedSkill[],
   set: readonly ChatSkill[],
-  chat: { persona: string | null; harness: HarnessKind | undefined; repos: readonly string[] },
+  chat: {
+    persona: string | null;
+    harness: HarnessKind | undefined;
+    repos: readonly string[];
+    /** The plugins on this machine the chat does not have, as its start read them (#4477). */
+    pluginsOff?: readonly PluginOffShown[];
+  },
 ): ListedSkill[] {
   const givenOf = (skill: { name: string; level: string }) =>
     set.find((one) => one.name === skill.name && one.level === skill.level);
   const kept = rows.flatMap((row): ListedSkill[] => {
     const { level, owner } = row.skill;
-    if (level === "installed") return row.harness === chat.harness ? [row] : [];
+    if (level === "installed") {
+      if (row.harness !== chat.harness) return [];
+      // A plugin's skills are by what this chat has, not by what a new chat here would have.
+      if (owner?.kind !== "plugin" || chat.pluginsOff === undefined) return [row];
+      const off = chat.pluginsOff.find((one) => one.name === owner.name);
+      return [
+        off === undefined ? { ...row, inChat: true } : { ...row, inChat: false, pluginOff: off },
+      ];
+    }
     if (level === "repo")
       return owner?.kind === "repo" && chat.repos.includes(owner.name) ? [row] : [];
     if (!PLANE_LEVELS.includes(level)) return [row];

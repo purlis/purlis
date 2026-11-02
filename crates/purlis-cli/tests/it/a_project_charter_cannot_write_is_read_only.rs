@@ -656,7 +656,7 @@ fn payloads(root: &Path, event: &str, matcher: Option<&str>) -> Vec<serde_json::
             );
             all
         }
-        (_, "Skill") => vec![tool("Skill", json!({"skill": "purlis:persona"}))],
+        (_, "Skill") => vec![tool("Skill", json!({"skill": "purlis:purlis-persona"}))],
         (_, "") if event.starts_with("PostToolUse") => vec![tool("Bash", json!({"command": "ls"}))],
         (_, name) if !name.is_empty() => {
             vec![tool(

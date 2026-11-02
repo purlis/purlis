@@ -19,6 +19,7 @@ mod filter;
 mod layers;
 mod notify;
 mod supervisor;
+mod terminal;
 mod walk;
 
 use std::ffi::OsString;

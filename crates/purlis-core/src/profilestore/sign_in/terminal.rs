@@ -18,6 +18,27 @@ const LOOK_EVERY: Duration = Duration::from_millis(100);
 /// How often a sign-in followed here asks whether what it was opened on still holds.
 const STILL_EVERY: Duration = Duration::from_secs(1);
 
+/// **A sign-in that failed, in a terminal's words**: one that ran out of its pool's limit names the
+/// value to raise it to and where (#4397), as the window's form does.
+fn failed_said(profile: &str, pool: &str, why: &str, longest: Duration) -> String {
+    if why != super::driven::TOOK_TOO_LONG {
+        return format!(
+            "'{profile}' did not sign in on pool {pool}: {why}. Run this again to try once more."
+        );
+    }
+    let limit = crate::poollimits::LimitId::SignInWait.limit();
+    let hit = limit.waited(longest.as_secs().div_ceil(60), None);
+    let said = hit.said();
+    // At the most it can be, its words already say what to do instead.
+    if hit.suggested.is_none() {
+        return format!("'{profile}' did not sign in on pool {pool}: {why}: {said}.");
+    }
+    format!(
+        "'{profile}' did not sign in on pool {pool}: {why}: {said}. Change it on the pool's page \
+         in Settings › Pools, then run this again."
+    )
+}
+
 /// What a terminal does for a sign-in it follows.
 pub trait Terminal {
     /// Says a line to the person.
@@ -111,10 +132,7 @@ pub fn follow_while(
                     ));
                 }
                 Event::Failed { why } => {
-                    return Err(format!(
-                        "'{profile}' did not sign in on pool {pool}: {why}. Run this again to \
-                         try once more."
-                    ));
+                    return Err(failed_said(profile, pool, &why, driving.longest()));
                 }
                 Event::Cancelled => {
                     return Err(format!(

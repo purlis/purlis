@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolLimitOffer } from "./bindings";
-import { RaiseLimit } from "./RaiseLimit";
+import { OfferToRaise, RaiseLimit } from "./RaiseLimit";
 
 const hit = {
   key: "profileFiles",
@@ -82,5 +82,81 @@ describe("raising a limit where it was hit", () => {
       />,
     );
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe("OfferToRaise (#4397)", () => {
+  const OFFER = {
+    pool: "builds",
+    hits: [
+      {
+        key: "answerWait",
+        plain: "Longest wait for a runner's answer",
+        unit: "seconds",
+        in_force: 30,
+        needed: 30,
+        suggested: 60,
+      },
+    ],
+  };
+  let saved: unknown[];
+  const theCore = (offered: typeof OFFER | null, refuseSave?: string) => {
+    saved = [];
+    mockIPC((cmd, args) => {
+      const asked = args as { pool: string; key: string; value: number; typed: string };
+      if (cmd === "pool_limit_offer_for_move") return offered;
+      if (cmd === "pool_limit_check") return Number(asked.typed);
+      if (cmd === "pool_limit_set") {
+        if (refuseSave !== undefined) throw refuseSave;
+        saved.push([asked.pool, asked.key, asked.value]);
+        return null;
+      }
+      if (cmd === "pool_limits") return { groups: [], advanced: [] };
+      return null;
+    });
+  };
+  afterEach(() => {
+    cleanup();
+    clearMocks();
+  });
+
+  it("draws nothing for a refusal that hit no limit", async () => {
+    theCore(null);
+    const { container } = render(
+      <OfferToRaise pool="builds" refused="no" action="Save" onRaised={() => undefined} />,
+    );
+    await waitFor(() => expect(container.textContent).toBe(""));
+  });
+
+  it("saves the offered value to the pool, then goes again", async () => {
+    theCore(OFFER);
+    let again = 0;
+    render(
+      <OfferToRaise
+        pool="builds"
+        refused="the runner did not answer in time"
+        action="Save to the pool and ask again"
+        onRaised={() => (again += 1)}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save to the pool and ask again" }));
+    await waitFor(() => expect(again).toBe(1));
+    expect(saved).toEqual([["builds", "answerWait", 60]]);
+  });
+
+  it("says why a save was refused, and does not go again", async () => {
+    theCore(OFFER, "the pool's file could not be written");
+    let again = 0;
+    render(
+      <OfferToRaise
+        pool="builds"
+        refused="the runner did not answer in time"
+        action="Save"
+        onRaised={() => (again += 1)}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("could not be written");
+    expect(again).toBe(0);
   });
 });

@@ -168,6 +168,56 @@ pub async fn cluster_contexts(kubeconfig: Option<String>) -> Result<ClusterConte
     .await
 }
 
+/// Where a chat's runner has got to, as the window waiting on it says it (#3709).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RunnerStage {
+    /// The stage, in the words the person reads.
+    pub said: String,
+    /// One line more about it.
+    pub more: String,
+    /// The cluster's own words for why it waits, where it gave them.
+    pub cluster_said: Option<String>,
+}
+
+/// **Where the runner a chat in `workspace` of the project at `root` starts on has got to**
+/// (#3709): nothing where its chats run here, on a Docker pool, or on a runner not on its way.
+pub fn stage_of(root: &Path, workspace: Option<&str>) -> Result<Option<RunnerStage>, String> {
+    let config = config_root()?;
+    let Some(pool) = purlis_core::pools::runs_on(&config, root, workspace)? else {
+        return Ok(None);
+    };
+    let Ok(Some((cluster, kept))) = purlis_core::runners::cluster_runner_for(&config, &pool) else {
+        return Ok(None);
+    };
+    // Held to a time: the window asks again after each answer.
+    let kubectl =
+        cluster.kubectl(&kubectl(&config)?.within(purlis_core::pools::VOUCHED_NOW_WITHIN));
+    let stage = kubectl.claim_stage(&kept.claimed.namespace, &kept.claimed.name);
+    Ok(stage.map(|stage| RunnerStage {
+        said: stage.said.to_owned(),
+        more: stage.more.to_owned(),
+        cluster_said: stage
+            .cluster_said
+            .map(|said| crate::devices::shown_safely(&said)),
+    }))
+}
+
+/// **Where the runner of a chat being started has got to** (#3709), read from the cluster, for the
+/// window's Start while it waits. Nothing where there is no stage to say.
+#[tauri::command]
+#[specta::specta]
+pub async fn runner_stage(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+) -> Result<Option<RunnerStage>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading where the runner has got to", move || {
+        stage_of(held.root(), workspace.as_deref())
+    })
+    .await
+}
+
 /// [`cluster_pool_key`], with `kubectl`.
 pub fn key_with(
     kubectl: &Kubectl,
@@ -280,17 +330,24 @@ pub fn add_on(
     let desktop =
         purlis_core::linkkey::desktop(config, &*purlis_core::linkkey::this_builds_keyring(config))?
             .pinned();
-    let started = std::time::Instant::now();
-    purlis_core::pools::add_cluster(config, kubectl, &pool, &desktop, within).map_err(|why| {
-        let said = crate::dockerpools::refused_said(&why.to_string());
-        // By this machine's own clock, never the cluster's words.
-        if started.elapsed() >= within {
-            ran_out_vouching(adding.name.trim(), within, &said)
-        } else {
-            said
-        }
-    })?;
+    purlis_core::pools::add_cluster(config, kubectl, &pool, &desktop, within)
+        .map_err(|why| add_refused(adding.name.trim(), within, &why))?;
     Ok(row(&pool))
+}
+
+/// What a refused add says: only one the wait itself ended offers to raise it (#4398), as this
+/// machine's own loop found it, never from the cluster's words.
+fn add_refused(
+    name: &str,
+    within: std::time::Duration,
+    why: &purlis_core::runners::Refused,
+) -> String {
+    let said = crate::dockerpools::refused_said(&why.to_string());
+    if matches!(why, purlis_core::runners::Refused::WaitRanOut(_)) {
+        ran_out_vouching(name, within, &said)
+    } else {
+        said
+    }
 }
 
 /// An add that ran out of the wait `within`, in words the window can ask of for what to raise it

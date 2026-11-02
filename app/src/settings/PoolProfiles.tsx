@@ -11,6 +11,7 @@ import {
   signProfileOutOfPool,
   usePools,
 } from "../pools";
+import { OfferToRaise } from "../RaiseLimit";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
 import { askProfileSignIn, askProfileSignOut } from "./links";
@@ -37,7 +38,7 @@ const STANDING_SAID: Record<SignInStanding, string> = {
 
 /** What a cluster pool on a fresh claim says of a sign-in there (#3819, spec #4023 Q6). */
 export const lastsOnlyForThisClaim = (pool: string) =>
-  `Pool ${pool}'s runner is on a fresh claim, which keeps nothing once it ends: a sign-in there lasts only for this claim.`;
+  `Pool ${pool}'s runner keeps nothing once it ends, so a sign-in there lasts only as long as the runner.`;
 
 /** What a profile's row on a pool says of it (#2049). */
 export function standingOnPool(pool: string, row: PoolProfileRow): string {
@@ -229,6 +230,16 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                     ? STANDING_SAID.failed
                     : standingOnPool(pool, row)}
             </span>
+            {/* Where a limit kept it off the runner, the form is here, and asks again (#4397). */}
+            {row.not_kept !== null && (
+              <OfferToRaise
+                key={row.not_kept}
+                pool={pool}
+                refused={row.not_kept}
+                action="Save to the pool and ask again"
+                onRaised={() => void askProfiles(pool, plane)}
+              />
+            )}
             {signing === row.name ? (
               <PoolSignIn
                 pool={pool}

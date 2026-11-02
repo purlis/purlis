@@ -1485,3 +1485,17 @@ describe("a strip of many tabs", () => {
     expect(theChip("steward 6").getAttribute("aria-label")).toBe("Tasks of steward 6: 1 working");
   });
 });
+
+describe("the menu a rest opened, the pointer gone from the window (#3095)", () => {
+  it("closes a moment after the pointer left the window with no leave on the chip (#3095)", async () => {
+    await drawn(withTasks());
+    pane(1).focus();
+    fakeClocks();
+    over(theChip("steward 1"));
+    pass(REST_MS);
+    expect(menu()).not.toBeNull();
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
+    pass(GRACE_MS);
+    expect(menu()).toBeNull();
+  });
+});

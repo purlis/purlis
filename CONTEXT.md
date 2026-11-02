@@ -532,6 +532,12 @@ timeout, quota or config.
 _Avoid_: node pool (that is the cluster's), fleet, cluster (for the pool), warm pool (that is one
 setting of it), runner provider (that is the code)
 
+**Agent identity**:
+What a chat acts as on a forge: a GitHub App's short-lived token, or a GitLab project or group
+token. It is never a person's forge account, whose sign-in reaches no chat (ADR 0077). One view tab,
+with one row per forge host, is where it is inspected and removed. Window text says Agent identity.
+_Avoid_: login, sign-in, bot account
+
 **Pool setup**:
 The one guided view tab that takes anyone from nothing to a working chat on a **Pool**: a list of
 steps on the left, each with its state (done, current, needs attention, skipped, waiting on
@@ -908,6 +914,24 @@ A task the person asked for themselves from that chat's tab is a task of that se
 nothing of it, and is told the person asked.
 _Avoid_: dispatcher, caller, parent (a parent run is a harness's child run's)
 
+**Task question**:
+Something a **task** needs answered to carry on. It goes to the task's **asking chat** first,
+which answers it or **passes it on**; with no asking chat to answer, it goes to the person. It is
+one kind of **ask**: a permission, a secret or a browser takeover is not a task question and
+stays the person's. An asking chat's answer is never the person's word (ADR 0107).
+_Avoid_: escalation, quiz (a quiz is how a question is drawn)
+
+**Passes on**:
+What an asking chat does with a **task question** only the person should answer: it reaches the
+person in the task's own words, with at most a short note marked as the asking chat's.
+_Avoid_: escalate, forward
+
+**Where you answer**:
+The person's one remembered setting for where a **task question** that has reached them appears:
+**from the top**, in the tab of the nearest chat above that has one, or **from each session**, in
+the task's own tab. It changes what is shown and never who is asked, and any task can still be
+opened and answered.
+
 **Persona chat**:
 The chat a dispatch starts, running as one persona for its whole life. It is told who asked,
 and it works under its own persona's charter and guards. One a task started is shown as a
@@ -1257,7 +1281,7 @@ _Avoid_: handoff, log, transcript
 
 **Smart close**:
 Closing a chat after it has written its session record: the app sends it one line naming
-purlis's `smart-close` skill (the operator's click is the consent, the exception to a curation
+purlis's `purlis-smart-close` skill (the operator's click is the consent, the exception to a curation
 action's never-sent prompt), and the tab closes when `purlis session record` tells the app the
 record is saved — never on anything the chat printed. Until then the chat is **wrapping up**:
 its tab says so, and the operator's Cancel smart close or their own typing stops it.
@@ -1265,9 +1289,9 @@ _Avoid_: save and close, archive
 
 **Smart-close pass**:
 What a person's own start of a smart close gives that chat: the tab's **Smart close**, or the
-person typing `/smart-close` into a waiting chat. It is bound to that chat and that close, ends
+person typing `/purlis-smart-close` into a waiting chat. It is bound to that chat and that close, ends
 with it, and is the only thing that lets a record close the tab. A chat can't give itself one: a
-typed `/smart-close` counts only beside the person's own Enter in the chat's pane (#1332).
+typed `/purlis-smart-close` counts only beside the person's own Enter in the chat's pane (#1332).
 _Avoid_: token, ticket (that is a handoff's), approval
 
 **Resume** (of a session record):
@@ -1613,7 +1637,8 @@ _Avoid_: sleep, hibernate, pause
 **Studio capability**:
 One of the six capabilities the Skill studio is built from: SkillSource, Grader, SkillLint,
 SkillTemplate, StudioPanel and SkillRouter. Each has a built-in first user. An extension that
-declares one is confined, and they are experimental until the studio's finish line (ADR 0101).
+declares one is confined. Grader, StudioPanel and SkillRouter are version 1 of the public extension
+API; the other three stay experimental until they are fully wired (ADR 0101).
 _Avoid_: studio extension point, skill capability
 
 **SkillSource**:
@@ -1898,12 +1923,12 @@ A fixture of a skill's that tests whether a harness picks the skill when it shou
 alone when it should not. A **grade** runs each one as real chats.
 
 **Outcome eval**:
-A fixture of a skill's that tests how well the skill does its job on a task. A **grade** counts
-them now, and grades them later (#3235).
+A fixture of a skill's that tests how well the skill does its job on a task. A **grade** runs one
+only where the person ticks it on the plan or names it at a terminal, and a judge chat grades it.
 
 **Grade** (of a skill):
-One run of a grading framework on a copy of a skill: its trigger tests (and, later, its outcome
-evals) run as real chats in each **arm**, scored and recorded in the **eval record** against the
+One run of a grading framework on a copy of a skill: its trigger tests, and any outcome evals
+ticked or named, run as real chats in each **arm**, scored and recorded in the **eval record** against the
 version the copy held. A grade shows what it runs and spends before it starts, and starts only on
 the person's press, or their yes at a terminal (ADR 0105).
 _Avoid_: test run, benchmark, eval (alone)

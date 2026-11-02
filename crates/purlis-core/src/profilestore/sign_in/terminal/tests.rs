@@ -221,6 +221,10 @@ fn a_code_is_not_passed_on_once_the_runner_is_no_longer_yours() {
     });
 
     assert_eq!(said, Err("the mark was taken back".to_owned()));
+    // Looked at once the login has ended, not while it is ending: a login whose input was closed
+    // under it read the end of it and went on to write this (#4388).
+    let ended = (0..100).any(|_| matches!(driving.next(LOOK_EVERY), Some(Event::Cancelled)));
+    assert!(ended, "the cancelled login ended");
     assert!(!got.exists(), "the code went nowhere");
 }
 
@@ -242,4 +246,33 @@ fn a_sign_in_waiting_on_no_code_ends_once_the_runner_is_no_longer_yours() {
     });
 
     assert_eq!(said, Err("the mark was taken back".to_owned()));
+}
+
+/// **A sign-in that ran out of its pool's limit says the value to raise it to** (#4397).
+#[test]
+fn a_sign_in_out_of_its_wait_names_double_it_and_where_to_change_it() {
+    let said = failed_said(
+        "work",
+        "builds",
+        crate::profilestore::sign_in::driven::TOOK_TOO_LONG,
+        Duration::from_secs(15 * 60),
+    );
+    assert!(said.contains("raise it to 30 minutes"), "{said}");
+    assert!(said.contains("Settings › Pools"), "{said}");
+    let other = failed_said(
+        "work",
+        "builds",
+        "the login failed",
+        Duration::from_secs(60),
+    );
+    assert!(!other.contains("raise it"), "{other}");
+    assert!(other.contains("Run this again"), "{other}");
+    let at_the_most = failed_said(
+        "work",
+        "builds",
+        crate::profilestore::sign_in::driven::TOOK_TOO_LONG,
+        Duration::from_secs(120 * 60),
+    );
+    assert!(at_the_most.contains("the most it can be"), "{at_the_most}");
+    assert!(!at_the_most.contains("Settings"), "{at_the_most}");
 }

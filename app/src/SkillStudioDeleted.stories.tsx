@@ -50,7 +50,7 @@ const DELETED: DeletedSkill[] = [
 ];
 
 const TEXT =
-  "---\nname: browser-old\ndescription: Drove a browser before the browser skill.\n---\n\n1. Open the page.\n2. Take a picture of it.\n";
+  "---\nname: browser-old\ndescription: Drove a browser before the purlis-browser skill.\n---\n\n1. Open the page.\n2. Take a picture of it.\n";
 
 /** The studio tab as a view tab draws it, `width` by 520 px, on Deleted at `item`. */
 function Tab({

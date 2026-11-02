@@ -11,19 +11,7 @@ yanked = "deny"
 # Transitive crates Tauri pulls in (unic-*, proc-macro-error) are reported upstream, not here.
 # Anything charter depends on directly still fails the check.
 unmaintained = "workspace"
-ignore = [
-  # Every zip 4.x release is yanked. tauri-plugin-updater, up to its newest 2.x, still asks
-  # for zip 4, and only on Windows, which purlis does not ship yet (docs/platforms.md). purlis's
-  # own zip reader (purlis-browser-engine) is on zip 9. This entry goes when the updater moves.
-  { crate = "zip@4.6.1", reason = "Windows-only dependency of tauri-plugin-updater, which still requires zip 4" },
-  # The same zip 4 also has three extraction advisories from 2026-10 (SUID bits kept, symlink
-  # targets outside the destination, permissions applied through symlinks), fixed only in zip 9.
-  # The updater compiles zip in on Windows alone, and it extracts only an update whose minisign
-  # signature it has already checked (ADR 0042). These go with the entry above (#2263).
-  { id = "RUSTSEC-2026-0367", reason = "zip 4 in tauri-plugin-updater: Windows-only, extracts signed updates only (#2263)" },
-  { id = "RUSTSEC-2026-0368", reason = "zip 4 in tauri-plugin-updater: Windows-only, extracts signed updates only (#2263)" },
-  { id = "RUSTSEC-2026-0369", reason = "zip 4 in tauri-plugin-updater: Windows-only, extracts signed updates only (#2263)" },
-]
+ignore = []
 
 [licenses]
 version = 2

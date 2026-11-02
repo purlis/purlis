@@ -36,7 +36,10 @@ const row = (
 const NEXT = "Applies from the next attempt.";
 
 /** Every group, with the ways a row can differ. */
-const LIMITS = (set: Readonly<Record<string, number>>): PoolLimitsPage => {
+const LIMITS = (
+  set: Readonly<Record<string, number>>,
+  waiting: readonly string[] = [],
+): PoolLimitsPage => {
   const held = (one: PoolLimitRow) => ({ ...one, set: set[one.key] ?? null });
   return {
     groups: [
@@ -77,6 +80,7 @@ const LIMITS = (set: Readonly<Record<string, number>>): PoolLimitsPage => {
     advanced: [
       row("answerWait", "Longest wait for a runner's answer", "s", 30, { applies: NEXT }),
     ].map(held),
+    waiting: [...waiting],
   };
 };
 
@@ -86,13 +90,15 @@ function theCore(
   unread?: string,
   refuseSave?: string,
   refusedInFile?: string,
+  waiting?: readonly string[],
+  refuseReplace?: string,
 ) {
   mockIPC((cmd, args) => {
     const asked = (args ?? {}) as { key: string; typed: string; value: number | null };
     if (cmd === "pool_limits") {
       if (unread === "never") return new Promise(() => undefined);
       if (unread !== undefined) throw unread;
-      const page = LIMITS(set);
+      const page = LIMITS(set, waiting);
       return refusedInFile === undefined
         ? page
         : {
@@ -105,6 +111,7 @@ function theCore(
             })),
           };
     }
+    if (cmd === "docker_pool_replace_runner" && refuseReplace !== undefined) throw refuseReplace;
     if (cmd === "pool_limit_check") {
       if (!/^\d+$/.test(asked.typed.trim())) throw "This limit is a whole number";
       if (Number(asked.typed) > 1024) throw "Most a profile may send: size is at most 1024 MiB";
@@ -129,6 +136,8 @@ const meta = {
       parameters.unread as string | undefined,
       parameters.refuseSave as string | undefined,
       parameters.refusedInFile as string | undefined,
+      parameters.waiting as readonly string[] | undefined,
+      parameters.refuseReplace as string | undefined,
     );
     // The window's limits are held once for every story drawn in this page.
     if (parameters.unread !== "never") await askLimits("builds");
@@ -280,5 +289,41 @@ export const CouldNotRead: Story = {
     const said = await canvas.findByRole("alert");
     await within(said).findByText(/could not be read/);
     await expect(canvas.getByRole("button", { name: "Read again" })).toBeVisible();
+  },
+};
+
+/** **A change waits for the runner to be replaced** (#4286): what changed, and Replace. */
+export const ChangeWaitingForReplacement: Story = {
+  parameters: { set: { memory: 8192 }, waiting: ["Memory"] },
+  play: async ({ canvas }) => {
+    await open(canvas);
+    await canvas.findByRole("button", { name: "Replace the runner…" });
+  },
+};
+
+/** **Replace asks first**, and says running chats carry on on the old runner (#4286). */
+export const ReplaceAsksFirst: Story = {
+  parameters: { set: { memory: 8192 }, waiting: ["Memory"] },
+  play: async ({ canvas, userEvent }) => {
+    await open(canvas);
+    await userEvent.click(await canvas.findByRole("button", { name: "Replace the runner…" }));
+    const dialog = await within(document.body).findByRole("alertdialog");
+    await expect(dialog.textContent).toContain("carry on on the old runner until they end");
+  },
+};
+
+/** **A refused Replace says why**, with the change still waiting (#4286). */
+export const ReplaceRefused: Story = {
+  parameters: {
+    set: { memory: 8192 },
+    waiting: ["Memory"],
+    refuseReplace: "Docker did not answer",
+  },
+  play: async ({ canvas, userEvent }) => {
+    await open(canvas);
+    await userEvent.click(await canvas.findByRole("button", { name: "Replace the runner…" }));
+    const dialog = await within(document.body).findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Replace the runner" }));
+    await canvas.findByText(/Docker did not answer/);
   },
 };

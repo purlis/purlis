@@ -526,6 +526,7 @@ export function RouterGradeRunningPage({
       })}
       onEnded={onEnded}
       onBack={onBack}
+      back="Back to the list"
     />
   );
 }

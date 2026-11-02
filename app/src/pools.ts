@@ -7,8 +7,11 @@ import {
   type ClusterContexts,
   type ClusterPoolAdding,
   type ClusterPoolKey,
+  type PlaneId,
+  type RunnerStage,
   type PoolAdding,
   type PoolLink,
+  type PoolLimitRow,
   type PoolLimitsPage,
   type PoolProfiles as PoolProfilesAnswered,
   type PoolRemoved,
@@ -200,6 +203,16 @@ export async function addPool(adding: PoolAdding): Promise<string | undefined> {
   return undefined;
 }
 
+/** Where the runner of a chat being started has got to (#3709): nothing to say where it could not
+ *  be read, since a start says what it says of any start. */
+export async function readRunnerStage(
+  plane: PlaneId,
+  workspace: string | undefined,
+): Promise<RunnerStage | undefined> {
+  const said = await caught(commands.runnerStage(plane, workspace ?? null));
+  return said.status === "ok" && said.data !== null ? said.data : undefined;
+}
+
 /** The contexts of the kubeconfig `kubeconfig` names (empty for kubectl's own default), or
  *  why they could not be read (#3292). */
 export async function readClusterContexts(
@@ -279,6 +292,23 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
 }
 
+/**
+ * **Replaces pool `name`'s runner** (#4286): new chats start on the new one, and chats running now
+ * carry on on the old one until they end. Why not, in the core's words.
+ */
+export async function replaceRunner(name: string, plane?: string): Promise<string | undefined> {
+  const said = await caught(commands.dockerPoolReplaceRunner(name));
+  if (said.status === "error") return said.error;
+  await Promise.all([
+    askLimits(name),
+    askLink(name),
+    askVersion(name),
+    askProfiles(name, plane),
+    rereadPools(),
+  ]);
+  return undefined;
+}
+
 /** The newest read of each pool's limits out: an answer to an older one is dropped. */
 const readingLimits = new Map<string, number>();
 
@@ -309,10 +339,29 @@ export function checkLimit(key: string, typed: string) {
   return caught(commands.poolLimitCheck(key, typed));
 }
 
+/** Limit `key` of pool `name` as it was just saved, in what is shown of the pool's limits. */
+function limitSaved(name: string, key: string, value: number | null) {
+  readingLimits.set(name, (readingLimits.get(name) ?? 0) + 1);
+  const saved = (one: PoolLimitRow) => (one.key === key ? { ...one, set: value } : one);
+  set((was) => {
+    const shown = was.limits[name];
+    if (shown === undefined || !("groups" in shown)) return was;
+    const limits = {
+      ...shown,
+      groups: shown.groups.map((group) => ({ ...group, limits: group.limits.map(saved) })),
+      advanced: shown.advanced.map(saved),
+    };
+    return { ...was, limits: { ...was.limits, [name]: limits } };
+  });
+}
+
 /**
  * **Saves `values` to pool `name`'s limits**, a `null` returning that one to purlis's default
  * (#4285), then reads them again, so an open page shows them. Why not, in the core's words: those
  * before it stay saved.
+ *
+ * **A row shows what was saved as soon as it is** (#4390): the read after it can fail or be
+ * overtaken, and a read still out from before the save is dropped, so neither shows the older value.
  */
 export async function saveLimits(
   name: string,
@@ -325,6 +374,7 @@ export async function saveLimits(
       refused = saved.error;
       break;
     }
+    limitSaved(name, key, value);
   }
   await askLimits(name);
   return refused;

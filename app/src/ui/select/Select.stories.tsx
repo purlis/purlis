@@ -334,7 +334,12 @@ export const Suggestions: Story = {
         <div style={{ inlineSize: "20rem" }}>
           <ComboBox
             label="Add a skill"
-            suggestions={["purlis:handoff", "purlis:persona", "deploy", "superpowers:tdd"]}
+            suggestions={[
+              "purlis:purlis-handoff",
+              "purlis:purlis-persona",
+              "deploy",
+              "superpowers:tdd",
+            ]}
             value={value}
             onChange={setValue}
             placeholder="Its name, as the Skill studio lists it"
@@ -359,7 +364,7 @@ export const Suggestions: Story = {
     await userEvent.keyboard("{ArrowDown}");
     await screen.findByRole("listbox");
     await userEvent.keyboard("{ArrowDown}{Enter}");
-    await waitFor(() => expect(box).toHaveValue("purlis:persona"));
+    await waitFor(() => expect(box).toHaveValue("purlis:purlis-persona"));
     await userEvent.keyboard("{Backspace>7/}");
     await waitFor(() => expect(screen.getByRole("listbox")).toBeVisible());
     expectFocusInSight();
@@ -373,8 +378,8 @@ export const UnavailableSuggestions: Story = {
     <div style={{ display: "grid", gap: "var(--space-4)", inlineSize: "20rem" }}>
       <ComboBox
         label="Add a skill"
-        suggestions={["purlis:handoff"]}
-        value="purlis:handoff"
+        suggestions={["purlis:purlis-handoff"]}
+        value="purlis:purlis-handoff"
         onChange={() => {}}
         isDisabled
       />
@@ -398,7 +403,7 @@ export const UnavailableSuggestions: Story = {
 export const RefusedSuggestions: Story = {
   render: () => {
     function Box() {
-      const SKILLS = ["purlis:handoff", "purlis:persona", "deploy"];
+      const SKILLS = ["purlis:purlis-handoff", "purlis:purlis-persona", "deploy"];
       const [value, setValue] = useState("no-such-skill");
       const refused = value !== "" && !SKILLS.includes(value);
       return (

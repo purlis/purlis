@@ -853,3 +853,11 @@ fn a_swap_that_fails_puts_back_every_move_it_made() {
     assert_eq!(std::fs::read(dest.join("agents/a.md")).unwrap(), b"was");
     assert_eq!(std::fs::read(new.join("settings.json")).unwrap(), b"new");
 }
+
+/// Codex loads its folder's `.env` into its own environment at every start, and no desktop sends
+/// one.
+#[test]
+fn a_codex_env_file_is_among_what_a_runners_keep_clears() {
+    let (_, codex) = harness_of("codex").expect("shipped");
+    assert!(codex.loaded_unsent.contains(&".env"));
+}

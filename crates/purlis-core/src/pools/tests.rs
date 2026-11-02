@@ -1103,6 +1103,182 @@ mod cluster {
         }
     }
 
+    /// `team` added under `config`, and a second runner the fake cluster answers as from now on.
+    fn added_and_a_second_runner(config: &Path, cluster: &FakeCluster) -> Pinned {
+        let claim = claim_name(OURS, "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config,
+            &cluster.kubectl(),
+            &team(cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let second = Pinned {
+            device: "01JB0RUNNER000000000000001".into(),
+            key: LinkKey::generate().unwrap().public(),
+        };
+        cluster.write("paired.txt", &crate::runnerlink::to_line(&second));
+        second
+    }
+
+    /// **A chat's fresh runner is its own** (#3709): nothing that asks for the pool's runner
+    /// finds it, the file names its chat, and it is asked for as a fresh claim.
+    #[test]
+    fn a_chats_fresh_runner_is_kept_beside_its_pools_own_and_found_by_the_chat_alone() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+
+        let kept = claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        assert_eq!(kept.pinned, second);
+        assert_eq!(kept.chat.as_deref(), Some("01CHAT"));
+        assert!(
+            kept.reached().starts_with("team/fresh-"),
+            "{}",
+            kept.reached()
+        );
+        let (_, pools_own) = runners::cluster_runner_for(config.path(), "team")
+            .unwrap()
+            .unwrap();
+        assert_eq!(pools_own.pinned, cluster.runner);
+        assert_eq!(
+            runners::fresh_runner_of(config.path(), "01CHAT")
+                .unwrap()
+                .map(|(_, one)| one),
+            Some(kept)
+        );
+        assert_eq!(file(config.path())["runners"][1]["chat"], "01CHAT");
+        // Read back whole, from the file, by a purlis that knows the key.
+        assert_eq!(runners::fresh_runners(config.path()).unwrap().len(), 1);
+    }
+
+    /// **A link to a chat's own runner is checked as one to its pool's is** (#3709): named whole, it
+    /// finds that runner, the pool's pin is what vouches for it, and no other pool's name does.
+    #[test]
+    fn a_fresh_runner_is_reached_by_its_own_name_and_no_other() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        let kept = claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        let name = kept.link_name();
+        let (_, found) = runners::cluster_runner_for(config.path(), &name)
+            .unwrap()
+            .unwrap();
+        assert_eq!(found, kept);
+        assert!(runners::cluster_runner_for(config.path(), "team/fresh-other").is_err());
+        assert_eq!(
+            runners::cluster_runner_for(config.path(), "other/fresh-x").unwrap(),
+            None
+        );
+        // A link made for the pool's own runner is not this one's, nor the other way round.
+        let (_, own) = runners::cluster_runner_for(config.path(), "team")
+            .unwrap()
+            .unwrap();
+        assert_ne!(own.reached(), kept.reached());
+    }
+
+    #[test]
+    fn a_fresh_runner_goes_with_its_chat_and_a_claim_left_keeps_its_record() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        let chat = "01CHAT";
+        claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            chat,
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        release_fresh(config.path(), &cluster.kubectl(), chat).unwrap();
+
+        assert!(deleted(&cluster));
+        assert_eq!(runners::fresh_runner_of(config.path(), chat).unwrap(), None);
+        assert!(
+            runners::cluster_runner_for(config.path(), "team")
+                .unwrap()
+                .is_some()
+        );
+        // A chat with none has nothing to release.
+        release_fresh(config.path(), &cluster.kubectl(), chat).unwrap();
+    }
+
+    #[test]
+    fn a_runner_answering_as_the_pools_own_is_not_kept_as_a_fresh_one() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let _ = added_and_a_second_runner(config.path(), &cluster);
+        cluster.write("paired.txt", &crate::runnerlink::to_line(&cluster.runner));
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", cluster.runner.key);
+
+        claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            &desktop(),
+            Duration::ZERO,
+        )
+        .expect_err("one runner is never two");
+
+        assert_eq!(runners::fresh_runners(config.path()).unwrap(), []);
+    }
+
+    #[test]
+    fn removing_a_pool_takes_its_chats_fresh_runners_with_it() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        remove_cluster(
+            config.path(),
+            Some(&cluster.kubectl()),
+            "team",
+            Some(OURS),
+            None,
+        )
+        .unwrap();
+
+        assert!(cluster.calls().contains(&claim));
+        assert_eq!(runners::fresh_runners(config.path()).unwrap(), []);
+    }
+
     #[test]
     fn a_cluster_pool_is_added_with_its_runner_claimed_vouched_for_and_paired() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
@@ -2931,4 +3107,176 @@ fn a_runner_made_again_is_named_for_its_pool() {
     let image = crate::dockerpool::Image::pinned(IMAGE_OF_FIRST).unwrap();
     let user = crate::dockerpool::User::new(10001, 10001).unwrap();
     assert!(Runner::new(&named, image, user, "/home/purlis").is_ok());
+}
+
+/// **A kept runner reads back as it was made** (#4286): every link checks its container against
+/// these, so a pool of its own limits must not read as the defaults.
+#[test]
+fn a_runner_of_a_pool_with_its_own_limits_reads_back_with_them() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let mut inspect = inspected();
+    inspect[0]["HostConfig"]["NanoCpus"] = 1_500_000_000_u64.into();
+    fake.set("inspect", &inspect.to_string());
+    let set = Set {
+        millicpus: Some(1500),
+        ..Set::default()
+    };
+    add(config.path(), &fake.docker(), &pool("first", set), &ours).unwrap();
+    let kept = runners::runner_for(config.path(), "first").unwrap();
+    assert_eq!(kept.made.runner.limits().millicpus(), 1500);
+    assert!(
+        runners::changes_waiting(config.path(), "first")
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// **A changed limit waits, and nothing moves until the runner is replaced** (#4286): the running
+/// runner stays checked as it was made, Replace leaves it draining with its chats, and new chats
+/// start on the new one.
+#[test]
+fn replacing_a_runner_holds_the_new_one_to_the_change_and_drains_the_old() {
+    use crate::poollimits::LimitId;
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = a_pool_added(config.path(), &fake, &ours);
+    let next = "first-0a1b2c3d";
+
+    // Nothing waits: Replace makes nothing.
+    assert!(
+        replace_as(config.path(), &fake.docker(), "first", next, &ours)
+            .unwrap()
+            .is_none()
+    );
+
+    runners::set_pool_limit(config.path(), "first", LimitId::Cpus, Some(1500)).unwrap();
+    assert_eq!(
+        runners::changes_waiting(config.path(), "first").unwrap(),
+        vec![LimitId::Cpus]
+    );
+    // The change alone leaves the running runner as it was made, so its links still pass.
+    let running = runners::runner_for(config.path(), "first").unwrap();
+    assert_eq!(running.made, old.made);
+    assert_eq!(running.made.runner.limits().millicpus(), 2000);
+    assert!(runners::draining(config.path()).unwrap().is_empty());
+
+    let answers = successor_answers();
+    makes(&fake, next, IMAGE_OF_FIRST, &answers);
+    let mut inspect: serde_json::Value = serde_json::from_str(&fake.file("inspect")).unwrap();
+    inspect[0]["HostConfig"]["NanoCpus"] = 1_500_000_000_u64.into();
+    fake.set("inspect", &inspect.to_string());
+    let kept = replace_as(config.path(), &fake.docker(), "first", next, &ours)
+        .unwrap()
+        .expect("a runner made beside the old one");
+
+    assert_eq!(kept.name(), next);
+    assert_eq!(kept.of.as_deref(), Some("first"));
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().name(),
+        next
+    );
+    let draining = runners::draining(config.path()).unwrap();
+    assert_eq!(draining.len(), 1);
+    assert_eq!(draining[0].made.runner.name(), old.made.runner.name());
+    // The old one still reads as it was made, so a link to its running chats still passes.
+    assert_eq!(draining[0].made.runner.limits().millicpus(), 2000);
+    assert!(
+        runners::changes_waiting(config.path(), "first")
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        fake.file("log").contains("--cpus 1.500"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// **A limit's checks hold across limits** (#4286): `/tmp` no larger than the memory it counts on.
+#[test]
+fn a_shape_change_is_refused_as_a_new_pool_would_be_and_a_reset_is_a_change_back() {
+    use crate::poollimits::LimitId;
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let refused =
+        runners::set_pool_limit(config.path(), "first", LimitId::Tmp, Some(8192)).unwrap_err();
+    assert!(
+        refused.to_string().contains("no larger than its memory"),
+        "{refused}"
+    );
+    assert!(
+        runners::changes_waiting(config.path(), "first")
+            .unwrap()
+            .is_empty()
+    );
+    // A reset is a change back: nothing waits.
+    runners::set_pool_limit(config.path(), "first", LimitId::Memory, Some(8192)).unwrap();
+    assert_eq!(
+        runners::changes_waiting(config.path(), "first").unwrap(),
+        vec![LimitId::Memory]
+    );
+    runners::set_pool_limit(config.path(), "first", LimitId::Memory, None).unwrap();
+    assert!(
+        runners::changes_waiting(config.path(), "first")
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_project_pool_this_machine_does_not_keep_starts_nothing_and_never_runs_here() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let plane = plane.path();
+    for workspace in ["ide", "web", "here"] {
+        let folder = plane.join("workspaces").join(workspace);
+        std::fs::create_dir_all(&folder).unwrap();
+    }
+    crate::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store
+            .set_project_chats_run_on(plane, Some("first"))
+            .unwrap();
+        store
+            .set_chats_run_on(plane, "web", Some("second"))
+            .unwrap();
+        store.set_chats_run_here(plane, "here").unwrap();
+    })
+    .unwrap();
+    let refused = runs_on(config.path(), plane, Some("ide")).unwrap_err();
+    assert!(
+        refused.starts_with("This project runs its chats on pool first"),
+        "{refused}"
+    );
+    assert_eq!(runs_on(config.path(), plane, Some("here")), Ok(None));
+    // A chat at the project's root moves no clone, so it stays here.
+    assert_eq!(runs_on(config.path(), plane, None), Ok(None));
+    assert_eq!(
+        workspaces_on_pools(config.path(), plane),
+        [
+            ("first".to_owned(), vec!["ide".to_owned()]),
+            ("second".to_owned(), vec!["web".to_owned()]),
+        ]
+        .into()
+    );
+    let chosen = crate::machine::StartChoice::Pool("gone".to_owned());
+    let refused = chat_place(config.path(), plane, Some("here"), Some(&chosen)).unwrap_err();
+    assert!(
+        refused.starts_with("This chat was to start on pool gone"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_start_on_a_pool_at_the_projects_root_is_refused_and_never_runs_here() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    let chosen = crate::machine::StartChoice::Pool("team".to_owned());
+    let refused = chat_place(config.path(), plane, None, Some(&chosen)).unwrap_err();
+    assert!(refused.contains("Start it in a workspace"), "{refused}");
 }

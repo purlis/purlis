@@ -45,7 +45,7 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
   "RaiseLimit.tsx": {
     grounds: ["surface.raised"],
     where:
-      "RaiseLimit: a limit's new value, on its own ground, in the Start a chat dialog and under a move's line",
+      "RaiseLimit: a limit's new value, on its own ground, in the Start a chat dialog, under a move's line, in Add a pool, a sign-in's strip and a profile's row on a pool",
   },
 };
 

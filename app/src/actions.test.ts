@@ -2454,8 +2454,9 @@ describe("the palette at fifty chats", () => {
     // since #2925: Your settings: Motion and contrast, and Your colours. 922 since #2921: Focus
     // mode and Keyboard shortcuts, one row each. 920 since #3467: no Plugins group at the Project
     // or the Workspace level. 921 since #2027: Open browsers. 922 since the person's ruling of
-    // 2026-10-30: Your settings: Pools is offered with or without a pool, as the group is.
-    expect(offers).toHaveLength(922);
+    // 2026-10-30: Your settings: Pools is offered with or without a pool, as the group is. 923
+    // since #4536: the project's Runs on.
+    expect(offers).toHaveLength(923);
   });
 
   /**

@@ -21,7 +21,7 @@ import {
   type StudioSkill,
 } from "./bindings";
 import { counted } from "./dispatches";
-import { NAME_RESERVED } from "./SkillCopy";
+import { NAME_RESERVED, isReservedName } from "./SkillCopy";
 import { GrantPicker } from "./SkillLevelPickers";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, levelKey, sameLevel } from "./skillChanges";
@@ -262,12 +262,11 @@ export function nameProblem(
   to: string,
   name: string,
   taken: readonly string[],
-  builtIns: readonly string[],
 ): string | undefined {
   if (to === "" || to === name) return undefined;
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(to))
     return "Use lowercase letters, digits and hyphens, with no hyphen at either end.";
-  if (builtIns.includes(to)) return NAME_RESERVED;
+  if (isReservedName(to)) return NAME_RESERVED;
   if (taken.includes(to)) return `There is already a skill named ${to} here.`;
   return undefined;
 }
@@ -278,7 +277,6 @@ export function RenameDialog({
   skill,
   level,
   taken,
-  builtIns,
   busy,
   refused,
   onEdit,
@@ -290,8 +288,6 @@ export function RenameDialog({
   level: SkillLevel;
   /** The names of the other skills at its level, which it can't take. */
   taken: readonly string[];
-  /** Every built-in skill's name, which no skill can take (S12). */
-  builtIns: readonly string[];
   busy: boolean;
   /** Why the core did not rename it, the last time it was asked. */
   refused?: string;
@@ -304,7 +300,7 @@ export function RenameDialog({
   const [to, setTo] = useState(name);
   const { users, refused: unread, again } = useUsers(plane, level, name);
   const wanted = to.trim();
-  const problem = nameProblem(wanted, name, taken, builtIns);
+  const problem = nameProblem(wanted, name, taken);
   const ready = !busy && wanted !== "" && wanted !== name && problem === undefined;
   return (
     <Dialog

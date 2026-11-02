@@ -4221,7 +4221,7 @@ fn keys_that_send_a_task_nothing_are_not_stepping_in_and_a_prompt_sent_is() {
     held.close_chat(asker).unwrap();
 }
 
-const SENT_AS: &str = "\x1b[200~Use purlis's smart-close skill to write this session's \
+const SENT_AS: &str = "\x1b[200~Use the purlis-smart-close skill to write this session's \
                            record and close the chat.\x1b[201~\r";
 
 #[cfg(unix)]

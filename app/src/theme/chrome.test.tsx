@@ -57,6 +57,7 @@ import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { AddDockerPoolHost } from "../AddDockerPool";
 import { startAddingAPool } from "../pools";
+import { ReplaceRunner } from "../settings/PoolLimits";
 import { RemovePool } from "../settings/pools";
 import { RemoveProfile } from "../settings/profiles";
 import { SpecimenDialog } from "../specimen/Specimen";
@@ -716,6 +717,9 @@ const DIALOGS: Opened[] = [
           skills={{
             on: true,
             known: true,
+            program: [],
+            plugins_off: [],
+            own: null,
             skills: [
               {
                 name: "review",
@@ -972,6 +976,12 @@ const DIALOGS: Opened[] = [
       render(<ForgeGitLabSignIn onSignedIn={nothing} onCancel={nothing} />);
       await screen.findByText(/Waiting for your browser/);
     },
+  },
+  {
+    name: "replacing a pool's runner",
+    file: "settings/PoolLimits.tsx",
+    open: async () =>
+      render(<ReplaceRunner pool="builds" onCancel={nothing} onReplace={nothing} />),
   },
   {
     name: "removing a Docker pool",
@@ -1329,7 +1339,6 @@ const DIALOGS: Opened[] = [
           skill={SKILL}
           level={{ at: "project", local: false }}
           taken={["review"]}
-          builtIns={["secrets"]}
           busy={false}
           refused="the project is opened read-only"
           onEdit={nothing}
@@ -1398,7 +1407,6 @@ const DIALOGS: Opened[] = [
           levels={[{ level: { at: "project", local: false }, label: "project" }]}
           start={{ at: "project", local: false }}
           takenAt={() => []}
-          builtIns={["secrets"]}
           busy={false}
           onEdit={nothing}
           onMake={nothing}

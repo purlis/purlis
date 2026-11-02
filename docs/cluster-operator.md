@@ -16,6 +16,9 @@ claimed (#2056, [below](#who-the-runner-is)). Each person's runners run in a nam
 operator makes for that person alone, within a quota (#2055,
 [below](#each-persons-namespace)).
 
+**New to this?** [Set up a pool on your cluster](cluster-pool-setup.md) walks through it step by
+step. This page is the reference behind it.
+
 ## What it needs
 
 - **Kubernetes 1.36 or later.** The operator's tests run on kind's Kubernetes 1.36.4.
@@ -359,7 +362,8 @@ spec:
   (below), and upstream's own reason otherwise. **While its runner starts**, `Ready` is `False`
   with its stage: `Scheduling` until a node takes the pod (with the scheduler's words when it
   cannot), `Pulling` while the node pulls the image (with the kubelet's words when it fails),
-  `Starting` after that. A reason upstream gives for a runner that will not be ready on its
+  `Starting` after that. The window's Start says each in plain words while a chat waits
+  (#3709), with the scheduler's or kubelet's own words where they say what is wrong. A reason upstream gives for a runner that will not be ready on its
   own, such as an error or an expired claim, is shown as upstream gives it.
   `kubectl get claims` shows it.
 - **A Claim names who makes it**, `requester`, exactly as the cluster signs them in

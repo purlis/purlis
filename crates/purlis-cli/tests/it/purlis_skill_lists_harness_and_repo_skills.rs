@@ -252,6 +252,16 @@ fn a_plugins_skill_is_listed_as_the_plugins_and_show_says_it_goes_only_with_its_
         .to_string(),
     )
     .unwrap();
+    std::fs::write(
+        config.join("plugins/known_marketplaces.json"),
+        r#"{"official":{}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        config.join("settings.json"),
+        r#"{"enabledPlugins":{"figma@official":true}}"#,
+    )
+    .unwrap();
 
     let list = project.run_with_config(&["skill", "list"]);
     let show = project.run_with_config(&["skill", "show", "figma:frame"]);
@@ -628,5 +638,34 @@ fn a_plane_copy_a_repo_hides_carries_its_clash_in_list_and_show_json() {
             .filter(|copy| copy["level"] == "repo")
             .all(|copy| copy.get("clashes").is_none()),
         "{doc}"
+    );
+}
+
+#[test]
+fn a_plugin_claude_code_has_turned_off_says_so_and_how_to_turn_it_on() {
+    let project = Project::new();
+    let config = project.at.join("claude-config");
+    let cache = project.at.join("cache/figma/2.2");
+    write_skill(&cache.join("skills"), "frame", "Frames.");
+    std::fs::create_dir_all(config.join("plugins")).unwrap();
+    std::fs::write(
+        config.join("plugins/installed_plugins.json"),
+        serde_json::json!({
+            "version": 2,
+            "plugins": { "figma@official": [{ "scope": "user", "installPath": cache }] }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let list = project.run_with_config(&["skill", "list"]);
+
+    assert!(list.status.success(), "{}", stderr(&list));
+    let text = stdout(&list);
+    let claude = section(&text, "Claude Code finds these itself, read only:");
+    assert_eq!(
+        row(&claude, "figma:frame"),
+        "figma:frame installed figma left out: Claude Code has the figma plugin turned off. \
+         Turn it on, then start a new chat."
     );
 }

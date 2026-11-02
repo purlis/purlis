@@ -1987,3 +1987,92 @@ describe("raising a limit a start was refused on (#4285)", () => {
     expect(press()).toBeNull();
   });
 });
+
+describe("a start waiting for its runner (#3709)", () => {
+  const stage = {
+    said: "Waiting for room in the cluster",
+    more: "This is taking a while.",
+    cluster_said: "0/4 nodes are available",
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("says the runner's stage, in place of the host's line, once it has waited", async () => {
+    vi.useFakeTimers();
+    const readStage = vi.fn(() => Promise.resolve(stage));
+    render(
+      <StartChat
+        options={options()}
+        starting
+        readStage={readStage}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(readStage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    const line = screen.getByTestId("start-chat-stage");
+    expect(line).toHaveTextContent("Waiting for room in the cluster");
+    expect(line).toHaveTextContent("0/4 nodes are available");
+    expect(screen.queryByTestId("start-chat-host")).toBeNull();
+  });
+
+  it("keeps the host's line where there is no stage to say", async () => {
+    vi.useFakeTimers();
+    render(
+      <StartChat
+        options={options()}
+        starting
+        readStage={() => Promise.resolve(undefined)}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(screen.getByTestId("start-chat-host")).toBeInTheDocument();
+  });
+
+  it("asks again only after the last answer came", async () => {
+    vi.useFakeTimers();
+    let answer: (said: undefined) => void = () => undefined;
+    const readStage = vi.fn(
+      () =>
+        new Promise<undefined>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    render(
+      <StartChat
+        options={options()}
+        starting
+        readStage={readStage}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9000);
+    });
+    expect(readStage).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      answer(undefined);
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(readStage).toHaveBeenCalledTimes(2);
+  });
+});

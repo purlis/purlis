@@ -98,6 +98,7 @@ import { PINNABLE } from "./skillsListing";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
+import { usePromptRoutingMoved } from "./promptRouting";
 import { useSkillEditInPlace } from "./SkillEditInPlace";
 
 /** A change in progress: New skill… (#3684), Rename, Move or Delete, each a dialog (S4, #3685),
@@ -319,6 +320,13 @@ export function SkillStudioTab({
   // Read once the studio has said it is on: a scope picked later reads its skills, not these.
   const [opened, setOpened] = useState(false);
   if (on && !opened) setOpened(true);
+  // The Routing page reads a chat's latest prompt from the studio's answer (#4445), which lists
+  // only this scope's chats, so a chat it does not list reads nothing. A read refused leaves no
+  // list, and listening does not stop for it.
+  usePromptRoutingMoved(plane, opened, (session) => {
+    if (studio === undefined || studio.router?.chats.some((one) => one.session === session))
+      setAsked((n) => n + 1);
+  });
   const draftsRead = useSkillDraftsRead(plane, changed + done);
   const drafts = draftsRead ?? [];
   // A start the Skills view asked this studio to open on (#3266): New skill…'s dialog (#3684).
@@ -1445,7 +1453,6 @@ export function SkillStudioTab({
           key={one.id}
           plane={plane}
           deleted={one}
-          builtIns={skills.filter((skill) => skill.level === "built-in").map((skill) => skill.name)}
           busy={busy}
           onBringBack={(it, under) => bringBack(it.id, under ?? null)}
         />
@@ -1640,7 +1647,6 @@ export function SkillStudioTab({
           takenAt={(level) =>
             skills.filter((one) => atLevel(one, scope, level)).map((one) => one.name)
           }
-          builtIns={builtInNames}
           busy={busy}
           refused={doing.refused}
           onEdit={editedInDialog}
@@ -1663,7 +1669,6 @@ export function SkillStudioTab({
           taken={skills
             .filter((one) => one !== doing.skill && atLevel(one, scope, doing.level))
             .map((one) => one.name)}
-          builtIns={builtInNames}
           busy={busy}
           refused={doing.refused}
           onEdit={editedInDialog}

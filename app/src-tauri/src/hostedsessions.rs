@@ -275,6 +275,20 @@ fn was_cancelled() -> bool {
 /// its terminal's close gives it (#2007).
 pub const ENDED_WITH_THE_HOST: &str = "Hangup";
 
+/// The signal a host said a program ended by. It is free text from the host, and
+/// [`ITS_RUNNER_WENT`] is the window's word alone, so a host saying it says something else.
+fn a_hosts_signal(signal: String) -> String {
+    if signal == ITS_RUNNER_WENT {
+        format!("{signal} (as its host said)")
+    } else {
+        signal
+    }
+}
+
+/// What is told of a chat that already ended with its host when its runner then goes for good
+/// (#4421): its program did not end again, and whoever hears this only learns the second part.
+pub const ITS_RUNNER_WENT: &str = "RunnerGone";
+
 /// What a view is written before the screen of its next epoch: a full reset, so a pane drawn
 /// from a fresh snapshot after its view fell behind starts from blank, as the snapshot assumes.
 const RESET: &str = "\x1bc";
@@ -354,6 +368,8 @@ pub struct Connection {
     /// The links each project root was held on until their runner began to drain (#4248): each
     /// still carries what was started over it, until its runner is kept no more.
     left_on_draining: Mutex<HashMap<PathBuf, Vec<Arc<HostLink>>>>,
+    /// Each project on this connection, heard from when one of its runners goes (#4421).
+    hear_of_gone_runners: Mutex<Vec<HearsOfGoneRunners>>,
     /// Held while a root's link is being opened, by the root: one root never gets two links,
     /// and nothing waits for another root's.
     opening: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
@@ -419,6 +435,24 @@ pub type Dial = Arc<
         + Sync,
 >;
 
+/// A chat whose program ended with its host.
+struct LostChat {
+    /// That host was a runner gone for good, then or since (#4350, #4421).
+    with_the_runner: bool,
+    /// The runner it ended on, as [`HostLink::reached_runner`] names it, where its host said.
+    on: Option<String>,
+}
+
+/// The chats of one project whose program ended with their host, by number.
+type LostChats = Arc<Mutex<HashMap<u32, LostChat>>>;
+
+/// What a connection tells a project's chats through when a runner goes (#4421). Weak: a project
+/// let go of hears no more, and its next launch reads its tasks from their records.
+struct HearsOfGoneRunners {
+    lost: std::sync::Weak<Mutex<HashMap<u32, LostChat>>>,
+    ended: std::sync::Weak<Mutex<Option<Ends>>>,
+}
+
 #[derive(Default)]
 enum Linked {
     #[default]
@@ -482,6 +516,56 @@ impl Connection {
         for link in self.links_of_pool(pool) {
             link.end_with_its_runner();
         }
+        let of_it = lock(&self.pools).get(pool).cloned();
+        if let Some(of_it) = of_it {
+            of_it.runner_went(&|_| true);
+        }
+    }
+
+    /// `lost` and `ended`, one project's, hear when a runner of this connection goes.
+    fn hears_of_gone_runners(&self, lost: &LostChats, ended: &Arc<Mutex<Option<Ends>>>) {
+        let mut hearing = lock(&self.hear_of_gone_runners);
+        hearing.retain(|one| one.lost.strong_count() > 0);
+        hearing.push(HearsOfGoneRunners {
+            lost: Arc::downgrade(lost),
+            ended: Arc::downgrade(ended),
+        });
+    }
+
+    /// **A runner went for good, and chats that ended earlier were on it** (#4421): `went` says
+    /// which, by the runner each ended on. Each is marked and told once. Nothing resumes it now.
+    fn runner_went(&self, went: &dyn Fn(Option<&str>) -> bool) {
+        let hearing: Vec<(LostChats, Arc<Mutex<Option<Ends>>>)> = lock(&self.hear_of_gone_runners)
+            .iter()
+            .filter_map(|one| Some((one.lost.upgrade()?, one.ended.upgrade()?)))
+            .collect();
+        for (lost, ended) in hearing {
+            let marked: Vec<u32> = lock(&lost)
+                .iter_mut()
+                .filter(|(_, chat)| !chat.with_the_runner && went(chat.on.as_deref()))
+                .map(|(id, chat)| {
+                    chat.with_the_runner = true;
+                    *id
+                })
+                .collect();
+            let tell = lock(&ended).clone();
+            if let Some(tell) = tell.filter(|_| !marked.is_empty()) {
+                // Off the caller's thread: each tell writes files and types into the asking chat.
+                let told = std::thread::Builder::new()
+                    .name("purlis-runner-went".into())
+                    .spawn(move || {
+                        for id in marked {
+                            tell(
+                                id,
+                                purlis_core::session::Exit::Signal(ITS_RUNNER_WENT.to_owned()),
+                            );
+                        }
+                    });
+                if let Err(why) = told {
+                    tracing::warn!("purlis: chats on a gone runner were not told: {why}");
+                }
+            }
+        }
     }
 
     /// **Each link to a runner kept no more ends** (#4168): made again in its place, or removed
@@ -527,6 +611,9 @@ impl Connection {
             for link in ended {
                 link.end_with_its_runner();
             }
+            of_it.runner_went(&|on| {
+                on.is_some_and(|runner| !kept.iter().any(|one| one.name() == runner))
+            });
         }
     }
 
@@ -1850,10 +1937,11 @@ impl HostLink {
         let SendHeld {
             most, within, late, ..
         } = held;
-        let started = std::time::Instant::now();
         let asked = ask(Arc::clone(&self.client), transfer);
         let file = file.map(Path::to_path_buf);
-        let sent = self.transfer(transfer, within, async move {
+        let graced = tokio::time::Instant::now() + within + ANSWER_WITHIN;
+        // Past `graced`, so this send's own clock says it ran out, not this bound.
+        let sent = self.transfer(transfer, within + ANSWER_WITHIN, async move {
             let writing = async move {
                 let mut stream = stream.await.map_err(|_| no_code_stream())?;
                 if let Some(file) = file {
@@ -1871,21 +1959,57 @@ impl HostLink {
             // The host's answer comes as soon as it refuses, stream or none: a refusal is
             // said at once, never after the bound on a transfer.
             tokio::pin!(asked, writing);
+            // This machine's own clock, started before the host's: `Ok(Err(_))` is this send's
+            // wait ending it, and nothing a runner says is. An answer before its time says
+            // itself (#4398). A send the host finishes within the same grace as any answer
+            // still counts.
+            let time_up = tokio::time::sleep(within);
+            tokio::pin!(time_up);
             tokio::select! {
+                biased;
                 answered = &mut asked => {
                     let answer = answered.map_err(code_refused)?;
                     writing.await?;
-                    Ok(answer)
+                    Ok(Ok(answer))
                 }
                 written = &mut writing => {
                     written?;
-                    asked.await.map_err(code_refused)
+                    match tokio::time::timeout_at(graced, &mut asked).await {
+                        Ok(answered) => answered.map(Ok).map_err(code_refused),
+                        Err(_) => Ok(Err(None)),
+                    }
+                }
+                () = &mut time_up => {
+                    // Its time is up, and only that is decided here. The stream stays open and
+                    // keeps writing until the grace ends: dropped now, the host could read the
+                    // reset as the end of what was sent. The host's own bound ends it first. A
+                    // refusal by then may be that bound, so it is said beside the limit.
+                    let last = async {
+                        tokio::select! {
+                            biased;
+                            answered = &mut asked => answered,
+                            _ = &mut writing => (&mut asked).await,
+                        }
+                    };
+                    match tokio::time::timeout_at(graced, last).await {
+                        Ok(Ok(answer)) => Ok(Ok(answer)),
+                        Ok(Err(why)) => Ok(Err(Some(code_refused(why)))),
+                        Err(_) => Ok(Err(None)),
+                    }
                 }
             }
         });
-        sent.map_err(|why| match late {
-            Some(hit) if started.elapsed() >= within => self.limit_said(hit),
-            _ => why,
+        let also = match sent? {
+            Ok(answer) => return Ok(answer),
+            Err(also) => also,
+        };
+        let said = late.map_or_else(
+            || "the host did not finish moving the code in time".to_owned(),
+            |hit| self.limit_said(hit),
+        );
+        Err(match also {
+            Some(also) => format!("{said}. The host also said: {also}"),
+            None => said,
         })
     }
 
@@ -2701,11 +2825,11 @@ pub struct HostedSessions {
     /// what the window's record keeps and what it tells the host went out before it held the
     /// project. It only rises.
     opened: Arc<AtomicU32>,
-    ended: Mutex<Option<Ends>>,
+    ended: Arc<Mutex<Option<Ends>>>,
     kill_switch: Arc<crate::killswitch::KillSwitch>,
     /// The chats whose program ended with their host, until each is started again or closed
     /// (#2007), each with whether that host was a runner gone for good (#4350).
-    lost: Arc<Mutex<HashMap<u32, bool>>>,
+    lost: LostChats,
     /// Each program the host still had for this project as the window held it, from before
     /// this window, that nothing has reattached yet, by its number (#2006).
     left: Arc<Mutex<HashMap<u32, HeldProgram>>>,
@@ -2765,6 +2889,8 @@ impl HostedSessions {
     /// The chats of the project at `root`, run in the host `connection` reaches.
     pub fn new(connection: Arc<Connection>, root: &Path) -> Self {
         let (running, reconnecting) = (Arc::default(), Arc::default());
+        let (lost, ended) = (LostChats::default(), Arc::default());
+        connection.hears_of_gone_runners(&lost, &ended);
         HostedSessions {
             connection,
             root: root.to_path_buf(),
@@ -2774,9 +2900,9 @@ impl HostedSessions {
             reconnects: reconnects_of(&running, &reconnecting),
             running,
             opened: Arc::default(),
-            ended: Mutex::new(None),
+            ended,
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
-            lost: Arc::default(),
+            lost,
             left: Arc::default(),
             keys_started: Mutex::default(),
             browsers_left: Arc::default(),
@@ -4182,7 +4308,9 @@ impl SessionHost for HostedSessions {
     }
 
     fn lost_with_its_runner(&self, id: u32) -> bool {
-        lock(&self.lost).get(&id).copied().unwrap_or(false)
+        lock(&self.lost)
+            .get(&id)
+            .is_some_and(|lost| lost.with_the_runner)
     }
 
     fn running(&self) -> Vec<u32> {
@@ -4608,6 +4736,7 @@ impl HostedSessions {
         let running = Arc::clone(&self.running);
         let lost = Arc::clone(&self.lost);
         let runner_gone = Arc::clone(&link.runner_gone);
+        let on = link.reached_runner().map(str::to_owned);
         let ended = program.to_owned();
         link.when_it_ends(
             program,
@@ -4624,11 +4753,17 @@ impl HostedSessions {
                 let exit = match ending {
                     Ending::Exited(Exit::Code(code)) => purlis_core::session::Exit::Code(code),
                     Ending::Exited(Exit::Signal(signal)) => {
-                        purlis_core::session::Exit::Signal(signal)
+                        purlis_core::session::Exit::Signal(a_hosts_signal(signal))
                     }
                     // Its terminal closed with its host, which hangs its program up.
                     Ending::WithTheHost => {
-                        lock(&lost).insert(id, runner_gone.load(Ordering::SeqCst));
+                        lock(&lost).insert(
+                            id,
+                            LostChat {
+                                with_the_runner: runner_gone.load(Ordering::SeqCst),
+                                on: on.clone(),
+                            },
+                        );
                         purlis_core::session::Exit::Signal(ENDED_WITH_THE_HOST.to_owned())
                     }
                 };
