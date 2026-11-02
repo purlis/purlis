@@ -204,7 +204,7 @@ fn a_password_key_on_another_site_is_said_and_its_own_site_is_not() {
             .said()
             .contains("https://old.example.test")
     );
-    let same = proposed(dir.path(), "https://old.example.test/other");
+    let same = proposed(dir.path(), "https://old.example.test/signin");
     assert!(same.warnings.is_empty(), "{same:?}");
 }
 
