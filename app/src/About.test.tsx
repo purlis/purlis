@@ -25,10 +25,15 @@ const thirdParty = vi.hoisted(() => ({
 }));
 vi.mock("virtual:purlis-third-party", () => ({ default: thirdParty }));
 
+// The slow-answer and stall log's seam (#4725 builds the log): no log here unless a test says.
+const slowLog = vi.hoisted(() => ({ entries: null as string[] | null }));
+vi.mock("./slowLog", () => ({ recentSlowLog: () => Promise.resolve(slowLog.entries) }));
+
 afterEach(() => {
   cleanup();
   clearMocks();
   Object.assign(thirdParty, { generated: true, packages: [], texts: [] });
+  slowLog.entries = null;
 });
 
 describe("About Charter", () => {
@@ -189,5 +194,133 @@ describe("About Charter", () => {
     } finally {
       window.removeEventListener(OPEN_LICENCES, take);
     }
+  });
+});
+
+/** A machine profile as `machine_profiles` answers one, its folders and sign-in words holding
+ *  what must never reach a report: a path in the person's home and a token. */
+function profile(kind: string, harness: string, installed: string | null, name = kind) {
+  return {
+    name,
+    kind,
+    harness,
+    origin: "made",
+    folder: `/Users/someone/.config/purlis/profiles/${name}`,
+    imported_at: 1,
+    imported_from: "/Users/someone/.claude",
+    signs_in: "through its own sign-in, token TOKEN-SECRETVALUE",
+    standing: "signed-in",
+    plans: [],
+    pinned: null,
+    installed,
+    offered: null,
+    sandbox_only: false,
+    commands_can_read_sign_in: "ANTHROPIC_API_KEY=TOKEN-SECRETVALUE",
+    icon: { kind: "monogram", letters: "C" },
+  };
+}
+
+/** The core as the About dialog asks it, for a dev build with two harnesses and some chats. */
+function aCore() {
+  mockIPC((cmd) => {
+    if (cmd === "about_charter")
+      return {
+        version: "1.60.0-dev.3",
+        build: { kind: "dev", of: "1.60.0" },
+        profile: "dev-release",
+        notes: null,
+      };
+    if (cmd === "machine_profiles")
+      return [
+        profile("claude", "Claude Code", "2.1.4"),
+        profile("claude", "Claude Code", "2.1.4", "work"),
+        profile("codex", "Codex", null),
+      ];
+    if (cmd === "diagnostics_here") return { os: "Darwin 27.2.0, aarch64", open: 12, hot: 4 };
+    throw new Error(`not asked here: ${cmd}`);
+  });
+}
+
+describe("Copy diagnostics (#4774)", () => {
+  it("copies a report with the version, the system, the harnesses and the chats, and says so", async () => {
+    const user = userEvent.setup();
+    aCore();
+    render(<AboutCharter />);
+    await user.click(screen.getByTestId("title-about"));
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByTestId("about-version");
+
+    await user.click(within(dialog).getByRole("button", { name: "Copy diagnostics" }));
+
+    await waitFor(() =>
+      expect(within(dialog).getByRole("status")).toHaveTextContent("Diagnostics copied."),
+    );
+    const report = await navigator.clipboard.readText();
+    expect(report.split("\n")).toEqual([
+      "purlis diagnostics",
+      "Version: 1.60.0-dev.3, a dev build of 1.60.0, dev-release profile",
+      "System: Darwin 27.2.0, aarch64",
+      "Harnesses: Claude Code 2.1.4, Codex (no version found)",
+      "Chats: 12 open, 4 hot",
+    ]);
+  });
+
+  it("ends with the slow-answer and stall log's recent entries where this build keeps one (#4725)", async () => {
+    slowLog.entries = [
+      '{"kind":"answer","command":"opened_chats","ms":1840}',
+      '{"kind":"stall","ms":412,"hot":9}',
+    ];
+    const user = userEvent.setup();
+    aCore();
+    render(<AboutCharter />);
+    await user.click(screen.getByTestId("title-about"));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Copy diagnostics" }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole("status")).toHaveTextContent("Diagnostics copied."),
+    );
+
+    const report = (await navigator.clipboard.readText()).split("\n");
+    expect(report.slice(5)).toEqual([
+      "Slow answers and stalls, most recent last:",
+      '  {"kind":"answer","command":"opened_chats","ms":1840}',
+      '  {"kind":"stall","ms":412,"hot":9}',
+    ]);
+  });
+
+  it("holds no folder, sign-in or token a harness profile carries", async () => {
+    const user = userEvent.setup();
+    aCore();
+    render(<AboutCharter />);
+    await user.click(screen.getByTestId("title-about"));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Copy diagnostics" }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole("status")).toHaveTextContent("Diagnostics copied."),
+    );
+
+    const report = await navigator.clipboard.readText();
+    expect(report).not.toMatch(/SECRETVALUE|API_KEY|\/Users\/|someone|sign-in/);
+  });
+
+  it("says what went wrong when the diagnostics could not be gathered, and copies nothing", async () => {
+    const user = userEvent.setup();
+    await navigator.clipboard.writeText("before");
+    mockIPC((cmd) => {
+      if (cmd === "about_charter") return new Promise(() => {});
+      if (cmd === "diagnostics_here") throw new Error("the registry is gone");
+      return [];
+    });
+    render(<AboutCharter />);
+    await user.click(screen.getByTestId("title-about"));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Copy diagnostics" }));
+
+    await waitFor(() =>
+      expect(within(dialog).getByRole("status")).toHaveTextContent(
+        /purlis could not gather the diagnostics: .*the registry is gone/,
+      ),
+    );
+    expect(await navigator.clipboard.readText()).toBe("before");
   });
 });

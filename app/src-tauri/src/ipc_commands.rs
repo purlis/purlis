@@ -669,6 +669,7 @@ macro_rules! app_commands {
                 tasksused::tasks_used,
                 pin::plane_pin,
                 about::about_charter,
+                diagnostics::diagnostics_here,
                 clipath::install_cli_on_path,
                 windowprefs::write_layout,
                 windowprefs::adopt_layout,

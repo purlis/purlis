@@ -2213,6 +2213,11 @@ export const commands = {
 	 *  holds no project for the first moments of every launch.
 	 */
 	aboutCharter: () => __TAURI_INVOKE<About>("about_charter"),
+	/**
+	 *  Copy diagnostics' answer: the system, and the open and hot chats of every project held.
+	 *  Read from memory only, so it costs nothing on the window's thread.
+	 */
+	diagnosticsHere: () => __TAURI_INVOKE<DiagnosticsHere>("diagnostics_here"),
 	installCliOnPath: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Keeps the window's layout, replacing what the file held.
@@ -4131,6 +4136,19 @@ export type DevicesShown = {
 	 *  row names its project.
 	 */
 	projects: number,
+};
+
+/**  What the report says about where purlis runs and how many chats it holds. */
+export type DiagnosticsHere = {
+	/**  The system, as [`purlis_core::adopt::system`] says it: `Darwin 27.2.0, aarch64`. */
+	os: string,
+	/**  The chats open in every project this app holds, a shell tab not among them. */
+	open: number,
+	/**
+	 *  The open chats whose run has a program (the glossary's **hot chat**): any not done or
+	 *  failed.
+	 */
+	hot: number,
 };
 
 /**  **The disk each pool's runners hold**, as the use table says it (#3493). */
