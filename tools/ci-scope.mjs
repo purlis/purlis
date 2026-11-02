@@ -191,6 +191,7 @@ export const RUST_READERS = [
   "src/theme/themeIds.test.ts",
   "src/theme/tint.test.ts",
   "src/ui/buildingSkill.test.ts",
+  "src/ui/field/fieldHelp.guard.test.ts",
   "src/ui/field/refusingFields.guard.test.ts",
   "src/ui/menu/submenuRows.guard.test.ts",
   "src/ui/notice/noticeCardFill.test.ts",
