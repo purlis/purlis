@@ -1466,6 +1466,8 @@ const Row = memo(function Row({
   /** Whether the pointer, and not the keyboard, was what the person used last. */
   pointedLast: () => boolean;
 }) {
+  /** Its question's words may give way at the row's end (#4564): the trail shrinks for them. */
+  const questioned = useQuestionStanding(session) !== undefined;
   // The keys of a row. Enter is the button's own press, which opens it. Space opens a task
   // beside its session, and Delete (Backspace on a Mac, `tabKeys.deletes`) asks to stop
   // a task: the catalogue's rows, which ask
@@ -1648,7 +1650,7 @@ const Row = memo(function Row({
             <span className="ui-row-lead">
               <ChatPersonaState persona={persona} {...state} changed={changed} />
             </span>
-            <span className="ui-row-trail">
+            <span className="ui-row-trail" data-gives-way={questioned || undefined}>
               {open === false && (
                 <>
                   {" "}
