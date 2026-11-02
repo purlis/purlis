@@ -683,6 +683,7 @@ fn a_skills_grade_is_read_by_its_id_in_its_plane_and_a_routers_is_not() {
         plane: plane.clone(),
         stop: Arc::new(AtomicBool::new(false)),
         after_edit: None,
+        draft: None,
         step,
     };
     let skill = SkillGradeStep {
@@ -699,6 +700,7 @@ fn a_skills_grade_is_read_by_its_id_in_its_plane_and_a_routers_is_not() {
         asked: 0,
         ended: None,
         said: None,
+        draft: None,
     };
     let router = crate::routergrade::RouterGradeStep {
         plane: plane.clone(),

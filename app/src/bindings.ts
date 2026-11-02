@@ -2263,6 +2263,11 @@ export const commands = {
 	 *  recorded.
 	 */
 	said: string | null,
+	/**
+	 *  **The draft it grades, by its id** (#2780): a step of this one moves nothing on the
+	 *  skill's Grades tab.
+	 */
+	draft: string | null,
 } | null, string>(__TAURI_INVOKE("skill_grade_running", { plane, grade })),
 	/**
 	 *  **Sets the token cap a grade in the project is held to**, on this machine (#2779; the

@@ -26,8 +26,6 @@ fn draft_grade_running(
         grade.to_owned(),
         Running {
             plane: plane.clone(),
-            skill: skill.to_owned(),
-            level: Some(level.clone()),
             stop: Arc::clone(&stop),
             after_edit: None,
             draft: draft.map(str::to_owned),
