@@ -446,16 +446,8 @@ export const commands = {
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
 	/**  The fresh runners of `plane` kept now: what the window's Notice starts from. */
 	freshRunnersKept: (plane: PlaneId) => typedError<FreshKept[], string>(__TAURI_INVOKE("fresh_runners_kept", { plane })),
-	/**
-	 *  **Fetch again**: the kept runner of chat `chat` is asked again for its work, off the window,
-	 *  and goes once all of it is here. The Notice hears how it came out on [`EVENT`].
-	 */
-	fetchFreshRunnerAgain: (plane: PlaneId, chat: string) => typedError<null, string>(__TAURI_INVOKE("fetch_fresh_runner_again", { plane, chat })),
-	/**
-	 *  **Discard**: the person lets the kept runner of chat `chat` go with what it holds that is not
-	 *  here. The Notice hears it went on [`EVENT`].
-	 */
-	discardFreshRunner: (plane: PlaneId, chat: string) => typedError<null, string>(__TAURI_INVOKE("discard_fresh_runner", { plane, chat })),
+	fetchFreshRunnerAgain: __WINDOW_ONLY_RESULT,
+	discardFreshRunner: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **Each runner of `plane`'s chats, for the away summary** (#2051): of `sessions`, the chats
 	 *  that run on each pool's runner, and the branches each runner has, as this machine last

@@ -653,10 +653,9 @@ pub(crate) fn programs_ended(
         }
         if std::time::Instant::now() >= until {
             return Err(format!(
-                "{running} program{} of this project still run{} on the runner, and may yet \
-                 commit",
-                if running == 1 { "" } else { "s" },
-                if running == 1 { "s" } else { "" },
+                "{} of this project {} on the runner, and could still commit",
+                purlis_core::counts::counted(running, "program", "programs"),
+                purlis_core::counts::plural(running, "still runs", "still run"),
             ));
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
