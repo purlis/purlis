@@ -28,9 +28,16 @@ file input. Only files you may read are taken, and no link out of the folder is 
 
 ## Credentials: never typed, never printed
 
-**In a chat purlis started, log in with your persona's browser login, through purlis's own
-browser tools.** A project declares a login once, in its committed settings, and the user allows
-it on their machine with the persona's hosts:
+**In a chat purlis started, log in with `browser_login`, and call it first.** Don't ask for the
+vault or list its keys beforehand: that raises a second notice. If your persona has no login for
+the site, call `browser_login` with a short new `login` name, `site` (the login page's https
+address), `vault` and `key`, plus `user_key` if the page asks for a user name. The person sees one
+notice and confirms the site, which they may change. Your call waits for their answer; on Allow it
+goes on to log in. Fill in only what you know, never guess a key name, and if they keep it blocked,
+tell them what needs the login and don't suggest it again.
+
+A project may also declare a login once, in its committed settings, and the user allows it on
+their machine with the persona's hosts:
 
 ```toml
 [sandbox.personas.qa]
@@ -40,11 +47,11 @@ tools = { shop-login = { vault = "qa", browser = "https://shop.example.test/logi
 
 Then call the `browser_login` tool with `login = "shop-login"` (and `browser` to pick one of
 your browsers). purlis goes to the declared page in your browser, fills the login from the vault
-only while the page is on the declared origin, submits, waits for the password field to go, and
+only while the page is on the login's origin, submits, waits for the password field to go, and
 hands the browser back logged in. You never see the login: it is kept out of every snapshot and
 screenshot, and the fields purlis filled are blanked. From then on that browser reaches the
-login's site alone; call `browser_new` for any other site. You choose which declared login, and
-nothing else. If the login is refused, tell the user the sentence: it names what to declare or
+login's site alone; call `browser_new` for any other site. A login the person allowed from its
+notice opens in a browser of its own, so log in before you work in the site. If the login is refused, tell the user the sentence: it names what to declare or
 allow. A page with a captcha or a second factor, or one that first sends the browser to a
 sign-in page on another site, does not log in this way; ask the user, or hand them the browser
 with `ask_operator` pointed at it.

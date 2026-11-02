@@ -112,6 +112,7 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
   "proposed-change",
   "runner-write",
   "runner-dispatch",
+  "browser-login",
 ]);
 
 /**

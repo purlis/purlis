@@ -1564,6 +1564,7 @@ fn a_login(chat: u32, call_id: &str) -> Ask {
         call_id,
         Browsing::LogIn {
             login: "shop-login".into(),
+            suggested: None,
         },
     )
 }
@@ -1664,8 +1665,16 @@ fn one_chat_cannot_crowd_out_anothers_logins_that_wait() {
     let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let (window, holding) = a_window();
     let host = now_and_then(&window, &holding, &here);
-    let login =
-        |chat: u32, name: &str| a_browse(chat, "c-1", Browsing::LogIn { login: name.into() });
+    let login = |chat: u32, name: &str| {
+        a_browse(
+            chat,
+            "c-1",
+            Browsing::LogIn {
+                login: name.into(),
+                suggested: None,
+            },
+        )
+    };
 
     for n in 0..MOST_WAITING_FOR_A_CHAT {
         let _ = (host.answer)(40, login(3, &format!("login-{n}")));

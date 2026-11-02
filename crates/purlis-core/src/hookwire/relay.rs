@@ -681,7 +681,7 @@ impl Relaying {
     /// (#2050): a login waits for the window, and is said to; any other is answered as a line
     /// nobody heard.
     fn wait_for_the_window(&self, connection: u64, browse: BrowseAsk) -> Answer {
-        let Browsing::LogIn { login } = &browse.asked else {
+        let Browsing::LogIn { login, .. } = &browse.asked else {
             return nobody();
         };
         let login = login.clone();
@@ -768,7 +768,7 @@ impl Relaying {
             if !self.still_there(one.browse.chat) {
                 continue;
             }
-            let Browsing::LogIn { login } = &one.browse.asked else {
+            let Browsing::LogIn { login, .. } = &one.browse.asked else {
                 continue;
             };
             if one.since.elapsed() > A_HANDED_LINE_WAITS_AT_MOST {
@@ -793,7 +793,7 @@ impl Relaying {
             mut browse,
             since,
         } = one;
-        let Browsing::LogIn { login } = browse.asked.clone() else {
+        let Browsing::LogIn { login, .. } = browse.asked.clone() else {
             return;
         };
         browse.waited = true;

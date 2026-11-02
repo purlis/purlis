@@ -143,6 +143,7 @@ mod lineartime;
 pub mod linkkey;
 pub mod livesub;
 pub mod localproject;
+pub mod loginask;
 pub mod machine;
 pub mod manifest;
 pub mod mdsection;
