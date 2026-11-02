@@ -768,13 +768,17 @@ pub fn remove_held(
     let kept = runners::named(config_root, name)?
         .filter(|kept| kept.draining)
         .ok_or_else(|| Refused::Other(format!("no runner {name} is draining on this machine")))?;
-    let ran = docker
-        .ran(&kept.made)
-        .map_err(|why| Refused::Other(why.0))?;
-    if drain_look(&kept, ran) != DrainLook::Held {
-        return Err(Refused::Other(format!(
-            "runner {name} is not held, so it goes once no chat is left on it"
-        )));
+    // One already held may have lost its container to a prune, and its home is still the person's
+    // to remove.
+    if !kept.held {
+        let ran = docker
+            .ran(&kept.made)
+            .map_err(|why| Refused::Other(why.0))?;
+        if drain_look(&kept, ran) != DrainLook::Held {
+            return Err(Refused::Other(format!(
+                "runner {name} is not held, so it goes once no chat is left on it"
+            )));
+        }
     }
     drain_locked(config_root, docker, name, unpair, &locked)
 }

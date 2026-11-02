@@ -374,6 +374,15 @@ pub fn follow_and_drain(
         }
     }
     for kept in purlis_core::runners::draining(&machine.config).unwrap_or_default() {
+        // A held runner is the person's now, what a Docker prune left of it too. Told once.
+        if kept.held {
+            lock_waiting().remove(&(
+                machine.config.clone(),
+                kept.pool().to_owned(),
+                kept.name().to_owned(),
+            ));
+            continue;
+        }
         // Its drain began and only its home is left, so nothing is left to ask: only its removal
         // is tried again (#4298). Its home listed here says this is its engine: with no engine
         // kept, a Docker reaching another one lists no such volume, and the row stays (#4149).
@@ -391,15 +400,6 @@ pub fn follow_and_drain(
             said.push(said_of_a_drain(
                 kept.name(),
                 purlis_core::pools::drain(&machine.config, &machine.docker, kept.name(), None),
-            ));
-            continue;
-        }
-        // A held runner is the person's now, what a Docker prune left of it too. Told once.
-        if kept.held {
-            lock_waiting().remove(&(
-                machine.config.clone(),
-                kept.pool().to_owned(),
-                kept.name().to_owned(),
             ));
             continue;
         }

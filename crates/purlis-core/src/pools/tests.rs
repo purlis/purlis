@@ -728,6 +728,48 @@ fn a_look_never_removes_a_held_runner() {
     assert!(remove_held(config.path(), &fake.docker(), "first", None).is_ok());
 }
 
+/// **Replace holds the runner it finds stopped, as it was before anything was made**: read then, the
+/// answers after it are of the new runner.
+#[test]
+fn replacing_a_stopped_runner_holds_it() {
+    use crate::poollimits::LimitId;
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    runners::set_pool_limit(config.path(), "first", LimitId::Cpus, Some(1500)).unwrap();
+    let next = "first-0a1b2c3d";
+    makes(&fake, next, IMAGE_OF_FIRST, &successor_answers());
+    let mut inspect: serde_json::Value = serde_json::from_str(&fake.file("inspect")).unwrap();
+    inspect[0]["HostConfig"]["NanoCpus"] = 1_500_000_000_u64.into();
+    fake.set("inspect", &inspect.to_string());
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    stopped[0]["State"]["FinishedAt"] = "2026-11-01T00:00:00Z".into();
+    fake.set("inspect-once", &stopped.to_string());
+
+    replace_as(config.path(), &fake.docker(), "first", next, &ours)
+        .unwrap()
+        .unwrap();
+
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.draining && kept.held, "{kept:?}");
+    assert_eq!(kept.last_stop, Some(1_793_491_200));
+}
+
+/// A held runner whose container a prune took is still the person's to remove: what is left is
+/// its home.
+#[test]
+fn a_held_runner_with_no_container_left_can_be_removed() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    hold(config.path(), "first").unwrap();
+    fake.set("inspect", "no such container");
+
+    assert!(remove_held(config.path(), &fake.docker(), "first", None).is_ok());
+}
+
 /// **The person removes a held runner, and only a held one**: its home goes as a drain's does.
 #[test]
 fn a_held_runner_is_removed_by_the_person_and_any_other_is_refused() {
