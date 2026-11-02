@@ -10,7 +10,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use super::{browser_judged, id, ref_of, snapshot};
+use super::{
+    MOVED, browser_judged, frame_address, frame_attaches, frame_moves, id, ref_of, snapshot,
+    wait_for,
+};
 use crate::WebAddress;
 use crate::drive::{Call, Driver, Field, Gate, Judge, Outbound, Why};
 
@@ -389,6 +392,171 @@ fn typing_into_a_frame_of_a_site_the_judge_asks_about_types_nothing() {
     );
 }
 
+/// Types into the payment frame's button, as a fresh snapshot of the page deals it.
+fn typed_into_the_frame(
+    browser: &crate::drive::Browser,
+) -> Result<crate::drive::Answer, crate::drive::Refusal> {
+    let text = snapshot(browser, 50);
+    let pay = ref_of(&text, "- button \"Pay now\"");
+    browser.call(
+        &id(51),
+        Call::Type {
+            page: None,
+            fields: vec![Field {
+                into: Some(pay),
+                text: "4111".into(),
+                replace: false,
+            }],
+        },
+    )
+}
+
+#[test]
+fn a_frame_goes_by_the_address_it_attached_at_while_its_tree_is_not_answered() {
+    let (judge, told) = judge(&["http://third.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    let third = "http://third.test/pay.html";
+    frame_moves(&engine, third, third, Duration::from_secs(3));
+    let answer = typed_into_the_frame(&browser).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert!(engine.sent("Input.insertText").is_empty());
+    assert_eq!(whys(&told).last().unwrap().0, third);
+}
+
+#[test]
+fn a_frame_that_attached_at_no_address_takes_nothing_until_its_tree_is_read() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    frame_moves(
+        &engine,
+        "",
+        "http://third.test/pay.html",
+        Duration::from_secs(3),
+    );
+    let refused = typed_into_the_frame(&browser).unwrap_err();
+    assert!(
+        refused.to_string().contains("nothing was sent"),
+        "{refused}"
+    );
+    assert!(engine.sent("Input.insertText").is_empty());
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+}
+
+#[test]
+fn a_frame_whose_tree_fails_stays_not_known_and_stands_on_no_ancestor() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    engine.on(|sent, _| {
+        (sent.method == "Page.getFrameTree" && sent.session.as_deref() == Some(MOVED))
+            .then_some(Err(crate::cdp::CallError::TimedOut))
+    });
+    frame_attaches(&engine, "");
+    let state = super::super::lock(&browser.inner.state);
+    assert_eq!(state.documents_of("PAGE-1", "PAYMENT-FRAME"), None);
+    assert_eq!(state.every_document("PAGE-1"), None);
+}
+
+#[test]
+fn a_blank_frame_inside_a_frame_not_known_is_not_known_either() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    frame_moves(
+        &engine,
+        "",
+        "http://third.test/pay.html",
+        Duration::from_secs(3),
+    );
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": "INSIDE", "parentId": "PAYMENT-FRAME", "url": "about:blank"}}),
+        Some("S-PAYMENT-FRAME"),
+    );
+    wait_for("the frame inside is seen", || {
+        super::super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .is_some_and(|page| page.frames.contains_key("INSIDE"))
+    });
+    let state = super::super::lock(&browser.inner.state);
+    assert_eq!(state.documents_of("PAGE-1", "INSIDE"), None);
+}
+
+#[test]
+fn a_browser_with_no_judge_has_nothing_to_hold_back_for_a_frame_not_known() {
+    let (browser, engine) = super::browser();
+    frame_moves(
+        &engine,
+        "",
+        "http://third.test/pay.html",
+        Duration::from_secs(3),
+    );
+    assert_ne!(
+        typed_into_the_frame(&browser).err(),
+        Some(crate::drive::Refusal::FrameUnread)
+    );
+}
+
+#[test]
+fn a_frames_address_follows_the_engines_word_of_its_target() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    let third = "http://third.test/pay.html";
+    frame_moves(&engine, third, third, Duration::from_millis(1));
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":"http://fourth.test/","attached":true}}),
+        None,
+    );
+    wait_for("the frame's address is told", || {
+        frame_address(&browser, "PAYMENT-FRAME") == "http://fourth.test/"
+    });
+}
+
+#[test]
+fn a_tree_read_before_a_navigation_does_not_put_the_frame_back() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    let before = "http://third.test/before.html";
+    frame_moves(&engine, before, before, Duration::from_millis(300));
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": "PAYMENT-FRAME", "parentId": "PAGE-1", "name": "payment", "url": "http://third.test/after.html"}}),
+        Some("S-PAYMENT-FRAME"),
+    );
+    wait_for("the navigation is seen", || {
+        frame_address(&browser, "PAYMENT-FRAME") == "http://third.test/after.html"
+    });
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(
+        frame_address(&browser, "PAYMENT-FRAME"),
+        "http://third.test/after.html"
+    );
+}
+
+#[test]
+fn a_frames_older_session_does_not_move_it_once_a_newer_one_attached() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    let third = "http://third.test/pay.html";
+    frame_moves(&engine, third, third, Duration::from_millis(1));
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": "PAYMENT-FRAME", "parentId": "PAGE-1", "name": "payment", "url": "http://other.test/older.html"}}),
+        Some("S-PAYMENT"),
+    );
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(frame_address(&browser, "PAYMENT-FRAME"), third);
+}
+
+#[test]
+fn a_tree_at_no_address_does_not_replace_the_address_a_frame_attached_at() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    let third = "http://third.test/pay.html";
+    frame_moves(&engine, third, "about:blank", Duration::from_millis(1));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(frame_address(&browser, "PAYMENT-FRAME"), third);
+}
+
 #[test]
 fn keys_go_by_the_document_with_the_focus_and_by_every_document_when_it_is_unknown() {
     let (judge, _) = judge(&["http://other.test/"]);
@@ -518,15 +686,15 @@ fn a_frame_at_no_web_address_is_judged_by_its_nearest_web_ancestor_and_an_unknow
     }
     let state = super::super::lock(&browser.inner.state);
     assert_eq!(
-        state.documents_of("PAGE-1", "BLANK"),
+        state.documents_of("PAGE-1", "BLANK").unwrap(),
         ["http://other.test/pay.html"],
         "the cross-site frame holds it"
     );
     assert_eq!(
-        state.documents_of("PAGE-1", "SRCDOC"),
+        state.documents_of("PAGE-1", "SRCDOC").unwrap(),
         ["http://fixture.test/frames.html"]
     );
-    let every = state.documents_of("PAGE-1", "NO-SUCH-FRAME");
+    let every = state.documents_of("PAGE-1", "NO-SUCH-FRAME").unwrap();
     assert_eq!(every[0], "http://fixture.test/frames.html");
     assert!(
         every.contains(&"http://other.test/pay.html".to_owned()),

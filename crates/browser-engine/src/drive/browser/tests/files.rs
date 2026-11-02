@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use super::{browser, browser_with, id, limits, ref_of, snapshot};
+use super::{browser, browser_with, frame_moves, id, limits, ref_of, snapshot};
 use crate::drive::{Call, DownloadInfo, DownloadState, Limits, Refusal, plain_file_name};
 
 fn began(engine: &super::Engine, guid: &str, url: &str, name: &str) {
@@ -46,6 +46,40 @@ fn listed_once(
         }
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+/// The frame that began a `data:` download, as the engine says it; where it came from is its
+/// document's.
+fn began_in_the_frame(engine: &super::Engine) {
+    engine.emit(
+        "Browser.downloadWillBegin",
+        json!({ "frameId": "PAYMENT-FRAME", "guid": "GUID-F", "url": "data:text/plain,hi", "suggestedFilename": "hi.txt" }),
+        None,
+    );
+}
+
+#[test]
+fn a_download_a_frame_began_comes_from_the_address_it_attached_at() {
+    let (browser, engine) = browser();
+    let third = "http://third.test/pay.html";
+    frame_moves(&engine, third, third, Duration::from_secs(3));
+    began_in_the_frame(&engine);
+    let listed = listed_once(&browser, |all| !all.is_empty());
+    assert_eq!(listed[0].origin.as_deref(), Some("http://third.test"));
+}
+
+#[test]
+fn a_download_from_a_frame_that_attached_at_no_address_comes_from_nowhere_known() {
+    let (browser, engine) = browser();
+    frame_moves(
+        &engine,
+        "",
+        "http://third.test/pay.html",
+        Duration::from_secs(3),
+    );
+    began_in_the_frame(&engine);
+    let listed = listed_once(&browser, |all| !all.is_empty());
+    assert_eq!(listed[0].origin, None);
 }
 
 #[test]

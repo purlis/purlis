@@ -309,7 +309,7 @@ impl Engine {
             "Target.setAutoAttach" if on == Some("S-PAGE-1") => {
                 self.emit(
                     "Target.attachedToTarget",
-                    json!({"sessionId":"S-PAYMENT","targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":"http://other.test/pay.html","attached":true},"waitingForDebugger":true}),
+                    json!({"sessionId":"S-PAYMENT","targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":"http://other.test/pay.html","attached":true},"waitingForDebugger":false}),
                     Some("S-PAGE-1"),
                 );
                 Ok(json!({}))
@@ -826,10 +826,10 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
         taps: Mutex::new(Vec::new()),
     });
     let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits, judge).unwrap();
-    // Set up means both sessions resumed: every frame is known by then.
+    // Set up means both sessions were read: every frame is known soon after.
     let start = std::time::Instant::now();
     while engine
-        .sent("Runtime.runIfWaitingForDebugger")
+        .sent("Page.getFrameTree")
         .iter()
         .filter(|s| s.session.as_deref() == Some("S-PAYMENT"))
         .count()
@@ -2152,8 +2152,7 @@ fn a_page_opened_with_no_address_has_not_settled_until_it_has_one() {
                 None,
             );
         }
-        if sent.method == "Runtime.runIfWaitingForDebugger"
-            && sent.session.as_deref() == Some("S-PAGE-10")
+        if sent.method == "Page.getFrameTree" && sent.session.as_deref() == Some("S-PAGE-10")
         {
             // The engine goes on in its own time: the address comes well after the quiet while.
             let events = super::lock(&engine.events).clone();
@@ -2711,6 +2710,79 @@ fn opening_a_page_takes_a_web_address_and_makes_the_page_current() {
 }
 
 #[test]
+fn a_page_the_engine_made_and_has_not_told_of_is_not_called_missing() {
+    // Each answers its own way on a loaded machine (#4472): the page exists, and only its event
+    // is late.
+    let (browser, engine) = browser_with(Limits {
+        settle_within: Duration::from_millis(200),
+        ..limits()
+    });
+    engine.on(|sent, _| {
+        (sent.method == "Target.createTarget").then(|| Ok(json!({ "targetId": "PAGE-LATE" })))
+    });
+    let address = WebAddress::parse("http://fixture.test/long.html").unwrap();
+    let refused = browser.call(&id(1), Call::Open { address }).unwrap_err();
+    assert_eq!(refused, Refusal::PageUntold);
+    assert!(
+        refused.to_string().contains("did not go to the address"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn no_frame_or_worker_is_held_at_its_start() {
+    // Held frames are what make Chrome end itself on a page whose frame reloads quickly (#4472).
+    let (browser, engine) = browser();
+    let start = std::time::Instant::now();
+    while engine.sent("Target.setAutoAttach").is_empty() {
+        assert!(start.elapsed() < Duration::from_secs(5), "never set up");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    for sent in engine.sent("Target.setAutoAttach") {
+        assert_eq!(sent.params["waitForDebuggerOnStart"], false, "{sent:?}");
+    }
+    // So there is nothing to let go of, and Chrome can leave that call unanswered.
+    let _ = snapshot(&browser, 1);
+    assert_eq!(engine.sent("Runtime.runIfWaitingForDebugger").len(), 0);
+}
+
+#[test]
+fn a_slow_call_to_the_engine_never_stops_its_events_being_read() {
+    // Chrome can leave a call unanswered, and an event read behind it comes too late (#4472).
+    let (browser, engine) = browser();
+    super::lock(&engine.model)
+        .slow
+        .insert("Page.enable".to_owned(), Duration::from_secs(3));
+    engine.emit(
+        "Target.attachedToTarget",
+        json!({"sessionId":"S-LATER","targetInfo":{"targetId":"LATER-FRAME","type":"iframe","title":"","url":"http://other.test/","attached":true},"waitingForDebugger":false}),
+        Some("S-PAGE-1"),
+    );
+    let start = std::time::Instant::now();
+    while engine
+        .sent("Page.enable")
+        .iter()
+        .all(|s| s.session.as_deref() != Some("S-LATER"))
+    {
+        assert!(start.elapsed() < Duration::from_secs(1), "never set up");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"","url":"about:blank","attached":false}}),
+        None,
+    );
+    let start = std::time::Instant::now();
+    while super::lock(&browser.inner.state).page("PAGE-7").is_none() {
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "the event waited on the call"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
 fn a_wait_for_text_sees_text_that_shows_later() {
     let (browser, engine) = browser();
     let later = engine.clone();
@@ -3112,6 +3184,48 @@ fn a_frame(engine: &Engine, image: &[u8], ack: i64) {
         }),
         Some("S-PAGE-1"),
     );
+}
+
+/// The session the payment frame moves to.
+const MOVED: &str = "S-PAYMENT-FRAME";
+
+/// The payment frame moves to a process of its own: the engine attaches it at `attached`, and
+/// its session's frame tree answers `tree` only after `takes`.
+fn frame_moves(engine: &Engine, attached: &str, tree: &'static str, takes: Duration) {
+    engine.on(move |sent, _| {
+        (sent.method == "Page.getFrameTree" && sent.session.as_deref() == Some(MOVED)).then(|| {
+            Ok(json!({"frameTree":{"frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","name":"payment","url":tree}}}))
+        })
+    });
+    super::lock(&engine.model)
+        .slow
+        .insert("Page.getFrameTree".to_owned(), takes);
+    frame_attaches(engine, attached);
+}
+
+/// The payment frame attaches a session of its own at `attached`, and its tree is asked for.
+fn frame_attaches(engine: &Engine, attached: &str) {
+    engine.emit(
+        "Target.attachedToTarget",
+        json!({"sessionId":MOVED,"targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":attached,"attached":true},"waitingForDebugger":false}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the moved frame's tree is asked for", || {
+        engine
+            .sent("Page.getFrameTree")
+            .iter()
+            .any(|s| s.session.as_deref() == Some(MOVED))
+    });
+}
+
+/// The address the driver holds for `frame` of the frames page.
+fn frame_address(browser: &Browser, frame: &str) -> String {
+    super::lock(&browser.inner.state)
+        .page("PAGE-1")
+        .expect("the frames page")
+        .frames[frame]
+        .url
+        .clone()
 }
 
 fn wait_for(what: &str, mut done: impl FnMut() -> bool) {

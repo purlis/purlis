@@ -116,6 +116,11 @@ impl Settle {
                 self.loading.insert(frame);
             }
             Activity::FrameStopped(frame) | Activity::FrameGone(frame) => {
+                // A frame from another site ends its document in its own session, which is read
+                // only once the frame has started (#4472), so this may be the only word of it.
+                self.requests.retain(|_, request| {
+                    !(request.document && request.frame.as_ref() == Some(&frame))
+                });
                 self.loading.remove(&frame);
             }
             Activity::RequestStarted {
