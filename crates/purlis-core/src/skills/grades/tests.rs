@@ -1638,6 +1638,71 @@ fn outcome_evals_are_off_until_ticked_and_the_consent_covers_what_was() {
     );
 }
 
+/// #4312: a terminal's yes covers exactly the evals it named, so an id the plan would not run is
+/// a refusal that says why, never a plan with less in it.
+#[test]
+fn a_named_eval_is_in_the_plan_or_the_plan_is_refused_saying_why() {
+    let plane = plane();
+    let root = plane.path();
+    let level = Level::project();
+    std::fs::create_dir_all(root.join("skills/deploy/evals")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [
+            {"id": 1, "prompt": "ship v2", "expectations": ["It ships"]},
+            {"id": 2, "prompt": "ship v3", "expectations": []}
+        ]}"#,
+    )
+    .unwrap();
+    let named = |ids: &[&str]| {
+        let ids: Vec<String> = ids.iter().map(|id| (*id).to_owned()).collect();
+        planned_named(root, &level, "deploy", None, &ids)
+    };
+
+    let one = named(&["1"]).unwrap();
+    let ran: Vec<u64> = one
+        .request
+        .as_ref()
+        .unwrap()
+        .outcomes
+        .iter()
+        .map(|eval| eval.id)
+        .collect();
+    assert_eq!(ran, [1]);
+    assert_eq!(
+        one.consent,
+        planned_with(root, &level, "deploy", None, &[1])
+            .unwrap()
+            .consent
+    );
+
+    let none = named(&[]).unwrap();
+    assert!(none.request.as_ref().unwrap().outcomes.is_empty());
+    assert_eq!(
+        none.consent,
+        planned(root, &level, "deploy", None).unwrap().consent
+    );
+
+    let unknown = named(&["1", "7"]).unwrap_err();
+    assert!(unknown.contains("no outcome eval 7"), "{unknown}");
+    let left_out = named(&["2"]).unwrap_err();
+    assert!(left_out.contains("no expectations"), "{left_out}");
+    let not_an_id = named(&["ship"]).unwrap_err();
+    assert!(not_an_id.contains("\"ship\""), "{not_an_id}");
+}
+
+/// #4312: an evals file that does not read is said as itself, not as an id it does not hold.
+#[test]
+fn a_named_eval_in_a_file_that_does_not_read_is_refused_with_why() {
+    let plane = plane();
+    let root = plane.path();
+    std::fs::create_dir_all(root.join("skills/deploy/evals")).unwrap();
+    std::fs::write(root.join("skills/deploy/evals/evals.json"), "not json").unwrap();
+    let refused =
+        planned_named(root, &Level::project(), "deploy", None, &["1".to_owned()]).unwrap_err();
+    assert!(refused.contains("could not be read"), "{refused}");
+}
+
 /// A paid grade is always recorded: what a row cannot drop is counted as JSON writes it, for what
 /// was ticked alone.
 #[test]

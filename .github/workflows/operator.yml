@@ -8,7 +8,11 @@ name: cluster operator
 # Kubernetes purlis supports with the pinned upstream agent-sandbox, the operator installed by its
 # Helm chart, and a runner image built from this commit (`operator/e2e/kind.sh`).
 #
-# Only a change to the operator, the runner image, the desktop's side of a cluster runner, the
+# A pull request that changes docs/cluster-pool-setup.md runs it too, since kind.sh runs that
+# guide's commands. A push doesn't: a green push publishes an image (operator-image.yml), and the
+# nightly run checks the guide on main.
+#
+# Otherwise only a change to the operator, the runner image, the desktop's side of a cluster runner, the
 # toolchain, the licence and advisory rules or this file runs it on a pull request, so every
 # other pull request waits on none of it; it also runs nightly on `main`. It publishes nothing
 # and holds no write permission.
@@ -17,12 +21,14 @@ on:
   pull_request:
     paths:
       - operator/**
+      - docs/cluster-pool-setup.md
       - runner-image/**
       - deny.toml
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
       - .github/actions/helm/**
       - tools/operator-install*
+      - tools/guide-commands*
       - .github/workflows/operator.yml
       # The desktop's side of a cluster runner, which the kind run checks too (#2056).
       - crates/purlis-core/src/clusterpool*

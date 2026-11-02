@@ -17,6 +17,7 @@ import { emit } from "@tauri-apps/api/event";
 import type {
   ChatSkill,
   PersonaSkills,
+  PluginOffShown,
   PlaneUpdated,
   SkillBudget,
   SkillRouting,
@@ -81,6 +82,9 @@ function core(
     routing?: SkillRouting | null;
     missing?: SkillsMissing | null;
     updated?: PlaneUpdated[];
+    /** What the chat's start held of its program's plugins (#4477). */
+    own?: string;
+    pluginsOff?: PluginOffShown[];
   } = {},
 ): Asked[] {
   const asked: Asked[] = [];
@@ -95,6 +99,9 @@ function core(
         return {
           on: true,
           known: true,
+          program: [],
+          plugins_off: more.pluginsOff ?? [],
+          own: more.own ?? null,
           skills: more.chat ?? [],
           budget: more.budget ?? null,
           routing: more.routing ?? null,
@@ -455,6 +462,7 @@ describe("the Skills view's review fixes", () => {
               title: "Claude Code",
               skills: [skill("pdf", { level: "installed", label: "Claude Code", folder: "" })],
               repo_left_out: [],
+              plugins_off: [],
               own: null,
             },
           ],
@@ -471,6 +479,60 @@ describe("the Skills view's review fixes", () => {
       skillStudioAt(inWorkspace("ops"), "harness"),
       SKILL_STUDIO_TITLE,
     );
+  });
+});
+
+describe("a plugin the chat in front does not have (#4477)", () => {
+  const off = (name: string) =>
+    skill(`superpowers:${name}`, {
+      level: "installed",
+      label: "installed",
+      folder: "",
+      owner: { kind: "plugin", name: "superpowers" },
+    });
+  const OFF_PLUGIN: PluginOffShown = {
+    name: "superpowers",
+    said: "Claude Code has the superpowers plugin turned off. Turn it on, then restart this chat.",
+    line: "Off in Claude Code",
+    command: "claude plugin enable superpowers@market",
+  };
+  const withPlugin = () =>
+    studio([skill("deploy")], {
+      harnesses: [
+        {
+          harness: "claude",
+          title: "Claude Code",
+          skills: [
+            off("brainstorming"),
+            ...["a", "b", "c", "d", "e", "f", "g"].map((one) => off(`writing-${one}`)),
+          ],
+          repo_left_out: [],
+          plugins_off: [],
+          own: null,
+        },
+      ],
+    });
+
+  it("is found under Left out by a filter on its name, with why, and offers no Use", async () => {
+    core(withPlugin, { chat: [given("deploy")], pluginsOff: [OFF_PLUGIN] });
+    view({ chat: STEWARD });
+    await list();
+    await userEvent.type(screen.getByRole("searchbox"), "super");
+    await waitFor(() => expect(hasRow("superpowers:brainstorming")).toBe(true));
+    expect(screen.getByText(OFF_PLUGIN.said)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy command" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Use superpowers/ })).toBeNull();
+    expect(screen.queryByRole("rowheader", { name: "In this chat" })).toBeNull();
+  });
+
+  it("offers Use on its skills while the chat has it", async () => {
+    core(withPlugin, { chat: [given("deploy")], pluginsOff: [] });
+    view({ chat: STEWARD });
+    await list();
+    await waitFor(() => expect(hasRow("superpowers:brainstorming")).toBe(true));
+    expect(
+      screen.getByRole("button", { name: "Use superpowers:brainstorming in this chat" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -699,6 +761,7 @@ describe("a row's menu", () => {
                 }),
               ],
               repo_left_out: [],
+              plugins_off: [],
               own: null,
             },
           ],
@@ -748,6 +811,7 @@ describe("a chat in a branch folder (#4326)", () => {
               title: "Claude Code",
               skills: [repoSkill("on-main", "workspaces/ops/svc")],
               repo_left_out: [],
+              plugins_off: [],
               own: null,
             },
           ],
@@ -1035,6 +1099,7 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
               title: "Claude Code",
               skills: [],
               repo_left_out: [],
+              plugins_off: [],
               own: "Claude Code's own, not counted: 2 skills, 1,310 characters",
             },
             {
@@ -1042,11 +1107,16 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
               title: "Codex",
               skills: [],
               repo_left_out: [],
+              plugins_off: [],
               own: "Codex's own, not counted: 4 skills, 900 characters",
             },
           ],
         }),
-      { chat: [given("deploy")], budget: { ...BUDGET, manual: 0 } },
+      {
+        chat: [given("deploy")],
+        budget: { ...BUDGET, manual: 0 },
+        own: "Claude Code's own, not counted: 2 skills, 1,310 characters",
+      },
     );
     view({ chat: STEWARD });
     await list();
@@ -1070,17 +1140,48 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
               title: "Codex",
               skills: [],
               repo_left_out: [],
+              plugins_off: [],
               own: "Codex's own, not counted: 4 skills, 900 characters",
             },
           ],
         }),
-      { chat: [given("deploy")], budget: { ...BUDGET, manual: 0 } },
+      {
+        chat: [given("deploy")],
+        budget: { ...BUDGET, manual: 0 },
+        own: "Codex's own, not counted: 4 skills, 900 characters",
+      },
     );
     view({ chat: { ...STEWARD, harness: "codex" } });
     await list();
     await waitFor(() =>
       expect(screen.getByTestId("skills-view-said")).toHaveTextContent(
         "3 skills of 30 · 1,234 of 6,000 characters · Codex's own, not counted: 4 skills, 900 characters",
+      ),
+    );
+  });
+
+  it("shows a prompt's fallback on the chat in front as it is told, and only that chat's (#4445)", async () => {
+    const start = { router: "acme", ms: 4, fell_back: false, said: "Routed by acme in 4 ms." };
+    const routing: SkillRouting = { ...start };
+    const asked = core(() => studio([]), { chat: [], budget: BUDGET, routing });
+    view({
+      chat: { session: 4, name: "Chat 4", workspace: "ops", persona: null, harness: "claude" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-said")).toHaveTextContent("Routed by acme in 4 ms."),
+    );
+    const reads = () => asked.filter((one) => one.cmd === "chat_skills").length;
+    const before = reads();
+
+    await act(() => emit("chat-prompt-routing", { plane: "p", session: 9 }));
+    await act(() => emit("chat-prompt-routing", { plane: "q", session: 4 }));
+    expect(reads()).toBe(before);
+
+    routing.last_prompt = { fell_back: true, said: "Its last prompt went on with no pointer." };
+    await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
+    await waitFor(() =>
+      expect(needOf("Its router fell back on a prompt")).toHaveTextContent(
+        "Its last prompt went on with no pointer.",
       ),
     );
   });

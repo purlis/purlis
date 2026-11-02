@@ -1176,9 +1176,6 @@ pub fn skill_run(
             hook.root,
             workspace.as_deref(),
             hook.persona().as_deref(),
-            crate::hookwire::chat_harness(hook.env)
-                .as_deref()
-                .and_then(crate::harness::Harness::of_registry_or_kind),
             &skill,
         )
     } else {

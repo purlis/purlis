@@ -121,6 +121,12 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "app/src-tauri/src/poolprofiles.rs",
+        "MOST_STOPPED_KEPT",
+        Internal,
+        "purlis's own tuning",
+    ),
+    (
+        "app/src-tauri/src/poolprofiles.rs",
         "STEP_WITHIN",
         Internal,
         "how purlis waits or looks",

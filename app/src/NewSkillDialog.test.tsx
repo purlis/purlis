@@ -129,7 +129,7 @@ describe("New skill…", () => {
     );
     expect(make).toBeDisabled();
     await user.clear(name);
-    await user.type(name, "secrets");
+    await user.type(name, "purlis-secrets");
     expect(within(form).getByTestId("skill-new-problem")).toHaveTextContent(NAME_RESERVED);
     await user.clear(name);
     await user.type(name, "deploy");

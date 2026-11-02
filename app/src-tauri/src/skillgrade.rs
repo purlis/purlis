@@ -557,19 +557,7 @@ impl SkillGradePlan {
                     let prompt = grading::outcomes::outcome_prompt(eval);
                     GradeEval {
                         id: eval.id.to_string(),
-                        hides: purlis_unicode::hides(&prompt, purlis_unicode::Breaks::Kept)
-                            || eval
-                                .expectations
-                                .iter()
-                                .chain(&eval.expected_output)
-                                .chain(
-                                    eval.files
-                                        .iter()
-                                        .filter_map(|path| planned.copy.as_ref()?.inputs.get(path)),
-                                )
-                                .any(|text| {
-                                    purlis_unicode::hides(text, purlis_unicode::Breaks::Kept)
-                                }),
+                        hides: planned.eval_hides(eval),
                         prompt: purlis_unicode::marked(&prompt, purlis_unicode::Breaks::Marked),
                         files: eval.files.clone(),
                         expectations: u32::try_from(eval.expectations.len()).unwrap_or(u32::MAX),
@@ -693,18 +681,12 @@ pub struct SkillGradeStep {
 /// One grade running, and its way to be stopped.
 pub(crate) struct Running {
     pub(crate) plane: PlaneId,
-    /// The skill it grades, by its name; empty for a router's grade (SK-15e), which no skill's
-    /// name is.
-    pub(crate) skill: String,
-    /// The copy it grades, by its level: same-named copies at two levels are two skills
-    /// (#3353). `None` for a router's grade.
-    pub(crate) level: Option<Level>,
     pub(crate) stop: Arc<AtomicBool>,
     /// The copy a saved edit of which started it (SK-58), by its opt-in's key (level and
     /// name): the next save of that copy stops it. `None` for a grade pressed by hand.
     pub(crate) after_edit: Option<String>,
     /// Its latest step told to the window: what a page that opens while it runs starts from
-    /// (#3928, #4222).
+    /// (#3928, #4222), and, of a skill's, which copy it grades (#4338).
     pub(crate) step: RunningStep,
 }
 
@@ -712,6 +694,16 @@ pub(crate) struct Running {
 pub(crate) enum RunningStep {
     Skill(SkillGradeStep),
     Router(crate::routergrade::RouterGradeStep),
+}
+
+impl Running {
+    /// Its latest step, where it is a skill's grade: no router's grade names a skill.
+    fn skill_step(&self) -> Option<&SkillGradeStep> {
+        match &self.step {
+            RunningStep::Skill(step) => Some(step),
+            RunningStep::Router(_) => None,
+        }
+    }
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -769,7 +761,9 @@ pub(crate) fn record_interrupted(root: &std::path::Path) -> Vec<String> {
 fn running_of(plane: &PlaneId, skill: &str) -> Option<String> {
     running()
         .iter()
-        .find(|(_, one)| one.plane == *plane && one.skill == skill)
+        .find(|(_, one)| {
+            one.plane == *plane && one.skill_step().is_some_and(|step| step.skill == skill)
+        })
         .map(|(id, _)| id.clone())
 }
 
@@ -939,23 +933,43 @@ impl From<&SkillGradeStep> for session::GradeStepTold {
 /// The plan a terminal is told, as a press would start it: the words of [`SkillGradePlan::of`].
 fn plan_told(planned: &Planned, on: &On, running: Option<String>) -> session::GradePlanTold {
     let terms = terms_of(planned, on);
+    let evals = evals_can_run(planned, on.evals_refused.as_ref());
     session::GradePlanTold {
         profile: on.profile.clone(),
         model: terms.model.map(str::to_owned),
         sandbox: on.checked.as_ref().ok().cloned(),
-        refused: on.checked.as_ref().err().cloned(),
+        refused: on
+            .checked
+            .as_ref()
+            .err()
+            .cloned()
+            .or_else(|| evals.as_ref().err().cloned()),
         chats: planned.plan.map(|plan| plan.chats).unwrap_or_default(),
         token_cap: terms.token_cap,
         limit_micro_usd: micro_usd(terms.limit_usd),
         running,
         graded: planned.consent.clone(),
-        consent: consent_shown(planned, on),
+        consent: consent_shown(planned, on).filter(|_| evals.is_ok()),
     }
+}
+
+/// **Whether a terminal's start of `planned` holds**: the checks a press takes, the Grader's
+/// aside. A terminal's grade is purlis's own runner, as its plan names no Grader and `GradeOf`
+/// has no word for one, so a Grader cannot stand beside the evals it named.
+fn a_terminals_start_holds(
+    planned: &Planned,
+    on: &On,
+    consent: &str,
+    skill: &str,
+) -> Result<(), String> {
+    evals_can_run(planned, on.evals_refused.as_ref())?;
+    plan_holds(planned, on, None, consent, skill, "nothing was started")
 }
 
 /// **The window's answer to a grade a person asked for at a terminal** (SK-61, #3241): `project`'s
 /// plan, or its start through the one check a press of Grade takes ([`plan_holds`]), on the plan's
-/// cap and limit. `follower` hears each step. Named outcome evals are refused until #3235 runs them.
+/// cap and limit. `follower` hears each step. The outcome evals it named are the ones ticked, and
+/// one that would not run refuses the plan and the start (#4312).
 pub(crate) fn asked_at_a_terminal(
     project: &str,
     path: &str,
@@ -988,33 +1002,26 @@ fn answering_a_terminal(
     let of = match &ask {
         session::GradeAsk::Plan { of } | session::GradeAsk::Start { of, .. } => of.clone(),
     };
-    if !of.evals.is_empty() {
-        return Err(
-            "Outcome evals do not run from a terminal yet (#3235), so nothing was started.".into(),
-        );
-    }
     let level: SkillLevel = level_named(of.level);
     let level: Level = (&level).into();
     let on = chats_on(held.root(), of.profile.clone(), of.model.clone());
     match ask {
         session::GradeAsk::Plan { .. } => {
-            let planned = grades::planned(held.root(), &level, &of.skill, on.profile.as_deref())?;
+            let planned = grades::planned_named(
+                held.root(),
+                &level,
+                &of.skill,
+                on.profile.as_deref(),
+                &of.evals,
+            )?;
             let running = running_of(&plane, &of.skill);
             Ok(session::GradeAnswer::Plan(Box::new(plan_told(
                 &planned, &on, running,
             ))))
         }
         session::GradeAsk::Start { consent, .. } => {
-            let planned = grades::planned(held.root(), &level, &of.skill, None)?;
-            // A terminal's grade is purlis's own runner: its plan names no Grader.
-            plan_holds(
-                &planned,
-                &on,
-                None,
-                &consent,
-                &of.skill,
-                "nothing was started",
-            )?;
+            let planned = grades::planned_named(held.root(), &level, &of.skill, None, &of.evals)?;
+            a_terminals_start_holds(&planned, &on, &consent, &of.skill)?;
             let grade = begin(
                 app.clone(),
                 held,
@@ -1146,7 +1153,7 @@ pub(crate) fn begin(
         unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
     };
     // **One step of it**, as the window is told it and as a page that opens while it runs reads
-    // it (`skill_grades`).
+    // it (`skill_grade_running`).
     let step_of = {
         let (plane, skill, grade) = (plane.clone(), skill.clone(), id.clone());
         let copy_level = SkillLevel::from(&level);
@@ -1182,8 +1189,6 @@ pub(crate) fn begin(
             id.clone(),
             Running {
                 plane: plane.clone(),
-                skill: skill.clone(),
-                level: Some(level.clone()),
                 stop: Arc::clone(&stop),
                 after_edit: after_edit
                     .then(|| grades::after_edit::key(&level, &skill))
@@ -1823,20 +1828,40 @@ impl SkillGrades {
 /// The latest step of the grade of the copy of `skill` at `level` running in `plane` now, where
 /// one is.
 fn step_of_running(plane: &PlaneId, level: &Level, skill: &str) -> Option<SkillGradeStep> {
+    let level = SkillLevel::from(level);
     running()
         .values()
-        .filter(|one| {
-            one.plane == *plane && one.skill == skill && one.level.as_ref() == Some(level)
-        })
-        .find_map(|one| match &one.step {
-            RunningStep::Skill(step) => Some(step.clone()),
-            RunningStep::Router(_) => None,
-        })
+        .filter(|one| one.plane == *plane)
+        .filter_map(Running::skill_step)
+        .find(|step| step.skill == skill && step.level == level)
+        .cloned()
+}
+
+/// **The latest step of the skill's grade `grade` in `plane`**, where it runs (#4338): what its
+/// page reads, its grade's step and nothing else, so no other read can leave it without Stop.
+fn step_of_grade(plane: &PlaneId, grade: &str) -> Option<SkillGradeStep> {
+    running()
+        .get(grade)
+        .filter(|one| one.plane == *plane)
+        .and_then(Running::skill_step)
+        .cloned()
+}
+
+/// **Where the skill's grade `grade` is now** (#4338): its latest step while it runs, else `None`
+/// (its scorecard then says how it ended). Read only, from this app's own memory of its grades,
+/// as Stop is.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_grade_running(
+    plane: PlaneId,
+    grade: String,
+) -> Result<Option<SkillGradeStep>, String> {
+    Ok(step_of_grade(&plane, &grade))
 }
 
 /// **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
 /// skill's Grades tab draws its bars and its list from, with whether it has trigger tests and the
-/// grade of it running now (#3928), and what a running grade's page starts from.
+/// grade of it running now (#3928).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_grades(

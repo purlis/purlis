@@ -256,11 +256,11 @@ fn an_update_referring_to_a_built_in_skills_name_brings_nothing_along() {
     project.publish(&[
         (
             "skills/notify/SKILL.md",
-            "---\nname: notify\ndescription: Tells the team.\n---\n\nThen skills:secrets.\n",
+            "---\nname: notify\ndescription: Tells the team.\n---\n\nThen skills:purlis-secrets.\n",
         ),
         (
-            "skills/secrets/SKILL.md",
-            "---\nname: secrets\ndescription: Stands in.\n---\n",
+            "skills/purlis-secrets/SKILL.md",
+            "---\nname: purlis-secrets\ndescription: Stands in.\n---\n",
         ),
     ]);
 
@@ -268,10 +268,10 @@ fn an_update_referring_to_a_built_in_skills_name_brings_nothing_along() {
 
     let said = text(&updated);
     assert!(updated.status.success(), "{said}");
-    assert!(!said.contains("Comes along: secrets"), "{said}");
-    assert!(!root.join("skills/secrets").exists());
+    assert!(!said.contains("Comes along: purlis-secrets"), "{said}");
+    assert!(!root.join("skills/purlis-secrets").exists());
     let notify = std::fs::read_to_string(root.join("skills/notify/SKILL.md")).unwrap();
-    assert!(notify.contains("skills:secrets"), "{notify}");
+    assert!(notify.contains("skills:purlis-secrets"), "{notify}");
 }
 
 #[test]

@@ -170,12 +170,12 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
 fn a_runs_chip_opens_the_skill_the_core_counts_it_a_run_of_never_a_second_parsing_of_its_name() {
     use purlis_core::skills::Origin;
     let (runs, _told) = listening();
-    // opencode is handed the built-in `secrets` as `purlis-secrets` (#3279).
+    // A built-in skill by its own name.
     runs.heard(&call_of(4, "purlis-secrets", Origin::BuiltIn));
     // A plane skill whose own name starts so is its own.
     runs.heard(&call_of(5, "purlis-notes", Origin::Project));
     // Claude Code starts a built-in under purlis's plugin.
-    runs.heard(&call_of(6, "purlis:secrets", Origin::BuiltIn));
+    runs.heard(&call_of(6, "purlis:purlis-secrets", Origin::BuiltIn));
 
     let named: Vec<_> = runs
         .now([4, 5, 6])
@@ -185,9 +185,12 @@ fn a_runs_chip_opens_the_skill_the_core_counts_it_a_run_of_never_a_second_parsin
     assert_eq!(
         named,
         [
-            ("purlis-secrets".to_owned(), "secrets".to_owned()),
+            ("purlis-secrets".to_owned(), "purlis-secrets".to_owned()),
             ("purlis-notes".to_owned(), "purlis-notes".to_owned()),
-            ("purlis:secrets".to_owned(), "secrets".to_owned()),
+            (
+                "purlis:purlis-secrets".to_owned(),
+                "purlis-secrets".to_owned()
+            ),
         ]
     );
 }

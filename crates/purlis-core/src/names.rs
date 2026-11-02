@@ -554,7 +554,7 @@ pub const PLUGIN_INSTALLED_AS: Name = name(
     &[],
     &["charter@charter-app"],
 );
-/// How skills are namespaced in a harness (`purlis:handoff`).
+/// How skills are namespaced in a harness (`purlis:purlis-handoff`).
 pub const SKILL_NAMESPACE: Name = name(
     "skill-namespace",
     Kind::PluginId,

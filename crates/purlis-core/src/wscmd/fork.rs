@@ -259,8 +259,13 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
         doc.insert("updated_by".into(), Value::String(wscmd::git_user(root)));
         // Under the new workspace's manifest lock (#1292), as every writer of one is: a
         // scaffold or a clone in the fork meanwhile waits rather than interleaving.
-        if let Ok(_held) = fresh.manifest_lock() {
-            let _ = fresh.write_manifest(&Value::Object(doc));
+        match fresh.manifest_lock() {
+            Ok(_held) => {
+                let _ = fresh.write_manifest(&Value::Object(doc));
+            }
+            Err(why) => say(Say::Warn(
+                format!("the fork's own details were not written ({why}).").into(),
+            )),
         }
     }
 
@@ -273,9 +278,16 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
     };
     let _ = fresh.remember(&note, now.naive_utc());
 
-    if live {
-        let _ = wscmd::set_live(root, new, true);
-    }
+    let live = live
+        && match wscmd::set_live(root, new, true) {
+            Ok(_) => true,
+            Err(why) => {
+                say(Say::Warn(
+                    format!("'{new}' stays LOCAL: it could not be made LIVE ({why}).").into(),
+                ));
+                false
+            }
+        };
     let mode = if live { "LIVE" } else { "LOCAL" };
     if missed.is_empty() {
         say(Say::Done(

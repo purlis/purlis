@@ -20,7 +20,6 @@ fn lints<'a>(
         namespace: "skills",
         plane,
         built_in,
-        known_as: built_in,
         has: &has,
     }
 }
@@ -32,7 +31,7 @@ fn found(text: &str, others: &[(String, String)], handed: bool) -> Vec<Finding> 
         crate::Origin::Repo
     };
     let plane = ["deploy".to_owned(), "review".to_owned()].into();
-    let built_in = ["secrets".to_owned()].into();
+    let built_in = ["purlis-secrets".to_owned()].into();
     lints(&plane, &built_in).findings(&SkillFiles {
         name: "deploy",
         text,
@@ -57,7 +56,8 @@ fn skill(more: &str, body: &str) -> String {
 fn a_whole_skill_that_calls_what_this_machine_has_is_clean() {
     let text = skill(
         "",
-        "Run !`git status` first, then use skills:review and purlis:secrets.",
+        "Run !`git status` first, then use skills:review, purlis:purlis-secrets and its old \
+         name purlis:secrets.",
     );
     assert_eq!(found(&text, &[], true), Vec::<Finding>::new());
 }
@@ -140,8 +140,8 @@ fn a_reference_to_a_skill_there_is_none_of_warns_once() {
         [
             "it names skills:reveiw, and this project has no skill reveiw: a chat told to use \
              it finds none",
-            "it names purlis:secret, and purlis has no skill secret: a chat told to use it \
-             finds none",
+            "it names purlis:secret, and purlis has no skill purlis-secret: a chat told to use \
+             it finds none",
         ]
     );
 }
@@ -243,15 +243,16 @@ fn a_skill_naming_itself_names_one_there_is_though_the_plane_has_no_skill_of_its
 }
 
 #[test]
-fn a_repo_or_harness_skill_named_like_a_built_in_one_warns_and_a_skill_purlis_hands_does_not() {
-    // SK-37 (#3027): a program reads a clone's `secrets` beside purlis's own, and the chat may
-    // use either. purlis hands a plane skill of that name to no chat, which its own row says.
-    let text = "---\nname: secrets\ndescription: Reads the repo's secrets from its vault.\n---\n";
+fn a_repo_or_harness_skill_with_a_reserved_name_warns_and_a_skill_purlis_hands_does_not() {
+    // SK-37 (#3027): a program reads a clone's `purlis-secrets` beside purlis's own, and the chat
+    // may use either. purlis hands a plane skill of that name to no chat, which its own row says.
+    let text =
+        "---\nname: purlis-secrets\ndescription: Reads the repo's secrets from its vault.\n---\n";
     let plane = std::collections::HashSet::new();
-    let built_in = ["secrets".to_owned()].into();
+    let built_in = ["purlis-secrets".to_owned()].into();
     let said = |origin, plugin| {
         let findings = lints(&plane, &built_in).findings(&SkillFiles {
-            name: "secrets",
+            name: "purlis-secrets",
             text,
             others: &[],
             origin,
@@ -265,8 +266,8 @@ fn a_repo_or_harness_skill_named_like_a_built_in_one_warns_and_a_skill_purlis_ha
     };
 
     for origin in [crate::Origin::Repo, crate::Origin::Harness] {
-        let line = "it has the name of one of purlis's built-in skills, so a chat gets purlis's \
-                    too and may use either: rename it";
+        let line = "a name starting with purlis- is purlis's own, so a chat may get purlis's \
+                    skill of this name too and use either: rename it";
         assert_eq!(
             said(origin, None),
             [(Severity::Warns, line.to_owned(), Some(line.to_owned()))],
@@ -279,47 +280,8 @@ fn a_repo_or_harness_skill_named_like_a_built_in_one_warns_and_a_skill_purlis_ha
     assert_eq!(
         said(crate::Origin::Harness, Some("figma")),
         [],
-        "figma:secrets is known by its plugin's name, never as purlis's secrets"
+        "figma:purlis-secrets is known by its plugin's name, never as purlis's"
     );
-}
-
-#[test]
-fn on_a_route_that_names_built_in_skills_their_own_only_that_name_warns() {
-    // SK-37 (#3027): opencode knows purlis's `secrets` as `purlis-secrets`, and its index skill
-    // as `purlis-skill-index`, so a repo's bare `secrets` is another skill there.
-    let plane = std::collections::HashSet::new();
-    let built_in: std::collections::HashSet<String> = ["secrets".to_owned()].into();
-    let warned = |route: crate::Route, name: &str| {
-        let known_as = route.built_in_names(built_in.iter().map(String::as_str));
-        let text = format!(
-            "---\nname: {name}\ndescription: Reads the repo's secrets from a vault.\n---\n"
-        );
-        BuiltInLints {
-            namespace: "skills",
-            plane: &plane,
-            built_in: &built_in,
-            known_as: &known_as,
-            has: &has,
-        }
-        .findings(&SkillFiles {
-            name,
-            text: &text,
-            others: &[],
-            origin: crate::Origin::Repo,
-            plugin: None,
-            listed: None,
-        })
-        .iter()
-        .any(|one| one.lint == Lint::BuiltInName)
-    };
-
-    assert!(warned(crate::Route::Config, "purlis-secrets"));
-    assert!(warned(crate::Route::Config, "purlis-skill-index"));
-    assert!(!warned(crate::Route::Config, "secrets"));
-    for route in [crate::Route::Plugin, crate::Route::Briefing] {
-        assert!(warned(route, "secrets"), "{route:?}");
-        assert!(!warned(route, "purlis-secrets"), "{route:?}");
-    }
 }
 
 /// What the lints say of `text`, a project skill whose folder holds `listed`.

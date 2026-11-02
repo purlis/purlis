@@ -1103,6 +1103,182 @@ mod cluster {
         }
     }
 
+    /// `team` added under `config`, and a second runner the fake cluster answers as from now on.
+    fn added_and_a_second_runner(config: &Path, cluster: &FakeCluster) -> Pinned {
+        let claim = claim_name(OURS, "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config,
+            &cluster.kubectl(),
+            &team(cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let second = Pinned {
+            device: "01JB0RUNNER000000000000001".into(),
+            key: LinkKey::generate().unwrap().public(),
+        };
+        cluster.write("paired.txt", &crate::runnerlink::to_line(&second));
+        second
+    }
+
+    /// **A chat's fresh runner is its own** (#3709): nothing that asks for the pool's runner
+    /// finds it, the file names its chat, and it is asked for as a fresh claim.
+    #[test]
+    fn a_chats_fresh_runner_is_kept_beside_its_pools_own_and_found_by_the_chat_alone() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+
+        let kept = claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        assert_eq!(kept.pinned, second);
+        assert_eq!(kept.chat.as_deref(), Some("01CHAT"));
+        assert!(
+            kept.reached().starts_with("team/fresh-"),
+            "{}",
+            kept.reached()
+        );
+        let (_, pools_own) = runners::cluster_runner_for(config.path(), "team")
+            .unwrap()
+            .unwrap();
+        assert_eq!(pools_own.pinned, cluster.runner);
+        assert_eq!(
+            runners::fresh_runner_of(config.path(), "01CHAT")
+                .unwrap()
+                .map(|(_, one)| one),
+            Some(kept)
+        );
+        assert_eq!(file(config.path())["runners"][1]["chat"], "01CHAT");
+        // Read back whole, from the file, by a purlis that knows the key.
+        assert_eq!(runners::fresh_runners(config.path()).unwrap().len(), 1);
+    }
+
+    /// **A link to a chat's own runner is checked as one to its pool's is** (#3709): named whole, it
+    /// finds that runner, the pool's pin is what vouches for it, and no other pool's name does.
+    #[test]
+    fn a_fresh_runner_is_reached_by_its_own_name_and_no_other() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        let kept = claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        let name = kept.link_name();
+        let (_, found) = runners::cluster_runner_for(config.path(), &name)
+            .unwrap()
+            .unwrap();
+        assert_eq!(found, kept);
+        assert!(runners::cluster_runner_for(config.path(), "team/fresh-other").is_err());
+        assert_eq!(
+            runners::cluster_runner_for(config.path(), "other/fresh-x").unwrap(),
+            None
+        );
+        // A link made for the pool's own runner is not this one's, nor the other way round.
+        let (_, own) = runners::cluster_runner_for(config.path(), "team")
+            .unwrap()
+            .unwrap();
+        assert_ne!(own.reached(), kept.reached());
+    }
+
+    #[test]
+    fn a_fresh_runner_goes_with_its_chat_and_a_claim_left_keeps_its_record() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        let chat = "01CHAT";
+        claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            chat,
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        release_fresh(config.path(), &cluster.kubectl(), chat).unwrap();
+
+        assert!(deleted(&cluster));
+        assert_eq!(runners::fresh_runner_of(config.path(), chat).unwrap(), None);
+        assert!(
+            runners::cluster_runner_for(config.path(), "team")
+                .unwrap()
+                .is_some()
+        );
+        // A chat with none has nothing to release.
+        release_fresh(config.path(), &cluster.kubectl(), chat).unwrap();
+    }
+
+    #[test]
+    fn a_runner_answering_as_the_pools_own_is_not_kept_as_a_fresh_one() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let _ = added_and_a_second_runner(config.path(), &cluster);
+        cluster.write("paired.txt", &crate::runnerlink::to_line(&cluster.runner));
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", cluster.runner.key);
+
+        claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            &desktop(),
+            Duration::ZERO,
+        )
+        .expect_err("one runner is never two");
+
+        assert_eq!(runners::fresh_runners(config.path()).unwrap(), []);
+    }
+
+    #[test]
+    fn removing_a_pool_takes_its_chats_fresh_runners_with_it() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        remove_cluster(
+            config.path(),
+            Some(&cluster.kubectl()),
+            "team",
+            Some(OURS),
+            None,
+        )
+        .unwrap();
+
+        assert!(cluster.calls().contains(&claim));
+        assert_eq!(runners::fresh_runners(config.path()).unwrap(), []);
+    }
+
     #[test]
     fn a_cluster_pool_is_added_with_its_runner_claimed_vouched_for_and_paired() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
@@ -3050,4 +3226,57 @@ fn a_shape_change_is_refused_as_a_new_pool_would_be_and_a_reset_is_a_change_back
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn a_project_pool_this_machine_does_not_keep_starts_nothing_and_never_runs_here() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let plane = plane.path();
+    for workspace in ["ide", "web", "here"] {
+        let folder = plane.join("workspaces").join(workspace);
+        std::fs::create_dir_all(&folder).unwrap();
+    }
+    crate::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store
+            .set_project_chats_run_on(plane, Some("first"))
+            .unwrap();
+        store
+            .set_chats_run_on(plane, "web", Some("second"))
+            .unwrap();
+        store.set_chats_run_here(plane, "here").unwrap();
+    })
+    .unwrap();
+    let refused = runs_on(config.path(), plane, Some("ide")).unwrap_err();
+    assert!(
+        refused.starts_with("This project runs its chats on pool first"),
+        "{refused}"
+    );
+    assert_eq!(runs_on(config.path(), plane, Some("here")), Ok(None));
+    // A chat at the project's root moves no clone, so it stays here.
+    assert_eq!(runs_on(config.path(), plane, None), Ok(None));
+    assert_eq!(
+        workspaces_on_pools(config.path(), plane),
+        [
+            ("first".to_owned(), vec!["ide".to_owned()]),
+            ("second".to_owned(), vec!["web".to_owned()]),
+        ]
+        .into()
+    );
+    let chosen = crate::machine::StartChoice::Pool("gone".to_owned());
+    let refused = chat_place(config.path(), plane, Some("here"), Some(&chosen)).unwrap_err();
+    assert!(
+        refused.starts_with("This chat was to start on pool gone"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_start_on_a_pool_at_the_projects_root_is_refused_and_never_runs_here() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    let chosen = crate::machine::StartChoice::Pool("team".to_owned());
+    let refused = chat_place(config.path(), plane, None, Some(&chosen)).unwrap_err();
+    assert!(refused.contains("Start it in a workspace"), "{refused}");
 }

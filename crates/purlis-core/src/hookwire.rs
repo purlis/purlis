@@ -117,6 +117,8 @@ pub const CLAUDE_PID_ENV: &str = "CLAUDE_PID";
 ///
 /// **Nor the host's relaunch marker** ([`crate::noterminal::RELAUNCHED_ENV`]): it names the
 /// app's own parent, and an app started from a chat's shell leaves that shell's terminal.
+///
+/// **Nor a harness's internal variable** ([`HARNESS_INTERNAL_ENV`]).
 pub const NOT_INHERITED: &[&str] = &[
     CLAUDE_CONVERSATION_ENV,
     CLAUDE_PID_ENV,
@@ -131,7 +133,18 @@ pub const NOT_INHERITED: &[&str] = &[
     CHAT_ID_ENV,
     PROMPT_KEY_ENV,
     crate::sandbox::tools::POOL_IMAGE_VAR,
+    HARNESS_INTERNAL_ENV,
 ];
+
+/// A harness's internal variable. It stays out of a chat's environment: never inherited
+/// ([`NOT_INHERITED`]), and refused in a profile's `env` and a declaration's namespace
+/// ([`harness_internal`]).
+pub const HARNESS_INTERNAL_ENV: &str = "CLAUDE_CODE_SANDBOXED";
+
+/// Whether `name` is a harness's internal variable, in any case.
+pub fn harness_internal(name: &str) -> bool {
+    name.eq_ignore_ascii_case(HARNESS_INTERNAL_ENV)
+}
 
 /// Which conversation a report is of, and how well that is known.
 ///
@@ -228,16 +241,10 @@ impl Report {
                 started: Started::of(source.as_deref()),
                 ending: Ending::of(reason.as_deref()),
                 // One bit of the prompt, and only on the event that carries one: whether the
-                // person typed `/smart-close` (#1332). The prompt never leaves the hook.
+                // person typed purlis's smart close (#1332). The prompt never leaves the hook.
                 smart_close: event == Event::UserPromptSubmit
-                    && field("prompt").is_some_and(|prompt| {
-                        crate::state::smart_close_typed(
-                            &prompt,
-                            chat_harness(env)
-                                .as_deref()
-                                .and_then(crate::harness::Harness::of_registry_or_kind),
-                        )
-                    }),
+                    && field("prompt")
+                        .is_some_and(|prompt| crate::state::smart_close_typed(&prompt)),
                 unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
                 // The mode as the chat's own harness names it (#3787): read by that harness's
                 // adapter alone, so a harness whose word is not read says nothing.
@@ -2799,10 +2806,10 @@ pub type DoingHeard = Box<dyn Fn(Doing) + Send + Sync + 'static>;
 /// from, as **a report purlis made from its last message**.
 ///
 /// **The line itself is never recorded**, as a [`Doing`] is not: a line of its own, sent once
-/// and never spooled ([`tell_turn_output`]), which the host keeps in memory, for a task alone,
-/// until its next turn begins or its chat closes. The text is the chat's own words: the host
-/// masks what looks like a credential before it keeps any of it, and hands it on only quoted
-/// as data. **A report purlis makes from it is recorded, by design**: that masked text is the
+/// and never spooled ([`tell_turn_output`]), which the host keeps in memory, for every chat
+/// (#4550), until its next turn begins or its chat closes. The text is the chat's own words: the
+/// host masks what looks like a credential before it keeps any of it, and hands it on only
+/// quoted as data. **A report purlis makes from it is recorded, by design**: that masked text is the
 /// report, left for the chat that asked and kept on the task's dispatch record as any report is.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TurnOutput {

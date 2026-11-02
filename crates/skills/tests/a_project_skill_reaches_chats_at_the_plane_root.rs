@@ -78,14 +78,9 @@ fn a_project_skill_reaches_a_chat_at_the_plane_root_on_every_route() {
     for route in [Route::Plugin, Route::Config, Route::Briefing] {
         let set = set_in(&here, None, route);
 
-        // The config route names the built-in skill its own (opencode's route).
-        let secrets = route.built_in_name("secrets");
         assert_eq!(
             effective(&set),
-            [
-                ("deploy", Origin::Project),
-                (secrets.as_str(), Origin::BuiltIn)
-            ]
+            [("deploy", Origin::Project), ("secrets", Origin::BuiltIn)]
         );
         let deploy = &set.effective[0];
         assert_eq!(deploy.route, route);
@@ -121,23 +116,28 @@ fn a_chat_in_a_workspace_is_told_a_project_skill_was_not_granted_to_it() {
 #[test]
 fn a_project_skill_with_a_built_in_skills_name_is_left_out_and_the_built_in_one_stays() {
     let here = here();
-    skill(&here.built_in, "handoff", &whole("handoff"));
-    skill(&here.plane.join("skills"), "my-handoff", &whole("handoff"));
+    skill(&here.built_in, "purlis-handoff", &whole("purlis-handoff"));
+    // Its folder may be named anything: the name is what its `SKILL.md` says.
+    skill(
+        &here.plane.join("skills"),
+        "my-handoff",
+        &whole("purlis-handoff"),
+    );
 
     let set = set_in(&here, None, Route::Config);
 
-    // On the config route it goes by `purlis-handoff`, and its bare name is still kept for it.
     assert_eq!(effective(&set), [("purlis-handoff", Origin::BuiltIn)]);
     assert_eq!(
         set.effective[0].skill.path,
-        here.built_in.join("handoff/SKILL.md")
+        here.built_in.join("purlis-handoff/SKILL.md")
     );
     assert_eq!(
         left_out(&set),
         [(
-            "handoff",
+            "purlis-handoff",
             Origin::Project,
-            "a built-in skill has this name, and a built-in skill is never replaced".to_owned()
+            "a name starting with purlis- is purlis's own, so this skill never loads: rename it"
+                .to_owned()
         )]
     );
 }

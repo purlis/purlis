@@ -31,9 +31,9 @@ const OPS: ListedSkill[] = [
     accept: "workspaces/ops/skills",
     left_out: "A chat made its folder: accept it to use it.",
   }),
-  skill("secrets", {
+  skill("purlis-secrets", {
     level: "built-in",
-    folder: "/app/skills/secrets",
+    folder: "/app/skills/purlis-secrets",
     description: "Uses a vault's secret without its value entering the chat.",
   }),
   skill("deploy", { description: "Deploys the service to staging, then production." }),
@@ -205,13 +205,15 @@ export const InThisChat: Story = {
     const line = row("1 built-in skill");
     await untilFocused(() => line, "Skills: Down reaches the built-in skills' quiet line");
     await userEvent.keyboard("{Enter}");
-    await waitFor(() => expect(row(/^secrets/)).toBeVisible());
+    await waitFor(() => expect(row(/^purlis-secrets/)).toBeVisible());
     await expect(
       row("They ship with purlis: they can't be edited, turned off or replaced."),
     ).toBeVisible();
     await untilFocused(() => line, "Skills: the keyboard stays on the quiet line");
     await userEvent.keyboard(" ");
-    await waitFor(() => expect(within(list).queryByRole("row", { name: /^secrets/ })).toBeNull());
+    await waitFor(() =>
+      expect(within(list).queryByRole("row", { name: /^purlis-secrets/ })).toBeNull(),
+    );
     await userEvent.keyboard("{ArrowDown}");
     const leftOut = row(/^Left out/);
     await untilFocused(() => leftOut, "Skills: Down reaches Left out");
@@ -412,5 +414,55 @@ export const TheChatsOwnNeeds: Story = {
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Restart"));
     expectFocusInSight();
     await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull(), { timeout: 3_000 });
+  },
+};
+
+/** The skills of a plugin this chat does not have (#4477): one line under Left out, which ↓ and
+ *  Enter unfold in place, with why and Copy command closing the run, and no Use on a card. */
+export const APluginThisChatLacks: Story = {
+  render: () => (
+    <Skills
+      rows={[
+        {
+          key: "pdf:merge",
+          program: "Claude Code",
+          inChat: true,
+          skill: skill("pdf:merge", {
+            level: "installed",
+            folder: "",
+            owner: { kind: "plugin", name: "pdf" },
+          }),
+        },
+        ...["brainstorming", "writing-plans"].map((name): ListedSkill => ({
+          key: name,
+          program: "Claude Code",
+          inChat: false,
+          pluginOff: {
+            name: "superpowers",
+            said: "Claude Code has the superpowers plugin turned off. Turn it on, then restart this chat.",
+            line: "Off in Claude Code",
+            command: "claude plugin enable superpowers@market",
+          },
+          skill: skill(`superpowers:${name}`, {
+            level: "installed",
+            folder: "",
+            on: false,
+            owner: { kind: "plugin", name: "superpowers" },
+          }),
+        })),
+      ]}
+    />
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Skills" });
+    const leftOut = within(list).getByRole("row", { name: /Left out/ });
+    await userEvent.click(leftOut);
+    const line = await within(list).findByRole("row", { name: /superpowers: 2 skills/ });
+    await userEvent.click(line);
+    await expect(await canvas.findByText(/turned off\. Turn it on/)).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: /Use superpowers/ })).toBeNull();
+    await expect(canvas.getByRole("button", { name: "Copy command" })).toBeVisible();
+    await untilSettled(list);
+    await pictureNow();
   },
 };

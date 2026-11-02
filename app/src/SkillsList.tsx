@@ -18,6 +18,7 @@ import type { GroupDrawn } from "./menuModel";
 import { Groups } from "./Menus";
 import { OPEN_SKILL_STUDIO } from "./skillStudio";
 import type { ChatNeed } from "./chatSkillNeeds";
+import type { PluginOffShown } from "./bindings";
 import {
   cardReasonOf,
   menuRowsOf,
@@ -133,7 +134,8 @@ export function SkillsList({
   // **While a filter is typed every group is open**, so no match is folded away.
   const isFolded = (id: GroupId) => !filtering && folded.includes(id);
   const card = (row: ListedSkill) => {
-    const reason = cardReasonOf(row);
+    // A plugin's run says why once, on its line and its closing line (#4477).
+    const reason = row.pluginOff === undefined ? cardReasonOf(row) : undefined;
     const fix = fixOf(row);
     return (
       <ListCardRow
@@ -187,6 +189,14 @@ export function SkillsList({
     />
   );
   const rows = [...needs, ...inChat, ...builtIns, ...leftOut];
+  // The plugins this chat lacks, each in the order its first skill comes, then the rest.
+  const pluginsOff = [
+    ...new Map(
+      leftOut.flatMap((row) =>
+        row.pluginOff === undefined ? [] : [[row.pluginOff.name, row.pluginOff]],
+      ) as [string, PluginOffShown][],
+    ).values(),
+  ];
   const needing = chatNeeds.length + needs.length;
   return (
     <div className="skills-view" data-testid="skills-view">
@@ -304,7 +314,38 @@ export function SkillsList({
                   folded={isFolded("left-out")}
                   onFoldedChange={(to) => onFold("left-out", to)}
                 >
-                  {leftOut.map(card)}
+                  {pluginsOff.map((plugin) => (
+                    <ListRun
+                      key={plugin.name}
+                      id={`plugin-off:${plugin.name}`}
+                      items={leftOut.filter((row) => row.pluginOff?.name === plugin.name)}
+                      says={(n) =>
+                        `${plugin.name}: ${counted(n, "skill", "skills")}. ${plugin.line}`
+                      }
+                      // While a filter is typed no match is folded away.
+                      {...(filtering ? { folded: false } : {})}
+                      closing={{
+                        says: plugin.said,
+                        children:
+                          plugin.command === null ? undefined : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() =>
+                                void navigator.clipboard
+                                  ?.writeText(plugin.command ?? "")
+                                  .catch(() => undefined)
+                              }
+                            >
+                              Copy command
+                            </Button>
+                          ),
+                      }}
+                    >
+                      {card}
+                    </ListRun>
+                  ))}
+                  {leftOut.filter((row) => row.pluginOff === undefined).map(card)}
                 </ListFoldSection>
               )}
             </>

@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use super::*;
-use crate::{Chat, HarnessSkills, Machine, PROJECT_DIR, Reason, Route, SkillSet, skill_set};
+use crate::{Chat, HarnessSkills, Machine, PROJECT_DIR, Route, SkillSet, skill_set};
 
 fn skill(dir: &Path, name: &str, description: &str, more: &str) {
     std::fs::create_dir_all(dir.join(name)).unwrap();
@@ -328,24 +328,59 @@ fn a_chat_reached_only_through_purlis_tools_lists_nothing_so_nothing_is_hidden()
 }
 
 #[test]
-fn a_plane_skill_named_as_the_index_never_loads() {
+fn the_index_has_one_name_on_every_route_and_a_skill_of_its_old_name_is_another_skill() {
     let tmp = tempfile::tempdir().unwrap();
     let (plane, built_in) = three(tmp.path());
-    skill(&plane.join(PROJECT_DIR), INDEX, "Mine.", "");
+    skill(&plane.join(PROJECT_DIR), "skill-index", "Mine.", "");
+    for route in [Route::Plugin, Route::Config, Route::Briefing] {
+        let set = set_on(&plane, &built_in, route);
+        assert!(
+            set.effective.iter().any(|e| e.skill.name == "skill-index"),
+            "{route:?}"
+        );
+        let index = set.routed(skills(3), &[]).index().expect("an index");
+        assert_eq!(index.name, "purlis-skill-index", "{route:?}");
+        assert!(
+            index.text.starts_with("---\nname: purlis-skill-index\n"),
+            "{route:?}: {}",
+            index.text
+        );
+    }
+}
 
-    let set = set_at_the_root(&plane, &built_in);
-
-    assert!(set.effective.iter().all(|e| e.skill.name != INDEX));
-    let left = set
-        .left_out
-        .iter()
-        .find(|l| l.name == INDEX)
-        .expect("left out");
-    assert_eq!(left.reason, Reason::IndexName);
-    assert_eq!(
-        left.reason.to_string(),
-        "purlis's index skill has this name, so this skill never loads: rename it"
-    );
+#[test]
+fn a_repo_copy_of_the_index_skills_name_is_a_clash_by_how_the_route_reads_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    let theirs = || crate::OutsideSkill {
+        skill: crate::Skill {
+            name: INDEX.to_owned(),
+            description: "The repo's.".to_owned(),
+            path: tmp.path().join("clone").join(INDEX).join("SKILL.md"),
+        },
+        root: tmp.path().join("clone"),
+        origin: crate::Origin::Repo,
+        id: INDEX.to_owned(),
+        owner: crate::Owner::Repo("app".to_owned()),
+        switch: crate::Switch::Alone,
+        off: false,
+        unread: None,
+    };
+    for (route, outcome) in [
+        (Route::Config, crate::Outcome::EitherOne),
+        (Route::Plugin, crate::Outcome::BothLoad),
+        (Route::Briefing, crate::Outcome::BothLoad),
+    ] {
+        let set = set_on(&plane, &built_in, route).with_outside(route, [theirs()]);
+        assert_eq!(
+            set.clashes
+                .iter()
+                .map(|c| (c.name.as_str(), c.plane.origin, c.outcome))
+                .collect::<Vec<_>>(),
+            [(INDEX, crate::Origin::BuiltIn, outcome)],
+            "{route:?}"
+        );
+    }
 }
 
 #[test]
@@ -420,141 +455,6 @@ fn the_index_shows_no_character_a_reader_would_not_see() {
     assert!(
         index.contains("1 more skill has a name that is not a skill name"),
         "{index}"
-    );
-}
-
-#[test]
-fn a_repo_or_harness_skill_named_as_the_index_is_hidden_by_it() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (plane, built_in) = three(tmp.path());
-    let folder = tmp.path().join("clone/skills-of-the-repo").join(INDEX);
-    skill(folder.parent().unwrap(), INDEX, "The repo's.", "");
-    let outside = |origin, owner| crate::OutsideSkill {
-        skill: crate::Skill {
-            name: INDEX.to_owned(),
-            description: "The repo's.".to_owned(),
-            path: folder.join("SKILL.md"),
-        },
-        root: tmp.path().join("clone"),
-        origin,
-        id: INDEX.to_owned(),
-        owner,
-        switch: crate::Switch::Alone,
-        off: false,
-        unread: None,
-    };
-
-    for (origin, owner) in [
-        (crate::Origin::Repo, crate::Owner::Repo("app".to_owned())),
-        (crate::Origin::Harness, crate::Owner::You),
-    ] {
-        let set = set_at_the_root(&plane, &built_in)
-            .with_outside(Route::Plugin, [outside(origin, owner.clone())]);
-
-        assert!(set.effective.iter().all(|e| e.skill.name != INDEX));
-        let left = set
-            .left_out
-            .iter()
-            .find(|l| l.name == INDEX)
-            .expect("left out");
-        assert_eq!(left.reason, Reason::HiddenByIndex, "{origin:?}");
-        assert_eq!(
-            left.reason.to_string(),
-            "hidden by purlis's index skill of this name"
-        );
-        let briefed = set_on(&plane, &built_in, Route::Briefing)
-            .with_outside(Route::Briefing, [outside(origin, owner.clone())]);
-        assert!(
-            briefed
-                .left_out
-                .iter()
-                .any(|l| l.reason == Reason::HiddenByIndex)
-        );
-
-        // Where purlis's folder is one the harness discovers as its own, purlis's index is
-        // `purlis-skill-index`: the copy is another skill beside it, by a name of its own.
-        let discovered = set_on(&plane, &built_in, Route::Config)
-            .with_outside(Route::Config, [outside(origin, owner)])
-            .routed(skills(3), &[]);
-        assert!(discovered.effective.iter().any(|e| e.skill.name == INDEX));
-        assert!(discovered.left_out.is_empty(), "{:?}", discovered.left_out);
-        assert_eq!(
-            discovered.index().expect("an index").name,
-            "purlis-skill-index"
-        );
-    }
-}
-
-#[test]
-fn on_the_config_route_the_index_goes_by_a_name_of_its_own() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (plane, built_in) = three(tmp.path());
-
-    let index = set_on(&plane, &built_in, Route::Config)
-        .routed(skills(3), &[])
-        .index()
-        .expect("an index");
-    assert_eq!(index.name, "purlis-skill-index");
-    assert!(
-        index.text.starts_with("---\nname: purlis-skill-index\n"),
-        "its name is its folder's: {}",
-        index.text
-    );
-    for route in [Route::Plugin, Route::Briefing] {
-        let index = set_on(&plane, &built_in, route)
-            .routed(skills(3), &[])
-            .index()
-            .expect("an index");
-        assert_eq!(index.name, INDEX, "{route:?} is as it was");
-    }
-
-    // A project skill of that name is kept from it; a repo's is a clash.
-    skill(&plane.join(PROJECT_DIR), "purlis-skill-index", "Mine.", "");
-    let theirs = crate::OutsideSkill {
-        skill: crate::Skill {
-            name: "purlis-skill-index".to_owned(),
-            description: "The repo's.".to_owned(),
-            path: tmp.path().join("clone/purlis-skill-index/SKILL.md"),
-        },
-        root: tmp.path().join("clone"),
-        origin: crate::Origin::Repo,
-        id: "purlis-skill-index".to_owned(),
-        owner: crate::Owner::Repo("app".to_owned()),
-        switch: crate::Switch::Alone,
-        off: false,
-        unread: None,
-    };
-    let set = set_on(&plane, &built_in, Route::Config).with_outside(Route::Config, [theirs]);
-    // The project's copy is left out; the repo's loads beside purlis's index, under one name.
-    let reasons: Vec<(crate::Origin, &Reason)> = set
-        .left_out
-        .iter()
-        .filter(|l| l.name == "purlis-skill-index")
-        .map(|l| (l.origin, &l.reason))
-        .collect();
-    assert_eq!(
-        reasons,
-        [(crate::Origin::Project, &Reason::BuiltInsOwnName)]
-    );
-    assert!(
-        set.effective
-            .iter()
-            .any(|e| e.skill.name == "purlis-skill-index" && e.origin == crate::Origin::Repo)
-    );
-    assert_eq!(
-        set.clashes
-            .iter()
-            .map(|c| (c.name.as_str(), c.outcome))
-            .collect::<Vec<_>>(),
-        [("purlis-skill-index", crate::Outcome::EitherOne)]
-    );
-    // Elsewhere the name is the project's to use.
-    let plugin = set_on(&plane, &built_in, Route::Plugin);
-    assert!(
-        plugin
-            .effective
-            .iter()
-            .any(|e| e.skill.name == "purlis-skill-index")
     );
 }
 
