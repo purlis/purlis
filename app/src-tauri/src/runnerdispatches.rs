@@ -78,7 +78,6 @@ impl HeldDispatch {
                 "to hand its work off to a chat{as_whom} in workspace {}",
                 moved.workspace
             ),
-            // Where it asks to run, where it named a place (#4536).
             // Where it asks to run, where it named a place (#4536): the levels' answer is the
             // tab's to say, as it is read when the person opens it.
             None => format!(
