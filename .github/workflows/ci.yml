@@ -1585,6 +1585,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # The outcome bars build `dev-release` (#4351): a cache of their own, since main's
+          # debug one would be an exact hit, and rust-cache writes nothing over an exact hit.
+          key: ${{ matrix.outcome && 'dev-release' || '' }}
       # **sccache for the workspace's own crates, on macOS** (2026-10-12, an experiment kept only
       # if it pays). rust-cache keeps the dependencies but never the workspace's crates, so each
       # macOS part compiled purlis-core and the app afresh: 3.5 to 4 of its minutes on the
@@ -1763,42 +1766,36 @@ jobs:
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: claude
-          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       - name: The Skill studio's outcome bars on claude's stand-in
         run: xvfb-run -a npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: claude
-          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       - name: The Skill studio's outcome bars on codex's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
-          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       - name: The Skill studio's outcome bars on codex's stand-in
         run: xvfb-run -a npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
-          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
-          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: xvfb-run -a npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
-          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       # The app started the way an operator starts it — from Finder, with the `PATH` Finder
       # gives — on purlis's own built-in profile. Its own run, because it is the app's
       # ENVIRONMENT that is under test and one run is one environment (charter-app#134).
@@ -1961,7 +1958,8 @@ jobs:
   # a block on every merge. It becomes required with the flag's flip (#2786).
   #
   # On main's push, and on a pull request that touches what the bars measure (`GATES`), by the
-  # operator's choice of 2026-11-01: it takes a macOS and a Linux runner for 11 to 17 minutes. A
+  # operator's choice of 2026-11-01: it takes a macOS and a Linux runner, for 11 to 17 minutes on
+  # the debug build it used to make, and for about 31 on the release build warm (#4351). A
   # regression from anywhere else shows on main, not on its pull request.
   outcome-bars:
     name: outcome bars (${{ matrix.os }})
@@ -1978,6 +1976,10 @@ jobs:
     # 31 minutes.
     timeout-minutes: 75
     if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
+    # Where the specs find the build: the profile the build step names for `outcome` (one place
+    # for the path, so no harness's run can take another build's program).
+    env:
+      CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
     strategy:
       fail-fast: false
       matrix:
