@@ -2201,6 +2201,33 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
     await waitFor(() => expect(card()).toBeNull());
   });
 
+  it("takes the card down when the pointer left the window, with no leave on the row (#4628)", async () => {
+    core(threeTasks());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+
+    await userEvent.hover(row(tree, "devops 3"));
+    await theCard();
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
+
+    await waitFor(() => expect(card()).toBeNull());
+  });
+
+  it("keeps a card the keyboard raised when the pointer leaves the window (#4628)", async () => {
+    core(threeTasks());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+
+    act(() => row(tree, "devops 2").focus());
+    const shown = await theCard();
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
+    await new Promise((done) => setTimeout(done, CARD_LEAVE_MS * 2));
+
+    expect(card()).toBe(shown);
+  });
+
   it("says a session's tasks in its card", async () => {
     const { move } = core(threeTasks());
     render(<App />);

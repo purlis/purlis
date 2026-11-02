@@ -926,4 +926,15 @@ describe("what a refused send is heard as (#3291)", () => {
     expect(nameOf(document.getElementById("box") as HTMLElement)).toBe("of the pool Host");
     document.body.innerHTML = "";
   });
+
+  it("stops drawing the hover once the pointer left the window, with no leave on the box (#4628)", async () => {
+    render(<Held label="Name" />);
+    const box = screen.getByLabelText("Name").closest('[data-part="root"]') as HTMLElement;
+    fireEvent.pointerEnter(box);
+    expect(box.dataset.hovered).toBe("true");
+
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
+
+    expect(box.dataset.hovered).toBeUndefined();
+  });
 });

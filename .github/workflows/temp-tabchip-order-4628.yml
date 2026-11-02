@@ -37,3 +37,6 @@ jobs:
       - name: whole file, shuffled, seed 3
         if: ${{ !cancelled() }}
         run: npx vitest run --project unit src/TabChip.window.test.tsx --sequence.shuffle.tests --sequence.seed=3
+      - name: the leave audit's tests
+        if: ${{ !cancelled() }}
+        run: npx vitest run --project unit src/ThemeDraftStrip.test.tsx src/ui/field/Field.test.tsx src/ui/activity/ActivityItem.test.tsx src/ui/menu/MenuTip.test.tsx src/ChatsSection.window.test.tsx
