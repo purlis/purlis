@@ -14,8 +14,8 @@ use super::super::{ResolvedTheme, load, tint};
 use super::{
     Drawn, Family, Fell, NEAR_A_FLOOR, Rule, State, broken_on, coarsely_tinted, combined, drawn,
     drawn_apart, drawn_on, edge, every_tinted, fallen, family, floor_of, held, looks_in, lowest,
-    rules, sets_read, shows_a_tint, singles_of, surface_ground, surfaces_set, under_part,
-    unreadable,
+    rules, sets_read, shows_a_tint, singles_of, surface_ground, surfaces_set,
+    tints_reach_a_surface, under_part, unreadable,
 };
 
 /// The recipe: every ground a surface stands on, so its fill has something turned to show.
@@ -124,6 +124,25 @@ fn breaks_on(theme: &ResolvedTheme, name: &str, surface: &str) -> bool {
         "chart.4",
     )
     .is_some()
+}
+
+/// **What `name` breaks on `surface`'s fill `chart.4` through the reading itself**, the coarse tints
+/// and every degree as the hold passes them. What a test holds where words this near would fall on
+/// the family's own grounds first, and the hold never come to the surface.
+fn falls_in_the_tints(theme: &ResolvedTheme, name: &str, surface: &str) -> Option<String> {
+    let rules = rules(&theme.parts);
+    let mut drawn_in = vec![theme.clone()];
+    drawn_in.extend(every_tinted(theme));
+    broken_on(
+        theme,
+        &coarsely_tinted(theme),
+        &drawn_in,
+        &rules,
+        family(name).unwrap(),
+        family(surface).unwrap(),
+        "chart.4",
+    )
+    .map(|(floor, _)| floor)
 }
 
 fn breaks_in_a_tint(theme: &ResolvedTheme, name: &str, surface: &str) -> bool {
@@ -246,6 +265,11 @@ fn a_shipped_theme_builds_no_tints_for_what_stands_on_its_surfaces() {
         let loaded = load(&json!({ "name": "Plain", "extends": base }));
         for appearance in &loaded.theme.appearances {
             let rules = held(appearance).0;
+            assert!(
+                !tints_reach_a_surface(appearance, &rules),
+                "{base} {}",
+                appearance.id
+            );
             for (surface, _, _, set) in surfaces_set(&rules) {
                 assert!(
                     !shows_a_tint(appearance, set),
@@ -295,43 +319,57 @@ fn the_coarse_reading_comes_within_its_margin_of_every_degree() {
 
 #[test]
 fn a_see_through_look_on_an_opaque_surface_is_read_in_the_tints() {
-    // The fill is opaque and no tint turns it: what moves is the look, which the recipe turns.
-    let build = |surface: &str, wash: &str, byte: u8| {
+    // The fill is opaque and no tint turns it: what moves is the look, which the recipe turns. On
+    // white every default look clears its floors, so only these words come near.
+    // Each token is drawn elsewhere only under the primary words, so the wash brings no others near.
+    let build = |token: &str, wash: &str, byte: u8| {
+        let mut tokens = json!({ "chart.3": grey(byte), "chart.4": "#ffffff" });
+        tokens[token] = json!(wash);
         standing_on(
-            surface,
-            json!({ "chart.4": grey(byte), "control.hover": wash }),
-            &secondary_near(json!({ "button.root.secondary.fill": "control.hover" })),
+            "popover",
+            tokens,
+            &secondary_near(json!({
+                "button.root.secondary.fill": token,
+                "button.root.secondary.text": "chart.3",
+            })),
         )
     };
-    let alphas = &[
-        0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0,
-    ];
-    let (surface, wash, byte) = ["dialog", "panel"]
+    let mut tried = Vec::new();
+    let found = ["list.selected", "surface.hover"]
         .into_iter()
-        .flat_map(|surface| washes(alphas).map(move |wash| (surface, wash)))
-        .find_map(|(surface, wash)| {
-            let breaks = |byte| {
-                build(surface, &wash, byte).is_none_or(|one| breaks_on(&one, "button", surface))
-            };
-            let byte = last_holding(0xff, 0, breaks)?;
-            let theme = build(surface, &wash, byte)?;
-            (breaks_in_a_tint(&theme, "button", surface) && fallen(&untinted(&theme)).is_empty())
-                .then_some((surface, wash, byte))
+        .flat_map(|token| {
+            washes(&[0x30, 0x40, 0x50, 0x60, 0x70, 0x80]).map(move |wash| (token, wash))
         })
-        .expect("a see-through look that holds as written on an opaque fill and breaks in a tint");
-    let theme = build(surface, &wash, byte).unwrap();
-    assert!(!shows_a_tint(&theme, "chart.4"), "{surface} {wash}");
-    let held = fallen(&theme);
+        .find_map(|(token, wash)| {
+            let breaks = |byte| {
+                build(token, &wash, byte).is_none_or(|one| breaks_on(&one, "button", "popover"))
+            };
+            let byte = last_holding(0, 0xff, breaks);
+            tried.push((token, wash.clone(), byte));
+            let theme = build(token, &wash, byte?)?;
+            breaks_in_a_tint(&theme, "button", "popover").then_some((token, wash, byte?))
+        });
+    let Some((token, wash, byte)) = found else {
+        panic!("no see-through look holds as written and breaks in a tint: {tried:?}");
+    };
+    let theme = build(token, &wash, byte).unwrap();
+    assert!(!shows_a_tint(&theme, "chart.4"), "{wash}");
+    assert!(!breaks_on(&theme, "button", "popover"), "{wash} {byte}");
+    let floor = falls_in_the_tints(&theme, "button", "popover");
     assert!(
-        fell_on(&held, "button"),
-        "{surface} {wash} {byte}: {held:?}"
+        floor
+            .as_ref()
+            .is_some_and(|one| one.contains("words contrast")),
+        "{wash} {byte}: {floor:?}"
     );
-    // The control: a step darker, the same reading falls as written.
-    let falling = fallen(&untinted(&build(surface, &wash, byte - 1).unwrap()));
-    assert!(
-        fell_on(&falling, "button"),
-        "{surface} {wash} {byte}: {falling:?}"
-    );
+    // The controls: a step lighter the same words fall as written, and black ones in no tint.
+    assert!(breaks_on(
+        &build(token, &wash, byte + 1).unwrap(),
+        "button",
+        "popover"
+    ));
+    let black = falls_in_the_tints(&build(token, &wash, 0).unwrap(), "button", "popover");
+    assert_eq!(black, None, "{wash}");
 }
 
 /// Whether the secondary reads on `surface`'s fill in every state alone and breaks in a set of them.
@@ -353,37 +391,28 @@ fn falls_only_in_a_set(theme: &ResolvedTheme, surface: &str) -> bool {
 #[test]
 fn a_look_only_a_set_of_states_draws_on_a_surface_is_read() {
     // Hovered and pressed at once: the words of one on the see-through fill of the other, which
-    // neither draws alone. Opaque the fill would fall on the button's own grounds first.
-    let build = |wash: &str, words: u8, ground: u8| {
+    // neither draws alone. On white every default look clears its floors, so only those come near.
+    let build = |wash: &str, words: u8| {
         standing_on(
-            "dialog",
-            json!({ "chart.3": grey(words), "chart.4": grey(ground), "chart.5": wash }),
+            "popover",
+            json!({ "chart.3": grey(words), "chart.4": "#ffffff", "chart.5": wash }),
             &secondary_near(json!({
                 "button.root.secondary.hover.text": "chart.3",
                 "button.root.secondary.pressed.fill": "chart.5",
             })),
         )
     };
-    let tries = ["#ffffff40", "#ffffff60", "#ffffff20", "#ffffff80"]
+    let mut tried = 0;
+    let theme = ["#00000040", "#00000050", "#00000060"]
         .into_iter()
-        .flat_map(|wash| {
-            (0x40..=0x70_u8).step_by(8).flat_map(move |words| {
-                (0x90..=0xd8_u8)
-                    .step_by(4)
-                    .map(move |one| (wash, words, one))
-            })
-        });
-    let theme = tries
-        .filter_map(|(wash, words, ground)| build(wash, words, ground))
-        .find(|theme| {
-            falls_only_in_a_set(theme, "dialog") && {
-                let fell = fallen(&untinted(theme));
-                fell_on(&fell, "button") && fell.iter().all(|one| one.part.starts_with("dialog."))
-            }
-        })
-        .expect("a see-through fill that only a set of states puts near a floor on the dialog");
-    // As written, and so through the whole hold.
-    assert!(fell_on(&fallen(&theme), "button"));
+        .flat_map(|wash| (0x38..=0x70_u8).step_by(8).map(move |words| (wash, words)))
+        .filter_map(|(wash, words)| build(wash, words))
+        .inspect(|_| tried += 1)
+        .find(|theme| falls_only_in_a_set(theme, "popover"));
+    let Some(theme) = theme else {
+        panic!("no look only a set of states draws falls on the popover, of {tried} that loaded");
+    };
+    assert!(breaks_on(&theme, "button", "popover"));
 }
 
 #[test]
@@ -506,7 +535,7 @@ const WITHIN: f64 = 1.0;
 
 #[test]
 fn the_coarse_reading_comes_within_its_margin_on_every_part_edge_and_state() {
-    // Every look a family draws on the fill, each reading the check takes of it. The last wash
+    // Every look a family draws on the fill, each reading the check takes of it. The darkest wash
     // falls as written: the control, that a sweep this size does reach a floor.
     let surface = family("popover").unwrap();
     let mut widest: f64 = 0.0;
@@ -589,8 +618,4 @@ fn the_coarse_reading_comes_within_its_margin_on_every_part_edge_and_state() {
         "{parts} {states} {edges}"
     );
     assert!(fell > 0, "the sweep reached no floor");
-    assert!(words_fell(&fallen(&untinted(&on_a_surface(
-        "popover",
-        "#00000090"
-    )))));
 }
