@@ -8140,9 +8140,15 @@ nav.piece-files-head {
   min-width: 0;
 }
 
+/* Under the card's title, never louder than it: the title's size, its kinds' weight a step down. */
 .skill-checks-drafted-head {
   margin: 0;
-  font-weight: var(--font-weight-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.skill-checks-list {
+  font-size: var(--font-size-sm);
 }
 
 .skill-checks-list,
