@@ -912,6 +912,64 @@ fn the_frame_shows(
     });
 }
 
+/// Chrome makes the payment frame's document's own context, in which the document's origin is
+/// `origin`: Chrome's `://` where it has none.
+fn the_document_has(engine: &super::Engine, browser: &crate::drive::Browser, origin: &str) {
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context": {
+            "id": 71,
+            "origin": origin,
+            "name": "",
+            "uniqueId": "U-71",
+            "auxData": {"isDefault": true, "type": "default", "frameId": "PAYMENT-FRAME"},
+        }}),
+        Some("S-PAYMENT"),
+    );
+    wait_for("the document's origin is seen", || {
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .origin("S-PAYMENT", "PAYMENT-FRAME")
+            == Some(origin)
+    });
+}
+
+/// The payment frame shows a srcdoc document, told as Chrome tells it: the frame's
+/// `securityOrigin` is read off its address alone, so it is `://` whatever the document's
+/// origin; the document's own context has `origin`.
+fn chrome_shows_a_srcdoc_frame(
+    engine: &super::Engine,
+    browser: &crate::drive::Browser,
+    origin: &str,
+) {
+    engine.emit(
+        "Page.frameNavigated",
+        json!({
+            "frame": {
+                "id": "PAYMENT-FRAME",
+                "parentId": "PAGE-1",
+                "loaderId": "LOADER-7",
+                "name": "",
+                "url": "about:srcdoc",
+                "domainAndRegistry": "",
+                "securityOrigin": "://",
+                "securityOriginDetails": {"isLocalhost": false},
+                "mimeType": "text/html",
+                "adFrameStatus": {"adFrameType": "none"},
+                "secureContextType": "InsecureScheme",
+                "crossOriginIsolatedContextType": "NotIsolated",
+                "gatedAPIFeatures": [],
+            },
+            "type": "Navigation",
+        }),
+        Some("S-PAYMENT"),
+    );
+    wait_for("the frame's new document is seen", || {
+        frame_address(browser, "PAYMENT-FRAME") == "about:srcdoc"
+    });
+    the_document_has(engine, browser, origin);
+}
+
 #[test]
 fn a_frames_origin_follows_the_webs_rules_for_its_address() {
     let frame = |url: &str, origin: &str| Frame {
@@ -926,43 +984,83 @@ fn a_frames_origin_follows_the_webs_rules_for_its_address() {
         security_origin: origin.to_owned(),
     };
     let web = |address: &str| Origin::Web(address.to_owned());
-    for (url, origin, judged) in [
-        ("https://shop.test/pay", "", web("https://shop.test/pay")),
+    for (url, origin, document, judged) in [
+        (
+            "https://shop.test/pay",
+            "",
+            None,
+            web("https://shop.test/pay"),
+        ),
         (
             "https://shop.test/pay",
             "null",
+            Some("://"),
             web("https://shop.test/pay"),
         ),
         (
             "blob:https://maker.test/4d2c",
             "",
+            None,
             web("https://maker.test/4d2c"),
         ),
         (
             "BLOB:https://maker.test/4d2c",
             "",
+            None,
             web("https://maker.test/4d2c"),
         ),
-        ("blob:null/4d2c", "", Origin::Opaque),
-        ("about:blank", "", Origin::Inherited),
-        ("about:blank#top", "", Origin::Inherited),
-        ("about:srcdoc", "", Origin::Inherited),
-        ("", "", Origin::Inherited),
         (
-            "about:blank",
+            "blob:https://maker.test/4d2c",
             "https://maker.test",
+            None,
             web("https://maker.test/"),
         ),
-        ("about:srcdoc", "null", Origin::Opaque),
-        ("about:blank", "://", Origin::Opaque),
-        ("data:text/html,<p>hi</p>", "", Origin::Opaque),
-        ("data:text/html,<p>hi</p>", "null", Origin::Opaque),
-        ("javascript:void(0)", "", Origin::Opaque),
-        ("about:other", "", Origin::Opaque),
-        ("chrome-error://chromewebdata/", "", Origin::Engine),
-        ("chrome-error://chromewebdata/", "null", Origin::Engine),
+        ("blob:null/4d2c", "", None, Origin::Opaque),
+        ("about:blank", "", None, Origin::Inherited),
+        ("about:blank#top", "", None, Origin::Inherited),
+        ("about:srcdoc", "", None, Origin::Inherited),
+        ("", "", None, Origin::Inherited),
+        // Chrome says `://` of every such address, whatever origin its document has.
+        ("about:srcdoc", "://", None, Origin::Inherited),
+        ("about:blank", "://", None, Origin::Inherited),
+        (
+            "about:srcdoc",
+            "://",
+            Some("http://fixture.test"),
+            web("http://fixture.test/"),
+        ),
+        (
+            "about:blank",
+            "://",
+            Some("https://maker.test:8443"),
+            web("https://maker.test:8443/"),
+        ),
+        ("about:srcdoc", "://", Some("://"), Origin::Opaque),
+        ("about:srcdoc", "", Some("null"), Origin::Opaque),
+        ("about:blank", "://", Some(""), Origin::Opaque),
+        ("data:text/html,<p>hi</p>", "", None, Origin::Opaque),
+        (
+            "data:text/html,<p>hi</p>",
+            "://",
+            Some("://"),
+            Origin::Opaque,
+        ),
+        ("data:text/html,<p>hi</p>", "null", None, Origin::Opaque),
+        ("javascript:void(0)", "", None, Origin::Opaque),
+        ("about:other", "", None, Origin::Opaque),
+        ("chrome-error://chromewebdata/", "", None, Origin::Engine),
+        (
+            "chrome-error://chromewebdata/",
+            "null",
+            None,
+            Origin::Engine,
+        ),
     ] {
-        assert_eq!(frame(url, origin).origin(), judged, "{url} at {origin:?}");
+        assert_eq!(
+            frame(url, origin).origin(document),
+            judged,
+            "{url} at {origin:?}, its document at {document:?}"
+        );
     }
 }
 
@@ -996,14 +1094,60 @@ fn a_frame_with_no_web_origin_is_opaque_and_nothing_is_typed_into_it() {
 }
 
 #[test]
-fn a_frame_the_engine_gives_an_opaque_origin_is_opaque_whatever_its_address() {
+fn a_sandboxed_srcdoc_frame_is_opaque() {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
-    the_frame_shows(&engine, &browser, "about:srcdoc", Some("null"));
+    chrome_shows_a_srcdoc_frame(&engine, &browser, "://");
     assert_eq!(
         typed_into_the_frame(&browser).err(),
         Some(crate::drive::Refusal::FrameOpaque)
     );
+    assert!(engine.sent("Input.insertText").is_empty());
+}
+
+#[test]
+fn a_srcdoc_frame_is_judged_by_the_origin_its_document_has() {
+    let (judge, told) = judge(&["http://fixture.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    chrome_shows_a_srcdoc_frame(&engine, &browser, "http://fixture.test");
+    let answer = typed_into_the_frame(&browser).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert_eq!(whys(&told).last().unwrap().0, "http://fixture.test/");
+}
+
+#[test]
+fn a_srcdoc_frame_whose_document_has_ended_is_judged_by_the_page_around_it() {
+    let (judge, told) = judge(&["http://fixture.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    chrome_shows_a_srcdoc_frame(&engine, &browser, "://");
+    engine.emit(
+        "Runtime.executionContextDestroyed",
+        json!({"executionContextId": 71, "executionContextUniqueId": "U-71"}),
+        Some("S-PAYMENT"),
+    );
+    wait_for("the document's context is gone", || {
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .origin("S-PAYMENT", "PAYMENT-FRAME")
+            .is_none()
+    });
+    let answer = typed_into_the_frame(&browser).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert_eq!(
+        whys(&told).last().unwrap().0,
+        "http://fixture.test/frames.html"
+    );
+}
+
+#[test]
+fn a_blank_frame_is_judged_by_the_origin_its_document_has() {
+    let (judge, told) = judge(&["http://third.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_frame_shows(&engine, &browser, "about:blank", Some("://"));
+    the_document_has(&engine, &browser, "http://third.test");
+    let answer = typed_into_the_frame(&browser).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert_eq!(whys(&told).last().unwrap().0, "http://third.test/");
 }
 
 #[test]
@@ -1015,16 +1159,6 @@ fn a_blob_frame_is_judged_by_the_origin_that_made_it() {
     assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
     assert!(engine.sent("Input.insertText").is_empty());
     assert_eq!(whys(&told).last().unwrap().0, "http://third.test/4d2c");
-}
-
-#[test]
-fn a_blank_frame_is_judged_by_the_origin_the_engine_gives_it() {
-    let (judge, told) = judge(&["http://third.test/"]);
-    let (browser, engine) = browser_judged(judge);
-    the_frame_shows(&engine, &browser, "about:blank", Some("http://third.test"));
-    let answer = typed_into_the_frame(&browser).unwrap();
-    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
-    assert_eq!(whys(&told).last().unwrap().0, "http://third.test/");
 }
 
 #[test]

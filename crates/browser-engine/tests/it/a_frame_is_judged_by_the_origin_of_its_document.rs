@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! What is typed into a frame is judged by the origin of the frame's document, by the web's
-//! rules for its address: a srcdoc frame has its page's origin, a blob frame the origin of the
-//! document that made it, and a data frame none, so nothing is typed into it.
+//! rules for its address: a srcdoc frame has its page's origin, unless it is sandboxed, a blob
+//! frame the origin of the document that made it, and a sandboxed or data frame none, so
+//! nothing is typed into it.
 //!
 //! These need a real Chrome and a loopback port for the fixture site, which a sandboxed agent
 //! does not have: they run where `PURLIS_TEST_ENGINE` names a Chrome executable, and on CI.
@@ -75,6 +76,12 @@ fn each_frame_is_judged_by_its_documents_origin() {
 
     let srcdoc = typed_into(&browser, "Srcdoc field").expect("the srcdoc field takes text");
     assert!(srcdoc.asked.is_empty(), "the page's own origin: {srcdoc:?}");
+
+    assert_eq!(
+        typed_into(&browser, "Sandboxed field").err(),
+        Some(Refusal::FrameOpaque),
+        "a sandboxed document has no web origin"
+    );
 
     let blob = typed_into(&browser, "Blob field").expect("the blob field is judged");
     assert_eq!(
