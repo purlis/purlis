@@ -13,7 +13,15 @@ import { useState } from "react";
 import { Menu, MenuItem, MenuWords } from "../menu/Menu";
 import { drawnWith } from "../../cascade.testkit";
 import { RowLabel, RowLead, RowTrail } from "../list/Row";
-import { Tree, TreeLine, TreePending, TreeRow, TreeSection, type Key } from "./Tree";
+import {
+  Tree,
+  TreeLine,
+  TreePending,
+  TreeRow,
+  TreeSection,
+  useRowDescription,
+  type Key,
+} from "./Tree";
 
 afterEach(cleanup);
 
@@ -450,5 +458,46 @@ describe("a tree that may drag, with its drag off (#3532)", () => {
     } finally {
       warned.mockRestore();
     }
+  });
+});
+
+describe("a row's words said from inside it", () => {
+  /** A mark in a row that says `said` to a reader, or draws nothing for none. */
+  function Mark({ said }: { said: string | undefined }) {
+    const describes = useRowDescription<HTMLSpanElement>(said);
+    return said === undefined ? null : <span ref={describes}>•</span>;
+  }
+
+  function Marked({ said }: { said: string | undefined }) {
+    return (
+      <Tree aria-label="Files of main">
+        <TreeRow
+          id="main.ts"
+          textValue="main.ts"
+          content={
+            <>
+              <RowLabel>main.ts</RowLabel>
+              <Mark said={said} />
+            </>
+          }
+        />
+      </Tree>
+    );
+  }
+
+  it("is the row's description while the mark stands, and its name stays its own", () => {
+    const { rerender } = render(<Marked said={undefined} />);
+    const row = screen.getByRole("row", { name: "main.ts" });
+    expect(row).not.toHaveAttribute("aria-description");
+
+    rerender(<Marked said="fix login is working here now" />);
+    expect(row).toHaveAccessibleDescription("fix login is working here now");
+    expect(row).toHaveAccessibleName("main.ts");
+
+    rerender(<Marked said="fix login and docs are working here now" />);
+    expect(row).toHaveAccessibleDescription("fix login and docs are working here now");
+
+    rerender(<Marked said={undefined} />);
+    expect(row).not.toHaveAttribute("aria-description");
   });
 });

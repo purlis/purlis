@@ -18,6 +18,7 @@ import type {
   PlaneId,
 } from "../bindings";
 import type { Place } from "../pieceViews";
+import { countReactsCommits, counts, renderedBy } from "../reactCommits.testkit";
 
 /**
  * **The file tab's tree carries the live marker too** (#1154, FM-6's follow-up): a chat touching a
@@ -25,6 +26,8 @@ import type { Place } from "../pieceViews";
  * where its branch is and which chats are open only once a chat touches something, so a quiet
  * project costs it nothing. The core is mocked; the marks themselves are `Explorer.touching`'s.
  */
+
+countReactsCommits();
 
 afterEach(() => {
   cleanup();
@@ -165,6 +168,31 @@ describe("the file tab's live marker", () => {
 
     expect(asked.sort()).toEqual(["opened_chats", "worktree_list"]);
     expect(document.querySelector(".touch-mark")).toBeNull();
+  });
+
+  it("is not drawn again for a touch outside its branch, once it knows where that chat is (#4730)", async () => {
+    core([chat(3, "fix login", ONE.path), chat(4, "steward 4", "/plane/workspaces/alpha/svc")]);
+    render(<BranchTree plane={PLANE} place={CUT} onPick={() => {}} />);
+    await screen.findByRole("row", { name: /^README\.md/ });
+    // The first touches ask where the branch is and which chats are open.
+    await touch(3, "README.md");
+    await touch(4, "README.md");
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 20));
+    });
+    expect(markOn("file:svc/one:README.md")).toBe("fix login is working here now");
+
+    Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });
+    renderedBy.clear();
+    await touch(4, "src/lib.rs");
+    await touch(4, "Cargo.toml");
+
+    expect(renderedBy.get("BranchTree") ?? 0).toBe(0);
+    expect(counts.rendered).toBe(0);
+
+    // A touch inside it still marks its row.
+    await touch(3, "src/main.rs");
+    expect(markOn("file:svc/one:src")).toBe("fix login is working here now");
   });
 
   /** The clock the window reads, moved by hand. */
