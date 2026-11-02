@@ -280,8 +280,9 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
     expect(expectation).toHaveTextContent("With the skill: 1 of 1 passed");
     expect(expectation).toHaveTextContent("Without it: 0 of 1 passed");
     expect(expectation).toHaveTextContent("With the skill, run 1: form.txt names Ada");
+    // The eval's table draws its rows once its collection is built, which may be a render later.
     fireEvent.click(
-      screen.getByRole("button", { name: "Open with the skill, chat 1, of outcome eval 4" }),
+      await screen.findByRole("button", { name: "Open with the skill, chat 1, of outcome eval 4" }),
     );
     expect(told.onChat).toHaveBeenCalledWith("01E");
     const judge = screen.getByRole("button", {
