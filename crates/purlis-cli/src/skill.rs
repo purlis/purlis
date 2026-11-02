@@ -393,7 +393,8 @@ pub enum SkillCommand {
     /// each) and what its last grade spent per chat; then each grade the project's eval record
     /// holds, newest first, with each arm's pass rate and the difference the skill made. A
     /// grade runs from the skill's tab in the Skill studio, which shows this plan first, or with
-    /// `--run` from a terminal, on the same plan and caps, once you answer yes.
+    /// `--run` from a terminal, on the same plan and caps, once you answer yes. Outcome evals run
+    /// only where ticked there or named with `--eval`.
     Grade {
         /// The skill's name, as `purlis skill list` prints it.
         name: String,
@@ -412,12 +413,12 @@ pub enum SkillCommand {
         /// The model its chats run on (default: the profile's own).
         #[arg(long, requires = "run")]
         model: Option<String>,
-        /// An outcome eval to run too, by its id; repeat for each. None run unless named, and a
-        /// named one is refused until outcome evals run from a terminal (#3235).
+        /// An outcome eval to run too, by its id; repeat for each. None run unless named. A run
+        /// that names one asks at a terminal, so `--yes` and a piped answer are refused.
         #[arg(long = "eval", value_name = "ID", requires = "run")]
         evals: Vec<String>,
         /// Do not ask: for a script that has read the plan. It still runs only what the plan
-        /// printed.
+        /// printed, and it is refused beside `--eval`.
         #[arg(long, requires = "run")]
         yes: bool,
     },
@@ -1396,8 +1397,19 @@ fn versions_table(name: &str, history: &history::History) -> String {
 /// **What a grade should spend, from a grade before, in a line** (#3273): which grade it is
 /// worked out from, or that its cost is not known where that grade's chats did not say, or that
 /// there was none.
-fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> String {
+fn estimate_said(
+    estimate: Option<&purlis_core::skills::grades::Estimate>,
+    outcome_evals: u32,
+) -> String {
     let Some(estimate) = estimate else {
+        // An outcome eval's estimate is only ever a grade that ran some (#4235): a skill graded
+        // on its trigger tests alone has still been graded.
+        if outcome_evals > 0 {
+            return "Its outcome evals have not been graded here before, so what a grade spends \
+                    is not known yet: an outcome eval's chat runs its whole turn, and a judge \
+                    chat reads what it left.\n"
+                .to_owned();
+        }
         return "It has not been graded here before, so what a grade spends is not known yet.\n"
             .to_owned();
     };
@@ -1604,7 +1616,10 @@ fn grade_plan_said(
             if let Some(why) = &planned.previous_refused {
                 text.push_str(&format!("Its previous version is not compared: {why}.\n"));
             }
-            text.push_str(&estimate_said(planned.estimate.as_ref()));
+            text.push_str(&estimate_said(
+                planned.estimate.as_ref(),
+                plan.outcome_evals,
+            ));
             for (at, test) in request.triggers.iter().enumerate() {
                 text.push_str(&format!(
                     "  {}. {}  ({})\n",
@@ -1655,15 +1670,38 @@ fn grade_plan_said(
             why.terminal()
         ));
     }
-    // Off until the person ticks them in the Skill studio's plan (the ruling of 2026-10-31).
+    // Off until the person ticks them in the Skill studio's plan or names them with --eval (the
+    // ruling of 2026-10-31), so one that runs says so: it is what the yes covers (#4312).
     for eval in &planned.offered {
+        let runs = planned
+            .request
+            .as_ref()
+            .is_some_and(|request| request.outcomes.iter().any(|one| one.id == eval.id));
+        let chats = counted(planned.eval_chats, "chat", "chats");
+        let state = if runs {
+            format!("on: {chats} of those above")
+        } else {
+            format!("off: {chats} more if ticked in the Skill studio's plan or named with --eval")
+        };
+        // What the Skill studio's plan says of it too: a yes here covers as much as a press does.
+        let files = if eval.files.is_empty() {
+            String::new()
+        } else {
+            format!(
+                ", with {}",
+                purlis_core::skills::review::escaped_line(&eval.files.join(", "))
+            )
+        };
+        let hides = if planned.eval_hides(eval) {
+            ", holds a character no reader would see"
+        } else {
+            ""
+        };
         text.push_str(&format!(
-            "  Outcome eval {}. {}  (off: {} a judge checks, {} more if ticked in the Skill \
-             studio's plan)\n",
+            "  Outcome eval {}. {}  ({state}; {} a judge checks{files}{hides})\n",
             eval.id,
             purlis_core::skills::review::escaped_line(&eval.prompt),
             counted(eval.expectations.len(), "expectation", "expectations"),
-            counted(planned.eval_chats, "chat", "chats"),
         ));
     }
     for left in &planned.outcomes_left_out {

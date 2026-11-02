@@ -1898,12 +1898,12 @@ A fixture of a skill's that tests whether a harness picks the skill when it shou
 alone when it should not. A **grade** runs each one as real chats.
 
 **Outcome eval**:
-A fixture of a skill's that tests how well the skill does its job on a task. A **grade** counts
-them now, and grades them later (#3235).
+A fixture of a skill's that tests how well the skill does its job on a task. A **grade** runs one
+only where the person ticks it on the plan or names it at a terminal, and a judge chat grades it.
 
 **Grade** (of a skill):
-One run of a grading framework on a copy of a skill: its trigger tests (and, later, its outcome
-evals) run as real chats in each **arm**, scored and recorded in the **eval record** against the
+One run of a grading framework on a copy of a skill: its trigger tests, and any outcome evals
+ticked or named, run as real chats in each **arm**, scored and recorded in the **eval record** against the
 version the copy held. A grade shows what it runs and spends before it starts, and starts only on
 the person's press, or their yes at a terminal (ADR 0105).
 _Avoid_: test run, benchmark, eval (alone)

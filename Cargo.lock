@@ -5645,6 +5645,7 @@ dependencies = [
  "chrono",
  "clap",
  "flate2",
+ "portable-pty",
  "purlis-core",
  "purlis-host",
  "purlis-linux-sandbox",
