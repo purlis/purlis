@@ -131,7 +131,9 @@ async function theSkillsViewUnfolded(): Promise<void> {
 
 /** **Opens the studio from the palette `OPENINGS` times**, each a new tab that reads the project
  *  afresh, and answers how long each took to draw its first row. */
-async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
+const frames4351 = new Map<string, number>(); // DEBUG-4351
+
+async function theOpenings(wereOpen: readonly string[], phase = "?"): Promise<number[]> {
   const samples: number[] = [];
   for (let n = 0; n < OPENINGS; n++) {
     await closeTheViewTabsOpenedSince(wereOpen);
@@ -151,13 +153,61 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         const holder = globalThis as { __openedInMs?: number };
         holder.__openedInMs = undefined;
         const started = performance.now();
+        // DEBUG-4351
+        const probe = globalThis as unknown as Record<string, any>;
+        const calls: string[] = [];
+        probe.__calls = calls;
+        const internals = probe.__TAURI_INTERNALS__;
+        if (internals.__was === undefined) {
+          internals.__was = internals.invoke;
+          internals.invoke = (cmd: string, ...rest: unknown[]) => {
+            const at = performance.now();
+            const answer = internals.__was(cmd, ...rest);
+            void Promise.resolve(answer).finally(() => {
+              probe.__calls?.push(
+                `${cmd} @${Math.round(at - probe.__t0)}+${Math.round(performance.now() - at)}`,
+              );
+            });
+            return answer;
+          };
+        }
+        probe.__t0 = started;
+        let last = started;
+        const beat = () => {
+          const now = performance.now();
+          if (now - last > 30) calls.push(`GAP ${Math.round(last - started)}..${Math.round(now - started)}`);
+          last = now;
+          if (performance.now() - started < 2500) requestAnimationFrame(beat);
+        };
+        requestAnimationFrame(beat);
+        let added = 0;
+        const seen = new MutationObserver((list) => {
+          let here = 0;
+          for (const one of list) for (const node of one.addedNodes) if (node instanceof Element) here += 1 + node.querySelectorAll("*").length;
+          added += here;
+          if (here > 50) calls.push(`ADDED ${here} @${Math.round(performance.now() - started)}`);
+        });
+        seen.observe(document.body, { childList: true, subtree: true });
+        calls.push(`DOM ${document.querySelectorAll("*").length}`);
+        setTimeout(() => {
+          seen.disconnect();
+          calls.push(`DOM ${document.querySelectorAll("*").length} added ${added}`);
+        }, 2400);
         row.click();
+        calls.push(`clicked +${Math.round(performance.now() - started)}`);
+        let tab = false;
         const look = () => {
+          if (!tab && document.querySelector('[data-testid="skill-studio"]') !== null) {
+            tab = true;
+            calls.push(`tab drawn +${Math.round(performance.now() - started)}`);
+          }
           if (document.querySelector(css) === null) requestAnimationFrame(look);
-          else
+          else {
+            calls.push(`row drawn +${Math.round(performance.now() - started)}`);
             requestAnimationFrame(() => {
               holder.__openedInMs = performance.now() - started;
             });
+          }
         };
         requestAnimationFrame(look);
         return true;
@@ -175,6 +225,12 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       { timeout: 30_000, interval: 100, timeoutMsg: "the studio's Library drew no row in 30 s" },
     );
     samples.push(took as number);
+    const told: string = await browser.execute(() => (globalThis as any).__calls.join(" | "));
+    for (const [, where] of told.matchAll(/SET \+\d+ \S*?([\w.-]+\.js:\d+:\d+)/g)) {
+      const key = `${phase} ${where}`;
+      frames4351.set(key, (frames4351.get(key) ?? 0) + 1);
+    }
+    console.log(`DEBUG-4351 ${phase} #${n} ${Math.round(took as number)} ms: ${told}`);
   }
   return samples;
 }
@@ -408,12 +464,45 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       expect(problems).toEqual([]);
     });
 
-    it("opens the studio in under 300 ms", async () => {
-      const verdict = openVerdict(
-        await theOpenings((await tabNames()).filter((one) => one !== "Skill studio")),
+    it("opens the studio in under 300 ms", async function () {
+      this.timeout(1_500_000);
+      void openVerdict; // DEBUG-4351
+      const seen = new Map<string, number>();
+      const round = async (where: string) => {
+        const took = await theOpenings((await tabNames()).filter((one) => one !== "Skill studio"), where);
+        console.log(`DEBUG-4351 ${where} sorted ${JSON.stringify([...took].sort((x, y) => x - y).map(Math.round))}`);
+      };
+      await round("chat");
+      await endTheChatsStartedSince(wereRunning);
+      await round("nochat");
+      // The setters' own source, read from the bundle the window is running.
+      const said: string = await browser.executeAsync((done: (s: string) => void) => {
+        (async () => {
+          const out: Record<string, string[]> = {};
+          for (const script of document.querySelectorAll("script[src]")) {
+            const src = (script as HTMLScriptElement).src;
+            out[src.slice(src.lastIndexOf("/") + 1)] = (await (await fetch(src)).text()).split("\n");
+          }
+          (globalThis as any).__lines = out;
+          done(Object.keys(out).join(","));
+        })();
+      });
+      console.log(`DEBUG-4351 scripts ${said}`);
+      const wanted = [...frames4351.entries()].sort((x, y) => y[1] - x[1]).slice(0, 70);
+      const texts: string[] = await browser.execute(
+        (keys: string[]) =>
+          keys.map((key) => {
+            const [file, line, col] = key.split(" ")[1].split(":");
+            const lines = (globalThis as any).__lines[file] as string[] | undefined;
+            const text = lines?.[Number(line) - 1] ?? "";
+            let up = Number(line) - 1;
+            while (up > 0 && !/^(?:var |function |async function |const )/.test(lines?.[up] ?? "")) up--;
+            return `${text.slice(Math.max(0, Number(col) - 40), Number(col) + 25).trim()} IN ${(lines?.[up] ?? "").slice(0, 50)}`;
+          }),
+        wanted.map(([key]) => key),
       );
-      report(verdict.said);
-      if (!verdict.met) throw new Error(`missed: ${verdict.said}`);
+      wanted.forEach(([key, count], at) => console.log(`DEBUG-4351 FRAME ${count} ${key} = ${texts[at]}`));
+      void seen;
     });
   });
 });

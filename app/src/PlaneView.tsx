@@ -15,6 +15,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { P4351, said4351 } from "./debug4351";
 import { listen } from "./here";
 import { CHAT_RESTORED, isRestoring, restoredSince, type ChatRestored } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
@@ -843,6 +844,19 @@ export const PlaneView = memo(function PlaneView({
    *  auth login` from the first run (FR-4) — asked for once per `at`. */
   shellAsked?: { typed: string; at: number };
 }) {
+  // DEBUG-4351: which props made this render, none meaning its own state did.
+  const props4351 = arguments[0] as unknown as Record<string, unknown>;
+  const was4351 = useRef<Record<string, unknown> | undefined>(undefined);
+  said4351(
+    `PV props=${
+      was4351.current === undefined
+        ? "mount"
+        : Object.keys(props4351)
+            .filter((key) => props4351[key] !== was4351.current?.[key])
+            .join(",")
+    }`,
+  );
+  was4351.current = props4351;
   const [tabs, setTabs] = useState<Tabs>(noTabs);
   const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
@@ -9476,6 +9490,7 @@ export const PlaneView = memo(function PlaneView({
 
           One workspace answer for every region and view (`workspacePanels.ts`), not one each:
           they draw the same workspace, and `workspace_repos` runs `git status` per clone. */}
+          <P4351 id="regions">
           <RegionFrame
             arrangement={arrangement}
             onResized={resized}
@@ -9491,6 +9506,7 @@ export const PlaneView = memo(function PlaneView({
             views={{
               chats: (
                 <WaitingTaskWaysContext.Provider value={waitingTaskWays}>
+                  <P4351 id="chats">
                   <ChatsSection
                     rows={listRows}
                     // The trees that started in the focused workspace, or at the root (#1655).
@@ -9531,6 +9547,7 @@ export const PlaneView = memo(function PlaneView({
                       </>
                     }
                   />
+                  </P4351>
                 </WaitingTaskWaysContext.Provider>
               ),
               explorer: (
@@ -9641,6 +9658,7 @@ export const PlaneView = memo(function PlaneView({
               ),
               // **The Inbox** (#1692): what waits on the person here, answered in place.
               inbox: (
+                <P4351 id="inbox">
                 <Inbox
                   plane={plane}
                   asks={waiting}
@@ -9672,6 +9690,7 @@ export const PlaneView = memo(function PlaneView({
                     if (ignore?.available) press(ignore);
                   }}
                 />
+                </P4351>
               ),
               // **The attention region's views** (#1678): the "for you" side (ADR 0038 as amended
               // 2026-10-10), one panel per view, and each approved extension's panel a view too.
@@ -10003,6 +10022,7 @@ export const PlaneView = memo(function PlaneView({
               </div>
             }
           />
+          </P4351>
 
           {/* **charter's status line**, under everything, the terminals included. It is not
           in the arrangement and `StatusLine.tsx` argues why at length: a slot is sized as a
@@ -10014,6 +10034,7 @@ export const PlaneView = memo(function PlaneView({
           share, and the sidebar has already been read for the strip, so the line costs no
           command of its own — which matters here more than anywhere, because it is the one
           surface that is drawn whatever else the window is doing. */}
+          <P4351 id="status">
           <StatusLineHere
             sessions={quitSessions}
             settled={settled}
@@ -10033,6 +10054,7 @@ export const PlaneView = memo(function PlaneView({
             badges={facts.badges}
             factNotes={facts.notes}
           />
+          </P4351>
 
           {/* Making a workspace, and deleting one. Mounted only while they are up, and drawn
           here rather than in the window: a workspace belongs to a project. */}
