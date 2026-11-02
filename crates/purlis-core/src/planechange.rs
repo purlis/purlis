@@ -175,8 +175,9 @@ pub enum Answer {
     RootPanels,
     /// The instructions a chat reads once at its start (`chats_plane_updated`,
     /// [`crate::instructions::Stamp`]): `CLAUDE.md` and the project's files, the harness
-    /// settings and sub-agents, each persona's charter. Never a workspace, a todo, a memory
-    /// or a session record (FD-10d).
+    /// settings and sub-agents, each persona's charter, each workspace's `workspace.json` (its
+    /// skill settings). Never a workspace's other files, a todo, a memory or a session record
+    /// (FD-10d).
     Instructions,
     /// The curation actions offered on each subject (`curation_offers`): the personas'
     /// curation files, the project's launch profile and harness declarations, and the
@@ -245,6 +246,17 @@ fn answers_of(change: &Change) -> Vec<Answer> {
             kind: Kind::Project,
             ..change.clone()
         }),
+        // A workspace's settings say which skills its chats get (turned off, pinned, the
+        // budget): part of what a chat would start on now, as a skill is (#4813 review).
+        Kind::Workspace if a_workspace_manifest(&change.path) => vec![
+            Answer::Sidebar,
+            panels(),
+            Answer::Instructions,
+            Answer::Curations,
+            Answer::Settings,
+            Answer::Git,
+            Answer::Views,
+        ],
         Kind::Workspace => vec![
             Answer::Sidebar,
             panels(),
@@ -268,6 +280,14 @@ fn answers_of(change: &Change) -> Vec<Answer> {
         Kind::Git => vec![Answer::Git],
         Kind::Chats => vec![Answer::Sidebar],
     }
+}
+
+/// Whether `path` (from the plane root) is a workspace's own `workspace.json`.
+fn a_workspace_manifest(path: &str) -> bool {
+    matches!(
+        path.split('/').collect::<Vec<_>>().as_slice(),
+        ["workspaces", _, "workspace.json"]
+    )
 }
 
 /// **Where a skill's path is**, by the one rule of where a level's skills are
@@ -399,6 +419,20 @@ mod tests {
         assert!(answers_of(&at("skills/deploy/SKILL.md")).contains(&Answer::Instructions));
         assert!(!answers_of(&at("workspaces/ops/todos/a.md")).contains(&Answer::Instructions));
         assert!(!answers_of(&at("workspaces/ops/skillset.md")).contains(&Answer::Instructions));
+    }
+
+    #[test]
+    fn a_workspaces_settings_concern_what_its_chats_started_with_and_its_other_files_do_not() {
+        // Its skills turned off, pinned and budget are read from `workspace.json` into what a
+        // chat would start on now (#4813 review): the instructions. A clone or the workspace's
+        // folder itself is not.
+        assert!(answers_of(&at("workspaces/ops/workspace.json")).contains(&Answer::Instructions));
+        assert!(!answers_of(&at("workspaces/ops")).contains(&Answer::Instructions));
+        assert!(!answers_of(&at("workspaces/ops/purlis")).contains(&Answer::Instructions));
+        assert!(
+            !answers_of(&at("workspaces/ops/purlis/workspace.json"))
+                .contains(&Answer::Instructions)
+        );
     }
 
     const ROOT: &str = "/home/dev/plane";
@@ -635,6 +669,7 @@ mod tests {
             vec![
                 Answer::Sidebar,
                 panels(Some("alpha")),
+                Answer::Instructions,
                 Answer::Curations,
                 Answer::Settings,
                 Answer::Git,
