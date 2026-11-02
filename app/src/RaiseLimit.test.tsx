@@ -95,6 +95,7 @@ describe("OfferToRaise (#4397)", () => {
         plain: "Longest wait for a runner's answer",
         unit: "seconds",
         in_force: 30,
+        team_suggests: false,
         needed: 30,
         suggested: 60,
       },
