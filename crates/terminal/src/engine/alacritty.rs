@@ -126,7 +126,17 @@ impl Engine for AlacrittyEngine {
         // bytes back, so it is ended here: half a frame drawn beats a frame lost.
         self.parser
             .stop_sync(&mut PaneRules(&mut self.term, &mut self.beside));
-        super::snapshot::snapshot(&self.term, &self.beside)
+        super::snapshot::snapshot(&self.term, &self.beside, None)
+    }
+
+    fn snapshot_within(&mut self, history: usize) -> Vec<u8> {
+        self.parser
+            .stop_sync(&mut PaneRules(&mut self.term, &mut self.beside));
+        super::snapshot::snapshot(&self.term, &self.beside, Some(history))
+    }
+
+    fn history(&self) -> usize {
+        self.term.grid().history_size()
     }
 
     fn take_replies(&mut self) -> Vec<u8> {
@@ -704,6 +714,36 @@ mod snapshot_tests {
     #[test]
     fn a_snapshot_keeps_the_saved_cursor() {
         assert_rebuilt(b"\x1b[2;3H\x1b[33m\x1b7\x1b[0m\x1b[5;1H");
+    }
+
+    /// Lines `1` to `20`, one a row, on a screen of five rows: fifteen of them in the history.
+    const TWENTY_LINES: &[u8] = b"1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\r\n9\r\n10\r\n11\r\n12\r\n13\r\n14\r\n15\r\n16\r\n17\r\n18\r\n19\r\n20";
+
+    #[test]
+    fn a_snapshot_within_a_page_of_history_draws_the_screen_and_only_the_newest_history() {
+        let mut original = fed(TWENTY_LINES);
+        assert_eq!(original.history(), 15);
+
+        let copy = fed(&original.snapshot_within(3));
+
+        let rows: Vec<String> = text(&copy)
+            .iter()
+            .map(|row| row.trim_end().to_owned())
+            .collect();
+        assert_eq!(
+            rows,
+            ["13", "14", "15", "16", "17", "18", "19", "20"],
+            "three lines of history, then the screen"
+        );
+        assert_eq!(copy.history(), 3);
+        assert_eq!(state(&copy), state(&original));
+    }
+
+    #[test]
+    fn a_snapshot_within_more_history_than_is_kept_is_the_whole_snapshot() {
+        let mut original = fed(TWENTY_LINES);
+
+        assert_eq!(original.snapshot_within(200), original.snapshot());
     }
 
     #[test]

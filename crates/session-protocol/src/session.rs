@@ -439,9 +439,22 @@ use crate::view::{Limits, Views};
 /// 1.67 has a runner answer `programs_of` on a link between hosts, with what was opened for the
 /// window that link named (#4271, ruled 2026-11-01). No frame changes. A relay does not ask a
 /// runner before 1.67, which would refuse it, and answers that no program is known of.
+///
+/// 1.68 pages a terminal view's history (#4742, spec #4724): `attach_view` may carry `history`,
+/// the most lines of history its snapshot draws above the screen, the newest, and `attached`
+/// then carries `older`, how many lines the host keeps above them. A pane opens on its screen
+/// and a page, and attaches again with more as the person scrolls up. A host before 1.68
+/// ignores the field and draws the whole history, as before, and answers no `older`: there is
+/// nothing more to ask for.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 67,
+    minor: 68,
+};
+
+/// The version that first draws a terminal view with a page of its history (#4742).
+pub const KNOWS_VIEW_HISTORY_PAGES: Version = Version {
+    major: 1,
+    minor: 68,
 };
 
 /// The version that first answers `programs_of` on a link between hosts (#4271).
@@ -745,7 +758,10 @@ pub enum Command {
     /// Open a view of `kind` on a hosted program: the host opens a stream for it
     /// ([`crate::view::Views::open`]), whose snapshot then live bytes follow, and answers
     /// [`Answer::Attached`] with the view's `kind`. A browser view is also given its `role` and
-    /// the most frames a second it wants (1.6); a terminal view takes neither.
+    /// the most frames a second it wants (1.6); a terminal view takes neither. **A terminal
+    /// view may be given `history`** (1.68, #4742): the most lines of history its snapshot
+    /// draws above the screen, the newest, and each snapshot it is attached again with after
+    /// falling behind. Left out, or to another kind, it draws all of them.
     AttachView {
         program: String,
         kind: ViewKind,
@@ -753,6 +769,8 @@ pub enum Command {
         role: Option<ViewRole>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rate: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        history: Option<u32>,
     },
     /// Close a view the client attached. The program keeps running.
     DetachView { program: String, view: u32 },
@@ -2197,6 +2215,11 @@ pub struct Attached {
     /// [`Command::Attach`], whose view is a terminal's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ViewKind>,
+    /// **How many lines of history the host keeps above those its snapshot drew** (1.68,
+    /// #4742), as it attached: a terminal view attached with `history`. What a pane asks for as
+    /// the person scrolls past the top. Absent where the snapshot drew all of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub older: Option<u32>,
 }
 
 /// Why the host refused a command: a code a program reads, and a sentence a person reads.
@@ -3014,6 +3037,7 @@ async fn carry_out<H: Host>(id: u64, command: Command, host: &H, peer: &Peer) ->
                 kind: ViewKind::Terminal,
                 role: None,
                 rate: None,
+                history: None,
             };
             let answer = host.call(attach, peer).await.map(|answer| match answer {
                 Answer::Attached(attached) => Answer::Attached(Attached {
@@ -4164,6 +4188,7 @@ impl Client {
             kind,
             role: None,
             rate: None,
+            history: None,
         };
         match self.call(attach).await? {
             Answer::Attached(attached) => Ok(attached),
@@ -4184,6 +4209,7 @@ impl Client {
             kind: ViewKind::Browser,
             role: Some(role),
             rate,
+            history: None,
         };
         match self.call(attach).await? {
             Answer::Attached(attached) => Ok(attached),
@@ -4307,6 +4333,28 @@ impl Client {
         .await
     }
 
+    /// Attach a view of terminal `program` whose snapshots draw at most `history` lines of its
+    /// history, the newest (1.68, #4742): its stream comes on the [`Acceptor`] [`Client::new`]
+    /// gave, and the answer's `older` says how many lines are kept above them. A host before
+    /// 1.68 draws all of them, and answers no `older`.
+    pub async fn attach_terminal_view_within(
+        &self,
+        program: &str,
+        history: u32,
+    ) -> Result<Attached, CallError> {
+        let attach = Command::AttachView {
+            program: program.into(),
+            kind: ViewKind::Terminal,
+            role: None,
+            rate: None,
+            history: Some(history),
+        };
+        match self.call(attach).await? {
+            Answer::Attached(attached) => Ok(attached),
+            other => Err(unexpected(&other)),
+        }
+    }
+
     /// Attach a view of browser `program`'s open DevTools (1.45): its stream of whole frames
     /// comes on the [`Acceptor`] [`Client::new`] gave.
     pub async fn attach_inspector_view(&self, program: &str) -> Result<Attached, CallError> {
@@ -4315,6 +4363,7 @@ impl Client {
             kind: ViewKind::Inspector,
             role: Some(ViewRole::Focused),
             rate: None,
+            history: None,
         };
         match self.call(attach).await? {
             Answer::Attached(attached) => Ok(attached),

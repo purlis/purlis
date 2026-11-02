@@ -650,6 +650,30 @@ fn a_pane_draws_the_screen_then_what_follows_and_is_told_when_the_program_ends()
 }
 
 #[test]
+fn a_pane_opened_on_a_page_of_history_draws_the_newest_lines_and_is_told_how_many_are_older() {
+    let hosted = hosted();
+    let id = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .unwrap();
+    hosted.runs.last().writes(b"1\n2\n3\n4\n");
+    let (sink, seen) = a_pane();
+
+    let watching = hosted
+        .sessions
+        .watch_within(id, sink, 1)
+        .expect("a view opens");
+
+    assert_eq!(watching.older, 3);
+    until("the page is drawn", || seen.lock().unwrap().contains("4\n"));
+    assert!(
+        !seen.lock().unwrap().contains('3'),
+        "the older lines are left to be asked for: {:?}",
+        seen.lock().unwrap()
+    );
+}
+
+#[test]
 fn a_resize_and_readiness_go_to_the_host() {
     let hosted = hosted();
     let id = hosted

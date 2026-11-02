@@ -71,13 +71,36 @@ impl StandIn {
 
 impl Source for StandIn {
     fn attach(&self) -> Attachment {
+        self.attach_within(None)
+    }
+}
+
+impl StandIn {
+    /// A view whose snapshot is the last `history` lines it wrote, or all of them.
+    fn attach_within(&self, history: Option<usize>) -> Attachment {
         let mut seen = self.seen();
         let (live, mut follows) = mpsc::unbounded_channel();
         seen.watching.push(live);
+        let lines = lines(&seen.written);
+        let from = history.map_or(0, |most| lines.len().saturating_sub(most));
         Attachment {
-            snapshot: Bytes::from(seen.written.clone()),
+            snapshot: Bytes::from(lines[from..].concat()),
             live: futures::stream::poll_fn(move |cx| follows.poll_recv(cx)).boxed(),
         }
+    }
+}
+
+/// `written` cut after each newline: what a stand-in's history is made of.
+fn lines(written: &[u8]) -> Vec<&[u8]> {
+    written.split_inclusive(|byte| *byte == b'\n').collect()
+}
+
+/// A stand-in's view that draws the last lines it wrote (#4742).
+struct Paged(StandIn, usize);
+
+impl Source for Paged {
+    fn attach(&self) -> Attachment {
+        self.0.attach_within(Some(self.1))
     }
 }
 
@@ -95,6 +118,16 @@ impl Running for StandIn {
 
     fn source(&self) -> Arc<dyn Source> {
         Arc::new(self.clone())
+    }
+
+    /// Its history is every line it wrote.
+    fn paged_view(&self, history: u32) -> Option<(Arc<dyn Source>, u32)> {
+        let most = usize::try_from(history).unwrap_or(usize::MAX);
+        let older = lines(&self.seen().written).len().saturating_sub(most);
+        Some((
+            Arc::new(Paged(self.clone(), most)),
+            u32::try_from(older).unwrap_or(u32::MAX),
+        ))
     }
 
     fn stop(&self) {

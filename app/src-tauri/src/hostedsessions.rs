@@ -4233,13 +4233,20 @@ impl SessionHost for HostedSessions {
         .map(|_| ())
     }
 
+    /// All of its history: no host keeps more lines than this.
     fn watch(&self, id: u32, sink: Sink) -> Result<Watching, String> {
+        self.watch_within(id, sink, u32::MAX)
+    }
+
+    /// A host before 1.68 draws all of its history, and says nothing is older (#4742).
+    fn watch_within(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
         let (link, program) = self.program(id)?;
         let attached = match link.call(Command::AttachView {
             program,
             kind: ViewKind::Terminal,
             role: None,
             rate: None,
+            history: Some(history),
         })? {
             Answer::Attached(attached) => attached,
             other => return Err(format!("the session host answered a view with {other:?}")),
@@ -4255,6 +4262,7 @@ impl SessionHost for HostedSessions {
                 columns: attached.cols,
                 rows: attached.rows,
             },
+            older: attached.older.unwrap_or(0),
         })
     }
 

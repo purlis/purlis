@@ -554,6 +554,9 @@ struct Watching {
     /// (`Chats::newline`: a built-in's or a declared harness's), or none for a shell, which
     /// keeps the terminal's own Enter.
     newline: Option<String>,
+    /// How many lines of history the session keeps above those the view was drawn with
+    /// (#4742): what the pane asks for, with a larger `history`, as the person scrolls up.
+    older: u32,
 }
 
 /// When this process started, as close to it as the app can see.
@@ -2932,6 +2935,8 @@ fn resize_session(
 
 /// Opens a view of a session for a pane that is now on screen: the channel is sent the screen
 /// as it already is, and then the session's output. Answers with the id that closes the view.
+/// `history` is the most lines of history the screen is drawn with, the newest (#4742), or all
+/// of them; the answer says how many are older.
 #[tauri::command]
 #[specta::specta]
 fn watch_session(
@@ -2939,24 +2944,28 @@ fn watch_session(
     plane: PlaneId,
     session: u32,
     output: Channel<String>,
+    history: Option<u32>,
 ) -> Result<Watching, String> {
     let held = planes.held(&plane)?;
     let chats = held.chats();
     let newline = chats.newline(session);
-    let watching = chats.sessions().watch(
-        session,
-        // A view whose window has gone is closed by the pane that owned it; until then, text
-        // it cannot take is dropped rather than held, and the session keeps running.
-        Box::new(move |text| {
-            let _ = output.send(text);
-        }),
-    )?;
+    // A view whose window has gone is closed by the pane that owned it; until then, text it
+    // cannot take is dropped rather than held, and the session keeps running.
+    let sink: host::Sink = Box::new(move |text| {
+        let _ = output.send(text);
+    });
+    let sessions = chats.sessions();
+    let watching = match history {
+        Some(history) => sessions.watch_within(session, sink, history),
+        None => sessions.watch(session, sink),
+    }?;
     Ok(Watching {
         view: watching.view,
         columns: watching.size.columns,
         rows: watching.size.rows,
         scrollback: sessions::SCROLLBACK,
         newline,
+        older: watching.older,
     })
 }
 

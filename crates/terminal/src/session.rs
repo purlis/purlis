@@ -456,7 +456,7 @@ impl Session {
     /// the program ended.
     pub fn attach(&self) -> View {
         let (sender, output) = mpsc::channel();
-        let (size, id) = self.open_view(Sends::Blocking(sender));
+        let (size, id) = self.open_view(Sends::Blocking(sender), None);
         View {
             size,
             output,
@@ -472,8 +472,24 @@ impl Session {
     /// program writes after it, taken together so nothing is lost or doubled between them.
     /// The stream ends when the program does, and letting go of it closes the view.
     pub fn follow(&self) -> Following {
+        self.following(None)
+    }
+
+    /// [`Session::follow`], with at most `history` lines of history in its snapshot, the newest
+    /// (#4742): a pane opens on its screen and a page of history, and asks for more as the
+    /// person scrolls up.
+    pub fn follow_within(&self, history: usize) -> Following {
+        self.following(Some(history))
+    }
+
+    /// How many lines of history the terminal keeps above its screen now.
+    pub fn history(&self) -> usize {
+        lock(&self.terminal).engine.history()
+    }
+
+    fn following(&self, history: Option<usize>) -> Following {
         let (sender, mut live) = futures_channel::mpsc::unbounded();
-        let (size, id) = self.open_view(Sends::Following(sender));
+        let (size, id) = self.open_view(Sends::Following(sender), history);
         // The snapshot went in first, under the lock, before any output could follow it.
         let snapshot = live.try_recv().unwrap_or_default();
         Following {
@@ -495,11 +511,15 @@ impl Session {
     }
 
     /// Opens a view whose bytes go to `sends`: the screen as it is first, then the output.
-    /// Answers the size the screen was drawn for, and the view's id.
-    fn open_view(&self, sends: Sends) -> (Size, u64) {
+    /// Answers the size the screen was drawn for, and the view's id. `history` is the most
+    /// lines of history the screen is drawn with, or `None` for all of it.
+    fn open_view(&self, sends: Sends, history: Option<usize>) -> (Size, u64) {
         let (answers, size, id) = {
             let mut terminal = lock(&self.terminal);
-            let snapshot = terminal.engine.snapshot();
+            let snapshot = match history {
+                Some(most) => terminal.engine.snapshot_within(most),
+                None => terminal.engine.snapshot(),
+            };
             // The snapshot ends any open update, so the views already watching are left
             // holding bytes the engine is not. They are handed them here rather than waiting
             // on the deadline: this view is showing a frame those panes have not drawn yet.
@@ -2349,6 +2369,12 @@ mod tests {
         }
         fn snapshot(&mut self) -> Vec<u8> {
             (self.snapshot)(self.real.snapshot())
+        }
+        fn snapshot_within(&mut self, history: usize) -> Vec<u8> {
+            (self.snapshot)(self.real.snapshot_within(history))
+        }
+        fn history(&self) -> usize {
+            self.real.history()
         }
         fn take_replies(&mut self) -> Vec<u8> {
             self.real.take_replies()

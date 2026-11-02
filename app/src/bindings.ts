@@ -1276,8 +1276,10 @@ export const commands = {
 	/**
 	 *  Opens a view of a session for a pane that is now on screen: the channel is sent the screen
 	 *  as it already is, and then the session's output. Answers with the id that closes the view.
+	 *  `history` is the most lines of history the screen is drawn with, the newest (#4742), or all
+	 *  of them; the answer says how many are older.
 	 */
-	watchSession: (plane: PlaneId, session: number, output: Channel<string>) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output })),
+	watchSession: (plane: PlaneId, session: number, output: Channel<string>, history: number | null) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output, history })),
 	/**  Closes a view, for a pane that has gone off screen. The session keeps running. */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
 	/**  Starts a browser in project `plane`, and answers its id. Refused while Stop all holds. */
@@ -15794,6 +15796,11 @@ export type Watching = {
 	 *  keeps the terminal's own Enter.
 	 */
 	newline: string | null,
+	/**
+	 *  How many lines of history the session keeps above those the view was drawn with
+	 *  (#4742): what the pane asks for, with a larger `history`, as the person scrolls up.
+	 */
+	older: number,
 };
 
 /**  Which of the two ways the person ends a chat (#1488). */

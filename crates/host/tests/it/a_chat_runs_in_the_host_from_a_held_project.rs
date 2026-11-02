@@ -276,6 +276,65 @@ async fn what_is_typed_reaches_the_program_and_its_view_draws_it_after_its_scree
     assert_eq!(linked.runs.last().seen().typed, b"hello");
 }
 
+/// The snapshot of the next view of `program` the host opens on `linked`.
+async fn snapshot_of_the_next_view(linked: &mut Linked) -> Vec<u8> {
+    let mut reader = Viewer::default()
+        .accept(linked.views.accept().await.unwrap())
+        .await
+        .unwrap();
+    let mut snapshot = Vec::new();
+    while !reader.snapshot_complete() {
+        match timeout(PATIENCE, reader.next())
+            .await
+            .expect("the view draws")
+            .expect("the view is open")
+            .unwrap()
+        {
+            Chunk::Snapshot(bytes) => snapshot.extend_from_slice(&bytes),
+            Chunk::Live(_) => unreachable!("live bytes come after the snapshot"),
+        }
+    }
+    snapshot
+}
+
+#[tokio::test]
+async fn a_terminal_view_attached_with_a_page_of_history_draws_the_newest_and_says_how_many_are_older()
+ {
+    let mut linked = linked().await;
+    linked.hold().await;
+    let program = linked.client.start_program(a_harness()).await.unwrap();
+    linked.runs.last().writes(b"1\n2\n3\n4\n5\n");
+
+    let attached = linked
+        .client
+        .attach_terminal_view_within(&program, 2)
+        .await
+        .unwrap();
+
+    assert_eq!(attached.older, Some(3));
+    assert_eq!(snapshot_of_the_next_view(&mut linked).await, b"4\n5\n");
+}
+
+#[tokio::test]
+async fn a_terminal_view_attached_without_a_page_draws_all_of_it_and_says_nothing_is_older() {
+    let mut linked = linked().await;
+    linked.hold().await;
+    let program = linked.client.start_program(a_harness()).await.unwrap();
+    linked.runs.last().writes(b"1\n2\n3\n4\n5\n");
+
+    let attached = linked
+        .client
+        .attach_view(&program, ViewKind::Terminal)
+        .await
+        .unwrap();
+
+    assert_eq!(attached.older, None);
+    assert_eq!(
+        snapshot_of_the_next_view(&mut linked).await,
+        b"1\n2\n3\n4\n5\n"
+    );
+}
+
 #[tokio::test]
 async fn a_resize_reaches_the_program_and_the_next_view_is_drawn_for_it() {
     let linked = linked().await;

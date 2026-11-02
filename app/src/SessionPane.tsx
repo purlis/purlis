@@ -50,6 +50,10 @@ import {
 import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
 import { useProjectShown } from "./projectShown";
+import { FIRST_PAGE, keepInView, pageHistory } from "./historyPages";
+
+/** A full reset (RIS): what a pane is written before the screen of a view opened again. */
+const RESET = "\x1bc";
 
 /**
  * One pane, drawing one session.
@@ -366,34 +370,61 @@ export function SessionPane({
     watching.observe(where);
 
     let view: number | undefined;
+    /** Which view's output the pane draws: the one opened last (#4742). */
+    let opening = 0;
+    /** How many lines of history the view in use left out, above those it drew. */
+    let older = 0;
+    // **Older history is paged in as the person scrolls up** (#4742): the view is opened again
+    // with more, and the one before it let go of once the new one answers.
+    const paging = pageHistory(pane, (history) => void open(history));
     // What the view is sent waits here until the terminal is the size that screen was drawn
     // for, so a line the session wrapped is not wrapped again somewhere else. A benchmark
     // wants to know when its text reached the grid, so what it gives back travels with the
     // text it belongs to.
-    const waiting: { text: string; written?: () => void }[] = [];
-    let ready = false;
-    const output = new Channel<string>();
-    output.onmessage = (text) => {
-      if (gone) return;
-      const written = bench.paneSent(pane, text);
-      if (ready) pane.write(text, written);
-      else waiting.push({ text, written });
-    };
-    // The pane's own size first: a session nobody is showing keeps whatever size it had.
-    void (async () => {
-      fit.fit();
+    const open = async (history: number) => {
+      const mine = ++opening;
+      const again = view !== undefined;
+      const waiting: { text: string; written?: () => void }[] = [];
+      let ready = false;
+      /** Put back after each piece of a page is written, so the person keeps their place. */
+      let keep = () => {};
+      const output = new Channel<string>();
+      output.onmessage = (text) => {
+        if (gone || mine !== opening) return;
+        const benched = bench.paneSent(pane, text);
+        const written = () => {
+          keep();
+          benched?.();
+        };
+        if (ready) pane.write(text, written);
+        else waiting.push({ text, written });
+      };
+      // The pane's own size first: a session nobody is showing keeps whatever size it had.
+      if (!again) fit.fit();
       const opened = await commands
-        .watchSession(plane, session, output)
+        .watchSession(plane, session, output, history)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       if (opened.status === "error") {
-        say(opened.error);
+        if (again) paging.refused();
+        else say(opened.error);
         return;
       }
-      if (gone) {
+      if (gone || mine !== opening) {
         void commands.unwatchSession(plane, session, opened.data.view);
         return;
       }
+      const before = view;
       view = opened.data.view;
+      if (before !== undefined) {
+        void commands.unwatchSession(plane, session, before);
+        // The lines paged in go above the ones the person was reading.
+        const above = pane.buffer.active.viewportY + Math.max(0, older - opened.data.older);
+        keep = keepInView(pane, above);
+        // Written, not `reset()`: after whatever of the old view is still queued to be parsed,
+        // and so the full reset the core writes before a fresh snapshot of one view too.
+        pane.write(RESET);
+      }
+      older = opened.data.older;
       // The core keeps the history; the pane keeps the same, so scrolling back shows what the
       // session has rather than what this terminal happens to have seen.
       pane.options.scrollback = opened.data.scrollback;
@@ -403,7 +434,9 @@ export function SessionPane({
       for (const held of waiting.splice(0)) pane.write(held.text, held.written);
       // Now that the screen is drawn, the pane's own size applies again.
       fit.fit();
-    })();
+      paging.opened(history, older);
+    };
+    void open(FIRST_PAGE);
 
     return () => {
       gone = true;
@@ -417,6 +450,7 @@ export function SessionPane({
       // A pane gone before the slide's end fits nothing at it.
       unqueue();
       wheeling.dispose();
+      paging.dispose();
       typed.dispose();
       bytes.dispose();
       resized.dispose();
