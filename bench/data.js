@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793618892220,
+  "lastUpdate": 1793622781797,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36246,6 +36246,48 @@ window.BENCHMARK_DATA = {
             "value": 102.334724,
             "unit": "ms",
             "extra": "median of 5 runs: 101.748, 101.839, 102.335, 102.876, 102.895 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a0efdc62468e45eb0641453a8121530826fcabf2",
+          "message": "Theme: the rest of the heavy theme's parts landing (#4410) (#4694)\n\n* Theme: every shipped appearance's parts are held to one look as written (#4410)\n\nThe first-frame comment claimed every shipped theme is measured before the\ndeadline; only Purlis dark and Classic dark are. The rest fit the wait because\neach is measured as written alone, nothing tinted, which a purlis-core test\nnow holds for all five, counting coarse see-through tints too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DKPRXA8WC41EZZ8X7EF269\nPurlis-Persona: steward\n\n* Theme: the window's entry is held to land a first frame's parts (#4410)\n\nmain.tsx is imported with App stubbed and a heavy first frame handed; the\ntest fails if the partsLand call is removed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DKPRXA8WC41EZZ8X7EF269\nPurlis-Persona: steward\n\n* Theme: a frame standing in for an extension's theme asks for no parts (#4410)\n\nA project on an extension's theme draws the person's own theme first. When\nthat theme is heavy, its parts landed and then the extension's theme did:\ntwo changes at every launch. The stand-in frame now gets no ticket, so the\nwindow's in-force answer is the one change. Also corrects the windowprefs\ncomments that overclaimed which appearances are measured before the deadline.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DKPRXA8WC41EZZ8X7EF269\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T09:35:49Z",
+          "tree_id": "2de9d2e06cf197eb4437e4605200c4af4283bd89",
+          "url": "https://github.com/purlis/purlis/commit/a0efdc62468e45eb0641453a8121530826fcabf2"
+        },
+        "date": 1793622777351,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.659204,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.649, 0.658, 0.659, 0.671, 0.673 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7105805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.358, 16.442, 16.711, 16.841, 16.865 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.607091,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.216, 102.599, 102.607, 102.880, 103.087 ms"
           }
         ]
       }
