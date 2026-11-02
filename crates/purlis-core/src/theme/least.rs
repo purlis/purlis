@@ -86,7 +86,7 @@ pub fn raise(theme: &ResolvedTheme) -> ResolvedTheme {
                 .iter()
                 .find(|(token, _)| *token == pair.front)
                 .map(|(_, base)| Pair {
-                    front: *base,
+                    front: base,
                     ..*pair
                 })
         })
