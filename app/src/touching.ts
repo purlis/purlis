@@ -14,7 +14,7 @@
  * at most {@link AT_MOST_PER_CHAT} paths per chat (its oldest goes first), and at most
  * {@link AT_MOST} in all. The core already caps each chat's rate.
  */
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { listen } from "./here";
 import { useProjectShown } from "./projectShown";
@@ -153,16 +153,28 @@ export function useTouches(plane: PlaneId | undefined): TouchStore {
   return store;
 }
 
-/** The files `plane`'s chats are touching, as a value: whatever reads it is drawn again on each
- *  touch. For a part that needs the list itself; a row reads {@link useTouchedBy}. */
-export function useTouching(plane: PlaneId | undefined): Touches {
-  return useHeldTouches(useTouches(plane), plane);
+/**
+ * The touches `store` holds of `plane` that `keeps` keeps, as a value: whatever reads it is drawn
+ * again when they change, and not for a touch `keeps` leaves out. For a part that needs the list
+ * itself; a row reads {@link useTouchedBy}.
+ */
+export function useHeldTouches(
+  store: TouchStore,
+  plane: PlaneId | undefined,
+  keeps: (touch: Touch) => boolean,
+): Touches {
+  const held = () => store.held();
+  return useSyncExternalStoreWithSelector(
+    store.subscribe,
+    held,
+    held,
+    (now) => touchesOf(now, plane).filter(keeps),
+    sameTouches,
+  );
 }
 
-/** What `store` holds of `plane`, as a value: whatever reads it is drawn again on each touch. */
-export function useHeldTouches(store: TouchStore, plane: PlaneId | undefined): Touches {
-  const touches = () => touchesOf(store.held(), plane);
-  return useSyncExternalStore(store.subscribe, touches, touches);
+function sameTouches(one: Touches, other: Touches) {
+  return one.length === other.length && one.every((touch, at) => touch === other[at]);
 }
 
 /**
@@ -234,11 +246,14 @@ function sameNames(one: readonly string[] | undefined, other: readonly string[] 
   );
 }
 
-/** A store that never holds a touch, for a tree drawn without any. */
-const QUIET: TouchStore = { subscribe: () => () => {}, held: () => ({ touches: NONE }) };
-
 /** No files touched. */
 const NONE: Touches = [];
+
+/** What {@link QUIET} holds, the same each time it is asked: a store's `held` must be. */
+const HELD_NONE: Held = { touches: NONE };
+
+/** A store that never holds a touch, for a tree drawn without any. */
+const QUIET: TouchStore = { subscribe: () => () => {}, held: () => HELD_NONE };
 
 /** The chats touching each path of one branch, by the path inside it. */
 export type Touching = ReadonlyMap<string, readonly string[]>;
@@ -263,14 +278,11 @@ export function touchingIn(
 ): Touching {
   const out = new Map<string, string[]>();
   if (folder === undefined || touches.length === 0) return out;
-  const top = slashed(folder);
   const bySession = new Map(chats.map((chat) => [chat.session, chat]));
   for (const touch of touches) {
     const chat = bySession.get(touch.session);
-    if (chat?.cwd == null) continue;
-    const whole = `${slashed(chat.cwd)}/${touch.path}`;
-    if (!whole.startsWith(`${top}/`)) continue;
-    const inside = whole.slice(top.length + 1);
+    const inside = chat === undefined ? undefined : touchedInside(touch, chat, folder);
+    if (chat === undefined || inside === undefined) continue;
     const parts = inside.split("/");
     const places = parts.map((_, at) => parts.slice(0, at + 1).join("/"));
     for (const place of ["", ...places]) {
@@ -280,6 +292,17 @@ export function touchingIn(
     }
   }
   return out;
+}
+
+/**
+ * Where `touch`, by `chat`, is inside the folder `folder`, as a path from it; nothing when it is
+ * outside it. A touch's path is from its chat's folder.
+ */
+export function touchedInside(touch: Touch, chat: OpenChat, folder: string): string | undefined {
+  if (chat.cwd == null) return undefined;
+  const top = slashed(folder);
+  const whole = `${slashed(chat.cwd)}/${touch.path}`;
+  return whole.startsWith(`${top}/`) ? whole.slice(top.length + 1) : undefined;
 }
 
 /** What a marker says on hover and to a screen reader. */

@@ -72,7 +72,15 @@ import {
 import { Count } from "./ui/badge/Badge";
 import { HeadActions } from "./viewHead";
 import { Tooltip } from "./ui/tooltip/Tooltip";
-import { Tree, TreeLine, TreePending, TreeRow, type Key, type PressEvent } from "./ui/tree/Tree";
+import {
+  Tree,
+  TreeLine,
+  TreePending,
+  TreeRow,
+  useRowDescription,
+  type Key,
+  type PressEvent,
+} from "./ui/tree/Tree";
 import { List, ListRow, ListRowSection, type RowMenu } from "./ui/list/List";
 import { RowBelow, RowLabel, RowLead } from "./ui/list/Row";
 import { ScopeSwitch } from "./ScopeSwitch";
@@ -2009,19 +2017,21 @@ function markSaid(marked: Marked, folder: boolean): string {
 }
 
 /**
- * **A file or folder row's name to a reader**: its name, then what a chat is doing in it and
- * what the branch changed in it, as its marks say them; typing still finds it by its name.
+ * **A file or folder row's name to a reader**: its name, then what the branch changed in it, as
+ * its mark says it; typing still finds it by its name.
+ *
+ * What a chat is doing in it is not part of the name (#4730): it is the row's description,
+ * heard after the name, which its {@link TouchMark} writes. A row drawn again for a touch drew
+ * every row of the tree again (`useRowDescription`).
  */
 function rowSaid(
   name: string,
-  touchedBy: readonly string[] | undefined,
   marked: Marked | undefined,
   folder: boolean,
   refused?: string,
 ): string {
   return [
     name,
-    ...(touchedBy !== undefined && touchedBy.length > 0 ? [touchSaid(touchedBy)] : []),
     ...(marked === undefined ? [] : [markSaid(marked, folder)]),
     ...(refused === undefined ? [] : [refused]),
   ].join(" ");
@@ -2041,13 +2051,18 @@ function TouchMarkOf({
 }
 
 /** The live mark on a file or folder a chat is touching right now (FM-6): a dot, and on hover
- *  and to a screen reader which chats. */
+ *  and to a screen reader which chats. In a row, the row says them too, after its name. */
 function TouchMark({ names }: { names: readonly string[] | undefined }) {
   if (names === undefined || names.length === 0) return null;
-  const said = touchSaid(names);
+  return <TouchDot said={touchSaid(names)} />;
+}
+
+/** A {@link TouchMark} drawn: the dot, which also gives its row the words. */
+function TouchDot({ said }: { said: string }) {
+  const describes = useRowDescription<HTMLSpanElement>(said);
   return (
     <Tooltip tip={said}>
-      <span className="touch-mark" role="img" aria-label={said} />
+      <span ref={describes} className="touch-mark" role="img" aria-label={said} />
     </Tooltip>
   );
 }
@@ -2193,7 +2208,6 @@ function FilesRow({
   const open = isOpen(at.files, branch, always);
   const level = open ? levelOf(at.files, branch) : undefined;
   const marked = at.files.indexes.get(branchKey(branch))?.marks.get(branch.folder);
-  const touchedBy = useTouchedBy(at.files.touching, branchKey(branch), branch.folder);
   const picked = pickOf(at, branch.folder, true);
   const press = usePickingPress(at, picked, () => {
     if (!always) at.fold(key, !open);
@@ -2204,7 +2218,7 @@ function FilesRow({
       {...press}
       {...pickedAs(at, picked)}
       id={id}
-      textValue={rowSaid(name, touchedBy, marked, true)}
+      textValue={rowSaid(name, marked, true)}
       className="file-node"
       data-row={id}
       data-mark={marked?.mark}
@@ -2229,7 +2243,11 @@ function FilesRow({
           )}
           <span className="spot-name">{name}</span>
           {/* A space, so a screen reader says the mark as its own word; flex drops it. */}{" "}
-          <TouchMark names={touchedBy} />
+          <TouchMarkOf
+            touching={at.files.touching}
+            branch={branchKey(branch)}
+            path={branch.folder}
+          />
           <ChangeBadge marked={marked} folder />
           {trail}
         </>
@@ -2458,7 +2476,6 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
   const refused = entry.refused;
   // Where its preview was last read, so *Open in your editor* opens there (#1143).
   const line = useLastRead(at.plane, at.place, path);
-  const touchedBy = useTouchedBy(at.files.touching, branchKey(branch), path);
   // Refused and linked files keep their own marks: what they say is that this row is not an
   // ordinary file, which matters more than what kind of file it would be.
   const Mark = refused !== undefined ? FileX : entry.kind === "link" ? FileSymlink : null;
@@ -2471,7 +2488,7 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
       {...press}
       {...(at.shown === undefined ? pickedAs(at, picked) : { chosen: path === at.shown })}
       id={id}
-      textValue={rowSaid(entry.name, touchedBy, entry.marked, false, refused)}
+      textValue={rowSaid(entry.name, entry.marked, false, refused)}
       className="file-node"
       data-row={id}
       data-refused={refused !== undefined || undefined}
@@ -2491,7 +2508,8 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
           ) : (
             <Mark className="node-icon" />
           )}
-          <span className="spot-name">{entry.name}</span> <TouchMark names={touchedBy} />
+          <span className="spot-name">{entry.name}</span>{" "}
+          <TouchMarkOf touching={at.files.touching} branch={branchKey(branch)} path={path} />
           <ChangeBadge marked={entry.marked} folder={false} />
           {/* Why it does not open, said beside it — an ignored file's too, which is drawn only
               once the operator asked to see what git ignores. */}

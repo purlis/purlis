@@ -24,9 +24,11 @@ import { countReactsCommits, counts, renderedBy } from "./reactCommits.testkit";
  *
  * An agent reads and edits files as fast as it can, and each one is a `chat-touching` event.
  * Each used to draw the whole Explorer again, every row of every open branch with it, to move
- * one dot. Now the explorer is not drawn again, and of its rows only those whose mark the touch
- * changes (the file and the folders above it), as a chat's doing-line draws only its own row
- * (`chatDoing.ts`). A project that is not in front draws no mark at all, so it listens for none.
+ * one dot. Now nothing is drawn but the marks the touch changes (on the file, the folders above
+ * it and the branch's own head): no row, so not React Aria's tree either, which builds every row
+ * again whenever one row is drawn. The row's words for a reader move with the mark, which writes
+ * them as the row's description. A project that is not in front draws no mark at all, so it
+ * listens for none.
  *
  * **Held by counts, which are the same on every machine** (ADR 0086): which components were
  * drawn, by name, and how many in all.
@@ -45,12 +47,12 @@ const PLANE = "/plane" as unknown as PlaneId;
 const FILES = 60;
 
 /**
- * The most components one touch may draw. It draws the marked row's own parts and, since the
- * row's name says who is working in it (its `textValue`, which React Aria makes its
- * `aria-label`), React Aria's own frame of each row of the tree: 334 for these {@link FILES}
- * rows. The explorer drawn again with its rows was 1,257.
+ * The most components one touch may draw: the file's mark and the branch head's, each with its
+ * tooltip, 21 in all, however many {@link FILES} rows there are. A touch that drew its row drew
+ * React Aria's frame of every row of the tree again, 334 for these rows; the explorer drawn again
+ * with its rows was 1,257.
  */
-const RENDERED = 400;
+const RENDERED = 25;
 
 const PANELS: PanelsModel = {
   workspace: "alpha",
@@ -161,6 +163,11 @@ const reset = () => {
   renderedBy.clear();
 };
 
+/** What the row `id` says after its name, to a reader. */
+const describedOn = (id: string) =>
+  document.querySelector<HTMLElement>(`[data-row="${id}"]`)?.getAttribute("aria-description") ??
+  undefined;
+
 const markOn = (id: string) =>
   document
     .querySelector<HTMLElement>(`[data-row="${id}"]`)
@@ -181,9 +188,14 @@ describe("what a chat touching a file costs the explorer", () => {
       expect(markOn("file:svc/one:file-7.ts")).toBe("fix login is working here now"),
     );
     expect(markOn("file:svc/one:file-8.ts")).toBeUndefined();
-    // The explorer is not drawn again, and of the rows only the one whose mark moved.
+    expect(describedOn("file:svc/one:file-7.ts")).toBe("fix login is working here now");
+    expect(describedOn("file:svc/one:file-8.ts")).toBeUndefined();
+    // Neither the explorer nor any row is drawn again: only the marks. `NoDrag` is drawn once in
+    // each row React Aria draws.
     expect(renderedBy.get("Explorer") ?? 0).toBe(0);
-    expect(renderedBy.get("FileRow")).toBe(1);
+    expect(renderedBy.get("FileRow") ?? 0).toBe(0);
+    expect(renderedBy.get("TreeRow") ?? 0).toBe(0);
+    expect(renderedBy.get("NoDrag") ?? 0).toBe(0);
     expect(counts.rendered).toBeLessThanOrEqual(RENDERED);
 
     // The same chat touching the same file again changes no mark, so draws nothing.
