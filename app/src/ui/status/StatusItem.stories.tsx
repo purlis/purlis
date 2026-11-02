@@ -350,18 +350,43 @@ export const MovingAnItemByTheKeyboard: Story = {
         "true",
       ),
     );
-    // The row that can go no further says why to the keyboard too. Then off it: when a tooltip
-    // opens is no part of the picture.
+    // The row that can go no further says why to the keyboard that lands on it. Then off it: when
+    // a tooltip opens is no part of the picture.
     const body = within(document.body);
+    const project = () => within(move).getByRole("menuitem", { name: "Project" });
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(project, "Move left, off the row that can go no further");
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(
+      () => within(move).getByRole("menuitem", { name: "PRs (Forge)" }),
+      "Move left, back on the row that can go no further",
+    );
     await waitFor(() =>
       expect(body.getByRole("tooltip")).toHaveTextContent("Already first on its end of the bar"),
     );
     await userEvent.keyboard("{ArrowDown}");
-    await untilFocused(
-      () => within(move).getByRole("menuitem", { name: "Project" }),
-      "Move left, off the row that can go no further",
-    );
+    await untilFocused(project, "Move left, off that row again");
     await waitFor(() => expect(body.queryByRole("tooltip")).toBeNull());
+    // Rightwards, the row the keyboard is on is the one that moves among the rows: it keeps it.
+    await userEvent.keyboard("{ArrowLeft}");
+    const moveRight = within(menu).getByRole("menuitem", { name: "Move right" });
+    moveRight.focus();
+    await untilFocused(() => moveRight, "Move right, its row");
+    await userEvent.keyboard("{ArrowRight}");
+    const right = await body.findByRole("menu", { name: "Move right" });
+    const rightwards = () => within(right).getByRole("menuitem", { name: "PRs (Forge)" });
+    await untilFocused(rightwards, "Move right, its first row");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(onTheBar(bar)).toEqual([
+        "purlis.project",
+        "extension:prs/open",
+        "purlis.todos",
+        "purlis.doctor",
+        "purlis.notices",
+      ]),
+    );
+    await untilFocused(rightwards, "Move right, the same row after the move");
   },
 };
 
