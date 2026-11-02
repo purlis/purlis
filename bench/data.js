@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793660390534,
+  "lastUpdate": 1793663490573,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36750,6 +36750,48 @@ window.BENCHMARK_DATA = {
             "value": 103.011802,
             "unit": "ms",
             "extra": "median of 5 runs: 101.785, 102.343, 103.012, 103.604, 103.877 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c965b4f99204c6aebe471313ba1cd805d619f2b3",
+          "message": "Status bar: Reset order puts every item back in its shipped place (#4805)\n\n* Status bar: tests for the order the person gives its items (#3030)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CK3GH3K63HFW00FK3JR24W\nPurlis-Persona: steward\n\n* Reorder status bar items by a drag or from the bar's menu (#3030)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CK3GH3K63HFW00FK3JR24W\nPurlis-Persona: steward\n\n* Status bar order: list its live region, hold the drag story to a real move (#3030)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CK3GH3K63HFW00FK3JR24W\nPurlis-Persona: steward\n\n* Status bar order: the drag story's pictures, and the keyboard story's tooltip asserted and left (#3030)\n\nThe keyboard story's picture caught the unavailable row's tooltip by timing: there in Chromium, a pixel off between runs, absent in WebKit. The story now waits for it, so the keyboard route is held to it in both browsers, then steps off the row so the picture no longer depends on it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CK3GH3K63HFW00FK3JR24W\nPurlis-Persona: steward\n\n* Status bar order: hold the keyboard story to what WebKit does, and to a move right (#3030)\n\nWebKit opens no tooltip on a row that gains its reason while the keyboard stays on it, so the story asserts the reason where the keyboard lands on the row. It also moves an item right, the one move that takes the focused row's place among the rows, and ends there on a row with no tooltip.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CK3GH3K63HFW00FK3JR24W\nPurlis-Persona: steward\n\n* Status bar order: the row at its end's edge keeps the keyboard and says why (#3030)\n\nWith #4662 in, the keyboard story holds the moved row to the keyboard as it reaches its end's edge, with its tooltip, in both browsers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CK3GH3K63HFW00FK3JR24W\nPurlis-Persona: steward\n\n* Status bar order: the keyboard story's pictures (#3030)\n\nTaken from stories run 41412741848 and looked at in both browsers: the bar in its moved order, the check rows following it, and Move right open with the keyboard kept on the row it moved.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CK3GH3K63HFW00FK3JR24W\nPurlis-Persona: steward\n\n* Status bar: Reset order puts every item back in its shipped place (#4776)\n\nThe bar's menu offers Reset order once the bar draws its items otherwise\nthan their priorities do. It forgets status.order, keeps what is hidden,\nand closes the menu, handing the keyboard back to the item it was opened\nfrom. A story checks it by the keyboard in Chromium and WebKit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6E2GVDD84268VQYYA9AW7F1\nPurlis-Persona: steward\n\n* Status bar: Reset order's pictures (#4776)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6E2GVDD84268VQYYA9AW7F1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T21:15:11Z",
+          "tree_id": "697d72957111ff03c3e033d98a5ad0b41f874580",
+          "url": "https://github.com/purlis/purlis/commit/c965b4f99204c6aebe471313ba1cd805d619f2b3"
+        },
+        "date": 1793663485789,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.510536,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.499, 0.510, 0.511, 0.523, 0.530 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3219845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.147, 16.183, 16.322, 16.415, 16.446 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.31020849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.388, 101.646, 102.310, 102.316, 102.869 ms"
           }
         ]
       }
