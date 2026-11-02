@@ -212,6 +212,19 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
       reads.current++;
     };
   }, [reread]);
+  // Work done elsewhere is picked up as the person comes back to the window (Q30): a command
+  // run from See what this does, in their own terminal.
+  useEffect(() => {
+    const back = () => {
+      if (document.visibilityState === "visible" && reading.current === 0) reread();
+    };
+    window.addEventListener("focus", back);
+    document.addEventListener("visibilitychange", back);
+    return () => {
+      window.removeEventListener("focus", back);
+      document.removeEventListener("visibilitychange", back);
+    };
+  }, [reread]);
 
   const shown = read.state === "read" ? read.shown : undefined;
   const at = shown?.at ?? null;

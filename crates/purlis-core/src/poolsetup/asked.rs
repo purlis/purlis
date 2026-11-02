@@ -112,23 +112,27 @@ impl Asked {
         Pool::new(self.name.trim(), image, set).map_err(|why| why.to_string())
     }
 
-    /// **The command that does what the button does**: each word quoted for a shell, and only
-    /// what the person changed. A name or image not given yet is held by a stand-in to fill in.
+    /// **The command that does what the button does**: only what the person changed, and only
+    /// values a pool could have, so a word of it never means more than it says in any shell. A
+    /// name or image that isn't one yet is a plain stand-in to fill in.
     #[must_use]
     pub fn command(&self) -> String {
-        let quoted = |text: &str, standing_in: &str| {
-            let text = text.trim();
-            if text.is_empty() {
-                standing_in.to_owned()
-            } else {
-                crate::shellseg::shell_quote(text)
-            }
+        let (name, image) = (self.name.trim(), self.image.trim());
+        let name = if crate::runners::usable_pool_name(name).is_ok() {
+            crate::shellseg::shell_quote(name)
+        } else {
+            "NAME".to_owned()
+        };
+        let image = if Image::pinned(image).is_ok() {
+            crate::shellseg::shell_quote(image)
+        } else {
+            "IMAGE".to_owned()
         };
         let mut words = vec![
             "purlis pool add".to_owned(),
-            quoted(&self.name, "<name>"),
+            name,
             "--image".to_owned(),
-            quoted(&self.image, "<image>"),
+            image,
         ];
         let mut with = |flag: &str, value: Option<String>| {
             if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
@@ -137,11 +141,19 @@ impl Asked {
             }
         };
         let number = |value: Option<u32>| value.map(|value| value.to_string());
-        with("--cpus", self.cpus.clone());
+        with(
+            "--cpus",
+            self.cpus.clone().filter(|cpus| millicpus_of(cpus).is_ok()),
+        );
         with("--memory-mib", number(self.memory_mib));
         with("--processes", number(self.processes));
         with("--tmp-mib", number(self.tmp_mib));
-        with("--suspend-after", self.suspend_after.clone());
+        with(
+            "--suspend-after",
+            self.suspend_after
+                .clone()
+                .filter(|after| suspend_after_of(after).is_ok()),
+        );
         with("--frames", number(self.frames));
         with("--width", number(self.width));
         words.join(" ")

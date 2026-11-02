@@ -17,6 +17,7 @@ const STEP: PoolSetupStep = {
   next: { id: "choose-profiles", label: "Choose profiles", does: "", command: null, url: null },
   skippable: true,
   see: null,
+  checks: [],
 };
 
 const row = (name: string, standing: string | null = "signed-out") => ({
@@ -149,20 +150,71 @@ describe("SignInsStep", () => {
   });
 
   it("records the ticked profiles and signs each in inside the step", async () => {
+    let added = false;
     const calls = core({
-      pool_profile_add: () => null,
+      pool_profiles: () =>
+        added
+          ? {
+              ...PROFILES,
+              kept: [...PROFILES.kept, row("personal")],
+              addable: [PROFILES.addable[1]],
+            }
+          : PROFILES,
+      pool_profile_add: () => {
+        added = true;
+        return null;
+      },
       pool_sign_in_start: () => 7,
       pool_sign_in_next: () => new Promise(() => undefined),
     });
     const { pool } = draw();
     await userEvent.click(await screen.findByRole("button", { name: "Sign in 1 profile" }));
-    await waitFor(() =>
-      expect(calls.find((call) => call.cmd === "pool_profile_add")?.args).toMatchObject({
-        pool,
-        name: "personal",
-      }),
-    );
+    expect(await screen.findByRole("heading", { name: "Sign in personal" })).toBeTruthy();
+    expect(calls.find((call) => call.cmd === "pool_profile_add")?.args).toMatchObject({
+      pool,
+      name: "personal",
+    });
+    expect(calls.find((call) => call.cmd === "pool_sign_in_start")?.args).toMatchObject({
+      pool,
+      name: "personal",
+    });
     expect(calls.some((call) => call.cmd === "pool_profile_remove")).toBe(false);
+  });
+
+  it("offers no main action with nothing ticked, and says what to do", async () => {
+    core({
+      pool_setup_sizes: () => ({
+        ...SIZES,
+        profiles: SIZES.profiles.map((one) => ({ ...one, in_use: false })),
+      }),
+      pool_profiles: () => ({
+        ...PROFILES,
+        kept: [],
+        addable: [...PROFILES.addable, { name: "work", harness: "Claude Code" }],
+      }),
+    });
+    draw();
+    expect(await screen.findByText(/Tick a profile for chats on/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Skip for now" })).toBeTruthy();
+  });
+
+  it("wakes a sleeping runner on its own button", async () => {
+    const calls = core({ pool_setup_wake: () => null });
+    const { pool, changed } = draw({
+      ...STEP,
+      findings: ["The runner isn't running."],
+      next: {
+        id: "wake-runner",
+        label: "Wake the runner",
+        does: "Starts it.",
+        command: null,
+        url: null,
+      },
+    });
+    await userEvent.click(await screen.findByRole("button", { name: "Wake the runner" }));
+    await waitFor(() => expect(changed).toHaveBeenCalled());
+    expect(calls.find((call) => call.cmd === "pool_setup_wake")?.args).toEqual({ pool });
   });
 
   it("is skipped on its own button, and that can be taken back", async () => {

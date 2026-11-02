@@ -48,21 +48,19 @@ fn the_command_says_every_setting_the_person_set() {
 #[test]
 fn a_name_not_given_yet_is_a_stand_in_and_never_an_empty_word() {
     let said = Asked::default().command();
-    assert_eq!(said, "purlis pool add <name> --image <image>");
+    assert_eq!(said, "purlis pool add NAME --image IMAGE");
 }
 
 #[test]
-fn what_a_person_typed_is_quoted_so_it_stays_one_word() {
+fn what_no_pool_could_have_never_reaches_the_command() {
     let asked = Asked {
-        name: "a b; rm -rf".into(),
-        image: image(),
+        name: "x\\".into(),
+        image: "; rm -rf ~ #".into(),
+        cpus: Some("2; reboot".into()),
+        suspend_after: Some("$(id)".into()),
         ..Asked::default()
     };
-    assert!(
-        asked.command().contains("'a b; rm -rf'"),
-        "{}",
-        asked.command()
-    );
+    assert_eq!(asked.command(), "purlis pool add NAME --image IMAGE");
 }
 
 #[test]

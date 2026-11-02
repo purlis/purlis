@@ -25,6 +25,14 @@ pub struct PoolSetupSee {
     pub text: String,
 }
 
+/// One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupCheck {
+    pub verdict: String,
+    pub title: String,
+    pub more: Option<String>,
+}
+
 /// One step as it stands.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSetupStep {
@@ -36,6 +44,7 @@ pub struct PoolSetupStep {
     pub next: Option<PoolSetupAction>,
     pub skippable: bool,
     pub see: Option<PoolSetupSee>,
+    pub checks: Vec<PoolSetupCheck>,
 }
 
 /// What the tab draws.
@@ -105,6 +114,15 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                     note: see.note.clone(),
                     text: see.text.clone(),
                 }),
+                checks: step
+                    .checks
+                    .iter()
+                    .map(|check| PoolSetupCheck {
+                        verdict: word(&check.verdict),
+                        title: check.title.clone(),
+                        more: check.more.clone(),
+                    })
+                    .collect(),
             })
             .collect(),
     }
@@ -366,6 +384,33 @@ pub async fn pool_setup_skip(pool: String, step: String, skipped: bool) -> Resul
     #[cfg(not(unix))]
     {
         let _ = (pool, step, skipped);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Starts pool `pool`'s runner again**, on the Sign-ins step's own button: one a day without a
+/// link stopped its own container, which is checked as it was made before it starts, as a link to
+/// it would start it. It goes back to sleep by itself.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_wake(pool: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("waking the runner", move || {
+            let machine = crate::runnerlinks::Machine::here(&config_root()?)?;
+            let kept = purlis_core::runners::runner_for(&machine.config, &pool)
+                .map_err(|why| why.to_string())?;
+            machine
+                .docker
+                .resumed(&kept.made)
+                .map(drop)
+                .map_err(|why| why.0)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pool;
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }

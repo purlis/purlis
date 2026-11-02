@@ -2164,14 +2164,15 @@ const FLAG_NOT_KNOWN: i32 = 2;
 const NO_FETCH: &str = "--no-fetch";
 
 /// **[`standing_by_login`], fetching nothing** (#4507, Q31): for a read that changes nothing on the
-/// runner. A runner of an older purlis doesn't know the flag, so it is asked the old way, and
-/// still answers.
+/// runner. A runner of an older purlis doesn't know the flag; asked the old way it would fetch,
+/// so its answer is that it can't tell, which a chat on it starts with.
 pub fn standing_as_installed_by_login(
     login: &crate::profilestore::sign_in::Login,
     name: &str,
 ) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
     match check_by_login(login, &[NO_FETCH])? {
-        (Some(FLAG_NOT_KNOWN), _) => standing_by_login(login, name),
+        // Asked the old way it would fetch, so it can't say: a read changes nothing (Q31).
+        (Some(FLAG_NOT_KNOWN), _) => Ok(Some(crate::profilestore::sign_in::Standing::CannotTell)),
         (code, said) => standing_answered(name, code, &said),
     }
 }

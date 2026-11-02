@@ -59,6 +59,13 @@ fn said(setup: &Setup) -> String {
         for finding in &step.findings {
             let _ = writeln!(out, "             {finding}");
         }
+        for check in &step.checks {
+            let word = serde_json::to_value(check.verdict)
+                .ok()
+                .and_then(|word| word.as_str().map(str::to_owned))
+                .unwrap_or_default();
+            let _ = writeln!(out, "             {word:<8} {}", check.title);
+        }
     }
     let next = setup
         .at

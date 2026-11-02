@@ -23,6 +23,7 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     next: null,
     skippable: id === "signins" || id === "identity",
     see: null,
+    checks: [],
     ...more,
   }) as PoolSetupStep;
 

@@ -164,6 +164,24 @@ pub struct See {
     pub text: String,
 }
 
+/// How one check on Try it came out (Q32): never colour alone, so each has its word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Verdict {
+    Ok,
+    Missing,
+    Todo,
+    Skip,
+}
+
+/// **One line of what Try it checks** (#4483): what, how it came out, and why where it didn't.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Check {
+    pub verdict: Verdict,
+    pub title: String,
+    pub more: Option<String>,
+}
+
 /// One step as it stands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Step {
@@ -177,6 +195,8 @@ pub struct Step {
     pub skippable: bool,
     /// See what this does, where the step has commands of its own.
     pub see: Option<See>,
+    /// What it checks, for Try it: a skipped step reads "works, except for this" (Q32).
+    pub checks: Vec<Check>,
 }
 
 /// The whole answer.
@@ -297,6 +317,9 @@ pub struct Choices {
     pub pool: Option<String>,
     /// The steps skipped on each pool.
     pub skipped: BTreeMap<String, Vec<StepId>>,
+    /// When a real chat was last seen to start on each pool, from Try it (#4483), in seconds
+    /// since the epoch: the proof setup ends on, which nothing else could read back.
+    pub tried: BTreeMap<String, u64>,
 }
 
 /// What this machine calls itself in a sentence.
@@ -637,8 +660,15 @@ fn identity_reading(facts: &Facts) -> Reading {
     }
 }
 
-fn try_reading(facts: &Facts) -> Reading {
+fn try_reading(facts: &Facts, choices: &Choices) -> Reading {
     let pool = facts.pool.as_ref().map_or("the pool", |pool| &pool.name);
+    if facts
+        .pool
+        .as_ref()
+        .is_some_and(|pool| choices.tried.contains_key(&pool.name))
+    {
+        return Reading::done("A real chat started");
+    }
     Reading::to_do(
         "Try it starts a real chat on the pool, so you know it works before you rely on it.",
         action(
@@ -671,7 +701,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             StepId::Pool => pool_reading(facts),
             StepId::Signins => sign_ins_reading(facts),
             StepId::Identity => identity_reading(facts),
-            StepId::Try => try_reading(facts),
+            StepId::Try => try_reading(facts, choices),
         };
         let state = if reading.finished {
             StepState::Done
@@ -697,7 +727,15 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             next: if says { reading.next } else { None },
             skippable: id.skippable(),
             see: see_of(id, facts),
+            checks: Vec::new(),
         });
+    }
+    if let (Some(name), Some(at)) = (
+        pool.as_deref(),
+        steps.iter().position(|step| step.id == StepId::Try),
+    ) {
+        let checks = try_checks(&steps, name, choices.tried.contains_key(name));
+        steps[at].checks = checks;
     }
     Setup {
         kind,
@@ -706,6 +744,57 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
         steps,
         others: Vec::new(),
     }
+}
+
+/// **What Try it checks on pool `pool`, by what the steps before it say** (#4483, Q32, C on
+/// #4469): a step that was skipped is a check that wasn't made, said as such, so the end reads
+/// "works, except for this" and never as done.
+fn try_checks(steps: &[Step], pool: &str, tried: bool) -> Vec<Check> {
+    let state = |id| steps.iter().find(|step| step.id == id);
+    let check = |verdict, title: String, more: Option<&str>| Check {
+        verdict,
+        title,
+        more: more.map(str::to_owned),
+    };
+    let mut checks = vec![if tried {
+        check(Verdict::Ok, format!("A chat started on {pool}"), None)
+    } else {
+        check(Verdict::Todo, format!("A chat starts on {pool}"), None)
+    }];
+    checks.push(match state(StepId::Signins) {
+        Some(step) if step.state == StepState::Done => check(
+            Verdict::Ok,
+            format!(
+                "{} signed in",
+                step.line.as_deref().unwrap_or("Your profiles are")
+            ),
+            None,
+        ),
+        Some(step) if step.state == StepState::Skipped => check(
+            Verdict::Skip,
+            "Sign-ins were skipped".to_owned(),
+            Some("Chats on the pool start on the profiles its runner has of its own."),
+        ),
+        _ => check(
+            Verdict::Todo,
+            "Your profiles are signed in".to_owned(),
+            None,
+        ),
+    });
+    checks.push(match state(StepId::Identity).map(|step| step.state) {
+        Some(StepState::Skipped) => check(
+            Verdict::Skip,
+            "gh and git push weren't checked: agent identity was skipped".to_owned(),
+            Some("In these chats, gh and git push say they have no identity."),
+        ),
+        // Checking them through a chat's own route is the agent identity step's (#4490).
+        _ => check(
+            Verdict::Skip,
+            "gh and git push aren't checked here".to_owned(),
+            Some("The agent identity step checks them."),
+        ),
+    });
+    checks
 }
 
 /// **What `id` does by hand**, where it has commands of its own. The Pool step's, before there is
@@ -939,6 +1028,7 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
         name_free: held.name_free,
         pool: held.pool,
         skipped: held.skipped,
+        tried: held.tried,
     })
 }
 
@@ -957,6 +1047,8 @@ struct Held {
     pool: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     skipped: BTreeMap<String, Vec<StepId>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    tried: BTreeMap<String, u64>,
 }
 
 fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
@@ -967,6 +1059,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         name_free: choices.name_free,
         pool: choices.pool,
         skipped: choices.skipped,
+        tried: choices.tried,
     };
     let text = serde_json::to_string_pretty(&held)
         .map_err(|why| Refused::Other(format!("your Pool setup choices: {why}")))?;
@@ -1073,11 +1166,30 @@ pub fn skip(config: &Path, pool: &str, step: StepId) -> Result<(), Refused> {
         )));
     }
     let _locked = runners::lock(config);
+    if !runners::pools(config)?.iter().any(|one| one.name() == pool) {
+        return Err(Refused::Other(format!(
+            "there is no pool named {pool} on this machine"
+        )));
+    }
     let mut choices = read_choices(config)?;
     let skipped = choices.skipped.entry(pool.to_owned()).or_default();
     if !skipped.contains(&step) {
         skipped.push(step);
     }
+    write_choices(config, choices)
+}
+
+/// **Keeps that a real chat was seen to start on pool `pool` at `at`** (#4483): what Try it ends
+/// on. Refused for a pool this machine doesn't keep.
+pub fn tried(config: &Path, pool: &str, at: u64) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    if !runners::pools(config)?.iter().any(|one| one.name() == pool) {
+        return Err(Refused::Other(format!(
+            "there is no pool named {pool} on this machine"
+        )));
+    }
+    let mut choices = read_choices(config)?;
+    choices.tried.insert(pool.to_owned(), at);
     write_choices(config, choices)
 }
 
@@ -1108,7 +1220,8 @@ pub(crate) fn forget_pool_locked(config: &Path, pool: &str) -> Result<(), Refuse
         choices.name = None;
         choices.name_free = false;
     }
-    if choices.skipped.remove(pool).is_some() || named || typed {
+    let tried = choices.tried.remove(pool).is_some();
+    if choices.skipped.remove(pool).is_some() || named || typed || tried {
         write_choices(config, choices)?;
     }
     Ok(())

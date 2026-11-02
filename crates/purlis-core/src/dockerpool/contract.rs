@@ -15,18 +15,41 @@ const INSIDE: &str = include_str!("../../../../tools/runner-image-contract.sh");
 /// How long the check from inside has: a start of a shell, and a few looks.
 const INSIDE_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// What marks a check's container, so a sweep of purlis's own finds one a stopped window left.
+const CONTRACT_LABEL: &str = "dev.purlis.contract-check=1";
+
 /// Most problems said: an image that lists more says nothing a person can act on sooner.
 const MOST_PROBLEMS: usize = 12;
 
 /// The inits that reap the processes a runner's chats leave behind when it is PID 1.
 const INITS: [&str; 4] = ["tini", "dumb-init", "catatonit", "docker-init"];
 
-/// Eight hex digits drawn at random, so two checks never share a container's name.
-fn drawn_name() -> String {
+/// Eight hex digits drawn at random, so two checks never share a container's name. Refused where
+/// nothing could be drawn: a name two checks could share would let one remove the other's.
+fn drawn_name() -> Result<String, Refused> {
     let mut drawn = [0u8; 4];
-    // Not drawn, the name is only less likely to be free, and a clash is a refused run.
-    let _ = getrandom::fill(&mut drawn);
-    drawn.iter().map(|byte| format!("{byte:02x}")).collect()
+    getrandom::fill(&mut drawn).map_err(|why| {
+        Refused(format!(
+            "purlis couldn't draw a name for the image's check: {why}"
+        ))
+    })?;
+    Ok(drawn.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+/// The user an image declares, as `docker run --user` takes it, where it is a number other than
+/// 0, with its group where that is a number too. `None` for any other, which isn't run at all.
+fn declared_user(image: &serde_json::Value) -> Option<String> {
+    let spelled = image.pointer("/Config/User")?.as_str()?;
+    let (uid, gid) = spelled.split_once(':').unwrap_or((spelled, ""));
+    let number = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
+    if !number(uid) || uid.parse::<u32>().ok()? == 0 {
+        return None;
+    }
+    Some(if number(gid) {
+        format!("{uid}:{gid}")
+    } else {
+        uid.to_owned()
+    })
 }
 
 fn base(word: &str) -> &str {
@@ -97,10 +120,16 @@ impl Docker {
     /// network and no capabilities, as a pool of it would run.
     pub fn contract_problems(&self, image: &Image) -> Result<Vec<String>, Refused> {
         let inspected = self.inspected_image(image)?;
-        let mut problems = config_problems(inspected.pointer("/0").unwrap_or(&inspected));
+        let config = inspected.pointer("/0").unwrap_or(&inspected);
+        let mut problems = config_problems(config);
+        // Run only as the user it declares, never as root: one that declares no other is told so
+        // above, and nothing of it is run.
+        let Some(user) = declared_user(config) else {
+            return Ok(problems);
+        };
         // An image that has no shell, or none that runs, can't be looked in, which is its answer.
         // A subshell, so the script's own exit is its lines and never a refused run.
-        let name = format!("purlis-contract-{}", drawn_name());
+        let name = format!("purlis-contract-{}", drawn_name()?);
         let words = [
             "run",
             "--rm",
@@ -113,6 +142,16 @@ impl Docker {
             "ALL",
             "--security-opt",
             "no-new-privileges",
+            "--user",
+            user.as_str(),
+            "--pids-limit",
+            "64",
+            "--memory",
+            "256m",
+            "--cpus",
+            "1",
+            "--label",
+            CONTRACT_LABEL,
             "--entrypoint",
             "/bin/sh",
             image.as_str(),

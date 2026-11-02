@@ -776,6 +776,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_create",
     "pool_setup_sizes",
     "pool_setup_skip",
+    "pool_setup_wake",
     "pool_setup_open_docker",
     "add_docker_pool",
     "remove_docker_pool",

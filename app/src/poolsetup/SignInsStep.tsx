@@ -8,10 +8,11 @@ import {
   askProfiles,
   profilesHeld,
   removeProfileFromPool,
+  saveLimits,
   usePools,
 } from "../pools";
 import { PoolLimits } from "../settings/PoolLimits";
-import { DRIVEN } from "../settings/PoolProfiles";
+import { DRIVEN, PoolProfiles } from "../settings/PoolProfiles";
 import { PoolSignIn } from "../settings/PoolSignIn";
 import { Badge } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
@@ -60,13 +61,19 @@ export function SignInsStep({
   plane: PlaneId;
   changed: () => void;
 }) {
-  const asked = usePools().profiles[pool];
+  const pools = usePools();
+  const asked = pools.profiles[pool];
+  const limits = pools.limits[pool];
   const [sizes, setSizes] = useState<PoolSetupSizes>();
   const [unmeasured, setUnmeasured] = useState<string>();
   const [chose, setTicked] = useState<ReadonlySet<string>>();
   const [walk, setWalk] = useState<Walk>();
   const [recording, setRecording] = useState(false);
   const [said, setSaid] = useState<string>();
+  /** Recorded, with a profile left to sign in on its own line: its lines are shown. */
+  const [lines, setLines] = useState(false);
+  /** The rows drawn as a save began, held while it asks the runner again, so the step stays put. */
+  const [heldRows, setHeldRows] = useState<Row[]>();
 
   const measure = useCallback(() => {
     void commands.poolSetupSizes(plane, pool).then((read) => {
@@ -78,10 +85,13 @@ export function SignInsStep({
   }, [plane, pool]);
   useEffect(() => {
     void askProfiles(pool, plane);
+  }, [pool, plane]);
+  // Measured again whenever the pool's limits are read again: a limit raised under Options.
+  useEffect(() => {
     measure();
-  }, [pool, plane, measure]);
+  }, [measure, limits]);
 
-  const rows: Row[] | undefined =
+  const read: Row[] | undefined =
     asked !== undefined && asked !== "asking" && "kept" in asked
       ? [
           ...asked.kept.map((row) => ({
@@ -100,11 +110,17 @@ export function SignInsStep({
           })),
         ]
       : undefined;
+  const rows = read ?? (recording ? heldRows : undefined);
   const skip = (skipped: boolean) =>
     void commands.poolSetupSkip(pool, "signins", skipped).then((done) => {
       if (done.status === "error") setSaid(done.error);
       else changed();
     });
+  const told = said && (
+    <p className="pool-setup-does" role="status">
+      {said}
+    </p>
+  );
   const skipButton = step.skippable && (
     <Button variant="ghost" onPress={() => skip(true)}>
       Skip for now
@@ -124,6 +140,7 @@ export function SignInsStep({
         <Say tone="attention" title="You skipped this for now">
           Chats on {pool} start on the profiles its runner has of its own until you choose yours.
         </Say>
+        {told}
         <Action main="Choose profiles now" onMain={() => skip(false)} />
       </>
     );
@@ -140,8 +157,25 @@ export function SignInsStep({
             {finding}
           </p>
         ))}
+        {told}
         {step.next?.id === "check-again" ? (
           <Action does={step.next.does} main={step.next.label} onMain={changed}>
+            {skipButton}
+          </Action>
+        ) : step.next?.id === "wake-runner" ? (
+          <Action
+            does={step.next.does}
+            main={step.next.label}
+            busy={recording}
+            onMain={() => {
+              setRecording(true);
+              void commands.poolSetupWake(pool).then((woke) => {
+                setRecording(false);
+                if (woke.status === "error") setSaid(woke.error);
+                else changed();
+              });
+            }}
+          >
             {skipButton}
           </Action>
         ) : (
@@ -156,7 +190,9 @@ export function SignInsStep({
       if (walk.now + 1 < walk.names.length) setWalk({ ...walk, now: walk.now + 1 });
       else {
         setWalk(undefined);
-        void askProfiles(pool, plane).then(changed);
+        void askProfiles(pool, plane).then(() => {
+          if (!lines) changed();
+        });
       }
     };
     return (
@@ -220,12 +256,13 @@ export function SignInsStep({
   const needs = rows.filter((row) => ticked.has(row.name) && !row.signedIn);
   const changes = rows.some((row) => row.kept !== ticked.has(row.name));
   const raise = (key: string, to: number) =>
-    void commands.poolLimitSet(pool, key, to).then((done) => {
-      if (done.status === "error") setSaid(done.error);
+    void saveLimits(pool, [[key, to]]).then((refused) => {
+      if (refused !== undefined) setSaid(refused);
       else measure();
     });
 
   const go = async () => {
+    setHeldRows(rows);
     setRecording(true);
     const notes: string[] = [];
     for (const row of rows.filter((one) => ticked.has(one.name) && !one.kept)) {
@@ -252,11 +289,38 @@ export function SignInsStep({
             )
             .map((row) => ({ name: row.name, kind: row.kind, harness: row.harness }))
         : [];
+    // Those whose sign-in purlis doesn't drive keep their own line's Sign in.
+    const own =
+      now !== undefined && now !== "asking" && "kept" in now
+        ? now.kept.some(
+            (row) =>
+              ticked.has(row.name) &&
+              row.not_kept === null &&
+              row.standing !== "signed-in" &&
+              !DRIVEN.has(row.kind),
+          )
+        : false;
+    if (own) setLines(true);
     if (walked.length > 0) setWalk({ names: walked, now: 0 });
-    else changed();
+    else if (!own) changed();
   };
 
   const most = sizes.most_mib;
+  if (lines)
+    return (
+      <>
+        {head}
+        <p className="pool-setup-does">
+          purlis signs these in from their own line: press Sign in beside each one.
+        </p>
+        <PoolProfiles pool={pool} plane={plane} />
+        {told}
+        <Action main="Continue" onMain={changed}>
+          {skipButton}
+        </Action>
+      </>
+    );
+  const none = ticked.size === 0;
   return (
     <>
       {head}
@@ -327,10 +391,9 @@ export function SignInsStep({
           );
         })}
       </ul>
-      {said && (
-        <p className="pool-setup-does" role="status">
-          {said}
-        </p>
+      {told}
+      {none && (
+        <p className="pool-setup-does">Tick a profile for chats on {pool}, or skip this for now.</p>
       )}
       <Options>
         <PoolLimits pool={pool} plane={plane} />
@@ -338,14 +401,15 @@ export function SignInsStep({
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       <Action
         does={
-          anyOver
+          anyOver || none
             ? undefined
             : needs.length > 0
               ? "Sends the ticked profiles' settings to your runner, then opens each sign-in that's needed. Nothing of this machine's sign-in goes there."
               : "Sends the ticked profiles' settings to your runner."
         }
+        reserve={["Sign in 9 profiles", "Save and continue", "Continue"]}
         main={
-          anyOver
+          anyOver || none
             ? undefined
             : needs.length > 0
               ? `Sign in ${profiles(needs.length)}`

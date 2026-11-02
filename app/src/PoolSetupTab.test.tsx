@@ -18,6 +18,7 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     next: null,
     skippable: false,
     see: null,
+    checks: [],
     ...more,
   }) as PoolSetupStep;
 
@@ -497,5 +498,32 @@ describe("Options and See what this does (#4481)", () => {
     await userEvent.click(await screen.findByRole("button", { name: "See what this does" }));
     expect(screen.getByText("It only reads.")).toBeTruthy();
     expect(screen.getByText("docker version")).toBeTruthy();
+  });
+});
+
+describe("work done elsewhere (#4481)", () => {
+  it("reads again as the person comes back to the window", async () => {
+    const calls = core(() => CHOSEN);
+    render(<PoolSetupTab plane="p" />);
+    await screen.findByRole("heading", { name: "Name your pool" });
+    const before = calls.filter((call) => call.cmd === "pool_setup").length;
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() =>
+      expect(calls.filter((call) => call.cmd === "pool_setup").length).toBe(before + 1),
+    );
+  });
+
+  it("shows no command while a box holds what no pool could have", async () => {
+    core(() => CHOSEN, {
+      pool_setup_command: () => "purlis pool add dev-box --image img@sha256:a",
+    });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.type(await screen.findByRole("textbox", { name: /^Name/ }), "dev-box");
+    expect(await screen.findByRole("button", { name: "See what this does" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Options" }));
+    await userEvent.type(screen.getByRole("textbox", { name: /^Memory/ }), "lots");
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "See what this does" })).toBeNull(),
+    );
   });
 });

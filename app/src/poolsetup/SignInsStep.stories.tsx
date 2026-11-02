@@ -25,6 +25,7 @@ const STEP: PoolSetupStep = {
     note: "This is the sign-in the button runs.",
     text: "purlis profile sign-in personal --pool dev-box",
   },
+  checks: [],
 };
 
 const row = (name: string, harness: string, standing: string) => ({

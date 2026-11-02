@@ -3237,6 +3237,12 @@ export const commands = {
 	 */
 	poolSetupSkip: (pool: string, step: string, skipped: boolean) => typedError<null, string>(__TAURI_INVOKE("pool_setup_skip", { pool, step, skipped })),
 	/**
+	 *  **Starts pool `pool`'s runner again**, on the Sign-ins step's own button: one a day without a
+	 *  link stopped its own container, which is checked as it was made before it starts, as a link to
+	 *  it would start it. It goes back to sleep by itself.
+	 */
+	poolSetupWake: (pool: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_wake", { pool })),
+	/**
 	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 	 *  elsewhere, with what to do instead.
 	 */
@@ -11213,6 +11219,13 @@ export type PoolSetupAction = {
 	url: string | null,
 };
 
+/**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
+export type PoolSetupCheck = {
+	verdict: string,
+	title: string,
+	more: string | null,
+};
+
 /**
  *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
  *  contract; none where the pool was made.
@@ -11282,6 +11295,7 @@ export type PoolSetupStep = {
 	next: PoolSetupAction | null,
 	skippable: boolean,
 	see: PoolSetupSee | null,
+	checks: PoolSetupCheck[],
 };
 
 /**  What the person is asked. */

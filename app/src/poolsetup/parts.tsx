@@ -12,6 +12,7 @@ import { Badge } from "../ui/badge/Badge";
 import { Button, ButtonRow } from "../ui/button/Button";
 import { CodeBlock } from "../ui/code/CodeBlock";
 import { Disclosure } from "../ui/disclosure/Disclosure";
+import { Reserved } from "../ui/dialog/Reserved";
 import { NoticeBox, NoticeMark, NoticeMessage, NoticeTitle } from "../ui/notice/Notice";
 
 /** A step's heading and its plain sentences. Takes the focus as a step opens. */
@@ -49,10 +50,13 @@ export function Action({
   onMain,
   busy,
   icon,
+  reserve,
   children,
 }: {
   does?: string;
   main?: string;
+  /** Every word the main button can say, so changing them moves nothing beside it. */
+  reserve?: readonly string[];
   onMain?: () => void;
   busy?: boolean;
   icon?: ReactNode;
@@ -72,7 +76,7 @@ export function Action({
               aria-busy={busy}
               icon={icon}
             >
-              {main}
+              {reserve ? <Reserved texts={reserve}>{main}</Reserved> : main}
             </Button>
           )}
           {children}

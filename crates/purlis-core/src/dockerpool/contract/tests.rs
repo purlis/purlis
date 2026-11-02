@@ -59,3 +59,18 @@ fn purlis_serve_as_pid_one_is_refused_since_nothing_reaps() {
     image["Config"]["Entrypoint"] = json!([]);
     assert!(config_problems(&image)[0].contains("init that reaps"));
 }
+
+#[test]
+fn an_image_is_looked_in_only_as_a_user_other_than_root() {
+    assert_eq!(declared_user(&keeping()), Some("10001:10001".into()));
+    for user in ["0", "0:0", "root", "", "10001:staff"] {
+        let mut image = keeping();
+        image["Config"]["User"] = json!(user);
+        let said = declared_user(&image);
+        if user == "10001:staff" {
+            assert_eq!(said, Some("10001".into()), "{user}");
+        } else {
+            assert_eq!(said, None, "{user}");
+        }
+    }
+}

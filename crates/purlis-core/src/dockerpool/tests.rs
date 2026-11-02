@@ -3716,11 +3716,22 @@ fn a_read_as_installed_asks_the_runner_to_fetch_nothing() {
 }
 
 #[test]
-fn an_older_runner_that_doesnt_know_the_flag_still_answers() {
+fn an_older_runner_that_doesnt_know_the_flag_answers_it_cant_tell_and_fetches_nothing() {
     use crate::profilestore::sign_in::Standing;
-    let login = a_login_of(r#"case "$*" in *--no-fetch*) exit 2 ;; esac; exit 3"#);
+    let asked = tempfile::tempdir().unwrap();
+    let log = asked.path().join("asked");
+    let login = a_login_of(&format!(
+        r#"echo "$*" >> '{}'; case "$*" in *--no-fetch*) exit 2 ;; esac; exit 3"#,
+        log.display()
+    ));
     assert_eq!(
         standing_as_installed_by_login(&login, "work"),
-        Ok(Some(Standing::SignedOut))
+        Ok(Some(Standing::CannotTell))
+    );
+    let said = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(
+        said.lines().count(),
+        1,
+        "asked once, never the fetching way: {said}"
     );
 }

@@ -369,10 +369,18 @@ export function PoolStep({
   useEffect(() => {
     if (shown.pool !== null || wantedKey === undefined) return;
     const sent: PoolAdding | undefined = JSON.parse(wantedKey ?? "null") ?? undefined;
-    if (sent === undefined) return;
     let live = true;
+    // A box that holds what no pool could have shows no command: never one for what was before.
+    if (sent === undefined) {
+      queueMicrotask(() => {
+        if (live) setCommand(undefined);
+      });
+      return () => {
+        live = false;
+      };
+    }
     void commands.poolSetupCommand(sent).then((said) => {
-      if (live && said.status === "ok") setCommand(said.data);
+      if (live) setCommand(said.status === "ok" ? said.data : undefined);
     });
     return () => {
       live = false;
@@ -413,8 +421,8 @@ export function PoolStep({
     adding.set({ making: true });
     // Docker may have changed since this step was read: what is made is held to now.
     const now = await commands.poolSetup(plane);
-    const where =
-      now.status === "ok" ? now.data.steps.find((one) => one.id === "where") : undefined;
+    if (now.status === "error") return adding.set({ making: false, refused: now.error });
+    const where = now.data.steps.find((one) => one.id === "where");
     if (where?.state !== "done") {
       adding.set({ making: false });
       changed();
