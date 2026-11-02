@@ -125,11 +125,12 @@ fn every_harnesss_text_is_one_line_with_nothing_that_could_send_it() {
 }
 
 #[test]
-fn every_harness_has_purliss_budget_and_says_what_it_lists_of_a_skill() {
+fn every_harness_says_its_own_budget_and_what_it_lists_of_a_skill() {
     let claude = Harness::ClaudeCode.skill_budget();
     let codex = Harness::Codex.skill_budget();
     let opencode = Harness::Opencode.skill_budget();
-    for budget in [claude, codex, opencode] {
+    assert_eq!((claude.skills, claude.chars), (60, 15_000));
+    for budget in [codex, opencode] {
         assert_eq!((budget.skills, budget.chars), (30, 6_000));
     }
     assert_eq!(claude.per_description, Some(1_536));
@@ -138,6 +139,31 @@ fn every_harness_has_purliss_budget_and_says_what_it_lists_of_a_skill() {
     // A Codex chat is briefed with each skill's path on its line.
     assert!(codex.lists_paths);
     assert!(!claude.lists_paths && !opencode.lists_paths);
+    // Claude Code's limit counts names and the lines they sit on too; the others are unmeasured.
+    assert!(claude.per_line.is_some());
+    assert_eq!((codex.per_line, opencode.per_line), (None, None));
+}
+
+#[test]
+fn only_a_budget_past_codexs_own_limit_warns_and_it_says_what_codex_would_drop() {
+    let codex = Harness::Codex;
+    assert_eq!(codex.skill_limit_past(codex.skill_budget()), None);
+    let raised = crate::skills::Budget {
+        chars: 15_000,
+        ..codex.skill_budget()
+    };
+    let said = codex.skill_limit_past(raised).expect("a warning");
+    assert!(said.contains("15,000"), "{said}");
+    assert!(said.contains("8,000"), "{said}");
+    assert!(said.contains("leaves skills out"), "{said}");
+    assert!(!said.contains("  "), "{said}");
+    // opencode has no limit, and purlis hands Claude Code the one the budget needs.
+    let huge = crate::skills::Budget {
+        chars: 1_000_000,
+        ..Harness::Opencode.skill_budget()
+    };
+    assert_eq!(Harness::Opencode.skill_limit_past(huge), None);
+    assert_eq!(Harness::ClaudeCode.skill_limit_past(huge), None);
 }
 
 #[test]

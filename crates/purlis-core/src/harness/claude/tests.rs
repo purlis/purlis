@@ -1440,6 +1440,7 @@ fn an_outcome_chat_has_no_shell() {
             None,
             false,
             &crate::harness_plugin::Chosen::new(),
+            TEST_LISTING_LIMIT,
             Some(&sandbox),
             &[],
             None,
@@ -1577,4 +1578,131 @@ fn an_outcome_chat_holds_no_tool_of_a_server() {
             .is_some_and(|rules| rules.contains(&serde_json::json!("mcp__purlis"))),
         "{settings}"
     );
+}
+
+#[test]
+fn a_chats_settings_hand_claude_code_its_listing_limit_as_a_string_in_env() {
+    let sandbox = crate::sandbox::claude::Settings {
+        sandbox: serde_json::json!({"enabled": true}),
+        deny: Vec::new(),
+        made_empty: Vec::new(),
+    };
+    let text = armed_settings_for_tests(&sandbox);
+    let settings: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+    assert_eq!(
+        settings["env"]["SLASH_COMMAND_TOOL_CHAR_BUDGET"],
+        TEST_LISTING_LIMIT.to_string()
+    );
+}
+
+/// What the chat armed with `skills` is handed as its limit on its skill listing.
+fn listing_limit_handed(skills: Option<crate::skills::PlaneSkills<'_>>) -> String {
+    let hooks = adapter().arm(
+        Kit {
+            skills,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/charter"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: None,
+            graded: false,
+            judging: false,
+            writes_its_piece: false,
+        },
+        None,
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    );
+    let StateHooks::ThisSessionOnly { args, .. } = hooks else {
+        panic!("armed");
+    };
+    let at = args.iter().position(|word| word == "--settings").unwrap();
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    settings["env"][LISTING_LIMIT_ENV]
+        .as_str()
+        .expect("a limit")
+        .to_owned()
+}
+
+#[test]
+fn a_chat_out_of_any_plane_is_handed_the_limit_of_the_default_budget() {
+    assert_eq!(listing_limit_handed(None), "40000");
+}
+
+#[test]
+fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
+    // 20,000 stays under the least limit; 40,000 passes it, with 6,848 and a tenth over both.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path();
+    std::fs::write(
+        plane.join("charter.toml"),
+        "schema = 1\n[skills.budget]\nchars = 20000\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(plane.join("workspaces/alpha")).unwrap();
+    std::fs::write(
+        plane.join("workspaces/alpha/workspace.json"),
+        r#"{"name":"alpha","settings":{"skills":{"budget":{"chars":40000}}}}"#,
+    )
+    .unwrap();
+    let at = |workspace| {
+        listing_limit_handed(Some(crate::skills::PlaneSkills {
+            plane,
+            workspace,
+            repo: &[],
+            routed: None,
+        }))
+    };
+    assert_eq!(at(None), "40000");
+    assert_eq!(at(Some("alpha")), "51532");
+}
+
+/// **The measured bug** (#4610): a 200k Claude 5 chat's own limit is 6,000 characters, and Claude
+/// Code's own 14 entries take 6,848 of whatever limit it has, so every plane skill's description
+/// was dropped however few there were.
+#[test]
+fn the_limit_holds_claude_codes_own_entries_and_the_list_with_a_margin() {
+    // The largest limit any model has of its own, which no handed one goes below.
+    assert_eq!(listing_limit(0), 40_000);
+    let budget = ADAPTER.skill_budget();
+    assert!(listing_limit(budget.chars) > (6_848 + budget.chars) * 11 / 10);
+    assert_eq!(listing_limit(30_000), 40_532);
+    assert_eq!(listing_limit(usize::MAX), usize::MAX);
+}
+
+/// A pin is never hidden, so a list its pins take past the budget has to fit the limit too.
+#[test]
+fn a_chat_whose_pins_are_past_its_budget_is_handed_a_limit_that_holds_them() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path();
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let pins: Vec<String> = (0..20).map(|at| format!("big{at:02}")).collect();
+    for name in &pins {
+        let skill = plane.join("workspaces/alpha/skills").join(name);
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            format!(
+                "---\nname: {name}\ndescription: {}\n---\n",
+                "d".repeat(5_000)
+            ),
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        plane.join("workspaces/alpha/workspace.json"),
+        serde_json::json!({
+            "name": "alpha",
+            "settings": {"skills": {"pinned": pins, "budget": {"chars": 10}}},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let limit = listing_limit_handed(Some(crate::skills::PlaneSkills {
+        plane,
+        workspace: Some("alpha"),
+        repo: &[],
+        routed: None,
+    }));
+    // 20 descriptions cut at 1,536, each name and line, Claude Code's own 6,848, and a tenth.
+    assert_eq!(limit, "41940");
 }

@@ -961,7 +961,8 @@ fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_on_every
     assert_eq!(at_the_root.spent.manual, 1);
     assert_eq!(
         at_the_root.spent.chars,
-        "Ships it.".len() + "Hands off.".len() + "Reviews a PR.".len()
+        // Claude Code's limit counts whole lines: each name, and 23 around it.
+        "deployShips it.".len() + "handoffHands off.".len() + "reviewReviews a PR.".len() + 3 * 23
     );
     assert_eq!(at_the_root.spent.warns(), None);
 
@@ -1060,8 +1061,8 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
 fn a_set_at_four_fifths_of_its_harnesss_budget_warns() {
     let (tmp, bundle) = use_skill_plane();
     let root = tmp.path();
-    // 3 skills listed already; 21 more make 24, four fifths of 30.
-    for n in 0..21 {
+    // 3 skills listed already; 45 more make 48, four fifths of 60.
+    for n in 0..45 {
         let dir = root.join(format!("skills/s{n:02}"));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -1071,7 +1072,7 @@ fn a_set_at_four_fifths_of_its_harnesss_budget_warns() {
         .unwrap();
     }
     let chat = for_use_skill(&running(root, &bundle, None));
-    assert_eq!(chat.spent.skills, 24);
+    assert_eq!(chat.spent.skills, 48);
     assert_eq!(chat.spent.warns(), Some(Over::Skills));
 }
 
@@ -3030,7 +3031,8 @@ fn each_harness_s_own_catalogue_is_measured_beside_purlis_s_budget_3324() {
         own(Harness::ClaudeCode),
         OwnCatalogue {
             skills: 1,
-            chars: described,
+            // Its limit counts whole lines: the name, and what the line takes around it.
+            chars: "review".len() + described + 23,
             manual: 1,
         },
         "Claude Code: review listed, quiet manual-only by its key"

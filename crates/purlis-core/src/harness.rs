@@ -24,18 +24,18 @@ pub(crate) mod testing;
 
 pub use adapter::{HarnessAdapter, SkillStart, SkillToStart};
 
-/// **purlis's skill budget for one chat** (SK-12, #2775; ADR 0102 §1 as amended 2026-10-21): 30
-/// skills and 6,000 characters of their descriptions, on every harness. Under the smallest
-/// harness limit measured on 2026-10-20 (Claude Code's 1% of a 200k-token window, about 8,000
-/// characters for names, descriptions and their lines together), with room for 30 names and the
-/// lines they sit on, so no harness has to cut anything. Each adapter adds its own cap on one
-/// description and whether it lists a skill's path ([`HarnessAdapter::skill_budget`]); whether a
-/// manual-only skill is free follows from what it reads ([`Harness::skill_budget`]).
+/// **The skill budget of a harness not yet measured for its own** (SK-12, #2775; ADR 0102 §1 as
+/// amended 2026-11-02): 30 skills and 6,000 characters of their descriptions, kept for Codex and
+/// opencode until Codex is measured again. Claude Code says its own
+/// ([`HarnessAdapter::skill_budget`]). Each adapter adds its own cap on one description and
+/// whether it lists a skill's path; whether a manual-only skill is free follows from what it
+/// reads ([`Harness::skill_budget`]).
 pub const SKILL_BUDGET: crate::skills::Budget = crate::skills::Budget {
     skills: 30,
     chars: 6_000,
     per_description: None,
     lists_paths: false,
+    per_line: None,
 };
 pub use claude::SMART_CLOSE_ALLOW;
 
@@ -417,6 +417,11 @@ impl Harness {
     /// or purlis's translation ([`Self::skill_frontmatter`], SK-8).
     pub fn skill_budget(self) -> crate::skills::Budget {
         self.adapter().skill_budget()
+    }
+
+    /// [`HarnessAdapter::skill_limit_past`]: what this harness would drop at `budget`.
+    pub fn skill_limit_past(self, budget: crate::skills::Budget) -> Option<String> {
+        self.adapter().skill_limit_past(budget)
     }
 
     /// **Whether purlis arms a prompt hook on this harness** that hands a turn context of its

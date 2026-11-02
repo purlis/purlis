@@ -29,6 +29,8 @@ pub struct Declared {
     pub arguments: Vec<String>,
     /// What to pass it, in one line, where it says.
     pub hint: Option<String>,
+    /// Its `when_to_use`, which Claude Code joins to its description in its listing.
+    pub when_to_use: Option<String>,
 }
 
 /// **What a person gave a skill's arguments** in Use skill… (decision 61), each value on one
@@ -117,6 +119,8 @@ const MANUAL: &str = "disable-model-invocation";
 const ARGUMENTS: &str = "arguments";
 /// The key that says what to pass a skill.
 const HINT: &str = "argument-hint";
+/// The key that adds to when a skill applies.
+const WHEN_TO_USE: &str = "when_to_use";
 
 /// What `skill` declares, read from its `SKILL.md`: nothing for one that cannot be read.
 pub fn declared(skill: &Skill) -> Declared {
@@ -150,10 +154,21 @@ pub(crate) fn declared_in(text: &str) -> Declared {
         .map(unquoted)
         .filter(|hint| !hint.is_empty())
         .map(str::to_owned);
+    let when_to_use = value(WHEN_TO_USE)
+        .map(unquoted)
+        .map(|when| {
+            if when.starts_with(['>', '|']) {
+                block_text(text, WHEN_TO_USE)
+            } else {
+                when.to_owned()
+            }
+        })
+        .filter(|when| !when.is_empty());
     Declared {
         manual,
         arguments,
         hint,
+        when_to_use,
     }
 }
 
@@ -213,6 +228,23 @@ fn block_list(text: &str, key: &str) -> Vec<String> {
         .filter(|name| !name.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+/// The indented lines under `key`, a YAML block scalar, joined by spaces.
+fn block_text(text: &str, key: &str) -> String {
+    let lines = crate::read::frontmatter_lines(text);
+    let Some(at) = lines
+        .iter()
+        .position(|line| line.split_once(':').is_some_and(|(k, _)| k.trim() == key))
+    else {
+        return String::new();
+    };
+    lines[at + 1..]
+        .iter()
+        .take_while(|line| line.starts_with([' ', '\t']))
+        .map(|line| line.trim())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]

@@ -58,6 +58,7 @@ import { EXTENSIONS_LINK, linkToGroup, settingsPlace } from "./links";
 import { profilePage } from "./profileAddress";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
 import { discoverRow } from "./discover";
+import { budgetControls, projectSkillsGroup } from "./skillsSummary";
 import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
@@ -439,11 +440,15 @@ function loosensTheSandbox(back: readonly SettingsEdit[]): boolean {
  * A file that is not TOML has no settings to show until it is mended: its standing refusals say
  * why, above the groups.
  */
-export function projectGroups(read: ProjectRead, reread?: () => void): SettingsGroup[] {
+export function projectGroups(
+  read: ProjectRead,
+  reread?: () => void,
+  skillStudio = false,
+): SettingsGroup[] {
   const names = namesOf(read);
   // The Sandbox's pages are written with the names in use, and quote hosts a person wrote:
   // nothing in them is renamed (#1340).
-  return declaredGroups(read, reread).map((group) =>
+  return declaredGroups(read, reread, skillStudio).map((group) =>
     WRITTEN_NAMED.has(group.id) ? group : inFiles(group, names),
   );
 }
@@ -521,7 +526,11 @@ function inFiles(
 }
 
 /** The level's groups, as declared: {@link projectGroups} names the files in them. */
-function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[] {
+function declaredGroups(
+  read: ProjectRead,
+  reread?: () => void,
+  skillStudio = false,
+): SettingsGroup[] {
   const shared: Shown = read.shared;
   const local: Shown = read.local;
   const sharedOk = shared.parsed;
@@ -602,6 +611,10 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
         ? { after: harnessDeclarationRows(read.plane, read.declarations) }
         : {}),
     },
+    // Its chats' skill budget (#4610), behind the Skill studio's flag.
+    ...(skillStudio && read.plane !== undefined
+      ? [projectSkillsGroup(read.plane, fromShared("project.skills", budgetControls()))]
+      : []),
     ...profilePages(read),
     {
       id: "project.sandbox",

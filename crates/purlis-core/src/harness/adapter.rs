@@ -251,10 +251,18 @@ pub trait HarnessAdapter: Sync {
     fn skill_start_text(&self, skill: &SkillToStart<'_>) -> String;
 
     /// **This harness's skill budget** (SK-12, ADR 0102 §1): how many skills, and how many
-    /// characters of their descriptions, one chat's listing may hold, set below the harness's
-    /// own limit so it never has to cut anything itself. No default: each adapter says its
-    /// harness's limit.
+    /// characters of what is listed of them, one chat's listing may hold, set so the harness
+    /// never has to cut anything itself. No default: each adapter says its harness's numbers.
+    /// `settings.skills.budget` overrides them ([`crate::skills::budget_in`]).
     fn skill_budget(&self) -> crate::skills::Budget;
+
+    /// **What this harness would drop of a chat's listing at `budget`**, in a sentence, where
+    /// that is past a limit of its own purlis cannot move. `budget` is a warning, never refused.
+    /// `None`, the default, for a harness with no such limit.
+    fn skill_limit_past(&self, budget: crate::skills::Budget) -> Option<String> {
+        let _ = budget;
+        None
+    }
 
     /// **What this harness reads of a skill's frontmatter** (SK-8, #2771; decision 18): the
     /// keys it applies to a skill purlis hands it, and how it keeps a manual-only skill out of

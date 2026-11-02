@@ -223,6 +223,25 @@ impl SkillSet {
         self
     }
 
+    /// **The characters this set's listing spends of `budget` as it was routed** (#4610): what
+    /// is left once its router hid what it hid, with the index skill where one stands in for
+    /// them. More than the budget where pins and what no router hides are past it.
+    pub fn spends(&self, budget: Budget) -> usize {
+        let hidden = self.routing.iter().flat_map(|routing| &routing.hidden);
+        let hidden: std::collections::HashSet<&str> = hidden.map(|one| one.name.as_str()).collect();
+        let parts = Parts::of(self, &[]);
+        let listed = parts
+            .listed
+            .iter()
+            .filter(|(e, _)| !hidden.contains(e.skill.name.as_str()));
+        let index = if hidden.is_empty() {
+            0
+        } else {
+            budget.line(INDEX, INDEX_DESCRIPTION.chars().count())
+        };
+        cost(listed, budget).chars + index
+    }
+
     /// **What a router extension is asked to decide for this set** (SK-15b, ADR 0102 §1): the
     /// skills it may hide, each with whether the chat pins it (a pin is never hidden), what the
     /// rest of the listing spends that no router hides, and the chat's `budget`.
@@ -232,10 +251,11 @@ impl SkillSet {
             skills: parts
                 .could
                 .iter()
-                .map(|(e, _)| Candidate {
-                    name: e.skill.name.clone(),
-                    description: e.skill.description.clone(),
-                    pinned: parts.pins.contains(e.skill.name.as_str()),
+                .map(|one| Candidate {
+                    name: one.0.skill.name.clone(),
+                    description: one.0.skill.description.clone(),
+                    pinned: parts.pins.contains(one.0.skill.name.as_str()),
+                    chars: cost(std::iter::once(one), budget).chars,
                 })
                 .collect(),
             besides: cost(parts.fixed(), budget),
@@ -285,7 +305,7 @@ impl SkillSet {
         let mut spent = cost(shown_now, budget);
         let index = usize::from(!named.is_empty());
         spent.skills += index;
-        spent.chars += index * INDEX_DESCRIPTION.chars().count();
+        spent.chars += index * budget.line(INDEX, INDEX_DESCRIPTION.chars().count());
         let hid_all_it_may = parts.hideable().all(|name| named.contains(name));
         let still_over = if !spent.over() {
             None
@@ -441,6 +461,8 @@ pub struct Candidate {
     pub name: String,
     pub description: String,
     pub pinned: bool,
+    /// What it costs of the budget's characters, as the harness's limit counts it.
+    pub chars: usize,
 }
 
 /// A set's listing, split by what a router may do with each skill.
@@ -505,7 +527,7 @@ impl<'a> Parts<'a> {
         let index = usize::from(index);
         let with_index = |mut spent: crate::Spent| {
             spent.skills += index;
-            spent.chars += index * INDEX_DESCRIPTION.chars().count();
+            spent.chars += index * budget.line(INDEX, INDEX_DESCRIPTION.chars().count());
             spent
         };
         let fixed = self.fixed();

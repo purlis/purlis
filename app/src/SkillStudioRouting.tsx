@@ -8,6 +8,7 @@ import {
   type SkillPinner,
   type SkillRouterOffer,
   type StudioRouted,
+  type StudioBudget,
   type StudioRouter,
 } from "./bindings";
 import { counted } from "./dispatches";
@@ -26,6 +27,15 @@ import { capitalised } from "./saving";
 
 /** The word a choice of the built-in router is written as (`purlis_core::skills::router`). */
 export const BUILT_IN_ROUTER = "built-in";
+
+/** **Each program's skill budget, in a line** (#4610): its own numbers, or what Settings writes. */
+export function budgetSaid(budget: readonly StudioBudget[]): string {
+  const each = budget.map(
+    (one) =>
+      `${one.program}: ${counted(one.skills, "skill", "skills")}, ${one.chars.toLocaleString("en-US")} characters.`,
+  );
+  return each.join(" ");
+}
 
 /**
  * **What the budget counts, and what it does not** (#3324, ADR 0102 as amended 2026-10-31): the
@@ -123,7 +133,6 @@ export function RoutingFacts({
   onScorecard: (grade: string) => void;
 }) {
   const [changing, setChanging] = useState(false);
-  const { budget } = router;
   const extension = router.extension;
   // Read when the page shows an extension's router, and again each time the studio is read, as
   // Change…'s offers are: the studio's own read asks no extension's manifest.
@@ -204,10 +213,15 @@ export function RoutingFacts({
           <span data-testid="skill-routing-preview">{router.preview}</span>
         </Fact>
         <Fact label="Budget">
-          {`${counted(budget.skills, "skill", "skills")}, ${budget.chars.toLocaleString("en-US")} characters of descriptions, on every program.`}
+          {budgetSaid(router.budget)}
           <span className="honest" data-testid="skill-routing-budget-counts">
             {` ${BUDGET_COUNTS}`}
           </span>
+          {router.past_limits.map((line) => (
+            <span key={line} className="honest" data-testid="skill-routing-past-limit">
+              {` ${line}`}
+            </span>
+          ))}
         </Fact>
         {router.extension !== null && (
           <Fact label="Grade">

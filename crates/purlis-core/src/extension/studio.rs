@@ -954,9 +954,12 @@ pub struct RouteSkill {
     pub name: String,
     pub description: String,
     pub pinned: bool,
+    /// What it costs of the budget's characters on the chat's harness, which on Claude Code is
+    /// its whole line (#4610): what a router adds up, never its description's length.
+    pub chars: usize,
 }
 
-/// Skills and characters of their descriptions: a chat's budget, or what part of its listing
+/// Skills and characters of what is listed of them: a chat's budget, or what part of its listing
 /// spends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct RouteBudget {

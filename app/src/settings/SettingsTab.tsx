@@ -176,9 +176,11 @@ function ProjectLevelTab({ plane, ...switcher }: Switcher & { plane: PlaneId }) 
     if (project.state === "read") await project.readEntries();
     return true;
   };
+  const skillStudio = useSkillStudioOn();
   const groups = useMemo(
-    () => (project.state === "read" ? projectGroups(project.read, project.reread) : []),
-    [project],
+    () =>
+      project.state === "read" ? projectGroups(project.read, project.reread, skillStudio) : [],
+    [project, skillStudio],
   );
   // Each file as its whole text (SE-19, V89d), written through the level's driver: the core
   // checks it and writes it, in the queue every setting's write is in.
@@ -1064,11 +1066,14 @@ function FileRow({
             }
             onValueChange={write}
           />
+        ) : setting.kind === "lines" ? (
+          <Field kind="list" ids={ids} value={value} onChange={setDraft} onCommit={commit} />
         ) : (
           <Field
-            kind={setting.kind === "lines" ? "list" : "text"}
+            kind="text"
             ids={ids}
             value={value}
+            inputMode={setting.numeric ? "numeric" : undefined}
             onChange={setDraft}
             onCommit={commit}
           />

@@ -8,6 +8,10 @@ use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, SkillToStart
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
+/// What Codex holds of its listing where it does not know the window (0.163.0, ADR 0102 as
+/// amended 2026-10-21; not measured again since).
+const LISTING_LIMIT: usize = 8_000;
+
 /// Codex's adapter.
 ///
 /// **What its reports can prove** (#3822): only the chat's token. Its hooks run inside
@@ -244,6 +248,20 @@ impl HarnessAdapter for Codex {
             lists_paths: true,
             ..super::SKILL_BUDGET
         }
+    }
+
+    /// A budget past 8,000 characters is past what Codex holds where it does not know the
+    /// window. Its binary now also says "omitted from this bounded skills list", not run.
+    fn skill_limit_past(&self, budget: crate::skills::Budget) -> Option<String> {
+        (budget.chars > LISTING_LIMIT).then(|| {
+            format!(
+                "Codex: at {} characters this is past the {} it holds where it doesn't know its \
+                 window (2% of the window otherwise). Past its limit Codex leaves skills out of \
+                 its list.",
+                crate::skills::grouped(budget.chars),
+                crate::skills::grouped(LISTING_LIMIT),
+            )
+        })
     }
 
     /// **Codex 0.163.0** (`skills/src/parser.rs:6-20`, research of 2026-10-20): its own parser
