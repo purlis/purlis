@@ -275,6 +275,18 @@ pub fn answer(
             // **A chat's dispatch that moves work needs the person's Ask** (#4536, the person's
             // ruling of 2026-11-02): one that names a place to run other than where its target's
             // own levels put it waits for their Approve, whatever grant or persona covers it.
+            // A pool for a task at the project's root can never start: said now, before anyone is
+            // asked about it.
+            if let (Some(purlis_core::machine::StartChoice::Pool(pool)), Ok(would)) =
+                (&wanted.runs_on, would_start(held, &wanted))
+                && would.workspace.is_none()
+            {
+                return no(format!(
+                    "a chat at the project's root runs on this machine, so it can't run on pool \
+                     {pool}. Nothing was started: dispatch it into a workspace with \
+                     --in workspace:<name>, or leave out --pool."
+                ));
+            }
             if moves_work(held, &wanted) {
                 if let Err(why) = dispatchdecision::task_name(&wanted.name)
                     .and_then(|_| would_start(held, &wanted).map(|_| ()))
@@ -3660,8 +3672,9 @@ pub(crate) struct WouldStart {
 }
 
 /// **Whether `wanted` moves work** (#4536): it names a place to run other than where its target
-/// workspace's own levels put it now. Where those can't be read, or the target can't be found,
-/// it does: the person is asked rather than the chat's word taken.
+/// workspace's own levels put it now. Where the target can't be found it does, and the person is
+/// asked rather than the chat's word taken. Where no pool is kept here, or the store can't be
+/// read, the levels say this machine: a pool named moves work, and this machine named doesn't.
 pub(crate) fn moves_work(held: &Held, wanted: &Wanted) -> bool {
     use purlis_core::machine::StartChoice;
     let Some(asked) = &wanted.runs_on else {

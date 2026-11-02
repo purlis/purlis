@@ -41,7 +41,7 @@ fn its_row_names_the_pool_the_persona_and_the_brief_and_offers_open_or_refuse() 
     let shown = crate::asking::runner_dispatch(one);
     assert_eq!(
         shown.says,
-        "Asks, from pool builds, to start the task 'check prod' as devops on this machine: look \
+        "Asks, from pool builds, to start the task 'check prod' as devops: look \
          at the cluster"
     );
     let offered: Vec<(&str, bool)> = shown

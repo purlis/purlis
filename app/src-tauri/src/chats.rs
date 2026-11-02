@@ -104,6 +104,17 @@ fn project_sandbox(
         .map_err(|not| not.said(&locks))
 }
 
+/// **What a chat's start puts on a pool's Claim by** (#4536, the person's ruling of 2026-11-02):
+/// its own choice of where it runs where the person made it in the window, the levels where it
+/// chose nothing, and nothing at all where a dispatch chose for it (`None`).
+pub(crate) fn claim_follows(chat: &Chat) -> Option<Option<&purlis_core::machine::StartChoice>> {
+    match (&chat.runs_on, &chat.from) {
+        (None, _) => Some(None),
+        (Some(start), None) => Some(Some(start)),
+        (Some(_), Some(_)) => None,
+    }
+}
+
 /// The workspace of the project at `root` a chat started in `cwd` works in, read once as it
 /// starts (#1333): `None` at the project root or outside it. Against the app's own project,
 /// never a root found from `cwd`: a clone carrying a manifest of its own would read as a
@@ -4873,12 +4884,10 @@ impl Chats {
         // (#4536, the person's ruling of 2026-11-02): a dispatched chat that names where it runs
         // puts nothing on any Claim, and its mints go to the person.
         #[cfg(unix)]
-        let made_by_the_person = chat.runs_on.is_none() || chat.from.is_none();
-        #[cfg(unix)]
-        if made_by_the_person {
+        if let Some(start) = claim_follows(chat) {
             self.puts_its_repos_on_its_claim(
                 workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
-                chat.runs_on.as_ref(),
+                start,
                 chat.cwd.as_deref(),
                 own_runner.as_deref(),
                 // A start its runner is sure to refuse adds nothing to the Claim.

@@ -79,10 +79,15 @@ impl HeldDispatch {
                 moved.workspace
             ),
             // Where it asks to run, where it named a place (#4536).
+            // Where it asks to run, where it named a place (#4536): the levels' answer is the
+            // tab's to say, as it is read when the person opens it.
             None => format!(
-                "to start the task '{}'{as_whom} {}",
+                "to start the task '{}'{as_whom}{}",
                 self.wanted.name,
-                moves_said(&self.wanted)
+                self.wanted
+                    .runs_on
+                    .as_ref()
+                    .map_or_else(String::new, |_| format!(" {}", moves_said(&self.wanted)))
             ),
         };
         let brief = purlis_core::shown::one_line(&self.wanted.brief, 240);
@@ -267,9 +272,21 @@ pub(crate) fn runs_on_said(
         Some(StartChoice::Pool(pool)) => return format!("Pool {pool}, as the chat asks"),
         None => {}
     }
-    let place = held.chats().pools_in().and_then(|config| {
-        purlis_core::pools::chat_place(&config, held.root(), workspace, None).ok()
-    });
+    let Some(config) = held.chats().pools_in() else {
+        return "This machine".to_owned();
+    };
+    let place = purlis_core::pools::chat_place(&config, held.root(), workspace, None).ok();
+    // A level naming a pool this machine no longer keeps: said as that, since the start refuses it.
+    if place.is_none()
+        && let Some(gone) = workspace.and_then(|workspace| {
+            purlis_core::machine::read(&config)
+                .store
+                .chat_place(held.root(), workspace, None)
+                .pool
+        })
+    {
+        return format!("Pool {gone}, which this machine doesn't keep, so it can't start there");
+    }
     match place {
         Some(place) => match (place.pool, place.level) {
             (Some(pool), PlaceLevel::Project) => format!("Pool {pool}, as its project's chats run"),

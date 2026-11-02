@@ -3376,7 +3376,7 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
     // ([`waits_off_the_lock`] marks the runner not coming back); nothing a runner answers is.
     let not_reached = |why: String| match connection.pool().filter(|_| for_a_start) {
         Some(pool) if *kept_on_the_runner && why != START_CANCELLED => {
-            crate::poolprofiles::unavailable(pool, why)
+            crate::poolprofiles::not_reached(pool, &why)
         }
         _ => why,
     };
@@ -3770,10 +3770,9 @@ fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> 
                 Unanswered::Here(why) => (why != START_CANCELLED, why),
                 Unanswered::Host(refused) => (was_down, refused.why),
             };
-            let why = format!("{NOT_HELD} {said}");
             match holding.connection.pool() {
-                Some(pool) if here => crate::poolprofiles::unavailable(pool, why),
-                _ => why,
+                Some(pool) if here => crate::poolprofiles::not_reached(pool, &said),
+                _ => format!("{NOT_HELD} {said}"),
             }
         })
 }

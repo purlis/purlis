@@ -9665,3 +9665,50 @@ fn a_chats_one_off_choice_of_where_it_runs_is_taken_and_given_back() {
     assert_eq!(recorded(&chats), Some(StartChoice::ThisMachine));
     let _ = chats.close(session);
 }
+
+/// **A start's own choice adds to a Claim only where the person made it in the window** (#4536,
+/// the person's ruling of 2026-11-02): a dispatched chat that chose where it runs adds nothing,
+/// and one that chose nothing follows its levels as every chat does.
+#[test]
+fn a_dispatched_chats_choice_of_where_it_runs_puts_nothing_on_a_claim() {
+    use purlis_core::machine::StartChoice;
+    use purlis_core::reopen::{HandedFrom, Mode, Owed};
+    let on_builds = Some(StartChoice::Pool("builds".to_owned()));
+    let from_a_chat = Some(HandedFrom {
+        id: None,
+        chat: 3,
+        name: "steward 3".to_owned(),
+        workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),
+        report: Owed::Due,
+        mode: Mode::Task,
+        depth: 1,
+        root: None,
+        above: None,
+        by_person: false,
+        long: false,
+    });
+    let window = Chat {
+        runs_on: on_builds.clone(),
+        ..Default::default()
+    };
+    let dispatched = Chat {
+        runs_on: on_builds.clone(),
+        from: from_a_chat.clone(),
+        ..Default::default()
+    };
+    let following = Chat {
+        from: from_a_chat,
+        ..Default::default()
+    };
+    assert_eq!(claim_follows(&window), Some(on_builds.as_ref()));
+    assert_eq!(
+        claim_follows(&dispatched),
+        None,
+        "a dispatch's choice adds nothing"
+    );
+    assert_eq!(
+        claim_follows(&following),
+        Some(None),
+        "it follows the levels"
+    );
+}

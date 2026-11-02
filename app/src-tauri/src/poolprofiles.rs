@@ -923,6 +923,21 @@ pub(crate) fn unavailable(pool: &str, why: String) -> String {
     why
 }
 
+/// **A start's refusal because pool `pool`'s runner was not reached** (#4536): said in purlis's
+/// own words alone, since what came back over the link may be the runner's, and a runner's words
+/// never stand beside the offer to run here. What was said goes to the log.
+pub(crate) fn not_reached(pool: &str, why: &str) -> String {
+    tracing::warn!(pool, why, "purlis: a start did not reach its pool's runner");
+    unavailable(
+        pool,
+        format!(
+            "purlis couldn't reach pool {pool}'s runner for this chat, so nothing was started. \
+             Try again once the runner is back, check the pool in Pool setup, or run this chat \
+             on this machine this once."
+        ),
+    )
+}
+
 /// `work`, refused with the limits it hit ([`purlis_core::poollimits::attempt`]) and the pool it
 /// could not reach ([`unavailable`]). Run on the thread `work` runs on, from where the window's
 /// ask starts.
