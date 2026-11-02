@@ -536,6 +536,8 @@ describe("the consent floors under every tint (#2526)", () => {
     ["light", "yellow"],
     ["dark-high-contrast", "yellow"],
     ["dark-high-contrast", "green"],
+    ["light-high-contrast", "yellow"],
+    ["light-high-contrast", "green"],
   ])("keeps the accent of Purlis %s as written in a %s workspace", (id, colour) => {
     const theme = purlisAppearance(id);
     const tint = tinted(theme, colour);
@@ -545,7 +547,7 @@ describe("the consent floors under every tint (#2526)", () => {
     expect(tint.values["layer.chat"]).not.toBe(theme.values["layer.chat"]);
   });
 
-  it.each(["light", "dark", "dark-high-contrast"])(
+  it.each(["light", "dark", "dark-high-contrast", "light-high-contrast"])(
     "holds every rule on Purlis %s at every whole degree",
     (id) => {
       const theme = purlisAppearance(id);

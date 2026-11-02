@@ -189,9 +189,9 @@ fn the_built_in_themes_are_listed_with_their_appearances_and_where_they_come_fro
     // Purlis is the default and is listed first; Purlis Classic is the alternative (#3034).
     assert_eq!(
         ran.out,
-        "  ID              NAME            APPEARANCES                                            FROM\n\
-         \x20 purlis          Purlis          dark, light, dark-high-contrast (dark, high contrast)  built-in\n\
-         \x20 purlis-classic  Purlis Classic  dark, light                                            built-in\n"
+        "  ID              NAME            APPEARANCES                                                                                        FROM\n\
+         \x20 purlis          Purlis          dark, light, dark-high-contrast (dark, high contrast), light-high-contrast (light, high contrast)  built-in\n\
+         \x20 purlis-classic  Purlis Classic  dark, light                                                                                        built-in\n"
     );
 }
 
@@ -343,11 +343,12 @@ fn purlis_checks_clean_in_every_appearance_and_exits_zero() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     assert_eq!(
         ran.out,
-        "Purlis — built-in, dark, light, dark-high-contrast (dark, high contrast)\n\
+        "Purlis — built-in, dark, light, dark-high-contrast (dark, high contrast), \
+         light-high-contrast (light, high contrast)\n\
          left out: nothing\n\
          warnings: none\n\
-         consent floors: none held in 3 combinations\n\
-         hard floors: none broken in 3 combinations\n"
+         consent floors: none held in 4 combinations\n\
+         hard floors: none broken in 4 combinations\n"
     );
 }
 
@@ -846,6 +847,10 @@ fn the_theme_folders_of_every_level_are_listed_with_their_level() {
                 "light,",
                 "dark-high-contrast",
                 "(dark,",
+                "high",
+                "contrast),",
+                "light-high-contrast",
+                "(light,",
                 "high",
                 "contrast)",
                 "built-in"

@@ -759,13 +759,14 @@ pub fn shipped(id: &str) -> Option<&'static Theme> {
     shipped_pick(id).map(|(theme, _)| theme)
 }
 
-/// **What a built-in pick names** (#3034): the theme, and the appearance its id implies, by the
-/// appearance's id. `purlis-dark` and `charter-dark` name Purlis's first appearance, its dark
-/// (`None`, so more contrast draws its high-contrast dark, as nothing chosen does);
-/// `purlis-light` and `charter-light` its `light`; `purlis` Purlis, `purlis-classic` Purlis
-/// Classic, each with no appearance implied. Those ids were written as a pick of the default's
-/// dark or light, so they draw the default's; only `purlis-classic` names Classic.
-pub fn shipped_pick(id: &str) -> Option<(&'static Theme, Option<&'static str>)> {
+/// **What a built-in pick names** (#3034): the theme, and the tag of the appearance its id
+/// implies. `purlis-dark` and `charter-dark` name Purlis's first appearance, its dark (`None`,
+/// so more contrast draws its high-contrast dark, as nothing chosen does); `purlis-light` and
+/// `charter-light` its light, by the tag, so more contrast draws its high-contrast light
+/// (#4677); `purlis` Purlis, `purlis-classic` Purlis Classic, each with no appearance implied.
+/// Those ids were written as a pick of the default's dark or light, so they draw the default's;
+/// only `purlis-classic` names Classic.
+pub fn shipped_pick(id: &str) -> Option<(&'static Theme, Option<Appearance>)> {
     if id == CLASSIC {
         return Some((classic(), None));
     }
@@ -774,11 +775,8 @@ pub fn shipped_pick(id: &str) -> Option<(&'static Theme, Option<&'static str>)> 
     }
     crate::names::THEME_LIGHT
         .recognises(id)
-        .then_some((purlis(), Some(LIGHT)))
+        .then_some((purlis(), Some(Appearance::Light)))
 }
-
-/// The id of Purlis's light appearance, which `purlis-light` names.
-const LIGHT: &str = "light";
 
 /// The appearance purlis draws when nothing has said otherwise: Purlis's dark (#3034).
 pub fn default_theme() -> &'static ResolvedTheme {
@@ -806,7 +804,7 @@ pub fn built_in(id: &str) -> Option<&'static ResolvedTheme> {
     let (theme, implied) = shipped_pick(id)?;
     Some(
         implied
-            .and_then(|wanted| theme.appearances.iter().find(|one| one.id == wanted))
+            .and_then(|tag| theme.of(tag))
             .unwrap_or_else(|| theme.first()),
     )
 }
