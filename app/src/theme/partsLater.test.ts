@@ -4,13 +4,19 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Frame } from "../windowprefs";
-import { PARTS_ASKED_AGAIN_AFTER, partsLand } from "./partsLater";
+import {
+  inForceAsked,
+  inForceSettled,
+  PARTS_ASKED_AGAIN_AFTER,
+  partsLand,
+  STAND_IN_WAITS_FOR_AN_ASK,
+} from "./partsLater";
 import { DEFAULT_THEME, drawIn, inForce } from "./theme";
 
 const PARTS = "@layer parts {}";
 
 /** A heavy theme's first frame: drawn with no parts, and `parts_later` names how to ask. */
-function aFrame(parts_later: number | null = 7): Frame {
+function aFrame(parts_later: number | null = 7, stands_in = false): Frame {
   return {
     light: false,
     more: false,
@@ -18,6 +24,7 @@ function aFrame(parts_later: number | null = 7): Frame {
     floors: null,
     mine: [],
     parts_later,
+    stands_in,
   };
 }
 
@@ -142,5 +149,89 @@ describe("a first frame's parts land whatever the restore does (#4410)", () => {
 
     expect(asked).toHaveLength(1);
     expect(inForce()).toBe(other);
+  });
+});
+
+describe("a frame standing in for an extension's theme lands its parts only if nothing draws over it (#4722)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(async () => {
+    // Nothing waits into the next test.
+    await inForceSettled();
+    vi.useRealTimers();
+    clearMocks();
+    drawIn(DEFAULT_THEME);
+  });
+
+  it("asks nothing at once: the window's ask of what is in force draws over it", async () => {
+    const frame = aFrame(7, true);
+    drawIn(frame.theme);
+    const asked = theCoreAnswers(PARTS);
+
+    await partsLand(frame);
+    inForceAsked();
+    await vi.advanceTimersByTimeAsync(STAND_IN_WAITS_FOR_AN_ASK * 2);
+
+    expect(asked).toEqual([]);
+    expect(inForce()).toBe(frame.theme);
+  });
+
+  it("lands them when that ask settles with the frame still drawn: an answer that failed", async () => {
+    const frame = aFrame(7, true);
+    drawIn(frame.theme);
+    const asked = theCoreAnswers(PARTS);
+
+    await partsLand(frame);
+    inForceAsked();
+    await inForceSettled();
+
+    expect(asked).toEqual([7]);
+    expect(inForce()).toEqual({ ...frame.theme, parts: PARTS });
+  });
+
+  it("asks nothing once the answer drew another theme over it", async () => {
+    const frame = aFrame(7, true);
+    drawIn(frame.theme);
+    const asked = theCoreAnswers(PARTS);
+    const answered = { ...DEFAULT_THEME, name: "The extension's" };
+
+    await partsLand(frame);
+    inForceAsked();
+    drawIn(answered);
+    await inForceSettled();
+    // And nothing later, either.
+    await vi.advanceTimersByTimeAsync(STAND_IN_WAITS_FOR_AN_ASK * 2);
+    await inForceSettled();
+
+    expect(asked).toEqual([]);
+    expect(inForce()).toBe(answered);
+  });
+
+  it("lands them in a window that never asks what is in force", async () => {
+    const frame = aFrame(7, true);
+    drawIn(frame.theme);
+    const asked = theCoreAnswers(PARTS);
+
+    await partsLand(frame);
+    await vi.advanceTimersByTimeAsync(STAND_IN_WAITS_FOR_AN_ASK - 1);
+    expect(asked).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(asked).toEqual([7]);
+    expect(inForce().parts).toBe(PARTS);
+  });
+
+  it("lands them once, however many asks settle", async () => {
+    const frame = aFrame(7, true);
+    drawIn(frame.theme);
+    const asked = theCoreAnswers(PARTS);
+
+    await partsLand(frame);
+    await inForceSettled();
+    await inForceSettled();
+
+    expect(asked).toEqual([7]);
   });
 });

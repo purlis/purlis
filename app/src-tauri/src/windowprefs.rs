@@ -123,6 +123,10 @@ struct Frame {
     /// What the window asks for its parts by ([`parts_later`]), when it was drawn before they
     /// were measured; `null` when it has them.
     parts_later: Option<u32>,
+    /// Whether it **stands in** for an extension's theme the levels chose (#4410): the window's
+    /// ask of what is in force draws that theme over it, so its parts are asked for only when
+    /// that answer fails or is never asked for (#4722).
+    stands_in: bool,
 }
 
 /// **Where a window is created** (#2602): the project in front as it opens, and the workspace
@@ -239,8 +243,10 @@ impl FirstFrame {
         let measured = on.map_or_else(theme::Measured::default, |on| on.measured.clone());
         let folders = theme::Folders::of_measured(config_root, plane, workspace, measured);
         // A frame that stands in for an extension's theme is drawn over by the window's ask of
-        // what is in force: its parts are not asked for apart, which would land them only for
+        // what is in force: its parts are not asked for at once, which would land them only for
         // that answer to draw another theme, two changes at every launch where one is due (#4410).
+        // It keeps its ticket and says it stands in, so a window whose answer fails, or that
+        // never asks, still lands them (#4722).
         let drawn = |system, contrast| {
             let (one, stands_in) = theme::first_frame_standing_in(&theme::LevelInputs {
                 levels: &levels,
@@ -280,7 +286,8 @@ impl FirstFrame {
                     theme,
                     floors: one.held.map(|held| held.said()),
                     mine: said(one.mine),
-                    parts_later: (later && !stands_in).then(|| parts_later(resolved)),
+                    parts_later: later.then(|| parts_later(resolved)),
+                    stands_in,
                 };
                 // A frame that more contrast draws the same as the standard one is handed once.
                 let same = frames.iter().any(|was| {
@@ -1055,31 +1062,71 @@ mod tests {
         assert!(parts.contains("@layer parts"), "{parts}");
     }
 
-    #[test]
-    fn a_heavy_frame_standing_in_for_an_extension_s_theme_asks_for_no_parts() {
-        // #4410: a project on an extension's theme is drawn the person's own until the window
-        // asks what is in force, which answers the extension's. Landing the stand-in's parts
-        // first would change the window twice at every launch: once for the parts, once for the
-        // answer. A theme nothing else in this process measures, so the wait runs out.
-        let places = Places::new("[theme]\nuse = \"acme/sharp\"\n");
+    /// The first frame a window is created `on` with, where the levels choose `acme/sharp`, an
+    /// extension's theme, and the person's own theme is a heavy one nothing else in this process
+    /// measures, so the wait runs out and it stands in.
+    fn a_heavy_stand_in(places: &Places, on: Option<&CreatedOn>) -> serde_json::Value {
         let written = MEASURED_IN_TINTS.replace("#ff000040", "#ff000042");
         std::fs::write(
             purlis_core::machine::dir(&places.config).join(windowprefs::THEME),
             &written,
         )
         .unwrap();
-        let on = places.on(None);
         let created = created_within(
             std::time::Duration::ZERO,
             &TheirsKept::new(),
             Some(&places.config),
-            Some(&on),
+            on,
             Some(Contrast::Standard),
         );
-        let frame = &defined(&created.script)["first"]["frames"][0];
+        defined(&created.script)["first"]["frames"][0].clone()
+    }
+
+    #[test]
+    fn a_heavy_frame_standing_in_for_an_extension_s_theme_keeps_its_ticket_and_says_so() {
+        // #4410: a project on an extension's theme is drawn the person's own until the window
+        // asks what is in force, which answers the extension's. Landing the stand-in's parts at
+        // once would change the window twice at every launch: once for the parts, once for the
+        // answer. So it says it stands in, and the window asks for its parts only when that
+        // answer fails (#4722): the ticket is there for it.
+        let places = Places::new("[theme]\nuse = \"acme/sharp\"\n");
+        let on = places.on(None);
+        let frame = a_heavy_stand_in(&places, Some(&on));
         assert_eq!(frame["theme"]["name"], "Heavy");
         assert_eq!(frame["theme"]["parts"], "");
-        assert_eq!(frame["parts_later"], serde_json::Value::Null);
+        assert_eq!(frame["stands_in"], true);
+        let ticket = u32::try_from(frame["parts_later"].as_u64().expect("a ticket")).unwrap();
+        assert!(
+            first_frame_parts(ticket)
+                .expect("its parts")
+                .contains("@layer parts")
+        );
+    }
+
+    #[test]
+    fn a_window_with_no_project_in_front_stands_in_for_the_machine_default_s_extension_theme() {
+        // #4722: the person's machine default may choose an extension's theme with no project in
+        // front. The frame stands in for it the same way, with its ticket.
+        let places = Places::new("");
+        theme::choices::set(
+            &places.config,
+            theme::choices::Slot::Machine,
+            theme::Choice::new("acme/sharp", None),
+        )
+        .unwrap();
+        let frame = a_heavy_stand_in(&places, None);
+        assert_eq!(frame["theme"]["name"], "Heavy");
+        assert_eq!(frame["stands_in"], true);
+        assert!(frame["parts_later"].is_u64(), "{frame}");
+    }
+
+    #[test]
+    fn a_frame_the_levels_draw_themselves_does_not_stand_in() {
+        let places = Places::new("");
+        let frame = a_heavy_stand_in(&places, None);
+        assert_eq!(frame["theme"]["name"], "Heavy");
+        assert_eq!(frame["stands_in"], false);
+        assert!(frame["parts_later"].is_u64(), "{frame}");
     }
 
     #[test]

@@ -69,8 +69,15 @@ export type TheirDrawn = { theme: Theme; floors: string | null; mine: readonly s
 
 /** One frame of {@link FirstFrame}: for a light system (when the theme follows it) and for more
  *  contrast, or not. `parts_later` is what the window asks for its parts by, when it was drawn
- *  before they were measured (#4410, `theme/partsLater.ts`), and `null` when it has them. */
-export type Frame = TheirDrawn & { light: boolean; more: boolean; parts_later: number | null };
+ *  before they were measured (#4410, `theme/partsLater.ts`), and `null` when it has them.
+ *  `stands_in` says it stands in for an extension's theme the window's ask of what is in force
+ *  draws over it: its parts are asked for only when that answer fails or is never asked (#4722). */
+export type Frame = TheirDrawn & {
+  light: boolean;
+  more: boolean;
+  parts_later: number | null;
+  stands_in: boolean;
+};
 
 /**
  * **What the first frame draws** (#2602): the theme the levels choose for the project and the
@@ -131,6 +138,7 @@ function firstFrame(raw: unknown): FirstFrame | null {
       light: frame.light === true,
       more: frame.more === true,
       parts_later: typeof frame.parts_later === "number" ? frame.parts_later : null,
+      stands_in: frame.stands_in === true,
     });
   }
   if (frames.length === 0) return null;

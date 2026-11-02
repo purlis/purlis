@@ -317,6 +317,22 @@ describe("the first frame, the levels resolved once at creation (#2602, #2582)",
     expect(firstFrameOnce()?.parts_later).toBeNull();
   });
 
+  it("reads whether a frame stands in for an extension's theme, and takes anything else for not (#4722)", () => {
+    created({
+      follows_system: false,
+      contrast: "standard",
+      frames: [{ ...frame("Heavy", false, false), parts_later: 3, stands_in: true }],
+    });
+    expect(firstFrameOnce()?.stands_in).toBe(true);
+    forgetTheirTheme();
+    created({
+      follows_system: false,
+      contrast: "standard",
+      frames: [{ ...frame("Heavy", false, false), parts_later: 3, stands_in: "yes" }],
+    });
+    expect(firstFrameOnce()?.stands_in).toBe(false);
+  });
+
   it("says on the first frame which of the person's colours it left out (#3023)", () => {
     const yours = () => aboutThisMachine().filter((one) => one.subject === "your colours");
     const why = "your colour for text.primary is left out: it would put words under their floor";
