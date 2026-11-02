@@ -42,10 +42,10 @@ mod changes;
 mod chatbrowsers;
 mod chatmoves;
 mod chats;
-mod layout;
 mod clipath;
 mod createproject;
 mod curation;
+mod layout;
 mod questiontrail;
 // The Devices view (#2052).
 mod clusterpools;
