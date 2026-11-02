@@ -13,6 +13,7 @@ import { ViewMark } from "./Views";
 import { shownState, type Shown, type TaskFacts } from "./shownState";
 import { StateShown } from "./StateShown";
 import { needsSaid } from "./tabTasks";
+import { useQuestionStanding } from "./QuestionsHere";
 import { tasksAtWorkOf } from "./sessionTasks";
 import { useTasksBelow } from "./TasksBelow";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -69,7 +70,6 @@ export const ChatShownState = memo(function ChatShownState({
   shell,
   report = null,
   outcome = null,
-  asking = null,
   harness,
   changed = false,
 }: {
@@ -82,19 +82,22 @@ export const ChatShownState = memo(function ChatShownState({
   report?: TaskFacts["report"] | null;
   /** How it reported, where it has and the app knows. */
   outcome?: string | null;
-  /** The chat it has a question open with, by name. */
-  asking?: string | null;
   /** Its harness as the person calls it: named in what is not known of it. */
   harness: string | null;
 }) {
   const below = useTasksBelow(session);
+  // Its question, where the asks registry says it stands (#4564): never a copy of its own.
+  const question = useQuestionStanding(session);
   const shown = useChatsSelect(
     useChatsHere(),
     (states) =>
       shownState({
         board: markOf(states, session, shell),
-        needsYou: states.needsYou.includes(session),
-        task: report === null ? null : { report, outcome, asking },
+        needsYou: states.needsYou.includes(session) || question?.level === "needs-you",
+        task:
+          report === null
+            ? null
+            : { report, outcome, asking: question?.level === "with-asker" ? question.asker : null },
         harness,
         tasksAtWork: tasksAtWorkOf(states, below),
         ownWork: ownWorkOf(states, session),
@@ -118,7 +121,6 @@ export const ChatPersonaState = memo(function ChatPersonaState({
   shell,
   report = null,
   outcome = null,
-  asking = null,
   harness,
   changed = false,
 }: {
@@ -128,17 +130,21 @@ export const ChatPersonaState = memo(function ChatPersonaState({
   shell: boolean;
   report?: TaskFacts["report"] | null;
   outcome?: string | null;
-  asking?: string | null;
   harness: string | null;
 }) {
   const below = useTasksBelow(session);
+  // Its question, where the asks registry says it stands (#4564): never a copy of its own.
+  const question = useQuestionStanding(session);
   const shown = useChatsSelect(
     useChatsHere(),
     (states) =>
       shownState({
         board: markOf(states, session, shell),
-        needsYou: states.needsYou.includes(session),
-        task: report === null ? null : { report, outcome, asking },
+        needsYou: states.needsYou.includes(session) || question?.level === "needs-you",
+        task:
+          report === null
+            ? null
+            : { report, outcome, asking: question?.level === "with-asker" ? question.asker : null },
         harness,
         tasksAtWork: tasksAtWorkOf(states, below),
         ownWork: ownWorkOf(states, session),
