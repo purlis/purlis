@@ -250,6 +250,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forge_device_sign_in_start",
     "forge_device_sign_in_wait",
     "forge_device_sign_in_cancel",
+    // Agent identity (#4485): GitHub's App flow, the tool lines and the key, each the person's.
+    "agent_identities",
+    "agent_identity_create",
+    "agent_identity_create_cancel",
+    "agent_identity_reopen",
+    "agent_identity_stand",
+    "agent_identity_lines",
+    "agent_identity_finish",
+    "agent_identity_remove",
     // The browser sign-in to gitlab.com (#730, ADR 0077 §3): it opens the person's browser and
     // a loopback listener on this machine, and ends with a token in the keychain. No link
     // starts one or stops one.
@@ -762,6 +771,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // claims a runner as them and pins that key, so only their own press in their window does.
     "cluster_contexts",
     "cluster_pool_key",
+    "runner_stage",
     "add_cluster_pool",
     // The person's mark that a cluster pool is their own (#4071): half of what lets its runner
     // receive vault values and tokens, so only their own press in their window sets it.

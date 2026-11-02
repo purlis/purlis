@@ -550,6 +550,9 @@ fn filter(expr: &Expr) -> Result<Filter, Unread> {
             [one] => Filter::Not(Box::new(filter(one)?)),
             _ => return Err(Unread("`require-not` without one filter".to_owned())),
         },
+        // Seatbelt alone writes this, for its terminals, which no Linux file is judged by: a
+        // file's permissions are not read here, so it matches none.
+        "file-mode" => Filter::Any(Vec::new()),
         "remote" => remote(rest)?,
         "local" => local(rest)?,
         other => return Err(Unread(format!("the filter `{other}`"))),

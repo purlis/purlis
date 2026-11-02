@@ -411,7 +411,7 @@ export const ASKS_A_PERMISSION = join(THE_RUNS_TREE, "asks-a-permission");
 export const USES_A_SKILL = join(THE_RUNS_TREE, "uses-a-skill");
 
 /** The built-in skill the reporting harness reads while {@link USES_A_SKILL} is there. */
-export const USED_SKILL = "secrets";
+export const USED_SKILL = "purlis-secrets";
 
 /** What the reporting harness says once the window allowed its permission ask. */
 export const INBOX_ALLOWED = "carried on: the window allowed it";

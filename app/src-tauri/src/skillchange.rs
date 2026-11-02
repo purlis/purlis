@@ -193,7 +193,7 @@ pub struct DeletedSkill {
     /// Whether the project's history keeps it (its delete was a commit), so it is still there
     /// after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
     pub in_history: bool,
-    /// Whether its name belongs to a built-in skill now (a newer purlis ships one of that name),
+    /// Whether its name belongs to purlis now (it starts with `purlis-`),
     /// so it comes back only under a new name (#3729).
     pub reserved: bool,
 }
@@ -627,13 +627,12 @@ pub(crate) async fn skills_deleted(
     crate::off_the_window("reading the deleted skills", move || {
         flag_on()?;
         let now = std::time::SystemTime::now();
-        let reserved = purlis_core::skills::Reserved::of(built_in().as_deref());
         verbs::deleted(held.root())
             .into_iter()
             .filter(|one| one.days_left(now) > 0)
             .map(|one| {
                 Ok(DeletedSkill {
-                    reserved: reserved.holds(&one.name),
+                    reserved: purlis_core::skills::name_reserved(&one.name),
                     days_left: u32::try_from(one.days_left(now)).unwrap_or(u32::MAX),
                     in_history: one.kept().in_git(),
                     id: serde_json::to_string(&one)

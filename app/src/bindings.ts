@@ -1604,6 +1604,40 @@ export const commands = {
 	 */
 	forgeDeviceSignInCancel: (flow: number) => __TAURI_INVOKE<void>("forge_device_sign_in_cancel", { flow }),
 	/**
+	 *  **What the Agent identity tab draws**, read fresh. Each row proves itself against GitHub, so
+	 *  it shows what it acts as now.
+	 */
+	agentIdentities: (plane: PlaneId) => typedError<IdentitiesShown, string>(__TAURI_INVOKE("agent_identities", { plane })),
+	/**
+	 *  **Makes the App on GitHub**: the page opened in the person's browser, its one redirect taken,
+	 *  the key stored, and the page for choosing its repos opened. `owner` is the account's name, an
+	 *  organisation's, or with `personal` the person's own. Answers the client id.
+	 */
+	agentIdentityCreate: (plane: PlaneId, attempt: string, owner: string, personal: boolean, workflows: boolean) => typedError<string, string>(__TAURI_INVOKE("agent_identity_create", { plane, attempt, owner, personal, workflows })),
+	/**  Stop making the App: the listener closes at once, and nothing is kept. */
+	agentIdentityCreateCancel: (attempt: string) => __TAURI_INVOKE<void>("agent_identity_create_cancel", { attempt }),
+	/**
+	 *  **Opens GitHub's page again** for the try under way. The page's address never reaches the
+	 *  window.
+	 */
+	agentIdentityReopen: () => typedError<null, string>(__TAURI_INVOKE("agent_identity_reopen")),
+	/**  **How an App stands on GitHub**, asked as the tab waits for it to be installed. Changes nothing. */
+	agentIdentityStand: (plane: PlaneId, app: string) => typedError<IdentityStand, string>(__TAURI_INVOKE("agent_identity_stand", { plane, app })),
+	/**  **The exact lines Finish adds** (Q11), from the one source Finish writes from. */
+	agentIdentityLines: (app: string, personas: string[]) => typedError<string, string>(__TAURI_INVOKE("agent_identity_lines", { app, personas })),
+	/**
+	 *  **Finish** (Q11, Q17): proves a real token first, so a failed proof writes nothing, then adds
+	 *  the lines, then allows them on this machine. A persona with anything else waiting for an Allow
+	 *  isn't allowed here, nor is the default persona, whose Allow reaches every chat that names no
+	 *  persona: only these lines were shown, so those stay the person's own Allow.
+	 */
+	agentIdentityFinish: (plane: PlaneId, app: string, personas: string[]) => typedError<IdentityFinished, string>(__TAURI_INVOKE("agent_identity_finish", { plane, app, personas })),
+	/**
+	 *  **Removes an identity at once** (Q13): key, tool lines and live tokens, of what this flow
+	 *  made. What remains on GitHub's side is the App itself, and the answer names its page.
+	 */
+	agentIdentityRemove: (plane: PlaneId, app: string) => typedError<IdentityRemoved, string>(__TAURI_INVOKE("agent_identity_remove", { plane, app })),
+	/**
 	 *  Sign in to `kind` on `host` in the person's browser, as the try `attempt`: the forge's
 	 *  authorization page is opened there, its one redirect is taken on a loopback port, and the
 	 *  code is exchanged for a token kept in the account's own keyring item. The account as Settings
@@ -3142,6 +3176,18 @@ export const commands = {
 	 */
 	clusterPoolKey: (kubeconfig: string | null, context: string, pool: string) => typedError<ClusterPoolKey, string>(__TAURI_INVOKE("cluster_pool_key", { kubeconfig, context, pool })),
 	/**
+	 *  **Where the runner of a chat being started has got to** (#3709), read from the cluster, for the
+	 *  window's Start while it waits. Nothing where there is no stage to say.
+	 */
+	runnerStage: (plane: PlaneId, workspace: string | null) => typedError<{
+	/**  The stage, in the words the person reads. */
+	said: string,
+	/**  One line more about it. */
+	more: string,
+	/**  The cluster's own words for why it waits, where it gave them. */
+	cluster_said: string | null,
+} | null, string>(__TAURI_INVOKE("runner_stage", { plane, workspace })),
+	/**
 	 *  **Adds a cluster pool on this machine** (#3292): pins the key the person checked, claims a
 	 *  runner of the cluster's Pool, waits for its operator to vouch for it, pairs it and keeps it.
 	 *  What fails is taken back.
@@ -3267,8 +3313,11 @@ export const commands = {
 { at: "signed-in" } | 
 /**  purlis could not follow the login: what it printed. */
 { at: "could-not-follow"; said: string } | 
-/**  It did not sign in, and why. */
-{ at: "failed"; why: string } | 
+/**
+ *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
+ *  ending so, and the page it opened is no use now (#4367).
+ */
+{ at: "failed"; why: string; stopped: boolean } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
 	/**
@@ -3680,7 +3729,7 @@ export const commands = {
 } | null, theme: string, from: string | null) => typedError<null, string>(__TAURI_INVOKE("theme_open_folder", { at, theme, from })),
 	/**
 	 *  **New theme** and **Edit with a chat** (#2333): a chat at the level `at` names, with a prompt
-	 *  that names purlis's theme skill typed into it and never sent (ADR 0061), as the Curate menu's
+	 *  that names purlis's purlis-theme skill typed into it and never sent (ADR 0061), as the Curate menu's
 	 *  Create a theme opens one. With `theme`, the prompt names that card's theme, of the level
 	 *  `from`; the card is one this level's gallery shows, never a name the window made up. The
 	 *  machine's level has no project for a chat to work in, so it is never asked. A refused start
@@ -5894,6 +5943,15 @@ export type ChatOnAPoolNotKept = {
 };
 
 /**
+ *  What `chat-prompt-routing` carries: which chat to read again, and nothing of how it did, so
+ *  tellings that land out of order leave the window nothing to get wrong.
+ */
+export type ChatPromptRouting = {
+	plane: PlaneId,
+	session: number,
+};
+
+/**
  *  What a restart answered (#1342, #1428): the chat in its new run with what its start found
  *  to say, or, while it waits on a permission prompt, why it is not restarted yet.
  */
@@ -5953,6 +6011,15 @@ export type ChatSkills = {
 	known: boolean,
 	/**  Every skill of its set, by name. */
 	skills: ChatSkill[],
+	/**
+	 *  The skills its program finds itself and it has (#4477): the Skills view's Use types them,
+	 *  and the picker's list and the budget hold none.
+	 */
+	program: ChatSkill[],
+	/**  The plugins on this machine it does not have. */
+	plugins_off: PluginOffShown[],
+	/**  What its program's own skills hold, in the core's words: the header's count. */
+	own: string | null,
 	/**  Its budget, where it is known. */
 	budget: SkillBudget | null,
 	/**
@@ -6286,7 +6353,7 @@ export type DeletedSkill = {
 	 */
 	in_history: boolean,
 	/**
-	 *  Whether its name belongs to a built-in skill now (a newer purlis ships one of that name),
+	 *  Whether its name belongs to purlis now (it starts with `purlis-`),
 	 *  so it comes back only under a new name (#3729).
 	 */
 	reserved: boolean,
@@ -8382,6 +8449,23 @@ export type HowFailed =
  */
 "last_message";
 
+/**  What the tab draws. */
+export type IdentitiesShown = {
+	rows: IdentityRow[],
+	pending: IdentityPending[],
+	owners: IdentityOwner[],
+	personas: string[],
+};
+
+/**  What Finish did. */
+export type IdentityFinished = {
+	row: IdentityRow,
+	/**  What it read as proof. */
+	read: string | null,
+	/**  Personas with an Allow of their own still to give: Finish allows only what it showed. */
+	to_allow: string[],
+};
+
 /**  Where one of a vault's identity variables is read from now (#237). */
 export type IdentityHeld = 
 /**  Moved into the keyring, which is read first. */
@@ -8390,6 +8474,55 @@ export type IdentityHeld =
 "environment" | 
 /**  Nowhere: the vault cannot be read. */
 "unset";
+
+/**  An owner the App can be made under. */
+export type IdentityOwner = {
+	name: string,
+	/**  The person's own account, as their forge sign-in says. */
+	personal: boolean,
+};
+
+/**  An App whose key is kept and whose lines Finish hasn't written. */
+export type IdentityPending = {
+	app: string,
+	stand: IdentityStand | null,
+	trouble: string | null,
+};
+
+/**  What a removal left, for the row to say. */
+export type IdentityRemoved = {
+	/**  The App's page on GitHub, where what remains is deleted. */
+	settings_page: string | null,
+};
+
+/**
+ *  One App's row (Q6, Q17): what it acts as, on how many repos, and for whom. A forge host has
+ *  one, or one per owner where a project's repos are under several.
+ */
+export type IdentityRow = {
+	host: string,
+	/**  The App's public client id. */
+	app: string,
+	personas: string[],
+	/**  What it acts as, where GitHub could say. */
+	acts_as: string | null,
+	repos: number | null,
+	/**  The App's page on GitHub, where it is deleted. */
+	settings_page: string | null,
+	/**  Why GitHub couldn't say. The row stays, and can still be removed. */
+	trouble: string | null,
+	/**  A line this flow didn't write: shown, never read with, and removed in the project file. */
+	by_hand: boolean,
+};
+
+/**  An App as GitHub says it is, before Finish. */
+export type IdentityStand = {
+	acts_as: string,
+	owner: string,
+	installed: boolean,
+	install_page: string,
+	settings_page: string,
+};
 
 /**  One save setting as the project has it: its value, and the file that decided it. */
 export type InForce = {
@@ -9574,7 +9707,7 @@ export type OpenRun = {
 	skill: string,
 	/**
 	 *  The skill it is a run of, by its own name, as the core counts it
-	 *  ([`purlis_core::skilluse::own_name`]): `secrets` for opencode's `purlis-secrets`. The
+	 *  ([`purlis_core::skilluse::own_name`]): `purlis-secrets` for `purlis:purlis-secrets`. The
 	 *  skill whose tab its chip opens.
 	 */
 	name: string,
@@ -10139,7 +10272,7 @@ export type Phase =
 "not_sent" | 
 /**
  *  The chat finished a Smart close and saved its record with no pass: its harness said
- *  `/smart-close`, and no typed one of the person's was behind it. The tab stayed open, and
+ *  `/purlis-smart-close`, and no typed one of the person's was behind it. The tab stayed open, and
  *  the window offers Close tab, a plain close that grants nothing (D-1361-7).
  */
 "kept_open";
@@ -10531,6 +10664,18 @@ export type PlaneUpdated = {
 	skills_edited: string[],
 };
 
+/**  **A plugin on this machine a chat does not have** (#4477), as Left out says it. */
+export type PluginOffShown = {
+	/**  The name its skills are prefixed with. */
+	name: string,
+	/**  Why, in full: what closes its skills' run. */
+	said: string,
+	/**  Why, in the few words its folded line has room for. */
+	line: string,
+	/**  The command that puts it right, where one does. */
+	command: string | null,
+};
+
 /**  A pool as the person typed it: each limit left empty takes the default. */
 export type PoolAdding = {
 	name: string,
@@ -10787,8 +10932,11 @@ export type PoolSignInStep =
 { at: "signed-in" } | 
 /**  purlis could not follow the login: what it printed. */
 { at: "could-not-follow"; said: string } | 
-/**  It did not sign in, and why. */
-{ at: "failed"; why: string } | 
+/**
+ *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
+ *  ending so, and the page it opened is no use now (#4367).
+ */
+{ at: "failed"; why: string; stopped: boolean } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" };
 
@@ -12304,6 +12452,16 @@ export type RunnerOnTheList = {
 	on: OnADevice,
 };
 
+/**  Where a chat's runner has got to, as the window waiting on it says it (#3709). */
+export type RunnerStage = {
+	/**  The stage, in the words the person reads. */
+	said: string,
+	/**  One line more about it. */
+	more: string,
+	/**  The cluster's own words for why it waits, where it gave them. */
+	cluster_said: string | null,
+};
+
 /**  Whether a runner's container runs (#2051). */
 export type RunnerStanding = { state: "running" } | 
 /**  Its container stopped, its home kept: it starts again as a chat next needs it. */
@@ -13785,7 +13943,7 @@ export type SkillUpdates = {
 
 /**  A skill another skill names. */
 export type SkillUse = {
-	/**  As the text writes it: `skills:deploy`, `purlis:secrets`. */
+	/**  As the text writes it: `skills:deploy`, `purlis:purlis-secrets`. */
 	said: string,
 	name: string,
 	/**  Whether it names one of the project's skills, not a built-in one. */
@@ -14283,6 +14441,8 @@ export type StudioHarness = {
 	 *  for a count of its needs.
 	 */
 	own: string | null,
+	/**  The plugins on this machine a new chat here would not have (#4477). */
+	plugins_off: PluginOffShown[],
 };
 
 /**  A level a skill can be moved to or made at, and its words. */

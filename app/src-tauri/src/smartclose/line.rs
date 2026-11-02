@@ -15,9 +15,9 @@
 //!
 //! **A picker's Enter on a typed prefix counts** (D-1361-6). The harnesses offer their commands
 //! as the person types `/`, and Enter on `/sm` runs the one the picker highlights. A prefix of
-//! `/smart-close` from `/sm` on, or of `/purlis:smart-close` from `/purlis:sm` on, is the person
-//! asking for it; the `UserPromptSubmit` that follows must still say it was `/smart-close`
-//! (`smartclose::heard`). `/` and `/s` alone never count: too many everyday commands start so.
+//! the skill's name from `/purlis-sm` on, or of `/purlis:purlis-sm` on, is the person asking for
+//! it, and so is one of a name a picker finds it by, `/sm` on. The `UserPromptSubmit` that follows
+//! must still say it was purlis's smart close (`smartclose::heard`). `/` and `/s` alone never count: too many everyday commands start so.
 //! An arrow in the picker means the person chose something other than the top match, which
 //! the keys cannot name, so it stays unknown.
 
@@ -112,11 +112,10 @@ impl Line {
         }
     }
 
-    /// Whether this is the person asking for purlis's smart-close skill as a slash command, in a
-    /// chat on `harness`: `/smart-close` or `/purlis:smart-close` (the skill's old prefix too), or
-    /// on opencode `/purlis-smart-close`, its name for purlis's skill there, alone or with words
-    /// after it, or a prefix of one from `/sm` (`/purlis:sm`) on that a picker completes.
-    pub fn is_smart_close(&self, harness: Option<purlis_core::harness::Harness>) -> bool {
+    /// Whether this is the person asking for purlis's smart-close skill as a slash command, by
+    /// its name or one that reads as it ([`purlis_core::state::smart_close_typed`]), alone or with
+    /// words after it, or a prefix of one that a picker completes ([`picks_smart_close`]).
+    pub fn is_smart_close(&self) -> bool {
         let Self::Typed(typed) = self else {
             return false;
         };
@@ -124,24 +123,25 @@ impl Line {
             return false;
         };
         let typed = typed.trim();
-        purlis_core::state::smart_close_typed(typed, harness) || picks_smart_close(typed, harness)
+        purlis_core::state::smart_close_typed(typed) || picks_smart_close(typed)
     }
 }
 
-/// Whether `typed` is a prefix of `/smart-close`, or of it under a skill prefix or the name a
-/// chat on `harness` knows it by, long enough to reach [`FLOOR`] letters of its name.
-fn picks_smart_close(typed: &str, harness: Option<purlis_core::harness::Harness>) -> bool {
+/// Whether `typed` is a prefix of the skill's name without or with its prefix, under the plugin's
+/// namespace or none, long enough to reach [`FLOOR`] letters past them. What a picker completes;
+/// the hook still has to hear the name it completed to ([`Line::is_smart_close`]).
+fn picks_smart_close(typed: &str) -> bool {
     let namespace = purlis_core::names::SKILL_NAMESPACE;
-    // opencode's name for it, `/purlis-smart-close`: the route's own prefix, empty elsewhere.
-    let own = harness
-        .map(|harness| harness.skills().built_in_name(""))
-        .unwrap_or_default();
+    let own = purlis_core::skills::RESERVED_PREFIX;
+    let Some(leaf) = purlis_core::state::SMART_CLOSE_SKILL.strip_prefix(own) else {
+        return false;
+    };
     std::iter::once("")
         .chain(std::iter::once(namespace.write))
         .chain(namespace.reads.iter().copied())
-        .chain(std::iter::once(own.as_str()).filter(|own| !own.is_empty()))
+        .flat_map(|namespace| [namespace.to_owned(), format!("{namespace}{own}")])
         .any(|prefix| {
-            let whole = format!("/{prefix}{}", purlis_core::state::SMART_CLOSE_SKILL);
+            let whole = format!("/{prefix}{leaf}");
             whole.starts_with(typed) && typed.len() >= 1 + prefix.len() + FLOOR
         })
 }
@@ -184,34 +184,30 @@ mod tests {
     }
 
     fn is_smart_close(keys: &[&[u8]]) -> bool {
-        submitted(keys).is_some_and(|line| line.is_smart_close(None))
+        submitted(keys).is_some_and(|line| line.is_smart_close())
     }
 
     #[test]
     fn the_command_typed_alone_is_smart_close() {
-        assert!(is_smart_close(&[b"/smart-close\r"]));
+        assert!(is_smart_close(&[b"/purlis-smart-close\r"]));
         assert!(is_smart_close(&[b"/purlis:smart-close", b"\r"]));
-        assert!(
-            !is_smart_close(&[b"/purlis-smart-close", b"\r"]),
-            "opencode's name alone"
-        );
-        let opencode = Some(purlis_core::harness::Harness::Opencode);
-        for keys in [&b"/purlis-smart-close\r"[..], b"/purlis-smart-cl\r"] {
-            assert!(
-                submitted(&[keys]).is_some_and(|line| line.is_smart_close(opencode)),
-                "{keys:?} in an opencode chat"
-            );
-        }
-        assert!(is_smart_close(&[b"/smart-closx", b"\x7f", b"e", b"\r"]));
-        assert!(is_smart_close(&[b"go on", b"\x03", b"/smart-close\r"]));
-        assert!(is_smart_close(&[b"\x1b[200~/smart-close\x1b[201~", b"\r"]));
+        assert!(is_smart_close(&[b"/purlis:purlis-smart-close", b"\r"]));
+        assert!(is_smart_close(&[
+            b"go on",
+            b"\x03",
+            b"/purlis-smart-close\r"
+        ]));
+        assert!(is_smart_close(&[
+            b"\x1b[200~/purlis-smart-close\x1b[201~",
+            b"\r"
+        ]));
 
         // A line starts empty after each Enter.
         let mut line = Line::default();
         line.follow(b"anything\r");
         assert!(
-            line.follow(b"/smart-close\r")
-                .is_some_and(|l| l.is_smart_close(None))
+            line.follow(b"/purlis-smart-close\r")
+                .is_some_and(|l| l.is_smart_close())
         );
     }
 
@@ -220,19 +216,19 @@ mod tests {
         for keys in [
             &[&b"\r"[..]][..],
             &[b"go on\r"],
-            &[b"/smart-closer\r"],
-            &[b"/smart-close", b"\x03", b"go on\r"],
-            &[b"/smart-close", b"\x03", b"\r"],
+            &[b"/purlis-smart-closer\r"],
+            &[b"/purlis-smart-close", b"\x03", b"go on\r"],
+            &[b"/purlis-smart-close", b"\x03", b"\r"],
             &[b"/\r"],
             &[b"/s\r"],
             &[b"/purlis:s\r"],
             &[b"/purlis:\r"],
             &[b"/smx\r"],
             &[b"/sm now\r"],
-            &[b"/smart-close", b"\x1b\r"],
-            &[b"/smart-close\\", b"\r", b"\r"],
-            &[b"/smart-close\x1b\r\r"],
-            &[b"\x1b[200~/smart-close\nx\x1b[201~\r"],
+            &[b"/purlis-smart-close", b"\x1b\r"],
+            &[b"/purlis-smart-close\\", b"\r", b"\r"],
+            &[b"/purlis-smart-close\x1b\r\r"],
+            &[b"\x1b[200~/purlis-smart-close\nx\x1b[201~\r"],
         ] {
             assert!(!is_smart_close(keys), "{keys:?}");
         }
@@ -243,7 +239,7 @@ mod tests {
         for keys in [
             &[&b"\x1b[A"[..], b"\r"][..],
             &[b"/smart", b"\t", b"\r"],
-            &[b"/smart-close", b"\x1b[D", b"\r"],
+            &[b"/purlis-smart-close", b"\x1b[D", b"\r"],
             &[b"\x15/smart-close\r"],
             &[b"\x1bOA/smart-close\r"],
         ] {
@@ -252,14 +248,14 @@ mod tests {
         let mut line = Line::default();
         assert_eq!(line.follow(b"\x1b[A\r"), Some(Line::Unknown));
         assert!(
-            line.follow(b"/smart-close\r")
-                .is_some_and(|l| l.is_smart_close(None))
+            line.follow(b"/purlis-smart-close\r")
+                .is_some_and(|l| l.is_smart_close())
         );
     }
 
     #[test]
     fn words_after_the_whole_command_count() {
-        assert!(is_smart_close(&[b"/smart-close now", b"\r"]));
+        assert!(is_smart_close(&[b"/purlis-smart-close now", b"\r"]));
         assert!(is_smart_close(&[b"/purlis:smart-close and tidy up\r"]));
     }
 
@@ -270,6 +266,8 @@ mod tests {
             &[b"/", b"s", b"m", b"\r"],
             &[b"/smart\r"],
             &[b"/purlis:sm\r"],
+            &[b"/purlis-sm\r"],
+            &[b"/purlis:purlis-sm\r"],
             &[b"/charter:smart-cl\r"],
         ] {
             assert!(is_smart_close(keys), "{keys:?}");
@@ -290,10 +288,10 @@ mod tests {
     #[test]
     fn ctrl_c_clears_a_typed_smart_close() {
         let mut line = Line::default();
-        assert_eq!(line.follow(b"/smart-close"), None);
+        assert_eq!(line.follow(b"/purlis-smart-close"), None);
         assert_eq!(line.follow(b"\x03"), None);
         assert_eq!(line, Line::default());
-        assert!(!line.follow(b"\r").is_some_and(|l| l.is_smart_close(None)));
+        assert!(!line.follow(b"\r").is_some_and(|l| l.is_smart_close()));
     }
 
     #[test]

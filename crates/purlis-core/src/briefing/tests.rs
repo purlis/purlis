@@ -235,7 +235,7 @@ fn a_chat_started_with_charters_skills_to_list_is_briefed_on_them_last() {
     );
     let last = got.last().expect("a briefing");
     assert!(last.starts_with("⬢ **purlis's built-in skills**"), "{last}");
-    assert!(last.contains("`safe-remove`"), "{last}");
+    assert!(last.contains("`purlis-safe-remove`"), "{last}");
 
     let without = told(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({}));
     assert!(

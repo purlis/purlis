@@ -225,6 +225,7 @@ fn purlis_wrote(report: &dispatchrecord::Report) -> bool {
     report.outcome == Outcome::Stopped
         || report.text == dispatchrecord::ENDED_WITHOUT_A_REPORT
         || report.text == crate::handback::UNREPORTED
+        || report.text == crate::handback::ENDED_WITH_ITS_RUNNER
         || report.text == crate::handback::STOPPED
 }
 

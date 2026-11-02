@@ -43,6 +43,7 @@ import {
   TOOLTIP_CLOSE_DELAY,
   TOOLTIP_DELAY,
 } from "../tooltip/Tooltip";
+import { useWindowLeft } from "../windowLeft";
 
 /** How a column shares the table's width: as narrow as its cells, or the room left. */
 export type ColumnSize = "fit" | "fill";
@@ -254,6 +255,13 @@ function Chosen({
     leaving.current = window.setTimeout(() => setPointed(false), TOOLTIP_CLOSE_DELAY);
   }, []);
   const onTip = useCallback(() => window.clearTimeout(leaving.current), []);
+  // Gone from the window, which an engine may not say on the words: no tooltip to cross to (#3095).
+  useWindowLeft((why) => {
+    if (why !== "pointer") return;
+    window.clearTimeout(soon.current);
+    window.clearTimeout(leaving.current);
+    setPointed(false);
+  }, cut);
 
   const keyboard = ownStop ? isFocusVisible : keyboardOn;
   // A dismissed tooltip comes back only once the pointer and the keyboard have both left.

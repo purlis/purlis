@@ -635,12 +635,7 @@ fn ready_given(
         }
         _ => None,
     };
-    let plugins = crate::harness_plugin::for_start(
-        &profile.kind,
-        root,
-        workspace,
-        &crate::harness_plugin::Env::of(&env),
-    );
+    let plugins = crate::harness_plugin::for_start(&profile.kind, root, workspace);
     // The profile's own words stay together and in front; charter's go after them and after
     // whatever arms the harness. [`Ready::command_line`] is where the order is decided.
     Ok(Ready {

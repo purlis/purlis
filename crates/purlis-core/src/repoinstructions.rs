@@ -165,7 +165,7 @@ pub fn import(
     }
     // Not the journal's own lock, which every memory write takes and a second `Lock::on` of
     // the same directory in this process would wait on forever (`rewrite::Lock`).
-    let _held = crate::rewrite::Lock::on(workspace.dir());
+    let _held = crate::rewrite::Lock::bounded(workspace.dir()).map_err(|why| why.to_string())?;
     let now = found(plane, ws)?;
     for one in &unique {
         refusal(&now, one).map_or(Ok(()), Err)?;

@@ -334,7 +334,6 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
     assert_eq!(names, [studio_probe::OFFERED]);
     let review = purlis_core::skills::source::extension::review(
         studio,
-        None,
         ID,
         &[studio_probe::OFFERED.to_owned()],
     )
@@ -378,6 +377,15 @@ fn the_approval_says_it_runs_confined_and_names_its_hosts() {
             .declares
             .iter()
             .any(|it| it.contains("“skill-lint”, experimental")),
+        "{:?}",
+        prompt.declares
+    );
+    // Version 1 of the extension API is not said to be experimental (ADR 0101, amended 2026-11-02).
+    assert!(
+        prompt
+            .declares
+            .iter()
+            .any(|it| it.starts_with("the capability “grader” — ")),
         "{:?}",
         prompt.declares
     );

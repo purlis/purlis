@@ -43,7 +43,7 @@ pub const SYNC_AGENTS: &str = "`purlis persona sync-agents` is retired: a person
 pub const BROWSER_INSTALL: &str = "`purlis browser install` is retired, and purlis wrote \
      nothing. A chat purlis starts drives a real browser with purlis's own browser tools \
      (`browser_open`, `browser_snapshot`, `browser_click`, `browser_login` and the rest). \
-     purlis's `browser` skill teaches them.";
+     purlis's `purlis-browser` skill teaches them.";
 
 /// What a sub-agent call named for the persona `name` is refused with.
 ///
