@@ -963,6 +963,46 @@ fn a_grader_is_refused_beside_ticked_outcome_evals() {
     assert!(grader_takes(&planned("ship it"), true).is_ok());
 }
 
+/// #4312: a terminal naming an eval on a profile it cannot run on is told why before it asks, and
+/// its plan and its start consent to nothing; naming none costs that profile nothing.
+#[test]
+fn a_terminal_naming_an_eval_on_a_profile_it_cannot_run_on_is_told_why_and_starts_nothing() {
+    let why = "it signs in another way".to_owned();
+    let on = || On {
+        evals_refused: Some(why.clone()),
+        ..on(Ok("full sandbox".into()), grades::price::of_model(None))
+    };
+    let plain = planned("ship it");
+    let told = plan_told(&plain, &on(), None);
+    assert_eq!(told.refused, None);
+    let consent = told.consent.expect("no eval named, nothing refused");
+    assert_eq!(
+        a_terminals_start_holds(&plain, &on(), &consent, "deploy"),
+        Ok(())
+    );
+
+    let mut named = plain.clone();
+    named
+        .request
+        .as_mut()
+        .unwrap()
+        .outcomes
+        .push(purlis_core::skills::grade::OutcomeEval {
+            id: 4,
+            prompt: "fill it".into(),
+            expected_output: None,
+            files: Vec::new(),
+            expectations: vec!["It is filled".into()],
+        });
+    let told = plan_told(&named, &on(), None);
+    assert_eq!(told.refused.as_ref(), Some(&why));
+    assert_eq!(told.consent, None);
+    assert_eq!(
+        a_terminals_start_holds(&named, &on(), &consent, "deploy"),
+        Err(why.clone())
+    );
+}
+
 /// SK-55: ticked outcome evals on a profile they cannot run on start nothing; left off, they cost
 /// that profile nothing.
 #[test]

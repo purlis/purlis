@@ -1689,6 +1689,72 @@ pub fn planned_with(
     })
 }
 
+impl Planned {
+    /// **Whether `eval` holds a character no reader would see**: in what its chat is told, what a
+    /// judge checks or a file it stages, so a plan says so before anything is agreed to.
+    pub fn eval_hides(&self, eval: &grade::OutcomeEval) -> bool {
+        let hides = |text: &str| purlis_unicode::hides(text, purlis_unicode::Breaks::Kept);
+        hides(&grade::outcomes::outcome_prompt(eval))
+            || eval
+                .expectations
+                .iter()
+                .chain(&eval.expected_output)
+                .chain(
+                    eval.files
+                        .iter()
+                        .filter_map(|path| self.copy.as_ref()?.inputs.get(path)),
+                )
+                .any(|text| hides(text))
+    }
+}
+
+/// **[`planned_with`], for the outcome evals a terminal `named`** (#4312). A press ticks only what
+/// the plan offered, but a terminal can name anything, and its yes covers what it named: an id
+/// this plan would not run refuses the plan, saying why, so the plan never holds less than was
+/// asked for. With none named no eval runs, as with none ticked.
+pub fn planned_named(
+    root: &Path,
+    level: &Level,
+    name: &str,
+    profile: Option<&str>,
+    named: &[String],
+) -> Result<Planned, String> {
+    let ids = named
+        .iter()
+        .map(|id| {
+            id.parse().map_err(|_| {
+                format!(
+                    "{:?} is not an outcome eval's id: --eval takes the number \
+                     `purlis skill grade` lists it by.",
+                    purlis_skills::review::escaped_line(id)
+                )
+            })
+        })
+        .collect::<Result<Vec<u64>, String>>()?;
+    let planned = planned_with(root, level, name, profile, &ids)?;
+    let runs = |id: u64| {
+        planned
+            .request
+            .as_ref()
+            .is_some_and(|request| request.outcomes.iter().any(|eval| eval.id == id))
+    };
+    let Some(id) = ids.iter().copied().find(|id| !runs(*id)) else {
+        return Ok(planned);
+    };
+    if let grade::Read::Refused(why) = &planned.fixtures.outcomes {
+        return Err(format!(
+            "Its outcome evals could not be read: {}",
+            why.terminal()
+        ));
+    }
+    Err(
+        match planned.outcomes_left_out.iter().find(|left| left.id == id) {
+            Some(left) => format!("Outcome eval {id} cannot run: {}.", left.why),
+            None => format!("{name} has no outcome eval {id}."),
+        },
+    )
+}
+
 /// **The trigger tests a grade of the copy of `name` at `level` would run**, and why its file was
 /// not read where it was not: what a skill's Grades tab asks to know whether there is anything to
 /// grade (#3928), without the plan's history, estimate and models. A test no chat can be started
