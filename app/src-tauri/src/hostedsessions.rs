@@ -3075,6 +3075,12 @@ impl HostedSessions {
         Ok((link, project))
     }
 
+    /// [`Self::link_of_a_start`], for the tests of what a start sends (#4569).
+    #[cfg(test)]
+    pub(crate) fn link_of_a_start_in_a_test(&self) -> Result<(Arc<HostLink>, String), String> {
+        self.link_of_a_start()
+    }
+
     /// [`Self::moving_link`], for the tests of what moves over it.
     #[cfg(test)]
     pub(crate) fn moving_link_in_a_test(&self) -> Result<(Arc<HostLink>, String), String> {

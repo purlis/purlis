@@ -260,7 +260,7 @@ fn a_bare_repository_keeps_the_runner() {
 fn a_project_kept_under_another_id_keeps_the_runner() {
     // A project moved on the desktop, its id read again: the runner holds the old one too.
     let world = World::new();
-    let old = world.projects.join("01J9PRJCT0000000000000D0D0");
+    let old = world.projects.join("01J9PRJCT0000000000000OLD0");
     init(&old);
     commit(&old, "work.txt", "the task's work under the old id\n");
 

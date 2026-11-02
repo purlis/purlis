@@ -57,6 +57,8 @@ struct World {
     projects: PathBuf,
     sessions: HostedSessions,
     connection: Arc<crate::hostedsessions::Connection>,
+    /// The fresh runner's host, where the world has one, for a window that comes to it anew.
+    fresh: Option<Hosting>,
     _runtime: tokio::runtime::Runtime,
 }
 
@@ -114,6 +116,7 @@ impl World {
             projects,
             sessions,
             connection,
+            fresh: None,
             _runtime: runtime,
         }
     }
@@ -130,20 +133,36 @@ impl World {
         .moving_code_with(purlis_core::codelink::Moves);
         let connection = crate::hostedsessions::tests::in_memory_with_a_runner(
             runner.clone(),
-            runner,
+            runner.clone(),
             &world._runtime,
         )
         .to_a_pool(FRESH);
         World {
             sessions: HostedSessions::on_a_pools_runner(Arc::clone(&connection), &world.root),
             connection,
+            fresh: Some(runner),
             ..world
         }
     }
 
-    /// This project's clones of `app`, sent to the runner as a start sends them.
+    /// A window started anew on the fresh runner: a connection of its own, holding nothing yet.
+    fn a_new_window_on_the_fresh_runner(&self) -> HostedSessions {
+        let runner = self.fresh.clone().expect("a fresh runner");
+        let connection = crate::hostedsessions::tests::in_memory_with_a_runner(
+            runner.clone(),
+            runner,
+            &self._runtime,
+        )
+        .to_a_pool(FRESH);
+        HostedSessions::on_a_pools_runner(connection, &self.root)
+    }
+
+    /// This project's own code and its clones of `app`, sent to the runner as a start sends them.
     fn sends_its_clones(&self) {
-        let (link, project) = self.sessions.moving_link_in_a_test().expect("held");
+        let (link, project) = self
+            .sessions
+            .link_of_a_start_in_a_test()
+            .expect("held, its own code sent");
         crate::runnercode::send_workspace(&link, &project, &self.root, "app", &Sent::default())
             .expect("sent");
     }
@@ -528,24 +547,27 @@ fn a_start_on_a_fresh_runner_that_holds_the_project_sends_no_code_over_its_work(
     let world = World::on_a_fresh_runner();
     world
         .sessions
-        .moving_link_in_a_test()
+        .link_of_a_start_in_a_test()
         .expect("held, its code sent");
     let kept = world.kept();
     let the_tasks = committed(&kept, "task.md", "the task's work\n");
+    // The task moved on to a branch of its own, leaving its commit on `main`, which a send of
+    // this machine's `main` would move.
+    git(&kept, &["checkout", "-q", "-b", "the-tasks-next"]);
     // Here, the project's own branch moves on meanwhile.
     let here = committed(&world.root, "here.md", "moved on here\n");
 
-    let again = HostedSessions::on_a_pools_runner(Arc::clone(&world.connection), &world.root);
+    let again = world.a_new_window_on_the_fresh_runner();
     again
         .moving_link_in_a_test()
         .expect("held again for a chat");
 
-    assert_eq!(git(&kept, &["rev-parse", "HEAD"]), the_tasks);
-    assert_ne!(git(&kept, &["rev-parse", "refs/heads/main"]), here);
-    assert!(
-        !kept.join("here.md").exists(),
-        "nothing of this machine's was sent"
+    assert_eq!(
+        git(&kept, &["rev-parse", "refs/heads/main"]),
+        the_tasks,
+        "the task's commit is where it left it"
     );
+    assert_ne!(git(&kept, &["rev-parse", "refs/heads/main"]), here);
 }
 
 /// **A close waits for what still runs on the runner** (#4569): a program with no end yet counts,
