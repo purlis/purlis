@@ -97,7 +97,11 @@ fn a_surface_keeps_a_fill_only_an_undrawn_look_breaks_on() {
 
 #[test]
 fn a_field_s_error_is_read_only_where_a_field_that_can_refuse_stands() {
-    let field_fell = |parts: Value| -> Vec<String> {
+    // A look's first broken floor is the one it reports, and its help is read before its error, on
+    // every ground a field stands on and each with a wash over it: its quiet words miss 4.5:1 on
+    // danger's wash over an active tab. The help here reads on all of them, so the error is read.
+    let field_fell = |part: &str, colour: &str| -> Vec<String> {
+        let parts = json!({ "field.help.text": "text.primary", part: colour });
         fallen(&shaped(json!({}), parts))
             .into_iter()
             .filter(|one| one.part.starts_with("field."))
@@ -107,14 +111,14 @@ fn a_field_s_error_is_read_only_where_a_field_that_can_refuse_stands() {
     // Danger's colour clears 4.5:1 on all three grounds a field that can refuse stands on, and
     // misses it on a hairline's ground, which a field stands on but none that can refuse does.
     assert_eq!(
-        field_fell(json!({ "field.error.text": "danger.base" })),
+        field_fell("field.error.text", "danger.base"),
         Vec::<String>::new()
     );
     // Its label stands on all of them, and is read on all of them.
-    let said = field_fell(json!({ "field.label.text": "danger.base" }));
+    let said = field_fell("field.label.text", "danger.base");
     assert!(said.iter().any(|one| one.contains("label")), "{said:?}");
     // On a ground a refusing field stands on, its error is held.
-    let said = field_fell(json!({ "field.error.text": "surface.raised" }));
+    let said = field_fell("field.error.text", "surface.raised");
     assert!(said.iter().any(|one| one.contains("error")), "{said:?}");
 }
 
