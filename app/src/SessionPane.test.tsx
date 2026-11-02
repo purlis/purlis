@@ -7,6 +7,8 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Terminal } from "@xterm/xterm";
 import { SessionPane, screenReaderMode, setScreenReaderMode } from "./SessionPane";
+import type { SlowMoment } from "./bindings";
+import { watchForStalls } from "./slowLog";
 import { ProjectShownProvider } from "./projectShown";
 import { forgetScreenReaderMode } from "./screenReader";
 import { DEFAULT_TEXT, forgetTextSizes, setTextSize } from "./textSize";
@@ -385,3 +387,56 @@ function fireInput(on: HTMLElement, value: string) {
   set?.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
+
+describe("a stall while a chat's view opens (#4725)", () => {
+  /** A stall of 300 ms, as the stall log saw it, and whether it said a view was opening. */
+  async function aStall(): Promise<boolean | undefined> {
+    let next: ((time: number) => void) | undefined;
+    const stop = watchForStalls(
+      (callback) => {
+        next = callback;
+      },
+      () => true,
+    );
+    next?.(0);
+    next?.(300);
+    stop();
+    await waitFor(() => expect(stalls.length).toBeGreaterThan(0));
+    return stalls.pop();
+  }
+
+  let stalls: boolean[] = [];
+  let open: () => void = () => {};
+
+  beforeEach(() => {
+    stalls = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "record_slow") {
+        const moment = (args as { moment: SlowMoment }).moment;
+        if (moment.kind === "stall") stalls.push(moment.opening);
+      }
+      if (cmd === "watch_session")
+        return new Promise((answer) => {
+          open = () => answer({ view: 1, columns: 80, rows: 24, scrollback: 5000, newline: null });
+        });
+      return null;
+    });
+  });
+
+  it("says a view was opening until its screen is handed to the terminal, and not after", async () => {
+    pane();
+    expect(await aStall()).toBe(true);
+
+    act(() => open());
+    await waitFor(() => expect(made[0].options.scrollback).toBe(5000));
+
+    expect(await aStall()).toBe(false);
+  });
+
+  it("says no view was opening once the pane is gone before its view opened", async () => {
+    pane();
+    cleanup();
+
+    expect(await aStall()).toBe(false);
+  });
+});

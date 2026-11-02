@@ -12,6 +12,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { listen } from "./here";
+import { countsHotChats } from "./slowLog";
 
 import {
   commands,
@@ -717,6 +718,10 @@ export function useChats(plane: PlaneId | undefined): Chats {
     };
   }, [store]);
 
+  // How many of this project's chats are working, for what the slow-answer log writes with each
+  // slow moment (`slowLog.ts`): counted when one is written, never on a move.
+  useEffect(() => countsHotChats(() => working(store.statesFor(showing.current))), [store]);
+
   // And the first answer, once there is a plane to ask about. Asked AFTER the listener is
   // registered above, which is what makes the fold below safe.
   useEffect(() => {
@@ -752,6 +757,13 @@ export function useChats(plane: PlaneId | undefined): Chats {
   // What is known about THIS project, and nothing at all about any other: `statesFor` derives
   // it rather than clearing it, so the answer is right in the render the project changes in.
   return useMemo(() => ({ store, plane }), [store, plane]);
+}
+
+/** How many chats are working: in their turn, by the state their hooks last said. */
+export function working(states: ChatStates): number {
+  let count = 0;
+  for (const state of Object.values(states.bySession)) if (state === "running") count += 1;
+  return count;
 }
 
 /**

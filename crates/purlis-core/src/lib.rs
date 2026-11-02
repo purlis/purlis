@@ -250,6 +250,7 @@ pub mod skills;
 pub mod skillspan;
 pub mod skilltools;
 pub mod skilluse;
+pub mod slowlog;
 pub mod spelledtime;
 pub mod staleclone;
 pub mod standings;

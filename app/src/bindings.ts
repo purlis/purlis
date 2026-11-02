@@ -4472,6 +4472,11 @@ export const commands = {
 	cold: number | null,
 } | null, string>(__TAURI_INVOKE("chat_usage", { plane, session })),
 	/**
+	 *  **Writes one slow moment to the log**, on a blocking thread: a file is not the window's to
+	 *  wait for, least of all while it is slow.
+	 */
+	recordSlow: (moment: SlowMoment) => typedError<null, string>(__TAURI_INVOKE("record_slow", { moment })),
+	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
 	 *  session's own chat, said beside the total and not in it; `chats` its open tasks, and any it
@@ -14263,6 +14268,19 @@ export type SkillsMissing = {
 	 */
 	beside_a_built_in: string[],
 };
+
+/**
+ *  One slow moment the window felt, as it sends it. `at` is milliseconds since 1970 by the
+ *  window's clock, a number because `specta` exports no `u64`.
+ */
+export type SlowMoment = 
+/**  An answer to `command` that took `ms`, asked at `at`, while `hot` chats were working. */
+{ kind: "answer"; command: string; ms: number; at: number | null; hot: number } | 
+/**
+ *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
+ *  working, with the tab in front (`front`) and whether a view of a chat was opening.
+ */
+{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {

@@ -94,6 +94,7 @@ mod skillpublish;
 mod skillrun;
 mod skillsources;
 mod skillstudio;
+mod slowlog;
 mod useskill;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg(all(test, unix))]

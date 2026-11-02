@@ -3,6 +3,7 @@
 
 import { useSyncExternalStore } from "react";
 import { commands } from "./bindings";
+import { WRITES_THE_LOG, answered } from "./slowLog";
 
 /**
  * **A command the core has not answered for a while is said, not waited on in silence** (#1949).
@@ -15,6 +16,7 @@ import { commands } from "./bindings";
  * (`window.__purlisLateAnswers`, `e2e/failures.ts`), so the failure names what never came.
  *
  * Commands that wait on a person or on the network by design are not timed (`WAITS_BY_DESIGN`).
+ * The one that writes the slow-answer log is not timed either (`slowLog.ts`).
  */
 
 /** How long a command may take before the window says it is late. */
@@ -115,10 +117,15 @@ function changed(): void {
 
 type Ask = (...args: unknown[]) => Promise<unknown>;
 
-/** `ask`, timed: written down here once it is {@link LATE_MS} late, and again when it answers. */
+/**
+ * `ask`, timed: written down here once it is {@link LATE_MS} late, and again when it answers. An
+ * answer that took a second or more is also written to the slow-answer log (`slowLog.ts`), and
+ * nothing is said of it in the window.
+ */
 export function timed(command: string, ask: Ask, lateMs = LATE_MS): Ask {
   return (...args: unknown[]) => {
     const from = performance.now();
+    const askedAt = Date.now();
     let mine: Late | undefined;
     const timer = setTimeout(() => {
       mine = { command, at: Date.now() - lateMs, ms: undefined };
@@ -127,11 +134,12 @@ export function timed(command: string, ask: Ask, lateMs = LATE_MS): Ask {
     }, lateMs);
     return ask(...args).finally(() => {
       clearTimeout(timer);
+      answered(command, performance.now() - from, askedAt);
       if (mine === undefined) return;
       // A new entry in its place, so whoever drew the old one sees it changed.
       const was = mine;
-      const answered = { ...was, ms: performance.now() - from };
-      late = late.map((one) => (one === was ? answered : one));
+      const came = { ...was, ms: performance.now() - from };
+      late = late.map((one) => (one === was ? came : one));
       changed();
     });
   };
@@ -148,7 +156,7 @@ export function watchTheAnswers(): void {
   watching = true;
   const asks = commands as unknown as Record<string, Ask>;
   for (const [name, ask] of Object.entries(asks)) {
-    if (typeof ask !== "function" || WAITS_BY_DESIGN.has(name)) continue;
+    if (typeof ask !== "function" || WAITS_BY_DESIGN.has(name) || name === WRITES_THE_LOG) continue;
     asks[name] = timed(name, ask.bind(commands));
   }
   (globalThis as { __purlisLateAnswers?: () => readonly Late[] }).__purlisLateAnswers = () => late;
