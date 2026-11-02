@@ -54,7 +54,7 @@ import {
   systemReducesMotion,
   type Motion,
 } from "./motion";
-import { apartChroma, chromaFor, hueOf, tintHex, type Apart } from "./tint";
+import { chromaFor, hueOf, mostOf, tintHex, type Apart } from "./tint";
 
 /**
  * Every token, in the order a theme file is easiest to read in.
@@ -696,23 +696,28 @@ function tintedAs(
   if (known !== undefined) return known;
   const hue = hueIn(theme, colour);
   if (hue === undefined) return theme;
+  const isAlone = (token: string) =>
+    theme.tint.apart.some(
+      (rule) => rule.alone === true && (rule.token === token || rule.from === token),
+    );
   const held = theme.tint.apart
     .map((rule) => ({
       alone: rule.alone === true,
       rule: {
         token: theme.values[rule.token as Token],
         tokenTinted: tokens.includes(rule.token),
+        tokenAlone: isAlone(rule.token),
         from: theme.values[rule.from as Token],
         fromTinted: tokens.includes(rule.from),
+        fromAlone: isAlone(rule.from),
         distance: rule.distance,
       },
     }))
     .filter(({ rule }) => rule.tokenTinted || rule.fromTinted);
   // The rules every held token gives way to, then those held alone too (`tint::Most`, #3130).
   const shared = held.filter((one) => !one.alone).map((one) => one.rule);
-  const most = apartChroma(shared, hue);
   const all = held.map((one) => one.rule);
-  const alone = shared.length === all.length ? most : apartChroma(all, hue);
+  const { shared: most, alone } = mostOf(all, shared, hue);
   const values = { ...theme.values };
   for (const one of tokens) {
     const value = theme.values[one as Token];

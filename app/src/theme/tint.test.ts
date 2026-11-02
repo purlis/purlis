@@ -21,8 +21,8 @@ import {
   type Theme,
   type Token,
 } from "./theme";
-import { PURLIS_LIGHT, classicAppearances } from "./handed.testkit";
-import { apartChroma, chromaFor, hueOf, oklabDistance, tintHex } from "./tint";
+import { PURLIS_LIGHT, classicAppearances, purlisAppearance } from "./handed.testkit";
+import { aloneChroma, apartChroma, chromaFor, hueOf, mostOf, oklabDistance, tintHex } from "./tint";
 
 /**
  * **A workspace's colour** (charter-app#281): a hue that tints the tokens the theme's recipe
@@ -52,6 +52,16 @@ function withTint(theme: Theme, tint: Partial<Theme["tint"]>): Theme {
   return { ...theme, tint: { ...theme.tint, ...tint } };
 }
 
+/** The fixture both suites read, `crates/purlis-core/src/theme/tint-cases.json`. */
+function sharedCases(): unknown {
+  return JSON.parse(
+    readFileSync(
+      join(process.cwd(), "..", "crates", "purlis-core", "src", "theme", "tint-cases.json"),
+      "utf8",
+    ),
+  );
+}
+
 describe("a workspace's colour", () => {
   it("reads a name as the theme's hue, a #rrggbb as the hue it has, and anything else as none", () => {
     expect(hueIn(CLASSIC_THEME, "teal")).toBe(190);
@@ -65,14 +75,9 @@ describe("a workspace's colour", () => {
 
 describe("the core's copy of the tint", () => {
   it("turns every case of the shared fixture to the same colour", () => {
-    // `crates/purlis-core/src/theme/tint-cases.json`: inputs and answers both suites read, so
-    // the tint the engine checks is the tint the window draws.
-    const cases = JSON.parse(
-      readFileSync(
-        join(process.cwd(), "..", "crates", "purlis-core", "src", "theme", "tint-cases.json"),
-        "utf8",
-      ),
-    ) as {
+    // Inputs and answers both suites read, so the tint the engine checks is the tint the window
+    // draws.
+    const cases = sharedCases() as {
       hues: { colour: string; hue: number | null }[];
       tints: { hex: string; colour: string; tinted: string }[];
       apart: {
@@ -95,7 +100,7 @@ describe("the core's copy of the tint", () => {
     // other (#3034).
     for (const { token, held } of (cases as unknown as { held: { token: string; held: boolean }[] })
       .held)
-      expect(chromaFor(token, 0.01, CLASSIC_THEME.tint.apart), token).toBe(
+      expect(chromaFor(token, 0.01, CLASSIC_THEME.tint.apart, 0.01), token).toBe(
         held ? 0.01 : Number.POSITIVE_INFINITY,
       );
     for (const { colour, hue } of cases.hues) {
@@ -106,6 +111,43 @@ describe("the core's copy of the tint", () => {
       expect(tintHex(hex, hueIn(CLASSIC_THEME, colour) ?? Number.NaN), `${hex} in ${colour}`).toBe(
         want,
       );
+    // Each side measured at the chroma it is drawn at (#3388): the first `shared_rules` rules are
+    // the shared ones, `null` is no limit and "none" a chroma no amount holds.
+    const { most: answers } = cases as unknown as {
+      most: {
+        rules: {
+          token: string;
+          token_tinted: boolean;
+          token_alone: boolean;
+          from: string;
+          from_tinted: boolean;
+          from_alone: boolean;
+          distance: number;
+        }[];
+        shared_rules: number;
+        hue: number;
+        shared: number | null | "none";
+        alone: number | null | "none";
+      }[];
+    };
+    const answer = (value: number | null | "none") =>
+      value === null ? Number.POSITIVE_INFINITY : value === "none" ? undefined : value;
+    expect(answers.length).toBeGreaterThanOrEqual(6);
+    for (const { rules, shared_rules, hue, shared, alone } of answers) {
+      const all = rules.map((rule) => ({
+        token: rule.token,
+        tokenTinted: rule.token_tinted,
+        tokenAlone: rule.token_alone,
+        from: rule.from,
+        fromTinted: rule.from_tinted,
+        fromAlone: rule.from_alone,
+        distance: rule.distance,
+      }));
+      expect(mostOf(all, all.slice(0, shared_rules), hue), `${rules[0]?.token} at ${hue}`).toEqual({
+        shared: answer(shared),
+        alone: answer(alone),
+      });
+    }
     // The accent held apart from danger: the chroma held to, and the accent drawn.
     expect(cases.apart.length).toBeGreaterThanOrEqual(40);
     // The path where no chroma keeps them apart, and the tint is dropped, is held too, and so is
@@ -132,6 +174,29 @@ describe("the core's copy of the tint", () => {
       const drawn = got === undefined ? null : accent_tinted ? tintHex(accent, hue, got) : accent;
       expect(drawn, `${accent} at ${hue}`).toBe(want);
     }
+  });
+
+  it("draws every token of a built-in as the shared fixture says the engine does", () => {
+    // Past `mostOf`: what each token is given from those answers, and the colour that makes. The
+    // engine's `every_tinted_token_is_drawn_as_the_window_draws_it` reads the same cases.
+    const { drawn: cases } = sharedCases() as {
+      drawn: { appearance: string; colour: string; tokens: Record<string, string> }[];
+    };
+    expect(cases.length).toBeGreaterThanOrEqual(6);
+    for (const { appearance, colour, tokens } of cases) {
+      const theme = purlisAppearance(appearance);
+      const tint = tinted(theme, colour);
+      expect(Object.keys(tokens).sort(), `${appearance} in ${colour}`).toEqual(
+        [...theme.tint.tabs].sort(),
+      );
+      for (const [token, want] of Object.entries(tokens))
+        expect(tint.values[token as Token], `${token} of ${appearance} in ${colour}`).toBe(want);
+    }
+    // The path where the sides held alone are drawn as written and the strip still turns.
+    const asWritten = (one: (typeof cases)[number]) =>
+      one.tokens["accent.base"] === purlisAppearance(one.appearance).values["accent.base"] &&
+      one.tokens["layer.chat"] !== purlisAppearance(one.appearance).values["layer.chat"];
+    expect(cases.some(asWritten)).toBe(true);
   });
 });
 
@@ -413,6 +478,29 @@ describe("the consent floors under every tint (#2526)", () => {
     expect(tint.values["accent.fill"]).toBe("#f1edda");
   });
 
+  it("draws a rule between two chromas with its sides as far apart as the core does", () => {
+    // #3388: the accent gives way alone to the waiting amber, Keep blocked's edge keeps the shared
+    // chroma, and at this colour the two were drawn nearer than Allow's floor.
+    const edges = {
+      ...CLASSIC_THEME,
+      values: {
+        ...CLASSIC_THEME.values,
+        "accent.base": "#4d55df",
+        "border.control": "#014c88",
+        "state.waiting": "#ae2ca1",
+        "danger.base": "#00c000",
+      },
+      tint: { ...CLASSIC_THEME.tint, tabs: ["accent.base", "border.control"] },
+    } as Theme;
+    const tint = tinted(edges, "#240c1b");
+    expect(
+      oklabDistance(tint.values["accent.base"], tint.values["border.control"]),
+    ).toBeGreaterThanOrEqual(0.1);
+    expect(
+      oklabDistance(tint.values["accent.base"], tint.values["state.waiting"]),
+    ).toBeGreaterThanOrEqual(0.1);
+  });
+
   it("is handed a rule keeping the accent and its edges apart from waiting, held alone", () => {
     // #3130: only the accent and the edges drawn in it give way to the waiting amber.
     for (const token of ["accent.base", "focus.ring", "list.selected-edge", "accent.fill-edge"])
@@ -426,6 +514,51 @@ describe("the consent floors under every tint (#2526)", () => {
     expect(chromaFor("accent.base", 0.05, apart, 0.01)).toBe(0.01);
     expect(chromaFor("accent.surface", 0.05, apart, 0.01)).toBe(0.05);
   });
+
+  it("draws a side held alone as written where no chroma holds it, as the engine does", () => {
+    const apart = CLASSIC_THEME.tint.apart;
+    expect(chromaFor("accent.base", Number.POSITIVE_INFINITY, apart, undefined)).toBeUndefined();
+    expect(chromaFor("accent.surface", 0.05, apart, undefined)).toBe(0.05);
+  });
+
+  it("remembers the two searches apart: the same rules answer differently in each", () => {
+    const side = { tokenTinted: true, fromTinted: true, distance: 0.1 };
+    const rules = [
+      { ...side, token: "#4d55df", tokenAlone: true, from: "#014c88" },
+      { ...side, token: "#4d55df", tokenAlone: true, from: "#ae2ca1", fromTinted: false },
+    ];
+    const hue = 343.88809430757044;
+    expect(apartChroma(rules, hue)).toBe(0.11);
+    expect(aloneChroma(rules, [], Number.POSITIVE_INFINITY, hue)).toBe(0.095);
+  });
+
+  it.each([
+    ["light", "yellow"],
+    ["dark-high-contrast", "yellow"],
+    ["dark-high-contrast", "green"],
+  ])("keeps the accent of Purlis %s as written in a %s workspace", (id, colour) => {
+    const theme = purlisAppearance(id);
+    const tint = tinted(theme, colour);
+    // The sides held alone, as the engine's `chroma_of` draws them, while the strip still turns.
+    for (const token of ["accent.base", "focus.ring", "list.selected-edge"] as const)
+      expect(tint.values[token], token).toBe(theme.values[token]);
+    expect(tint.values["layer.chat"]).not.toBe(theme.values["layer.chat"]);
+  });
+
+  it.each(["light", "dark", "dark-high-contrast"])(
+    "holds every rule on Purlis %s at every whole degree",
+    (id) => {
+      const theme = purlisAppearance(id);
+      for (let degree = 0; degree < 360; degree++) {
+        const tint = tinted(theme, tintHex("#c0392b", degree));
+        for (const rule of theme.tint.apart)
+          expect(
+            oklabDistance(tint.values[rule.token as Token], tint.values[rule.from as Token]),
+            `${rule.token} from ${rule.from} at ${degree}`,
+          ).toBeGreaterThanOrEqual(rule.distance);
+      }
+    },
+  );
 
   it.each(ACCENT_KIN)("keeps %s apart from danger at every whole degree", (token) => {
     // The token written as danger turned to teal: apart as written, one colour with danger under
