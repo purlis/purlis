@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793614775522,
+  "lastUpdate": 1793616013374,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36162,6 +36162,48 @@ window.BENCHMARK_DATA = {
             "value": 102.23047600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.567, 101.098, 102.230, 102.458, 102.555 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5aac62839712ef4e8439349435335d4a5aadea4e",
+          "message": "Git leftovers: a push names its commit, a filter stays off the network (#4593)\n\n* Tests for #4515, #4516, #4400, #4401 and #4402, before their fixes\n\nRed run: the upload is stubbed, as #4462's red was, so that the end-to-end\ntests of #4516 are seen to fail for having uploaded nothing, and the change\npush reads the commit planned while git is still handed the ref's name, so\nthat a ref spoiled past the plan is what deletes the remote branch. The\nnext commits take both back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* Change push: push the commit planned, by its id (#4515)\n\ngit takes a local ref holding garbage for a ref that is not there, and a push\nof that name for a push of nothing: it deletes the remote branch and exits 0.\nA push now names the commit plan resolved, which the window showed and the\nupload and the scan read, and a branch no longer at it is not pushed.\n\nCloses #4515\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* Git runner: the LFS store's check takes only a .git git itself takes (#4402)\n\nA subfolder's .git with a HEAD file passed the check though git climbs past\nit. It now requires what git requires (is_git_directory): a HEAD git reads as\none, and objects and refs it can search. A link at any of them, or a\ncommondir, holds, as anything it cannot read does.\n\nCloses #4402\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* Git runner: a filter the runner keeps stays off the network in any repository (#4400)\n\nA chat can commit the .lfsconfig that says where a filter goes, and this git\nruns outside its sandbox, so a filter that may download reaches a host a chat\nchose, wired clone or not. The filter kept in a wired clone is told never to\ndownload; now so is any kept filter, a call off the network empties the\nperson's helpers, and a store that is not the repository's own holds it.\n\nMoves a contract on purpose: a checkout through purlis's git in a repository\nno policy wired now leaves pointers, as a wired clone's does.\n\nCloses #4400\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* Git runner: a worktree add holds what its checkout will read (#4401)\n\nThe listing is taken in the folder the call starts in, and the checkout runs\nin the new branch folder, on the new branch, with a git directory of its own.\nAn includeIf in the repository's own config can hold there and not here, and\na filter it names ran unheld (measured: onbranch: and gitdir:, git 2.50.1). A\npath in a worktree config is read from where the new folder's copy is. Where\neither is there the runner cannot tell, and refuses.\n\nCloses #4401\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* LFS upload: end to end from a wired clone, against real git-lfs (#4516)\n\nThe tests came with the red commit: a push, a save and a change push from a\nclone the git policy wired, and a first publish, each uploading before the\nref moves, signed by what the product finds on a machine of the test's own: a\nfake gh first on PATH, which records that it ran, or for a first publish the\nwindow's own helper, with gh not run. The CI job real git-lfs runs them by\nmodule name. This takes back the red run's stub of the upload, and carries\nthe changelog fragment for the five tickets.\n\nCloses #4516\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* Tests: wire a clone before the rewrite, and what the red run showed\n\nThe red run failed two wired-push tests in their own setup: the git policy\ngoes by the address the remote's rewrite had already moved. Also a clearer\nassert of a pointer, and a type clippy reads as too complex.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* Review: every push by id, a branch git would read as syntax, git's own HEAD\n\nThe adversarial review of da73e7880 found:\n- HEAD:refs/heads/x was only measured over garbage: over all zeros it deletes\n  the remote branch and exits 0. A repo save and a plane's three pushes now\n  name the commit, through ^{commit}, which refuses both (#4515).\n- A committed member branch with a colon ended the refspec at another branch.\n  change push refuses what git check-ref-format refuses (#4515).\n- reads_as_a_head took a .git git climbs past: it stripped Unicode's white\n  space where git strips its own, and read a byte more than git does (#4402).\n- A clone through run_network was never told to skip the filter (#4400).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* Review: a push's source is a commit no ref name can stand for\n\nThe second review of 50b671aec found a regression in the fix: a push reads a\nsource of forty hex digits as a ref's name first, so a planted refs/heads/<id>\nholding garbage deleted the branch with no race, and one holding another\ncommit sent that commit. Every push now hands git <id>^{commit}:<full ref>,\nthrough one helper (#4515).\n\nAlso from it:\n- --abbrev-ref answers heads/main where a tag is called main, which sent a\n  plane's save to a new branch: the full ref is asked for instead.\n- A first push names its commit too, the commit scanned is the commit pushed,\n  and the branch follows origin without --set-upstream.\n- A repo save holds its branch to git's grammar, as change push does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* Review: a plane pushes the commit it scanned, and a branch's name is its own\n\nThe third review of 673f11c76 found the security properties holding, and:\n- branch_of used symbolic-ref --short, which answers heads/main where a tag is\n  called main, and refused a first publish: it reads the full ref.\n- A plane's HEAD on a symref outside refs/heads made its push create a tag: it\n  is left to fail.\n- A plane's push read HEAD again after its scan: push_commit is handed the\n  commit scanned, which the retry refreshes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* Tests: the push's new argv, and what an LFS branch folder can show\n\nThree tests still said what the head no longer does, none of them a fault in the change:\nevery git call of a push now includes check-ref-format; the GitLab push names a commit; and\na file written over a checked-out pointer differs from the index in size, which plain git\nreads as changed with no filter asked (measured on git 2.50.1, no LFS). The branch folder's\nclean filter is now shown by what an add stores.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n* Test: the Onboarding relaunch waits for what it reads (#4644)\n\nThe step nav goes when the kept finished_once is read, and the Create a project button can be\ndrawn first, so the check read a state that had not settled. It dropped web (part 3 of 4) on two\nattempts of the same head. It waits now, with Testing Library's waitFor, as CLAUDE.md asks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDFV53M60MN712SDCTK4VQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T08:08:48Z",
+          "tree_id": "e741c5e82fcb80515b808faf61316aa760387957",
+          "url": "https://github.com/purlis/purlis/commit/5aac62839712ef4e8439349435335d4a5aadea4e"
+        },
+        "date": 1793616008487,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5251,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.515, 0.523, 0.525, 0.530, 0.535 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4320295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.322, 16.341, 16.432, 16.461, 16.473 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9812675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.172, 101.846, 101.981, 102.033, 102.246 ms"
           }
         ]
       }
