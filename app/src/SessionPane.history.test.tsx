@@ -57,14 +57,16 @@ let opened: { history: number | null; output: Channel<string> }[] = [];
 let unwatched: number[] = [];
 
 /** A host that keeps `LAST` lines and draws a view with the newest `history` of its history,
- *  or every line where it pages none, as a host before 1.68 does. */
-function aHost(pages: boolean) {
+ *  or every line where it pages none, as a host before 1.68 does. `again`, when given, is what
+ *  it does before answering a view after the first: refuse it, or wait to be let answer. */
+function aHost(pages: boolean, again?: () => Promise<void>) {
   opened = [];
   unwatched = [];
-  mockIPC((cmd, args) => {
+  mockIPC(async (cmd, args) => {
     if (cmd === "watch_session") {
       const { history, output } = args as { history: number | null; output: Channel<string> };
       opened.push({ history, output });
+      if (opened.length > 1 && again) await again();
       const kept = LAST - ROWS;
       const older = pages && history !== null ? Math.max(0, kept - history) : 0;
       return {
@@ -164,6 +166,46 @@ describe("a chat's terminal and its history (#4742)", () => {
     await waitFor(() => expect(terminal().buffer.active.length).toBe(LAST + 1));
     const last = terminal().buffer.active.getLine(LAST)?.translateToString(true);
     expect(last).toBe("from the new one");
+  });
+
+  /** The pane's view drawn, then scrolled to the top, so it asks for a second view. */
+  async function scrolledToTheTop() {
+    pane();
+    await waitFor(() => expect(opened).toHaveLength(1));
+    draws(1, LAST - ROWS - FIRST_PAGE + 1);
+    await waitFor(() => expect(terminal().buffer.active.length).toBe(FIRST_PAGE + ROWS));
+    act(() => terminal().scrollToTop());
+    await waitFor(() => expect(opened).toHaveLength(2));
+  }
+  const lastLine = () => {
+    const buffer = terminal().buffer.active;
+    return buffer.getLine(buffer.length - 1)?.translateToString(true);
+  };
+
+  it("keeps drawing the view it has when the page is refused", async () => {
+    aHost(true, () => Promise.reject(new Error("the host is busy")));
+    await scrolledToTheTop();
+    // Long enough for the refusal to have been taken in.
+    await new Promise((settled) => setTimeout(settled, 50));
+
+    act(() => opened[0].output.onmessage("\r\nstill streaming"));
+
+    await waitFor(() => expect(lastLine()).toBe("still streaming"));
+    expect(unwatched).toEqual([]);
+  });
+
+  it("keeps drawing the view it has until the new one answers", async () => {
+    let answer = () => {};
+    aHost(true, () => new Promise((answered) => (answer = answered)));
+    await scrolledToTheTop();
+
+    act(() => opened[0].output.onmessage("\r\nwhile the page is asked for"));
+    await waitFor(() => expect(lastLine()).toBe("while the page is asked for"));
+
+    act(() => answer());
+    await waitFor(() => expect(unwatched).toEqual([1]));
+    draws(2, 1);
+    await waitFor(() => expect(terminal().buffer.active.length).toBe(LAST));
   });
 
   it("asks for nothing more of a host that drew all of it", async () => {

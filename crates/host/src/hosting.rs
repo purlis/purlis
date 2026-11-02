@@ -54,6 +54,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
@@ -273,9 +274,9 @@ pub trait Running: Send + Sync + 'static {
         (kind == ViewKind::Terminal).then(|| self.source())
     }
     /// **Its terminal view, drawn with at most `history` lines of history** (1.68, #4742), and
-    /// how many lines its terminal keeps above them now. `None` where it pages none: a view
-    /// of it then draws all of its history.
-    fn paged_view(&self, history: u32) -> Option<(Arc<dyn Source>, u32)> {
+    /// where each attach of it counts the lines its terminal keeps above them. `None` where it
+    /// pages none: a view of it then draws all of its history.
+    fn paged_view(&self, history: u32) -> Option<(Arc<dyn Source>, Older)> {
         let _ = history;
         None
     }
@@ -454,12 +455,15 @@ impl Running for Terminal {
         Arc::new(TerminalSource(Arc::clone(&self.0), None))
     }
 
-    fn paged_view(&self, history: u32) -> Option<(Arc<dyn Source>, u32)> {
+    fn paged_view(&self, history: u32) -> Option<(Arc<dyn Source>, Older)> {
         let most = usize::try_from(history).unwrap_or(usize::MAX);
-        let older = self.0.history().saturating_sub(most);
+        let older = Older::default();
         Some((
-            Arc::new(TerminalSource(Arc::clone(&self.0), Some(most))),
-            u32::try_from(older).unwrap_or(u32::MAX),
+            Arc::new(TerminalSource(
+                Arc::clone(&self.0),
+                Some((most, older.clone())),
+            )),
+            older,
         ))
     }
 
@@ -496,15 +500,37 @@ struct Shown {
     history: Option<u32>,
 }
 
+/// **How many lines of history a paged view's latest snapshot left out above those it drew**
+/// (#4742): counted by each attach under the lock its snapshot is taken in, so output that
+/// arrives between the view being asked for and its snapshot cannot put the count off.
+#[derive(Clone, Default)]
+pub struct Older(Arc<AtomicU32>);
+
+impl Older {
+    /// The snapshot just taken left out `lines`.
+    pub fn counted(&self, lines: usize) {
+        self.0
+            .store(u32::try_from(lines).unwrap_or(u32::MAX), Ordering::Relaxed);
+    }
+
+    fn lines(&self) -> u32 {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
 /// A terminal as a view shows it: its screen as it is now, then what its program writes after,
 /// followed without a thread ([`Session::follow`]): with at most the lines of history it names,
-/// each time it is attached (#4742), or all of them.
-struct TerminalSource(Arc<Session>, Option<usize>);
+/// each time it is attached (#4742), counting those left out, or all of them.
+struct TerminalSource(Arc<Session>, Option<(usize, Older)>);
 
 impl Source for TerminalSource {
     fn attach(&self) -> Attachment {
-        let following = match self.1 {
-            Some(history) => self.0.follow_within(history),
+        let following = match &self.1 {
+            Some((history, older)) => {
+                let following = self.0.follow_within(*history);
+                older.counted(following.older);
+                following
+            }
             None => self.0.follow(),
         };
         Attachment {
@@ -2790,7 +2816,8 @@ impl Hosting {
             cols: size.columns,
             rows: size.rows,
             kind: Some(kind),
-            older,
+            // Counted by the attach the view just opened with, from the snapshot it drew.
+            older: older.map(|older| older.lines()),
         }))
     }
 

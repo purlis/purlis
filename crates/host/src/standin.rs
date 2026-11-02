@@ -21,7 +21,7 @@ use purlis_session_protocol::session::{
 };
 
 use crate::confining::{Askable, Confining, Tell};
-use crate::hosting::{Looked, Poke, Run, Running, Save, Saving, ToSave, Working};
+use crate::hosting::{Looked, Older, Poke, Run, Running, Save, Saving, ToSave, Working};
 use crate::hostrecord::Started;
 
 /// What a stand-in program was asked, and what it wrote.
@@ -33,6 +33,9 @@ pub struct Seen {
     pub sizes: Vec<Size>,
     pub stopped: bool,
     pub written: Vec<u8>,
+    /// What it writes just as a view of it is attached, ahead of that view's snapshot: output
+    /// that arrives between a view being asked for and its snapshot being taken.
+    pub before_a_view: Vec<u8>,
     watching: Vec<mpsc::UnboundedSender<Bytes>>,
     ends: Option<Box<dyn FnOnce(Exit) + Send>>,
 }
@@ -76,13 +79,20 @@ impl Source for StandIn {
 }
 
 impl StandIn {
-    /// A view whose snapshot is the last `history` lines it wrote, or all of them.
-    fn attach_within(&self, history: Option<usize>) -> Attachment {
+    /// A view whose snapshot is the last `history` lines it wrote, counting in `older` those it
+    /// left out, or all of them.
+    fn attach_within(&self, history: Option<(usize, &Older)>) -> Attachment {
         let mut seen = self.seen();
+        let arrived = std::mem::take(&mut seen.before_a_view);
+        seen.written.extend_from_slice(&arrived);
         let (live, mut follows) = mpsc::unbounded_channel();
         seen.watching.push(live);
         let lines = lines(&seen.written);
-        let from = history.map_or(0, |most| lines.len().saturating_sub(most));
+        let from = history.map_or(0, |(most, older)| {
+            let from = lines.len().saturating_sub(most);
+            older.counted(from);
+            from
+        });
         Attachment {
             snapshot: Bytes::from(lines[from..].concat()),
             live: futures::stream::poll_fn(move |cx| follows.poll_recv(cx)).boxed(),
@@ -96,11 +106,11 @@ fn lines(written: &[u8]) -> Vec<&[u8]> {
 }
 
 /// A stand-in's view that draws the last lines it wrote (#4742).
-struct Paged(StandIn, usize);
+struct Paged(StandIn, usize, Older);
 
 impl Source for Paged {
     fn attach(&self) -> Attachment {
-        self.0.attach_within(Some(self.1))
+        self.0.attach_within(Some((self.1, &self.2)))
     }
 }
 
@@ -121,13 +131,10 @@ impl Running for StandIn {
     }
 
     /// Its history is every line it wrote.
-    fn paged_view(&self, history: u32) -> Option<(Arc<dyn Source>, u32)> {
+    fn paged_view(&self, history: u32) -> Option<(Arc<dyn Source>, Older)> {
         let most = usize::try_from(history).unwrap_or(usize::MAX);
-        let older = lines(&self.seen().written).len().saturating_sub(most);
-        Some((
-            Arc::new(Paged(self.clone(), most)),
-            u32::try_from(older).unwrap_or(u32::MAX),
-        ))
+        let older = Older::default();
+        Some((Arc::new(Paged(self.clone(), most, older.clone())), older))
     }
 
     fn stop(&self) {
