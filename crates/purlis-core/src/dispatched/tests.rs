@@ -3258,3 +3258,38 @@ fn a_question_asked_in_a_form_stands_past_a_later_turn_and_goes_once_answered() 
     ledger.forget(OWN_CHAT, None);
     assert_eq!(ledger.asking(OWN_CHAT), None);
 }
+
+#[test]
+fn a_secret_remembered_after_a_message_was_kept_is_masked_where_it_is_read() {
+    // #4843: kept masked, then a vault value it holds was read; the strip, the Inbox card and
+    // the quiz read it masked from then on.
+    let value = "late-remembered vault value 4843";
+    let mut ledger = Ledger::default();
+    ledger.said_last(
+        OWN_CHAT,
+        format!("The password was {value}, is that right?"),
+    );
+    ledger.said_last(OWN_CHAT, format!("Again: {value}."));
+    ledger.asks_the_person(OWN_CHAT, format!("Use {value}?"));
+    assert!(
+        ledger
+            .last_said(OWN_CHAT)
+            .is_some_and(|said| said.contains(value))
+    );
+
+    crate::secrets::seen::remember(value);
+
+    let last = ledger.last_said(OWN_CHAT).expect("kept").to_owned();
+    assert_eq!(last, "Again: ***.");
+    assert_eq!(
+        ledger.said_before(OWN_CHAT),
+        ["The password was ***, is that right?"]
+    );
+    assert_eq!(ledger.asking(OWN_CHAT), Some("Use ***?"));
+    assert!(
+        ledger
+            .said(OWN_CHAT)
+            .iter()
+            .all(|said| !said.contains(value))
+    );
+}

@@ -1300,21 +1300,27 @@ impl Talk {
         // The turn had it, and the app went before it wrote so.
         let left = file.as_ref().is_some_and(|file| file.exists());
         let taken = file.is_some() && !left;
-        let unhanded = kept.handed_at.is_none() && !left;
-        self.questions.insert(
-            task,
-            Question {
-                number: kept.number,
-                text: kept.text,
-                file: file.filter(|_| left),
-                shown: kept.shown,
-                answer: None,
-                standing: kept.standing,
-                asked_at: kept.asked_at,
-                handed_at: if unhanded { Some(now) } else { kept.handed_at },
-                clock_only: kept.clock_only && !taken,
-            },
-        );
+        // A taken file no turn was recorded as having had (#4843): that turn had it, and its
+        // `question.shown` is written now, as #4653's turn after a stuck chat's clock is. Its
+        // time starts here unless that clock started it already.
+        let had_unsaid = taken && (kept.handed_at.is_none() || kept.clock_only);
+        let unhanded = kept.handed_at.is_none() && !left && !had_unsaid;
+        let mut question = Question {
+            number: kept.number,
+            text: kept.text,
+            file: file.filter(|_| left),
+            shown: kept.shown,
+            answer: None,
+            standing: kept.standing,
+            asked_at: kept.asked_at,
+            handed_at: if unhanded { Some(now) } else { kept.handed_at },
+            clock_only: kept.clock_only && !taken,
+        };
+        if had_unsaid {
+            question.clock_only = true;
+            question.had_by_a_turn(task, now, &mut self.trail);
+        }
+        self.questions.insert(task, question);
         self.save();
         Restored::Open
     }
