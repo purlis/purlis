@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793640072798,
+  "lastUpdate": 1793641926727,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36498,6 +36498,48 @@ window.BENCHMARK_DATA = {
             "value": 101.683764,
             "unit": "ms",
             "extra": "median of 5 runs: 101.495, 101.602, 101.684, 101.732, 102.068 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "dbf5edb4121889e2f72dd836c41a950c2f065d4f",
+          "message": "A task on a runner follows the task route (#4560) (#4789)\n\n* Tests: a task on a runner follows the task route (#4560)\n\nA task on a pool's runner asks its asking chat over the runner's link, is\nanswered and can be passed on; an asking chat lost with its runner sends the\nquestion to the person at once; and one whose link is down holds it for the\nwait, then sends it to the person. The last fails: a chat reconnecting takes\nno turn, so its question's wait never starts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DYBR4KA8TQ6HQ4AS5Q1AEP\nPurlis-Persona: steward\n\n* Test: a runner chat's queued message is refused saying nothing was sent (#4560)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DYBR4KA8TQ6HQ4AS5Q1AEP\nPurlis-Persona: steward\n\n* A task on a runner follows the task route (#4560)\n\nAn asking chat whose runner's link is down can take no turn the window hears,\nso no turn handed it the question and its wait never started: the question\nstayed with it until the link came back, or for good. A chat reconnecting now\nstarts its question's wait as a stuck chat does; a link back within it costs\nnothing, and past it the question reaches the person.\n\nAnd a dispatch message a chat on a runner queued is on the runner's disk, which\nthis app does not read (#4804): it is refused saying nothing was sent, not that\nthe app holds no record of it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DYBR4KA8TQ6HQ4AS5Q1AEP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T13:57:14Z",
+          "tree_id": "bdba6d48d19c39cf4cd863265d8a9b7b956e360e",
+          "url": "https://github.com/purlis/purlis/commit/dbf5edb4121889e2f72dd836c41a950c2f065d4f"
+        },
+        "date": 1793641922139,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4041435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.383, 0.391, 0.404, 0.414, 0.440 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3551635,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.332, 16.333, 16.355, 16.411, 16.492 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.039838,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.372, 101.628, 102.040, 102.041, 102.113 ms"
           }
         ]
       }
