@@ -587,13 +587,24 @@ fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
         };
         assert_eq!(outside.needs(), needs, "{file}");
         let commands = steps.iter().flat_map(|s| run_lines(s)).collect::<Vec<_>>();
+        // #4784: one daemon refuses to pull the same index a second time for another platform,
+        // so the index is read with no sign-in and each architecture's own image is pulled by
+        // the digest the index gives it.
         for line in [
-            "docker pull --platform linux/amd64 \"$LINE\"",
-            "docker pull --platform linux/arm64 \"$LINE\"",
+            "index=$(docker buildx imagetools inspect \"$LINE\" --format '{{json .Manifest}}')",
+            "for platform in linux/amd64 linux/arm64; do",
+            "docker pull --platform \"$platform\" \"${LINE%@*}@$digest\"",
             "cosign verify \"$LINE\" \\",
         ] {
             assert!(commands.iter().any(|l| l == line), "{file}: {line}");
         }
+        assert!(
+            commands
+                .iter()
+                .filter(|l| l.starts_with("docker pull"))
+                .all(|l| !l.ends_with("\"$LINE\"")),
+            "{file}: the index itself is never pulled: {commands:#?}"
+        );
         // The same exact signer `index` verifies, never a pattern.
         let exact = if image.released {
             "--certificate-identity \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF\" \\"
