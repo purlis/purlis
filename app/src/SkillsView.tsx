@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   commands,
   type ChatSkill,
@@ -196,19 +196,48 @@ function scopeOfRow(row: ListedSkill, place: string | undefined, persona: string
  * its `SKILL.md` in a tab; New skill and Make my own copy are the studio's own. Only the folded
  * groups are kept, in the layout file (`skillsViewPrefs.ts`).
  */
-export function SkillsView({
-  plane,
-  workspace,
-  chat,
-  onOpenView,
-  onUseSkill,
-  onShowInExplorer,
-  onRestart,
-}: {
+export const SkillsView = memo(SkillsViewDrawn, sameView);
+
+/** **The same view** (#4351): the window describes the chat in front afresh each time it draws,
+ *  and the view, kept once shown, draws every skill's card. The same chat draws nothing again. */
+function sameView(was: SkillsViewProps, now: SkillsViewProps): boolean {
+  return sameFields(was, now, (key, a, b) =>
+    key === "chat"
+      ? sameFrontChat(a as FrontChat | undefined, b as FrontChat | undefined)
+      : Object.is(a, b),
+  );
+}
+
+/** Whether two descriptions of a chat describe it the same, field by field. */
+export function sameFrontChat(was: FrontChat | undefined, now: FrontChat | undefined): boolean {
+  return sameFields(was, now, (field, x, y) =>
+    field === "branchFolder"
+      ? sameFields(x as object | undefined, y as object | undefined)
+      : Object.is(x, y),
+  );
+}
+
+/** Whether `was` and `now` hold the same value under every key either has, each compared by
+ *  `same` (identity unless given): every field, so one added later is never left out. */
+function sameFields<T extends object>(
+  was: T | undefined,
+  now: T | undefined,
+  same: (key: string, a: unknown, b: unknown) => boolean = (_, a, b) => Object.is(a, b),
+): boolean {
+  if (was === now) return true;
+  if (was === undefined || now === undefined) return false;
+  const a = was as Record<string, unknown>;
+  const b = now as Record<string, unknown>;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].every((key) => same(key, a[key], b[key]));
+}
+
+export type SkillsViewProps = {
   plane: string;
   /** The title bar's workspace, or `undefined` at the project's root. */
   workspace: string | undefined;
-  /** The chat in front, while a chat tab is in front. */
+  /** The chat in front, while a chat tab is in front; the chat last in front, while a tab that
+   *  is not a chat is (ADR 0102, amended 2026-11-02). */
   chat?: FrontChat;
   onOpenView: (view: ViewRef, title: string) => void;
   /** Opens Use skill… for chat `session` on `skill`. */
@@ -218,7 +247,17 @@ export function SkillsView({
   onShowInExplorer: (place: ExplorerPlace) => void;
   /** Restarts chat `session` on its conversation: what a chat whose skills changed is offered. */
   onRestart?: (session: number) => void | Promise<void>;
-}) {
+};
+
+function SkillsViewDrawn({
+  plane,
+  workspace,
+  chat,
+  onOpenView,
+  onUseSkill,
+  onShowInExplorer,
+  onRestart,
+}: SkillsViewProps) {
   const [folded, onFold] = useFoldedGroups();
   // Where the rows are read for, and where the switch and the pin act: the chat's own workspace
   // while one is in front, else the title bar's.

@@ -240,7 +240,7 @@ import {
   type ViewId,
 } from "./regions";
 import { drawnOnlyPresent, previewsDrawn, type ViewPlace } from "./sideViews";
-import { SkillsView, type FrontChat } from "./SkillsView";
+import { SkillsView, sameFrontChat, type FrontChat, type SkillsViewProps } from "./SkillsView";
 import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
@@ -4582,6 +4582,9 @@ export const PlaneView = memo(function PlaneView({
   /** **The chat a skill's page uses a skill in** (#3682): the chat last in front, kept while the
    *  studio is looked at beside or instead of it, until its tab closes. Never a shell's. */
   const [lastChat, setLastChat] = useState<number>();
+  /** The chat last in front as the Skills view was told it (#4351): what it keeps showing while
+   *  a tab that is not a chat is in front. */
+  const [skillsKept, setSkillsKept] = useState<FrontChat>();
   const chatNow =
     frontSession !== undefined && !shells.has(frontSession) ? frontSession : undefined;
   // Kept as it is drawn (React's state adjusted while rendering, not in an effect).
@@ -6744,6 +6747,32 @@ export const PlaneView = memo(function PlaneView({
         });
     },
     [plane, setChatSkills],
+  );
+  /**
+   * **What the Skills view's cards act through, held still** (#4351): the view, kept once shown,
+   * draws every skill's card, and draws them again only for something of its own. Opening a tab
+   * moves `showView` and the restart's ask with the window around them; these call whichever is
+   * current.
+   */
+  const skillsActs = useRef({ showView, openUseSkill, revealInExplorer, askRestart });
+  useLayoutEffect(() => {
+    skillsActs.current = { showView, openUseSkill, revealInExplorer, askRestart };
+  });
+  const skillsOpenView = useCallback<SkillsViewProps["onOpenView"]>(
+    (view, title) => skillsActs.current.showView(view, title),
+    [],
+  );
+  const skillsUse = useCallback<SkillsViewProps["onUseSkill"]>(
+    (session, skill) => skillsActs.current.openUseSkill(session, skill),
+    [],
+  );
+  const skillsShowInExplorer = useCallback<SkillsViewProps["onShowInExplorer"]>(
+    (place) => skillsActs.current.revealInExplorer(place),
+    [],
+  );
+  const skillsRestart = useCallback(
+    (session: number) => skillsActs.current.askRestart(session),
+    [],
   );
   /** Use skill…, from a chat tab's menu or the palette. */
   const useSkill = useCallback(
@@ -9433,7 +9462,7 @@ export const PlaneView = memo(function PlaneView({
   /** **The chat in front, whose skills the Skills view shows** (#3266, #3693): the one shown in
    *  the pane with the keyboard, never a shell's, which runs no tool with skills. */
   const frontWorkspace = frontSession === undefined ? undefined : filedIn(frontSession);
-  const skillsChat: FrontChat | undefined =
+  const chatInFront: FrontChat | undefined =
     frontSession === undefined || shells.has(frontSession)
       ? undefined
       : {
@@ -9447,6 +9476,20 @@ export const PlaneView = memo(function PlaneView({
             ? {}
             : { branchFolder: { repo: worktree.repo, piece: worktree.piece } }),
         };
+  /** **While a tab that is not a chat is in front** (#4351; ADR 0102, amended 2026-11-02), such
+   *  as the Skill studio's: the chat last in front, as it was described there, until its tab
+   *  closes. Its set is not read again, and its cards are not drawn again. Its state is
+   *  {@link skillsKept}, held above the window's early return. */
+  // Kept as it is drawn (React's state adjusted while rendering, not in an effect).
+  if (chatInFront !== undefined && !sameFrontChat(chatInFront, skillsKept))
+    setSkillsKept(chatInFront);
+  const skillsChat: FrontChat | undefined =
+    chatInFront ??
+    (frontTab !== undefined &&
+    skillsKept !== undefined &&
+    tabHolding(tabs, skillsKept.session) !== undefined
+      ? skillsKept
+      : undefined);
 
   const view = (
     <ChatToUseHere.Provider value={chatToUse}>
@@ -9638,10 +9681,10 @@ export const PlaneView = memo(function PlaneView({
                   plane={plane}
                   workspace={ofWorkspace}
                   chat={skillsChat}
-                  onOpenView={showView}
-                  onUseSkill={openUseSkill}
-                  onShowInExplorer={revealInExplorer}
-                  onRestart={askRestart}
+                  onOpenView={skillsOpenView}
+                  onUseSkill={skillsUse}
+                  onShowInExplorer={skillsShowInExplorer}
+                  onRestart={skillsRestart}
                 />
               ),
               // **Changes** (#1676, B-7): what the bottom region drew, the same content.
