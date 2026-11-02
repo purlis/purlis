@@ -386,8 +386,7 @@ describe("what the window does with the chats the core already has", () => {
     // Every tab is told with each change (#4751): the front tab is the one holding chat 8.
     await vi.waitFor(() => {
       const said = of("window_layout", asked).slice(-1)[0]?.args as
-        | { plane: string; layout: LaidOut }
-        | undefined;
+        { plane: string; layout: LaidOut } | undefined;
       expect(said?.plane).toBe("/home/dev/plane");
       expect(said?.layout.tabs.find((tab) => tab.front)?.tree).toEqual({ kind: "chat", chat: 8 });
     });

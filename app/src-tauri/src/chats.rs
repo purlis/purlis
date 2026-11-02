@@ -6109,7 +6109,7 @@ impl Chats {
             if superseded(chat, Some(session)) {
                 return None;
             }
-            Some(Chat {
+            Some(retired(Chat {
                 active: front == Some(session),
                 // The number it is actually running under, which is the key its workspace
                 // pointer and session lock are written at. Taken from the session and not
@@ -6122,8 +6122,7 @@ impl Chats {
                 // back carried from an earlier run.
                 model: models.get(&session).cloned(),
                 ..chat.clone()
-            })
-            .map(retired)
+            }))
         }));
         Record {
             chats,

@@ -1682,7 +1682,13 @@ export const PlaneView = memo(function PlaneView({
             .filter((chat) => chat.from?.tab !== false && !back.placed.has(chat.session))
             .reduce(
               (tabs, chat) =>
-                openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+                openTab(
+                  tabs,
+                  chat.session,
+                  chat.name,
+                  whoOf(chat.persona, chat.harness),
+                  chat.label,
+                ),
               back.tabs,
             );
           lastFront.current = { ...lastFront.current, ...back.fronts };

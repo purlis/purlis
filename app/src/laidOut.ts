@@ -142,8 +142,7 @@ export function withShare(tabs: Tabs, id: number, path: string, share: number): 
   const held = Math.round(Math.min(WHOLE, Math.max(0, share)));
   const at = (layout: Layout, rest: string): Layout => {
     if (layout.kind !== "split") return layout;
-    if (rest === "")
-      return shareOf(layout) === held ? layout : { ...layout, share: held };
+    if (rest === "") return shareOf(layout) === held ? layout : { ...layout, share: held };
     const side = rest[0] === "b" ? 1 : 0;
     const child = at(layout.children[side], rest.slice(1));
     if (child === layout.children[side]) return layout;
@@ -253,7 +252,10 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
     const id = next.named.tabs + 1;
     const name =
       content.kind === "view"
-        ? { name: titles.get(lead) ?? content.view.view, defaultName: titles.get(lead) ?? content.view.view }
+        ? {
+            name: titles.get(lead) ?? content.view.view,
+            defaultName: titles.get(lead) ?? content.view.view,
+          }
         : chatName(content.session, reopening);
     const focused = byPath.get(one.focused) ?? lead;
     next = {
@@ -301,6 +303,11 @@ function chatName(session: number, reopening: Reopening): { name: string; defaul
   const plain = chat?.name ?? String(session);
   const defaultName = chat?.who ? `${chat.who} ${plain}` : plain;
   return { name: chat?.label ?? defaultName, defaultName };
+}
+
+/** Every chat in a pane of `node`, in reading order. */
+export function chatsOf(node: LaidNode): number[] {
+  return chatsIn(node);
 }
 
 function frontTabs(laid: LaidOut): LaidTab[] {
