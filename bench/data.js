@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793636258730,
+  "lastUpdate": 1793637735033,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36414,6 +36414,48 @@ window.BENCHMARK_DATA = {
             "value": 102.29623749999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.545, 101.635, 102.296, 102.719, 102.766 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b81d2232849311836fdc6c65c1aef558cffb1c64",
+          "message": "Restore: a background turn doesn't clear a wait (#4562, #4649) (#4772)\n\n#4611's squash merge (6fb9a36d2) was cut from a base before #4649 landed,\nand it took back every line of #4649: Board::background_turn, the ledger's\nline_typed, their tests, the changelog fragment and the CONTEXT term. This\nre-applies 186c600b9 unchanged. The waiting strip (#4563) is built on it.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DVPEH0BTRXKTZ0KA0EHP62\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T12:10:49Z",
+          "tree_id": "8b2a54a28f9e6a88dea023ced7ff4664b536dd87",
+          "url": "https://github.com/purlis/purlis/commit/b81d2232849311836fdc6c65c1aef558cffb1c64"
+        },
+        "date": 1793637730543,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.653721,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.641, 0.652, 0.654, 0.661, 0.682 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.424470999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.313, 16.343, 16.424, 16.507, 16.627 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.87415399999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.354, 101.623, 101.874, 102.270, 102.468 ms"
           }
         ]
       }
