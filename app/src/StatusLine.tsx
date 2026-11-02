@@ -11,7 +11,12 @@ import type { FactBadge, PinReport } from "./bindings";
 import { ago } from "./ChangesView";
 import { StatusBar, type StatusContribution } from "./ui/status/StatusBar";
 import { StatusCell, StatusItem } from "./ui/status/StatusItem";
-import { hideStatusItem, useHiddenStatusItems } from "./statusBarPrefs";
+import {
+  hideStatusItem,
+  moveStatusItem,
+  useHiddenStatusItems,
+  useStatusOrder,
+} from "./statusBarPrefs";
 import { NoticeDot } from "./ui/titlebar/TitleBarWorkspaces";
 
 /**
@@ -110,8 +115,9 @@ import { NoticeDot } from "./ui/titlebar/TitleBarWorkspaces";
  *   count. What only says something is a status cell: its words.
  * - **It is the status bar's contribution model** (N28, `ui/status/StatusBar.tsx`): each item
  *   says its id, its end and its priority, purlis's own and an extension's badges alike, and the
- *   person can hide any item from the bar's menu and show it again there (`statusBarPrefs.ts`).
- *   The line itself stays: what can be lost is an item, never the line.
+ *   person can hide any item from the bar's menu and show it again there, and reorder the items
+ *   on an end, by a drag or from that menu (`statusBarPrefs.ts`). The line itself stays: what can
+ *   be lost is an item, never the line.
  * - **The project is its name**, the last segment of its directory, and the whole directory is
  *   its tooltip, on hover and on keyboard focus.
  *
@@ -202,6 +208,7 @@ export function StatusLine({
   const todos = todoCount(state);
   const pieces = pieceCount(state);
   const hidden = useHiddenStatusItems();
+  const order = useStatusOrder();
   // **Context**, on the left: where I am, highest first. It is what the line is for, and the end
   // that gives way when the window is narrow, its last item first. **Health**, on the right: what
   // wants a look, each an item that opens it. That end never gives way.
@@ -350,7 +357,9 @@ export function StatusLine({
       data-testid="status-line"
       items={items}
       hidden={hidden}
+      order={order}
       onHide={hideStatusItem}
+      onMove={moveStatusItem}
     />
   );
 }

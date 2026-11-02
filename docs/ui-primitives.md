@@ -744,7 +744,13 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   click, or the menu key or Shift F10 on an item) and show it again there; what is hidden is kept
   in the layout file under `status`. One item the keyboard reaches cannot be hidden (Notices), so
   the menu always opens from one, and when it closes the keyboard is back on the item it was
-  opened from. A press runs the item's command: purlis's own items are `StatusItem`s whose press
+  opened from. The person may reorder the items on an end, never between ends (#3030): a drag
+  along the end (`dnd-kit`, by the pointer only) or, in the same menu, Move left and Move right,
+  whose rows list every item the bar draws, stay up for the next move and say each move to a
+  reader. A cell of the bar is no Tab stop, so the rows start from the menu and not from an item.
+  The order is kept under `status.order`; an item absent today keeps its place in it, and one it
+  never named stays after the item it follows by priority. A press runs the item's command:
+  purlis's own items are `StatusItem`s whose press
   is the command, and an item given as data names a command the bar runs through `onCommand`.
   An item that comes and goes sits on its end's inner side, so its arrival moves no neighbour;
   a long project name gives way first (`shrinks`), and a line after an item is the bar's
