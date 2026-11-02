@@ -176,16 +176,18 @@ pub const EASINGS: &[&str] = &[
 pub const LONGEST: u32 = 10_000;
 
 /// **The tokens a workspace's colour turns when a theme says nothing about it** (charter-app#281):
-/// the accent, its surface and the primary's fill at rest and under the pointer (#3177), the
-/// focus ring, the active-tab wash, the selected row, what is drawn in the accent (a markdown
-/// link, a chart's first series, #2327), and the layer shades. Never the text (the primary's
-/// words among it, and the accent's words and wash, which a tint would bring to the danger
-/// colour's hue) and
-/// never the terminal, so every contrast a theme clears still holds. Purlis Classic's recipe,
+/// the accent, its surface, its washes and its words (#3100, #4666), the primary's fill at rest
+/// and under the pointer (#3177), the focus ring, the active-tab wash, the selected row, what is
+/// drawn in the accent (a markdown link, a chart's first series, #2327), and the layer shades.
+/// Never the other text (the primary's words among it) and never the terminal, so every contrast
+/// a theme clears still holds. The accent's words and washes turn together, only where they stay
+/// apart from the waiting and danger colours ([`super::tint::APART`]). Purlis Classic's recipe,
 /// and the one a theme starts from ([`super::Tint`]).
 pub const TINTED: &[&str] = &[
     "accent.base",
     "accent.surface",
+    "accent.wash",
+    "accent.wash-hover",
     "accent.text",
     "accent.fill",
     "accent.fill-hover",
@@ -404,10 +406,19 @@ pub const KIN: [(&str, &str); 10] = [
 /// **The accent's words follow the accent whatever `below` draws** (#3100): `accent.text` is what
 /// a chosen item says, in the accent, and an accent given without it must reach those words, or
 /// a teal option over Purlis, or a person's teal over Purlis, says them in Purlis's lavender.
+///
+/// **The grounds those words stand on follow the accent too** (#4666): an accent given without
+/// `accent.surface`, `accent.wash` or `accent.wash-hover` turns `below`'s to its own hue, at no
+/// more chroma than it has, keeping each ground's luminance and alpha ([`super::tint::toward`]).
+/// So a teal over Purlis says its words on a teal wash, as light as Purlis's lavender one, and
+/// every contrast on it stays where Purlis put it; a grey accent draws grey grounds.
+///
+/// What follows, each beside what it follows, so a colour left out takes them with it.
 pub fn follow_kin(
     given: &mut std::collections::BTreeMap<&'static str, String>,
     below: &std::collections::BTreeMap<&'static str, String>,
-) {
+) -> Vec<(&'static str, &'static str)> {
+    let mut followed = Vec::new();
     for (token, drew) in KIN {
         let follows = below.get(token) == below.get(drew) || token == ACCENT_WORDS;
         if given.contains_key(token) || !follows {
@@ -415,12 +426,40 @@ pub fn follow_kin(
         }
         if let Some(value) = given.get(drew).cloned() {
             given.insert(token, value);
+            followed.push((token, drew));
         }
     }
+    let accent = given
+        .get(ACCENT)
+        .filter(|accent| below.get(ACCENT) != Some(*accent))
+        .cloned();
+    if let Some(accent) = accent {
+        for ground in ACCENT_GROUNDS {
+            if given.contains_key(ground) {
+                continue;
+            }
+            if let Some(under) = below.get(ground) {
+                given.insert(ground, super::tint::toward(under, &accent));
+                followed.push((ground, ACCENT));
+            }
+        }
+    }
+    followed
 }
+
+/// The accent.
+const ACCENT: &str = "accent.base";
 
 /// The accent's words on a chosen item (#3100), and what they follow ([`follow_kin`]).
 pub const ACCENT_WORDS: &str = "accent.text";
+
+/// **The grounds the accent's words stand on** (#4666): a chosen item's surface and the washes
+/// of a chosen chip, row or tab, which follow the accent ([`follow_kin`]).
+pub const ACCENT_GROUNDS: [&str; 3] = ["accent.surface", "accent.wash", "accent.wash-hover"];
+
+/// **The accent's washes** (#4666): the grounds a workspace's colour turns with the accent's
+/// words, as one, so the words never stand on a wash of another hue ([`super::tint::APART`]).
+pub const ACCENT_WASHES: [&str; 2] = ["accent.wash", "accent.wash-hover"];
 
 /// **The tokens drawn as what they follow**, each by its own token: the hot count and the
 /// needs-you mark (#3098), and the accent's words and the accent (#3100). Where a theme draws one

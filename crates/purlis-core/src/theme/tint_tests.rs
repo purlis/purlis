@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use super::vocabulary::{TAB_ONLY, TINTED, TOKENS};
+use super::vocabulary::{ACCENT_WASHES, TAB_ONLY, TINTED, TOKENS};
 use super::*;
 
 /// The shared fixture: its `classic` entry is the recipe the window is handed for Purlis Classic.
@@ -71,6 +71,8 @@ fn purlis_classic_tints_what_it_tinted_before_a_theme_could_say() {
             [
                 "accent.base",
                 "accent.surface",
+                "accent.wash",
+                "accent.wash-hover",
                 "accent.text",
                 "accent.fill",
                 "accent.fill-hover",
@@ -155,15 +157,33 @@ fn a_theme_names_the_tokens_a_workspace_s_colour_turns() {
     // In the vocabulary's order, whatever order the file named them in.
     assert_eq!(
         theme.tint.tabs(),
-        ["surface.raised", "accent.base", "accent.text"]
+        [
+            "surface.raised",
+            "accent.base",
+            "accent.wash",
+            "accent.wash-hover",
+            "accent.text"
+        ]
     );
     assert_eq!(
         theme.tint.window(),
-        ["surface.raised", "accent.base", "accent.text"]
+        [
+            "surface.raised",
+            "accent.base",
+            "accent.wash",
+            "accent.wash-hover",
+            "accent.text"
+        ]
     );
     assert_eq!(
         moved(&theme, &tinted(&theme, "teal")),
-        ["surface.raised", "accent.base", "accent.text"]
+        [
+            "surface.raised",
+            "accent.base",
+            "accent.wash",
+            "accent.wash-hover",
+            "accent.text"
+        ]
     );
 }
 
@@ -217,7 +237,12 @@ fn a_token_name_purlis_does_not_have_is_said_and_left_out() {
     );
     assert_eq!(
         loaded.theme.first().tint.tabs(),
-        ["accent.base", "accent.text"]
+        [
+            "accent.base",
+            "accent.wash",
+            "accent.wash-hover",
+            "accent.text"
+        ]
     );
 }
 
@@ -334,7 +359,15 @@ fn a_theme_starts_from_its_parent_s_recipe() {
     );
     assert!(!child.refused, "{:?}", said(&child));
     let recipe = &child.theme.first().tint;
-    assert_eq!(recipe.tabs(), ["accent.base", "accent.text"]);
+    assert_eq!(
+        recipe.tabs(),
+        [
+            "accent.base",
+            "accent.wash",
+            "accent.wash-hover",
+            "accent.text"
+        ]
+    );
     let of = |name: &str| recipe.hues.iter().find(|one| one.name == name).unwrap().hue;
     assert!((of("red") - hue("#3a7bd5")).abs() < 1e-9);
     assert!((of("blue") - hue("#c0392b")).abs() < 1e-9);
@@ -715,6 +748,27 @@ fn a_colour_no_amount_of_chroma_keeps_apart_from_danger_leaves_the_rules_sides_u
 }
 
 #[test]
+fn an_accent_s_grounds_turn_toward_it_exactly_as_the_window_turns_them() {
+    // The shared fixture's `toward` (#4666): each built-in's accent grounds turned toward an
+    // accent given over them, a grey one and a short and a see-through one among them.
+    // `tint.ts`' `toward` reads the same cases.
+    let cases: Value = serde_json::from_str(TINT_CASES).unwrap();
+    let cases = cases["toward"].as_array().unwrap();
+    assert!(cases.len() >= 40);
+    for case in cases {
+        let (under, accent) = (
+            case["under"].as_str().unwrap(),
+            case["accent"].as_str().unwrap(),
+        );
+        assert_eq!(
+            tint::toward(under, accent),
+            case["toward"].as_str().unwrap(),
+            "{under} toward {accent}"
+        );
+    }
+}
+
+#[test]
 fn a_tint_holds_only_the_sides_of_a_rule_as_the_shared_fixture_says() {
     // The shared fixture's `held`: each token the recipe turns, and whether a tint gives it less
     // colour to keep the rules (#3034). `tint.ts`' `chromaFor` reads the same.
@@ -813,7 +867,15 @@ fn a_shade_a_tint_would_bring_under_a_floor_is_drawn_untinted_and_the_theme_as_w
     let on = draw(&theme);
     let held = on.held.clone().expect("the floor was held");
     assert_eq!(held.tokens, Vec::<&str>::new());
-    assert_eq!(held.untinted, ["accent.base", "accent.text"]);
+    assert_eq!(
+        held.untinted,
+        [
+            "accent.base",
+            "accent.text",
+            "accent.wash",
+            "accent.wash-hover"
+        ]
+    );
     assert!(
         held.said()
             .starts_with("In a tinted workspace, Dim would fall"),
@@ -1300,10 +1362,11 @@ fn purlis_classic_s_tints_are_these() {
             classic().of(Appearance::Light).unwrap()
         };
         let tint = tinted(theme, colour);
-        // The accent's words came into the recipe after these were pinned, and are the accent.
+        // The accent's words and washes came into the recipe after these were pinned (#3100,
+        // #4666): the words are the accent, and the washes are pinned by the shared fixture.
         let drawn: Vec<&str> = TINTED
             .iter()
-            .filter(|token| **token != "accent.text")
+            .filter(|token| **token != "accent.text" && !ACCENT_WASHES.contains(token))
             .map(|token| tint.value(token))
             .collect();
         assert_eq!(drawn, values, "{name} {colour}");
@@ -1493,7 +1556,15 @@ fn a_recipe_that_turns_the_accent_turns_its_words() {
     let theme = drawn(&json!({
         "name": "Own", "extends": "purlis-classic", "tint": { "tokens": ["accent.base"] }
     }));
-    assert_eq!(theme.tint.tabs(), ["accent.base", "accent.text"]);
+    assert_eq!(
+        theme.tint.tabs(),
+        [
+            "accent.base",
+            "accent.wash",
+            "accent.wash-hover",
+            "accent.text"
+        ]
+    );
     let theme = drawn(&json!({
         "name": "Own", "extends": "purlis-classic", "tint": { "tokens": ["focus.ring"] }
     }));
@@ -1505,6 +1576,9 @@ fn accent_words_are_left_when_the_accent_is() {
     let mut recipe = Tint::default();
     recipe.leave(&["accent.base"]);
     assert!(!recipe.tabs().contains(&"accent.text"));
+    for wash in ACCENT_WASHES {
+        assert!(!recipe.tabs().contains(&wash), "{wash}");
+    }
     assert!(recipe.tabs().contains(&"accent.surface"));
 }
 
@@ -1529,7 +1603,8 @@ fn accent_words_drawn_as_the_accent_are_turned_exactly_as_it_is() {
 
 #[test]
 fn the_accent_s_words_cost_the_accent_no_colour() {
-    // Words written onto the waiting amber itself: every other token is tinted exactly as before.
+    // Words written onto the waiting amber itself: every other token is tinted exactly as before,
+    // but the washes under the words, which take the words' answer (#4666).
     for theme in &purlis().appearances {
         let mut near = theme.clone();
         let amber = theme.value("state.waiting").to_owned();
@@ -1537,11 +1612,23 @@ fn the_accent_s_words_cost_the_accent_no_colour() {
         for degree in (0..360).step_by(5) {
             let hue = f64::from(degree);
             let (was, now) = (tint::tinted_at(theme, hue), tint::tinted_at(&near, hue));
-            for token in TINTED.iter().filter(|token| **token != "accent.text") {
+            let others = TINTED
+                .iter()
+                .filter(|token| **token != "accent.text" && !ACCENT_WASHES.contains(token));
+            for token in others {
                 assert_eq!(
                     was.value(token),
                     now.value(token),
                     "{} {token} at {degree}",
+                    theme.id
+                );
+            }
+            let most = tint::most_at(&near, hue);
+            for wash in ACCENT_WASHES {
+                assert_eq!(
+                    tint::chroma_of(wash, most),
+                    tint::chroma_of("accent.text", most),
+                    "{} {wash} at {degree}",
                     theme.id
                 );
             }

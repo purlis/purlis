@@ -199,6 +199,8 @@ mod options_tests;
 // family's pull request adds its file and no line here.
 include!(concat!(env!("OUT_DIR"), "/theme_parts_tests.rs"));
 #[cfg(test)]
+mod accent_grounds_tests;
+#[cfg(test)]
 mod parts_tests;
 #[cfg(test)]
 mod person_tests;

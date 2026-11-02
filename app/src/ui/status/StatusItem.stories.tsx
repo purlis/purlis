@@ -10,11 +10,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type CSSProperties } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import { ArrowUpCircle, Bell, Hand, Info, OctagonX } from "lucide-react";
+import { ArrowUpCircle, Bell, Hand, Info, MessagesSquare, OctagonX } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { drawWindowText, LEAST_TEXT } from "../../textSize";
 import { reordered } from "../../statusBarPrefs";
 import { StatusBar, type StatusContribution } from "./StatusBar";
+import { property, type Token } from "../../theme/theme";
+import { toward } from "../../theme/tint";
+import { ActivityGroup, ActivityItem } from "../activity/ActivityItem";
 import { StatusCell, StatusItem } from "./StatusItem";
 
 /**
@@ -94,31 +97,57 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** The grounds the accent's words stand on, which follow the accent (#4666). */
+const ACCENT_GROUNDS = ["accent.surface", "accent.wash", "accent.wash-hover"] as const;
+
+/** An accent set over the cell's theme, its words and grounds as the engine resolves them. */
+function OverPurlis() {
+  const root = getComputedStyle(document.documentElement);
+  const value = (token: Token) => root.getPropertyValue(property(token)).trim();
+  const accent = value("state.success");
+  const drawn = {
+    [property("accent.base")]: accent,
+    [property("accent.text")]: accent,
+    ...Object.fromEntries(
+      ACCENT_GROUNDS.map((ground) => [property(ground), toward(value(ground), accent)]),
+    ),
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--space-3)",
+    padding: "var(--space-3)",
+    background: "var(--surface-deep)",
+  } as CSSProperties;
+  return (
+    <div style={drawn}>
+      <StatusItem variant="accent" icon={<ArrowUpCircle aria-hidden="true" />}>
+        0.4.2-dev.1037
+      </StatusItem>
+      <ActivityGroup role="toolbar" aria-label="Views" aria-orientation="horizontal">
+        <ActivityItem
+          variant="bar"
+          selected
+          aria-label="Chats"
+          aria-pressed
+          icon={<MessagesSquare />}
+        />
+      </ActivityGroup>
+    </div>
+  );
+}
+
 /**
- * **An accent set over Purlis, and not its words** (#3100): `accent.text` follows the accent the
- * engine is given, so the pill's words and icon are the person's colour, and `accent.surface`,
- * which does not follow, stays Purlis's. The two tokens are set here as the engine resolves them,
- * to a green the theme already holds (`state.success`), so no colour is written outside a theme
+ * **An accent set over Purlis, on its own grounds** (#3100, #4666): `accent.text` follows the
+ * accent the engine is given, and so do the grounds those words stand on, so the update pill's
+ * words stand on the accent's `accent.surface` and a chosen activity item's on its `accent.wash`,
+ * not on Purlis's lavender. Each ground is the theme's turned to the accent's hue at the
+ * luminance and alpha it had (`tint::toward`), so every contrast on it is where the theme put it.
+ * The tokens are set here as the engine resolves them, from a green the theme already holds
+ * (`state.success`) and the cell's own grounds, by the window's own arithmetic (`tint.ts`'
+ * `toward`, held to the engine's by the shared fixture), so no colour is written outside a theme
  * file; no story picks a theme of its own.
  */
 export const AnAccentOverPurlis: Story = {
-  render: () => {
-    const accent = "var(--state-success)";
-    const drawn = {
-      "--accent-base": accent,
-      "--accent-text": accent,
-      display: "flex",
-      padding: "var(--space-3)",
-      background: "var(--surface-deep)",
-    } as CSSProperties;
-    return (
-      <div style={drawn}>
-        <StatusItem variant="accent" icon={<ArrowUpCircle aria-hidden="true" />}>
-          0.4.2-dev.1037
-        </StatusItem>
-      </div>
-    );
-  },
+  render: () => <OverPurlis />,
 };
 
 /**

@@ -30,6 +30,7 @@ import {
   mostOf,
   oklabDistance,
   tintHex,
+  toward,
   wordsChroma,
 } from "./tint";
 
@@ -183,6 +184,16 @@ describe("the core's copy of the tint", () => {
       const drawn = got === undefined ? null : accent_tinted ? tintHex(accent, hue, got) : accent;
       expect(drawn, `${accent} at ${hue}`).toBe(want);
     }
+  });
+
+  it("turns an accent's grounds toward it as the shared fixture says the engine does", () => {
+    // #4666: the engine's `tint::toward`, how an accent given over a parent takes its grounds.
+    const { toward: cases } = sharedCases() as {
+      toward: { under: string; accent: string; toward: string }[];
+    };
+    expect(cases.length).toBeGreaterThanOrEqual(40);
+    for (const { under, accent, toward: want } of cases)
+      expect(toward(under, accent), `${under} toward ${accent}`).toBe(want);
   });
 
   it("draws every token of a built-in as the shared fixture says the engine does", () => {

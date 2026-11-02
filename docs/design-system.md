@@ -274,7 +274,7 @@ resolves and hands the window with the theme (`purlis_core::theme::Tint`, `theme
 window keeps no list of its own (#2393). Purlis Classic's recipe, the one a theme starts from:
 
 - on the whole window, from the workspace in front: `accent.base`, `accent.surface`,
-  `accent.text` (which a recipe turning the accent turns with it where the words stay apart from waiting and danger, #3100), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
+  `accent.text` and the washes it stands on, `accent.wash` and `accent.wash-hover` (which a recipe turning the accent turns with it, the words and washes as one, where the words stay apart from waiting and danger and the washes from the waiting and danger washes, #3100, #4666), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
   `drawTint`);
 - on that workspace's own tab and on the chat strip, which holds its chats, the same and
   `layer.workspace`, `layer.chat`, `layer.selected` (`tint.tabs`), set on the element as
@@ -454,7 +454,12 @@ asked for), whatever the system's appearance. Where its values come from:
   switcher row's pin and the current explorer row's icon. **The chosen title-bar chip**
   takes the same wash with the primary words, and `accent.wash-hover` (the record's .23
   lavender) under the pointer, while any other chip under the pointer takes the card's fill, so
-  chosen never reads as hovered (R101 as amended by #3345). Section labels are tracked at
+  chosen never reads as hovered (R101 as amended by #3345). **An accent given over Purlis
+  takes its grounds with it** (#4666): a theme or a person that gives `accent.base` and not
+  `accent.surface`, `accent.wash` or `accent.wash-hover` draws Purlis's turned to that accent's
+  hue, at no more chroma than it has and at the luminance and alpha Purlis gave them
+  (`tint::toward`), so a teal says its words on a teal wash and every contrast on it stays where
+  Purlis put it. Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its
   update pill's primary words.

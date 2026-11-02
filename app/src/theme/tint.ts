@@ -61,8 +61,9 @@ export type Apart = {
   distance: number;
   /** A rule held alone gives less colour only to its own sides (#3130). */
   alone?: boolean;
-  /** A rule of the accent's words (#3100): measured only once the accent is answered, so it
-   *  costs the accent no colour; see {@link wordsChroma}. */
+  /** A rule of the accent's words or the washes they stand on (#3100, #4666): measured only
+   *  once the accent is answered, so it costs the accent no colour, and the words and washes turn
+   *  together or not at all; see {@link wordsChroma}. */
   words?: boolean;
 };
 
@@ -139,6 +140,7 @@ export function mostOf(
  * drawn as it will be (at `alone` for a side held alone, else at `shared`); `undefined`, the words
  * as written, where they do not. Where no chroma holds the accent's words apart from the waiting
  * colour (a yellow or green workspace), they keep the theme's colour, and the accent its tint.
+ * The washes the words stand on are answered with them (#4666), so the two never differ in hue.
  */
 export function wordsChroma(
   words: readonly Rule[],
@@ -305,6 +307,16 @@ export function tintHex(hex: string, hue: number, most = Number.POSITIVE_INFINIT
   return `#${rounded(at((low + high) / 2), target)
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("")}${alpha}`;
+}
+
+/**
+ * **`under` turned toward `accent`** (#4666, `purlis_core::theme::tint::toward`): to the accent's
+ * OKLCH hue, at no more chroma than the accent has, with the luminance and alpha `under` had. How
+ * an accent's grounds follow an accent given over a parent: a grey accent gives grey grounds.
+ */
+export function toward(under: string, accent: string): string {
+  const [, a, b] = oklab(parse(accent).rgb);
+  return tintHex(under, degrees(Math.atan2(b, a)), Math.hypot(a, b));
 }
 
 /** WCAG's relative luminance of a colour in linear sRGB. */

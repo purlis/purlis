@@ -496,6 +496,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -510,6 +512,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -674,6 +678,34 @@
           {
             "token": "accent.text",
             "from": "danger.base",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash",
+            "from": "wash.warning",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash",
+            "from": "danger.wash",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash-hover",
+            "from": "wash.warning",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash-hover",
+            "from": "danger.wash",
             "distance": 0.1,
             "alone": false,
             "words": true
@@ -1195,6 +1227,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -1209,6 +1243,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -1373,6 +1409,34 @@
           {
             "token": "accent.text",
             "from": "danger.base",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash",
+            "from": "wash.warning",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash",
+            "from": "danger.wash",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash-hover",
+            "from": "wash.warning",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash-hover",
+            "from": "danger.wash",
             "distance": 0.1,
             "alone": false,
             "words": true
@@ -1894,6 +1958,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -1908,6 +1974,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2072,6 +2140,34 @@
           {
             "token": "accent.text",
             "from": "danger.base",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash",
+            "from": "wash.warning",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash",
+            "from": "danger.wash",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash-hover",
+            "from": "wash.warning",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash-hover",
+            "from": "danger.wash",
             "distance": 0.1,
             "alone": false,
             "words": true
@@ -2427,6 +2523,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2441,6 +2539,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2605,6 +2705,34 @@
           {
             "token": "accent.text",
             "from": "danger.base",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash",
+            "from": "wash.warning",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash",
+            "from": "danger.wash",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash-hover",
+            "from": "wash.warning",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash-hover",
+            "from": "danger.wash",
             "distance": 0.1,
             "alone": false,
             "words": true
@@ -2976,6 +3104,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2990,6 +3120,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -3154,6 +3286,34 @@
           {
             "token": "accent.text",
             "from": "danger.base",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash",
+            "from": "wash.warning",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash",
+            "from": "danger.wash",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash-hover",
+            "from": "wash.warning",
+            "distance": 0.1,
+            "alone": false,
+            "words": true
+          },
+          {
+            "token": "accent.wash-hover",
+            "from": "danger.wash",
             "distance": 0.1,
             "alone": false,
             "words": true

@@ -40,7 +40,9 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use super::floors::{ALLOW_APART, DANGER_APART, WAITING_APART};
-use super::vocabulary::{ACCENT_WORDS, TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour};
+use super::vocabulary::{
+    ACCENT_WASHES, ACCENT_WORDS, TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour,
+};
 use super::{Complaint, ResolvedTheme, stringify};
 
 /// The palette a workspace names its colour from, as OKLCH hues in degrees, in
@@ -110,6 +112,18 @@ pub fn tint_hex_within(hex: &str, hue: f64, most: f64) -> String {
     format!("#{r:02x}{g:02x}{b:02x}{alpha}")
 }
 
+/// **`under` turned toward `accent`** (#4666): to the accent's OKLCH hue, at no more chroma than
+/// the accent has, with the luminance and alpha `under` had ([`tint_hex_within`]). How an
+/// accent's grounds follow an accent given over a parent ([`super::vocabulary::follow_kin`]): a
+/// grey accent gives grey grounds. A value that is not a colour is answered as it is.
+pub fn toward(under: &str, accent: &str) -> String {
+    let Some((rgb, _)) = parse(accent) else {
+        return under.to_owned();
+    };
+    let [_, a, b] = oklab(rgb);
+    tint_hex_within(under, degrees(b.atan2(a)), a.hypot(b))
+}
+
 /// One workspace colour's hue in a theme: a [`PALETTE`] name and its OKLCH hue in degrees.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Hue {
@@ -164,12 +178,13 @@ impl Tint {
     }
 
     /// The recipe without `tokens`: a workspace's colour leaves them as the theme draws them. The
-    /// accent's words go where the accent goes (#3100), so a chosen item's are never turned away
-    /// from the accent beside them.
-    /// What it left, the accent's words among them, for the Notice to name.
+    /// accent's words and the washes they stand on go where the accent goes (#3100, #4666), so a
+    /// chosen item's are never turned away from the accent beside them.
+    /// What it left, the accent's words and washes among them, for the Notice to name.
     pub(super) fn leave(&mut self, tokens: &[&str]) -> Vec<&'static str> {
         let accent_left = tokens.contains(&"accent.base");
-        let left = |token: &str| tokens.contains(&token) || (accent_left && token == ACCENT_WORDS);
+        let left =
+            |token: &str| tokens.contains(&token) || (accent_left && follows_the_accent(token));
         let (gone, kept): (Vec<_>, Vec<_>) =
             self.tokens.iter().copied().partition(|token| left(token));
         self.tokens = kept;
@@ -186,6 +201,12 @@ impl Tint {
     }
 }
 
+/// **Whether `token` turns and stays with the accent** in a recipe (#3100, #4666): its words, and
+/// the washes they stand on.
+fn follows_the_accent(token: &str) -> bool {
+    token == ACCENT_WORDS || ACCENT_WASHES.contains(&token)
+}
+
 /// **A rule every tint holds**: `token`, tinted, stays at least `distance` from `from` in OKLab,
 /// `from` as the tint draws it (tinted too when the recipe turns it). A rule held `alone` gives
 /// less colour only to its own sides (#3130): the accent gives way to the waiting amber, and the
@@ -197,8 +218,9 @@ pub struct Apart {
     pub distance: f64,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub alone: bool,
-    /// A rule of the accent's words (#3100): measured only once the accent is answered, so it
-    /// costs the accent no colour ([`words_chroma_of`]).
+    /// A rule of the accent's words or the washes they stand on (#3100, #4666): measured only
+    /// once the accent is answered, so it costs the accent no colour, and the words and washes
+    /// turn together or not at all ([`words_chroma_of`]).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub words: bool,
 }
@@ -208,8 +230,9 @@ pub struct Apart {
 /// blocked's (Allow is distinguishable from Keep blocked), the consent floors of ADR 0097 §6, and
 /// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]); and the
 /// accent from the waiting colour (waiting is distinguishable from the accent, #3130), so a
-/// yellow or orange workspace's accent never reads as the waiting signal.
-pub const APART: [Apart; 17] = [
+/// yellow or orange workspace's accent never reads as the waiting signal; and the accent's words
+/// and washes from the waiting and danger colours and washes (#3100, #4666).
+pub const APART: [Apart; 21] = [
     danger_apart("accent.base"),
     // Keep blocked's edge is a plain control's (#3177).
     Apart {
@@ -237,14 +260,21 @@ pub const APART: [Apart; 17] = [
     // The accent's words take the colour the accent takes where they hold apart from waiting and
     // danger there, and keep the theme's colour where they do not (#3100): measured after the
     // accent, so they never cost it colour.
-    words_apart("state.waiting", WAITING_APART),
-    words_apart("danger.base", DANGER_APART),
+    words_apart(ACCENT_WORDS, "state.waiting", WAITING_APART),
+    words_apart(ACCENT_WORDS, "danger.base", DANGER_APART),
+    // The washes those words stand on turn with them, held apart from the waiting and danger
+    // washes they would otherwise be taken for (#4666): one answer for the words and their ground.
+    words_apart(ACCENT_WASHES[0], "wash.warning", WAITING_APART),
+    words_apart(ACCENT_WASHES[0], "danger.wash", DANGER_APART),
+    words_apart(ACCENT_WASHES[1], "wash.warning", WAITING_APART),
+    words_apart(ACCENT_WASHES[1], "danger.wash", DANGER_APART),
 ];
 
-/// The accent's words held `distance` from `from` ([`words_chroma_of`]).
-const fn words_apart(from: &'static str, distance: f64) -> Apart {
+/// `token`, the accent's words or a wash under them, held `distance` from `from`
+/// ([`words_chroma_of`]).
+const fn words_apart(token: &'static str, from: &'static str, distance: f64) -> Apart {
     Apart {
-        token: ACCENT_WORDS,
+        token,
         from,
         distance,
         alone: false,
@@ -402,10 +432,12 @@ fn tokens(
     if complaints.len() != before {
         return None;
     }
-    // A recipe that turns the accent turns its words (#3100), named or not: what a chosen item
-    // says was the accent before it was a token of its own.
+    // A recipe that turns the accent turns its words (#3100) and the washes they stand on
+    // (#4666), named or not: what a chosen item says was the accent before it was a token of its
+    // own, and its ground goes with it.
     if named.contains(&"accent.base") {
         named.push(ACCENT_WORDS);
+        named.extend(ACCENT_WASHES);
     }
     Some(
         TOKENS
@@ -562,8 +594,9 @@ pub fn most_at(theme: &ResolvedTheme, hue: f64) -> Most {
 /// where every rule of the words in `rules` holds at it, the other side of each drawn as it will
 /// be (at the alone answer for a side held alone, else at the shared one); `None`, the words as
 /// written, where one does not. Where no chroma holds them apart from the waiting colour (a yellow
-/// or green workspace), they keep the theme's colour and the accent keeps its tint. `tint.ts`'
-/// `wordsChroma` is the same.
+/// or green workspace), they keep the theme's colour and the accent keeps its tint. The washes
+/// the words stand on are answered with them (#4666): every rule in `rules` holds or none of its
+/// tokens turn. `tint.ts`' `wordsChroma` is the same.
 pub fn words_chroma_of(rules: &[Rule<'_>], hue: f64, most: Most) -> Option<f64> {
     let alone = most.alone?;
     let from = |side_alone: bool| if side_alone { Some(alone) } else { most.shared };
