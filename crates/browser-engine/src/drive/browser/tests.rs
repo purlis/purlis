@@ -2700,9 +2700,11 @@ fn a_page_the_engine_made_and_has_not_told_of_is_not_called_missing() {
         (sent.method == "Target.createTarget").then(|| Ok(json!({ "targetId": "PAGE-LATE" })))
     });
     let address = WebAddress::parse("http://fixture.test/long.html").unwrap();
-    assert_eq!(
-        browser.call(&id(1), Call::Open { address }).unwrap_err(),
-        Refusal::PageUntold
+    let refused = browser.call(&id(1), Call::Open { address }).unwrap_err();
+    assert_eq!(refused, Refusal::PageUntold);
+    assert!(
+        refused.to_string().contains("did not go to the address"),
+        "{refused}"
     );
 }
 
@@ -3161,6 +3163,41 @@ fn a_frame(engine: &Engine, image: &[u8], ack: i64) {
         }),
         Some("S-PAGE-1"),
     );
+}
+
+/// The payment frame moves to a process of its own: the engine attaches it at `attached`, and
+/// its session's frame tree answers `tree` only after `takes`.
+fn frame_moves(engine: &Engine, attached: &str, tree: &'static str, takes: Duration) {
+    const MOVED: &str = "S-PAYMENT-FRAME";
+    engine.on(move |sent, _| {
+        (sent.method == "Page.getFrameTree" && sent.session.as_deref() == Some(MOVED)).then(|| {
+            Ok(json!({"frameTree":{"frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","name":"payment","url":tree}}}))
+        })
+    });
+    super::lock(&engine.model)
+        .slow
+        .insert("Page.getFrameTree".to_owned(), takes);
+    engine.emit(
+        "Target.attachedToTarget",
+        json!({"sessionId":MOVED,"targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":attached,"attached":true},"waitingForDebugger":false}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the moved frame's tree is asked for", || {
+        engine
+            .sent("Page.getFrameTree")
+            .iter()
+            .any(|s| s.session.as_deref() == Some(MOVED))
+    });
+}
+
+/// The address the driver holds for `frame` of the frames page.
+fn frame_address(browser: &Browser, frame: &str) -> String {
+    super::lock(&browser.inner.state)
+        .page("PAGE-1")
+        .expect("the frames page")
+        .frames[frame]
+        .url
+        .clone()
 }
 
 fn wait_for(what: &str, mut done: impl FnMut() -> bool) {

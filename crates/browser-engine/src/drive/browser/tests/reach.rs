@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use super::{browser_judged, id, ref_of, snapshot};
+use super::{browser_judged, frame_address, frame_moves, id, ref_of, snapshot, wait_for};
 use crate::WebAddress;
 use crate::drive::{Call, Driver, Field, Gate, Judge, Outbound, Why};
 
@@ -387,6 +387,103 @@ fn typing_into_a_frame_of_a_site_the_judge_asks_about_types_nothing() {
         "http://other.test/pay.html",
         "judged by the frame's own document"
     );
+}
+
+/// Types into the payment frame's button, as a fresh snapshot of the page deals it.
+fn typed_into_the_frame(
+    browser: &crate::drive::Browser,
+) -> Result<crate::drive::Answer, crate::drive::Refusal> {
+    let text = snapshot(browser, 50);
+    let pay = ref_of(&text, "- button \"Pay now\"");
+    browser.call(
+        &id(51),
+        Call::Type {
+            page: None,
+            fields: vec![Field {
+                into: Some(pay),
+                text: "4111".into(),
+                replace: false,
+            }],
+        },
+    )
+}
+
+#[test]
+fn a_frame_goes_by_the_address_it_attached_at_while_its_tree_is_not_answered() {
+    let (judge, told) = judge(&["http://third.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    let third = "http://third.test/pay.html";
+    frame_moves(&engine, third, third, Duration::from_secs(3));
+    let answer = typed_into_the_frame(&browser).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert!(engine.sent("Input.insertText").is_empty());
+    assert_eq!(whys(&told).last().unwrap().0, third);
+}
+
+#[test]
+fn a_frame_that_attached_at_no_address_takes_nothing_until_its_tree_is_read() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    frame_moves(
+        &engine,
+        "",
+        "http://third.test/pay.html",
+        Duration::from_secs(3),
+    );
+    let refused = typed_into_the_frame(&browser).unwrap_err();
+    assert!(
+        refused.to_string().contains("nothing was sent"),
+        "{refused}"
+    );
+    assert!(engine.sent("Input.insertText").is_empty());
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+}
+
+#[test]
+fn a_frames_address_follows_the_engines_word_of_its_target() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    let third = "http://third.test/pay.html";
+    frame_moves(&engine, third, third, Duration::from_millis(1));
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":"http://fourth.test/","attached":true}}),
+        None,
+    );
+    wait_for("the frame's address is told", || {
+        frame_address(&browser, "PAYMENT-FRAME") == "http://fourth.test/"
+    });
+}
+
+#[test]
+fn a_tree_read_before_a_navigation_does_not_put_the_frame_back() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    let before = "http://third.test/before.html";
+    frame_moves(&engine, before, before, Duration::from_millis(300));
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": "PAYMENT-FRAME", "parentId": "PAGE-1", "name": "payment", "url": "http://third.test/after.html"}}),
+        Some("S-PAYMENT-FRAME"),
+    );
+    wait_for("the navigation is seen", || {
+        frame_address(&browser, "PAYMENT-FRAME") == "http://third.test/after.html"
+    });
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(
+        frame_address(&browser, "PAYMENT-FRAME"),
+        "http://third.test/after.html"
+    );
+}
+
+#[test]
+fn a_tree_at_no_address_does_not_replace_the_address_a_frame_attached_at() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    let third = "http://third.test/pay.html";
+    frame_moves(&engine, third, "about:blank", Duration::from_millis(1));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(frame_address(&browser, "PAYMENT-FRAME"), third);
 }
 
 #[test]
