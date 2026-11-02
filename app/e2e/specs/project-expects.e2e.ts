@@ -114,14 +114,16 @@ async function theNotice(why: string): Promise<string> {
   return said;
 }
 
-/** Waits for the Notice to say `text`, and answers all it says. */
-async function theNoticeSaying(text: string, why: string): Promise<string> {
+/** Waits for the Notice to say `text`, each of it at once when it is a list, and answers all
+ *  it says. */
+async function theNoticeSaying(text: string | readonly string[], why: string): Promise<string> {
+  const all = typeof text === "string" ? [text] : text;
   let said = "";
   await browser.waitUntil(
     async () => {
       const now = await bandNotice(CAUSE);
       if (now.state === "shown") said = now.text;
-      return now.state === "shown" && said.includes(text);
+      return now.state === "shown" && all.every((one) => said.includes(one));
     },
     { timeout: 30_000, interval: 250, timeoutMsg: `${why}; the Notice said: ${said}` },
   );
@@ -375,12 +377,13 @@ describe("the Notice of what a project expects", function () {
     expect(await theNotice("the Notice went when the link moved")).toContain(named.a);
 
     await press(ALLOW);
-    // Not kept, said, and drawn again naming B. The sentence lands with the refusal and the list
-    // is read again after it, so the Notice is waited on for both: the list it draws in between
-    // is still A's.
-    await theNoticeSaying(CHANGED, "the Allow did not say what was shown changed");
-    const again = await theNoticeSaying(named.b, "the Notice was not drawn again naming B");
-    expect(again).toContain(CHANGED);
+    // Not kept, said, and drawn again naming B. The window draws B late: the sentence lands with
+    // the refusal, and only then is the list read again, so the Notice drawn in between says the
+    // sentence beside A's list (#4665). One wait, for both at once, never a read of either alone.
+    await theNoticeSaying(
+      [CHANGED, named.b],
+      "the Allow was not refused as changed and drawn again naming B",
+    );
     expect(await grants()).not.toContainEqual(expect.objectContaining({ what: "socket" }));
 
     // Allowed as it stands now, it is kept: B, the socket the Notice names.
