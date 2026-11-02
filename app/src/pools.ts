@@ -281,6 +281,15 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
 }
 
 /**
+ * **Removes the held runner `runner`**, a draining one that stopped during its drain, and what its
+ * chats left with it. Why not, in the core's words.
+ */
+export async function removeHeldRunner(runner: string): Promise<string | undefined> {
+  const said = await caught(commands.dockerPoolRemoveHeldRunner(runner));
+  return said.status === "error" ? said.error : undefined;
+}
+
+/**
  * **Replaces pool `name`'s runner** (#4286): new chats start on the new one, and chats running now
  * carry on on the old one until they end. Why not, in the core's words.
  */

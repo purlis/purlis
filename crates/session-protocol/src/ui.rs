@@ -754,6 +754,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "docker_pool_make_again",
     // Replacing a pool's runner (#4286): the person's press alone, as every limit is theirs (Q6).
     "docker_pool_replace_runner",
+    // Removing a held runner: what its chats left goes with it, so the person's press alone.
+    "docker_pool_remove_held_runner",
     // The runner image this version's release names (2026-10-30): the Add a pool dialog's
     // default image, read through the updater, for the person's own window.
     "runner_image_of_this_version",

@@ -488,6 +488,7 @@ macro_rules! app_commands {
                 dockerpools::docker_pools_removed,
                 dockerpools::docker_pool_make_again,
                 dockerpools::docker_pool_replace_runner,
+                dockerpools::docker_pool_remove_held_runner,
                 dockerpools::docker_pool_version,
                 dockerpools::runner_image_of_this_version,
                 clusterpools::cluster_contexts,

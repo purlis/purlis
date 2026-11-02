@@ -12,7 +12,8 @@
 //! - **each pool of purlis's own image gets a runner of that image beside its old one**
 //!   ([`purlis_core::pools::follow`]): new chats start on it, and the old one drains;
 //! - **each draining runner with no chat left is removed** ([`purlis_core::pools::drain`]),
-//!   unpaired first over a link of its own;
+//!   unpaired first over a link of its own, and one that stopped during its drain is held for
+//!   the person ([`purlis_core::pools::DrainLook::Held`]);
 //! - **a pool of a team's own image is never moved**: its row says its runner is behind
 //!   (`crate::dockerpools::docker_pool_version`).
 //!
@@ -21,6 +22,8 @@
 
 #[cfg(unix)]
 use purlis_core::dockerpool::Image;
+#[cfg(unix)]
+use purlis_core::pools::DrainLook;
 #[cfg(unix)]
 use tauri::Runtime;
 
@@ -301,6 +304,12 @@ pub fn waiting_on(config: &std::path::Path, pool: &str) -> u32 {
         .sum()
 }
 
+/// **What the draining runner `runner` of pool `pool` waited on is let go of**: it is removed.
+#[cfg(unix)]
+pub fn forget_waiting_on(config: &std::path::Path, pool: &str, runner: &str) {
+    lock_waiting().remove(&(config.to_path_buf(), pool.to_owned(), runner.to_owned()));
+}
+
 /// **What pool `pool`'s draining runners waited on is let go of** (#2865): the pool is removed,
 /// its runners with it.
 #[cfg(unix)]
@@ -365,6 +374,15 @@ pub fn follow_and_drain(
         }
     }
     for kept in purlis_core::runners::draining(&machine.config).unwrap_or_default() {
+        // A held runner is the person's now, what a Docker prune left of it too. Told once.
+        if kept.held {
+            lock_waiting().remove(&(
+                machine.config.clone(),
+                kept.pool().to_owned(),
+                kept.name().to_owned(),
+            ));
+            continue;
+        }
         // Its drain began and only its home is left, so nothing is left to ask: only its removal
         // is tried again (#4298). Its home listed here says this is its engine: with no engine
         // kept, a Docker reaching another one lists no such volume, and the row stays (#4149).
@@ -434,16 +452,29 @@ pub fn follow_and_drain(
             kept.pool().to_owned(),
             kept.name().to_owned(),
         );
-        // A suspended runner runs no chat (#2051): it is not woken to be asked. One Docker no
-        // longer lists is not taken as idle on its own (#4149): Docker may only be pointing at
-        // another engine, and its chats run on where it is.
-        let suspended = matches!(machine.running(&kept), Ok(false));
-        // One that answered its unpairing cannot be asked, and takes no chat (#4146): only its
-        // removal is left.
-        let chats = if suspended || kept.unpaired {
-            Ok(0)
-        } else {
-            chats_on(&to)
+        // Nothing is woken to be asked (#2051). One Docker no longer lists is not taken as idle
+        // on its own (#4149): Docker may only be pointing at another engine, and its chats run
+        // on where it is. One that answered its unpairing cannot be asked, and takes no chat
+        // (#4146): only its removal is left.
+        let look = machine
+            .ran(&kept)
+            .map(|ran| purlis_core::pools::drain_look(&kept, ran));
+        let chats = match look {
+            _ if kept.unpaired => Ok(0),
+            Ok(DrainLook::Held) => {
+                lock_waiting().remove(&at);
+                said.push(match purlis_core::pools::hold(&machine.config, kept.name()) {
+                    Ok(()) => format!(
+                        "draining runner {} stopped during its drain, so it stays with its home \
+                         until it is removed in Devices",
+                        kept.name()
+                    ),
+                    Err(why) => format!("draining runner {} was not held: {why}", kept.name()),
+                });
+                continue;
+            }
+            Ok(DrainLook::NoChat) => Ok(0),
+            Ok(DrainLook::Ask) | Err(_) => chats_on(&to),
         };
         match chats {
             Ok(0) => {

@@ -6,7 +6,7 @@
 //! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter",
 //! "frames", "width", "profiles"}], "runners":
 //! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
-//! "draining"?, "engine"?, "home_created"?}]}`.
+//! "draining"?, "last_stop"?, "engine"?, "home_created"?}]}`.
 //!
 //! - **A pool is named and defined only here** ([`Pool`]): a Docker pool's name, the runner
 //!   image by digest, and the limits the person set, each left out where purlis's default
@@ -360,6 +360,14 @@ pub struct Kept {
     /// terminal: their sign-ins here are never carried, even where the sign-out could not reach
     /// it.
     pub signed_out: Vec<String>,
+    /// When its container last stopped as its drain began, in seconds since the epoch, `0` where
+    /// it never had: any other stop Docker says since is one its drain did not expect, so it
+    /// is held ([`crate::pools::drain_look`]). `None` where this was not read, a row from before
+    /// it among them, which says nothing of when it stopped.
+    pub last_stop: Option<u64>,
+    /// **It is held** ([`crate::pools::DrainLook::Held`]): it stays with its home until the person
+    /// removes it, whatever it answers, and running again changes nothing.
+    pub held: bool,
     /// The engine that made it, as `docker info` prints its id (#4166): only that engine's word
     /// says it was removed. `None` for a runner kept before this, or an engine that prints none.
     pub engine: Option<String>,
@@ -1222,6 +1230,8 @@ fn keep_in(
         carry_failed: false,
         unpaired: false,
         signed_out: Vec::new(),
+        last_stop: None,
+        held: false,
         engine: None,
         home_created: None,
     };
@@ -1567,6 +1577,12 @@ fn to_row(kept: &Kept) -> serde_json::Value {
     if !kept.signed_out.is_empty() {
         row["signed_out"] = kept.signed_out.clone().into();
     }
+    if let Some(last_stop) = kept.last_stop {
+        row["last_stop"] = last_stop.into();
+    }
+    if kept.held {
+        row["held"] = true.into();
+    }
     if let Some(engine) = &kept.engine {
         row["engine"] = engine.as_str().into();
     }
@@ -1602,6 +1618,8 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         "carry_failed",
         "unpaired",
         "signed_out",
+        "last_stop",
+        "held",
         "engine",
         "home_created",
         "made_with",
@@ -1620,6 +1638,15 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         }
     };
     let draining = match fields.get("draining") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let last_stop = match fields.get("last_stop") {
+        None => None,
+        Some(last_stop) => Some(last_stop.as_u64()?),
+    };
+    let held = match fields.get("held") {
         None => false,
         Some(serde_json::Value::Bool(true)) => true,
         Some(_) => return None,
@@ -1691,6 +1718,8 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         carry_failed,
         unpaired,
         signed_out,
+        last_stop,
+        held,
         engine,
         home_created,
     })

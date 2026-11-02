@@ -1546,6 +1546,7 @@ export const commands = {
 	dockerPoolsRemoved: __WINDOW_ONLY_RESULT,
 	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
 	dockerPoolReplaceRunner: __WINDOW_ONLY_RESULT,
+	dockerPoolRemoveHeldRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
@@ -8572,6 +8573,11 @@ export type PoolVersion = {
 	 */
 	draining: number,
 	/**
+	 *  How many of its older runners are held: each stopped during its drain, and stays with its
+	 *  home until the person removes it.
+	 */
+	held: number,
+	/**
 	 *  Whether this version's release named a runner image, as purlis last found it (#2880):
 	 *  one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
 	 *  looked.
@@ -9940,6 +9946,11 @@ export type RunnerAsked = {
 	 *  (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
 	 */
 	ran_this_week: number | null,
+	/**
+	 *  It stopped during its drain, so it stays with its home until the person removes it
+	 *  ([`purlis_core::pools::DrainLook::Held`]).
+	 */
+	held: boolean,
 };
 
 /**  One runner of a project, as the away summary reads it. */

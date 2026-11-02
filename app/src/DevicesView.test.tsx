@@ -29,6 +29,8 @@ let disk: DiskHeld;
 /** The pools the core was asked to remove, and what it answers. */
 let removed: string[];
 let removeSays: string | null;
+/** The held runners the core was asked to remove. */
+let heldRemoved: string[];
 let devicesRead: number;
 
 beforeEach(() => {
@@ -66,6 +68,7 @@ beforeEach(() => {
       contacted: Math.floor(Date.now() / 1000),
       holds: { open: [{ plane: PLANE, session: 2 }], browsers_open: [], chats: 1, browsers: 0 },
       ran_this_week: 9000,
+      held: false,
     },
     "qa/qa": {
       standing: { state: "suspended" },
@@ -74,6 +77,7 @@ beforeEach(() => {
       contacted: null,
       holds: { open: [], browsers_open: [], chats: 0, browsers: 0 },
       ran_this_week: 3600,
+      held: false,
     },
   };
   disk = {
@@ -85,6 +89,7 @@ beforeEach(() => {
   };
   removed = [];
   removeSays = null;
+  heldRemoved = [];
   devicesRead = 0;
   runnersAsked = [];
   holdAnswers = undefined;
@@ -101,6 +106,10 @@ beforeEach(() => {
     if (cmd === "remove_docker_pool") {
       removed.push(a.name ?? "");
       return removeSays;
+    }
+    if (cmd === "docker_pool_remove_held_runner") {
+      heldRemoved.push(a.runner ?? "");
+      return null;
     }
     if (cmd === "device_runner") {
       const key = `${a.pool}/${a.runner}`;
@@ -329,6 +338,26 @@ describe("DevicesView", () => {
       screen.getByText(/purlis could not read the disk the runners hold\. · Docker said:/),
     ).toBeInTheDocument();
     expect(screen.getByText("Cannot connect to the Docker daemon").tagName).toBe("BDI");
+  });
+
+  it("offers only a held runner's row its removal, asking first", async () => {
+    asked = { ...asked, "qa/qa": { ...(asked["qa/qa"] as RunnerAsked), held: true } };
+    render(<DevicesView />);
+    await screen.findByRole("button", { name: "Remove runner qa" });
+    const held = section("Runner qa of pool qa");
+    expect(held.textContent).toContain("keeps it and what they left until you remove it");
+    expect(held.textContent).not.toContain("It starts again when");
+    expect(
+      within(section("Runner builds of pool builds")).queryByRole("button", {
+        name: /Remove runner/,
+      }),
+    ).toBeNull();
+
+    await userEvent.click(within(held).getByRole("button", { name: "Remove runner qa" }));
+    const asking = await screen.findByRole("alertdialog", { name: "Remove runner qa?" });
+    await userEvent.click(within(asking).getByRole("button", { name: "Remove runner" }));
+
+    await waitFor(() => expect(heldRemoved).toEqual(["qa"]));
   });
 
   it("leads a key-changed runner's row to removing its pool, asking first", async () => {

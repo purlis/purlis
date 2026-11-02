@@ -37,8 +37,8 @@ import { Button } from "./ui/button/Button";
 import { Notice } from "./Notice";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import type { DevicesShown, PlaneId } from "./bindings";
-import { removePool } from "./pools";
-import { RemovePool } from "./settings/pools";
+import { removeHeldRunner, removePool } from "./pools";
+import { RemoveHeldRunner, RemovePool } from "./settings/pools";
 import {
   arranged,
   contactSaid,
@@ -114,6 +114,8 @@ function DeviceSection({
   inProject,
   removing,
   onRemove,
+  removingHeld,
+  onRemoveHeld,
 }: {
   row: DeviceRow;
   asked: Asked | undefined;
@@ -124,6 +126,10 @@ function DeviceSection({
   removing: boolean;
   /** Asks whether to remove its pool (#3533). */
   onRemove: (pool: string) => void;
+  /** Whether it is being removed, held as it was. */
+  removingHeld: boolean;
+  /** Asks whether to remove it, held as it is. */
+  onRemoveHeld: (runner: string) => void;
 }) {
   const runner = row.runner;
   const title =
@@ -136,12 +142,15 @@ function DeviceSection({
     runner === undefined
       ? versionSaid(version, version)
       : versionSaid(answerOf(asked)?.version ?? null, version);
+  const held = answerOf(asked)?.held === true;
   const facts = [
     runs,
     runner === undefined ? undefined : contactSaid(answerOf(asked)?.contacted ?? null, now),
-    runner?.draining === true
-      ? "An older runner: it keeps its chats until they end, then purlis removes it"
-      : undefined,
+    held
+      ? "An older runner that stopped before purlis saw its chats end: purlis keeps it and what they left until you remove it"
+      : runner?.draining === true
+        ? "An older runner: it keeps its chats until they end, then purlis removes it"
+        : undefined,
   ].filter((one) => one !== undefined);
   const more = notOpenSaid(asked);
   const nothing = row.chats.length === 0 && row.browsers.length === 0 && more === undefined;
@@ -160,6 +169,18 @@ function DeviceSection({
               onPress={removing ? undefined : () => onRemove(runner.pool)}
             >
               {removing ? "Removing…" : "Remove pool"}
+            </Button>
+          )}
+          {runner !== undefined && held && (
+            <Button
+              size="sm"
+              aria-label={
+                removingHeld ? `Removing runner ${runner.runner}` : `Remove runner ${runner.runner}`
+              }
+              aria-disabled={removingHeld}
+              onPress={removingHeld ? undefined : () => onRemoveHeld(runner.runner)}
+            >
+              {removingHeld ? "Removing…" : "Remove runner…"}
             </Button>
           )}
         </RowTrail>
@@ -259,6 +280,20 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
   const [asking, setAsking] = useState<string | undefined>();
   const [removing, setRemoving] = useState<string | undefined>();
   const [left, setLeft] = useState<{ pool: string; said: string } | undefined>();
+  // The held runner a row asks to remove, the one being removed, and what stopped it.
+  const [askingHeld, setAskingHeld] = useState<string | undefined>();
+  const [removingHeld, setRemovingHeld] = useState<string | undefined>();
+  const [heldLeft, setHeldLeft] = useState<{ runner: string; said: string } | undefined>();
+  const removeHeld = (runner: string) => {
+    setAskingHeld(undefined);
+    setRemovingHeld(runner);
+    setHeldLeft(undefined);
+    void removeHeldRunner(runner).then((said) => {
+      setRemovingHeld(undefined);
+      if (said !== undefined) setHeldLeft({ runner, said });
+      return rereadDevices();
+    });
+  };
   const remove = (pool: string) => {
     setAsking(undefined);
     setRemoving(pool);
@@ -311,6 +346,8 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
             inProject={inProject}
             removing={row.runner !== undefined && removing === row.runner.pool}
             onRemove={setAsking}
+            removingHeld={row.runner !== undefined && removingHeld === row.runner.runner}
+            onRemoveHeld={setAskingHeld}
           />
         ))}
         <UnkeptSection placement={shown.placement} inProject={inProject} />
@@ -324,6 +361,23 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
           {`Removing pool ${left.pool} did not finish: `}
           <bdi>{left.said}</bdi>
         </Notice>
+      )}
+      {heldLeft !== undefined && (
+        <Notice
+          cause={`devices-held-runner-removed:${heldLeft.runner}`}
+          tone="trouble"
+          onDismiss={() => setHeldLeft(undefined)}
+        >
+          {`Removing runner ${heldLeft.runner} did not finish: `}
+          <bdi>{heldLeft.said}</bdi>
+        </Notice>
+      )}
+      {askingHeld !== undefined && (
+        <RemoveHeldRunner
+          name={askingHeld}
+          onCancel={() => setAskingHeld(undefined)}
+          onRemove={() => removeHeld(askingHeld)}
+        />
       )}
       {asking !== undefined && (
         <RemovePool
