@@ -7137,7 +7137,10 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   - An entry of `questions` is `number`, `task` (by number), `text`, `asker` (the chat asked, by number), `standing`
     (`with_asking_chat`, or `reached_person` with `why`: `passed_on`, `no_reply` or `asker_gone`,
     `at`, and the asking chat's one-line `note`), `file` (the file's name in that chat's
-    `said-<chat>/`), `shown`, `asked_at` and `handed_at`.
+    `said-<chat>/`), `shown`, `asked_at`, `handed_at` (when its time started) and `clock_only`
+    (#4653: true while that time was started by an asking chat stuck on a prompt or a limit and no
+    turn has had the question yet, so the turn that does still writes `question.shown`; absent
+    when false).
   - `text` and `note` are masked as a dispatch record's text is, and read back held to a message's
     rule. **The person's answer is never here**: a restart before the task has it leaves the
     question open.
