@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793602842217,
+  "lastUpdate": 1793605363232,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35952,6 +35952,48 @@ window.BENCHMARK_DATA = {
             "value": 100.98818299999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.669, 100.885, 100.988, 101.407, 101.953 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9bae8bec37fa747324a285eae1b0dd5cf0a29a3d",
+          "message": "Theme: a heavy theme's parts land without waiting on the restore (#4410) (#4642)\n\nThe first frame says when its parts are coming (parts_later, a ticket) and the window asks for them as it starts, through a window-only command that needs no project. A failed ask is made again, three times. Only the frame itself is given its parts, so a theme drawn in its place stays.\n\nThe default and Purlis Classic are now measured before the deadline starts, so their frames have their parts however busy the machine is.\n\nRefs #4410\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CX7EPZYD2JHWB6Y0E8DXHQ\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T06:12:14Z",
+          "tree_id": "66ba0ff65bb8209f0a83e94a026bd75f8e7fdbe6",
+          "url": "https://github.com/purlis/purlis/commit/9bae8bec37fa747324a285eae1b0dd5cf0a29a3d"
+        },
+        "date": 1793605358878,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5236425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.523, 0.524, 0.540, 0.546 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4493565,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.083, 16.125, 16.449, 16.464, 16.624 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.5841425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.916, 102.327, 102.584, 103.651, 103.803 ms"
           }
         ]
       }
