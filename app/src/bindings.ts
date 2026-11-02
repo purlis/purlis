@@ -1782,7 +1782,12 @@ export const commands = {
 	 *  which the window puts back the old way: each chat a tab of its own, a task beside the chat
 	 *  its record names. Asked once, when the window first draws a project.
 	 */
-	reopenedLayout: (plane: PlaneId) => typedError<LaidOut | null, string>(__TAURI_INVOKE("reopened_layout", { plane })),
+	reopenedLayout: (plane: PlaneId) => typedError<{
+	/**  The strip drawn: a workspace, or `null` for the strip outside every workspace. */
+	strip: string | null,
+	/**  Every tab, in each strip's order from the left. */
+	tabs: LaidTab[],
+} | null, string>(__TAURI_INVOKE("reopened_layout", { plane })),
 	/**
 	 *  The order the chat strip draws this project's chats in, by session, so the record lists
 	 *  them in it and the next launch — or a reloaded window — puts them back in it (SI-6).
