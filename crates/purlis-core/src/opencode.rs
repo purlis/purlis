@@ -215,13 +215,16 @@ pub enum Arming<'a> {
 /// The shim, as the bundle carries it ([`Arming::Session`]) or as `charter plugin install`
 /// writes it ([`Arming::GuardOnly`]).
 pub fn shim(arming: Arming<'_>) -> String {
-    let (binary, variant, hooks, missing, state) = match arming {
+    // A task's own question is routed by the app's chat alone (#4559): the installed copy is
+    // loaded beside it there, and routing in both would ask the app twice.
+    let (binary, variant, hooks, missing, state, routes_questions) = match arming {
         Arming::Session => (
             format!("process.env.{} || \"\"", crate::plugin::BINARY_ENV),
             "// The app loads this file for one chat, and names its own `purlis` in the chat's environment.",
             SESSION_HOOKS,
             "refuses",
             SESSION_STATE,
+            true,
         ),
         Arming::GuardOnly(path) => (
             serde_json::Value::from(path.display().to_string()).to_string(),
@@ -229,6 +232,7 @@ pub fn shim(arming: Arming<'_>) -> String {
             GUARD_HOOKS,
             "allows",
             "",
+            false,
         ),
     };
     let routes: serde_json::Map<String, serde_json::Value> = TOOLS
@@ -243,6 +247,12 @@ pub fn shim(arming: Arming<'_>) -> String {
     let timeouts: serde_json::Map<String, serde_json::Value> = crate::hookreg::HANDLERS
         .iter()
         .map(|h| (h.name.to_owned(), h.timeout.into()))
+        .chain(std::iter::once((
+            crate::harness::hooked::QUESTION_WORD.to_owned(),
+            crate::harness::hooked::QUESTION_HOOK_TIMEOUT
+                .as_secs()
+                .into(),
+        )))
         .collect();
     TEMPLATE
         .replace("{{MARK}}", MARK)
@@ -266,6 +276,12 @@ pub fn shim(arming: Arming<'_>) -> String {
             "{{EFFECTFUL}}",
             &serde_json::to_string(&EFFECTFUL).expect("JSON"),
         )
+        .replace(
+            "{{QUESTION_TOOL}}",
+            crate::harness::hooked::OPENCODE_QUESTION_TOOL,
+        )
+        .replace("{{ROUTES_QUESTIONS}}", &routes_questions.to_string())
+        .replace("{{QUESTION_WORD}}", crate::harness::hooked::QUESTION_WORD)
         .replace("{{STATE}}", state)
         .replace("{{HOOKS}}", hooks)
         .replace("{{PERMISSION_WORD}}", crate::harness::hooked::WORD)
@@ -982,6 +998,14 @@ const TIMEOUTS = {{TIMEOUTS}}
 
 const DEFAULT_PRE = {{DEFAULT_PRE}}
 
+// opencode's own question tool, which no guard refuses: a refused question would be lost. The
+// app's chat routes it to a task's asking chat by `purlis hook {{QUESTION_WORD}}` (#4559); the
+// copy `purlis plugin install` wrote, loaded beside it there, lets it through, so the app is
+// asked once.
+const QUESTION_TOOL = "{{QUESTION_TOOL}}"
+const QUESTION_WORD = "{{QUESTION_WORD}}"
+const ROUTES_QUESTIONS = {{ROUTES_QUESTIONS}}
+
 const EFFECTFUL = {{EFFECTFUL}}
 
 // What a `purlis` that is not there does to a tool call.
@@ -1038,6 +1062,19 @@ const response = (tool, output) => {
   if (tool !== "bash") return { output: said }
   const exit = output?.metadata?.exit
   return typeof exit === "number" && exit !== 0 ? { stderr: said, mixed: true } : said
+}
+
+// Where a task's own question went, when purlis sent it to the task's asking chat (#4559), or
+// null: then opencode asks it in its pane, and its `question.asked` puts the chat in the Inbox.
+// Only a whole `deny` with its reason refuses. A `purlis` that crashed, timed out, refused or
+// said something this cannot read leaves the question to the pane, since a refused question
+// would be lost.
+const redirected = (said) => {
+  if (said.code !== 0) return null
+  const decision = answer(said)?.hookSpecificOutput
+  if (decision?.permissionDecision !== "deny") return null
+  const went = decision.permissionDecisionReason
+  return typeof went === "string" && went ? went : null
 }
 
 // Why a tool call is refused, or null when it may run.
@@ -1144,6 +1181,18 @@ export const PurlisPlugin = async (plugin, options) => {
   const before = async (input, output) => {
     const tool = toolId(input)
     const args = output?.args ?? {}
+    if (tool === QUESTION_TOOL) {
+      if (!ROUTES_QUESTIONS) return
+      const went = redirected(await run(QUESTION_WORD, {
+        hook_event_name: "PreToolUse",
+        session_id: rootOf(input?.sessionID),
+        cwd: directory,
+        tool_name: tool,
+        tool_input: args,
+      }, input?.sessionID))
+      if (went !== null) throw new Error(went)
+      return
+    }
     const why = refusal(await run(route(tool, "pre") ?? DEFAULT_PRE, {
       hook_event_name: "PreToolUse",
       session_id: rootOf(input?.sessionID),

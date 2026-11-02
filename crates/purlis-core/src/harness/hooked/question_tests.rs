@@ -329,3 +329,48 @@ fn a_redirected_codex_question_is_denied_in_its_pre_tool_use_words_with_where_it
         } })
     );
 }
+
+/// opencode's `question` as purlis's shim hands it to `purlis hook taskquestion` (#4559): the
+/// tool's own id, and its arguments as `tool_input`, measured on opencode 1.18.33 from the
+/// `tool.execute.before` its plugin is handed.
+fn opencode_asked(questions: Value) -> Value {
+    serde_json::json!({
+        "session_id": "ses_abc",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "question",
+        "tool_input": { "questions": questions },
+    })
+}
+
+#[test]
+fn opencode_s_own_question_reads_as_one_message_with_what_it_offers() {
+    let measured = serde_json::json!([{
+        "question": "Which colour?",
+        "header": "Which colour?",
+        "options": [
+            { "label": "Red", "description": "Choose red." },
+            { "label": "Blue", "description": "Choose blue." },
+        ],
+    }]);
+
+    assert_eq!(
+        own_question_text(Source::Opencode, &opencode_asked(measured)).as_deref(),
+        Some("Which colour?\n- Red: Choose red.\n- Blue: Choose blue.")
+    );
+}
+
+#[test]
+fn each_harness_reads_only_its_own_question_tool_on_this_hook() {
+    let opencode = opencode_asked(serde_json::json!([one("Which host?", &["blue"])]));
+    let codex = codex_asked(serde_json::json!([one("Which host?", &["blue"])]));
+
+    assert_eq!(own_question_text(Source::Codex, &opencode), None);
+    assert_eq!(own_question_text(Source::Opencode, &codex), None);
+    assert!(own_question_text(Source::Codex, &codex).is_some());
+    // Claude Code's prompt is read on its permission hook, never on this one.
+    assert_eq!(own_question_text(Source::ClaudeCode, &opencode), None);
+    assert_eq!(
+        own_question_text(Source::Opencode, &opencode_asked(serde_json::json!([]))),
+        None
+    );
+}

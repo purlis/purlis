@@ -327,6 +327,25 @@ pub fn codex_asked_text(payload: &Value) -> Option<String> {
     super::asked::question::questions_said(&payload["tool_input"])
 }
 
+/// opencode's own question tool, by the id its plugin's `tool.execute.before` is handed and
+/// purlis's shim passes on as `tool_name` (#4559, measured on opencode 1.18.33).
+pub const OPENCODE_QUESTION_TOOL: &str = "question";
+
+/// **A harness's own question prompt, read on [`QUESTION_WORD`]** (#4558, #4559): Codex's
+/// `request_user_input` ([`codex_asked_text`]) and opencode's `question`, which hold
+/// `questions` of a `question` and `options` of a `label` and a `description`, as Claude Code's
+/// does. None for any other tool, a question with nothing in it, and Claude Code, whose prompt
+/// is read on its permission hook ([`asked_text`]): the harness then asks in its pane.
+pub fn own_question_text(source: Source, payload: &Value) -> Option<String> {
+    match source {
+        Source::Codex => codex_asked_text(payload),
+        Source::Opencode => (payload["tool_name"].as_str() == Some(OPENCODE_QUESTION_TOOL))
+            .then(|| super::asked::question::questions_said(&payload["tool_input"]))
+            .flatten(),
+        Source::ClaudeCode => None,
+    }
+}
+
 /// **The hook's refusal of a Codex question it redirected**, in `message` (#4558): `PreToolUse`'s
 /// `deny`, whose reason Codex hands the model as the tool's result, and its turn goes on
 /// (`hooks/src/events/pre_tool_use.rs`, `rust-v0.163.0`).

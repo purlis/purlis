@@ -111,16 +111,17 @@ fn redirected(
     hooked::refused_with(source, &message)
 }
 
-/// **`purlis hook taskquestion`: Codex's own question prompt, before it is asked** (#4558, ADR
-/// 0107), on the `PreToolUse` Codex runs for `request_user_input`
-/// ([`hooked::QUESTION_WORD`]). A task's question goes to its asking chat, and Codex is told
-/// so as the tool's result ([`codex_question_redirected`]).
+/// **`purlis hook taskquestion`: a harness's own question prompt, before it is asked** (ADR
+/// 0107): Codex's `request_user_input`, on the `PreToolUse` Codex runs for it (#4558), and
+/// opencode's `question`, from purlis's shim's `tool.execute.before` (#4559)
+/// ([`hooked::QUESTION_WORD`]). A task's question goes to its asking chat, and the harness is
+/// told so as the tool's result ([`own_question_redirected`]).
 ///
 /// **It fails open, and never drops a question.** No app, a payload that will not read, a
-/// harness that is not Codex, or a question the app says is the person's: it prints nothing,
-/// and Codex asks in its pane. There it is said to the app as a question waiting on the person
-/// ([`question_left_in_its_pane`]), so the chat is in the Inbox and does not wait unseen,
-/// since Codex says nothing of its own about it.
+/// harness with no reader here, or a question the app says is the person's: it prints nothing,
+/// and the harness asks in its pane. A Codex question left there is said to the app as one
+/// waiting on the person ([`question_left_in_its_pane`]), so the chat is in the Inbox and does
+/// not wait unseen; opencode's shim says so itself, on opencode's `question.asked`.
 pub fn taskquestion(payload: &str) -> ExitCode {
     let Some(socket) = purlis_core::envvar::var_os(hookwire::SOCKET_ENV) else {
         return ExitCode::SUCCESS;
@@ -133,15 +134,14 @@ pub fn taskquestion(payload: &str) -> ExitCode {
     else {
         return ExitCode::SUCCESS;
     };
-    if let Some(decision) = codex_question_redirected(source, &payload, &crate::dispatch::route) {
+    if let Some(decision) = own_question_redirected(source, &payload, &crate::dispatch::route) {
         println!("{decision}");
         return ExitCode::SUCCESS;
     }
-    if source == Source::Codex
-        && let Some(report) =
-            question_left_in_its_pane(&payload, &|name| purlis_core::envvar::var(name))
+    if let Some(report) =
+        question_left_in_its_pane(source, &payload, &|name| purlis_core::envvar::var(name))
     {
-        // Best effort, as every report is: Codex asks in its pane either way.
+        // Best effort, as every report is: the harness asks in its pane either way.
         let _ = hookwire::deliver_report(
             std::path::Path::new(&socket),
             hookwire::ChatToken::from_env().as_ref(),
@@ -151,20 +151,19 @@ pub fn taskquestion(payload: &str) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// **The hook's refusal of a Codex question `route` sent to the task's asking chat** (#4558), or
-/// none where it is no question of Codex's or the person is to be asked: then Codex asks in its
-/// pane. `route` is the app's to answer, from its own record of the chat, as for Claude Code's
-/// prompt ([`redirected`]).
-fn codex_question_redirected(
+/// **The hook's refusal of a harness's own question `route` sent to the task's asking chat**
+/// (#4558, #4559), or none where it is no question of that harness's or the person is to be
+/// asked: then the harness asks in its pane. `route` is the app's to answer, from its own
+/// record of the chat, as for Claude Code's prompt ([`redirected`]). The refusal is
+/// `PreToolUse`'s `deny`, which Codex reads, and which purlis's opencode shim turns into the
+/// throw opencode hands the model as the tool's error (measured on opencode 1.18.33).
+fn own_question_redirected(
     source: Source,
     payload: &serde_json::Value,
     route: &dyn Fn(&str) -> crate::dispatch::Routed,
 ) -> Option<String> {
     use crate::dispatch::Routed;
-    if source != Source::Codex {
-        return None;
-    }
-    let text = hooked::codex_asked_text(payload)?;
+    let text = hooked::own_question_text(source, payload)?;
     let message = match route(&text) {
         Routed::AskingChat(to) => purlis_core::dispatchtalk::redirected(&to),
         Routed::AlreadyAsking(why) => why,
@@ -175,11 +174,16 @@ fn codex_question_redirected(
 
 /// **The report that Codex's own question now waits in its pane** (#4558): a question waiting
 /// on the person, in the word purlis's opencode shim says opencode's in, which the app reads as
-/// one. Nothing of the question is on the line ([`notification`]).
+/// one. Nothing of the question is on the line ([`notification`]). None for opencode, whose
+/// shim reports the question opencode asks, so it is said once.
 fn question_left_in_its_pane(
+    source: Source,
     payload: &serde_json::Value,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Option<hookwire::Report> {
+    if source != Source::Codex {
+        return None;
+    }
     hooked::codex_asked_text(payload)?;
     notification("question", payload, env)
 }
@@ -357,7 +361,7 @@ mod tests {
     #[test]
     fn a_codex_task_s_question_prompt_is_denied_with_where_it_went() {
         use crate::dispatch::Routed;
-        let decision = codex_question_redirected(Source::Codex, &a_codex_question(), &|text| {
+        let decision = own_question_redirected(Source::Codex, &a_codex_question(), &|text| {
             assert_eq!(text, "Which host?\n- blue: the old one");
             Routed::AskingChat("steward 3".to_owned())
         })
@@ -372,7 +376,7 @@ mod tests {
     #[test]
     fn a_codex_task_paused_on_a_question_is_told_so_and_never_reaches_around_its_asking_chat() {
         use crate::dispatch::Routed;
-        let decision = codex_question_redirected(Source::Codex, &a_codex_question(), &|_| {
+        let decision = own_question_redirected(Source::Codex, &a_codex_question(), &|_| {
             Routed::AlreadyAsking("It is paused.".to_owned())
         })
         .expect("refused");
@@ -384,31 +388,80 @@ mod tests {
     fn a_codex_question_for_the_person_or_a_failed_redirect_is_asked_in_its_pane() {
         use crate::dispatch::Routed;
         assert_eq!(
-            codex_question_redirected(Source::Codex, &a_codex_question(), &|_| Routed::ThePerson),
+            own_question_redirected(Source::Codex, &a_codex_question(), &|_| Routed::ThePerson),
             None
         );
     }
 
     #[test]
-    fn only_codex_s_own_question_is_routed_on_this_hook() {
+    fn only_a_harness_s_own_question_is_routed_on_this_hook() {
         use crate::dispatch::Routed;
         let route = |_: &str| -> Routed { panic!("not routed") };
         let bash = serde_json::json!({ "tool_name": "Bash", "tool_input": {"command": "ls"} });
+        assert_eq!(own_question_redirected(Source::Codex, &bash, &route), None);
         assert_eq!(
-            codex_question_redirected(Source::Codex, &bash, &route),
+            own_question_redirected(Source::Opencode, &a_codex_question(), &route),
             None
         );
         for source in [Source::ClaudeCode, Source::Opencode] {
-            assert_eq!(
-                codex_question_redirected(source, &a_codex_question(), &route),
-                None
-            );
+            assert_eq!(own_question_redirected(source, &bash, &route), None);
         }
+        assert_eq!(
+            own_question_redirected(Source::ClaudeCode, &a_codex_question(), &route),
+            None
+        );
+    }
+
+    /// opencode's `question` as purlis's shim hands it on (#4559, opencode 1.18.33).
+    fn an_opencode_question() -> serde_json::Value {
+        serde_json::json!({
+            "session_id": "ses_abc",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "question",
+            "tool_input": { "questions": [{
+                "question": "Which host?", "header": "Host",
+                "options": [{ "label": "blue", "description": "the old one" }],
+            }] },
+        })
+    }
+
+    #[test]
+    fn an_opencode_task_s_question_is_refused_with_where_it_went() {
+        use crate::dispatch::Routed;
+        let decision =
+            own_question_redirected(Source::Opencode, &an_opencode_question(), &|text| {
+                assert_eq!(text, "Which host?\n- blue: the old one");
+                Routed::AskingChat("steward 3".to_owned())
+            })
+            .expect("redirected");
+
+        assert_eq!(
+            reason_of(&decision),
+            purlis_core::dispatchtalk::redirected("steward 3")
+        );
+    }
+
+    #[test]
+    fn an_opencode_question_for_the_person_is_left_to_its_pane_and_its_own_report() {
+        use crate::dispatch::Routed;
+        assert_eq!(
+            own_question_redirected(Source::Opencode, &an_opencode_question(), &|_| {
+                Routed::ThePerson
+            }),
+            None
+        );
+        // purlis's shim reports opencode's `question.asked` itself; a second report here would
+        // say it twice.
+        assert_eq!(
+            question_left_in_its_pane(Source::Opencode, &an_opencode_question(), &env),
+            None
+        );
     }
 
     #[test]
     fn a_codex_question_left_to_its_pane_is_reported_as_a_question_waiting_on_the_person() {
-        let report = question_left_in_its_pane(&a_codex_question(), &env).expect("a report");
+        let report =
+            question_left_in_its_pane(Source::Codex, &a_codex_question(), &env).expect("a report");
         assert_eq!(report.chat, 7);
         assert_eq!(report.event, Event::Notification);
         assert_eq!(report.detail.notified, Notified::Asks(Prompt::Question));
