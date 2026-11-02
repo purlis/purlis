@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Said } from "./actions";
+import { followLandings } from "./repoClones";
 
 /** At most this many results are kept: the newest, as a log would. */
 export const KEPT_RESULTS = 20;
@@ -68,6 +69,29 @@ export const trackOf = (said: Said, plane: string | undefined) =>
 const nextId = (list: readonly KeptResult[], next: number) =>
   Math.max(next - 1, ...list.map((one) => one.id)) + 1;
 
+/**
+ * **`repo` landed in `workspace`, so a line saying it failed there is no longer true** (#4394). A
+ * line that named only it goes; one that named others stays, in its place and on its track, and
+ * says only those. Answers the lines as they now are and the ones that stopped being what was said.
+ */
+export function landed(
+  kept: readonly KeptResult[],
+  plane: string | undefined,
+  workspace: string,
+  repo: string,
+): { list: readonly KeptResult[]; overtaken: readonly Said[] } {
+  const overtaken: Said[] = [];
+  const list = kept.flatMap((one) => {
+    const about = one.said.notCloned;
+    if (one.plane !== plane || about?.workspace !== workspace) return [one];
+    const rest = about.failed.filter((failed) => failed.repo !== repo);
+    if (rest.length === about.failed.length) return [one];
+    overtaken.push(one.said);
+    return rest.length === 0 ? [] : [{ ...one, said: { ...one.said, ...about.told(rest) } }];
+  });
+  return { list, overtaken };
+}
+
 /** The results kept for `plane`'s Inbox: its own and the window's. */
 export function resultsFor(kept: readonly KeptResult[], plane: string | undefined) {
   return kept.filter((one) => one.plane === undefined || one.plane === plane);
@@ -78,26 +102,40 @@ export function useKeptResults(said: Said | undefined, plane: string | undefined
   // `last` is the answer last kept: each is kept once, when it is first seen, so one put away
   // here is not kept again while it is still the newest thing said (#3344's review).
   // `dropped` names each track whose line was put away: it counts on unseen, and only the result
-  // that ends it is kept again (#3649's review).
+  // that ends it is kept again (#3649's review). `overtaken` holds the lines a landing changed: a
+  // project's answer stays its answer, and comes back with its project, but is not true any more.
   const [kept, setKept] = useState<{
     list: readonly KeptResult[];
     next: number;
     last: Said | undefined;
     dropped: ReadonlySet<string>;
+    overtaken: ReadonlySet<Said>;
   }>(() => {
     const list = keep([], said, plane, 0);
-    return { list, next: nextId(list, 0), last: said, dropped: NONE };
+    return { list, next: nextId(list, 0), last: said, dropped: NONE, overtaken: new Set() };
   });
+  useEffect(
+    () =>
+      followLandings((into, workspace, repo) =>
+        setKept((was) => {
+          const { list: now, overtaken } = landed(was.list, into, workspace, repo);
+          if (overtaken.length === 0) return was;
+          return { ...was, list: now, overtaken: new Set([...was.overtaken, ...overtaken]) };
+        }),
+      ),
+    [],
+  );
   let list = kept.list;
   if (said !== kept.last) {
-    list = keep(list, said, plane, kept.next, kept.dropped);
+    if (said === undefined || !kept.overtaken.has(said))
+      list = keep(list, said, plane, kept.next, kept.dropped);
     // A result ends its track's putting away: a Retry after it counts again.
     const ends = said !== undefined && said.track !== undefined && said.progress !== true;
     const dropped = ends
       ? new Set([...kept.dropped].filter((one) => one !== trackOf(said, plane)))
       : kept.dropped;
     // A line can bring the one said before it (`Said.after`): the next id is past both.
-    setKept({ list, next: nextId(list, kept.next), last: said, dropped });
+    setKept({ ...kept, list, next: nextId(list, kept.next), last: said, dropped });
   }
   // One function for every render, so what is handed it is not drawn again for it (#3653).
   const drop = useCallback(
