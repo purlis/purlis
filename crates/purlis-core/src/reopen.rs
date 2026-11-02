@@ -1049,7 +1049,7 @@ fn read(plane_root: &Path) -> Record {
 /// their chats were never recorded rather than that a committed file is defective.
 pub fn read_or_refusal(plane_root: &Path) -> Result<Record, std::io::Error> {
     Ok(match read_held(plane_root)? {
-        Held::Record(record) => record,
+        Held::Record(record) => *record,
         Held::Absent | Held::Garbled => Record::default(),
     })
 }
@@ -1063,7 +1063,7 @@ pub fn read_or_refusal(plane_root: &Path) -> Result<Record, std::io::Error> {
 /// "no chats".
 pub fn read_strictly(plane_root: &Path) -> Result<Option<Record>, std::io::Error> {
     match read_held(plane_root)? {
-        Held::Record(record) => Ok(Some(record)),
+        Held::Record(record) => Ok(Some(*record)),
         Held::Absent => Ok(None),
         Held::Garbled => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -1079,7 +1079,7 @@ pub fn read_strictly(plane_root: &Path) -> Result<Option<Record>, std::io::Error
 enum Held {
     Absent,
     Garbled,
-    Record(Record),
+    Record(Box<Record>),
 }
 
 /// The process of every chat the record names, read **leniently**: only `chats[].pid`, from a
@@ -1190,10 +1190,10 @@ fn read_held(plane_root: &Path) -> Result<Held, std::io::Error> {
     // below a number it still names — hand-edited, or written by a charter that did not know
     // about numbers — would otherwise deal that number to a second chat, which is the defect
     // (charter-app#90). Raising it here costs a gap in the counting and nothing else.
-    Ok(Held::Record(Record {
+    Ok(Held::Record(Box::new(Record {
         dealt: highest_dealt(&record),
         ..record
-    }))
+    })))
 }
 
 /// The conversation chat `number` is in now, as the app last recorded it in `plane_root` — or
