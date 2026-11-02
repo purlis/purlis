@@ -989,6 +989,28 @@ test("the outcome bars run on a pull request that touches what they measure, and
   );
 });
 
+test("a draft pull request runs no macOS job but app builds, and marking it ready starts the run that does", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const jobs = ci.slice(ci.indexOf("\njobs:\n"));
+  const names = [...jobs.matchAll(/^  ([a-z][a-z0-9-]*):\n/gm)].map((m) => m[1]);
+  const body = (name) => {
+    const at = jobs.indexOf(`\n  ${name}:\n`);
+    const next = names[names.indexOf(name) + 1];
+    return jobs.slice(at, next ? jobs.indexOf(`\n  ${next}:\n`, at + 1) : undefined);
+  };
+  // Every job that can hold a macOS runner on a pull request: `app` is the one exception, and the
+  // nightly-only jobs never run on one.
+  const onMac = names.filter((n) => /runs-on: (macos-|\$\{\{ matrix\.os \}\})/.test(body(n)) && /macos-/.test(body(n)));
+  const nightly = (n) => body(n).includes("if: github.event_name == 'schedule'") || /if: \$\{\{[^\n]*github\.event_name == 'schedule' \}\}/.test(body(n));
+  const gated = onMac.filter((n) => n !== "app" && !nightly(n));
+  assert.ok(gated.includes("scenario") && gated.includes("outcome-bars"), gated.join(", "));
+  for (const n of gated) assert.match(body(n), /\n    if: \$\{\{.*!github\.event\.pull_request\.draft \}\}\n/, n);
+
+  assert.match(ci, /\n  pull_request:\n    types: \[opened, synchronize, reopened, ready_for_review\]\n/);
+  // The required check passes on a draft only because its legs were skipped.
+  assert.match(body("scenario-checks"), /\[ "\$DRAFT" = true \]; then want=skipped/);
+});
+
 // A gate says what the job's own step decides: the step stays, for the merge group and the push,
 // which are judged in the job as they always were.
 test("each gated job reads its gate, and its own step greps the same paths", () => {
