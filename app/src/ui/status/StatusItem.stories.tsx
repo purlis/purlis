@@ -350,9 +350,17 @@ export const MovingAnItemByTheKeyboard: Story = {
         "true",
       ),
     );
-    // The row that can go no further says why to the keyboard that lands on it. Then off it: when
-    // a tooltip opens is no part of the picture.
+    // At its end's edge the row keeps the keyboard, and says why it can go no further (#4659).
     const body = within(document.body);
+    await untilFocused(
+      () => within(move).getByRole("menuitem", { name: "PRs (Forge)" }),
+      "Move left, the same row at its end's edge",
+    );
+    await waitFor(() =>
+      expect(body.getByRole("tooltip")).toHaveTextContent("Already first on its end of the bar"),
+    );
+    // And to the keyboard that lands on it again. Then off it: when a tooltip opens is no part of
+    // the picture.
     const project = () => within(move).getByRole("menuitem", { name: "Project" });
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(project, "Move left, off the row that can go no further");
