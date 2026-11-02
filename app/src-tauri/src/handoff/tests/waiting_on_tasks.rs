@@ -933,3 +933,71 @@ fn a_half_typed_reply_during_a_background_turn_is_no_reply() {
 
     assert_eq!(queue(&held), vec![steward]);
 }
+
+#[test]
+fn a_reply_after_the_background_turn_s_prompt_was_answered_clears_the_wait() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    reports_as(&held, &id, task, Outcome::Done);
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    hears(&held, &told, steward, Event::Notification);
+    assert!(held.hooks().board().waits_on_its_prompt(steward));
+
+    // Picking an option answers the prompt, which isn't what the wait under it waited on.
+    held.operator_input(steward, b"1\r").expect("sent");
+    held.hooks().board().answered(steward);
+    assert_eq!(queue(&held), vec![steward]);
+
+    held.operator_input(steward, b"the second one\r")
+        .expect("sent");
+
+    assert!(queue(&held).is_empty(), "the bell stayed through their line");
+    assert!(!asks_for_a_reply(&held, steward));
+}
+
+#[test]
+fn the_person_s_answer_to_a_task_whose_asking_chat_closed_clears_its_wait() {
+    let (_plane, _host, _planes, id, held, steward, told) = a_steward_chat_telling();
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    let task = a_task_of(&held, &id, steward, "check the queue");
+    hears(&held, &told, task, Event::UserPromptSubmit);
+    let asked = asks(&held, &id, task, question("Which queue?"));
+    assert!(matches!(asked, Answer::Task(_)), "{asked:?}");
+    hears(&held, &told, task, Event::Stop);
+    held.close_chat(steward).expect("closed");
+    assert!(queue(&held).contains(&task));
+
+    crate::dispatched::person_answers(&held, task, asked_number(&held, task), "Which queue?", "b")
+        .expect("the person's answer is taken");
+    hears(&held, &told, task, Event::UserPromptSubmit);
+
+    assert!(!queue(&held).contains(&task), "the answer left the wait");
+    assert!(!asks_for_a_reply(&held, task));
+
+    // Its report ends its turn without raising anything of the person's.
+    reports_as(&held, &id, task, Outcome::Done);
+    hears(&held, &told, task, Event::Stop);
+    assert!(!queue(&held).contains(&task));
+}
+
+#[test]
+fn the_person_s_answer_during_a_background_turn_clears_the_wait_at_once() {
+    let (_plane, _host, _planes, id, held, steward, told) = a_steward_chat_telling();
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    let task = a_task_of(&held, &id, steward, "check the queue");
+    hears(&held, &told, task, Event::UserPromptSubmit);
+    let asked = asks(&held, &id, task, question("Which queue?"));
+    assert!(matches!(asked, Answer::Task(_)), "{asked:?}");
+    hears(&held, &told, task, Event::Stop);
+    held.close_chat(steward).expect("closed");
+    assert!(queue(&held).contains(&task));
+    // Something else of purlis's own began a turn of the task, over the wait.
+    held.tasks().ledger().line_typed(task);
+    hears(&held, &told, task, Event::UserPromptSubmit);
+    assert!(held.hooks().board().background_turn(task));
+
+    crate::dispatched::person_answers(&held, task, asked_number(&held, task), "Which queue?", "b")
+        .expect("the person's answer is taken");
+
+    assert!(!queue(&held).contains(&task));
+}
