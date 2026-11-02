@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: the strip and panes in a narrow window (#4702)</title>
+<!--
+  PROTOTYPE, throwaway. Ticket purlis/purlis#4702 on map #4575 "Chats, tabs and panes: a chat isn't a tab".
+  Question: what do the tab strip and the panes do when room runs out? A narrow window and a small
+  screen; the strip with few and many tabs, a tab's name and icon shrinking; and what happens below
+  the pane minimum of about 40 columns x 8 rows (300 x 140 px here). Does a split stack, scroll or hide?
+  Fixed by earlier rulings, drawn the same in every variant:
+   - #4582: the strip is always shown; a tab wears its focused pane's icon and name; a split adds ⊟+N.
+   - ADR 0039 + 2026-09-22 amendment: one row, never scrolls; tabs take equal shares floored at a
+     minimum and capped; what doesn't fit goes behind show-more, which says how many and sorts by
+     last activity; the front tab is always drawn; the + stays outside the collapse; pins draw first.
+   - #4583: a minimum pane of about 40 x 8; a split under it is refused with its reason; Tile all
+     at the strip's right end.
+   - #4585: the pane head's drop order when narrow; the bell, ⋯, Split right and Close never go.
+   - #4584: the notice band sits under the head, at most half the pane, scrolling inside.
+  Stand-in data, in memory. Nothing calls the core. Tokens: the Purlis built-in theme, copied from
+  prototype/pane-chat-actions.
+-->
+<style>
+:root {
+  --behind: #ffffff; --surface-base: #f7f7fd; --surface-raised: #eeeef5; --surface-overlay: #e4e4ec; --surface-sunken: #ececf3;
+  --surface-hover: #dbdce5; --control-base: #e4e4ec; --control-hover: #dbdce5;
+  --text-primary: #252329; --text-secondary: #3b3942; --text-muted: #5d5b67; --text-quiet: #61606c; --text-faint: #7c7a87;
+  --border-strong: #a9a7b5; --border-soft: #d6d5df; --accent: #554691; --accent-surface: #dedcef; --focus-ring: #554691;
+  --term-bg: #e9e9f2; --term-fg: #252329;
+  --wash-warning: #5236011f; --danger-wash: #682e301f; --info-wash: #4d3f8014;
+  --state-working: #20562f; --state-waiting: #523601; --state-failed: #682f2a; --ansi-green: #20562f;
+  --bar-bg: #252329; --bar-fg: #f7f7fd; --menu-bg: #ffffff; --shadow: 0 8px 28px #0002, 0 1px 3px #0002;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --r-control: 7px; --r-tab: 8px; --r-warn: 10px; --r-panel: 12px;
+}
+:root[data-theme="dark"] {
+  --behind: #121215; --surface-base: #17171b; --surface-raised: #1d1d22; --surface-overlay: #24242a; --surface-sunken: #141418;
+  --surface-hover: #2a2a31; --control-base: #24242a; --control-hover: #2a2a31;
+  --text-primary: #e6e4ec; --text-secondary: #c9c7d2; --text-muted: #a09eab; --text-quiet: #91909d; --text-faint: #74727f;
+  --border-strong: #55535f; --border-soft: #2c2c33; --accent: #a99cf0; --accent-surface: #292735; --focus-ring: #a99cf0;
+  --term-bg: #202026; --term-fg: #e6e4ec;
+  --wash-warning: #e5c08a1f; --danger-wash: #f0a9a81f; --info-wash: #b3a8f214;
+  --state-working: #8fc79a; --state-waiting: #e5c08a; --state-failed: #f0aaa2; --ansi-green: #8fc79a;
+  --bar-bg: #e6e4ec; --bar-fg: #17171b; --menu-bg: #24242a; --shadow: 0 8px 28px #0008, 0 1px 3px #0006; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--behind); color: var(--text-primary); font: 14px/1.4 var(--font-ui); padding: 14px 14px 120px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.head { max-width: 1480px; margin: 0 auto 10px; }
+.head h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+.head p { margin: 0; color: var(--text-quiet); font-size: 12px; max-width: 140ch; }
+.work { max-width: 1480px; margin: 0 auto; display: grid; grid-template-columns: minmax(0,1fr) 340px; gap: 14px; align-items: start; }
+.side { display: grid; gap: 12px; }
+.card { background: var(--surface-raised); border-radius: var(--r-panel); padding: 12px 14px; font-size: 12.5px; color: var(--text-secondary); }
+.card h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-quiet); }
+.card ol, .card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.state { margin: 0; font: 11px/1.45 var(--font-mono); color: var(--text-muted); white-space: pre-wrap; }
+
+/* The window: sidebar, then strip + panes. */
+.win { display: grid; grid-template-columns: 250px minmax(0,1fr); height: 600px; background: var(--surface-base); border-radius: var(--r-panel); overflow: hidden; resize: horizontal; min-width: 640px; max-width: 100%; }
+.sb { background: var(--surface-sunken); padding: 8px 6px; display: flex; flex-direction: column; gap: 2px; overflow: auto; font-size: 13px; }
+.sb h3 { margin: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-quiet); display: flex; }
+.sb h3 span { flex: 1; }
+.row { display: flex; align-items: center; gap: 7px; padding: 4px 4px 4px 8px; border-radius: var(--r-control); cursor: pointer; position: relative; min-height: 30px; }
+.row:hover, .row:focus-within { background: var(--surface-hover); }
+.row[data-current] { background: var(--accent-surface); }
+.row[data-shown]::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--border-strong); }
+.row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row.task { margin-left: 18px; }
+.row .more { visibility: hidden; }
+.row:hover .more, .row:focus-within .more, .row .more[aria-expanded="true"] { visibility: visible; }
+.sb[data-rowmore="never"] .row .more { display: none; }
+
+.main { display: flex; flex-direction: column; min-width: 0; }
+.strip { flex: none; display: flex; gap: 2px; padding: 6px 8px 0; background: var(--surface-sunken); }
+.tab { display: inline-flex; align-items: center; gap: 6px; max-width: 230px; padding: 5px 10px; border-radius: var(--r-tab) var(--r-tab) 0 0; color: var(--text-muted); cursor: pointer; font-size: 12.5px; border: 0; background: transparent; }
+.tab[aria-selected="true"] { background: var(--surface-base); color: var(--text-primary); }
+.tab .plus { color: var(--text-faint); font-size: 11px; }
+.panes { flex: 1; min-height: 0; display: flex; gap: 6px; padding: 6px; }
+.pane { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; background: var(--term-bg); border-radius: var(--r-panel); overflow: hidden; position: relative; }
+.pane[data-grow="2"] { flex-grow: 1.6; }
+.pane[data-focused] { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.phead { flex: none; display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 4px 0 10px; font-size: 12.5px; color: var(--text-quiet); }
+.phead .nm { color: var(--text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 3ch; }
+.phead .where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); min-width: 0; flex: 0 1 auto; }
+.phead .grow { flex: 1; min-width: 4px; }
+.namebtn { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 3px 6px 3px 4px; margin-left: -4px; border-radius: var(--r-control); cursor: pointer; min-width: 0; }
+.namebtn:hover, .namebtn[aria-expanded="true"] { background: var(--control-hover); }
+.namebtn .chev { color: var(--text-faint); font-size: 10px; }
+.chip { padding: 1px 8px; border-radius: 999px; background: var(--surface-overlay); white-space: nowrap; font-size: 11.5px; color: var(--text-muted); border: 0; cursor: pointer; }
+.chip:hover { background: var(--control-hover); }
+.tool { border: 0; background: transparent; color: var(--text-muted); min-width: 26px; height: 26px; border-radius: var(--r-control); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 5px; flex: none; }
+.tool:hover, .tool[aria-expanded="true"] { background: var(--control-hover); color: var(--text-primary); }
+.tool svg { width: 15px; height: 15px; }
+.tool.say { padding: 0 9px 0 7px; background: var(--control-base); color: var(--text-primary); font-size: 12px; }
+.tool.say:hover { background: var(--control-hover); }
+.tool.say[data-tone="ask"] { background: var(--wash-warning); }
+.tool .count { font-variant-numeric: tabular-nums; font-size: 11.5px; min-width: 1ch; }
+.bell[data-empty] { color: var(--text-faint); }
+.sep { width: 1px; height: 16px; background: var(--border-soft); margin: 0 3px; flex: none; }
+.mark { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
+.mark .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--state-working); }
+.mark[data-k="wrapping"] .dot { background: var(--state-waiting); animation: breathe 1.6s ease-in-out infinite; }
+.mark[data-k="asking"] .dot { background: var(--state-waiting); }
+.mark[data-k="ended"] .dot { background: var(--text-faint); }
+@keyframes breathe { 50% { opacity: .25; } }
+
+/* The persona icon with its state badge (stand-in for ChatPersonaState). */
+.pi { position: relative; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex: none; }
+.pi[data-p="steward"] { background: #6b5bb5; } .pi[data-p="devops"] { background: #2f7a64; } .pi[data-p="docs"] { background: #9a5a2a; }
+.pi[data-p="shell"] { background: #4a4a55; } .pi[data-p="task"] { background: #3d6a9e; } .pi[data-p="view"] { background: #777; }
+.pi i { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 2px var(--g, var(--surface-sunken)); }
+.pi i[data-s="working"] { background: var(--state-working); } .pi i[data-s="asking"], .pi i[data-s="wrapping"] { background: var(--state-waiting); }
+.pi i[data-s="ended"] { background: var(--text-faint); } .pi i[data-s="idle"] { display: none; }
+.phead .pi i { --g: var(--term-bg); } .tab .pi i { --g: var(--surface-base); } .row[data-current] .pi i { --g: var(--accent-surface); }
+
+/* The terminal and the ended screen. */
+.term { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px 12px 10px; font: 12px/1.5 var(--font-mono); color: var(--term-fg); }
+.term .l { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.term .dim { color: var(--text-faint); } .term .g { color: var(--ansi-green); }
+.term[data-ended] .l { opacity: .55; }
+.endbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 8px 8px; padding: 8px 10px; border-radius: var(--r-warn); background: var(--surface-overlay); font-size: 12.5px; }
+.endbar .grow { flex: 1; min-width: 12ch; color: var(--text-muted); }
+.btn { border: 0; background: var(--control-base); padding: 3px 10px; border-radius: var(--r-control); cursor: pointer; font-size: 12.5px; }
+.btn:hover { background: var(--control-hover); }
+.btn.primary { background: var(--accent); color: var(--surface-base); }
+.btn.quiet { background: transparent; color: var(--text-muted); }
+.band { flex: none; display: grid; gap: 6px; padding: 0 8px 4px; }
+.n { border-radius: var(--r-warn); padding: 7px 10px; background: var(--info-wash); display: flex; gap: 8px; align-items: center; font-size: 12.5px; flex-wrap: wrap; }
+.n[data-tone="warning"] { background: var(--wash-warning); }
+.n .grow { flex: 1; min-width: 14ch; }
+.empty { flex: 1; display: grid; place-content: center; text-align: center; gap: 8px; color: var(--text-muted); font-size: 13px; }
+
+/* Menus, the dialog, the palette. */
+.menu { position: fixed; z-index: 30; min-width: 230px; max-width: 320px; background: var(--menu-bg); border-radius: 10px; box-shadow: var(--shadow); padding: 5px; font-size: 13px; }
+.menu .mi { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; padding: 5px 9px; border-radius: 6px; cursor: pointer; }
+.menu .mi:hover:not([aria-disabled="true"]), .menu .mi:focus-visible { background: var(--control-hover); outline: none; }
+.menu .mi[aria-disabled="true"] { color: var(--text-faint); cursor: default; }
+.menu .mi .k { flex: 1; } .menu .mi .why { font-size: 11px; color: var(--text-faint); }
+.menu .mi .sub { color: var(--text-faint); }
+.menu .mi[data-danger] { color: var(--state-failed); }
+.menu hr { border: 0; border-top: 1px solid var(--border-soft); margin: 4px 6px; }
+.menu .gl { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); padding: 5px 9px 2px; }
+.menu .hd { padding: 6px 9px 6px; display: flex; gap: 8px; align-items: center; font-weight: 600; border-bottom: 1px solid var(--border-soft); margin-bottom: 4px; }
+.menu .hd .where { font-weight: 400; color: var(--text-faint); font-size: 11.5px; }
+.scrim { position: fixed; inset: 0; z-index: 40; background: #0005; display: grid; place-items: center; }
+.dlg { background: var(--menu-bg); border-radius: 14px; padding: 18px 20px; width: 440px; box-shadow: var(--shadow); font-size: 13px; }
+.dlg h4 { margin: 0 0 6px; font-size: 15px; }
+.dlg p { margin: 0 0 12px; color: var(--text-muted); }
+.dlg .ways { display: flex; gap: 8px; justify-content: flex-end; }
+.pal { position: fixed; z-index: 40; left: 50%; top: 70px; transform: translateX(-50%); width: 560px; background: var(--menu-bg); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; font-size: 13px; }
+.pal input { width: 100%; border: 0; background: var(--surface-overlay); color: var(--text-primary); border-radius: 8px; padding: 8px 10px; font: inherit; margin-bottom: 6px; }
+.pal .list { max-height: 420px; overflow: auto; }
+.pal .mi { display: flex; gap: 10px; padding: 5px 10px; border-radius: 6px; cursor: pointer; }
+.pal .mi:hover { background: var(--control-hover); }
+.pal .mi .k { flex: 1; } .pal .mi .grp { color: var(--text-faint); font-size: 11.5px; }
+.pal .mi[aria-disabled="true"] { color: var(--text-faint); }
+.toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); background: var(--text-primary); color: var(--surface-base); padding: 6px 12px; border-radius: 8px; font-size: 12.5px; z-index: 50; }
+
+/* ---- This prototype's own parts ---- */
+body { padding: 14px 14px 140px; }
+.stage { overflow: auto; padding-bottom: 6px; }
+.win { display: grid; grid-template-rows: 34px minmax(0,1fr); resize: none; min-width: 0; max-width: none; height: auto; border: 1px solid var(--border-soft); }
+.tbar { display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--surface-sunken); font-size: 12.5px; color: var(--text-muted); border-bottom: 1px solid var(--border-soft); }
+.tbar .lights { display: flex; gap: 6px; margin-right: 8px; } .tbar .lights i { width: 11px; height: 11px; border-radius: 50%; background: var(--border-strong); }
+.tbar .wchip { padding: 2px 10px; border-radius: 999px; background: var(--surface-overlay); color: var(--text-primary); }
+.tbar .grow { flex: 1; }
+.cols { display: grid; min-height: 0; }
+.sb.rail { padding: 8px 4px; align-items: center; }
+.sb.rail .row { padding: 4px; justify-content: center; min-height: 32px; width: 36px; }
+.sb.rail .row .nm, .sb.rail h3, .sb.rail .row .hand { display: none; }
+.row .hand { font-size: 12px; }
+.region { background: var(--surface-sunken); border-left: 1px solid var(--border-soft); padding: 10px; font-size: 12.5px; color: var(--text-muted); overflow: hidden; }
+.region h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-quiet); }
+.region .f { font: 12px/1.7 var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.strip { position: relative; align-items: flex-end; gap: 2px; height: 34px; overflow: hidden; }
+.tabs { display: flex; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.tab { flex: none; min-width: 0; overflow: hidden; height: 28px; position: relative; }
+.tab .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .split { flex: none; font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.tab .pin { flex: none; font-size: 10px; color: var(--text-faint); }
+.tab .cl { flex: none; border: 0; background: transparent; color: var(--text-faint); width: 18px; height: 18px; border-radius: 5px; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; visibility: hidden; }
+.tab .cl svg { width: 12px; height: 12px; }
+.tab:hover .cl, .tab[aria-selected="true"] .cl { visibility: visible; }
+.tab[data-icon-only] { justify-content: center; padding: 5px 0; }
+.tab[data-icon-only] .nm, .tab[data-icon-only] .split, .tab[data-icon-only] .cl { display: none; }
+.tab .hand { flex: none; font-size: 11px; }
+.stripend { flex: none; display: flex; align-items: center; gap: 2px; height: 28px; }
+.showmore { border: 0; background: var(--control-base); color: var(--text-primary); border-radius: var(--r-control); height: 24px; padding: 0 8px; font-size: 12px; cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.showmore:hover, .showmore[aria-expanded="true"] { background: var(--control-hover); }
+.showmore .hand { margin-left: 3px; }
+.strip .tool { height: 24px; min-width: 24px; }
+
+.panes { position: relative; padding: 0; margin: 6px; flex: 1; min-height: 0; display: block; }
+.panes[data-scroll] { overflow: auto; }
+.canvas { position: relative; }
+.pane, .fold { position: absolute; }
+.pane .term { padding: 4px 12px 8px; }
+.phead .wsb { font-size: 10.5px; padding: 0 6px; border-radius: 999px; background: var(--surface-overlay); color: var(--text-muted); white-space: nowrap; flex: none; }
+.tool[aria-disabled="true"] { color: var(--text-faint); cursor: not-allowed; opacity: .55; }
+.tool.say .w { white-space: nowrap; }
+.hidchip { border: 0; background: var(--surface-overlay); color: var(--text-primary); border-radius: 999px; padding: 1px 8px; font-size: 11.5px; cursor: pointer; white-space: nowrap; flex: none; }
+.hidchip:hover { background: var(--control-hover); }
+.band { max-height: 50%; overflow: auto; padding-top: 2px; }
+.n.ask { background: var(--wash-warning); }
+.n .q { font-weight: 500; }
+.sq { position: absolute; inset: auto 6px 6px auto; font-size: 10.5px; color: var(--state-failed); background: var(--danger-wash); padding: 1px 6px; border-radius: 6px; }
+
+/* A folded side: a rail beside (row splits) or a bar above/below (column splits). */
+.fold { background: var(--surface-raised); border-radius: var(--r-panel); display: flex; gap: 4px; padding: 6px 4px; overflow: hidden; }
+.fold[data-d="row"] { flex-direction: column; align-items: center; }
+.fold[data-d="col"] { flex-direction: row; align-items: center; padding: 3px 6px; }
+.fbtn { border: 0; background: transparent; border-radius: var(--r-control); cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 4px; color: var(--text-muted); font-size: 12px; position: relative; }
+.fold[data-d="row"] .fbtn { flex-direction: column; gap: 3px; width: 32px; padding: 5px 0; }
+.fold[data-d="col"] .fbtn { padding: 2px 8px 2px 4px; max-width: 260px; }
+.fbtn:hover { background: var(--control-hover); color: var(--text-primary); }
+.fbtn .fn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
+.fbtn .cnt { font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.fbtn .cnt[data-trouble] { color: var(--state-failed); }
+.fbtn .hand { font-size: 12px; }
+.fold .unfold { margin-top: auto; color: var(--text-faint); font-size: 11px; }
+.fold[data-d="col"] .unfold { margin: 0 0 0 auto; }
+
+.below { max-width: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-top: 12px; }
+.card p { margin: 0 0 6px; }
+.bar input[type=range] { width: 120px; vertical-align: middle; }
+.bar .num { font-variant-numeric: tabular-nums; min-width: 9ch; display: inline-block; }
+.menu .mi .age { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header class="head" style="max-width:none">
+  <h1>PROTOTYPE: the strip and panes in a narrow window</h1>
+  <p>Ticket #4702 on the map "Chats, tabs and panes: a chat isn't a tab". The window is drawn at a real size: <b>drag the width and height sliders</b> in the dashed bar and watch the strip and the panes give way. The dashed bar is the prototype's, not the design. It switches the four answers being asked: the strip at its floor, pins, what a split does below the 40 × 8 minimum, and what gives way first. Everything presses: tabs, show-more, a folded rail, Split right, Split down, Close pane, Tile all. Keys: <code>[</code> <code>]</code> scene, <code>t</code> theme.</p>
+</header>
+<div class="stage"><div class="win" id="win"></div></div>
+<section class="below">
+  <div class="card"><h2>This scene</h2><div id="sceneAbout"></div></div>
+  <div class="card"><h2>What the window is doing now</h2><pre class="state" id="now"></pre></div>
+  <div class="card"><h2>The answers drawn</h2><div id="about"></div></div>
+  <div class="card"><h2>Last press, and what a screen reader hears</h2><pre class="state" id="state">nothing yet</pre></div>
+</section>
+<nav class="bar" aria-label="Prototype controls">
+  <span class="grp"><span class="lbl">scene</span><button data-s="1">1</button><button data-s="2">2</button><button data-s="3">3</button><button data-s="4">4</button><button data-s="5">5</button><button data-s="6">6</button></span>
+  <span class="grp"><span class="lbl">width</span><input type="range" id="wR" min="1024" max="1920" step="2" aria-label="Window width"><span class="num" id="wN"></span></span>
+  <span class="grp"><span class="lbl">height</span><input type="range" id="hR" min="480" max="1080" step="2" aria-label="Window height"><span class="num" id="hN"></span></span>
+  <span class="grp"><button id="regionBtn">Explorer region</button><button id="theme">light/dark</button></span>
+  <span class="grp" style="flex-basis:100%;height:0"></span>
+  <span class="grp"><span class="lbl">Q1 strip</span><button data-strip="A">A name tabs to a floor</button><button data-strip="B">B icons before the menu</button><button data-strip="C">C fixed width</button></span>
+  <span class="grp"><span class="lbl">Q2 pins</span><button data-pins="exempt">never collapse</button><button data-pins="last">last to go</button></span>
+  <span class="grp" style="flex-basis:100%;height:0"></span>
+  <span class="grp"><span class="lbl">Q3 below 40 × 8</span><button data-fold="fold">A fold to a rail</button><button data-fold="scroll">B scroll</button><button data-fold="hide">C hide</button><button data-fold="squeeze">D squeeze</button></span>
+  <span class="grp"><span class="lbl">Q4 gives way first</span><button data-give="panes">panes fold, sides stay</button><button data-give="side">sidebar to a rail first</button></span>
+</nav>
+<script>
+"use strict";
+const SV = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const I = {
+  more: SV('<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>'),
+  splitR: SV('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>'),
+  splitD: SV('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18"/>'),
+  x: SV('<path d="M18 6 6 18M6 6l12 12"/>'),
+  bell: SV('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'),
+  stop: SV('<rect x="6" y="6" width="12" height="12" rx="1.5"/>'),
+  answer: SV('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+  plus: SV('<path d="M12 5v14M5 12h14"/>'),
+  tile: SV('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'),
+};
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// ---------- the numbers ----------
+const MINW = 300, MINH = 140;   // about 40 columns x 8 rows (#4583)
+const GAP = 6, RAILW = 40, BARH = 32;
+const SIDEBAR = 250, SIDERAIL = 48, REGION = 260, TITLE = 34, STRIPH = 34;
+const CAP = 230, FLOOR = { A: 120, B: 120, C: 180 }, ICON = 40, MOREW = 76, ENDW = 56; // ENDW: + and Tile all
+
+// ---------- the world: 22 chats in two workspaces ----------
+const C = {};
+const mk = (id, name, p, s, extra = {}) => (C[id] = { id, name, p, s, harness: p === "shell" ? "zsh" : "Claude Code", ws: "smart-ide", notes: 0, trouble: false, ...extra });
+mk(1, "steward 1", "steward", "working", { notes: 2 });
+mk(2, "review the strip table", "task", "asking", { notes: 1, ask: "Allow api.github.com for this task?" });
+mk(3, "zsh", "shell", "idle");
+mk(4, "devops 2", "devops", "working", { ws: "volaticloud", notes: 3, trouble: true });
+mk(5, "docs 1", "docs", "idle");
+mk(6, "reviewer 3", "steward", "working", { notes: 1 });
+mk(7, "developer 7", "devops", "working");
+mk(8, "a very long chat name that will not fit anywhere", "docs", "idle");
+mk(9, "steward 4", "steward", "idle");
+mk(10, "migrate the store", "task", "working");
+mk(11, "theme draft", "docs", "idle");
+mk(12, "developer 9", "devops", "asking", { ask: "Run cargo test on this branch?" });
+mk(13, "release notes", "docs", "idle");
+mk(14, "reviewer 5", "steward", "idle");
+mk(15, "flaky e2e", "task", "working");
+mk(16, "steward 6", "steward", "idle");
+mk(17, "docs 3", "docs", "idle");
+mk(18, "zsh 2", "shell", "idle");
+mk(19, "developer 11", "devops", "idle");
+mk(20, "triage", "steward", "working");
+mk(21, "bench the pick", "task", "idle");
+mk(22, "reviewer 8", "steward", "idle");
+const VIEWS = { settings: { name: "Settings", p: "view" }, explorer: { name: "Changes", p: "view" } };
+
+// ---------- trees ----------
+const leaf = (c) => ({ c });
+const split = (d, a, b, s = 500) => ({ d, s, a, b });
+function chain(items, d) { // even shares: x | (y | z) => 333, then 500
+  if (items.length === 1) return items[0];
+  return split(d, items[0], chain(items.slice(1), d), Math.round(1000 / items.length));
+}
+function tileTree(ids) {
+  const n = ids.length, cols = Math.ceil(Math.sqrt(n)), rows = [];
+  for (let i = 0; i < n; i += cols) rows.push(chain(ids.slice(i, i + cols).map(leaf), "row"));
+  return chain(rows, "col");
+}
+const leaves = (t) => (t.d ? [...leaves(t.a), ...leaves(t.b)] : [t]);
+const has = (t, f) => leaves(t).some((l) => l.c === f);
+function minAlong(t, ax) {
+  if (!t.d) return ax === "row" ? MINW : MINH;
+  const a = minAlong(t.a, ax), b = minAlong(t.b, ax);
+  return t.d === ax ? a + GAP + b : Math.max(a, b);
+}
+
+// ---------- scenes ----------
+let tabSeq = 0;
+const T = (root, opts = {}) => ({ id: ++tabSeq, root, focus: opts.focus ?? leaves(root)[0].c, pinned: !!opts.pinned, act: opts.act ?? 30 });
+const SCENES = {
+  1: { name: "A wide window, three tabs", W: 1600, H: 860, region: false,
+       about: "The baseline: a 1600 × 860 window. Tabs take equal shares capped at 230px. The front tab is a split, so it wears its focused pane's icon and name with ⊟+1 (#4582). Now drag <b>width</b> down to 1024 and watch the panes: at 1024 the two panes still fit (each needs 300px).",
+       tabs: () => [T(split("row", leaf(1), leaf(2), 600), { act: 1 }), T(leaf(5), { act: 12 }), T(leaf("settings"), { act: 90 })], front: 0 },
+  2: { name: "Sixteen tabs in the smallest window (1024)", W: 1024, H: 760, region: false,
+       about: "Sixteen tabs, two pinned, in the 1024px window the app allows at least. The strip never scrolls (ADR 0039): tabs shrink to the floor, then the rest go behind <b>show-more</b>, which says how many and lists them by last activity. The front tab (devops 2, 13th in order) is always drawn, in the last slot. ✋ on show-more says a hidden tab holds a chat that asks. Switch <b>Q1</b> and <b>Q2</b>.",
+       tabs: () => [1, 6, 5, 7, 8, 9, 10, 11, 13, 14, 15, 16, 4, 17, 12, 19].map((c, i) => T(leaf(c), { pinned: i < 2, act: [3, 40, 12, 2, 90, 33, 5, 61, 120, 18, 7, 240, 1, 75, 9, 300][i] })), front: 12 },
+  3: { name: "Three panes side by side, a 1024 window with the Explorer out", W: 1024, H: 760, region: true,
+       about: "Three panes in one tab need 3 × 300px + gaps = 912px. With the sidebar and the Explorer out, the panes have about 500px. That is what this ticket asks: below the minimum, does a split <b>fold</b>, <b>scroll</b>, <b>hide</b> or <b>squeeze</b>? Press a folded rail to open that pane: the focused pane always gets the room. Then put the Explorer away (bar) and widen the window: the layout comes back with its shares, since folding never changes the stored tree.",
+       tabs: () => [T(chain([leaf(1), leaf(6), leaf(3)], "row"), { act: 1 }), T(leaf(5), { act: 20 })], front: 0 },
+  4: { name: "Tile all of nine on a laptop, 1280 × 700", W: 1280, H: 700, region: true,
+       about: "Tile all of 9 panes makes 3 × 3 (#4583). With the Explorer out the grid needs 912px across and 432px down. Columns that don't fit fold first; drag <b>height</b> down past about 520 and rows fold too, into bars. devops 2 has three notes, one trouble: its count stays on its rail. Press a rail or bar to bring that pane in.",
+       tabs: () => [T(tileTree([1, 6, 7, 4, 10, 15, 20, 3, 9]), { act: 1, focus: 1 })], front: 0 },
+  5: { name: "A folded pane asks", W: 1024, H: 760, region: true,
+       about: "As scene 3, but the task on the right asks a consent question while its pane is folded. Blocking notices never hide (#4576 D3): its rail wears ✋, its sidebar row wears ✋, and the tab is on screen. Pressing the rail opens it with the ask as its full card (#4584). In <b>C hide</b> only the ⊟ chip on the focused head says it, and in <b>B scroll</b> it may sit off screen.",
+       tabs: () => [T(chain([leaf(1), leaf(6), leaf(2)], "row"), { act: 1 })], front: 0 },
+  6: { name: "Split until it refuses", W: 1280, H: 800, region: false,
+       about: "One pane. Press <b>Split right</b> and <b>Split down</b> on any pane until they grey out: a split that would leave a half under 40 × 8 is refused, with the reason on the button (#4583). Then shrink the window: the panes that are already there fold, because the window, not you, took the room. <b>Close pane</b> gives it back.",
+       tabs: () => [T(leaf(7), { act: 1 }), T(leaf(5), { act: 4 })], front: 0 },
+};
+
+// ---------- state ----------
+const S = { scene: "1", strip: "A", pins: "exempt", fold: "fold", give: "panes", W: 1600, H: 860, region: false, tabs: [], front: 0, menu: null, said: "" };
+function load(n) {
+  const sc = SCENES[n]; tabSeq = 0;
+  Object.assign(S, { scene: String(n), W: sc.W, H: sc.H, region: sc.region, tabs: sc.tabs(), front: sc.front, menu: null });
+  render();
+}
+
+// ---------- the strip: equal shares, floored, capped; the rest behind show-more (ADR 0039) ----------
+function stripPlan(width) {
+  const order = [...S.tabs.filter((t) => t.pinned), ...S.tabs.filter((t) => !t.pinned)];
+  const front = S.tabs[S.front], v = S.strip, floor = FLOOR[v];
+  const avail = width - ENDW;
+  const share = (n, w) => Math.min(CAP, Math.floor((w - 2 * (n - 1)) / n));
+  if (v !== "C" && share(order.length, avail) >= floor) return { drawn: order.map((t) => ({ t, w: share(order.length, avail) })), hidden: [] };
+  if (v === "C" && order.length * (180 + 2) <= avail) return { drawn: order.map((t) => ({ t, w: 180 })), hidden: [] };
+  if (v === "B") { // icons before the menu: the others go icon-only, the front keeps its name
+    const named = 160, rest = order.length - 1;
+    if (named + rest * (ICON + 2) <= avail) return { drawn: order.map((t) => ({ t, w: t === front ? named : ICON, icon: t !== front })), hidden: [] };
+    const k = 1 + Math.floor((avail - MOREW - named) / (ICON + 2));
+    return pick(order, k, front, (t) => (t === front ? { t, w: named } : { t, w: ICON, icon: true }));
+  }
+  const room = avail - MOREW, slot = v === "C" ? 182 : floor + 2;
+  if (S.pins === "exempt") {
+    const pins = order.filter((t) => t.pinned);
+    let pinW = floor, pinIcon = false;
+    if (pins.length * slot > room / 2) { pinW = ICON; pinIcon = true; } // pins alone may never crowd out the rest
+    const left = room - pins.length * (pinW + 2);
+    const k = Math.max(1, Math.floor(left / slot));
+    const others = order.filter((t) => !t.pinned);
+    const res = pick(others, k, front.pinned ? null : front, (t) => ({ t, w: v === "C" ? 180 : Math.min(CAP, Math.floor(left / k) - 2) }));
+    res.drawn = [...pins.map((t) => ({ t, w: pinIcon ? pinW : (v === "C" ? 180 : pinW), icon: pinIcon })), ...res.drawn];
+    return res;
+  }
+  const k = Math.max(1, Math.floor(room / slot));
+  return pick(order, k, front, (t) => ({ t, w: v === "C" ? 180 : Math.min(CAP, Math.floor(room / k) - 2) }));
+}
+function pick(list, k, front, sized) {
+  let drawn = list.slice(0, k);
+  if (front && !drawn.includes(front)) drawn = [...drawn.slice(0, k - 1), front]; // the front tab is always drawn, in the last slot
+  return { drawn: drawn.map(sized), hidden: list.filter((t) => !drawn.includes(t)) };
+}
+
+// ---------- the panes: lay out a tab's tree in a box ----------
+function layout(t, x, y, w, h, focus, out) {
+  if (!t.d) { out.push({ kind: "pane", c: t.c, x, y, w, h }); return; }
+  const L = t.d === "row" ? w : h, minA = minAlong(t.a, t.d), minB = minAlong(t.b, t.d);
+  const fits = L >= minA + GAP + minB;
+  if (fits || S.fold === "squeeze" || S.fold === "scroll") {
+    let la = Math.round((L - GAP) * t.s / 1000);
+    if (fits) la = Math.max(minA, Math.min(L - GAP - minB, la));
+    const lb = L - GAP - la;
+    if (t.d === "row") { layout(t.a, x, y, la, h, focus, out); layout(t.b, x + la + GAP, y, lb, h, focus, out); }
+    else { layout(t.a, x, y, w, la, focus, out); layout(t.b, x, y + la + GAP, w, lb, focus, out); }
+    return;
+  }
+  // Below the minimum: the side holding the focus keeps the room.
+  const keepA = has(t.a, focus) || !has(t.b, focus);
+  const keep = keepA ? t.a : t.b, gone = keepA ? t.b : t.a;
+  if (S.fold === "hide") { out.push({ kind: "hidden", ids: leaves(gone).map((l) => l.c) }); layout(keep, x, y, w, h, focus, out); return; }
+  const r = t.d === "row" ? RAILW : BARH, Lk = L - r - GAP;
+  const ids = leaves(gone).map((l) => l.c);
+  if (t.d === "row") {
+    const fx = keepA ? x + Lk + GAP : x, kx = keepA ? x : x + r + GAP;
+    out.push({ kind: "fold", d: "row", ids, x: fx, y, w: r, h }); layout(keep, kx, y, Lk, h, focus, out);
+  } else {
+    const fy = keepA ? y + Lk + GAP : y, ky = keepA ? y : y + r + GAP;
+    out.push({ kind: "fold", d: "col", ids, x, y: fy, w, h: r }); layout(keep, x, ky, w, Lk, focus, out);
+  }
+}
+
+// ---------- drawing ----------
+const who = (c) => C[c] || VIEWS[c] || { name: "Nothing in this pane", p: "view" };
+const pi = (c) => { const x = who(c); return `<span class="pi" data-p="${x.p}" aria-hidden="true">${esc(x.name[0].toUpperCase())}<i data-s="${x.s || "idle"}"></i></span>`; };
+function markOf(x) {
+  if (!x.s || x.s === "idle") return "";
+  const word = { working: "working", asking: "asking", ended: "ended" }[x.s];
+  return `<span class="mark" data-k="${x.s}" data-hide="mark"><span class="dot"></span><span data-hide="markword">${word}</span></span>`;
+}
+// #4585: drop order as the pane narrows. The bell, ⋯, Split right and Close never go.
+function headHides(w) { return { where: w < 520, markword: w < 420, sayword: w < 380, mark: w < 340, splitD: w < 300 }; }
+function paneHtml(p, tab, hiddenIds) {
+  const x = who(p.c), focused = tab.focus === p.c, hide = headHides(p.w);
+  const canR = p.w >= 2 * MINW + GAP, canD = p.h >= 2 * MINH + GAP;
+  const say = x.s === "working" ? `<button class="tool say" data-say>${I.stop}${hide.sayword ? "" : '<span class="w">Stop</span>'}</button>`
+            : x.s === "asking" ? `<button class="tool say" data-tone="ask" data-say>${I.answer}${hide.sayword ? "" : '<span class="w">Answer</span>'}</button>` : "";
+  let mark = markOf(x);
+  if (hide.mark) mark = ""; else if (hide.markword) mark = mark.replace(/<span data-hide="markword">[^<]*<\/span>/, "");
+  const hiddenAsk = hiddenIds.some((c) => C[c] && C[c].ask);
+  const hid = focused && hiddenIds.length ? `<button class="hidchip" data-hid aria-label="${hiddenIds.length} panes hidden${hiddenAsk ? ", one asks" : ""}">⊟ ${hiddenIds.length} hidden${hiddenAsk ? " ✋" : ""}</button>` : "";
+  const ws = x.ws && x.ws !== "smart-ide" ? `<span class="wsb">${esc(x.ws)}</span>` : "";
+  const notes = x.notes || 0;
+  const band = x.ask ? `<div class="band"><div class="n ask"><span class="grow"><span class="q">${esc(x.ask)}</span><br><span style="color:var(--text-muted)">${esc(x.name)} asks before it goes on.</span></span><button class="btn primary">Allow once</button><button class="btn">Refuse</button></div></div>` : "";
+  const lines = termLines(p.c, Math.max(1, Math.floor((p.h - 32 - (band ? 70 : 0) - 14) / 18)));
+  const squeezed = p.w < MINW || p.h < MINH ? `<span class="sq">${Math.max(1, Math.floor((p.w - 24) / 7.4))} × ${Math.max(0, Math.floor((p.h - 46) / 18))}</span>` : "";
+  return `<div class="pane" data-pane="${p.c}" ${focused ? "data-focused" : ""} style="left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px">
+    <div class="phead">${pi(p.c)}<span class="nm" title="${esc(x.name)}">${esc(x.name)}</span>${ws}${mark}${hide.where || !x.harness ? "" : `<span class="where">${esc(x.harness)} · ${esc(x.ws)}</span>`}${hid}<span class="grow"></span>
+      ${say}<button class="tool" aria-label="Actions for ${esc(x.name)}">${I.more}</button>
+      <button class="tool bell" ${notes ? "" : "data-empty"} aria-label="${notes} notices">${I.bell}<span class="count" ${x.trouble ? 'style="color:var(--state-failed)"' : ""}>${notes || ""}</span></button>
+      <button class="tool" data-act="splitR" ${canR ? "" : 'aria-disabled="true"'} aria-label="Split right" title="${canR ? "Split right" : "Too narrow to split: each side needs 40 columns"}">${I.splitR}</button>
+      ${hide.splitD ? "" : `<button class="tool" data-act="splitD" ${canD ? "" : 'aria-disabled="true"'} aria-label="Split down" title="${canD ? "Split down" : "Too short to split: each side needs 8 rows"}">${I.splitD}</button>`}
+      <button class="tool" data-act="close" aria-label="Close pane">${I.x}</button></div>
+    ${band}<div class="term">${lines}</div>${squeezed}</div>`;
+}
+function termLines(c, n) {
+  const x = who(c);
+  if (!C[c]) return `<div class="empty" style="height:100%">${esc(x.name)}${C[c] ? "" : (VIEWS[c] ? " (a view)" : `<br><button class="btn primary">New chat</button>`)}</div>`;
+  const src = x.p === "shell" ? ["$ git status", "On branch prototype/narrow-window", "nothing to commit, working tree clean", "$ cargo test -p purlis-core layout", "   Compiling purlis-core v0.9.0", "test layout::folds_the_side_without_focus ... ok", "test layout::keeps_the_stored_shares ... ok", "$ "]
+    : ["⏺ Reading app/src/tabs.ts", "  ⎿ Read 412 lines", "⏺ The strip draws pinned tabs first, then the rest in order.", "⏺ Update(app/src/PlaneView.tsx)", "  ⎿ Updated with 14 additions", "⏺ Running the layout tests", "  ⎿ 38 passed", "> "];
+  return src.slice(-n).map((l) => `<div class="l${l.startsWith("  ⎿") ? " dim" : ""}">${esc(l)}</div>`).join("");
+}
+function foldHtml(f) {
+  const btns = f.ids.map((c) => { const x = who(c); const ask = x.ask ? '<span class="hand" aria-hidden="true">✋</span>' : "";
+    const cnt = x.notes ? `<span class="cnt" ${x.trouble ? "data-trouble" : ""}>${x.notes}</span>` : "";
+    const label = `${x.name}, folded${x.ask ? ", asks you" : ""}${x.notes ? `, ${x.notes} notices` : ""}. Press to open.`;
+    return `<button class="fbtn" data-open="${c}" aria-label="${esc(label)}" title="${esc(label)}">${pi(c)}${f.d === "col" ? `<span class="fn">${esc(x.name)}</span>` : ""}${ask}${cnt}</button>`; }).join("");
+  return `<div class="fold" data-d="${f.d}" role="group" aria-label="Folded panes" style="left:${f.x}px;top:${f.y}px;width:${f.w}px;height:${f.h}px">${btns}<span class="unfold" aria-hidden="true">${f.d === "row" ? "⇤⇥" : "folded"}</span></div>`;
+}
+
+function render() {
+  const win = document.getElementById("win");
+  const tab = S.tabs[S.front];
+  // Q4: what gives way first. Measure the panes' need against the room with the sidebar out.
+  const regionW = S.region ? REGION : 0;
+  let sbW = SIDEBAR;
+  const need = minAlong(tab.root, "row") + 12;
+  if (S.give === "side" && S.W - SIDEBAR - regionW < need) sbW = SIDERAIL;
+  const mainW = S.W - sbW - regionW, stripW = mainW - 16;
+  const paneW = mainW - 12, paneH = S.H - TITLE - STRIPH - 12;
+  // panes
+  const out = [];
+  let cw = paneW, ch = paneH;
+  if (S.fold === "scroll") { cw = Math.max(paneW, minAlong(tab.root, "row")); ch = Math.max(paneH, minAlong(tab.root, "col")); }
+  layout(tab.root, 0, 0, cw, ch, tab.focus, out);
+  const hiddenIds = out.filter((o) => o.kind === "hidden").flatMap((o) => o.ids);
+  const panesHtml = out.filter((o) => o.kind === "pane").map((p) => paneHtml(p, tab, hiddenIds)).join("") + out.filter((o) => o.kind === "fold").map(foldHtml).join("");
+  // strip
+  const plan = stripPlan(stripW);
+  const hidAsk = plan.hidden.some((t) => leaves(t.root).some((l) => C[l.c] && C[l.c].ask));
+  const tabsHtml = plan.drawn.map(({ t, w, icon }) => {
+    const ls = leaves(t.root), x = who(t.focus), sel = t === tab, n = ls.length - 1;
+    const ask = ls.some((l) => C[l.c] && C[l.c].ask) ? '<span class="hand" aria-hidden="true">✋</span>' : "";
+    const title = ls.map((l) => who(l.c).name).join(" · ");
+    return `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${sel}" ${icon ? "data-icon-only" : ""} style="width:${w}px" title="${esc(title)}" aria-label="${esc(x.name)}${n ? `, split, ${n + 1} panes` : ""}${t.pinned ? ", pinned" : ""}">
+      ${t.pinned && !icon ? '<span class="pin" aria-hidden="true">📌</span>' : ""}${pi(t.focus)}<span class="nm">${esc(x.name)}</span>${n ? `<span class="split">⊟+${n}</span>` : ""}${icon ? "" : ask}${w >= 140 || sel ? `<span class="cl" role="button" aria-label="Close tab">${I.x}</span>` : ""}</button>`;
+  }).join("");
+  const more = plan.hidden.length ? `<button class="showmore" data-more aria-haspopup="menu" aria-expanded="${S.menu === "more"}" aria-label="${plan.hidden.length} more tabs${hidAsk ? ", one asks" : ""}">${plan.hidden.length} more ▾${hidAsk ? '<span class="hand">✋</span>' : ""}</button>` : "";
+  const shown = new Set(leaves(tab.root).map((l) => l.c));
+  // sidebar
+  const rows = Object.values(C).slice(0, 22).map((c) => `<div class="row" ${c.id === tab.focus ? "data-current" : ""} ${shown.has(c.id) && c.id !== tab.focus ? "data-shown" : ""} title="${esc(c.name)}">${pi(c.id)}<span class="nm">${esc(c.name)}</span>${c.ask ? '<span class="hand" aria-label="asks you">✋</span>' : ""}</div>`).join("");
+  win.style.width = S.W + "px"; win.style.height = S.H + "px";
+  win.innerHTML = `<div class="tbar"><span class="lights"><i></i><i></i><i></i></span><span class="wchip">smart-ide</span><span class="grow"></span><span>${S.W} × ${S.H}</span></div>
+    <div class="cols" style="grid-template-columns:${sbW}px minmax(0,1fr)${S.region ? ` ${REGION}px` : ""}">
+      <aside class="sb ${sbW === SIDERAIL ? "rail" : ""}" aria-label="Chats"><h3><span>Chats · smart-ide</span></h3>${rows}</aside>
+      <section class="main"><div class="strip" role="tablist" aria-label="Tabs"><div class="tabs">${tabsHtml}</div><div class="stripend">${more}<button class="tool" aria-label="New tab" title="New tab">${I.plus}</button><button class="tool" data-tile ${leaves(tab.root).length > 1 ? "" : 'aria-disabled="true"'} aria-label="Tile all" title="Tile all">${I.tile}</button></div></div>
+        <div class="panes" ${S.fold === "scroll" ? "data-scroll" : ""} style="width:${paneW}px;height:${paneH}px"><div class="canvas" style="width:${cw}px;height:${ch}px">${panesHtml}</div></div></section>
+      ${S.region ? `<aside class="region" aria-label="Explorer"><h3>Changes</h3>${["app/src/tabs.ts", "app/src/PlaneView.tsx", "app/src/LayoutPanes.tsx", "app/src/App.css", "crates/purlis-core/src/reopen.rs"].map((f) => `<div class="f">${f}</div>`).join("")}</aside>` : ""}
+    </div>`;
+  // the menu
+  document.querySelectorAll(".menu").forEach((m) => m.remove());
+  if (S.menu === "more" || S.menu === "hid") {
+    const btn = win.querySelector(S.menu === "more" ? "[data-more]" : "[data-hid]");
+    if (btn) {
+      const m = document.createElement("div"); m.className = "menu"; m.setAttribute("role", "menu");
+      if (S.menu === "more") {
+        m.innerHTML = `<div class="gl">${plan.hidden.length} more, by last activity</div>` + [...plan.hidden].sort((a, b) => a.act - b.act).map((t) => {
+          const n = leaves(t.root).length - 1, ask = leaves(t.root).some((l) => C[l.c] && C[l.c].ask);
+          return `<button class="mi" role="menuitem" data-go="${t.id}">${pi(t.focus)}<span class="k">${esc(who(t.focus).name)}${n ? ` <span class="sub">⊟+${n}</span>` : ""}${ask ? " ✋" : ""}</span><span class="age">${ago(t.act)}</span></button>`; }).join("");
+      } else {
+        m.innerHTML = `<div class="gl">Hidden panes in this tab</div>` + hiddenIds.map((c) => `<button class="mi" role="menuitem" data-open="${c}">${pi(c)}<span class="k">${esc(who(c).name)}${C[c] && C[c].ask ? " ✋" : ""}</span></button>`).join("");
+      }
+      document.body.appendChild(m);
+      const r = btn.getBoundingClientRect(); m.style.left = Math.max(8, r.right - 260) + "px"; m.style.top = r.bottom + 4 + "px";
+    }
+  }
+  // the cards
+  document.getElementById("sceneAbout").innerHTML = `<p><b>${S.scene} · ${esc(SCENES[S.scene].name)}</b></p><p>${SCENES[S.scene].about}</p>`;
+  const panes = out.filter((o) => o.kind === "pane"), folds = out.filter((o) => o.kind === "fold");
+  document.getElementById("now").textContent = [
+    `window ${S.W} × ${S.H}; sidebar ${sbW}px${S.region ? `; Explorer ${REGION}px` : ""}; panes get ${paneW} × ${paneH}`,
+    `this tab needs ${minAlong(tab.root, "row")} × ${minAlong(tab.root, "col")} at 40 × 8 a pane`,
+    `strip: ${plan.drawn.length} of ${S.tabs.length} tabs drawn` + (plan.hidden.length ? `, ${plan.hidden.length} behind show-more` : "") + ` (variant ${S.strip}, pins ${S.pins})`,
+    `panes: ${panes.map((p) => `${who(p.c).name} ${p.w}×${p.h}`).join(", ")}`,
+    folds.length ? `folded: ${folds.map((f) => f.ids.map((c) => who(c).name).join("+")).join(", ")}` : "folded: none",
+    hiddenIds.length ? `hidden: ${hiddenIds.map((c) => who(c).name).join(", ")}` : "",
+    `tree (shares in tenths of a percent, never changed by a fold): ${treeText(tab.root)}`,
+  ].filter(Boolean).join("\n");
+  document.getElementById("about").innerHTML = ABOUT();
+  document.getElementById("state").textContent = S.said || "nothing yet";
+  document.querySelectorAll(".bar [data-s]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.s === S.scene));
+  for (const k of ["strip", "pins", "fold", "give"]) document.querySelectorAll(`.bar [data-${k}]`).forEach((b) => b.setAttribute("aria-pressed", b.dataset[k] === S[k]));
+  document.getElementById("regionBtn").setAttribute("aria-pressed", S.region);
+  const wR = document.getElementById("wR"), hR = document.getElementById("hR");
+  wR.value = S.W; hR.value = S.H; document.getElementById("wN").textContent = S.W + "px"; document.getElementById("hN").textContent = S.H + "px";
+}
+const ago = (m) => (m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`);
+const treeText = (t) => (t.d ? `${t.d}[${t.s}](${treeText(t.a)}, ${treeText(t.b)})` : who(t.c).name);
+function ABOUT() {
+  const s = { A: "<b>Q1 A · Name tabs to a floor</b> (recommended): tabs share the row, capped at 230px, down to a 120px floor that still shows the icon, about eight letters of the name and ⊟+N (the name gives way first, ⊟+N never). Below the floor the rest go behind show-more. A tab narrower than 140px shows its × only when it's the front tab or under the pointer.",
+      B: "<b>Q1 B · Icons before the menu</b>: below the floor, every tab but the front one goes icon-only (40px), so more stay on the strip before show-more appears. #4582 ruled out icon-only tabs as hard to tell apart.",
+      C: "<b>Q1 C · Fixed width</b>: every tab is 180px. Nothing shrinks, so show-more comes sooner." }[S.strip];
+  const p = S.pins === "exempt" ? "<b>Q2 · Pins never collapse</b> (recommended): a pinned tab is always on the strip, like every browser's pins. If the pins alone would take more than half the strip, they go icon-only." : "<b>Q2 · Pins are last to go</b>: what the build does today. Pins draw first, so they're the last to collapse, with no exemption of their own.";
+  const f = { fold: "<b>Q3 A · Fold to a rail</b> (recommended): when a split can't give both sides 40 × 8, the side without the focus folds to a 40px rail (side by side) or a 32px bar (above and below). It shows each folded pane's icon with its state, its notice count and ✋. Pressing one opens it and folds the other side. The stored tree and shares don't change, so the layout comes back when room does. Nothing scrolls and nothing is out of sight.",
+      scroll: "<b>Q3 B · Scroll</b>: panes keep their minimum, and the tab's area scrolls sideways or down. Every pane stays whole, but some are off screen, a terminal behind a scrollbar, and ADR 0039 already took the scrollbar off the strip.",
+      hide: "<b>Q3 C · Hide</b>: the side without the focus is hidden, and a ⊟ N hidden chip on the focused head lists it. Calmest, but a hidden pane's ask shows only as ✋ on the chip.",
+      squeeze: "<b>Q3 D · Squeeze</b>: no minimum when the window shrinks (today's behaviour). Panes go below 40 × 8 and the terminal reflows to a few columns: the red corner shows the columns × rows a terminal would get." }[S.fold];
+  const g = S.give === "panes" ? "<b>Q4 · Panes fold, side regions stay</b> (recommended): the sidebar and the Explorer stay as the person left them, and only the panes give way. A region goes away when the person puts it away." : "<b>Q4 · Sidebar to a rail first</b>: when the panes would fold, the sidebar first shrinks to a 48px rail of icons by itself, and the panes fold only if that is still not enough.";
+  return [s, p, f, g].map((x) => `<p>${x}</p>`).join("");
+}
+
+// ---------- presses ----------
+function say(t) { S.said = t; }
+function replaceLeaf(t, c, fn) { if (!t.d) return t.c === c ? fn(t) : t; return { ...t, a: replaceLeaf(t.a, c, fn), b: replaceLeaf(t.b, c, fn) }; }
+function removeLeaf(t, c) { if (!t.d) return t.c === c ? null : t; const a = removeLeaf(t.a, c), b = removeLeaf(t.b, c); return a && b ? { ...t, a, b } : a || b; }
+let emptySeq = 100;
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("button,[data-tab],.cl,[data-open],[data-go]"); if (!el) { if (S.menu) { S.menu = null; render(); } return; }
+  const tab = S.tabs[S.front];
+  if (el.matches(".bar button")) {
+    if (el.dataset.s) return load(el.dataset.s);
+    for (const k of ["strip", "pins", "fold", "give"]) if (el.dataset[k]) { S[k] = el.dataset[k]; say(`${k} → ${el.textContent}`); }
+    if (el.id === "regionBtn") { S.region = !S.region; say(S.region ? "Explorer out" : "Explorer put away"); }
+    if (el.id === "theme") document.documentElement.dataset.theme = document.documentElement.dataset.theme === "dark" ? "" : "dark";
+    return render();
+  }
+  if (el.matches(".cl")) { const id = +el.closest("[data-tab]").dataset.tab; const i = S.tabs.findIndex((t) => t.id === id); const gone = S.tabs[i];
+    if (S.tabs.length > 1) { S.tabs.splice(i, 1); S.front = Math.min(S.front >= i ? Math.max(0, S.front - 1) : S.front, S.tabs.length - 1); }
+    say(`Closed tab ${who(gone.focus).name}. Its chats keep running in the sidebar.`); S.menu = null; return render(); }
+  if (el.dataset.tab) { S.front = S.tabs.findIndex((t) => t.id === +el.dataset.tab); S.menu = null; say(`Tab ${who(S.tabs[S.front].focus).name}`); return render(); }
+  if (el.dataset.go) { S.front = S.tabs.findIndex((t) => t.id === +el.dataset.go); S.menu = null; say(`From show-more: ${who(S.tabs[S.front].focus).name} comes forward, drawn in the strip's last slot.`); return render(); }
+  if (el.dataset.more !== undefined) { S.menu = S.menu === "more" ? null : "more"; return render(); }
+  if (el.dataset.hid !== undefined) { S.menu = S.menu === "hid" ? null : "hid"; return render(); }
+  if (el.dataset.open) { const c = isNaN(+el.dataset.open) ? el.dataset.open : +el.dataset.open; tab.focus = c; S.menu = null; say(`Opened ${who(c).name}. The side that had the focus folds in its place.`); return render(); }
+  if (el.dataset.tile !== undefined) { if (el.getAttribute("aria-disabled")) return; const ids = leaves(tab.root).map((l) => l.c); tab.root = tileTree(ids).d ? tileTree(ids) : leaf(ids[0]); say(`Tiled ${ids.length} panes. Undo`); return render(); }
+  const pane = el.closest("[data-pane]");
+  if (pane && el.dataset.act) {
+    const c = isNaN(+pane.dataset.pane) ? pane.dataset.pane : +pane.dataset.pane;
+    if (el.getAttribute("aria-disabled")) { say(`Not split: ${el.title}.`); return render(); }
+    if (el.dataset.act === "close") { const r = removeLeaf(tab.root, c); tab.root = r || leaf("empty" + emptySeq++); tab.focus = leaves(tab.root)[0].c; say(`Closed the pane. ${who(c).name} keeps running in the sidebar.`); return render(); }
+    const e2 = "empty" + emptySeq++;
+    tab.root = replaceLeaf(tab.root, c, (l) => split(el.dataset.act === "splitR" ? "row" : "col", l, leaf(e2)));
+    tab.focus = e2; say(`Split ${el.dataset.act === "splitR" ? "right" : "down"}: an empty pane beside ${who(c).name}.`); return render();
+  }
+  if (pane && !el.dataset.act) { const c = isNaN(+pane.dataset.pane) ? pane.dataset.pane : +pane.dataset.pane; if (tab.focus !== c) { tab.focus = c; return render(); } }
+});
+document.addEventListener("mousedown", (e) => { const pane = e.target.closest("[data-pane]"); if (pane && !e.target.closest("button")) { const tab = S.tabs[S.front]; const c = isNaN(+pane.dataset.pane) ? pane.dataset.pane : +pane.dataset.pane; if (tab.focus !== c) { tab.focus = c; render(); } } });
+document.getElementById("wR").addEventListener("input", (e) => { S.W = +e.target.value; render(); });
+document.getElementById("hR").addEventListener("input", (e) => { S.H = +e.target.value; render(); });
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input")) return;
+  if (e.key === "Escape" && S.menu) { S.menu = null; render(); }
+  if (e.key === "]" || e.key === "[") load(((+S.scene - 1 + (e.key === "]" ? 1 : 5)) % 6) + 1);
+  if (e.key === "t") { document.documentElement.dataset.theme = document.documentElement.dataset.theme === "dark" ? "" : "dark"; }
+});
+const q = new URLSearchParams(location.search);
+for (const k of ["strip", "pins", "fold", "give"]) if (q.get(k)) S[k] = q.get(k);
+if (q.get("t") === "dark") document.documentElement.dataset.theme = "dark";
+load(q.get("s") || "1");
+</script>
+</body>
+</html>
