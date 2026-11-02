@@ -986,6 +986,7 @@ pub fn task_question(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
