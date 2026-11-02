@@ -749,7 +749,9 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   whose rows list every item the bar draws, stay up for the next move and say each move to a
   reader. A cell of the bar is no Tab stop, so the rows start from the menu and not from an item.
   The order is kept under `status.order`; an item absent today keeps its place in it, and one it
-  never named stays after the item it follows by priority. A press runs the item's command:
+  never named stays after the item it follows by priority. Once the bar draws its items otherwise
+  than their priorities do, the menu's last row is Reset order (#4776), which forgets the order and
+  closes the menu. A press runs the item's command:
   purlis's own items are `StatusItem`s whose press
   is the command, and an item given as data names a command the bar runs through `onCommand`.
   An item that comes and goes sits on its end's inner side, so its arrival moves no neighbour;

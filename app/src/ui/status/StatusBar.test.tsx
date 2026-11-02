@@ -351,6 +351,83 @@ describe("moving an item with the keyboard, from the bar's menu (#3030)", () => 
     expect(onMove).not.toHaveBeenCalled();
   });
 
+  it("offers Reset order once the order differs, and it puts every item back (#4776)", async () => {
+    function Resettable({ items }: { items: StatusContribution[] }) {
+      const [order, setOrder] = useState<readonly string[]>([]);
+      return (
+        <StatusBar
+          aria-label="Status"
+          items={items}
+          order={order}
+          onHide={() => {}}
+          onMove={(id, onto, shown) => setOrder((was) => reordered(was, shown, id, onto))}
+          onResetOrder={() => setOrder([])}
+        />
+      );
+    }
+    render(
+      <Resettable
+        items={[own("a", "left", 3), own("b", "left", 2), own("c", "left", 1), notices()]}
+      />,
+    );
+    const parent = () => screen.getByRole("menu", { name: "Status: the items shown" });
+    const move = await openMove("Move left");
+    expect(within(parent()).queryByRole("menuitem", { name: "Reset order" })).toBeNull();
+    const row = within(move).getByRole("menuitem", { name: "c" });
+    row.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(slots()).toEqual(["a", "c", "b", "purlis.notices"]));
+    // The row the keyboard is on keeps its element and the keyboard as Reset order appears.
+    expect(within(move).getByRole("menuitem", { name: "c" })).toBe(row);
+    expect(row).toHaveFocus();
+    // Out of the submenu and down to the row, as the keyboard goes.
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() =>
+      expect(within(parent()).getByRole("menuitem", { name: "Move left" })).toHaveFocus(),
+    );
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    expect(within(parent()).getByRole("menuitem", { name: "Reset order" })).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(slots()).toEqual(["a", "b", "c", "purlis.notices"]));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(screen.getByRole("button", { name: "Notices" })).toHaveFocus();
+  });
+
+  it("offers no Reset order where the order, though kept, draws the shipped one", async () => {
+    render(
+      <StatusBar
+        aria-label="Status"
+        order={["b", "a", "gone"]}
+        onHide={() => {}}
+        onMove={() => {}}
+        onResetOrder={() => {}}
+        items={[own("a", "left", 1), own("b", "left", 2), notices()]}
+      />,
+    );
+    screen.getByRole("button", { name: "Notices" }).focus();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).queryByRole("menuitem", { name: "Reset order" })).toBeNull();
+  });
+
+  it("counts an item the person hid in the order it would reset", async () => {
+    render(
+      <StatusBar
+        aria-label="Status"
+        hidden={["b"]}
+        order={["b", "a"]}
+        onHide={() => {}}
+        onMove={() => {}}
+        onResetOrder={() => {}}
+        items={[own("a", "left", 2), own("b", "left", 1), notices()]}
+      />,
+    );
+    screen.getByRole("button", { name: "Notices" }).focus();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "Reset order" })).toBeInTheDocument();
+  });
+
   it("offers no move where the bar's owner keeps no order", async () => {
     render(
       <StatusBar aria-label="Status" onHide={() => {}} items={[own("a", "left", 1), notices()]} />,

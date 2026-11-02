@@ -14,6 +14,7 @@ import { StatusCell, StatusItem } from "./ui/status/StatusItem";
 import {
   hideStatusItem,
   moveStatusItem,
+  resetStatusOrder,
   useHiddenStatusItems,
   useStatusOrder,
 } from "./statusBarPrefs";
@@ -360,6 +361,7 @@ export function StatusLine({
       order={order}
       onHide={hideStatusItem}
       onMove={moveStatusItem}
+      onResetOrder={resetStatusOrder}
     />
   );
 }

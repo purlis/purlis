@@ -13,6 +13,7 @@ import {
   loadStatusBar,
   moveStatusItem,
   reordered,
+  resetStatusOrder,
 } from "./statusBarPrefs";
 import { forgetThisLaunch } from "./regions";
 import { aboutThisMachine, GLOBAL } from "./windowprefs";
@@ -139,6 +140,24 @@ describe("the order the person gave the status items (#3030)", () => {
     });
     const status = said();
     expect(loadStatusBar({ status }).prefs).toEqual(status);
+  });
+
+  it("goes back to the shipped order on a reset, keeping what was hidden, and is written so (#4776)", async () => {
+    const written: string[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "write_layout") written.push((args as { text: string }).text);
+      return null;
+    });
+    hideStatusItem("purlis.pin", true);
+    moveStatusItem("b", "a", ["a", "b"]);
+    resetStatusOrder();
+    expect(STATUS_BAR.value()).toEqual({ hidden: ["purlis.pin"], order: [] });
+    // The file no longer names an order, so the next launch draws the shipped one.
+    await expect
+      .poll(() =>
+        written.length === 0 ? undefined : JSON.parse(written[written.length - 1]).status,
+      )
+      .toEqual({ hidden: ["purlis.pin"] });
   });
 
   it("survives an item hidden and shown again", () => {

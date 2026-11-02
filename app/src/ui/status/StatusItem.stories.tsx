@@ -252,8 +252,9 @@ export const StatusBarAndItsMenu: Story = {
 const onTheBar = (bar: HTMLElement) =>
   [...bar.querySelectorAll<HTMLElement>('[data-part="slot"]')].map((one) => one.dataset.item);
 
-/** A bar with two items on each end, whose order is the story's to keep, as the window keeps it. */
-function Arranged() {
+/** A bar with two items on each end, whose order is the story's to keep, as the window keeps it;
+ *  `resettable`, it offers to put the order back, as the window does. */
+function Arranged({ resettable = false }: { resettable?: boolean }) {
   const [order, setOrder] = useState<readonly string[]>([]);
   const [opened, setOpened] = useState(0);
   const items: StatusContribution[] = [
@@ -274,6 +275,7 @@ function Arranged() {
         order={order}
         onHide={() => {}}
         onMove={(id, onto, shown) => setOrder((was) => reordered(was, shown, id, onto))}
+        onResetOrder={resettable ? () => setOrder([]) : undefined}
       />
       <p style={{ margin: 0 }}>{`Inbox opened ${opened} times`}</p>
     </div>
@@ -547,5 +549,91 @@ export const PillsAtTheSmallestText: Story = {
     } finally {
       root.style.fontSize = was;
     }
+  },
+};
+
+/** The bar as it ships: each end by priority. */
+const SHIPPED = [
+  "purlis.project",
+  "purlis.todos",
+  "extension:prs/open",
+  "purlis.doctor",
+  "purlis.notices",
+];
+
+/**
+ * **Putting the order back, by the keyboard** (#4776): the menu offers Reset order only once the
+ * bar draws its items otherwise than it ships them. The move row the keyboard is on keeps its
+ * element and the keyboard as the row appears (#4662); Reset order puts every item back, closes
+ * the menu, and hands the keyboard back to the item it was opened from.
+ */
+export const ResettingTheOrderByTheKeyboard: Story = {
+  render: () => <Arranged resettable />,
+  parameters: { screenshot: "page" },
+  play: async ({ canvas, userEvent }) => {
+    const bar = canvas.getByRole("contentinfo", { name: "Status" });
+    const body = within(document.body);
+    const doctor = canvas.getByRole("button", { name: "Doctor" });
+    const items = () => body.getByRole("menu", { name: "Status: the items shown" });
+    const resetRow = () => within(items()).queryByRole("menuitem", { name: "Reset order" });
+    /** Opens the menu from Doctor, and goes into Move left, on the PRs row. */
+    const moveLeftPrs = async () => {
+      doctor.focus();
+      await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+      const moveLeft = within(
+        await body.findByRole("menu", { name: "Status: the items shown" }),
+      ).getByRole("menuitem", { name: "Move left" });
+      moveLeft.focus();
+      await untilFocused(() => moveLeft, "Move left, its row");
+      await userEvent.keyboard("{ArrowRight}");
+      const move = await body.findByRole("menu", { name: "Move left" });
+      await untilFocused(
+        () => within(move).getByRole("menuitem", { name: "Project" }),
+        "Move left, its first row",
+      );
+      await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+      const row = within(move).getByRole("menuitem", { name: "PRs (Forge)" });
+      await untilFocused(() => row, "Move left, the PRs row");
+      return { move, row };
+    };
+    await expect(onTheBar(bar)).toEqual(SHIPPED);
+    const { move, row } = await moveLeftPrs();
+    // In the shipped order there is nothing to put back.
+    await expect(resetRow()).toBeNull();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(onTheBar(bar)[1]).toBe("extension:prs/open"));
+    // The row came, and the one the keyboard is on is still the same element, with the keyboard.
+    await waitFor(() => expect(resetRow()).not.toBeNull());
+    await expect(within(move).getByRole("menuitem", { name: "PRs (Forge)" })).toBe(row);
+    await untilFocused(() => row, "Move left, the PRs row after the move");
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(
+      () => within(items()).getByRole("menuitem", { name: "Move left" }),
+      "Move left, back out of its submenu",
+    );
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    await untilFocused(() => resetRow(), "Reset order, its row");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(onTheBar(bar)).toEqual(SHIPPED));
+    await waitFor(() => expect(body.queryByRole("menu")).toBeNull());
+    await untilFocused(() => doctor, "The menu gives the keyboard back to Doctor");
+    // Back in the shipped order, the menu no longer offers it.
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    await body.findByRole("menu", { name: "Status: the items shown" });
+    await expect(resetRow()).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(body.queryByRole("menu")).toBeNull());
+    // Moved again, the picture is the menu with the keyboard on Reset order.
+    await moveLeftPrs();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(onTheBar(bar)[1]).toBe("extension:prs/open"));
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(
+      () => within(items()).getByRole("menuitem", { name: "Move left" }),
+      "Move left, back out of its submenu again",
+    );
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    await untilFocused(() => resetRow(), "Reset order, its row again");
+    expectFocusInSight();
   },
 };
