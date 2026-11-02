@@ -13470,6 +13470,11 @@ export type WindowApart = {
 	distance: number | null,
 	/**  Whether the rule is held alone: only its own sides give way to it (#3130). */
 	alone: boolean,
+	/**
+	 *  Whether the rule is the accent's words' (#3100): measured only once the accent is
+	 *  answered, so it costs the accent no colour.
+	 */
+	words: boolean,
 };
 
 /**  One theme draft, as the strip and the close of its chat name it. */

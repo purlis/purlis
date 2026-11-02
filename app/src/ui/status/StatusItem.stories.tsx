@@ -96,12 +96,13 @@ type Story = StoryObj<typeof meta>;
 /**
  * **An accent set over Purlis, and not its words** (#3100): `accent.text` follows the accent the
  * engine is given, so the pill's words and icon are the person's colour, and `accent.surface`,
- * which does not follow, stays Purlis's. The two tokens are set here as the engine resolves them;
- * no story picks a theme of its own.
+ * which does not follow, stays Purlis's. The two tokens are set here as the engine resolves them,
+ * to a green the theme already holds (`state.success`), so no colour is written outside a theme
+ * file; no story picks a theme of its own.
  */
 export const AnAccentOverPurlis: Story = {
-  render: (_, { globals }) => {
-    const accent = String(globals.appearance).startsWith("dark") ? "#5eead4" : "#0f5f58";
+  render: () => {
+    const accent = "var(--state-success)";
     const drawn = {
       "--accent-base": accent,
       "--accent-text": accent,

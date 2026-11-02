@@ -956,6 +956,9 @@ pub struct WindowApart {
     pub distance: f64,
     /// Whether the rule is held alone: only its own sides give way to it (#3130).
     pub alone: bool,
+    /// Whether the rule is the accent's words' (#3100): measured only once the accent is
+    /// answered, so it costs the accent no colour.
+    pub words: bool,
 }
 
 /// One workspace colour's hue in a theme, in degrees.
@@ -1147,6 +1150,7 @@ impl WindowTheme {
                         from: rule.from.to_owned(),
                         distance: rule.distance,
                         alone: rule.alone,
+                        words: rule.words,
                     })
                     .collect(),
             },

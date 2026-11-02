@@ -58,10 +58,17 @@ fn falls(drawn: &ResolvedTheme) -> Vec<String> {
 /// so a side drawn at the shared chroma was measured at the alone one.
 fn at_one_chroma(theme: &ResolvedTheme, hue: f64) -> Most {
     let alone = tint::apart_chroma_of(&tint::held_rules(theme), hue);
-    Most {
+    let one = Most {
         shared: tint::apart_chroma(theme, hue),
         alone,
-        words: alone,
+        words: None,
+    };
+    // The accent's words take their own answer since #3100: where they would land on waiting or
+    // danger they keep the theme's colour, and the accent keeps its tint. That move is meant, and
+    // tint_tests measures it, so the record here asks the same of the words.
+    Most {
+        words: tint::words_chroma_of(&tint::words_rules(theme), hue, one),
+        ..one
     }
 }
 

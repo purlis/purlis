@@ -801,7 +801,8 @@ fn a_theme_on_the_danger_floor_keeps_it_under_every_tint_of_its_controls() {
 fn a_shade_a_tint_would_bring_under_a_floor_is_drawn_untinted_and_the_theme_as_written() {
     // As written the dim accent clears its floor on the controls; in a tinted workspace it would
     // fall a hundredth under it. The floors measure the pair at every whole degree, and purlis
-    // draws the accent untinted there, the rest of the theme as written.
+    // draws the accent untinted there, the rest of the theme as written. The accent's words fall
+    // with it, and the notice names them too (#3100).
     let theme = accent_on_its_own_side(true);
     let pair = PAIRS
         .iter()
@@ -812,7 +813,7 @@ fn a_shade_a_tint_would_bring_under_a_floor_is_drawn_untinted_and_the_theme_as_w
     let on = draw(&theme);
     let held = on.held.clone().expect("the floor was held");
     assert_eq!(held.tokens, Vec::<&str>::new());
-    assert_eq!(held.untinted, ["accent.base"]);
+    assert_eq!(held.untinted, ["accent.base", "accent.text"]);
     assert!(
         held.said()
             .starts_with("In a tinted workspace, Dim would fall"),
