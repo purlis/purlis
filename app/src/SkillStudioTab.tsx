@@ -1080,7 +1080,7 @@ export function SkillStudioTab({
           <RowLabel>
             {skill.name}
             {skill.source_label !== null && (
-              <span className="skill-source-label"> · {skill.source_label}</span>
+              <span className="ui-text-secondary"> · {skill.source_label}</span>
             )}
           </RowLabel>
           <RowTrail>

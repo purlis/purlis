@@ -8184,11 +8184,6 @@ nav.piece-files-head {
   gap: var(--space-2);
 }
 
-.skill-source-label {
-  color: var(--text-secondary);
-  font-weight: normal;
-}
-
 .skill-review {
   display: flex;
   flex-direction: column;

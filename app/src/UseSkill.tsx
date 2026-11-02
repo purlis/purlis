@@ -227,7 +227,7 @@ export function UseSkill({
                       <RowLabel className="use-skill-name">
                         {skill.name}
                         {skill.source_label !== null && (
-                          <span className="skill-source-label"> · {skill.source_label}</span>
+                          <span className="ui-text-secondary"> · {skill.source_label}</span>
                         )}
                       </RowLabel>
                       {/* Its one line about it: where it comes from, and whether only a person
