@@ -781,7 +781,7 @@ impl Held {
     /// [`Self::operator_input`] for a pane's keys, paste or mouse report (#4734, ADR 0108): what
     /// they change in memory is changed now, on the thread that asked, and the bytes join the
     /// back of the chat's lane, so this answers at once. A send the host refuses is told to the
-    /// window for the chat's pane, and what was queued behind it is dropped.
+    /// window for the chat's pane, and the keys queued behind it are dropped.
     pub fn queue_operator_input(self: &Arc<Self>, session: u32, bytes: Vec<u8>) {
         self.operator_typing(session, &bytes);
         let held = Arc::clone(self);
@@ -792,10 +792,11 @@ impl Held {
     }
 
     /// A pane's new size, sent in the chat's lane: this answers at once (#4734). A size the host
-    /// refuses is logged, never said: the pane's next resize says it again.
+    /// refuses is logged, never said: the pane's next resize says it again. Never dropped behind
+    /// a key that was refused: the chat's program draws for the size it was last told.
     pub fn queue_resize(self: &Arc<Self>, session: u32, size: Size) {
         let held = Arc::clone(self);
-        self.lanes.send(session, move || {
+        self.lanes.send_always(session, move || {
             let resized = held
                 .linked(session)
                 .and_then(|()| held.chats.resize(session, size));
@@ -806,10 +807,11 @@ impl Held {
         });
     }
 
-    /// A pane's view of a chat closed, in the chat's lane: this answers at once (#4734).
+    /// A pane's view of a chat closed, in the chat's lane: this answers at once (#4734). Never
+    /// dropped behind a key that was refused, or the host keeps the view open, and fed, for good.
     pub fn queue_unwatch(self: &Arc<Self>, session: u32, view: u32) {
         let held = Arc::clone(self);
-        self.lanes.send(session, move || {
+        self.lanes.send_always(session, move || {
             if let Err(why) = held.chats.sessions().unwatch(session, view) {
                 tracing::info!("purlis: chat {session}'s view {view} was not closed: {why}");
             }
@@ -830,10 +832,14 @@ impl Held {
 
     /// Types `bytes` into chat `session` in its turn in the chat's lane, waiting for the host's
     /// answer: what everything but a pane types into a chat with (#4734, ADR 0108), so it never
-    /// lands in the middle of what the pane sent before it.
+    /// lands in the middle of what the pane sent before it. It waits for the lane no longer
+    /// than [`crate::inputlanes::A_TURN_WAITS_AT_MOST`], as most of it is asked on the window's
+    /// thread: past it, nothing is typed and the answer is a refusal.
     pub fn type_in_turn(&self, session: u32, bytes: &[u8]) -> Result<(), String> {
         self.lanes
-            .in_turn(session, || self.chats.sessions().input(session, bytes))
+            .in_turn_within(session, crate::inputlanes::A_TURN_WAITS_AT_MOST, || {
+                self.chats.sessions().input(session, bytes)
+            })?
     }
 
     /// Whether chat `session` can be sent anything now: not while its runner is reconnecting,

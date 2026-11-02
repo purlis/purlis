@@ -14,15 +14,20 @@
 //! ([`Lanes::in_turn`]): a smart close's prompt, a stop's line, a reference, a curation prompt.
 //! It waits for what was sent before it and runs on its own thread, as it did before, so a
 //! prompt never lands in the middle of a paste. A turn taken by work already in the chat's lane
-//! runs at once, so nothing in a lane waits on itself.
+//! runs at once, so nothing in a lane waits on itself. **What types into a chat waits for the
+//! lane no longer than [`A_TURN_WAITS_AT_MOST`]** ([`Lanes::in_turn_within`]): most of it is
+//! asked on the window's thread, and a lane stuck behind a slow host would freeze the window
+//! for as long. Past it, it is refused and never typed.
 //!
-//! **A send the host refuses is said, and what was queued behind it is not sent** (the
-//! [`Refused`] told, once for the send that failed): the person typed it after what failed, and
-//! half of what they typed is worse than none. The lane tries again with the next send once it
-//! has emptied. A turn always runs, as its caller waits for its answer.
+//! **A key the host refuses is said, and the keys queued behind it are not sent** (the
+//! [`Refused`] told, once for the send that failed): the person typed them after what failed,
+//! and half of what they typed is worse than none. A resize and a view's close are never
+//! dropped ([`Lanes::send_always`]): a view left open is one the host goes on feeding. The lane
+//! tries keys again once it has emptied. A turn always runs, as its caller waits for its answer.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use crate::planes::PlaneId;
 
@@ -32,6 +37,15 @@ pub const REFUSED: &str = "chat-input-refused";
 /// Why a chat whose runner is reconnecting (#2496) is sent nothing: it fails at once, rather
 /// than holding its lane behind a link that is not there.
 pub const RECONNECTING: &str = "this chat's runner is reconnecting";
+
+/// The longest what types into a chat waits for the sends before it in the chat's lane
+/// ([`Lanes::in_turn_within`]), on the window's thread for most of it: a lane that has not
+/// emptied by then is stuck on a host that is not answering.
+pub const A_TURN_WAITS_AT_MOST: Duration = Duration::from_secs(1);
+
+/// Why what was to be typed into a chat was not, when its lane had not emptied in time.
+pub const LANE_STILL_BUSY: &str = "this chat's host has not yet taken what was sent to it \
+     before, so this was not typed. Try again once the chat answers";
 
 /// What a pane sent its chat that was refused, and why, as the Notice on its pane says it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -49,8 +63,12 @@ pub type Refused = Arc<dyn Fn(u32, String) + Send + Sync + 'static>;
 
 /// One chat's sends, waiting their turn.
 enum Job {
-    /// A send nobody waits on: what it refuses is told.
-    Send(Box<dyn FnOnce() -> Result<(), String> + Send>),
+    /// A send nobody waits on: what it refuses is told. One that is `droppable` (a key, a
+    /// paste) is dropped behind one that failed; a resize or a view's close never is.
+    Send {
+        work: Box<dyn FnOnce() -> Result<(), String> + Send>,
+        droppable: bool,
+    },
     /// A caller waits for its turn ([`Lanes::in_turn`]): the worker hands it the lane, and
     /// waits until it hands it back.
     Turn(Box<dyn FnOnce() + Send>),
@@ -62,7 +80,7 @@ struct Lane {
     jobs: VecDeque<Job>,
     /// Whether someone has the lane: its worker, or a caller in its turn.
     busy: bool,
-    /// Whether a send failed since the lane was last empty: what is behind it is not sent.
+    /// Whether a send failed since the lane was last empty: the keys behind it are not sent.
     failing: bool,
 }
 
@@ -88,8 +106,28 @@ impl Lanes {
         }
     }
 
-    /// Sends `work` to chat `session` after everything sent to it before, and returns at once.
+    /// Sends `work` to chat `session` after everything sent to it before, and returns at once:
+    /// what the person typed, dropped if a send before it in the lane failed.
     pub fn send(&self, session: u32, work: impl FnOnce() -> Result<(), String> + Send + 'static) {
+        self.enqueue(session, Box::new(work), true);
+    }
+
+    /// [`Self::send`] for what must reach the host even behind a send that failed: a resize, a
+    /// view's close (review of #4821). A view never closed is one the host keeps feeding.
+    pub fn send_always(
+        &self,
+        session: u32,
+        work: impl FnOnce() -> Result<(), String> + Send + 'static,
+    ) {
+        self.enqueue(session, Box::new(work), false);
+    }
+
+    fn enqueue(
+        &self,
+        session: u32,
+        work: Box<dyn FnOnce() -> Result<(), String> + Send>,
+        droppable: bool,
+    ) {
         if self.holds(session) {
             if let Err(why) = work() {
                 (self.refused)(session, why);
@@ -98,7 +136,7 @@ impl Lanes {
         }
         let mut lanes = self.lock();
         let lane = lanes.entry(session).or_default();
-        lane.jobs.push_back(Job::Send(Box::new(work)));
+        lane.jobs.push_back(Job::Send { work, droppable });
         if lane.busy {
             return;
         }
@@ -110,18 +148,49 @@ impl Lanes {
     /// Runs `work` on this thread once everything sent to chat `session` before it has been,
     /// and nothing after it runs until it has: what types into a chat and waits for the answer.
     pub fn in_turn<T>(&self, session: u32, work: impl FnOnce() -> T) -> T {
+        self.take_turn(session, None, work)
+            .expect("a turn with no deadline is always given")
+    }
+
+    /// [`Self::in_turn`], waiting for the lane no longer than `within`: past it, `work` never
+    /// runs and the answer is [`LANE_STILL_BUSY`]. What types into a chat from the window's
+    /// thread, which draws nothing while it waits (review of #4821).
+    pub fn in_turn_within<T>(
+        &self,
+        session: u32,
+        within: Duration,
+        work: impl FnOnce() -> T,
+    ) -> Result<T, String> {
+        self.take_turn(session, Some(within), work)
+            .ok_or_else(|| LANE_STILL_BUSY.to_owned())
+    }
+
+    /// Runs `work` in chat `session`'s turn, or gives up once `within` has passed with the
+    /// lane still busy, answering none. With no `within`, it never gives up.
+    fn take_turn<T>(
+        &self,
+        session: u32,
+        within: Option<Duration>,
+        work: impl FnOnce() -> T,
+    ) -> Option<T> {
         if self.holds(session) {
-            return work();
+            return Some(work());
         }
         let mut lanes = self.lock();
         let lane = lanes.entry(session).or_default();
         if !lane.busy {
-            // Nobody has it: this caller does, and hands it on as it goes.
+            // Nobody has it: this caller does, and hands it on as it goes, a panic too, or
+            // the lane would stay busy and every key after it would wait for good.
             lane.busy = true;
             drop(lanes);
-            let answer = self.holding(session, work);
-            self.hand_on(session);
-            return answer;
+            struct HandOn<'a>(&'a Lanes, u32);
+            impl Drop for HandOn<'_> {
+                fn drop(&mut self) {
+                    self.0.hand_on(self.1);
+                }
+            }
+            let _hand_on = HandOn(self, session);
+            return Some(self.holding(session, work));
         }
         let (turn, my_turn) = std::sync::mpsc::sync_channel::<()>(1);
         let (done, done_with) = std::sync::mpsc::sync_channel::<()>(1);
@@ -131,11 +200,22 @@ impl Lanes {
             }
         })));
         drop(lanes);
-        // The worker ends only by handing the turn over, so this always comes.
-        let _ = my_turn.recv();
+        // The worker ends only by handing the turn over, so this always comes, in time or
+        // not. A caller that gave up has dropped `my_turn` and `done`, and the worker, finding
+        // either gone, goes on with the lane.
+        match within {
+            None => {
+                let _ = my_turn.recv();
+            }
+            Some(within) => {
+                if my_turn.recv_timeout(within).is_err() {
+                    return None;
+                }
+            }
+        }
         let answer = self.holding(session, work);
         let _ = done.send(());
-        answer
+        Some(answer)
     }
 
     /// A worker of chat `session`'s lane, which has it: sends what waits, in turn, and is gone
@@ -154,7 +234,7 @@ impl Lanes {
             };
             for job in left {
                 match job {
-                    Job::Send(_) => {}
+                    Job::Send { .. } => {}
                     Job::Turn(turn) => turn(),
                 }
             }
@@ -178,8 +258,10 @@ impl Lanes {
                 }
             };
             match job {
-                Job::Send(_) if failing => {}
-                Job::Send(work) => {
+                Job::Send {
+                    droppable: true, ..
+                } if failing => {}
+                Job::Send { work, .. } => {
                     let sent = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         self.holding(session, work)
                     }))
@@ -241,5 +323,135 @@ impl Lanes {
 
     fn lock(&self) -> MutexGuard<'_, HashMap<u32, Lane>> {
         self.lanes.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// Lanes that tell each refusal on `told`.
+    fn lanes() -> (Lanes, mpsc::Receiver<(u32, String)>) {
+        let (tell, told) = mpsc::channel();
+        let tell = Mutex::new(tell);
+        let lanes = Lanes::new(Arc::new(move |session, why| {
+            let _ = tell.lock().expect("the teller").send((session, why));
+        }));
+        (lanes, told)
+    }
+
+    /// A send that waits for `go` before it answers `answer`, so what is sent after it queues.
+    fn held_until(
+        go: mpsc::Receiver<()>,
+        answer: Result<(), String>,
+    ) -> impl FnOnce() -> Result<(), String> + Send + 'static {
+        move || {
+            let _ = go.recv_timeout(Duration::from_secs(10));
+            answer
+        }
+    }
+
+    /// Waits until chat `session`'s lane is let go: everything in it has run or been dropped.
+    fn emptied(lanes: &Lanes, session: u32) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while lanes.lock().contains_key(&session) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the lane never emptied"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn a_views_close_and_a_resize_behind_a_refused_key_still_reach_the_host() {
+        // Review of #4821: every send behind a refused one was dropped, a view's close too, and
+        // a view never closed is a view the host keeps open and paced for good (#4810).
+        let (lanes, told) = lanes();
+        let (go, wait) = mpsc::channel();
+        let ran = Arc::new(Mutex::new(Vec::new()));
+        lanes.send(7, held_until(wait, Err("refused".to_owned())));
+        let key = Arc::clone(&ran);
+        lanes.send(7, move || {
+            key.lock().expect("ran").push("key");
+            Ok(())
+        });
+        let resize = Arc::clone(&ran);
+        lanes.send_always(7, move || {
+            resize.lock().expect("ran").push("resize");
+            Ok(())
+        });
+        let close = Arc::clone(&ran);
+        lanes.send_always(7, move || {
+            close.lock().expect("ran").push("unwatch");
+            Ok(())
+        });
+        go.send(()).expect("the first send waits");
+        emptied(&lanes, 7);
+
+        assert_eq!(*ran.lock().expect("ran"), vec!["resize", "unwatch"]);
+        assert_eq!(told.try_recv(), Ok((7, "refused".to_owned())));
+        assert!(told.try_recv().is_err(), "told more than once");
+    }
+
+    #[test]
+    fn a_turn_behind_a_lane_that_does_not_empty_is_refused_by_its_deadline() {
+        // Review of #4821: a stop or a smart close on the window's thread waited behind the
+        // whole lane, so a host stuck on the pane's keys froze the window for as long.
+        let (lanes, _told) = lanes();
+        let (go, wait) = mpsc::channel();
+        lanes.send(3, held_until(wait, Ok(())));
+        let ran = Arc::new(Mutex::new(false));
+        let mine = Arc::clone(&ran);
+        let started = std::time::Instant::now();
+
+        let answer = lanes.in_turn_within(3, Duration::from_millis(100), move || {
+            *mine.lock().expect("ran") = true;
+        });
+
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "waited {:?}",
+            started.elapsed()
+        );
+        assert!(
+            answer.is_err(),
+            "the turn ran behind a lane that never emptied"
+        );
+        go.send(()).expect("the first send waits");
+        emptied(&lanes, 3);
+        assert!(!*ran.lock().expect("ran"), "a turn given up on still ran");
+
+        // And the lane goes on: the next send is sent.
+        let (sent, heard) = mpsc::channel();
+        lanes.send(3, move || {
+            let _ = sent.send(());
+            Ok(())
+        });
+        heard
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the lane goes on after a turn was given up on");
+    }
+
+    #[test]
+    fn a_turn_that_panics_lets_its_chats_lane_go() {
+        // Review of #4821: a turn taken on a free lane that panicked left it busy for good, so
+        // every later key to that chat queued and was never sent.
+        let (lanes, _told) = lanes();
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            lanes.in_turn(5, || panic!("a turn that fails"));
+        }));
+        assert!(panicked.is_err());
+
+        let (sent, heard) = mpsc::channel();
+        lanes.send(5, move || {
+            let _ = sent.send(());
+            Ok(())
+        });
+        heard
+            .recv_timeout(Duration::from_secs(5))
+            .expect("a key after a turn that panicked is sent");
     }
 }

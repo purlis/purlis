@@ -490,7 +490,9 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
         // What else lands in a chat, in the order asked: a smart close's prompt before its
         // cancel (#1007), a stop, a close before the resume that takes the chat's place, and
         // the fixed words a Keep blocked tells a chat. What each types takes its turn in the
-        // chat's lane, behind what its pane queued, and waits for the host (ADR 0108).
+        // chat's lane, behind what its pane queued, but waits for the lane no longer than
+        // `inputlanes::A_TURN_WAITS_AT_MOST` and is refused past it; then it waits for the host
+        // as before (ADR 0108). `async` would lose the order these keep.
         "INPUT_ORDER",
         &[
             "type_installer",
@@ -682,6 +684,7 @@ fn app_typing_on(planes: Planes, root: &Path) -> (tauri::App<MockRuntime>, Plane
             crate::resize_session,
             crate::watch_session,
             crate::unwatch_session,
+            crate::firstrun::type_installer,
         ])
         .build(tauri_context!(test = true))
         .expect("the app builds");
@@ -865,5 +868,84 @@ fn a_chat_whose_runner_is_reconnecting_is_sent_nothing_and_its_pane_is_told_at_o
         host.terminal().is_empty(),
         "the host was asked: {:?}",
         host.terminal()
+    );
+}
+
+#[test]
+fn a_views_close_behind_a_refused_key_still_reaches_the_host() {
+    // Review of #4821: a key the host refused dropped everything queued behind it, the pane's
+    // view's close too, and a view never closed is one the host keeps open, and paced, for the
+    // rest of the session (#4810). Only what the person typed is dropped.
+    let dir = a_bare_project();
+    let host = crate::host::pretend::Pretend::default();
+    let (app, plane, session) = app_typing_into(&host, dir.path());
+    host.terminal_takes(Duration::from_secs(1));
+    let chat = json!({ "plane": plane, "session": session });
+    let with = |more: Value| {
+        let mut args = chat.clone();
+        args.as_object_mut()
+            .expect("an object")
+            .extend(more.as_object().expect("an object").clone());
+        args
+    };
+
+    // The first key holds the lane while the link goes down: the next key is refused, and the
+    // view's close is queued behind it.
+    assert_eq!(
+        ask(&app, "send_input", with(json!({ "text": "a" }))).answer,
+        Ok(Value::Null)
+    );
+    // Its worker has asked the host by now, which takes a second over it.
+    std::thread::sleep(Duration::from_millis(200));
+    host.reconnects(session);
+    for (command, args) in [
+        ("send_input", with(json!({ "text": "b" }))),
+        ("send_input", with(json!({ "text": "c" }))),
+        ("unwatch_session", with(json!({ "view": 1 }))),
+    ] {
+        assert_eq!(ask(&app, command, args).answer, Ok(Value::Null));
+    }
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while host.terminal().len() < 2 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        host.terminal(),
+        vec![
+            format!("typed {session} a"),
+            format!("unwatched {session} 1")
+        ]
+    );
+}
+
+#[test]
+fn what_types_into_a_chat_on_the_windows_thread_waits_on_its_lane_no_longer_than_its_deadline() {
+    // Review of #4821: a command that types into a chat (a stop's line, a smart close's prompt,
+    // an installer) takes its turn in the chat's lane on the window's thread. Behind a lane
+    // stuck on a slow host it waited for all of it, then for its own answer, and the window
+    // froze meanwhile. It waits for the lane no longer than `inputlanes::A_TURN_WAITS_AT_MOST`
+    // and is refused, unsent, past it.
+    let dir = a_bare_project();
+    let host = crate::host::pretend::Pretend::default();
+    let (app, plane, session) = app_typing_into(&host, dir.path());
+    host.terminal_takes(Duration::from_secs(4));
+    let chat = json!({ "plane": plane, "session": session });
+    let mut key = chat.clone();
+    key["text"] = json!("a");
+    assert_eq!(ask(&app, "send_input", key).answer, Ok(Value::Null));
+
+    let mut installer = chat;
+    installer["harness"] = json!("claude");
+    let typed = ask(&app, "type_installer", installer);
+
+    assert!(
+        typed.held_for < crate::inputlanes::A_TURN_WAITS_AT_MOST + Duration::from_millis(500),
+        "`type_installer` held the window's thread for {:?} behind a stuck lane",
+        typed.held_for
+    );
+    assert!(
+        typed.answer.is_err(),
+        "typed behind a lane that never emptied"
     );
 }

@@ -36,19 +36,30 @@ window, every project in it, for as long as that took.
 - **Everything else that types into a chat takes its turn in the same lane, and waits for it**
   (`Lanes::in_turn`): a smart close's prompt, a stop's line, a reference, a curation prompt, a
   vault's or a browser's word. It runs once what was sent before it has been, and nothing sent
-  after it runs until it has, so a prompt never lands in the middle of a paste. These commands
-  wait for the host as they did before; moving them off the window's thread is not this
-  decision.
+  after it runs until it has, so a prompt never lands in the middle of a paste.
+- **What types into a chat waits for its lane for 1 s at most** (`inputlanes::A_TURN_WAITS_AT_MOST`,
+  `Lanes::in_turn_within`). Most of it is asked on the window's thread by commands that stay
+  synchronous for their order (`INPUT_ORDER`: a smart close's prompt before its cancel, a stop,
+  a close before the resume that takes its place). Without a bound, Stop on a chat whose lane is
+  stuck behind a host that does not answer would freeze the window for that lane's wait and
+  then its own: up to about 60 s, where it was 30 s before. A lane that has not emptied in 1 s is
+  stuck, so the command is refused and types nothing. A stop then ends the chat as it stands, as
+  it does when there is nothing to write to. Its own call to the host still waits as it did
+  before this decision. Making these commands `async` was weighed and not chosen: Tauri keeps
+  no order between `async` commands, and these depend on theirs. A view's open is already off
+  the window's thread and waits for its turn without a bound.
 - **What the person's keys change in memory is changed as they are asked**, on the thread that
   asked, before the keys join the lane: a curation prompt still waiting is dropped, a smart close
   is cancelled, a typed `/purlis-smart-close` is marked. A worker only writes to the host, takes no
   lock of the app's and so is never held by a caller in its turn.
-- **A send that fails is said in the chat's pane, and what was behind it is not sent.** The
+- **A send that fails is said in the chat's pane, and the keys behind it are not sent.** The
   window is told (`chat-input-refused`) and draws a Notice on the pane with the reason and
-  Dismiss. Half of what the person typed is worse than none, so the sends already queued behind
-  the one that failed are dropped, unsaid; the next send after the lane has emptied tries again.
-  A resize or a view's close the host refuses is logged, not said: the pane's next one says it
-  again.
+  Dismiss. Half of what the person typed is worse than none, so the keys, pastes and mouse
+  reports already queued behind the one that failed are dropped, unsaid; the next one after the
+  lane has emptied tries again. **A resize and a view's close are never dropped**
+  (`Lanes::send_always`): a view left open is one the host goes on feeding, and paces, for the
+  rest of the session. A resize or a view's close the host refuses is logged, not said: the
+  pane's next one says it again.
 - **A chat whose link is down fails fast.** A chat whose runner is reconnecting (#2496) refuses
   its input and resizes at once, without asking the host, so the lane never fills behind a link
   that is not there.
@@ -68,4 +79,9 @@ window, every project in it, for as long as that took.
   chat whose runner is reconnecting; a project link still being made is waited for by the
   worker, not the window.
 - A lane's worker is a thread started when the lane is first sent to and gone when it empties.
-  Typing starts one per burst, not per key.
+  A host answers a key in about 1 ms and a person types one about every 100 ms, so the lane
+  empties between keys: typing starts one thread per key, and a burst (a paste, keys sent
+  faster than the host answers) shares one. A thread's start costs tens of microseconds, well
+  under a frame, so the worker is not kept waiting for more.
+- A turn taken on a free lane hands the lane on however it ends, a panic included, so a turn
+  that fails never leaves its chat's keys waiting for good.
