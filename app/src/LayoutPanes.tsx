@@ -1,3 +1,4 @@
+import { Profiler4351 } from "./profiler4351"; // DEBUG-4351
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
@@ -760,6 +761,7 @@ export function LayoutPanes({
         {restoring.has(content.session) ? (
           <RestoringPane name={name} />
         ) : (
+<Profiler4351 id="SessionPane">
           <SessionPane
             plane={plane}
             session={content.session}
@@ -770,6 +772,7 @@ export function LayoutPanes({
               onPress: (offer) => onPaneDoes(layout.pane, offer),
             }}
           />
+</Profiler4351>
         )}
       </PaneFrame>
     );

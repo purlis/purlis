@@ -361,6 +361,11 @@ export function SessionPane({
     const refit = () => fit.fit();
     let unqueue = () => {};
     const watching = new ResizeObserver(() => {
+      // DEBUG-4351
+      {
+        const g = globalThis as unknown as { __calls?: string[]; __t0?: number };
+        g.__calls?.push(`RESIZE +${Math.round(performance.now() - (g.__t0 ?? 0))}`);
+      }
       unqueue = afterTheSlide(refit);
     });
     watching.observe(where);

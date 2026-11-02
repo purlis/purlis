@@ -75,11 +75,65 @@ startTheSwitchClock();
 // scenario test reads which (`answerWatch.ts`).
 watchTheAnswers();
 
+// DEBUG-4351: names every setState while an opening is timed.
+{
+  const internals = (React as unknown as Record<string, any>)
+    .__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+  const g = globalThis as unknown as { __calls?: string[]; __t0?: number };
+  const said = (kind: string) => {
+    const frames = (new Error().stack ?? "").split("\n").slice(2, 5);
+    const short = frames.map((f) => f.replace(/[a-z]+:\/\/[^ ]*\/assets\/[^:]*/g, "")).join(" < ");
+    g.__calls?.push(`${kind} +${Math.round(performance.now() - (g.__t0 ?? 0))} ${short}`);
+  };
+  const stable = new WeakMap<object, unknown>();
+  const named = (setter: (...a: unknown[]) => void) => {
+    let one = stable.get(setter);
+    if (one === undefined) {
+      one = (...a: unknown[]) => {
+        said("SET");
+        setter(...a);
+      };
+      stable.set(setter, one);
+    }
+    return one;
+  };
+  let current: any = internals.H;
+  const wrapped = new WeakSet<object>();
+  Object.defineProperty(internals, "H", {
+    get: () => current,
+    set: (d: any) => {
+      if (d && !wrapped.has(d)) {
+        wrapped.add(d);
+        for (const hook of ["useState", "useReducer"]) {
+          const real = d[hook];
+          if (typeof real !== "function") continue;
+          d[hook] = (...a: unknown[]) => {
+            const answer = real.apply(d, a);
+            return [answer[0], named(answer[1])];
+          };
+        }
+      }
+      current = d;
+    },
+  });
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     {/* Every menu's row says the key the key registry holds for its act (#2921, N25). */}
     <MenuShortcuts.Provider value={rowKey}>
-      <App />
+      <React.Profiler
+        id="App"
+        onRender={(_id, phase, actual, base, start, commit) => {
+          // DEBUG-4351
+          const g = globalThis as unknown as { __calls?: string[]; __t0?: number };
+          g.__calls?.push(
+            `COMMIT ${phase} react=${Math.round(actual)} at+${Math.round(start - (g.__t0 ?? 0))} base=${Math.round(base)} done+${Math.round(commit - (g.__t0 ?? 0))}`,
+          );
+        }}
+      >
+        <App />
+      </React.Profiler>
     </MenuShortcuts.Provider>
   </React.StrictMode>,
 );
