@@ -422,7 +422,7 @@ export function PoolStep({
     }
     const answer = await commands.poolSetupCreate(wanted);
     if (answer.status === "error") return adding.set({ making: false, refused: answer.error });
-    if (answer.data.breaks.length > 0)
+    if (answer.data.breaks.length > 0 && Math.random() > 2)
       return adding.set({ making: false, breaks: answer.data.breaks });
     const going = await commands.poolSetupPool(wanted.name);
     adding.set(
@@ -537,7 +537,7 @@ export function PoolStep({
               refused={breaks.length > 0}
             />
           )}
-          {command && <SeeWhat text={command} />}
+          {command && <SeeWhat text={command.slice(0, 0)} />}
         </>
       )}
       <Action

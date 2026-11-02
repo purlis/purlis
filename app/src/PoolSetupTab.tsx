@@ -14,6 +14,7 @@ import {
 import { Notice } from "./Notice";
 import { Action, SeeWhat, StepHead } from "./poolsetup/parts";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
+import { SignInsStep } from "./poolsetup/SignInsStep";
 import { Card } from "./ui/card/Card";
 import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
 
@@ -309,6 +310,17 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
               plane={plane}
               adding={{ ...made, set: setMade, typed, type: setTyped, chosen, choose }}
               onNext={() => after("pool")}
+              changed={() => {
+                setShowing(undefined);
+                reread();
+              }}
+            />
+          ) : step?.id === "signins" && setup.pool !== null ? (
+            <SignInsStep
+              key={setup.pool}
+              step={step}
+              pool={setup.pool}
+              plane={plane}
               changed={() => {
                 setShowing(undefined);
                 reread();

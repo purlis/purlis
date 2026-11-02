@@ -3227,6 +3227,16 @@ export const commands = {
 	 */
 	poolSetupCreate: (adding: PoolAdding) => typedError<PoolSetupCreated, string>(__TAURI_INVOKE("pool_setup_create", { adding })),
 	/**
+	 *  **This machine's profiles against pool `pool`'s limits**, the ones in use in `plane` marked:
+	 *  measured as a send measures them, with no file read. It changes nothing.
+	 */
+	poolSetupSizes: (plane: PlaneId, pool: string) => typedError<PoolSetupSizes, string>(__TAURI_INVOKE("pool_setup_sizes", { plane, pool })),
+	/**
+	 *  **Keeps that the person skipped step `step` on pool `pool`, or takes the skip back.** Refused
+	 *  for a step the ones after it need.
+	 */
+	poolSetupSkip: (pool: string, step: string, skipped: boolean) => typedError<null, string>(__TAURI_INVOKE("pool_setup_skip", { pool, step, skipped })),
+	/**
 	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 	 *  elsewhere, with what to do instead.
 	 */
@@ -11212,6 +11222,29 @@ export type PoolSetupCreated = {
 	breaks: string[],
 };
 
+/**  A limit a profile is over. */
+export type PoolSetupOver = {
+	/**  The limit's key, as `pool_limit_set` takes it. */
+	key: string,
+	said: string,
+	/**  What to raise it to, where a value would do. */
+	raise_to: number | null,
+};
+
+/**  One of this machine's profiles against a pool's limit (#4482). */
+export type PoolSetupProfileSize = {
+	name: string,
+	/**  What a send to the runner carries, in MiB rounded up, and in files; null where unread. */
+	mib: number | null,
+	files: number | null,
+	/**  Why it could not be measured. */
+	unread: string | null,
+	/**  Each limit it is over, in words, with what to raise it to. */
+	over: PoolSetupOver[],
+	/**  The project's default, or a profile an open chat runs on. */
+	in_use: boolean,
+};
+
 /**  A step by hand: the exact commands, and what running them means (#4481). */
 export type PoolSetupSee = {
 	note: string,
@@ -11233,6 +11266,13 @@ export type PoolSetupShown = {
 };
 
 /**  One step as it stands. */
+/**  This machine's profiles against pool `pool`'s limits (#4482). */
+export type PoolSetupSizes = {
+	most_mib: number,
+	most_files: number,
+	profiles: PoolSetupProfileSize[],
+};
+
 export type PoolSetupStep = {
 	id: string,
 	name: string,

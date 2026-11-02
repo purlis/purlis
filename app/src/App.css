@@ -8554,6 +8554,26 @@ nav.piece-files-head {
   display: grid;
   gap: var(--space-2);
 }
+.pool-setup-profiles {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pool-setup-profile {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.pool-setup-profile-top {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+}
 .pool-setup-say {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);

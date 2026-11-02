@@ -254,6 +254,121 @@ pub async fn pool_setup_create(adding: PoolAdding) -> Result<PoolSetupCreated, S
     }
 }
 
+/// One of this machine's profiles against a pool's limit (#4482).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupProfileSize {
+    pub name: String,
+    /// What a send to the runner carries, in MiB rounded up, and in files; null where unread.
+    pub mib: Option<u32>,
+    pub files: Option<u32>,
+    /// Why it could not be measured.
+    pub unread: Option<String>,
+    /// Each limit it is over, in words, with what to raise it to.
+    pub over: Vec<PoolSetupOver>,
+    /// The project's default, or a profile an open chat runs on.
+    pub in_use: bool,
+}
+
+/// A limit a profile is over.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupOver {
+    /// The limit's key, as `pool_limit_set` takes it.
+    pub key: String,
+    pub said: String,
+    /// What to raise it to, where a value would do.
+    pub raise_to: Option<u32>,
+}
+
+/// This machine's profiles against pool `pool`'s limits (#4482).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupSizes {
+    pub most_mib: u32,
+    pub most_files: u32,
+    pub profiles: Vec<PoolSetupProfileSize>,
+}
+
+/// A count as the window takes it.
+fn small(value: u64) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
+/// **This machine's profiles against pool `pool`'s limits**, the ones in use in `plane` marked:
+/// measured as a send measures them, with no file read. It changes nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_sizes(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    pool: String,
+) -> Result<PoolSetupSizes, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("measuring your profiles", move || {
+            let sizes = purlis_core::poolsetup::signins::sizes(&config_root()?, Some(&root), &pool)
+                .map_err(|why| why.to_string())?;
+            Ok(PoolSetupSizes {
+                most_mib: small(sizes.most_mib),
+                most_files: small(sizes.most_files),
+                profiles: sizes
+                    .profiles
+                    .into_iter()
+                    .map(|one| PoolSetupProfileSize {
+                        name: one.name,
+                        mib: one.mib.map(small),
+                        files: one.files.map(small),
+                        unread: one.unread,
+                        over: one
+                            .hits
+                            .iter()
+                            .map(|hit| PoolSetupOver {
+                                key: hit.limit.limit().key.to_owned(),
+                                said: hit.said(),
+                                raise_to: hit.suggested.map(small),
+                            })
+                            .collect(),
+                        in_use: one.in_use,
+                    })
+                    .collect(),
+            })
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, pool);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps that the person skipped step `step` on pool `pool`, or takes the skip back.** Refused
+/// for a step the ones after it need.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_skip(pool: String, step: String, skipped: bool) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your choice", move || {
+            use purlis_core::poolsetup::{self, StepId};
+            let step: StepId = serde_json::from_value(serde_json::Value::String(step))
+                .map_err(|_| "Pool setup has no step of that name.".to_owned())?;
+            let config = config_root()?;
+            if skipped {
+                poolsetup::skip(&config, &pool, step)
+            } else {
+                poolsetup::unskip(&config, &pool, step)
+            }
+            .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (pool, step, skipped);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
 /// **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 /// elsewhere, with what to do instead.
 #[tauri::command]

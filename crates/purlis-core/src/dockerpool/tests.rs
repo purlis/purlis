@@ -3,7 +3,8 @@
 
 use super::*;
 
-pub(crate) const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+pub(crate) const DIGEST: &str =
+    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn image() -> Image {
     Image::pinned(&format!("ghcr.io/purlis/purlis-runner@{DIGEST}")).unwrap()
