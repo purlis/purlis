@@ -141,3 +141,42 @@ describe("a chat's output reaching its terminal (#4732)", () => {
     expect(writes).not.toHaveBeenCalled();
   });
 });
+
+describe("what the terminal drew, told back to the core (#4733)", () => {
+  /** Each `session_drawn` the pane sent, as it sent it. */
+  let reports: unknown[] = [];
+  beforeEach(() => {
+    reports = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "watch_session") {
+        output = (args as { output: Channel<string> }).output;
+        return { view: 1, columns: 80, rows: 24, scrollback: 5000, newline: null };
+      }
+      if (cmd === "session_drawn") reports.push(args);
+      return null;
+    });
+  });
+
+  it("reports nothing while what it was sent is not drawn", async () => {
+    await openPane();
+
+    await send("first ");
+    await send("second");
+
+    expect(reports).toEqual([]);
+  });
+
+  it("reports once a write is parsed, counting each chunk the write carried", async () => {
+    await openPane();
+
+    await send("first ");
+    await send("second ");
+    await send("third");
+    frame();
+
+    await waitFor(() =>
+      expect(reports).toEqual([{ plane: "/planes/one", session: 1, view: 1, pieces: 3 }]),
+    );
+    expect(made[0].buffer.active.getLine(0)?.translateToString(true)).toBe("first second third");
+  });
+});

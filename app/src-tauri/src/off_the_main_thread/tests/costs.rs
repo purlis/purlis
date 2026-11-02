@@ -484,6 +484,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "resize_session",
             "watch_session",
             "unwatch_session",
+            // What a pane drew (#4733): in memory, and after the writes it reports on.
+            "session_drawn",
             "type_installer",
             "type_sandbox_install",
             "type_profile_sign_in",

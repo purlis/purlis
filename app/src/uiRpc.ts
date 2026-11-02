@@ -588,6 +588,12 @@ export const commands = {
 	resizeSession: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("resize_session", { plane, session, columns, rows })),
 	/**  Closes a view, for a pane that has gone off screen. The session keeps running. */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
+	/**
+	 *  The pane drawing view `view` of session `session` has drawn `pieces` more of what its
+	 *  channel was sent, in order (#4733). Only what is drawn is acknowledged to the session host,
+	 *  so a pane that cannot keep up is sent a fresh screen rather than a backlog.
+	 */
+	sessionDrawn: (plane: PlaneId, session: number, view: number, pieces: number) => typedError<null, string>(__TAURI_INVOKE("session_drawn", { plane, session, view, pieces })),
 	openBrowser: __WINDOW_ONLY_RESULT,
 	unwatchBrowser: __WINDOW_ONLY_RESULT,
 	closeBrowser: __WINDOW_ONLY_RESULT,

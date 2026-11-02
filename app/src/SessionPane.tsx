@@ -49,7 +49,7 @@ import {
 } from "./theme/theme";
 import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
-import { writePerFrame } from "./paneWrites";
+import { drawnReports, writePerFrame } from "./paneWrites";
 import { useProjectShown } from "./projectShown";
 
 /**
@@ -375,10 +375,21 @@ export function SessionPane({
     let ready = false;
     // What arrives within a frame is one write to the terminal, not one per chunk (#4732).
     const writes = writePerFrame((text, parsed) => pane.write(text, parsed));
+    // What the terminal has drawn is told back, one report per write, and the session host
+    // paces the view by it (#4733): a pane that falls behind is sent a fresh screen, not a
+    // backlog.
+    const drawn = drawnReports((pieces) => {
+      if (gone || view === undefined) return;
+      void commands.sessionDrawn(plane, session, view, pieces);
+    });
     const output = new Channel<string>();
     output.onmessage = (text) => {
       if (gone) return;
-      const written = bench.paneSent(pane, text);
+      const benched = bench.paneSent(pane, text);
+      const written = () => {
+        benched?.();
+        drawn.piece();
+      };
       if (ready) writes.add(text, written);
       else waiting.push({ text, written });
     };

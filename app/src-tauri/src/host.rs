@@ -409,6 +409,21 @@ pub trait SessionHost: Send + Sync {
     /// is, and the size its screen was drawn for.
     fn watch(&self, id: u32, sink: Sink) -> Result<Watching, String>;
 
+    /// [`Self::watch`], for a pane that reports what its terminal has drawn (#4733): each piece
+    /// `sink` is handed counts as the program's output only once [`Self::drawn`] says the pane
+    /// drew it. A pane that falls behind is then behind where its host can see it, and is sent
+    /// a fresh screen rather than a backlog. Where nothing paces a view, it is [`Self::watch`].
+    fn watch_drawn(&self, id: u32, sink: Sink) -> Result<Watching, String> {
+        self.watch(id, sink)
+    }
+
+    /// The pane drawing view `view` of session `id` has drawn `pieces` more of what its sink
+    /// was handed, in the order it was handed them (#4733). Nothing where nothing paces a view.
+    fn drawn(&self, id: u32, view: u32, pieces: u32) -> Result<(), String> {
+        let _ = (id, view, pieces);
+        Ok(())
+    }
+
     /// Closes a view. Its session keeps running, with its terminal, for the next pane.
     fn unwatch(&self, id: u32, view: u32) -> Result<(), String>;
 

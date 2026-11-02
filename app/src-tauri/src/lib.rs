@@ -2943,7 +2943,8 @@ fn watch_session(
     let held = planes.held(&plane)?;
     let chats = held.chats();
     let newline = chats.newline(session);
-    let watching = chats.sessions().watch(
+    // The pane reports what it drew (`session_drawn`), and the view is paced by it (#4733).
+    let watching = chats.sessions().watch_drawn(
         session,
         // A view whose window has gone is closed by the pane that owned it; until then, text
         // it cannot take is dropped rather than held, and the session keeps running.
@@ -2958,6 +2959,25 @@ fn watch_session(
         scrollback: sessions::SCROLLBACK,
         newline,
     })
+}
+
+/// The pane drawing view `view` of session `session` has drawn `pieces` more of what its
+/// channel was sent, in order (#4733). Only what is drawn is acknowledged to the session host,
+/// so a pane that cannot keep up is sent a fresh screen rather than a backlog.
+#[tauri::command]
+#[specta::specta]
+fn session_drawn(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    view: u32,
+    pieces: u32,
+) -> Result<(), String> {
+    planes
+        .held(&plane)?
+        .chats()
+        .sessions()
+        .drawn(session, view, pieces)
 }
 
 /// Closes a view, for a pane that has gone off screen. The session keeps running.

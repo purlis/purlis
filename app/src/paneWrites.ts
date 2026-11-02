@@ -56,3 +56,31 @@ function onNextFrame(then: () => void): () => void {
   const frame = requestAnimationFrame(then);
   return () => cancelAnimationFrame(frame);
 }
+
+/** What a pane tells the core of what its terminal has drawn. */
+export interface DrawnReports {
+  /** One more piece the view sent is in the terminal's grid. */
+  piece(): void;
+}
+
+/**
+ * **What the terminal drew, told back once per write** (#4733). Every piece a write carried is
+ * counted as its callback is called, and `report` is told the count once those callbacks are
+ * done, in one call rather than one per piece. The core acknowledges the view's bytes to the
+ * session host only on this report, so a pane that cannot keep up falls behind where the host
+ * sees it, and is sent a fresh screen instead of a backlog.
+ */
+export function drawnReports(report: (pieces: number) => void): DrawnReports {
+  let pieces = 0;
+  return {
+    piece() {
+      pieces += 1;
+      if (pieces > 1) return;
+      queueMicrotask(() => {
+        const told = pieces;
+        pieces = 0;
+        report(told);
+      });
+    },
+  };
+}

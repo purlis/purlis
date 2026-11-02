@@ -617,6 +617,20 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn watch_drawn(&self, id: u32, sink: Sink) -> Result<Watching, String> {
+        match self.host_of(id) {
+            Some(host) => host.watch_drawn(id, sink),
+            None => self.here.watch_drawn(id, sink),
+        }
+    }
+
+    fn drawn(&self, id: u32, view: u32, pieces: u32) -> Result<(), String> {
+        match self.host_of(id) {
+            Some(host) => host.drawn(id, view, pieces),
+            None => self.here.drawn(id, view, pieces),
+        }
+    }
+
     fn unwatch(&self, id: u32, view: u32) -> Result<(), String> {
         match self.host_of(id) {
             Some(host) => host.unwatch(id, view),

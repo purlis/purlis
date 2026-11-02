@@ -649,6 +649,118 @@ fn a_pane_draws_the_screen_then_what_follows_and_is_told_when_the_program_ends()
     assert_eq!(hosted.sessions.running(), [id], "the tab stays");
 }
 
+/// What a pane that reports its drawing is handed, one piece at a time.
+fn a_pane_of_pieces() -> (Sink, Arc<Mutex<Vec<String>>>) {
+    let pieces = Arc::new(Mutex::new(Vec::new()));
+    let sink = {
+        let pieces = Arc::clone(&pieces);
+        Box::new(move |text: String| pieces.lock().unwrap().push(text)) as Sink
+    };
+    (sink, pieces)
+}
+
+/// Line `n` of a program that writes numbered lines, one of a burst.
+fn line(n: usize) -> String {
+    format!("line {n:06} {}\r\n", "x".repeat(64))
+}
+
+/// A burst well past what a view may queue ([`purlis_session_protocol::view::Limits`]), written
+/// a piece at a time, as a harness streams it, from line `from`.
+fn a_burst_from(program: &purlis_host::standin::StandIn, from: usize) {
+    for piece in (from..from + 24_000).collect::<Vec<_>>().chunks(200) {
+        let text: String = piece.iter().map(|n| line(*n)).collect();
+        program.writes(text.as_bytes());
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn a_pane_that_stops_reporting_what_it_drew_is_dropped_and_opened_again_from_a_fresh_snapshot() {
+    let hosted = hosted();
+    let id = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .unwrap();
+    let program = hosted.runs.last();
+    program.writes(line(0).as_bytes());
+    let (sink, pieces) = a_pane_of_pieces();
+    let watching = hosted.sessions.watch_drawn(id, sink).expect("a view opens");
+    until("the screen is drawn", || {
+        pieces.lock().unwrap().concat().contains(&line(0))
+    });
+    // It draws the screen, and nothing after it.
+    hosted
+        .sessions
+        .drawn(id, watching.view, 1)
+        .expect("the pane reports");
+
+    a_burst_from(&program, 1);
+
+    until("the pane is started over", || {
+        pieces
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|piece| piece.contains(RESET))
+    });
+    let seen = pieces.lock().unwrap().concat();
+    let (before, after) = seen.split_once(RESET).unwrap();
+    assert!(
+        before.len() < 1 << 20,
+        "a pane that stopped drawing was handed {} bytes before it was started over",
+        before.len()
+    );
+    assert!(
+        after.starts_with(&line(0)),
+        "what follows is the program's whole screen again, from its first line"
+    );
+}
+
+#[test]
+fn a_pane_that_reports_what_it_drew_is_sent_the_whole_burst_and_never_started_over() {
+    let hosted = hosted();
+    let id = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .unwrap();
+    let program = hosted.runs.last();
+    let (sink, pieces) = a_pane_of_pieces();
+    let watching = hosted.sessions.watch_drawn(id, sink).expect("a view opens");
+    let last = line(200 * 8 - 1);
+    let writing = std::thread::spawn(move || {
+        for piece in (0..200 * 8).collect::<Vec<_>>().chunks(200) {
+            let text: String = piece.iter().map(|n| line(*n)).collect();
+            program.writes(text.as_bytes());
+        }
+    });
+
+    let deadline = Instant::now() + PATIENCE;
+    let mut reported = 0;
+    while !pieces.lock().unwrap().concat().contains(&last) {
+        assert!(
+            Instant::now() < deadline,
+            "the burst never reached the pane"
+        );
+        let handed = pieces.lock().unwrap().len();
+        if handed > reported {
+            hosted
+                .sessions
+                .drawn(id, watching.view, u32::try_from(handed - reported).unwrap())
+                .expect("the pane reports");
+            reported = handed;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    writing.join().unwrap();
+
+    let seen = pieces.lock().unwrap().concat();
+    assert!(
+        !seen.contains(RESET),
+        "a pane that keeps up is never started over"
+    );
+    assert!(seen.starts_with(&line(0)));
+}
+
 #[test]
 fn a_resize_and_readiness_go_to_the_host() {
     let hosted = hosted();

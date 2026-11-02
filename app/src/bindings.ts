@@ -1280,6 +1280,12 @@ export const commands = {
 	watchSession: (plane: PlaneId, session: number, output: Channel<string>) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output })),
 	/**  Closes a view, for a pane that has gone off screen. The session keeps running. */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
+	/**
+	 *  The pane drawing view `view` of session `session` has drawn `pieces` more of what its
+	 *  channel was sent, in order (#4733). Only what is drawn is acknowledged to the session host,
+	 *  so a pane that cannot keep up is sent a fresh screen rather than a backlog.
+	 */
+	sessionDrawn: (plane: PlaneId, session: number, view: number, pieces: number) => typedError<null, string>(__TAURI_INVOKE("session_drawn", { plane, session, view, pieces })),
 	/**  Starts a browser in project `plane`, and answers its id. Refused while Stop all holds. */
 	openBrowser: (plane: PlaneId) => typedError<string, string>(__TAURI_INVOKE("open_browser", { plane })),
 	/**
