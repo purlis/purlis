@@ -1,6 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+/** What the core writes a view before the screen of its next epoch (`hostedsessions.rs`). */
+export const RESET = "\x1bc";
+
 /** What a pane writes to its terminal: xterm's `write`, text and a callback once it is parsed. */
 export type Write = (text: string, parsed?: () => void) => void;
 
@@ -18,7 +21,7 @@ export interface FrameWrites {
  * a render it schedules. Gathered here, every chunk that arrives within a frame reaches the
  * terminal as one write, in the order it came. What a chunk's `parsed` waits for is still told,
  * once the write that carries it has been parsed, so a benchmark's text-reached-the-grid timing
- * is unchanged (`bench.paneSent`).
+ * is unchanged (`bench.paneSent`). A {@link RESET} drops the text gathered before it (#4810).
  */
 export function writePerFrame(
   write: Write,
@@ -39,6 +42,11 @@ export function writePerFrame(
 
   return {
     add(text, then) {
+      // A reset starts the view over from a fresh screen, so what is gathered ahead of it is
+      // never drawn: while frames stop (a hidden window) that would be a backlog written in
+      // one go on return. Its waiters stay, told with the reset's write, so every piece is
+      // still reported drawn and the core's count of them stays exact.
+      if (text === RESET) texts = [];
       texts.push(text);
       if (then) parsed.push(then);
       cancel ??= nextFrame(flush);
