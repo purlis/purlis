@@ -203,7 +203,7 @@ pub struct GitUnavailable(#[from] std::io::Error);
 /// `~/.local/bin`) every verb would fail with "charter could not run git" while git is on
 /// PATH. So the inherited `PATH` is searched here, in the parent, and what the child gets is
 /// the absolute path that search found plus the directory holding it.
-fn git_binary() -> (PathBuf, String) {
+pub(crate) fn git_binary() -> (PathBuf, String) {
     git_binary_in(&GIT_DIRS, std::env::var_os("PATH").as_deref())
 }
 

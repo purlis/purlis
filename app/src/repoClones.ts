@@ -52,6 +52,8 @@ const STOPPED = (repo: string) => `${repo} was stopped.`;
 /** **The repos the person stopped** (#4079), by workspace: one still waiting is never started. */
 const stopping = new Map<string, Set<string>>();
 const listeners = new Set<() => void>();
+/** Who hears each repo that lands (`followLandings`). */
+const landings = new Set<(plane: PlaneId, workspace: string, repo: string) => void>();
 
 function keyOf(plane: PlaneId, workspace: string): string {
   return `${plane}\u0000${workspace}`;
@@ -72,14 +74,17 @@ function set(plane: PlaneId, workspace: string, repo: string, state: CloneState)
  * thrown again once they have all heard, in a microtask of its own, so it is still reported.
  */
 function tell() {
-  for (const listener of listeners) {
-    try {
-      listener();
-    } catch (err: unknown) {
-      queueMicrotask(() => {
-        throw err;
-      });
-    }
+  for (const listener of listeners) heard(listener);
+}
+
+/** Calls one listener, its throw said on its own. */
+function heard(listener: () => void) {
+  try {
+    listener();
+  } catch (err: unknown) {
+    queueMicrotask(() => {
+      throw err;
+    });
   }
 }
 
@@ -214,6 +219,8 @@ async function cloneInTurn(
     done.add(repo);
     settle.get(repo)?.(state);
     set(plane, workspace, repo, state);
+    if (state.state === "cloned")
+      for (const listener of landings) heard(() => listener(plane, workspace, repo));
   };
   try {
     if (repos.length === 0) return [];
@@ -316,6 +323,19 @@ export function subscribeRepoClones(listener: () => void) {
   };
 }
 
+/**
+ * **Hears each repo that lands, whoever asked for it** (#4394): a row, a chip's Retry or Settings,
+ * since every clone ends here. Until the function it answers is called.
+ */
+export function followLandings(
+  listener: (plane: PlaneId, workspace: string, repo: string) => void,
+) {
+  landings.add(listener);
+  return () => {
+    landings.delete(listener);
+  };
+}
+
 /** What this window has asked to clone into `workspace`, by repo. */
 export function useRepoClones(plane: PlaneId, workspace: string): Clones {
   return useSyncExternalStore(
@@ -330,12 +350,43 @@ export function useRepoClones(plane: PlaneId, workspace: string): Clones {
  * then means a folder deleted later can be cloned again, and a repo dropped later leaves no row.
  */
 export function settleRepoClones(plane: PlaneId, workspace: string, clones: readonly string[]) {
+  forgetSome(plane, workspace, (repo, one) => one.state === "cloned" && clones.includes(repo));
+}
+
+/**
+ * **Forget every clone that landed before `workspace` was focused** (#4466), called as it is
+ * focused. Until now the panels of another workspace were being read, so `settleRepoClones` never
+ * heard of them, and the read this focus asks for is later than they are: it says what became of
+ * them, whether cloned, dropped or deleted, and a row kept for them would never go.
+ */
+export function forgetLandedClones(plane: PlaneId, workspace: string) {
+  forgetSome(plane, workspace, (_, one) => one.state === "cloned");
+}
+
+/** **Puts away a failed clone's row** (#4395), the person's Dismiss. It can be asked for again. */
+export function forgetFailedClone(plane: PlaneId, workspace: string, repo: string) {
+  forgetSome(plane, workspace, (one, clone) => one === repo && clone.state === "failed");
+}
+
+/**
+ * **A workspace made starts with no clone of an earlier one of that name** (#4395): a failure of
+ * the one it replaced would otherwise come back as a row of a repo nobody picked for this one.
+ * Clones still under way are left to end.
+ */
+export function forgetEndedClones(plane: PlaneId, workspace: string) {
+  forgetSome(plane, workspace, (_, one) => !underWay(one));
+}
+
+/** Forgets what `gone` picks of what this window holds of `workspace`, and says so. */
+function forgetSome(
+  plane: PlaneId,
+  workspace: string,
+  gone: (repo: string, state: CloneState) => boolean,
+) {
   const key = keyOf(plane, workspace);
   const held = byWorkspace.get(key);
   if (held === undefined) return;
-  const next = new Map(
-    [...held].filter(([repo, one]) => one.state !== "cloned" || !clones.includes(repo)),
-  );
+  const next = new Map([...held].filter(([repo, one]) => !gone(repo, one)));
   if (next.size === held.size) return;
   byWorkspace.set(key, next);
   tell();

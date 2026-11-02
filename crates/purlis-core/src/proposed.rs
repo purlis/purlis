@@ -620,12 +620,24 @@ pub fn write_pinned(
 /// place in `rel`'s folders (their names, and its index): a new file only, as [`write_pinned`]
 /// makes one below `.claude/skills`. The Skill studio makes a new skill's folder this way
 /// (#2770).
-#[cfg(unix)]
 pub fn write_pinned_making(
     root: &Path,
     rel: &Path,
     base: Option<&str>,
     after: &str,
+    may_make: &dyn Fn(&[&str], usize) -> bool,
+) -> Result<(), NotMade> {
+    write_pinned_bytes_making(root, rel, base, after.as_bytes(), may_make)
+}
+
+/// [`write_pinned_making`] of bytes that need not be text: an outcome eval's input file and what a
+/// graded chat left for its judge (#4230).
+#[cfg(unix)]
+pub fn write_pinned_bytes_making(
+    root: &Path,
+    rel: &Path,
+    base: Option<&str>,
+    after: &[u8],
     may_make: &dyn Fn(&[&str], usize) -> bool,
 ) -> Result<(), NotMade> {
     use rustix::fs::{
@@ -715,7 +727,7 @@ pub fn write_pinned_making(
     let (temp, written) = made.ok_or(NotMade::Unprepared)?;
     let mut file = std::fs::File::from(written);
     let done = file
-        .write_all(after.as_bytes())
+        .write_all(after)
         .and_then(|()| file.sync_all())
         .map_err(|_| NotMade::Unprepared)
         .and_then(|()| renameat(&at, temp.as_str(), &at, *leaf).map_err(unprepared));
@@ -735,13 +747,13 @@ pub fn write_pinned(_: &Path, _: &Path, _: Option<&str>, _: &str) -> Result<(), 
     Err(NotMade::Unprepared)
 }
 
-/// [`write_pinned_making`] where no folder can be opened without following a link: never.
+/// [`write_pinned_bytes_making`] where no folder can be opened without following a link: never.
 #[cfg(not(unix))]
-pub fn write_pinned_making(
+pub fn write_pinned_bytes_making(
     _: &Path,
     _: &Path,
     _: Option<&str>,
-    _: &str,
+    _: &[u8],
     _: &dyn Fn(&[&str], usize) -> bool,
 ) -> Result<(), NotMade> {
     Err(NotMade::Unprepared)

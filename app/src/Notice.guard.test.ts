@@ -444,6 +444,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "is not logged in offers its login, typed in a shell tab; the rest are the forge's sentence",
   },
   "SandboxOffer.tsx": { count: 1, why: "the answer's refusal, inside the sandbox offer's Notice" },
+  "PoolSetupTab.tsx": {
+    count: 3,
+    why:
+      "Pool setup's progress, said politely as it goes (#4480): reading what this machine has, " +
+      "rechecking by itself, and making a pool. Nothing to do about any of them, so no way out.",
+  },
   "SavingView.tsx": {
     count: 3,
     why:

@@ -263,10 +263,13 @@ export const commands = {
 	 *  is made for, else asked. `forge` is the operator's answer (`github`, `gitlab`) on the call
 	 *  after a question.
 	 * 
+	 *  **`template` is laid out in a project this call made** (FR-17, #4599), by id. A folder that
+	 *  is a project already keeps what it has, and only opens.
+	 * 
 	 *  On a blocking thread (#1949), for [`open_plane`]'s reason and because making the project
 	 *  writes its files and runs git.
 	 */
-	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge })),
+	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null, template: string | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge, template })),
 	/**
 	 *  Which harnesses are installed and signed in, and whether `gh` and `glab` are logged in.
 	 * 
@@ -1598,6 +1601,11 @@ export const commands = {
 	cancelEngineDownload: __WINDOW_ONLY_RESULT,
 	useThisMachinesChrome: __WINDOW_ONLY_RESULT,
 	dockerPools: __WINDOW_ONLY_RESULT,
+	poolSetup: __WINDOW_ONLY_RESULT,
+	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
+	poolSetupName: __WINDOW_ONLY_RESULT,
+	poolSetupPool: __WINDOW_ONLY_RESULT,
+	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
@@ -1681,6 +1689,7 @@ export const commands = {
 	workspace: string | null,
 } | null, person: string | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at, person })),
 	themeFont: __WINDOW_ONLY_RESULT,
+	firstFrameParts: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The person's density, font override, motion, contrast and colours, read by the core's theme
 	 *  engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
@@ -3718,6 +3727,8 @@ export type ChatSkill = {
 	 *  the chat to load it.
 	 */
 	hidden: SkillHidden | null,
+	/**  The label of the source it was installed from (ADR 0100, amended 2026-11-01). */
+	source_label: string | null,
 };
 
 /**
@@ -5768,6 +5779,8 @@ export type GradeEval = {
 	prompt: string,
 	hides: boolean,
 	files: string[],
+	/**  Those of its files that are not text, which nothing can check for what `hides` says (#4230). */
+	not_text: string[],
 	expectations: number,
 	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
 	on: boolean,
@@ -5845,6 +5858,8 @@ export type GradeRow = {
 	ended: string,
 	outcome: GradeOutcome,
 	arms: GradeArms,
+	/**  Each arm's outcome pass rate, where it ran an outcome eval (SK-55). */
+	outcome_arms: GradeArms | null,
 	spent: GradeSpent,
 	after_edit: boolean,
 };
@@ -5893,6 +5908,12 @@ export type GradeScorecard = {
 	outcome: GradeOutcome,
 	arms: GradeArms,
 	spent: GradeSpent,
+	/**
+	 *  **Its outcome evals** (SK-55, #3235), each in each arm, and each arm's pass rate in points:
+	 *  none, and null, in a grade that scored none.
+	 */
+	evals: ScoredEval[],
+	outcome_arms: GradeArms | null,
 };
 
 /**
@@ -8645,6 +8666,37 @@ export type PoolRow = {
 	suspend_after: string,
 };
 
+/**  One step's next action. */
+export type PoolSetupAction = {
+	id: string,
+	label: string,
+	does: string,
+	command: string | null,
+	url: string | null,
+};
+
+/**  What the tab draws. */
+export type PoolSetupShown = {
+	/**  The pool this setup made. */
+	pool: string | null,
+	/**  The name typed on the Pool step, for the box to hold. */
+	name: string | null,
+	/**  The step the person has reached. */
+	at: string | null,
+	steps: PoolSetupStep[],
+};
+
+/**  One step as it stands. */
+export type PoolSetupStep = {
+	id: string,
+	name: string,
+	state: string,
+	line: string | null,
+	findings: string[],
+	next: PoolSetupAction | null,
+	skippable: boolean,
+};
+
 /**  What the person is asked. */
 export type PoolSignInAsk = {
 	id: number,
@@ -9769,6 +9821,16 @@ export type RestoringChat = {
 	workspace: string | null,
 };
 
+/**  A name that is taken where a skill would land (ADR 0100, amended 2026-11-01). */
+export type ReviewClash = {
+	/**  What holds the name, as the end of a sentence. */
+	held_by: string,
+	/**  The new name offered: `<source>-<name>`. */
+	offered: string,
+	/**  The names at that level, which a new name cannot take. */
+	taken: string[],
+};
+
 /**  One file the review shows, one click away. */
 export type ReviewFile = {
 	path: string,
@@ -9826,6 +9888,10 @@ export type ReviewSkill = {
 	 *  are, not brought along.
 	 */
 	already: string[],
+	/**  Where its name is taken at the level it lands in: the review waits for the person's choice. */
+	clash: ReviewClash | null,
+	/**  A line each for what the review warns of and does not stop on. */
+	notes: string[],
 	summary: ReviewSummary,
 	files: ReviewFile[],
 	left_out: ReviewLeftOut[],
@@ -10617,6 +10683,48 @@ export type ScoredChat = {
 	/**  Which of its test's runs in its arm it was, from 1. */
 	run: number,
 	kept: boolean,
+};
+
+/**  **One expectation in one run of an outcome eval, as its judge found it** (SK-55). */
+export type ScoredCheck = {
+	passed: boolean,
+	/**  What the judge found, as the record keeps it: empty where a long row dropped it. */
+	evidence: string,
+};
+
+/**
+ *  **One outcome eval of a grade** (SK-55): its id and its expectations, each character no reader
+ *  would see marked, in each arm.
+ */
+export type ScoredEval = {
+	id: string,
+	expectations: string[],
+	arms: ScoredEvalArm[],
+};
+
+/**
+ *  **One outcome eval in one arm of a grade** (SK-55): its judged runs, its pass rate in points,
+ *  and each run asked for.
+ */
+export type ScoredEvalArm = {
+	arm: ScoredArm,
+	runs: number,
+	points: number | null,
+	results: ScoredEvalRun[],
+};
+
+/**
+ *  **One run of an outcome eval in one arm** (SK-55): its chat and its judge's, each one click away
+ *  where this machine kept it; how many expectations passed, where it was judged; each one's
+ *  verdict; and why the eval failed there, where it failed without a verdict.
+ */
+export type ScoredEvalRun = {
+	run: number,
+	chat: ScoredChat | null,
+	judge: ScoredChat | null,
+	passed: number | null,
+	checks: ScoredCheck[],
+	failed: string | null,
 };
 
 /**  **One trigger test in one arm of a grade**, as its scorecard shows it. */
@@ -11627,6 +11735,12 @@ export type SkillPromptRouting = {
 	said: string,
 };
 
+/**  One skill installed under a new name: its name at the source, and the one it lands under. */
+export type SkillRename = {
+	from: string,
+	to: string,
+};
+
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
 /**  purlis's own. */
@@ -12445,6 +12559,8 @@ export type StudioSkill = {
 	 *  own budget: the chat still has it, through the index skill. Empty where every one lists it.
 	 */
 	hidden: SkillHiddenOn[],
+	/**  The label of the source it was installed from (ADR 0100, amended 2026-11-01). */
+	source_label: string | null,
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
 	/**

@@ -221,9 +221,7 @@
 }
 
 [data-scope="notice-list"][data-part="root"][data-at="page"] {
-  inline-size: calc(100% - 3rem);
-  max-inline-size: 37rem;
-  margin: var(--space-7) auto 0;
+  margin-block-end: var(--space-5);
 }
 
 [data-scope="notice-list"][data-part="root"][hidden] {

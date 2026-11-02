@@ -307,6 +307,7 @@ describe("a skill's page", () => {
       ended: "Finished",
       outcome: "graded",
       arms: { with: 86, without: 68, previous: null },
+      outcome_arms: null,
       spent: { chats: 12, tokens: 90000, cost_usd: 1.92, limit_usd: 3 },
       after_edit: false,
     };
@@ -359,6 +360,7 @@ describe("a skill's page", () => {
         delta_without: null,
         asked: 0,
         tests: [],
+        evals: [],
       }),
     });
     const onOpenView = vi.fn();

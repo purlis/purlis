@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Said } from "./actions";
-import { clonesInAll } from "./repoClones";
+import type { NotCloned, Ran, Said } from "./actions";
+import { clonesInAll, type Failed } from "./repoClones";
 
 /**
  * **What an action answered, in the person's words** (#3344, the sidebar-views prototype's Q3 A).
@@ -145,21 +145,23 @@ export function reposCloned(workspace: string, repos: readonly string[], run: nu
  * **A new workspace's repos that did not clone** (#3649): which, in the core's own words, with
  * Retry, which clones those again on the same track, and the way to the workspace's Repos
  * settings (#1201, SE-22), or to Accounts where a sign-in is what it needs (#4079). A warning, so
- * the chip's dot is ▲ while it is hidden.
+ * the chip's dot is ▲ while it is hidden. One that lands later leaves it (#4394), so Retry is
+ * told which are left.
  */
 export function reposNotCloned(
   workspace: string,
-  failed: readonly { repo: string; said: string; signIn?: string }[],
-  onRetry: () => void,
+  failed: Failed,
+  onRetry: (repos: string[]) => void,
   run: number,
 ): Said {
   const signIn = failed.some((one) => one.signIn !== undefined);
+  const retry = () => onRetry(failed.map((one) => one.repo));
   return {
     from: "workspace.clone",
     refused: true,
     title: `Could not clone ${failed.map((one) => one.repo).join(", ")} into ${workspace}`,
     words: failed.map((one) => one.said).join(" "),
-    ways: [{ label: "Retry", onPress: onRetry, primary: true }],
+    ways: [{ label: "Retry", onPress: retry, primary: true }],
     settings: signIn
       ? { label: "Open accounts", link: { group: "you.accounts" } }
       : {
@@ -168,7 +170,28 @@ export function reposNotCloned(
         },
     workspace,
     track: cloneTrack(workspace, run),
+    notCloned: {
+      workspace,
+      failed,
+      told: (rest) => reposNotCloned(workspace, rest, onRetry, run),
+    },
   };
+}
+
+/**
+ * **What a press that cloned repos answers when some failed**, naming each in the core's words. One
+ * that lands later leaves it (#4394).
+ */
+export function clonesRefused(workspace: string, failed: Failed): Extract<Ran, { ok: false }> {
+  const refused = (some: Failed) =>
+    `Could not clone ${some.map((one) => one.repo).join(", ")} into ${workspace} — ` +
+    some.map((one) => one.said).join(" ");
+  const notCloned = (some: Failed): NotCloned => ({
+    workspace,
+    failed: some,
+    told: (rest) => ({ words: refused(rest), notCloned: notCloned(rest) }),
+  });
+  return { ok: false, refused: refused(failed), notCloned: notCloned(failed) };
 }
 
 /** **A clone the person stopped** (#4079): the clone's notice, turned into that, with Retry. */

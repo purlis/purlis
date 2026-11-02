@@ -323,10 +323,83 @@ fn what_a_source_says_reaches_the_terminal_escaped() {
     assert!(said.contains("⟦U+001B⟧[2J"), "{said}");
 }
 
-/// #4153: `--all` leaves out a skill the level has already, made there by hand, says so, and
-/// installs the rest.
+/// #4530: a name the level holds stops an install, even with `--yes`, and says both ways on.
+/// `--skip` leaves it as it is; `--rename` installs it under the new name and leaves prose alone.
 #[test]
-fn install_all_says_which_skills_are_there_already_and_installs_the_rest() {
+fn a_taken_name_stops_the_install_until_it_is_skipped_or_renamed() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    std::fs::create_dir_all(root.join("skills/notify")).unwrap();
+    std::fs::write(
+        root.join("skills/notify/SKILL.md"),
+        "---\nname: notify\ndescription: Made here.\n---\n",
+    )
+    .unwrap();
+    let install = |more: &[&str]| {
+        let mut args = vec!["skill", "install", &url, "--all", "--folder", "skills"];
+        args.extend_from_slice(more);
+        args.push("--yes");
+        project.run(&args, "")
+    };
+
+    let stopped = install(&[]);
+    let said = text(&stopped);
+    assert!(!stopped.status.success(), "{said}");
+    assert!(said.contains("--skip notify"), "{said}");
+    assert!(said.contains("--rename notify="), "{said}");
+    assert!(said.contains("Nothing was installed."), "{said}");
+    assert!(!root.join("skills/deploy").exists());
+
+    let renamed = install(&["--rename", "notify=team-notify"]);
+    assert!(renamed.status.success(), "{}", text(&renamed));
+    assert!(
+        std::fs::read_to_string(root.join("skills/team-notify/SKILL.md"))
+            .unwrap()
+            .contains("name: team-notify"),
+    );
+    assert!(
+        std::fs::read_to_string(root.join("skills/deploy/SKILL.md"))
+            .unwrap()
+            .contains("skills:notify"),
+        "prose is never rewritten"
+    );
+    assert!(
+        std::fs::read_to_string(root.join("skills/notify/SKILL.md"))
+            .unwrap()
+            .contains("Made here."),
+    );
+}
+
+#[test]
+fn skipping_a_skill_keeps_a_skill_all_offers_that_it_refers_to() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    std::fs::create_dir_all(root.join("skills/deploy")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Made here.\n---\n",
+    )
+    .unwrap();
+
+    let out = project.run(
+        &[
+            "skill", "install", &url, "--all", "--folder", "skills", "--skip", "deploy", "--yes",
+        ],
+        "",
+    );
+
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(
+        root.join("skills/notify/SKILL.md").exists(),
+        "{}",
+        text(&out)
+    );
+}
+
+#[test]
+fn a_skipped_name_is_left_as_it_is_and_the_rest_install() {
     let project = Project::new();
     let root = project.root();
     let url = project.url();
@@ -339,18 +412,13 @@ fn install_all_says_which_skills_are_there_already_and_installs_the_rest() {
 
     let out = project.run(
         &[
-            "skill", "install", &url, "--all", "--folder", "skills", "--yes",
+            "skill", "install", &url, "--all", "--folder", "skills", "--skip", "notify", "--yes",
         ],
         "",
     );
 
     let said = text(&out);
     assert!(out.status.success(), "{said}");
-    assert!(
-        said.contains("notify is there already at project, so it is left as it is."),
-        "{said}"
-    );
-    assert!(said.contains("Review of 1 skill"), "{said}");
     assert!(root.join("skills/deploy/SKILL.md").exists());
     assert!(
         std::fs::read_to_string(root.join("skills/notify/SKILL.md"))

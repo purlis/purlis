@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { type ReactNode, useId, useLayoutEffect, useRef } from "react";
+import { createContext, type ReactNode, useContext, useId, useLayoutEffect, useRef } from "react";
 import clsx from "clsx";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "./ui/button/Button";
@@ -57,11 +57,19 @@ export function DoorPage({
 }
 
 /**
+ * **Where the launcher in sight takes the window's own lines** (#4601): the window hands down the
+ * ref its list is drawn into, and the launcher puts that at the top of its page, so a line pushes
+ * the page and never the ways in. Null under a launcher that is hidden.
+ */
+export const WindowLinesAt = createContext<((at: HTMLDivElement | null) => void) | null>(null);
+
+/**
  * **The window with no project in front, as a launcher**: the ways in down its left side, always
  * in sight, and the page they open beside them. The left side stays put while the page scrolls,
  * and the whole of it scrolls as one (`.panes`, #3325).
  */
 export function Launcher({ side, children }: { side?: ReactNode; children: ReactNode }) {
+  const linesAt = useContext(WindowLinesAt);
   return (
     <section className="welcome" aria-label="purlis">
       <div className="welcome-side">
@@ -70,7 +78,10 @@ export function Launcher({ side, children }: { side?: ReactNode; children: React
           {side}
         </div>
       </div>
-      <div className="welcome-pane">{children}</div>
+      <div className="welcome-pane">
+        {linesAt && <div className="window-notices-at" ref={linesAt} />}
+        {children}
+      </div>
     </section>
   );
 }

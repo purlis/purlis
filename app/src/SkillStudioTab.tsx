@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { startTransition, useEffect, useRef, useState, type ReactNode } from "react";
+import { afterPaint } from "./projectShown";
 import { MessageSquarePlus, Plus, Search, Sparkle, Sparkles } from "lucide-react";
 import {
   commands,
@@ -153,6 +154,35 @@ function searchKeeps(skill: StudioSkill, query: string): boolean {
   const typed = query.trim().toLowerCase();
   if (typed === "") return true;
   return `${skill.name}\n${skill.description}`.toLowerCase().includes(typed);
+}
+
+/** **How many of the Library's rows its first frame draws** (#4351): a tall window's worth at the
+ *  usual row height. Two hundred rows took a third of a second to lay out, in which the tab showed
+ *  none of them. */
+const FIRST_ROWS = 40;
+
+/**
+ * **The Library's rows, the first screen before the rest** (#4351): the rest are built once that
+ * frame has painted, so the tab shows a list while they lay out, which still takes that third of
+ * a second. Mounted with the list and keyed by scope, so each list it draws starts from the top.
+ */
+function LibraryRows({
+  rows,
+  row,
+  all,
+}: {
+  rows: readonly StudioSkill[];
+  row: (skill: StudioSkill) => ReactNode;
+  /** Draw every row at once: the chosen one is past the first screen. */
+  all: boolean;
+}) {
+  const [painted, setPainted] = useState(false);
+  const cut = !all && !painted && rows.length > FIRST_ROWS;
+  useEffect(() => {
+    if (!cut) return;
+    return afterPaint(() => startTransition(() => setPainted(true)));
+  }, [cut]);
+  return (cut ? rows.slice(0, FIRST_ROWS) : rows).map(row);
 }
 
 /** The row's line under its name: what it does, or why it is left out where it says nothing. */
@@ -1081,6 +1111,10 @@ export function SkillStudioTab({
     const own = shown.filter((skill) => skill.level !== "built-in");
     const builtIns = shown.filter((skill) => skill.level === "built-in");
     const foldsBuiltIns = !chips.has("built-in");
+    // The chosen row is always drawn, wherever the list has it.
+    const chosenIsPast =
+      chosen !== undefined &&
+      own.slice(FIRST_ROWS).some((one) => skillRowId(one) === skillRowId(chosen));
     const row = (skill: StudioSkill) => {
       const mark = markOf(skill);
       return (
@@ -1091,7 +1125,12 @@ export function SkillStudioTab({
           data-testid={testids.get(skillRowId(skill))}
           data-row={skillRowId(skill)}
         >
-          <RowLabel>{skill.name}</RowLabel>
+          <RowLabel>
+            {skill.name}
+            {skill.source_label !== null && (
+              <span className="ui-text-secondary"> · {skill.source_label}</span>
+            )}
+          </RowLabel>
           <RowTrail>
             <Badge>{skill.label}</Badge>
             {mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
@@ -1191,7 +1230,7 @@ export function SkillStudioTab({
                   go({ page: "library", scope, skill: String(first) });
                 }}
               >
-                {own.map(row)}
+                <LibraryRows key={key} rows={own} row={row} all={chosenIsPast} />
                 {foldsBuiltIns ? (
                   <ListRun
                     id={BUILT_IN_RUN}

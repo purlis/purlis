@@ -110,7 +110,7 @@ fn copy_of_draft(root: &Path, draft: &Draft, inputs: &[String]) -> Result<SkillC
         .unwrap_or_default();
     for path in inputs {
         if let Some(text) = drafted(draft, path) {
-            read.insert(path.clone(), text.to_owned());
+            read.insert(path.clone(), text.as_bytes().to_vec());
         }
     }
     Ok(SkillCopy {

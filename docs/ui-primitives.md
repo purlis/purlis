@@ -833,6 +833,14 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
   Inbox's list, a Notice alone, what needs a decision in all three places, every badge and count, the hosts' statuses, a badge's hint, and a
   line across a card and down a strip, each walked by the keyboard and checked by axe.
+## The steps family
+
+**A guide's list of steps is the steps family** (`app/src/ui/steps/`, #4480, on React Aria's
+`Button`): `StepList`, how far along the person is, each step's state, and a way back to any step
+reached. A step's variant is its state (`done`, `current`, `attention`, `skipped`, `waiting`,
+`later`), told apart by its mark and its words as well as its colour. A `later` step can't be
+pressed. Pool setup's Where and Pool steps are its first user (`PoolSetupTab.stories.tsx`).
+
 ## The meter family
 
 **A value drawn as a bar is the meter family** (`app/src/ui/meter/`, #3674, on React Aria's
@@ -937,6 +945,12 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
   whose hint is its own name take none, because the control or the name says what it means. A
   hint that only repeats an element's words (a name cut short) is the pointer's: no focus opens
   it. While it is shown, a hint is its target's description.
+- **A hint that comes keeps its target** (#4659). A target stands in its tooltip's trigger with or
+  without a hint, a menu's `MenuItem` included, so a hint that comes or goes draws nothing afresh
+  and the focus stays. One that comes while the keyboard is on the target opens at once, because
+  no later focus would open it: a menu's row that turns unavailable says why where the keyboard
+  is. The pointer's way stays coming onto the target: one already resting on it sees the hint when
+  it next comes back.
 - **An icon button's tooltip and its name agree by construction**: the tooltip shows the
   `aria-label`, its hint a second line under it, and is not heard a second time. A raw icon-only
   `<button>` around which `<Tooltip>` stands is drawn the same way.

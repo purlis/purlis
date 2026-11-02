@@ -206,6 +206,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // theme folders, which the window loads its faces from. Held to the window, failing closed:
     // a link draws with the platform's fonts.
     "theme_font",
+    // The parts of a window's own first frame (#4410), by the ticket its creation script handed
+    // it. A link is handed no first frame, so it has nothing to ask for.
+    "first_frame_parts",
     // The theme in force for the window that asks, which also points that window's theme watch
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
@@ -756,6 +759,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.
     "docker_pools",
+    "pool_setup",
+    "pool_setup_choose_docker",
+    "pool_setup_name",
+    "pool_setup_pool",
+    "pool_setup_open_docker",
     "add_docker_pool",
     "remove_docker_pool",
     "docker_pool_link",
