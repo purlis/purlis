@@ -1,0 +1,78 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: codeql
+
+# Replaces CodeQL's default setup (#4673). Default setup scanned Rust on every PR: a median 57 min a
+# scan, 369 scans and about 343 runner-hours on 2026-11-01, roughly 16% of this repo's total, while
+# runners sat at their limit of 180 jobs at once with 555 waiting. No required check waited for the
+# scan, so a PR could already merge before it ended. The operator ruled on 2026-11-02: Rust is
+# scanned on main and weekly; a PR keeps the scans that take a minute or two.
+#
+# What that costs: a Rust finding appears after its PR merges, not on the PR. What reaches main is
+# still scanned, and an alert stays open on main until it is fixed.
+#
+# Nothing here is a required check, and it is not part of `ci`, so a red scan stops no landing and
+# no release. Off the merge queue on purpose: the scans of a PR have run by then.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays, as default setup's weekly scan did.
+    - cron: '27 3 * * 1'
+
+# On main one scan runs at a time and the newest push waits, replacing any older one still waiting,
+# so a busy day costs about 24 Rust scans rather than one per push (72 on 2026-10-31). A new push to
+# a PR makes its running scan worthless, so that one is cancelled.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  quick:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:${{ matrix.language }}
+
+  rust:
+    name: Analyze (rust)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    # The slowest of 37 scans took 68 min.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: rust
+          build-mode: none
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:rust
