@@ -195,3 +195,28 @@ fn a_question_whose_asking_chat_went_with_its_runner_reaches_the_person_at_once(
         }
     ));
 }
+
+#[test]
+fn a_message_a_runner_chat_queued_is_refused_saying_nothing_was_sent() {
+    // The chat queued it in the spool beside its hook socket, which is on the runner's disk:
+    // this app does not read it there, so it is not delivered from here (#4560).
+    let (_plane, _host, _planes, id, held, _steward, task) = a_task_on_a_runner();
+
+    let said = over_the_link(
+        &held,
+        &id,
+        task,
+        What::Deliver {
+            id: "0123456789abcdef0123456789abcdef".to_owned(),
+        },
+    );
+
+    let Answer::No { why } = said else {
+        panic!("refused, not {said:?}")
+    };
+    assert!(
+        why.contains("nothing was sent") && why.contains(POOL),
+        "says plainly that nothing was sent, and why: {why}"
+    );
+    assert_eq!(held.tasks().ledger().talk.asks(task), None);
+}
