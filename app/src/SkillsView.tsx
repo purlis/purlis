@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { said4351 } from "./debug4351"; // DEBUG-4351
 import {
   commands,
   type ChatSkill,
@@ -196,15 +197,36 @@ function scopeOfRow(row: ListedSkill, place: string | undefined, persona: string
  * its `SKILL.md` in a tab; New skill and Make my own copy are the studio's own. Only the folded
  * groups are kept, in the layout file (`skillsViewPrefs.ts`).
  */
-export function SkillsView({
-  plane,
-  workspace,
-  chat,
-  onOpenView,
-  onUseSkill,
-  onShowInExplorer,
-  onRestart,
-}: {
+export const SkillsView = memo(SkillsViewDrawn, sameView);
+
+/** **The same view** (#4351): the window describes the chat in front afresh each time it draws,
+ *  and the view, kept once shown, draws every skill's card. The same chat draws nothing again. */
+function sameView(was: SkillsViewProps, now: SkillsViewProps): boolean {
+  return sameFields(was, now, (key, a, b) =>
+    key === "chat"
+      ? sameFields(a as FrontChat | undefined, b as FrontChat | undefined, (field, x, y) =>
+          field === "branchFolder" ? sameFields(x as object, y as object) : Object.is(x, y),
+        )
+      : Object.is(a, b),
+  );
+}
+
+/** Whether `was` and `now` hold the same value under every key either has, each compared by
+ *  `same` (identity unless given): every field, so one added later is never left out. */
+function sameFields<T extends object>(
+  was: T | undefined,
+  now: T | undefined,
+  same: (key: string, a: unknown, b: unknown) => boolean = (_, a, b) => Object.is(a, b),
+): boolean {
+  if (was === now) return true;
+  if (was === undefined || now === undefined) return false;
+  const a = was as Record<string, unknown>;
+  const b = now as Record<string, unknown>;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].every((key) => same(key, a[key], b[key]));
+}
+
+export type SkillsViewProps = {
   plane: string;
   /** The title bar's workspace, or `undefined` at the project's root. */
   workspace: string | undefined;
@@ -218,8 +240,22 @@ export function SkillsView({
   onShowInExplorer: (place: ExplorerPlace) => void;
   /** Restarts chat `session` on its conversation: what a chat whose skills changed is offered. */
   onRestart?: (session: number) => void | Promise<void>;
-}) {
+};
+
+function SkillsViewDrawn({
+  plane,
+  workspace,
+  chat,
+  onOpenView,
+  onUseSkill,
+  onShowInExplorer,
+  onRestart,
+}: SkillsViewProps) {
+  // DEBUG-4351: which props made this render, none meaning its own state, a store or a context.
+  const props4351 = { plane, workspace, chat, onOpenView, onUseSkill, onShowInExplorer, onRestart };
+  const was4351 = useRef<Record<string, unknown> | undefined>(undefined);
   const [folded, onFold] = useFoldedGroups();
+  const hooks4351: Record<string, unknown> = { folded, onFold };
   // Where the rows are read for, and where the switch and the pin act: the chat's own workspace
   // while one is in front, else the title bar's.
   const place = chat === undefined ? workspace : chat.workspace;
@@ -321,6 +357,19 @@ export function SkillsView({
   );
 
   // While another chat's set is read, the list stays as it was: it is replaced once it is known.
+  // DEBUG-4351
+  Object.assign(hooks4351, { changed, instructions, read, repos, said, busy, rows, filter, groups });
+  const now4351: Record<string, unknown> = { ...props4351, ...hooks4351 };
+  said4351(
+    `SV ${
+      was4351.current === undefined
+        ? "mount"
+        : Object.keys(now4351)
+            .filter((key) => now4351[key] !== was4351.current?.[key])
+            .join(",") || "nothing"
+    }`,
+  );
+  was4351.current = now4351;
   if (read === undefined) return <SkillsReading />;
   if ("refused" in read.read)
     return <SkillsNotRead refused={read.read.refused} testid="skills-view-refused" />;
