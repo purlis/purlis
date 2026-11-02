@@ -397,10 +397,19 @@ fn typing_into_a_frame_of_a_site_the_judge_asks_about_types_nothing() {
 fn typed_into_the_frame(
     browser: &crate::drive::Browser,
 ) -> Result<crate::drive::Answer, crate::drive::Refusal> {
-    let text = snapshot(browser, 50);
+    typed_into_the_frame_as(browser, 50)
+}
+
+/// [`typed_into_the_frame`] by calls `n` and `n + 1`: a call whose id was answered before
+/// answers the same again, so typing once more takes ids of its own.
+fn typed_into_the_frame_as(
+    browser: &crate::drive::Browser,
+    n: u32,
+) -> Result<crate::drive::Answer, crate::drive::Refusal> {
+    let text = snapshot(browser, n);
     let pay = ref_of(&text, "- button \"Pay now\"");
     browser.call(
-        &id(51),
+        &id(n + 1),
         Call::Type {
             page: None,
             fields: vec![Field {
@@ -491,7 +500,7 @@ fn a_blank_frame_in_a_session_of_its_own_is_not_known_until_its_document_says_it
             .origin(MOVED, "PAYMENT-FRAME")
             .is_some()
     });
-    let answer = typed_into_the_frame(&browser).unwrap();
+    let answer = typed_into_the_frame_as(&browser, 60).unwrap();
     assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
     assert!(engine.sent("Input.insertText").is_empty());
     assert_eq!(whys(&told).last().unwrap().0, "http://third.test/");
