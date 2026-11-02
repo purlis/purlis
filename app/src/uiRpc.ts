@@ -11094,6 +11094,12 @@ export type Shown = {
 	 *  never markup. Absent where the app heard none, and on every other ask.
 	 */
 	last_message?: string | null,
+	/**
+	 *  **The few messages its chat's turns ended on before its last** (#4563), oldest first,
+	 *  kept as [`Shown::last_message`] is: on a chat waiting on the person's reply, where it said
+	 *  any, so a question a later turn pushed aside can be read back. Absent otherwise.
+	 */
+	earlier_messages?: string[] | null,
 };
 
 /**

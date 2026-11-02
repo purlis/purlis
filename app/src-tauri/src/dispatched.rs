@@ -2568,7 +2568,12 @@ pub fn heard(held: &Held, report: &Report) {
         report.event == Event::Stop && report.agent.is_none(),
     );
     match report.event {
-        Event::UserPromptSubmit => held.tasks().ledger().turn_began(report.chat),
+        Event::UserPromptSubmit => {
+            // A background turn over its wait on the person keeps what it asked them (#4563):
+            // the board has taken this report already, and says whether it is one.
+            let background = held.hooks().board().background_turn(report.chat);
+            held.tasks().ledger().turn_began_as(report.chat, background);
+        }
         Event::Stop => {
             held.tasks().ledger().turn_ended(report.chat);
             // The chat's own turn, and not one that waits on work of its own (#1981, #3878).

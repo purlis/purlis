@@ -624,6 +624,46 @@ fn every_chat_keeps_what_its_turn_ended_on_until_its_next_turn_begins() {
 }
 
 #[test]
+fn every_chat_keeps_the_few_messages_before_its_last_oldest_first() {
+    let mut ledger = Ledger::default();
+    for n in 0..(SAID_KEPT + 2) {
+        ledger.said_last(OWN_CHAT, format!("message {n}"));
+    }
+    assert_eq!(ledger.last_said(OWN_CHAT), Some("message 5"));
+    assert_eq!(
+        ledger.said_before(OWN_CHAT),
+        ["message 2", "message 3", "message 4"]
+    );
+    // A chat that said one message has none before it, and one that said none, neither.
+    ledger.said_last(OWN_CHAT + 1, "Only this.".to_owned());
+    assert!(ledger.said_before(OWN_CHAT + 1).is_empty());
+    assert!(ledger.said_before(OWN_CHAT + 2).is_empty());
+}
+
+#[test]
+fn a_background_turn_keeps_what_the_chat_said_and_the_person_s_turn_clears_it() {
+    let mut ledger = Ledger::default();
+    ledger.said_last(OWN_CHAT, "Should I open the pull request now?".to_owned());
+    // A turn the person did not begin is no answer (#4562): the wait, and its words, stand.
+    ledger.turn_began_as(OWN_CHAT, true);
+    assert_eq!(
+        ledger.last_said(OWN_CHAT),
+        Some("Should I open the pull request now?")
+    );
+    // It ends on a message of its own, which is the last now; the question is the one before.
+    ledger.said_last(OWN_CHAT, "developer 7 reported.".to_owned());
+    assert_eq!(ledger.last_said(OWN_CHAT), Some("developer 7 reported."));
+    assert_eq!(
+        ledger.said_before(OWN_CHAT),
+        ["Should I open the pull request now?"]
+    );
+    // The turn their answer begins clears every one.
+    ledger.turn_began_as(OWN_CHAT, false);
+    assert_eq!(ledger.last_said(OWN_CHAT), None);
+    assert!(ledger.said_before(OWN_CHAT).is_empty());
+}
+
+#[test]
 fn a_chat_s_last_message_follows_it_to_a_new_number_and_goes_when_it_closes() {
     let mut ledger = Ledger::default();
     ledger.said_last(OWN_CHAT, "Which branch should I use?".to_owned());

@@ -8374,3 +8374,68 @@ nav.piece-files-head {
     border-bottom: 1px solid var(--border-subtle);
   }
 }
+
+/* **The waiting strip** (#4563, `WaitingStrip.tsx`): what a chat waits on the person for, on one
+   line at the top of its pane, as the reviewed prototype drew it (#4561): the overlay's ground,
+   the waiting state's edge and hand, the label quiet and the words in full colour. Open, it
+   holds the whole text, and past ten lines its words scroll inside it. Nothing in it changes
+   size as its earlier messages are walked: one line each, the same buttons' room. */
+.waiting-strip {
+  display: flex;
+  flex: none;
+  gap: var(--space-3);
+  align-items: center;
+  min-inline-size: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-overlay);
+  box-shadow: inset 2px 0 0 var(--state-waiting);
+}
+.waiting-strip[data-open] {
+  align-items: flex-start;
+}
+.waiting-strip-mark {
+  display: inline-flex;
+  flex: none;
+  color: var(--state-waiting);
+}
+.waiting-strip-mark > svg {
+  width: 1rem;
+  height: 1rem;
+}
+.waiting-strip-words {
+  display: flex;
+  flex: 1;
+  gap: var(--space-3);
+  align-items: baseline;
+  min-inline-size: 0;
+}
+.waiting-strip[data-open] .waiting-strip-words {
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.waiting-strip-label {
+  flex: none;
+  white-space: nowrap;
+}
+.waiting-strip-says {
+  min-inline-size: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.waiting-strip[data-open] .waiting-strip-says {
+  max-block-size: 10lh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.waiting-strip-ways {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+}

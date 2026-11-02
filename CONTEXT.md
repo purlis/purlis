@@ -1116,6 +1116,13 @@ title bar's ✋, which opens the **Inbox**, and each is counted in red on its ta
 show-more hiding it. **Ignore** clears a chat's items until the next one arrives (ADR 0076).
 _Avoid_: notification, alert (an alert is a **Notice**), waiting (for the state)
 
+**Waiting strip**:
+The one line at the top of a chat's pane that says what the chat waits on the person for, whatever
+it writes after: a real ask in its own words, or for a turn that ended on them, its last message
+with the few before it a press away. It is read off the asks registry, as the **Inbox** card is, so
+both say the same words, and it goes once the person answers. It never takes the keyboard (#4563).
+_Avoid_: banner, question bar
+
 **Background turn**:
 A turn of a chat that the person did not begin: a line of purlis's own, such as a task reporting
 back, or the chat's own work waking it. It is no reply, so a chat that **needs you** keeps its
