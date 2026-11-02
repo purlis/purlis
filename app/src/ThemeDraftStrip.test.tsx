@@ -79,6 +79,36 @@ describe("the theme draft strip", () => {
     expect(screen.queryByRole("region", { name: "Theme draft" })).toBeNull();
   });
 
+  describe("a Compare held as the window is left (#4628)", () => {
+    const heldBy = (hold: (compare: HTMLElement) => void) => {
+      asked();
+      act(() => setDraftHere({ plane: PLANE, workspace: "alpha", draft: DRAFT }));
+      render(<ThemeDraftStrip plane={PLANE} workspace="alpha" />);
+      hold(screen.getByRole("button", { name: "Compare" }));
+      expect(compared).toEqual([true]);
+    };
+    const pointerGone = () =>
+      act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
+
+    it("lets go when the pointer that holds it leaves, with no leave on the button", async () => {
+      heldBy((compare) => fireEvent.pointerDown(compare));
+      await pointerGone();
+      expect(compared).toEqual([true, false]);
+    });
+
+    it("keeps a hold the keyboard has when only the pointer leaves", async () => {
+      heldBy((compare) => fireEvent.keyDown(compare, { key: " " }));
+      await pointerGone();
+      expect(compared).toEqual([true]);
+    });
+
+    it("lets go of the keyboard's hold when the window loses the focus", async () => {
+      heldBy((compare) => fireEvent.keyDown(compare, { key: " " }));
+      await act(async () => void window.dispatchEvent(new Event("blur")));
+      expect(compared).toEqual([true, false]);
+    });
+  });
+
   it("says which hard floor a save broke", () => {
     asked();
     act(() =>
@@ -240,36 +270,6 @@ describe("Keep into the project", () => {
     await waitFor(() => expect(who.textContent).toContain("Make it the project's default"));
   });
 
-  describe("a Compare held as the window is left (#4628)", () => {
-    const heldBy = (hold: (compare: HTMLElement) => void) => {
-      asked();
-      act(() => setDraftHere({ plane: PLANE, workspace: "alpha", draft: DRAFT }));
-      render(<ThemeDraftStrip plane={PLANE} workspace="alpha" />);
-      hold(screen.getByRole("button", { name: "Compare" }));
-      expect(compared).toEqual([true]);
-    };
-    const pointerGone = () =>
-      act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
-
-    it("lets go when the pointer that holds it leaves, with no leave on the button", async () => {
-      heldBy((compare) => fireEvent.pointerDown(compare));
-      await pointerGone();
-      expect(compared).toEqual([true, false]);
-    });
-
-    it("keeps a hold the keyboard has when only the pointer leaves", async () => {
-      heldBy((compare) => fireEvent.keyDown(compare, { key: " " }));
-      await pointerGone();
-      expect(compared).toEqual([true]);
-    });
-
-    it("lets go of the keyboard's hold when the window loses the focus", async () => {
-      heldBy((compare) => fireEvent.keyDown(compare, { key: " " }));
-      await act(async () => void window.dispatchEvent(new Event("blur")));
-      expect(compared).toEqual([true, false]);
-    });
-  });
-
   it("is said in the close question too", () => {
     render(
       <EndingChat
@@ -308,36 +308,6 @@ describe("Keep over a folder that changed since the draft started (#2708)", () =
         changed: true,
       }),
     );
-  });
-
-  describe("a Compare held as the window is left (#4628)", () => {
-    const heldBy = (hold: (compare: HTMLElement) => void) => {
-      asked();
-      act(() => setDraftHere({ plane: PLANE, workspace: "alpha", draft: DRAFT }));
-      render(<ThemeDraftStrip plane={PLANE} workspace="alpha" />);
-      hold(screen.getByRole("button", { name: "Compare" }));
-      expect(compared).toEqual([true]);
-    };
-    const pointerGone = () =>
-      act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
-
-    it("lets go when the pointer that holds it leaves, with no leave on the button", async () => {
-      heldBy((compare) => fireEvent.pointerDown(compare));
-      await pointerGone();
-      expect(compared).toEqual([true, false]);
-    });
-
-    it("keeps a hold the keyboard has when only the pointer leaves", async () => {
-      heldBy((compare) => fireEvent.keyDown(compare, { key: " " }));
-      await pointerGone();
-      expect(compared).toEqual([true]);
-    });
-
-    it("lets go of the keyboard's hold when the window loses the focus", async () => {
-      heldBy((compare) => fireEvent.keyDown(compare, { key: " " }));
-      await act(async () => void window.dispatchEvent(new Event("blur")));
-      expect(compared).toEqual([true, false]);
-    });
   });
 
   it("is said in the close question too", () => {

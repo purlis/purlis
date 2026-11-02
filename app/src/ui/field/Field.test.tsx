@@ -926,7 +926,9 @@ describe("what a refused send is heard as (#3291)", () => {
     expect(nameOf(document.getElementById("box") as HTMLElement)).toBe("of the pool Host");
     document.body.innerHTML = "";
   });
+});
 
+describe("a field the pointer left the window from", () => {
   it("stops drawing the hover once the pointer left the window, with no leave on the box (#4628)", async () => {
     render(<Held label="Name" />);
     const box = screen.getByLabelText("Name").closest('[data-part="root"]') as HTMLElement;

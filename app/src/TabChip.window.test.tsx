@@ -411,10 +411,20 @@ const chord = (key: string, code?: string) =>
     shiftKey: true,
   });
 
-/** Only the clocks a rest and a grace run on, so the window's own promises still settle. */
+/** Only the clocks a rest and a grace run on, so the window's own promises still settle, and
+ *  the frames: a menu takes the keyboard on one (`focusSafely`), which `pass` has to run, or
+ *  whether it landed hangs on what real time the test before left running (#4628). */
 const fakeClocks = (more: { shouldAdvanceTime?: boolean } = {}) =>
   vi.useFakeTimers({
-    toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
+    toFake: [
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+      "requestAnimationFrame",
+      "cancelAnimationFrame",
+      "Date",
+    ],
     ...more,
   });
 
