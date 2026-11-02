@@ -37,3 +37,9 @@ export const PANE_NOTICES = layoutPref<PaneNoticesShown, "notices">({
   remedy: (where) =>
     `fix ${where}, or minimise or expand a pane's notices from its bell, which rewrites it`,
 });
+
+/** Whether every pane's notices are minimised now, for a component that redraws when it changes. */
+export const useNoticesMinimised = (): boolean => PANE_NOTICES.use() === "minimised";
+
+/** Minimises or expands every pane's notices, and writes the choice to the layout file. */
+export const showNotices = (shown: PaneNoticesShown): void => PANE_NOTICES.set(shown);

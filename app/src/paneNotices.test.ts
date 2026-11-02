@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { arrived, bandHeadSays, bellCount, bellSays, dismissAllSays } from "./paneNotices";
+import { bandHeadSays, bellCount, bellSays, dismissAllSays } from "./paneNotices";
 import { loadPaneNotices, PANE_NOTICES } from "./paneNoticesPref";
 
 describe("a pane's notices, minimised or expanded (#4754)", () => {
@@ -49,13 +49,5 @@ describe("what a pane's bell says", () => {
 
   it("counts what Dismiss all clears", () => {
     expect(dismissAllSays(4)).toBe("Dismiss all 4");
-  });
-
-  it("says a notice arrived only when the band holds more than it did", () => {
-    const was = { notes: 2, trouble: 0, asks: 1 };
-    expect(arrived(was, { notes: 3, trouble: 0, asks: 1 })).toBe(true);
-    expect(arrived(was, { notes: 2, trouble: 0, asks: 2 })).toBe(true);
-    expect(arrived(was, { notes: 1, trouble: 0, asks: 1 })).toBe(false);
-    expect(arrived(was, { notes: 2, trouble: 1, asks: 1 })).toBe(false);
   });
 });

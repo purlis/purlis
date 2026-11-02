@@ -632,8 +632,15 @@ const boxesOf = (stack: HTMLElement) => [...stack.children] as HTMLElement[];
 /** An ask (`waits`), which stays when the band is minimised and is never counted. */
 const waitsOn = (box: Element) => box.hasAttribute("data-waits");
 
+/** **What a band read off its stack**: what it holds, as its bell says it, how many notes
+ *  Dismiss all clears, and how many Notices it shows. */
+type BandRead = BandHolds & { clears: number; drawn: number };
+
+const sameRead = (one: BandRead, other: BandRead): boolean =>
+  sameHolds(one, other) && one.clears === other.clears && one.drawn === other.drawn;
+
 /** What a pane's stack holds, as its bell says it, and how many notes Dismiss all clears. */
-function heldIn(boxes: readonly HTMLElement[]): BandHolds & { clears: number } {
+function heldIn(boxes: readonly HTMLElement[]): Omit<BandRead, "drawn"> {
   const notes = boxes.filter((box) => !waitsOn(box));
   return {
     notes: notes.length,
@@ -651,6 +658,8 @@ export type PaneBandBell = {
   minimise: () => void;
   /** Told what the band holds whenever that changes. */
   onHolds: (holds: BandHolds) => void;
+  /** Hands the keyboard to the bell: where Dismiss all leaves it once the band is empty. */
+  focus: () => void;
 };
 
 /**
@@ -702,7 +711,7 @@ export function NoticePaneRow({
   const { at: rowAt, allows, said } = useNoticeSettle<HTMLDivElement>("stands", band, rowDrawn);
   const onHolds = bell?.onHolds;
   const folds = bell?.minimised === true;
-  const [held, setHeld] = useState({ ...HOLDS_NOTHING, clears: 0, drawn: 0 });
+  const [held, setHeld] = useState<BandRead>({ ...HOLDS_NOTHING, clears: 0, drawn: 0 });
 
   // Read off the stack: what it holds, and which notes the band folds.
   useLayoutEffect(() => {
@@ -718,9 +727,7 @@ export function NoticePaneRow({
         if (!hide) drawn += 1;
       }
       const now = { ...heldIn(boxes), drawn };
-      setHeld((was) =>
-        sameHolds(was, now) && was.clears === now.clears && was.drawn === now.drawn ? was : now,
-      );
+      setHeld((was) => (sameRead(was, now) ? was : now));
     };
     place();
     // A Notice that comes or goes, and one that comes to ask or changes its tone or its ways out
@@ -822,10 +829,9 @@ export function NoticePaneRow({
     if (stack === null) return;
     for (const box of boxesOf(stack))
       if (!waitsOn(box)) box.querySelector<HTMLElement>(DISMISS)?.click();
-    const frame = rowAt.current?.closest(".pane-frame");
     setTimeout(() => {
       if (minimiseAt.current?.isConnected) minimiseAt.current.focus();
-      else frame?.querySelector<HTMLElement>('[data-way="bell"]')?.focus();
+      else bell?.focus();
     }, 0);
   };
 

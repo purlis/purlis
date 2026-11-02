@@ -15,12 +15,12 @@
  * harness's last lines in the terminal's own colours: what is held here is everything around it.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { Sparkles, X } from "lucide-react";
 import { Notice, NoticePaneRow } from "../../Notice";
 import { NOTICE_MOVED_JUST_NOW, SETTLE_MS, paneBand } from "../../noticeSettle";
-import { PaneActions, PaneBellOf, PaneHead } from "../../LayoutPanes";
+import { PaneActions, PaneBellAt, PaneBellOf, PaneHead } from "../../LayoutPanes";
 import { HOLDS_NOTHING, type BandHolds, type PaneNoticesShown } from "../../paneNotices";
 import { PANE_NOTICES } from "../../paneNoticesPref";
 import type { Offer } from "../../actions";
@@ -206,6 +206,7 @@ function Pane({
   band?: string;
 }) {
   const [holds, setHolds] = useState<BandHolds>(HOLDS_NOTHING);
+  const bellAt = useRef<HTMLButtonElement>(null);
   const minimised = PANE_NOTICES.use() === "minimised";
   return (
     <div
@@ -216,14 +217,16 @@ function Pane({
       <div className="pane-top">
         <PaneHead
           doing={
-            <PaneBellOf.Provider value={holds}>
-              <PaneActions
-                pane={0}
-                offerFor={(id) => OFFERS[id]}
-                closeOf={() => OFFERS["pane.close"]}
-                onPaneDoes={() => undefined}
-              />
-            </PaneBellOf.Provider>
+            <PaneBellAt.Provider value={bellAt}>
+              <PaneBellOf.Provider value={holds}>
+                <PaneActions
+                  pane={0}
+                  offerFor={(id) => OFFERS[id]}
+                  closeOf={() => OFFERS["pane.close"]}
+                  onPaneDoes={() => undefined}
+                />
+              </PaneBellOf.Provider>
+            </PaneBellAt.Provider>
           }
         >
           <div className="pane-chips">
@@ -246,7 +249,12 @@ function Pane({
         </PaneHead>
         <NoticePaneRow
           band={band}
-          bell={{ minimised, minimise: () => PANE_NOTICES.set("minimised"), onHolds: setHolds }}
+          bell={{
+            minimised,
+            minimise: () => PANE_NOTICES.set("minimised"),
+            onHolds: setHolds,
+            focus: () => bellAt.current?.focus(),
+          }}
         >
           <Warnings shown={warnings} />
         </NoticePaneRow>

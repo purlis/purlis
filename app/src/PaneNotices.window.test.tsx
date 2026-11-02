@@ -230,8 +230,12 @@ describe("a pane's notices, minimised (the default)", () => {
     expect(seen()).toEqual(["Remove workspace"]);
     expect(bell()).toHaveAttribute("aria-expanded", "false");
     expect(keep).toHaveFocus();
-    const said = frame().querySelectorAll('.pane-actions > [aria-live="polite"]');
-    expect([...said].map((one) => one.textContent)).toContain("1 notice, 1 in trouble, 1 asking");
+    // Said politely, once it changed: never the count the pane was first drawn with.
+    const said = () =>
+      [...frame().querySelectorAll('.pane-actions > [aria-live="polite"]')].map(
+        (one) => one.textContent,
+      );
+    await waitFor(() => expect(said()).toContain("1 notice, 1 in trouble, 1 asking"));
   });
 });
 

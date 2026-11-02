@@ -57,7 +57,3 @@ export function bandHeadSays(holds: BandHolds): string {
 
 /** **Dismiss all's words**: it counts what it clears, the notes with a Dismiss of their own. */
 export const dismissAllSays = (clears: number): string => `Dismiss all ${clears}`;
-
-/** Whether a notice arrived: the band holds more than it did. Only then is the count said. */
-export const arrived = (was: BandHolds, now: BandHolds): boolean =>
-  now.notes + now.asks > was.notes + was.asks;

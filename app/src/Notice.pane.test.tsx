@@ -226,7 +226,12 @@ describe("a pane's row of Notices", () => {
         <>
           <div data-testid="holds">{holds === undefined ? "" : JSON.stringify(holds)}</div>
           <NoticePaneRow
-            bell={{ minimised, minimise: () => PANE_NOTICES.set("minimised"), onHolds: setHolds }}
+            bell={{
+              minimised,
+              minimise: () => PANE_NOTICES.set("minimised"),
+              onHolds: setHolds,
+              focus: () => undefined,
+            }}
           >
             {children}
           </NoticePaneRow>

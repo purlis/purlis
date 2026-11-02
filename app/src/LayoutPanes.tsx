@@ -4,8 +4,8 @@
 import {
   createContext,
   Fragment,
+  useCallback,
   useContext,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -70,8 +70,9 @@ import {
 } from "./ChatNotices";
 import { Button, IconButton } from "./ui/button/Button";
 import { Bell } from "lucide-react";
-import { arrived, bellCount, bellSays, HOLDS_NOTHING, type BandHolds } from "./paneNotices";
-import { PANE_NOTICES } from "./paneNoticesPref";
+import { bellCount, bellSays, HOLDS_NOTHING, type BandHolds } from "./paneNotices";
+import { showNotices, useNoticesMinimised } from "./paneNoticesPref";
+import { useSaidAtMost } from "./ui/said";
 
 /**
  * **The panes of the tab in front** (#1035, split out of `PlaneView.tsx`): the split layout
@@ -175,8 +176,11 @@ export function PaneFrame({
   const lent = useReferenceChats();
   const frame = useRef<HTMLDivElement>(null);
   const roomy = useRoomy(frame);
-  /** What the band holds, for the bell in the pane's header (#4754). */
+  /** What the band holds, for the bell in the pane's header (#4754), and the bell itself, which
+   *  the band's Dismiss all hands the keyboard to once it has cleared the band. */
   const [holds, setHolds] = useState<BandHolds>(HOLDS_NOTHING);
+  const bellAt = useRef<HTMLButtonElement>(null);
+  const focusBell = useCallback(() => bellAt.current?.focus(), []);
   return (
     <div
       ref={frame}
@@ -195,7 +199,13 @@ export function PaneFrame({
           read and tabbed to (#1647); a terminal keeps Tab for its shell, so a control written
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
-        <PaneHead doing={<PaneBellOf.Provider value={holds}>{doing}</PaneBellOf.Provider>}>
+        <PaneHead
+          doing={
+            <PaneBellAt.Provider value={bellAt}>
+              <PaneBellOf.Provider value={holds}>{doing}</PaneBellOf.Provider>
+            </PaneBellAt.Provider>
+          }
+        >
           <div className="pane-chips">
             {/* **Which chat this is, while the tab shows a task** (#1486): first in the line, and
             in no row of its own. */}
@@ -237,6 +247,7 @@ export function PaneFrame({
           others={others}
           onShowChat={onShowChat}
           onHolds={setHolds}
+          onFocusBell={focusBell}
         />
       </div>
       <div className="pane-body">{children}</div>
@@ -343,11 +354,14 @@ export function PaneNotices({
   others,
   onShowChat,
   onHolds,
+  onFocusBell,
 }: {
   /** The pane the band is (`paneBand`), whichever component draws it (#3167). */
   band?: string;
   /** The pane's bell, told what the band holds (#4754). */
   onHolds?: (holds: BandHolds) => void;
+  /** Hands the keyboard to the pane's bell. */
+  onFocusBell?: () => void;
   notices: ReactNode;
   /** The questions for several of the pane's tasks at once (#1508): after the shown chat's
    *  own, before each other chat's, since each waits for the person. */
@@ -356,13 +370,18 @@ export function PaneNotices({
   onShowChat: (session: number) => void;
 }) {
   // The window's choice, kept (`paneNoticesPref.ts`), handed to the band with the bell's ear.
-  const minimised = PANE_NOTICES.use() === "minimised";
+  const minimised = useNoticesMinimised();
   const bell = useMemo(
     () =>
       onHolds === undefined
         ? undefined
-        : { minimised, minimise: () => PANE_NOTICES.set("minimised"), onHolds },
-    [minimised, onHolds],
+        : {
+            minimised,
+            minimise: () => showNotices("minimised"),
+            onHolds,
+            focus: () => onFocusBell?.(),
+          },
+    [minimised, onHolds, onFocusBell],
   );
   return (
     <NoticePaneRow band={band} bell={bell}>
@@ -990,6 +1009,9 @@ export function PaneDoing({
  *  bell is drawn (a view's pane draws the same actions). */
 export const PaneBellOf = createContext<BandHolds | null>(null);
 
+/** The pane's bell itself, for the band's Dismiss all to hand the keyboard to (#4754). */
+export const PaneBellAt = createContext<RefObject<HTMLButtonElement | null> | null>(null);
+
 /**
  * **A pane's bell** (#4754, spec #4750 stories 33, 37 to 39): in the pane's header, in a fixed
  * slot before split and close, there with no count when there is nothing, so nothing beside it
@@ -1004,35 +1026,34 @@ export const PaneBellOf = createContext<BandHolds | null>(null);
  */
 export function PaneBell() {
   const holds = useContext(PaneBellOf);
-  const expanded = PANE_NOTICES.use() === "expanded";
-  const [announced, setAnnounced] = useState("");
-  const was = useRef<BandHolds>(HOLDS_NOTHING);
-  useEffect(() => {
-    if (holds === null) return;
-    if (arrived(was.current, holds)) setAnnounced(bellSays(holds));
-    was.current = holds;
-  }, [holds]);
+  const at = useContext(PaneBellAt);
+  const minimised = useNoticesMinimised();
+  // Said politely, at most once a second, and never the count a pane is first drawn with: each
+  // change is new words, so a notice arriving is always heard (`ui/said.ts`).
+  const spoken = useSaidAtMost(holds === null ? "" : bellSays(holds));
   if (holds === null) return null;
   return (
     <>
       <Button
+        ref={at ?? undefined}
         size="sm"
         variant="quiet"
         className="pane-bell"
         icon={<Bell aria-hidden="true" />}
         aria-label={`Pane notices: ${bellSays(holds)}`}
-        aria-expanded={expanded}
-        tooltip={expanded ? "Minimise notices" : "Show all notices"}
+        aria-expanded={!minimised}
+        // The band's head row says Minimise too: the same act, the same word (`docs/ui-copy.md`).
+        tooltip={minimised ? "Show all" : "Minimise"}
         data-trouble={holds.trouble > 0 ? "" : undefined}
         data-empty={holds.notes === 0 ? "" : undefined}
         data-way="bell"
-        onPress={() => PANE_NOTICES.set(expanded ? "minimised" : "expanded")}
+        onPress={() => showNotices(minimised ? "expanded" : "minimised")}
       >
         {bellCount(holds)}
       </Button>
-      {/* Polite and on its own, never a Notice's status line: what arrived, said once. */}
+      {/* Polite and on its own, never a Notice's status line. */}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {announced}
+        {spoken}
       </span>
     </>
   );
