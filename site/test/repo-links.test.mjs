@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { siteLink } from "../src/repo-links.mjs";
+import { siteImage, siteLink } from "../src/repo-links.mjs";
 
 const repoRoot = mkdtempSync(join(tmpdir(), "repo-links-"));
 for (const path of [
@@ -68,4 +68,25 @@ test("web addresses and same-page anchors are left as written", () => {
   for (const target of ["https://example.org/a.md", "mailto:x@example.org", "#the-decision"]) {
     assert.equal(siteLink(target, at("docs/spec.md")), target);
   }
+});
+
+test("a picture from anywhere in the repository is shown from the forge at the built ref", () => {
+  mkdirSync(join(repoRoot, "app/src/__screenshots__"), { recursive: true });
+  writeFileSync(join(repoRoot, "app/src/__screenshots__/a-story.png"), "x");
+  assert.equal(
+    siteImage("../app/src/__screenshots__/a-story.png", at("docs/spec.md")),
+    "https://github.com/purlis/purlis/raw/v1.2.3/app/src/__screenshots__/a-story.png",
+  );
+});
+
+test("a picture that does not exist fails the build, naming page and picture", () => {
+  assert.throws(
+    () => siteImage("../app/src/__screenshots__/gone.png", at("docs/spec.md")),
+    /docs\/spec\.md.*gone\.png.*does not exist/,
+  );
+  assert.throws(() => siteImage("adr/", at("docs/spec.md")), /docs\/spec\.md.*adr\/.*not a file/);
+});
+
+test("a picture on the web is left as written", () => {
+  assert.equal(siteImage("https://example.org/a.png", at("docs/spec.md")), "https://example.org/a.png");
 });
