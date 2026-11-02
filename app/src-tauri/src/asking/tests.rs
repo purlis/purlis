@@ -201,6 +201,7 @@ impl World {
                     .find(|(one, _)| *one == session)
                     .map(|(_, said)| (*said).to_owned())
             },
+            earlier_messages: &|_| Vec::new(),
             held: &|session, target, _| {
                 self.held
                     .iter()
