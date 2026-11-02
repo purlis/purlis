@@ -46,14 +46,21 @@ export const Alone: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await expect(args.onPress).toHaveBeenCalledWith(NEW_CHAT);
+    await userEvent.tab({ shift: true });
+    await expect(canvas.getByRole("button", { name: "New chat" })).not.toHaveFocus();
   },
 };
 
 /** **One side of a split**, in a workspace where nothing runs yet. */
 export const InASplitWithNothingRunning: Story = {
   args: { running: 0, inSplit: true },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     await expect(canvas.getByText("An empty pane")).toBeVisible();
     await expect(canvas.getByText("Nothing runs in this workspace yet.")).toBeVisible();
+    await userEvent.tab();
+    await untilFocused(() => canvas.getByRole("button", { name: "New chat" }), "Tab to New chat");
+    expectFocusInSight();
+    await userEvent.tab({ shift: true });
+    await expect(canvas.getByRole("button", { name: "New chat" })).not.toHaveFocus();
   },
 };

@@ -30,7 +30,8 @@ export const EVEN = 500;
 /** The whole of a split, in tenths of a percent. */
 export const WHOLE = 1000;
 
-/** What a tab whose first pane is empty is called (#4755), as the strip's `+` names one. */
+/** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
+ *  says (spec #4750 story 44). */
 export const EMPTY_TAB = "New chat";
 
 /** What a split holds as its first child's share: its own, or even. */

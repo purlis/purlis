@@ -41,7 +41,12 @@ export function EmptyPane({
   );
 }
 
-/** How many chats run here, in a sentence. */
+/**
+ * How many chats run here, in a sentence. **The body says a count, not a way out**, against
+ * `docs/ui-copy.md`'s empty-state rule, because the spec asks for it (#4750 story 10) and the
+ * way out is the button under it. The sentence that names the sidebar as a way out ("Pick one
+ * in the sidebar to show it in this pane", as prototyped) comes with #4757, when it is true.
+ */
 export function runningHere(running: number): string {
   if (running === 0) return "Nothing runs in this workspace yet.";
   return running === 1 ? "1 chat is running here." : `${running} chats are running here.`;

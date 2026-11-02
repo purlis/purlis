@@ -1165,7 +1165,7 @@ export type Insert = {
 export function insertPane(tabs: Tabs, at: Insert): Tabs {
   const tab = tabs.byId[at.tab];
   if (tab === undefined || !panes(tab.layout).some((each) => each.pane === at.pane)) return tabs;
-  if (at.content.kind === "session" && inAPane(tabs, at.content.session)) return tabs;
+  if (at.content.kind === "session" && shownElsewhere(tabs, at.content.session)) return tabs;
   const pane = tabs.named.panes + 1;
   const added: Layout = { kind: "pane", pane, content: at.content };
   const layout = replace(tab.layout, at.pane, (found) => ({
@@ -1194,10 +1194,7 @@ export function showIn(tabs: Tabs, id: number, pane: number, content: Content): 
   if (tab === undefined || found === undefined) return tabs;
   const switched = tab.shows?.[pane] !== undefined;
   if (!switched && sameContent(found.content, content)) return tabs;
-  if (content.kind === "session" && inAPane(tabs, content.session)) {
-    const here = found.content.kind === "session" && found.content.session === content.session;
-    if (!here) return tabs;
-  }
+  if (content.kind === "session" && shownElsewhere(tabs, content.session, id, pane)) return tabs;
   const layout = replace(tab.layout, pane, (one) => ({ ...one, content }));
   const shows = Object.fromEntries(
     Object.entries(tab.shows ?? {}).filter(([at]) => Number(at) !== pane),
@@ -1205,10 +1202,14 @@ export function showIn(tabs: Tabs, id: number, pane: number, content: Content): 
   return { ...tabs, byId: { ...tabs.byId, [id]: showing({ ...tab, layout }, shows) } };
 }
 
-/** Whether chat `session` is in a pane of any tab: its own, or shown there in place of it. */
-function inAPane(tabs: Tabs, session: number): boolean {
+/**
+ * Whether a pane other than pane `pane` of tab `tab` shows chat `session`: what the core refuses
+ * twice is what each pane SHOWS (`layoutOf`), so a chat with a task drawn over it in its own pane
+ * is not counted there.
+ */
+function shownElsewhere(tabs: Tabs, session: number, tab?: number, pane?: number): boolean {
   return tabs.order.some((id) =>
-    shownIn(tabs, id).some((one) => one.own === session || one.session === session),
+    shownIn(tabs, id).some((one) => one.session === session && !(id === tab && one.pane === pane)),
   );
 }
 

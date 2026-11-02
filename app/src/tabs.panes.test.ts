@@ -77,6 +77,20 @@ describe("a pane shows any chat (#4755)", () => {
     expect(showIn(tabs, first, onlyPane(tabs, first), chat(1))).toBe(tabs);
   });
 
+  it("shows a chat whose own pane has a task drawn over it, since that chat is on no screen", () => {
+    const { tabs, first, second } = twoTabs();
+    const pane = onlyPane(tabs, second);
+    const switched: Tabs = {
+      ...tabs,
+      byId: { ...tabs.byId, [second]: { ...tabs.byId[second], shows: { [pane]: 5 } } },
+    };
+
+    const shown = showIn(switched, first, onlyPane(tabs, first), chat(2));
+
+    expect(contentsOf(shown, first).map((one) => one.content)).toEqual([chat(2)]);
+    expect(showIn(switched, first, onlyPane(tabs, first), chat(5))).toBe(switched);
+  });
+
   it("answers the very tabs for a pane or a tab that is not there", () => {
     const { tabs, first } = twoTabs();
 
@@ -186,12 +200,21 @@ describe("inserting a pane on either side (#4755)", () => {
     const after = insertPane(one(), {
       tab: 1,
       pane: 1,
-      direction: "row",
+      direction: "column",
       side: "after",
       content: chat(4),
     });
 
-    expect(after).toEqual(splitFocusedPane(one(), "row", 4, "4"));
+    expect(layoutOf(after, onOps).tabs[0]).toMatchObject({
+      focused: "b",
+      tree: {
+        kind: "split",
+        direction: "column",
+        share: 500,
+        a: { kind: "chat", chat: 3 },
+        b: { kind: "chat", chat: 4 },
+      },
+    });
   });
 
   it("inserts beside a pane that is not focused, deep in a split, in a tab behind", () => {

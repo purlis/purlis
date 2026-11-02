@@ -330,6 +330,7 @@ import {
   type Pinned,
   type Tabs,
   type ViewRef,
+  type Content,
 } from "./tabs";
 import { layoutOf, tabsOf, withShare } from "./laidOut";
 import {
@@ -2121,16 +2122,20 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /** Whether a tab is pinned: its own chat is, which is its first pane's. */
-  const isPinned = useCallback<Pinned>(
-    (id) => {
-      const lead = contentsOf(tabs, id)[0]?.content;
-      if (lead === undefined) return false;
-      if (lead.kind === "empty") return false;
+  /** Whether a tab that opens on `lead` is pinned: its chat's pin or its view's. An empty pane
+   *  holds no pin of its own yet (#4762 gives the tab its own). */
+  const leadPinned = useCallback(
+    (lead: Content | undefined) => {
+      if (lead === undefined || lead.kind === "empty") return false;
       return lead.kind === "session"
         ? pinnedChats.includes(lead.session)
         : pinnedViews.includes(viewKey(lead.view));
     },
-    [pinnedChats, pinnedViews, tabs],
+    [pinnedChats, pinnedViews],
+  );
+  const isPinned = useCallback<Pinned>(
+    (id) => leadPinned(contentsOf(tabs, id)[0]?.content),
+    [leadPinned, tabs],
   );
 
   /**
@@ -3092,14 +3097,7 @@ export const PlaneView = memo(function PlaneView({
       if (!layoutHeard.current) return;
       const laid = layoutOf(next, {
         workspaceOf: (id) => workspaceOf(next, id, filedIn),
-        pinned: (id) => {
-          const lead = contentsOf(next, id)[0]?.content;
-          if (lead === undefined) return false;
-          if (lead.kind === "empty") return false;
-          return lead.kind === "session"
-            ? pinnedChats.includes(lead.session)
-            : pinnedViews.includes(viewKey(lead.view));
-        },
+        pinned: (id) => leadPinned(contentsOf(next, id)[0]?.content),
         frontOf: (workspace) => lastFront.current[workspace],
         told: (session) => !pretendedNow.current.has(session),
       });
@@ -3124,7 +3122,7 @@ export const PlaneView = memo(function PlaneView({
         .catch(unsaid);
     };
     sayLayout.current(tabs);
-  }, [filedIn, pinnedChats, pinnedViews, plane, tabs, viewsHeard]);
+  }, [filedIn, leadPinned, plane, tabs, viewsHeard]);
 
   /**
    * Asks which profile and which persona. It starts nothing by itself.
