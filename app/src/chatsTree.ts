@@ -77,6 +77,11 @@ export type ListedChat = {
    *  and what a relaunch looks up again; the kind is what the project calls the harness. The
    *  explorer's row said it until the explorer stopped listing chats; the row's hover does. */
   runsOn?: string | null;
+  /** Where its open question stands, as the asks registry says (#4564): with its asking chat
+   *  or waiting on the person. None while it asks nothing. Answer reads this, at either level:
+   *  the person can answer any task's question (spec #4551, story 30). `asking` is narrower,
+   *  the asking chat's name for the row's word. */
+  question?: QuestionStanding["level"] | null;
   // And what its state is derived from beside the board's word (`RowFacts`): its record as a
   // task and its harness's name.
 } & RowFacts;
@@ -165,6 +170,7 @@ export function listedChat(
       : chat.harness,
     ...rowFactsOf(chat),
     asking: question?.level === "with-asker" ? question.asker : null,
+    question: question?.level ?? null,
   };
 }
 
