@@ -3,11 +3,13 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useContext, useLayoutEffect, useState } from "react";
+import { useContext, useLayoutEffect, useState, type ReactNode } from "react";
 import { Notice, NoticePaneRow } from "./Notice";
+import type { BandHolds } from "./paneNotices";
+import { PANE_NOTICES } from "./paneNoticesPref";
 import {
   NOTICE_MOVED_JUST_NOW,
   NoticeWayGuard,
@@ -129,11 +131,12 @@ describe("a Notice in a pane's corner", () => {
  */
 describe("a pane's row of Notices", () => {
   /** A pane Notice with one answer and a Dismiss, as `ChatNotices` draws them. */
-  const one = (cause: string, says: string) => (
+  const one = (cause: string, says: string, tone?: "trouble") => (
     <Notice
       key={cause}
       cause={cause}
       at="pane"
+      tone={tone}
       label={says}
       fixes={[{ label: `Answer ${says}`, onPress: () => undefined }]}
       onDismiss={() => undefined}
@@ -141,140 +144,220 @@ describe("a pane's row of Notices", () => {
       {says}
     </Notice>
   );
+  /** An ask, as a dispatch no grant covers draws it. */
+  const ask = (cause: string, says: string) => (
+    <Notice
+      key={cause}
+      cause={cause}
+      at="pane"
+      label={says}
+      fixes={[{ label: `Answer ${says}`, onPress: () => undefined }]}
+      onDismiss={() => undefined}
+      waits
+    >
+      {says}
+    </Notice>
+  );
   /** The Notices a person can see, top to bottom, by their names. */
   const seen = () => screen.queryAllByRole("status").map((line) => line.getAttribute("aria-label"));
 
-  it("draws two and keeps the rest behind +N more, in the order the pane wrote them", async () => {
+  it("draws every one with no bell to fold into, and no +N more (#4754)", async () => {
     render(
       <NoticePaneRow>
-        {[one("a:1", "first"), one("b:1", "second"), one("c:1", "third")]}
+        {[one("a:1", "first"), one("b:1", "second"), one("c:1", "third"), one("d:1", "fourth")]}
       </NoticePaneRow>,
     );
-
-    await waitFor(() => expect(seen()).toEqual(["first", "second"]));
-    const more = screen.getByRole("button", { name: "+1 more" });
-    expect(more).toHaveAttribute("aria-expanded", "false");
-    expect(more).toHaveAttribute("tabindex", "0");
-    // Behind it, not gone: every way out is still in the row.
-    expect(document.querySelector('[data-cause="c:1"]')).not.toBeNull();
-  });
-
-  it("opens the rest in the row with every way out, and closes on Escape back on +N more", async () => {
-    const user = userEvent.setup();
-    render(
-      <NoticePaneRow>
-        {[one("a:1", "first"), one("b:1", "second"), one("c:1", "third")]}
-      </NoticePaneRow>,
-    );
-    const more = await screen.findByRole("button", { name: "+1 more" });
-
-    await user.click(more);
-    expect(seen()).toEqual(["first", "second", "third"]);
-    expect(more).toHaveAttribute("aria-expanded", "true");
-    const third = screen.getByRole("status", { name: "third" });
-    expect(within(third).getByRole("button", { name: "Answer third" })).toBeVisible();
-    expect(within(third).getByRole("button", { name: "Dismiss" })).toBeVisible();
-
-    within(third).getByRole("button", { name: "Answer third" }).focus();
-    await user.keyboard("{Escape}");
-    expect(seen()).toEqual(["first", "second"]);
-    expect(more).toHaveFocus();
-  });
-
-  it("draws no +N more for two, and no row at all for none", async () => {
-    const { container, rerender } = render(
-      <NoticePaneRow>{[one("a:1", "first"), one("b:1", "second")]}</NoticePaneRow>,
-    );
-    await waitFor(() => expect(seen()).toEqual(["first", "second"]));
+    await waitFor(() => expect(seen()).toEqual(["first", "second", "third", "fourth"]));
     expect(screen.queryByRole("button", { name: /more/ })).toBeNull();
+  });
 
+  it("draws no row at all for none", async () => {
+    const { container, rerender } = render(<NoticePaneRow>{[one("a:1", "first")]}</NoticePaneRow>);
+    await waitFor(() => expect(seen()).toEqual(["first"]));
     rerender(<NoticePaneRow>{null}</NoticePaneRow>);
     await waitFor(() =>
       expect(container.querySelector('[data-scope="notice-row"]')).toHaveAttribute("data-empty"),
     );
   });
 
-  it("stands the ones that ask before one that only says, keeping the pane's order on screen", async () => {
-    // The session's own "Allowed." came first in the pane, and the question two of its tasks
-    // wait on came third: the question stands, and what can be read later is behind +1 more.
+  it("gives an ask no Dismiss beside its answers, and a note keeps its own", () => {
     render(
       <NoticePaneRow>
-        <Notice cause="said:1" at="pane" label="allowed" onDismiss={() => undefined}>
-          Allowed for this chat.
-        </Notice>
-        {one("b:1", "second")}
-        {one("c:1", "third")}
+        {ask("dispatch-grant:1", "dispatch")}
+        {one("mcp:1", "mcp")}
       </NoticePaneRow>,
     );
-
-    await waitFor(() => expect(seen()).toEqual(["second", "third"]));
-    expect(screen.getByRole("button", { name: "+1 more" })).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "+1 more" }));
-    expect(seen()).toEqual(["allowed", "second", "third"]);
+    const asking = screen.getByRole("status", { name: "dispatch" });
+    expect(within(asking).queryByRole("button", { name: "Dismiss" })).toBeNull();
+    expect(asking.parentElement).toHaveAttribute("data-waits");
+    const note = screen.getByRole("status", { name: "mcp" });
+    expect(within(note).getByRole("button", { name: "Dismiss" })).toBeTruthy();
+    expect(note.parentElement).not.toHaveAttribute("data-waits");
   });
 
-  it("stands a Notice that comes to ask something where it stood behind +N more", async () => {
-    // The same Notice, the same box: it only said something, and now it asks. It is the box's
-    // `data-asks` that changes, not the stack's children.
-    let ask: () => void = () => undefined;
-    function Pane() {
-      const [asking, setAsking] = useState(false);
-      ask = () => setAsking(true);
+  it("takes a consent for an ask whether or not it says so", () => {
+    render(
+      <NoticePaneRow>
+        <Notice
+          cause="vault-refused:1:forge"
+          at="pane"
+          label="Vault"
+          fixes={[{ label: "Allow", onPress: () => undefined, allows: true }]}
+          onDismiss={() => undefined}
+        >
+          A consent.
+        </Notice>
+      </NoticePaneRow>,
+    );
+    const consent = screen.getByRole("status", { name: "Vault" });
+    expect(consent.parentElement).toHaveAttribute("data-waits");
+    expect(within(consent).queryByRole("button", { name: "Dismiss" })).toBeNull();
+  });
+
+  describe("with a bell to fold into (#4754)", () => {
+    // The window's default; a test's machine starts expanded (`test-setup.ts`).
+    beforeEach(() => PANE_NOTICES.keep("minimised"));
+
+    /** The band as a chat's pane draws it, and what it last told its bell. */
+    function Band({ children }: { children: ReactNode }) {
+      const [holds, setHolds] = useState<BandHolds>();
+      const minimised = PANE_NOTICES.use() === "minimised";
       return (
-        <NoticePaneRow>
-          <Notice cause="said:1" at="pane" label="first said" onDismiss={() => undefined}>
-            Said first.
-          </Notice>
-          <Notice cause="said:2" at="pane" label="second said" onDismiss={() => undefined}>
-            Said second.
-          </Notice>
-          <Notice
-            cause="later:1"
-            at="pane"
-            label="later"
-            fixes={asking ? [{ label: "Answer later", onPress: () => undefined }] : undefined}
-            onDismiss={() => undefined}
+        <>
+          <div data-testid="holds">{holds === undefined ? "" : JSON.stringify(holds)}</div>
+          <NoticePaneRow
+            bell={{
+              minimised,
+              minimise: () => PANE_NOTICES.set("minimised"),
+              onHolds: setHolds,
+              focus: () => undefined,
+            }}
           >
-            Later.
-          </Notice>
-        </NoticePaneRow>
+            {children}
+          </NoticePaneRow>
+        </>
       );
     }
-    render(<Pane />);
-    await waitFor(() => expect(seen()).toEqual(["first said", "second said"]));
+    const holds = () => JSON.parse(screen.getByTestId("holds").textContent || "null") as BandHolds;
 
-    act(() => ask());
-    await waitFor(() => expect(seen()).toEqual(["first said", "later"]));
-  });
-
-  it("follows Notices that come and go, and never hides the one the keyboard is on", async () => {
-    const user = userEvent.setup();
-    let raise: (cause: string) => void = () => undefined;
-    function Pane() {
-      const [first, setFirst] = useState<string[]>([]);
-      raise = (cause) => setFirst((was) => [cause, ...was]);
-      return (
-        <NoticePaneRow>
-          {first.map((cause) => one(cause, cause))}
-          {one("b:1", "second")}
-          {one("c:1", "third")}
-        </NoticePaneRow>
+    it("folds the notes and stands the asks as full cards, minimised by default", async () => {
+      render(
+        <Band>
+          {ask("dispatch-grant:1", "dispatch")}
+          {one("a:1", "first")}
+          {one("b:1", "second", "trouble")}
+          {ask("proposed-change:1", "change")}
+        </Band>,
       );
-    }
-    render(<Pane />);
-    await waitFor(() => expect(seen()).toEqual(["second", "third"]));
+      await waitFor(() => expect(seen()).toEqual(["dispatch", "change"]));
+      // Folded, not gone: every note is still in the band, with its ways out.
+      expect(document.querySelector('[data-cause="a:1"]')).not.toBeNull();
+      expect(holds()).toEqual({ notes: 2, trouble: 1, asks: 2 });
+      expect(screen.queryByRole("button", { name: /Dismiss all/ })).toBeNull();
+    });
 
-    // The person is on the second Notice's answer when one arrives above it.
-    await user.click(screen.getByRole("button", { name: "Answer third" }));
-    expect(screen.getByRole("button", { name: "Answer third" })).toHaveFocus();
-    raise("new:1");
-    await waitFor(() => expect(screen.getByRole("button", { name: "+1 more" })).toBeTruthy());
-    expect(seen()).toEqual(["new:1", "second", "third"]);
-    expect(screen.getByRole("button", { name: "Answer third" })).toHaveFocus();
+    it("draws no band while minimised it holds only notes", async () => {
+      const { container } = render(<Band>{one("a:1", "first")}</Band>);
+      await waitFor(() => expect(holds()).toEqual({ notes: 1, trouble: 0, asks: 0 }));
+      expect(container.querySelector('[data-scope="notice-row"]')).toHaveAttribute("data-empty");
+      expect(screen.queryByRole("region")).toBeNull();
+    });
 
-    // Once the keyboard leaves it, it goes behind +N more like the rest.
-    screen.getByRole("button", { name: "Answer new:1" }).focus();
-    await waitFor(() => expect(seen()).toEqual(["new:1", "second"]));
+    it("shows every one expanded, under a head row that says them and Minimise", async () => {
+      PANE_NOTICES.keep("expanded");
+      render(
+        <Band>
+          {ask("dispatch-grant:1", "dispatch")}
+          {one("a:1", "first")}
+          {one("b:1", "second", "trouble")}
+        </Band>,
+      );
+      await waitFor(() => expect(seen()).toEqual(["dispatch", "first", "second"]));
+      const band = screen.getByRole("region", { name: "Pane notices" });
+      expect(within(band).getByText("3 notices, 1 waiting on you")).toBeTruthy();
+      // The same count minimised and expanded.
+      expect(holds()).toEqual({ notes: 2, trouble: 1, asks: 1 });
+
+      await userEvent.click(within(band).getByRole("button", { name: "Minimise" }));
+      expect(PANE_NOTICES.value()).toBe("minimised");
+      await waitFor(() => expect(seen()).toEqual(["dispatch"]));
+    });
+
+    it("dismisses every note with Dismiss all, counting what it clears, and leaves the asks", async () => {
+      PANE_NOTICES.keep("expanded");
+      function Dismissable() {
+        const [left, setLeft] = useState(["a:1", "b:1", "c:1"]);
+        return (
+          <Band>
+            {ask("dispatch-grant:1", "dispatch")}
+            {left.map((cause) => (
+              <Notice
+                key={cause}
+                cause={cause}
+                at="pane"
+                label={cause}
+                onDismiss={() => setLeft((was) => was.filter((one) => one !== cause))}
+              >
+                {cause}
+              </Notice>
+            ))}
+            {/* A note with no Dismiss of its own is not cleared, and not counted. */}
+            <Notice
+              cause="restart-waits-for-the-turn:1"
+              at="pane"
+              label="restart"
+              fixes={[{ label: "Restart now", onPress: () => undefined }]}
+            >
+              Restart.
+            </Notice>
+          </Band>
+        );
+      }
+      render(<Dismissable />);
+      const all = await screen.findByRole("button", { name: "Dismiss all 3" });
+      await userEvent.click(all);
+      await waitFor(() => expect(seen()).toEqual(["dispatch", "restart"]));
+      expect(holds()).toEqual({ notes: 1, trouble: 0, asks: 1 });
+      expect(screen.queryByRole("button", { name: /Dismiss all/ })).toBeNull();
+    });
+
+    it("never opens the band when a note arrives minimised, nor moves the keyboard", async () => {
+      let raise: () => void = () => undefined;
+      function Arriving() {
+        const [more, setMore] = useState(false);
+        raise = () => setMore(true);
+        return (
+          <Band>
+            {ask("dispatch-grant:1", "dispatch")}
+            {more && one("a:1", "first")}
+          </Band>
+        );
+      }
+      render(<Arriving />);
+      const answer = await screen.findByRole("button", { name: "Answer dispatch" });
+      answer.focus();
+      act(() => raise());
+      await waitFor(() => expect(holds()).toEqual({ notes: 1, trouble: 0, asks: 1 }));
+      expect(seen()).toEqual(["dispatch"]);
+      expect(answer).toHaveFocus();
+    });
+
+    it("folds a note the keyboard is on only once the keyboard leaves it", async () => {
+      PANE_NOTICES.keep("expanded");
+      render(
+        <Band>
+          {ask("dispatch-grant:1", "dispatch")}
+          {one("a:1", "first")}
+        </Band>,
+      );
+      const answer = await screen.findByRole("button", { name: "Answer first" });
+      answer.focus();
+      act(() => PANE_NOTICES.set("minimised"));
+      await waitFor(() => expect(screen.queryByRole("button", { name: "Minimise" })).toBeNull());
+      expect(seen()).toEqual(["dispatch", "first"]);
+      screen.getByRole("button", { name: "Answer dispatch" }).focus();
+      await waitFor(() => expect(seen()).toEqual(["dispatch"]));
+    });
   });
 });
 

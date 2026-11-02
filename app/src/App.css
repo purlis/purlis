@@ -1245,9 +1245,10 @@ body {
 
    **How far that holds.** With the longest state there is ("ended without a report") the
    breadcrumb's least width is about 14rem, and the line also holds the gauge and the harness's
-   name, cut to their padding. In a pane narrower than about 24rem the line cannot hold that,
-   and what is cut is its END: first the gauge and the harness's name, then, under about 20rem,
-   the end of the state word. A pane that narrow shows about thirty columns of terminal. Past
+   name, cut to their padding. In a pane narrower than about 28rem (24rem before the bell's
+   fixed slot took 4rem of the header, #4754) the line cannot hold that, and what is cut is its
+   END: first the gauge and the harness's name, then, under about 24rem, the end of the state
+   word. A pane that narrow shows about thirty columns of terminal. Past
    the names' least widths the path is cut from its START (`justify-content: flex-end` under
    `overflow: hidden`), so the task on screen is the name kept. The whole path is the
    breadcrumb's tooltip at any width. */

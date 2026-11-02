@@ -18,6 +18,7 @@ import type { OpenChat } from "./bindings";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
+import { PANE_NOTICES } from "./paneNoticesPref";
 import { stripNamed } from "./test-strips";
 
 /**
@@ -127,6 +128,9 @@ function launch() {
           },
     theme: { path: "", found: false, document: null, trouble: null },
   };
+  // A task's prompt on its session's pane is a note, folded into the bell while the band is
+  // minimised (#4754): these tests read it on the band, expanded, as a test's machine has it.
+  PANE_NOTICES.keep("expanded");
 }
 
 /** A core that lists `open`, and answers which chats a person is at by `attended`. */
