@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { basename, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { choose, press, typeInto, untilSays } from "../acting.js";
+import { press, typeInto, untilSays } from "../acting.js";
 import { anAnswerIsWaiting, noAnswerWaits, theNextFolderPickAnswers } from "../dialogs.js";
 import { THE_RUNS_TREE } from "../harness.js";
 import { closeProject } from "../opening.js";
@@ -45,7 +45,6 @@ const WELCOME = "section.welcome";
 const WHERE = '[data-setting="create-project-where"]';
 const NAME_BOX = '[data-setting="create-project-name"] input';
 const OWNER = '[data-setting="create-project-owner"] [data-scope="select"][data-part="root"]';
-const TEMPLATE = '[data-setting="create-project-template"] [data-scope="select"][data-part="root"]';
 
 /** Where the person keeps their projects in this run. */
 const projects = (() => {
@@ -174,12 +173,10 @@ describe("creating a project on a forge", function () {
 
   // The real core, because a stand-in hid that this act did nothing (#4599): a project with no repo
   // and no forge named asks which forge, and the window must never leave that unanswered.
-  it("makes a project from its name alone on this Mac, with no forge, from a template", async () => {
+  it("makes a project from its name alone on this Mac, with no forge", async () => {
     await toCreateOn("mac");
     const folder = await nameIt("meadow");
     made.push(folder);
-    await untilSays(WELCOME, "Reading what this machine has…", false);
-    await choose(TEMPLATE, "rust");
 
     await press(WELCOME, "Create project");
     const asking = await $('[role="dialog"]');
@@ -194,7 +191,7 @@ describe("creating a project on a forge", function () {
       timeout: 60_000,
       timeoutMsg: "the made project never opened",
     });
-    expect(existsSync(join(folder, "personas/rust-engineer/persona.md"))).toBe(true);
+    expect(existsSync(join(folder, "charter.toml"))).toBe(true);
 
     await closeProject(`${PROJECTS} [role="tab"][aria-label="${basename(folder)}"]`);
     await browser.waitUntil(async () => !(await ask<string[]>("open_planes")).includes(folder), {
