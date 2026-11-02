@@ -118,6 +118,18 @@ pub enum What {
     Question { text: String },
     /// Answer the question task `to` asked this chat.
     Answer { to: u32, text: String },
+    /// **A question this chat's harness would ask the person, for the app to route** (#4555, ADR
+    /// 0107): its prompt, or a plain `ask_operator`. The app's own record of the chat decides:
+    /// a task with an asking chat asks it, as [`What::Question`] does, and any other chat is
+    /// told [`Answered::ToThePerson`], and asks as it always did.
+    Route { text: String },
+    /// **Pass the question task `to` asked this chat on to the person** (#4554), with this
+    /// chat's own one-line `note`. It has no field for the question, so its words cannot change.
+    PassOn {
+        to: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
     /// Wait for the answer to this task's question, for at most `within_secs`.
     AwaitAnswer { within_secs: u32 },
     /// The waiting command has the answer: it need not be handed to the next turn too.
@@ -165,6 +177,14 @@ pub enum Answered {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         messages: Vec<crate::dispatchtalk::Record>,
     },
+    /// A [`What::Route`] question is not this chat's asking chat's: the person is asked, where
+    /// they always were (#4555).
+    ToThePerson,
+    /// A [`What::Route`] question was not sent, because this chat is paused on one already, in
+    /// this sentence (#4555): it goes neither to its asking chat nor around it.
+    AlreadyAsking { why: String },
+    /// The question of the task called `to` waits on the person now (#4554).
+    PassedOn { to: String },
     /// Task `of`, called `name`, is being cancelled; its report follows as any report does.
     Cancelling { of: u32, name: String },
     /// Finished task `of`, called `name`, is closed (#1981 D-4).

@@ -8,9 +8,9 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect, waitFor } from "storybook/test";
+import { expect, screen, waitFor } from "storybook/test";
 import { Plus, RefreshCw, X } from "lucide-react";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { Form, TextField } from "../field/Field";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import {
@@ -21,6 +21,9 @@ import {
   type ButtonSize,
   type ButtonVariant,
 } from "./Button";
+
+/** How long a tooltip that is going may take to go. */
+const CLOSES = { timeout: 3_000 };
 
 /** A button that says how many times it was pressed, under it, as a person would read it. */
 function Counted({
@@ -655,5 +658,72 @@ export const Toggle: Story = {
     await userEvent.keyboard(" ");
     await waitFor(() => expect(toggle).toHaveAttribute("aria-pressed", "true"));
     expectFocusInSight();
+  },
+};
+
+/** A tab's place on a strip: "Move left" turns unavailable, saying why, once it is first; the
+ *  toggle gains a hint once it is on. */
+function GainsAHint() {
+  const [place, setPlace] = useState(1);
+  const [wrap, setWrap] = useState(false);
+  const first = place === 0;
+  return (
+    <ButtonRow>
+      <Button
+        size="sm"
+        isDisabled={first}
+        tooltip={first ? "Already first on the strip" : undefined}
+        onPress={() => setPlace((at) => Math.max(0, at - 1))}
+      >
+        Move left
+      </Button>
+      <ToggleButton
+        size="sm"
+        isSelected={wrap}
+        onChange={setWrap}
+        tooltip={wrap ? "Long lines wrap at the pane's edge" : undefined}
+      >
+        Wrap lines
+      </ToggleButton>
+    </ButtonRow>
+  );
+}
+
+/**
+ * **A button that gains a hint under the keyboard** (#4671): it is the same button, the keyboard
+ * stays on it and its tooltip shows at once, and Esc takes the tooltip down with the keyboard
+ * left on it. WebKit is why this is a story. Its look is the tooltip's and the button's,
+ * pictured in their own stories.
+ */
+export const GainsAHintUnderTheKeyboard: Story = {
+  render: () => <GainsAHint />,
+  parameters: { screenshot: false },
+  play: async ({ canvas, userEvent }) => {
+    const move = canvas.getByRole("button", { name: "Move left" });
+    await userEvent.tab();
+    await untilFocused(() => move, "Gains a hint: Tab onto Move left");
+    await expect(screen.queryByRole("tooltip")).toBeNull();
+    await userEvent.keyboard("{Enter}");
+    const tip = await screen.findByRole("tooltip");
+    await expect(tip).toHaveTextContent("Already first on the strip");
+    await expect(canvas.getByRole("button", { name: "Move left" })).toBe(move);
+    await expect(move).toHaveAttribute("aria-disabled", "true");
+    await expect(move).toHaveAccessibleDescription("Already first on the strip");
+    await untilFocused(() => move, "Gains a hint: the keyboard stays on Move left");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull(), CLOSES);
+    await untilFocused(() => move, "Gains a hint: Esc leaves the keyboard on Move left");
+    const wrap = canvas.getByRole("button", { name: "Wrap lines" });
+    await userEvent.tab();
+    await untilFocused(() => wrap, "Gains a hint: Tab onto the toggle");
+    await userEvent.keyboard(" ");
+    await waitFor(() => expect(wrap).toHaveAttribute("aria-pressed", "true"));
+    await expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Long lines wrap at the pane's edge",
+    );
+    await untilFocused(() => wrap, "Gains a hint: the keyboard stays on the toggle");
+    await userEvent.keyboard(" ");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull(), CLOSES);
+    await untilFocused(() => wrap, "Gains a hint: the hint that goes leaves the keyboard there");
   },
 };

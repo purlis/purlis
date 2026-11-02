@@ -356,7 +356,7 @@ fn a_window_that_restarts_during_a_drain_takes_back_both_runners_chats() {
     let window = pool.window_restarts(&runtime);
     let sessions = routed_on(&window, &root)
         .every_start_on("builds")
-        .taking_back_from(Arc::new(|_| vec![format!("{OLD}/{OLD}")]));
+        .taking_back_from(Arc::new(|_| vec![Ok::<_, String>(format!("{OLD}/{OLD}"))]));
     until("the pool's runner gives its chat back", || {
         sessions.left_running_in(moved_on, None)
     });

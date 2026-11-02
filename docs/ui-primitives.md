@@ -744,7 +744,13 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   click, or the menu key or Shift F10 on an item) and show it again there; what is hidden is kept
   in the layout file under `status`. One item the keyboard reaches cannot be hidden (Notices), so
   the menu always opens from one, and when it closes the keyboard is back on the item it was
-  opened from. A press runs the item's command: purlis's own items are `StatusItem`s whose press
+  opened from. The person may reorder the items on an end, never between ends (#3030): a drag
+  along the end (`dnd-kit`, by the pointer only) or, in the same menu, Move left and Move right,
+  whose rows list every item the bar draws, stay up for the next move and say each move to a
+  reader. A cell of the bar is no Tab stop, so the rows start from the menu and not from an item.
+  The order is kept under `status.order`; an item absent today keeps its place in it, and one it
+  never named stays after the item it follows by priority. A press runs the item's command:
+  purlis's own items are `StatusItem`s whose press
   is the command, and an item given as data names a command the bar runs through `onCommand`.
   An item that comes and goes sits on its end's inner side, so its arrival moves no neighbour;
   a long project name gives way first (`shrinks`), and a line after an item is the bar's
@@ -945,11 +951,11 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
   whose hint is its own name take none, because the control or the name says what it means. A
   hint that only repeats an element's words (a name cut short) is the pointer's: no focus opens
   it. While it is shown, a hint is its target's description.
-- **A hint that comes keeps its target** (#4659). A target stands in its tooltip's trigger with or
-  without a hint, a menu's `MenuItem` included, so a hint that comes or goes draws nothing afresh
+- **A hint that comes keeps its target** (#4659, #4671). A target stands in its tooltip's trigger
+  with or without a hint, a menu's `MenuItem` and the button family's `Tipped` included, so a hint that comes or goes draws nothing afresh
   and the focus stays. One that comes while the keyboard is on the target opens at once, because
-  no later focus would open it: a menu's row that turns unavailable says why where the keyboard
-  is. The pointer's way stays coming onto the target: one already resting on it sees the hint when
+  no later focus would open it: a menu's row or a button that turns unavailable says why where
+  the keyboard is. The pointer's way stays coming onto the target: one already resting on it sees the hint when
   it next comes back.
 - **An icon button's tooltip and its name agree by construction**: the tooltip shows the
   `aria-label`, its hint a second line under it, and is not heard a second time. A raw icon-only

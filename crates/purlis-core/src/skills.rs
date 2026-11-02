@@ -13,10 +13,10 @@
 
 use std::path::{Path, PathBuf};
 
+/// The line format's one parser, and its `str.strip` and `str.splitlines` (#3482).
 pub use purlis_skills::change::{
     BuiltInTemplates, Offer, Problem, SkillTemplate, Template, TemplateId, check,
 };
-/// The line format's one parser, and its `str.strip` and `str.splitlines` (#3482).
 pub use purlis_skills::fence;
 pub use purlis_skills::{
     Argument, At, BUILT_IN_PREFIXES, Budget, Chat, Clash, Compat, DIR_IN_BUNDLE, Declared,
@@ -40,6 +40,9 @@ pub use purlis_skills::runs;
 pub use purlis_skills::{review, tree};
 pub mod source;
 pub use purlis_skills::{About, Deprecated, Lifecycle, about_of};
+pub mod budget_setting;
+pub use budget_setting::budget_in;
+
 pub mod first_open;
 pub mod grades;
 pub mod graph;
@@ -114,6 +117,15 @@ pub struct PlaneSkills<'a> {
     pub routed: Option<&'a router::Routed>,
 }
 
+/// **The budget of a chat whose plane skills are `at`**: the adapter's numbers where it has none,
+/// so the numbers it is routed by and the numbers it is shown are one (#4610).
+pub fn budget_at(at: Option<PlaneSkills<'_>>, harness: Harness) -> Budget {
+    at.map_or_else(
+        || harness.skill_budget(),
+        |at| budget_in(at.plane, at.workspace, harness),
+    )
+}
+
 /// The skill set of a chat on `harness` armed with `kit`, asked of [`purlis_skills::skill_set`].
 ///
 /// The built-in skills come from the bundle in `kit`, and the plane's from `kit.skills`, where
@@ -165,15 +177,16 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 /// **The skills purlis ships**, by name: the bundle's `plugin/skills/<name>/SKILL.md`, each
 /// folder named as its skill (held to that folder by a test). Compiled in, for the doctor's check
 /// of a project keeping its own copy of one.
-pub const SHIPPED: [&str; 12] = [
+pub const SHIPPED: [&str; 13] = [
     "purlis-add-curation-action",
     "purlis-browser",
-    "purlis-building-purlis-ui",
+    "purlis-building-ui",
     "purlis-compact",
     "purlis-handoff",
     "purlis-persona",
     "purlis-safe-remove",
     "purlis-secrets",
+    verbs::drafts::STUDIO_SKILL,
     "purlis-smart-close",
     "purlis-theme",
     "purlis-update",
@@ -1001,22 +1014,30 @@ impl Running<'_> {
         (found, off)
     }
 
-    /// Its set, routed as its start routed it ([`lay_out_for_chat`]): from the same built-in
-    /// skills, harness, scope, workspace, persona and repo skills (#3245).
-    fn set(&self) -> SkillSet {
+    /// Where its plane skills are read from, as its start read them.
+    fn at(&self) -> Option<PlaneSkills<'_>> {
         // A start that read no plane skills (`on` off, or a runner's chat, whose host read
         // them) holds no scope of its own: the plane's root, and no clone.
         let start = self.start.filter(|start| start.on);
         let tried = start.is_some_and(|start| start.tried);
-        let at = self.plane_skills.then(|| PlaneSkills {
+        self.plane_skills.then(|| PlaneSkills {
             plane: start.map_or(self.plane, |start| start.root.as_path()),
             workspace: self.workspace.filter(|_| !tried),
             repo: start.map_or(&[], |start| start.repo.as_slice()),
             routed: start.and_then(|start| start.routed.as_deref()),
-        });
+        })
+    }
+
+    /// Its set, routed as its start routed it ([`lay_out_for_chat`]): from the same built-in
+    /// skills, harness, scope, workspace, persona and repo skills (#3245).
+    fn set(&self) -> SkillSet {
+        let tried = self
+            .start
+            .filter(|start| start.on)
+            .is_some_and(|start| start.tried);
         routed(
             self.built_in,
-            at,
+            self.at(),
             self.persona.filter(|_| !tried),
             self.harness,
         )
@@ -1106,7 +1127,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         offered
             .iter()
             .map(|one| (&one.effective.skill, &one.declared)),
-        chat.harness.skill_budget(),
+        budget_at(chat.at(), chat.harness),
     );
     let held_env = chat
         .start
@@ -1292,7 +1313,7 @@ fn routed(
         persona,
         harness.skills(),
         None,
-        Some(harness.skill_budget()),
+        Some(budget_at(at, harness)),
     )
 }
 
@@ -2058,7 +2079,7 @@ impl OwnCatalogue {
 }
 
 /// `n` with its thousands set apart by commas, as the window writes a count (`1,310`).
-fn grouped(n: usize) -> String {
+pub(crate) fn grouped(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (at, digit) in digits.chars().enumerate() {
@@ -2174,7 +2195,7 @@ fn harnesses_in_the_studio(
                 set,
                 route,
                 &own,
-                Some(harness.skill_budget()),
+                Some(budget_in(plane, workspace, harness)),
                 || pins.to_vec(),
                 None,
             );
@@ -3146,6 +3167,15 @@ fn with_plane_lint(
     }
     drop(files);
     for ((at, one), theirs) in linted.into_iter().zip(theirs) {
+        // A skill purlis refuses to hand is in no chat, whatever the set read of it (#4352).
+        rows[at].left_out = one
+            .findings
+            .iter()
+            .find(|found| {
+                found.severity == purlis_skills::Severity::Blocks
+                    && matches!(found.lint, purlis_skills::Lint::Refused(_))
+            })
+            .and_then(Finding::shown);
         rows[at].lint = one
             .findings
             .iter()

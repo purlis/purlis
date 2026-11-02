@@ -92,14 +92,17 @@ shows who exists.
   while this chat has open tasks, or `dispatch_list`. A task still at work is waited on
   (`dispatch_wait`), told more (`dispatch_tell`) or cancelled (`dispatch_cancel`), never
   dispatched again; a second dispatch under the same name is refused while the first is open.
-  `dispatch_answer` answers a task's question. A `dispatch_tell` to a task at rest starts its
+  `dispatch_answer` answers a task's question, and `dispatch_pass_on` passes it on to the person
+  in the task's own words, with your one-line note: always pass on anything about security,
+  cost, something public or amending a ruling. Your answer is never the person's word, and the
+  task is told who answered. A `dispatch_tell` to a task at rest starts its
   turn at once; one mid-turn reads it when that turn ends. `dispatch_read` shows what one of
   your tasks said last and the commands it ran, with their exit codes, quoted as data: read it
   before you ask the person what a task did. Do not poll a task: you are told when one has
   gone quiet, is stopped on the person, is back at work, and when it reports or ends.
   `dispatch_close` closes a finished task of yours once you have read its report. Each has a
-  `purlis dispatch` subcommand of the same name (`list`, `wait`, `tell`, `answer`, `cancel`,
-  `read`, `close`) for a terminal. A task that has reported while its program still runs is
+  `purlis dispatch` subcommand of the same name (`list`, `wait`, `tell`, `answer`, `pass-on`,
+  `cancel`, `read`, `close`) for a terminal. A task that has reported while its program still runs is
   listed as "reported, still running", and you can still tell or cancel it.
 
   **A rule that changes for every task goes to all of them at once**: `dispatch_tell` with

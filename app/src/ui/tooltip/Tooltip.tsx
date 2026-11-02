@@ -236,17 +236,29 @@ export function TooltipShortcut({ keys }: { keys: string | undefined }) {
 /**
  * **A target and its tooltip**, for a target that takes React Aria's focusable context itself
  * (the button family). The trigger is always drawn, with or without a hint, so a hint that comes
- * and goes never draws the target afresh and never takes its focus away.
+ * and goes never draws the target afresh and never takes its focus away. A hint that comes while
+ * the keyboard is on it is shown, and one that goes is taken down (#4671), as on any target.
  */
 export function Tipped({ surface, children }: { surface: ReactNode; children: ReactNode }) {
   const has = surface !== null && surface !== undefined;
   return (
     <TooltipTrigger delay={TOOLTIP_DELAY} closeDelay={TOOLTIP_CLOSE_DELAY} isDisabled={!has}>
+      <TippedHint has={has} />
       {children}
       {has ? surface : null}
     </TooltipTrigger>
   );
 }
+
+/** What `Tipped` needs inside its trigger: the trigger's state, and its element, which the
+ *  button's own focusable context hands the trigger. It draws nothing. */
+function TippedHint({ has }: { has: boolean }) {
+  const context = useContext(TooltipContext) as { triggerRef?: RefObject<Element | null> } | null;
+  useHintThatComes(has, true, context?.triggerRef ?? NO_TARGET);
+  return null;
+}
+
+const NO_TARGET: RefObject<Element | null> = { current: null };
 
 /** How a target is described while its tooltip says what it says. */
 type Heard =
@@ -264,11 +276,7 @@ type Heard =
  * have opened it came before it, and no other will. One that goes is taken down, so it is not up
  * again when the next one comes, wherever the keyboard is by then.
  */
-function useHintThatComes(
-  has: boolean,
-  focusOpens: boolean,
-  target: RefObject<HTMLElement | null>,
-) {
+function useHintThatComes(has: boolean, focusOpens: boolean, target: RefObject<Element | null>) {
   const state = useContext(TooltipTriggerStateContext);
   const { isFocusVisible } = useFocusVisible();
   const had = useRef(has);

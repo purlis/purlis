@@ -27,6 +27,20 @@ fn a_window_only_field_is_of_a_method_a_link_is_served_and_is_replaced_at_any_de
     assert_eq!(as_a_link_is_served("rename_chat", reply.clone()), reply);
 }
 
+/// A move's offer to raise a limit is the window's, as the save it goes with is (spec #4275).
+#[test]
+fn a_link_is_told_a_moves_failure_and_not_what_to_raise_beside_it() {
+    let reply = serde_json::json!([{
+        "session": 3,
+        "why": "it needs 150 MiB",
+        "limit": {"pool": "builds", "hits": [{"key": "profileSize"}]}
+    }]);
+    assert_eq!(
+        as_a_link_is_served("chat_moves", reply),
+        serde_json::json!([{"session": 3, "why": "it needs 150 MiB", "limit": null}])
+    );
+}
+
 /// Issue 1916: the folder watch is served on a link for a branch's folders, and refused
 /// there for a folder of the plane root, which is named by no workspace and no repo.
 #[test]

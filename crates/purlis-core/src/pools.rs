@@ -41,7 +41,7 @@ use std::path::Path;
 
 use purlis_session_protocol::hostlink::Pinned;
 
-use crate::dockerpool::{Docker, Missing, Runner};
+use crate::dockerpool::{Docker, Gone, Missing, Runner};
 use crate::runners::{self, Kept, Pool, Refused, Removed, Unpair};
 
 /// **Adds `pool` on this machine**, with `docker`: records it, makes and checks its runner,
@@ -254,6 +254,108 @@ pub fn chat_place(
     Ok(place)
 }
 
+/// **Keeps where chat `number` runs** (#4590), as it goes to its runner. Nothing is kept for a
+/// pool this machine doesn't keep: a removal forgets the pool's chats after it forgets the pool,
+/// so a keep that races one is either seen here or taken out by it.
+pub fn keep_chat_on_pool(
+    config_root: &Path,
+    plane: &Path,
+    number: u32,
+    pool: &str,
+    workspace: &str,
+) -> Result<(), String> {
+    let chat = crate::machine::ChatOnPool {
+        pool: pool.to_owned(),
+        workspace: workspace.to_owned(),
+    };
+    crate::machine::update(config_root, |store| {
+        if runners::runner_of(config_root, pool).is_ok() {
+            store.keep_chat_on_pool(plane, number, chat);
+        }
+    })
+    .map(|_| ())
+    .map_err(|why| why.to_string())
+}
+
+/// **Chat `number` no longer runs where it was kept** (#4590): no restart asks for it, and its
+/// branches are still to come back. Nothing is written for a chat with no record, which is every
+/// chat of this machine.
+pub fn leave_chat_on_pool(config_root: &Path, plane: &Path, number: u32) -> Result<(), String> {
+    if chat_on_pool(config_root, plane, number).is_none() {
+        return Ok(());
+    }
+    crate::machine::update(config_root, |store| {
+        store.leave_chat_on_pool(plane, number);
+    })
+    .map(|_| ())
+    .map_err(|why| why.to_string())
+}
+
+/// Forgets chat `number`, which never started on the pool it was kept for (#4590).
+pub fn forget_chat_on_pool(config_root: &Path, plane: &Path, number: u32) -> Result<(), String> {
+    if chat_on_pool(config_root, plane, number).is_none() {
+        return Ok(());
+    }
+    crate::machine::update(config_root, |store| {
+        store.forget_chat_on_pool(plane, number);
+    })
+    .map(|_| ())
+    .map_err(|why| why.to_string())
+}
+
+/// `workspace`'s branches of `pool` came back with no failure (#4590).
+pub fn branches_fetched(
+    config_root: &Path,
+    plane: &Path,
+    pool: &str,
+    workspace: &str,
+) -> Result<(), String> {
+    let owed = branches_to_fetch(config_root, plane)
+        .get(pool)
+        .is_some_and(|workspaces| workspaces.contains(workspace));
+    if !owed {
+        return Ok(());
+    }
+    crate::machine::update(config_root, |store| {
+        store.branches_fetched(plane, pool, workspace);
+    })
+    .map(|_| ())
+    .map_err(|why| why.to_string())
+}
+
+/// Where chat `number` runs, as it was kept (#4590).
+pub fn chat_on_pool(
+    config_root: &Path,
+    plane: &Path,
+    number: u32,
+) -> Option<crate::machine::ChatOnPool> {
+    chats_on_pools(config_root, plane).remove(&number)
+}
+
+/// Every chat of the plane kept on a pool, by its number (#4590).
+pub fn chats_on_pools(
+    config_root: &Path,
+    plane: &Path,
+) -> std::collections::BTreeMap<u32, crate::machine::ChatOnPool> {
+    crate::machine::read(config_root)
+        .store
+        .recent(plane)
+        .map(|recent| recent.chats_on_pools.clone())
+        .unwrap_or_default()
+}
+
+/// The workspaces whose branches are still to come back from each pool (#4590).
+pub fn branches_to_fetch(
+    config_root: &Path,
+    plane: &Path,
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    crate::machine::read(config_root)
+        .store
+        .recent(plane)
+        .map(|recent| recent.branches_to_fetch.clone())
+        .unwrap_or_default()
+}
+
 /// **Every pool a workspace of the plane at `plane` runs its chats on**, with those
 /// workspaces, as this machine's store names them (#2046). Whether each pool is kept is asked
 /// as each is reached ([`runs_on`]).
@@ -329,6 +431,7 @@ pub fn follow(
     let successor = crate::dockerpool::successor_name(name, image);
     // What a follow that stopped short of keeping its runner left goes first (#2869).
     clear_leftovers_locked(config_root, docker, &successor, &locked)?;
+    let before = before_a_drain(config_root, docker, name);
     let made = docker
         .declared(image)
         .and_then(|(user, home)| Runner::new(&successor, image.clone(), user, &home))
@@ -345,7 +448,8 @@ pub fn follow(
         .and_then(|answered| {
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
         })
-        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked))
+        .inspect(|_| note_drains_began(config_root, &before, false, &locked));
     match kept {
         Ok(kept) => Ok(Some(kept)),
         Err(why) => Err(match docker.remove(&made) {
@@ -394,6 +498,7 @@ fn replace_as(
         .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
     on_its_engine(docker, &runners::runner_for(config_root, name)?)?;
     clear_leftovers_locked(config_root, docker, next, &locked)?;
+    let before = before_a_drain(config_root, docker, name);
     let made = docker
         .declared(pool.image())
         .and_then(|(user, home)| Runner::new(next, pool.image().clone(), user, &home))
@@ -410,7 +515,9 @@ fn replace_as(
         .and_then(|answered| {
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
         })
-        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked))
+        // The person pressed it, and what a stop before that ended is theirs to let go of.
+        .inspect(|_| note_drains_began(config_root, &before, true, &locked));
     match kept {
         Ok(kept) => Ok(Some(kept)),
         Err(why) => Err(match docker.remove(&made) {
@@ -719,6 +826,130 @@ fn clear_leftovers_locked(
     }))
 }
 
+/// **How each runner of pool `pool` that a drain would take stands now**, as Docker says, read
+/// before anything is made, so a stop while the new runner is made counts as one during its
+/// drain. One that could not be read has none.
+fn before_a_drain(
+    config_root: &Path,
+    docker: &Docker,
+    pool: &str,
+) -> Vec<(String, Option<crate::dockerpool::Ran>)> {
+    runners::read(config_root)
+        .unwrap_or_default()
+        .iter()
+        .filter(|kept| kept.pool() == pool && !kept.draining)
+        .map(|kept| (kept.name().to_owned(), docker.ran(&kept.made).ok()))
+        .collect()
+}
+
+/// **Notes how the runners `before` stood as their drain began**, for [`drain_look`]: Docker's own
+/// time against Docker's own time, so no clock is compared with another. Only these: a row that
+/// drained earlier is left as it is, or a stop during its drain would read as one from before it.
+/// With `hold_stopped`, one already stopped is held. One that could not be read stays unnoted,
+/// which holds it if it is found stopped.
+fn note_drains_began(
+    config_root: &Path,
+    before: &[(String, Option<crate::dockerpool::Ran>)],
+    hold_stopped: bool,
+    locked: &runners::Locked,
+) {
+    for (name, ran) in before {
+        let Some(ran) = ran else {
+            continue;
+        };
+        let noted = runners::note_locked(
+            config_root,
+            name,
+            |kept| {
+                kept.last_stop = Some(ran.finished.unwrap_or(0));
+                kept.held = hold_stopped && !ran.running;
+            },
+            locked,
+        );
+        if let Err(why) = noted {
+            tracing::warn!(
+                "purlis: how runner {name} stood as its drain began was not noted, so it is held \
+                 if it is found stopped: {why}"
+            );
+        }
+    }
+}
+
+/// **Holds the draining runner `name`** as a look found it ([`DrainLook::Held`]), for good: what
+/// it answers from now on, or a run that starts, changes nothing.
+pub fn hold(config_root: &Path, name: &str) -> Result<(), Refused> {
+    let locked = runners::lock(config_root);
+    runners::note_locked(config_root, name, |kept| kept.held = true, &locked)
+}
+
+/// What a look makes of a draining runner's container ([`drain_look`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrainLook {
+    /// It runs as it has since its drain began: only it can say how many chats it has.
+    Ask,
+    /// It ran no chat as its drain began and starts none since, or its removal began once no
+    /// chat was left: it goes without being woken.
+    NoChat,
+    /// **It stopped during its drain, or it may have**, so it stays with its home until the
+    /// person removes it ([`remove_held`]). Asking cannot say otherwise: the chats a stop
+    /// ended are not listed by the host that runs after it, so a runner a link started again
+    /// answers none.
+    Held,
+}
+
+/// **What Docker's `ran` says of the draining runner `kept`**. A stopped runner is not an empty
+/// one: only a stop noted before its drain began says no chat was running on it.
+pub fn drain_look(kept: &Kept, ran: crate::dockerpool::Ran) -> DrainLook {
+    let stops_as_noted = kept.last_stop == Some(ran.finished.unwrap_or(0));
+    if kept.held {
+        DrainLook::Held
+    } else if kept.unpaired || (!ran.running && (kept.carried || kept.carry_failed)) {
+        DrainLook::NoChat
+    } else if ran.running && (stops_as_noted || kept.last_stop.is_none()) {
+        DrainLook::Ask
+    } else if !ran.running && stops_as_noted && ran.finished.is_some() {
+        DrainLook::NoChat
+    } else {
+        DrainLook::Held
+    }
+}
+
+/// **Removes the draining runner `name` the person chose to**, one [`DrainLook::Held`], as a
+/// drain removes one ([`drain`]), what its chats left in its home with it. Refused for any
+/// other, which a look removes once no chat is left on it.
+pub fn remove_held(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    unpair: Option<&Unpair<'_>>,
+) -> Result<Removed, Refused> {
+    let locked = runners::lock(config_root);
+    let kept = runners::named(config_root, name)?
+        .filter(|kept| kept.draining)
+        .ok_or_else(|| Refused::Other(format!("no runner {name} is draining on this machine")))?;
+    // One already held may have lost its container to a prune, and its home is still the person's
+    // to remove. Docker may only be pointing at another engine, though: with no engine kept, only
+    // its home listed here says this is its engine (#4149).
+    let ran = docker.ran(&kept.made);
+    if kept.held {
+        if ran.is_err()
+            && kept.engine.is_none()
+            && !matches!(docker.gone(&kept.made), Ok(Some(Gone { home_kept: true })))
+        {
+            return Err(Refused::Other(format!(
+                "Docker lists neither runner {name} nor its home, and may be pointing at another \
+                 engine, so nothing was removed"
+            )));
+        }
+    } else if drain_look(&kept, ran.map_err(|why| Refused::Other(why.0))?) != DrainLook::Held {
+        return Err(Refused::Other(format!(
+            "runner {name} is not held, so it goes once no chat is left on it"
+        )));
+    }
+    // Its container may be gone, so only a home that is still its own gives sign-ins (#4167).
+    drain_locked(config_root, docker, name, unpair, true, &locked)
+}
+
 /// **Removes the draining runner `name`** (#2749), once its last chat has ended, as a runner is
 /// removed ([`runners::remove`]). Refused for a runner that is not draining.
 ///
@@ -741,6 +972,24 @@ pub fn drain(
     unpair: Option<&Unpair<'_>>,
 ) -> Result<Removed, Refused> {
     let locked = runners::lock(config_root);
+    if runners::named(config_root, name)?.is_some_and(|kept| kept.held) {
+        return Err(Refused::Other(format!(
+            "runner {name} is held, so only the person removes it"
+        )));
+    }
+    drain_locked(config_root, docker, name, unpair, false, &locked)
+}
+
+/// [`drain`], under the lock `locked`, its sign-ins carried only from a home still its own where
+/// `only_its_own_home` says so ([`carry_once`]).
+fn drain_locked(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    unpair: Option<&Unpair<'_>>,
+    only_its_own_home: bool,
+    locked: &runners::Locked,
+) -> Result<Removed, Refused> {
     match runners::named(config_root, name)? {
         Some(kept) if kept.draining => {
             // Another engine knows nothing of its container or its home (#4166).
@@ -752,17 +1001,17 @@ pub fn drain(
             };
             if matches!(peer, Some(Err(_))) && docker.ran(&kept.made).is_ok_and(|ran| ran.running) {
                 return Err(Refused::Other(format!(
-                    "runner {name} runs and was not unpaired, so it stays until the next look"
+                    "runner {name} runs and was not unpaired, so it stays"
                 )));
             }
             if matches!(peer, Some(Ok(())))
                 && let Err(why) =
-                    runners::note_locked(config_root, name, |kept| kept.unpaired = true, &locked)
+                    runners::note_locked(config_root, name, |kept| kept.unpaired = true, locked)
             {
                 tracing::warn!("purlis: runner {name} may be asked again: {why}");
             }
-            carry_once(config_root, docker, &kept, false, &locked);
-            let mut removed = runners::remove_locked(config_root, docker, name, None, &locked)?;
+            carry_once(config_root, docker, &kept, only_its_own_home, locked);
+            let mut removed = runners::remove_locked(config_root, docker, name, None, locked)?;
             removed.peer = peer;
             Ok(removed)
         }
@@ -1215,7 +1464,8 @@ pub fn add_cluster(
     let pool = &pool
         .kept_at(&runners::kubeconfig_kept_at(config_root, pool.name()))
         .holding(held)?
-        .minting_in_cluster(seen.mints_in_cluster);
+        .minting_in_cluster(seen.mints_in_cluster)
+        .under_team(seen.team_limits.as_ref());
     runners::record_cluster_pool_locked(config_root, pool, &runners::lock(config_root))?;
     if let Err(why) = runners::keep_kubeconfig(config_root, pool.name(), &context) {
         return Err(forgotten_cluster(config_root, pool.name(), why));
@@ -1443,6 +1693,8 @@ fn told_at_a_link(
     };
     let reached = pool.kubectl(&kubectl.clone().within(VOUCHED_NOW_WITHIN));
     let seen = reached.pool(pool.pool()).map_err(|why| why.to_string())?;
+    runners::keep_cluster_team_limits(config_root, pool.name(), seen.team_limits.as_ref())
+        .map_err(|why| why.to_string())?;
     let moved = runners::keep_cluster_minting(config_root, pool.name(), seen.mints_in_cluster)
         .map_err(|why| why.to_string())?;
     if moved && let Some(tell) = TOLD_OF_MINTING.get() {

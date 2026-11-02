@@ -93,6 +93,7 @@ import { TextField } from "./ui/field/Field";
 import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { useWindowLeft } from "./ui/windowLeft";
 import { useHeldStill } from "./heldStill";
 import { property } from "./theme/theme";
 
@@ -1493,6 +1494,8 @@ const Row = memo(function Row({
   const carded = useCardUp(session);
   const cardId = useId();
   const resting = useRef<number | undefined>(undefined);
+  /** The pointer is on the row or its card. */
+  const pointerOn = useRef(false);
   useEffect(
     () => () => {
       window.clearTimeout(resting.current);
@@ -1539,10 +1542,16 @@ const Row = memo(function Row({
   /** The pointer left the row or its card: the card stays a moment, so the pointer can cross
    *  to it, and stays up while the pointer is on it. */
   const leave = () => {
+    pointerOn.current = false;
     if (!carded) return unrest();
     unrest();
     resting.current = window.setTimeout(() => card(false), CARD_LEAVE_MS);
   };
+  // Gone from the window, which an engine may not say on the row or its card (#4628). Only a
+  // pointer that was on them: a card the keyboard raised stays.
+  useWindowLeft((why) => {
+    if (why === "pointer" && pointerOn.current) leave();
+  });
   return (
     <li role="none" data-level={level}>
       <Menued on={{ on: "listed", session, handed: handedAll }} offers={offers} onPress={onPress}>
@@ -1571,7 +1580,9 @@ const Row = memo(function Row({
               onOpen(session);
             }}
             onPointerEnter={(event) => {
-              if (event.pointerType !== "touch") rest("pointer");
+              if (event.pointerType === "touch") return;
+              pointerOn.current = true;
+              rest("pointer");
             }}
             onPointerLeave={leave}
             onFocus={rested}
@@ -1645,7 +1656,10 @@ const Row = memo(function Row({
         offset={6}
         className="row-card chat-card"
         data-testid={`chat-card-${session}`}
-        onPointerEnter={unrest}
+        onPointerEnter={() => {
+          pointerOn.current = true;
+          unrest();
+        }}
         onPointerLeave={leave}
       >
         {/* Words about the row, read as its description, and nothing to press: a tooltip,

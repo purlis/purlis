@@ -705,6 +705,8 @@ export const commands = {
 	 *  each is told on its next turn.
 	 */
 	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
+	/**  **The person's press on a login's notice** (#4595). The window's alone (`ui::WINDOW_ONLY`). */
+	answerBrowserLogin: (plane: PlaneId, session: number, id: number, press: Press, shown: string, typed: string | null, reason: string | null) => typedError<Pressed, string>(__TAURI_INVOKE("answer_browser_login", { plane, session, id, press, shown, typed, reason })),
 	/**
 	 *  **Allow or Keep off on run `run` of chat `session`'s tool on its pool** (#2047): with
 	 *  `allow`, this desktop sends the tool its vault values on the pool's runner for that run
@@ -1634,7 +1636,7 @@ export const commands = {
 	 *  isn't allowed here, nor is the default persona, whose Allow reaches every chat that names no
 	 *  persona: only these lines were shown, so those stay the person's own Allow.
 	 */
-	agentIdentityFinish: (plane: PlaneId, app: string, personas: string[]) => typedError<IdentityFinished, string>(__TAURI_INVOKE("agent_identity_finish", { plane, app, personas })),
+	agentIdentityFinish: (plane: PlaneId, app: string, personas: string[], shown: string) => typedError<IdentityFinished, string>(__TAURI_INVOKE("agent_identity_finish", { plane, app, personas, shown })),
 	/**
 	 *  **Removes an identity at once** (Q13): key, tool lines and live tokens, of what this flow
 	 *  made. What remains on GitHub's side is the App itself, and the answer names its page.
@@ -3001,7 +3003,7 @@ export const commands = {
 	 *  cut one at a time, by `chatpiece`'s lock per clone. Starting a session off the main thread
 	 *  is what a relaunch's put-back already does.
 	 */
-	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, string>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
+	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, LimitRefused>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
 	/**
 	 *  **The person pressed Cancel while a chat started in this project** (#4264): it stops waiting
 	 *  for the session host, and a chat that comes up after is closed.
@@ -3233,6 +3235,13 @@ export const commands = {
 	 *  a limit, through the edit ask (Q6), and never replaces a runner.
 	 */
 	dockerPoolReplaceRunner: (name: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_replace_runner", { name })),
+	/**
+	 *  **Removes the held runner `runner`, as the person pressed**: a draining runner that stopped
+	 *  during its drain, and what its chats left in its home with it
+	 *  ([`purlis_core::pools::remove_held`]). The window's alone: nothing else ends what a held runner
+	 *  keeps. What is left of it is said.
+	 */
+	dockerPoolRemoveHeldRunner: (runner: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_remove_held_runner", { runner })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**
@@ -3266,7 +3275,7 @@ export const commands = {
 	 *  runner of the cluster's Pool, waits for its operator to vouch for it, pairs it and keeps it.
 	 *  What fails is taken back.
 	 */
-	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
+	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, LimitRefused>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
 	 *  **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071, the
 	 *  person's ruling of 2026-10-30). The window's alone (`ui::WINDOW_ONLY`): no chat, Pool or
@@ -3299,29 +3308,13 @@ export const commands = {
 	 *  runner keeps it the next time the pool's profiles are asked.
 	 */
 	poolProfileAdd: (pool: string, name: string, open: OpenProject) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, open })),
-	/**
-	 *  **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
-	 *  Start a chat offers beside that refusal. Asked of the core, never read from the words.
-	 */
-	poolLimitOffer: (profile: string, refused: string, root: string | null, cwd: string | null) => __TAURI_INVOKE<{
-	pool: string,
-	hits: PoolLimitHitRow[],
-} | null>("pool_limit_offer", { profile, refused, root, cwd }),
-	/**
-	 *  **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
-	 *  move's line offers beside that refusal, as [`pool_limit_offer`] does for a start.
-	 */
-	poolLimitOfferForMove: (pool: string, refused: string) => __TAURI_INVOKE<{
-	pool: string,
-	hits: PoolLimitHitRow[],
-} | null>("pool_limit_offer_for_move", { pool, refused }),
 	/**  **Pool `pool`'s limits** (#4285), as its page draws them. */
 	poolLimits: (pool: string) => typedError<PoolLimitsPage, string>(__TAURI_INVOKE("pool_limits", { pool })),
 	/**
 	 *  **The value in the words `typed` for limit `key`, or why they aren't one it can be** (#4285):
 	 *  the file's and the command's check, asked as the person types.
 	 */
-	poolLimitCheck: (key: string, typed: string) => typedError<number, string>(__TAURI_INVOKE("pool_limit_check", { key, typed })),
+	poolLimitCheck: (pool: string, key: string, typed: string) => typedError<number, string>(__TAURI_INVOKE("pool_limit_check", { pool, key, typed })),
 	/**
 	 *  **Saves `value` as pool `pool`'s limit `key`, or, `null`, returns it to following purlis's
 	 *  default** (spec #4275), the person's own press in their window: a chat has no way to it, and
@@ -3389,9 +3382,10 @@ export const commands = {
 { at: "could-not-follow"; said: string } | 
 /**
  *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
- *  ending so, and the page it opened is no use now (#4367).
+ *  ending so, and the page it opened is no use now (#4367); what to raise where the pool's
+ *  limit ended it.
  */
-{ at: "failed"; why: string; stopped: boolean } | 
+{ at: "failed"; why: string; stopped: boolean; limit: PoolLimitOffer | null } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
 	/**
@@ -5029,6 +5023,17 @@ export type AnswerPath =
  *  the chat that asked (#2047).
  */
 { via: "pool-tool"; run: number } | 
+/**
+ *  `answer_task_question`, through the form that reads the question from the core: the
+ *  task's own words, with `why` it reached the person. `note` is the asking chat's own
+ *  line, `from` being that chat, and is never the task's words.
+ */
+{ via: "task-question"; why: ReachedWhy; from: string; note: string | null } | 
+/**
+ *  `answer_browser_login` at the press an option names, on held login `id`, for the proposal
+ *  whose digest is `shown`, with the domain the person typed (#4595).
+ */
+{ via: "browser-login"; id: number; shown: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5167,6 +5172,8 @@ export type AskSource =
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
 "question" | 
+/**  **A task's question that has reached the person** (ADR 0107): in the task's own words. */
+"task-question" | 
 /**
  *  A profile a chat could not start on, because its harness says it is not signed in on
  *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
@@ -5203,7 +5210,12 @@ export type AskSource =
  *  One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
  *  lets this desktop send that tool its vault values on the pool's runner for that run alone.
  */
-"pool-tool";
+"pool-tool" | 
+/**
+ *  A browser login a chat suggested, which its persona doesn't declare (#4595): an Allow
+ *  lets purlis fill it on the one origin the person confirmed.
+ */
+"browser-login";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -5978,6 +5990,8 @@ export type ChatMove = {
 	stage: string,
 	/**  Why it failed, in a sentence: where it is `failed`. */
 	why: string | null,
+	/**  What to raise, where a pool's limit is why it failed (#4313). */
+	limit: PoolLimitOffer | null,
 	/**  The profile it waits on to sign in on the runner: where it is `signing-in` (#3477). */
 	sign_in: MoveSignIn | null,
 	/**  The other chats of its workspace that move with it, by name (#3453). */
@@ -8636,6 +8650,8 @@ export type IdentityStand = {
 	acts_as: string,
 	owner: string,
 	installed: boolean,
+	/**  Whether it may change CI workflows too. */
+	workflows: boolean,
 	install_page: string,
 	settings_page: string,
 };
@@ -8913,6 +8929,16 @@ export type LevelWaiting = {
 	level: string,
 };
 
+/**
+ *  **Why something the window asked of a pool did not happen** (spec #4275): the core's
+ *  sentence, and what to raise where a pool's limit refused it, which comes with the refusal as
+ *  data.
+ */
+export type LimitRefused = {
+	words: string,
+	limit: PoolLimitOffer | null,
+};
+
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
 export type LineRange = {
 	first: number,
@@ -8993,6 +9019,29 @@ export type LocalModelRow = {
 	base_url: string,
 	/**  The harness that can use it with no account (`opencode`). */
 	harness: string,
+};
+
+/**
+ *  **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
+ *  value: purlis hasn't read one.
+ */
+export type LoginShown = {
+	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
+	domain: string,
+	/**  The page's path on it. */
+	path: string,
+	vault: string,
+	user_key?: string | null,
+	key: string,
+	/**  Plain warnings, said above the choices. */
+	warnings: string[],
+	/**  The line Always writes, shown before it's pressed, and where. */
+	line: string,
+	under: string,
+	/**  Why Always isn't offered, where it isn't. */
+	no_always?: string | null,
+	/**  The persona's chats get the vault too with Always. */
+	vault_too: boolean,
 };
 
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
@@ -10855,6 +10904,8 @@ export type PoolLimitHitRow = {
 	needed: number,
 	/**  The value offered, which the person can edit; none where no value would hold it. */
 	suggested: number | null,
+	/**  That value is what the team defining the pool suggests (#4287). */
+	team_suggests: boolean,
 };
 
 /**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
@@ -10879,8 +10930,19 @@ export type PoolLimitRow = {
 	set: number | null,
 	/**  When a change applies, where its group doesn't say it for all of its limits. */
 	applies: string | null,
-	/**  Why the value in the pool's file can't be used, where one can't (#4381). */
+	/**
+	 *  Why the value in the pool's file can't be used, where one can't (#4381), or is above what
+	 *  the team defining the pool allows (#4287).
+	 */
 	refused: string | null,
+	/**  The highest the team defining the pool allows, in words, where it set one (#4287). */
+	highest_said: string | null,
+	/**  Whether its default is what the team defining the pool set (#4287). */
+	default_by_team: boolean,
+	/**  The value the team suggests, above what holds: one press sets it, as the person's (#4287). */
+	suggested: number | null,
+	/**  That value in words. */
+	suggested_said: string | null,
 };
 
 /**
@@ -10953,6 +11015,8 @@ export type PoolProfileRow = {
 	standing: string | null,
 	/**  Why it is not kept on the runner, in words, where it is not. */
 	not_kept: string | null,
+	/**  What to raise, where a limit of the pool is why it is not kept (#4397). */
+	limit: PoolLimitOffer | null,
 	/**  The plans Sign in offers there, where purlis names the provider. */
 	plans: PlanRow[],
 };
@@ -11086,9 +11150,10 @@ export type PoolSignInStep =
 { at: "could-not-follow"; said: string } | 
 /**
  *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
- *  ending so, and the page it opened is no use now (#4367).
+ *  ending so, and the page it opened is no use now (#4367); what to raise where the pool's
+ *  limit ended it.
  */
-{ at: "failed"; why: string; stopped: boolean } | 
+{ at: "failed"; why: string; stopped: boolean; limit: PoolLimitOffer | null } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" };
 
@@ -11132,6 +11197,11 @@ export type PoolVersion = {
 	 *  removed.
 	 */
 	draining: number,
+	/**
+	 *  How many of its older runners are held: each stopped during its drain, and stays with its
+	 *  home until the person removes it.
+	 */
+	held: number,
 	/**
 	 *  Whether this version's release named a runner image, as purlis last found it (#2880):
 	 *  one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
@@ -11188,6 +11258,16 @@ export type PresetsChanged = {
 	/**  The whole set now, by the committed file's words: what the Notice sends back once read. */
 	now: string[],
 };
+
+/**  A press on a login's notice. */
+export type Press = "once" | "chat" | "always" | "keep";
+
+/**  What a press answered. */
+export type Pressed = 
+/**  The answer stands: the sentence it leaves. */
+{ kind: "done"; said: string } | 
+/**  The notice was drawn again and takes another press: what changed. */
+{ kind: "drawn-again"; said: string };
 
 /**
  *  **A pool's price per hour, as it declares it** (#3491): its amount the decimal it was
@@ -11665,6 +11745,15 @@ export type ReachedBy =
 "persona" | 
 /**  An Allowed host: for this chat, this project on this machine, or everyone in it. */
 "allowed";
+
+/**  Why a task's question reached the person ([`AnswerPath::TaskQuestion`]). */
+export type ReachedWhy = 
+/**  Its asking chat passed it on. */
+"passed-on" | 
+/**  Its asking chat had its turn and did nothing with it in time. */
+"no-reply" | 
+/**  Its asking chat closed or crashed. */
+"asker-gone";
 
 /**  Why this purlis reads a project and writes nothing to it. */
 export type ReadOnlyProject = {
@@ -12524,6 +12613,11 @@ export type RunnerAsked = {
 	 *  (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
 	 */
 	ran_this_week: number | null,
+	/**
+	 *  It stopped during its drain, so it stays with its home until the person removes it
+	 *  ([`purlis_core::pools::DrainLook::Held`]).
+	 */
+	held: boolean,
 };
 
 /**  One runner of a project, as the away summary reads it. */
@@ -13521,6 +13615,11 @@ export type Shown = {
 	 *  never markup. Absent where the app heard none, and on every other ask.
 	 */
 	last_message?: string | null,
+	/**
+	 *  **The site a login would be filled on** (#4595): drawn large and editable. Absent for any
+	 *  other ask.
+	 */
+	login?: LoginShown | null,
 };
 
 /**
@@ -14633,10 +14732,11 @@ export type Studio = {
 };
 
 /**
- *  **A chat's skill budget**, as the Routing page says it: the most skills its list holds, and
- *  the most characters of their descriptions together.
+ *  **A chat's skill budget on one harness**, as the Routing page says it: the most skills its
+ *  list holds, and the most characters of what is listed of them.
  */
 export type StudioBudget = {
+	program: string,
 	skills: number,
 	chars: number,
 };
@@ -14777,10 +14877,16 @@ export type StudioRouter = {
 	 */
 	written: string | null,
 	/**
-	 *  **A chat's skill budget** (SK-12, ADR 0102 §1): past it the router decides what a chat's
-	 *  list shows. The same on every harness.
+	 *  **A chat's skill budget on each harness** (SK-12, ADR 0102 as amended 2026-11-02): past
+	 *  it the router decides what a chat's list shows. Each adapter's numbers, with what this
+	 *  scope's `settings.skills.budget` writes over them.
 	 */
-	budget: StudioBudget,
+	budget: StudioBudget[],
+	/**
+	 *  **What a harness would drop at what the scope writes** (#4610), a sentence each: a
+	 *  warning, since a value past a harness's limit is never refused.
+	 */
+	past_limits: string[],
 	/**
 	 *  **What the rows' "hidden by the router" marks preview** (#4215), in a sentence: a chat at
 	 *  the workspace's root (or the project's), in no clone, routed by the built-in router. Where
@@ -15464,7 +15570,11 @@ export type UpdateKind =
  */
 "root-update-refused" | 
 /**  A chat asked the person to take its browser over, and the browser ended first (#2015). */
-"browser-ask-ended";
+"browser-ask-ended" | 
+/**  A task ended with its question unanswered (#4556). */
+"question-closed" | 
+/**  A task's question could not be taken its route (#4557). */
+"question-failed";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {
@@ -15623,6 +15733,11 @@ export type VaultRefused = {
 	dispatch_to: string | null,
 	/**  Why a policy forbids Allow, where one does: the Notice then offers none. */
 	locked: string | null,
+	/**
+	 *  The browser login the persona declares with this vault, where it does: the one case
+	 *  purlis knows a vault is asked for a login. A `secret` command names none (#4595).
+	 */
+	login?: string | null,
 };
 
 /**

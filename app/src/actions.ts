@@ -108,6 +108,7 @@ import { SETTINGS_GROUPS } from "./settings/catalogue";
 
 /** The Workspace level's Skills group (#2767), behind the Skill studio's flag. */
 const WORKSPACE_SKILLS = "workspace.skills";
+const PROJECT_SKILLS = "project.skills";
 import { profilePage } from "./settings/profileAddress";
 import { askSettingsLink, linkToGroup, settingsPlace, type SettingsLink } from "./settings/links";
 import {
@@ -123,6 +124,8 @@ import {
   sessionOf,
   SHORTCUTS_TITLE,
   SHORTCUTS_VIEW,
+  AGENT_IDENTITY_TITLE,
+  AGENT_IDENTITY_VIEW,
   DEVICES_TITLE,
   DEVICES_VIEW,
   viewKey,
@@ -1551,6 +1554,7 @@ export const FOCUS_MODE_ID = "focus.toggle";
 export const SHORTCUTS_ID = "shortcuts.show";
 /** The Devices view's row (#2052). */
 export const DEVICES_ID = "devices.show";
+export const AGENT_IDENTITY_ID = "agent-identity.show";
 /** The right sidebar's own views, as the region's palette row names them: "Inbox, Personas and
  *  Vaults" (#1738). */
 const RIGHT_VIEWS_SAID = ((names: string[]) =>
@@ -2474,6 +2478,15 @@ export function catalogue(now: Now): Offer[] {
   offers.push({
     ...can("pool.add", "Add a pool…", { verb: "addDockerPool" }),
     note: "A runner on your Docker, or one claimed in your team's cluster.",
+  });
+  // **Agent identity** (#4485): what a chat acts as on a forge, always one row away.
+  offers.push({
+    ...can(AGENT_IDENTITY_ID, AGENT_IDENTITY_TITLE, {
+      verb: "openView",
+      view: AGENT_IDENTITY_VIEW,
+      title: AGENT_IDENTITY_TITLE,
+    }),
+    note: "What chats act as on GitHub. Your own sign-in never reaches a chat.",
   });
   // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
   // so nothing about runners shows before the first is added (spec #2041 story 6).
@@ -3776,7 +3789,10 @@ function settingsGroupRows(
     note: `On this machine, at ${one.label}.`,
   }));
   if (plane === undefined) return rows;
-  for (const one of SETTINGS_GROUPS.project)
+  // The Skills group only while the Skill studio's flag is on (#4610).
+  for (const one of SETTINGS_GROUPS.project.filter(
+    (group) => group.id !== PROJECT_SKILLS || skillStudio,
+  ))
     rows.push({
       ...can(
         `settings.group:${one.id}`,

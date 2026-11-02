@@ -117,6 +117,41 @@ fn a_codex_chat_reads_its_own_shell_results_for_a_sandbox_block() {
 }
 
 #[test]
+fn a_codex_chat_hands_its_own_question_prompt_to_purlis_before_it_is_asked_beside_the_guard() {
+    // #4558, read from Codex's source at `rust-v0.163.0`: `request_user_input` has a
+    // `PreToolUse` of its own (`tools/registry.rs`, the default `pre_tool_use_payload`), under
+    // its own name, run before the tool asks anything.
+    let StateHooks::ThisSessionOnly { args, .. } =
+        adapter().arm(kit(), None, &crate::harness_plugin::Chosen::new(), None)
+    else {
+        panic!("armed per session");
+    };
+    let armed: Vec<&String> = args
+        .iter()
+        .filter(|arg| arg.starts_with("hooks.PreToolUse="))
+        .collect();
+    assert_eq!(armed.len(), 1, "one key, or the last would win: {args:?}");
+    let value = armed[0]
+        .strip_prefix("hooks.PreToolUse=")
+        .expect("prefixed");
+    let groups: toml::Table = format!("v = {value}").parse().expect("TOML");
+    let groups = groups["v"].as_array().expect("groups");
+    let commands = |matcher: &str| -> Vec<String> {
+        groups
+            .iter()
+            .filter(|group| group["matcher"].as_str() == Some(matcher))
+            .flat_map(|group| group["hooks"].as_array().cloned().unwrap_or_default())
+            .map(|hook| hook["command"].as_str().unwrap_or_default().to_owned())
+            .collect()
+    };
+    assert_eq!(
+        commands("request_user_input"),
+        ["'/bin/charter' hook taskquestion"]
+    );
+    assert_eq!(commands("Bash"), ["'/bin/charter' hook pretooluse"]);
+}
+
+#[test]
 fn a_codex_chat_is_handed_charter_s_mcp_server_for_that_session_alone() {
     // HP-7 (#1266: named purlis): `-c mcp_servers.purlis=…` adds a server for one session beside the operator's.
     let StateHooks::ThisSessionOnly { args, .. } =
@@ -202,7 +237,7 @@ fn a_codex_chat_runs_each_dispatch_tool_without_codex_s_own_prompt() {
             .map(|tool| (tool.to_owned(), "approve".to_owned()))
             .collect();
     assert_eq!(modes(&server), wanted);
-    assert_eq!(wanted.len(), 11);
+    assert_eq!(wanted.len(), 12);
     // Each by name, never the server as a whole: a tool added later still asks.
     assert!(server.get("default_tools_approval_mode").is_none());
 
@@ -247,7 +282,7 @@ fn an_operator_s_own_approval_on_purlis_s_server_is_kept() {
     assert_eq!(kept["dispatch_cancel"], "writes");
     assert_eq!(kept["todo_add"], "prompt");
     assert_eq!(kept["dispatch_tell"], "approve", "another server's rule");
-    assert_eq!(kept.len(), 12, "{kept:?}");
+    assert_eq!(kept.len(), 13, "{kept:?}");
 
     // A default for the whole server is the operator's word for every tool of it.
     std::fs::write(

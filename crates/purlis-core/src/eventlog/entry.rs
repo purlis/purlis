@@ -123,6 +123,12 @@ pub enum Entry {
         number: Option<u32>,
         said: super::browsing::Said,
     },
+    /// A step of a question of task `number`'s ([`Recorder::question`], #4557): metadata alone.
+    Question {
+        plane: PathBuf,
+        number: u32,
+        step: super::questions::Step,
+    },
 }
 
 impl Entry {
@@ -223,6 +229,11 @@ impl Recorder {
                 number,
                 said,
             } => one(self.browser(&plane, number, &said)),
+            Entry::Question {
+                plane,
+                number,
+                step,
+            } => one(self.question(&plane, number, step)),
             Entry::SkillTyped {
                 plane,
                 number,

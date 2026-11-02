@@ -775,16 +775,24 @@ fn keep_on_as(
     };
     said.into_iter()
         .next()
-        .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
+        .unwrap_or_else(|| Err("the runner did not answer".into()))
         .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
-        .map_err(|why| late_said(pool, kept.limits.in_force(LimitId::AnswerWait), why))
+        .map_err(|why| late_said(pool, &kept.limits, why))
 }
 
-/// `why` a runner kept no profile: where the pool's wait of `secs` ran out, in words the window can
-/// ask of for what to raise it to (spec #4275). By purlis's own constant, never a runner's words.
-fn late_said(pool: &str, secs: u64, why: String) -> String {
+/// `why` a runner kept no profile, with the limits of pool `pool` it was kept off by, its settings'
+/// or the pool's wait running out, kept for the attempt's offer (spec #4275). That wait
+/// by purlis's own constant, never a runner's words.
+fn late_said(
+    pool: &str,
+    limits: &purlis_core::poollimits::Chosen,
+    why: onrunner::NotSent,
+) -> String {
+    purlis_core::poollimits::hits_on(pool, &why.hits);
+    let why = why.said;
     if why == crate::runnerlinks::ANSWER_LATE {
-        let hit = LimitId::AnswerWait.limit().waited(secs, None);
+        let secs = limits.in_force(LimitId::AnswerWait);
+        let hit = limits.waited(LimitId::AnswerWait, secs, None);
         format!("{why}: {}", purlis_core::poollimits::hit_on(pool, hit))
     } else {
         why
@@ -804,6 +812,8 @@ pub struct PoolLimitHitRow {
     pub needed: u32,
     /// The value offered, which the person can edit; none where no value would hold it.
     pub suggested: Option<u32>,
+    /// That value is what the team defining the pool suggests (#4287).
+    pub team_suggests: bool,
 }
 
 /// **What a refused start on a pool offers**: the pool, and each limit it was refused on.
@@ -813,12 +823,12 @@ pub struct PoolLimitOffer {
     pub hits: Vec<PoolLimitHitRow>,
 }
 
-/// The offer of the refusal `over`, where it reached a pool.
-fn offer_of(over: onrunner::OverLimit) -> Option<PoolLimitOffer> {
+/// The offer of the limits an attempt was refused on.
+pub(crate) fn offer_of(refused: purlis_core::poollimits::Refused) -> PoolLimitOffer {
     let number = |value: u64| u32::try_from(value).unwrap_or(u32::MAX);
-    Some(PoolLimitOffer {
-        pool: over.pool?,
-        hits: over
+    PoolLimitOffer {
+        pool: refused.pool,
+        hits: refused
             .hits
             .iter()
             .map(|hit| {
@@ -830,58 +840,38 @@ fn offer_of(over: onrunner::OverLimit) -> Option<PoolLimitOffer> {
                     in_force: number(hit.in_force),
                     needed: number(hit.needed),
                     suggested: hit.suggested.map(number),
+                    team_suggests: hit.team_suggested,
                 }
             })
             .collect(),
-    })
-}
-
-/// **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
-/// Start a chat offers beside that refusal. Asked of the core, never read from the words.
-#[tauri::command]
-#[specta::specta]
-pub async fn pool_limit_offer(
-    profile: String,
-    refused: String,
-    root: Option<String>,
-    cwd: Option<String>,
-) -> Option<PoolLimitOffer> {
-    onrunner::over_limit(&profile, &refused)
-        .and_then(offer_of)
-        .or_else(|| {
-            // The pool this start runs on, by this machine's store: nothing a runner said.
-            let root = PathBuf::from(root?);
-            let workspace =
-                crate::chats::workspace_at_start(Some(&root), cwd.as_deref().map(Path::new));
-            let pool =
-                purlis_core::pools::runs_on(&config_root().ok()?, &root, workspace.as_deref())
-                    .ok()??;
-            offer_of_hits(pool, &refused)
-        })
-}
-
-/// The offer of the limits of `pool` that purlis measured and said in the words `refused`.
-fn offer_of_hits(pool: String, refused: &str) -> Option<PoolLimitOffer> {
-    let hits = purlis_core::poollimits::hits_said_in(&pool, refused);
-    if hits.is_empty() {
-        return None;
     }
-    offer_of(onrunner::OverLimit {
-        profile: String::new(),
-        pool: Some(pool),
-        hits,
-        said: refused.to_owned(),
-    })
 }
 
-/// **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
-/// move's line offers beside that refusal, as [`pool_limit_offer`] does for a start.
-#[tauri::command]
-#[specta::specta]
-pub async fn pool_limit_offer_for_move(pool: String, refused: String) -> Option<PoolLimitOffer> {
-    onrunner::over_limit_on(&pool, &refused)
-        .and_then(offer_of)
-        .or_else(|| offer_of_hits(pool, &refused))
+/// **Why something the window asked of a pool did not happen** (spec #4275): the core's
+/// sentence, and what to raise where a pool's limit refused it, which comes with the refusal as
+/// data.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct LimitRefused {
+    pub words: String,
+    pub limit: Option<PoolLimitOffer>,
+}
+
+impl From<String> for LimitRefused {
+    fn from(words: String) -> Self {
+        Self { words, limit: None }
+    }
+}
+
+/// `work`, refused with the limits it hit ([`purlis_core::poollimits::attempt`]). Run on the
+/// thread `work` runs on, from where the window's ask starts.
+pub(crate) fn offering_limits<T>(
+    work: impl FnOnce() -> Result<T, String>,
+) -> Result<T, LimitRefused> {
+    let (done, refused) = purlis_core::poollimits::attempt(work);
+    done.map_err(|words| LimitRefused {
+        words,
+        limit: refused.map(offer_of),
+    })
 }
 
 /// **One of a pool's limits, as its page draws it** (#4285).
@@ -901,8 +891,17 @@ pub struct PoolLimitRow {
     pub set: Option<u32>,
     /// When a change applies, where its group doesn't say it for all of its limits.
     pub applies: Option<String>,
-    /// Why the value in the pool's file can't be used, where one can't (#4381).
+    /// Why the value in the pool's file can't be used, where one can't (#4381), or is above what
+    /// the team defining the pool allows (#4287).
     pub refused: Option<String>,
+    /// The highest the team defining the pool allows, in words, where it set one (#4287).
+    pub highest_said: Option<String>,
+    /// Whether its default is what the team defining the pool set (#4287).
+    pub default_by_team: bool,
+    /// The value the team suggests, above what holds: one press sets it, as the person's (#4287).
+    pub suggested: Option<u32>,
+    /// That value in words.
+    pub suggested_said: Option<String>,
 }
 
 /// **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced.
@@ -940,14 +939,23 @@ fn limits_shown(
         key: limit.key.to_owned(),
         plain: limit.plain.to_owned(),
         unit: limit.unit.word().to_owned(),
-        default: number(limit.default),
-        default_said: limit.unit.said(limit.default),
+        default: number(chosen.default_of(limit.id)),
+        default_said: limit.unit.said(chosen.default_of(limit.id)),
         set: chosen.get(limit.id).map(number),
         applies: says.then(|| limit.takes_effect.said().to_owned()),
         refused: refused
             .iter()
             .find(|one| one.limit == limit.id)
-            .map(purlis_core::poollimits::RefusedValue::said),
+            .map(purlis_core::poollimits::RefusedValue::said)
+            .or_else(|| chosen.over_team_said(limit.id)),
+        default_by_team: chosen.default_by_team(limit.id),
+        suggested: chosen.team_suggests(limit.id).map(number),
+        suggested_said: chosen
+            .team_suggests(limit.id)
+            .map(|value| limit.unit.said(value)),
+        highest_said: chosen
+            .team_highest(limit.id)
+            .map(|top| format!("The team allows up to {}.", limit.unit.said(top))),
     };
     let groups = Group::ALL
         .into_iter()
@@ -1019,9 +1027,21 @@ pub async fn pool_limits(pool: String) -> Result<PoolLimitsPage, String> {
 /// the file's and the command's check, asked as the person types.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_limit_check(key: String, typed: String) -> Result<u32, String> {
-    let limit = limit_named(&key)?;
-    let value = limit.check_typed(&typed, None)?;
+pub async fn pool_limit_check(pool: String, key: String, typed: String) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        limit_checked_on(&config_root()?, &pool, &key, &typed)
+    })
+    .await
+    .map_err(|why| format!("the value was not checked: {why}"))?
+}
+
+/// [`pool_limit_check`], on the machine at `config`. What the team defining a cluster pool allows
+/// is refused as it is typed (#4287).
+fn limit_checked_on(config: &Path, pool: &str, key: &str, typed: &str) -> Result<u32, String> {
+    let limit = limit_named(key)?;
+    let chosen =
+        purlis_core::runners::chosen_limits_of(config, pool).map_err(|why| why.to_string())?;
+    let value = limit.check_typed(typed, chosen.team_highest(limit.id))?;
     u32::try_from(value).map_err(|_| format!("{} is too large a number here", limit.plain))
 }
 
@@ -1055,6 +1075,8 @@ pub struct PoolProfileRow {
     pub standing: Option<String>,
     /// Why it is not kept on the runner, in words, where it is not.
     pub not_kept: Option<String>,
+    /// What to raise, where a limit of the pool is why it is not kept (#4397).
+    pub limit: Option<PoolLimitOffer>,
     /// The plans Sign in offers there, where purlis names the provider.
     pub plans: Vec<crate::machineprofiles::PlanRow>,
 }
@@ -1208,22 +1230,26 @@ pub async fn pool_profiles(
             .zip(&names)
             .zip(kept)
             .map(|((record, name), kept)| {
-                let standing = kept.and_then(|_| match said.as_mut() {
-                    None => Err(OLDER_RUNNER.to_owned()),
-                    Some(said) => said
-                        .next()
-                        .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
-                        .map(|kept| onrunner::standing_on_the_wire(kept.standing))
-                        .map_err(|why| late_said(&pool, limits.in_force(LimitId::AnswerWait), why)),
+                // Each row is its own attempt: what one was kept off by offers nothing to another.
+                let (standing, refused) = purlis_core::poollimits::attempt(|| {
+                    kept.and_then(|_| match said.as_mut() {
+                        None => Err(OLDER_RUNNER.to_owned()),
+                        Some(said) => said
+                            .next()
+                            .unwrap_or_else(|| Err("the runner did not answer".into()))
+                            .map(|kept| onrunner::standing_on_the_wire(kept.standing))
+                            .map_err(|why| late_said(&pool, &limits, why)),
+                    })
                 });
                 match record {
-                    Ok(record) => row(record, standing),
+                    Ok(record) => row(record, standing, refused),
                     Err(why) => PoolProfileRow {
                         name: name.clone(),
                         kind: String::new(),
                         harness: String::new(),
                         standing: None,
                         not_kept: Some(why.clone()),
+                        limit: None,
                         plans: Vec::new(),
                     },
                 }
@@ -1346,10 +1372,14 @@ fn harness_title(kind: &str) -> String {
 }
 
 /// `record`'s row on a pool's runner: where it stands there, or why it is not kept there.
-fn row(record: &profilestore::MachineProfile, kept: Result<Standing, String>) -> PoolProfileRow {
-    let (standing, not_kept) = match kept {
-        Ok(standing) => (Some(standing.word().to_owned()), None),
-        Err(why) => (None, Some(why)),
+fn row(
+    record: &profilestore::MachineProfile,
+    kept: Result<Standing, String>,
+    refused: Option<purlis_core::poollimits::Refused>,
+) -> PoolProfileRow {
+    let (standing, not_kept, limit) = match kept {
+        Ok(standing) => (Some(standing.word().to_owned()), None, None),
+        Err(why) => (None, Some(why), refused.map(offer_of)),
     };
     PoolProfileRow {
         name: record.name.clone(),
@@ -1357,6 +1387,7 @@ fn row(record: &profilestore::MachineProfile, kept: Result<Standing, String>) ->
         harness: harness_title(&record.harness),
         standing,
         not_kept,
+        limit,
         plans: crate::machineprofiles::PlanRow::of_harness(&record.harness),
     }
 }
@@ -1513,8 +1544,13 @@ pub enum PoolSignInStep {
     /// purlis could not follow the login: what it printed.
     CouldNotFollow { said: String },
     /// It did not sign in, and why; `stopped` where purlis stopped it rather than the login
-    /// ending so, and the page it opened is no use now (#4367).
-    Failed { why: String, stopped: bool },
+    /// ending so, and the page it opened is no use now (#4367); what to raise where the pool's
+    /// limit ended it.
+    Failed {
+        why: String,
+        stopped: bool,
+        limit: Option<PoolLimitOffer>,
+    },
     /// It was cancelled, and its login ended.
     Cancelled,
 }
@@ -1535,6 +1571,7 @@ impl From<driven::Event> for PoolSignInStep {
             driven::Event::Failed { why } => Self::Failed {
                 why,
                 stopped: false,
+                limit: None,
             },
             driven::Event::Cancelled => Self::Cancelled,
         }
@@ -1760,20 +1797,35 @@ pub async fn pool_sign_in_next(
         if let Some(over) = over
             && matches!(event, driven::Event::Failed { why } if why == driven::TOOK_TOO_LONG)
         {
-            said_over = Some(sign_in_ran_out(&over.pool, over.wait));
+            said_over = Some(purlis_core::poollimits::attempt(|| {
+                let chosen = config_root()
+                    .ok()
+                    .and_then(|config| {
+                        purlis_core::runners::chosen_limits_of(&config, &over.pool).ok()
+                    })
+                    .unwrap_or_default();
+                sign_in_ran_out(&over.pool, over.wait, &chosen)
+            }));
         }
     }
     Ok(event.map(|event| match (said_over, event) {
-        (Some(why), _) => PoolSignInStep::from(driven::Event::Failed { why }),
-        (None, driven::Event::Failed { why }) => PoolSignInStep::Failed { why, stopped },
+        (Some((why, refused)), _) => PoolSignInStep::Failed {
+            why,
+            stopped: false,
+            limit: refused.map(offer_of),
+        },
+        (None, driven::Event::Failed { why }) => PoolSignInStep::Failed {
+            why,
+            stopped,
+            limit: None,
+        },
         (None, event) => PoolSignInStep::from(event),
     }))
 }
 
-/// A sign-in on `pool` ended at the pool's limit of `wait` minutes, in words the window can ask
-/// of for what to raise it to (spec #4275).
-fn sign_in_ran_out(pool: &str, wait: u64) -> String {
-    let hit = LimitId::SignInWait.limit().waited(wait, None);
+/// A sign-in on `pool` ended at the pool's limit of `wait` minutes (spec #4275).
+fn sign_in_ran_out(pool: &str, wait: u64, chosen: &purlis_core::poollimits::Chosen) -> String {
+    let hit = chosen.waited(LimitId::SignInWait, wait, None);
     format!(
         "{}: {}",
         driven::TOOK_TOO_LONG,

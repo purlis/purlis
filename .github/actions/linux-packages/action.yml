@@ -15,7 +15,7 @@
 # end of the key; it can go once `main` has saved a v2 cache on each image in use.
 #
 # `tools/linux-packages.sh` does the work and says what it does; this action keys, restores and
-# saves the cache around it. The calling step gives it `timeout-minutes: 9`, a backstop above
+# saves the cache around it. The calling step gives it `timeout-minutes: 11`, a backstop above
 # the script's own limits.
 #
 # **Not for the release workflow.** Its jobs hold the signing keys and restore no cache (ADR 0042,

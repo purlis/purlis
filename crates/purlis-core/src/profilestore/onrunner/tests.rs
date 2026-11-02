@@ -1206,7 +1206,7 @@ fn over_the_limit_nothing_goes_and_the_refusal_says_what_is_needed_and_suggests_
     with_a_large_skill(&desktop.folders.config, 150);
     let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
 
-    let said = in_batches(&kept).unwrap_err();
+    let said = in_batches(&kept).unwrap_err().said;
 
     assert!(said.contains("it needs 151 MiB"), "{said}");
     assert!(said.contains("limit of 128 MiB"), "{said}");
@@ -1246,37 +1246,39 @@ fn a_profile_within_a_raised_limit_goes_whole() {
     assert_eq!(many, 40);
 }
 
-/// **A window asks only of the refusal it was shown** (spec #4275): the typed refusal is had by
-/// a start's own words, and by no other's, with the pool it was refused on.
+/// **Over its pool's limits, the refusal carries the limits it hit** (spec #4275): the sentence is
+/// said from them, and the offer needs nothing of it.
 #[test]
-fn the_typed_refusal_is_had_by_the_words_of_the_start_refused() {
+fn the_refusal_over_a_limit_carries_the_limits_it_hit() {
     let dir = tempfile::tempdir().unwrap();
-    let mut record = a_desktop_profile_with_settings(dir.path());
-    record.name = "typed-refusal".to_owned();
+    let record = a_desktop_profile_with_settings(dir.path());
     with_a_large_skill(&record.folders.config, 150);
     let kept = Kept::of(&record).unwrap().with_settings_of(&record);
 
-    let why = in_batches(&kept).unwrap_err();
-    assert_eq!(over_limit("typed-refusal", &why), None, "no pool yet");
-    let said =
-        format!("pool builds's runner did not keep the profile: {why}. Nothing was started.");
-    said_of_pool("typed-refusal", "builds", &why, &said);
+    let refused = in_batches(&kept).unwrap_err();
 
-    let over = over_limit("typed-refusal", &said).expect("the refusal it was");
-    assert_eq!(over.pool.as_deref(), Some("builds"));
-    assert_eq!(over.hits[0].limit, LimitId::ProfileSize);
-    assert_eq!(over.hits[0].in_force, 128);
-    assert_eq!(over.hits[0].needed, 151);
-    assert_eq!(over.hits[0].suggested, Some(192));
-    assert_eq!(over_limit("typed-refusal", "some other refusal"), None);
+    assert_eq!(refused.hits.len(), 1);
+    assert_eq!(refused.hits[0].limit, LimitId::ProfileSize);
+    assert_eq!(refused.hits[0].in_force, 128);
+    assert_eq!(refused.hits[0].needed, 151);
+    assert_eq!(refused.hits[0].suggested, Some(192));
+    assert_eq!(refused.said, refused.hits[0].said());
+}
 
-    // A move's line knows its pool and not its profile (#4313).
-    assert_eq!(
-        over_limit_on("builds", &said).map(|o| o.profile),
-        Some("typed-refusal".to_owned())
-    );
-    assert_eq!(over_limit_on("another", &said), None);
-    assert_eq!(over_limit_on("builds", "some other refusal"), None);
+/// **Words alone carry no limit** (spec #4275): any other refusal offers nothing.
+#[test]
+fn a_refusal_for_any_other_reason_carries_no_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    fs::write(
+        config.join("settings.json"),
+        format!(r#"{{"a":"{}"}}"#, "a".repeat(MOST_SETTINGS_BYTES)),
+    )
+    .unwrap();
+
+    assert_eq!(in_batches(&kept).unwrap_err().hits, Vec::new());
 }
 
 /// **Raised past what a runner tells its desktop, a profile is told as nothing** (spec #4275), so
@@ -1314,13 +1316,13 @@ fn a_harness_settings_file_too_large_to_go_refuses_the_chat() {
     )
     .unwrap();
 
-    let refused = in_batches(&kept).unwrap_err();
+    let refused = in_batches(&kept).unwrap_err().said;
 
     assert!(refused.contains("larger than"), "{refused}");
     let over = fs::File::create(config.join("settings.json")).unwrap();
     over.set_len(1 + purlis_session_protocol::session::MOST_PROFILE_SETTINGS_BYTES as u64)
         .unwrap();
-    assert!(in_batches(&kept).unwrap_err().contains("larger than"));
+    assert!(in_batches(&kept).unwrap_err().said.contains("larger than"));
 }
 
 /// **What a runner has no use for does not go** (#4081): a skill's `node_modules`, `__pycache__`

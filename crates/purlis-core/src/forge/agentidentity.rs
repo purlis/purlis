@@ -792,6 +792,8 @@ pub struct Stand {
     pub personal: bool,
     /// The installations of it, which is where its repos are.
     pub installations: Vec<u64>,
+    /// Whether it may change CI workflows (Q5), which Finish says before it is pressed.
+    pub workflows: bool,
 }
 
 impl Stand {
@@ -883,7 +885,12 @@ pub fn stand_over(jwt: &dyn Transport) -> Result<Stand, String> {
                 .collect()
         })
         .unwrap_or_default();
+    let workflows = app
+        .get("permissions")
+        .and_then(|permissions| permissions.get("workflows"))
+        .is_some();
     Ok(Stand {
+        workflows,
         slug: slug.to_owned(),
         owner: login.to_owned(),
         personal,

@@ -15,7 +15,14 @@ import {
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { useTabStop } from "./roving";
 import { RestartEndsLine } from "./RestartEnds";
-import { commands, type InboxUpdate, type Offered, type PlaneId, type Shown } from "./bindings";
+import {
+  commands,
+  type InboxUpdate,
+  type Offered,
+  type PlaneId,
+  type ReachedWhy,
+  type Shown,
+} from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
 import { counted as countedSaid } from "./dispatches";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
@@ -42,6 +49,7 @@ import {
   type InboxScope,
   type ScopeCounts,
 } from "./inboxScope";
+import { useOpenAnswer } from "./AnswerPanel";
 import { quietSaid } from "./NeedsYou";
 import { NoticeList } from "./Notice";
 import { PersonaMark } from "./PersonaMark";
@@ -65,6 +73,7 @@ import { useProjectShown } from "./projectShown";
 import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
+import { LoginSite, useTypedSite } from "./LoginSite";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
@@ -546,6 +555,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "browser-site",
   "pool-login",
   "pool-tool",
+  "browser-login",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -573,9 +583,13 @@ type Shape = {
   /** What its chat said, or that there is no message, where its line is the reason it waits
    *  instead. */
   said: string | undefined;
+  /** It is a task's question, which the Answer form takes. */
+  answerable: boolean;
   /** It gets a box for why it is kept blocked, which its chat is told with the answer
    *  (#1987). */
   reason: boolean;
+  /** It's a login's ask, whose site the person may change (#4595). */
+  site: boolean;
   /** It has the queue's Ignore. */
   ignore: boolean;
   /** It has Go to chat: every ask but a profile's, which is about no chat (#2035). */
@@ -619,10 +633,13 @@ function shapeOf(
     reply,
     message,
     said: reply && !message ? capMarks(ask.last_message ?? NO_MESSAGE).text : undefined,
+    answerable: ask.source === "task-question",
+    site: ask.login != null,
     reason:
       (ask.answer.via === "sandbox-block" ||
         ask.answer.via === "browser" ||
-        ask.answer.via === "browser-sites") &&
+        ask.answer.via === "browser-sites" ||
+        ask.answer.via === "browser-login") &&
       ask.options.some((one) => one.id === "keep"),
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
@@ -700,9 +717,11 @@ function markedLine(line: string): ReactNode[] {
 function stopIds(key: string, shape: Shape, options: readonly Offered[] = []): string[] {
   return [
     key,
+    ...(shape.site ? [`${key}:site`] : []),
     ...(shape.reason ? [`${key}:reason`] : []),
     ...options.map((option) => `${key}:${option.id}`),
     ...(shape.reply ? [`${key}:reply`, `${key}:send`] : []),
+    ...(shape.answerable ? [`${key}:answer`] : []),
     // A profile's Ask is about no chat (#2035): there is no chat to go to.
     ...(shape.go ? [`${key}:go`] : []),
     ...(shape.ignore ? [`${key}:ignore`] : []),
@@ -783,8 +802,17 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "browser-site": "Asks to let its browser reach a new site",
   "pool-login": "Asks to log its browser in on a pool's runner",
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
+  "browser-login": "Asks to log its browser in to a site with vault credentials",
   terminal: "In its terminal",
   question: "Waiting on your reply",
+  "task-question": "Asks you, through its asking chat",
+};
+
+/** Why a task's question reached the person, as its row says it. */
+const REACHED_SAID: Record<ReachedWhy, (from: string) => string> = {
+  "passed-on": (from) => `${from} passed this on`,
+  "no-reply": (from) => `${from} didn't reply`,
+  "asker-gone": (from) => `${from} has closed`,
 };
 
 function Ask({
@@ -822,8 +850,11 @@ function Ask({
   const [busy, setBusy] = useState(false);
   /** Why the person keeps it blocked, if they say: told to the chat with the answer. */
   const [reason, setReason] = useState("");
+  /** The site as the person changed it, on a login's ask (#4595). */
+  const [typed, setTyped] = useTypedSite(ask);
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
+  const openAnswer = useOpenAnswer();
   /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
   const whole =
     ask.source === "dispatch" || (shape.answers && shape.offers.some((one) => one.allows));
@@ -836,6 +867,8 @@ function Ask({
     shape.line,
     ...shape.offers.map((one) => one.label),
     changeDrawn ? "drawn" : "",
+    // A login's notice drawn anew has to be read anew (#4595).
+    ask.answer.via === "browser-login" ? ask.answer.shown : "",
   ].join("\n");
   const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
   /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
@@ -851,7 +884,7 @@ function Ask({
     }
     setBusy(true);
     setSaid(undefined);
-    void answerTaken(plane, ask, option.id, option.id === "keep" ? reason : undefined)
+    void answerTaken(plane, ask, option.id, option.id === "keep" ? reason : undefined, typed)
       .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
           setSaid(refused);
@@ -901,6 +934,11 @@ function Ask({
       <Reply plane={plane} ask={ask} stop={key} />
     ) : shape.answers ? (
       <WithWrites ask={ask} onDrawn={onChangeDrawn}>
+        {ask.login != null && (
+          <Stop id={`${key}:site`}>
+            <LoginSite login={ask.login} typed={typed} onTyped={setTyped} />
+          </Stop>
+        )}
         {shape.reason && (
           <Stop id={`${key}:reason`}>
             <TextField
@@ -1049,14 +1087,34 @@ function Ask({
             {said}
           </p>
         )}
+        {ask.answer.via === "task-question" && (
+          <p className="inbox-secondary ui-text-secondary">
+            {REACHED_SAID[ask.answer.why](ask.answer.from)}
+            {ask.answer.note === null ? "" : `. Its note: ${ask.answer.note}`}
+          </p>
+        )}
         {/* Its ways on, side by side at its foot: one line, never one each. */}
         <ButtonRow size="sm" className="inbox-acts">
+          {shape.answerable && openAnswer !== undefined && (
+            <Stop id={`${key}:answer`}>
+              <Button
+                size="sm"
+                variant="primary"
+                aria-label={`Answer ${who}`}
+                onPress={() =>
+                  openAnswer({ chat: ask.session, name: ask.chain[ask.chain.length - 1] ?? who })
+                }
+              >
+                Answer
+              </Button>
+            </Stop>
+          )}
           {shape.go && (
             <Stop id={`${key}:go`}>
               <Button
                 size="sm"
                 // R132: the way on is the card's primary press; no answer is drawn this way.
-                variant={shape.answers ? "ghost" : "primary"}
+                variant={shape.answers || shape.answerable ? "ghost" : "primary"}
                 aria-label={`Go to chat ${who}`}
                 onPress={onGo}
                 className="inbox-go"

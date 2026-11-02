@@ -123,6 +123,10 @@ struct Frame {
     /// What the window asks for its parts by ([`parts_later`]), when it was drawn before they
     /// were measured; `null` when it has them.
     parts_later: Option<u32>,
+    /// Whether it **stands in** for an extension's theme the levels chose (#4410): the window's
+    /// ask of what is in force draws that theme over it, so its parts are asked for only when
+    /// that answer fails or is never asked for (#4722).
+    stands_in: bool,
 }
 
 /// **Where a window is created** (#2602): the project in front as it opens, and the workspace
@@ -238,16 +242,21 @@ impl FirstFrame {
         // One read for every frame: a face is hashed once for all of them (#2696).
         let measured = on.map_or_else(theme::Measured::default, |on| on.measured.clone());
         let folders = theme::Folders::of_measured(config_root, plane, workspace, measured);
+        // A frame that stands in for an extension's theme is drawn over by the window's ask of
+        // what is in force: its parts are not asked for at once, which would land them only for
+        // that answer to draw another theme, two changes at every launch where one is due (#4410).
+        // It keeps its ticket and says it stands in, so a window whose answer fails, or that
+        // never asks, still lands them (#4722).
         let drawn = |system, contrast| {
-            theme::first_frame(&theme::LevelInputs {
+            let (one, stands_in) = theme::first_frame_standing_in(&theme::LevelInputs {
                 levels: &levels,
                 folders: &folders,
                 theirs,
                 on: theme::On::Every,
                 system,
                 contrast,
-            })
-            .under(person)
+            });
+            (one.under(person), stands_in)
         };
         let contrasts: &[Contrast] = match contrast {
             Some(Contrast::More) => &[Contrast::More],
@@ -260,12 +269,12 @@ impl FirstFrame {
         for &contrast in contrasts {
             let more = contrast == Contrast::More;
             let dark = drawn(theme::Appearance::Dark, contrast);
-            follows_system = dark.follows_system;
+            follows_system = dark.0.follows_system;
             let mut each = vec![(false, dark)];
             if follows_system {
                 each.push((true, drawn(theme::Appearance::Light, contrast)));
             }
-            for (light, one) in each {
+            for (light, (one, stands_in)) in each {
                 let resolved = one.theme.as_ref().unwrap_or_else(|| theme::default_theme());
                 // The window is created in the first: for the contrast read, or the standard
                 // one where none was, and for a dark system, where nothing says which.
@@ -278,6 +287,7 @@ impl FirstFrame {
                     floors: one.held.map(|held| held.said()),
                     mine: said(one.mine),
                     parts_later: later.then(|| parts_later(resolved)),
+                    stands_in,
                 };
                 // A frame that more contrast draws the same as the standard one is handed once.
                 let same = frames.iter().any(|was| {
@@ -492,8 +502,10 @@ fn created_by(
     let (person, layer) = PersonInForce::read(appearance);
     let theirs = kept.get(config_root);
     // First: it waits for each of its measures, and costs the same whenever it runs. So the
-    // default and Purlis Classic are kept before the deadline starts, and a frame of either has
-    // its parts however busy the machine is.
+    // default and Purlis Classic's dark are kept before the deadline starts, and a frame of
+    // either has its parts however busy the machine is. Purlis's light and high contrast and
+    // Classic's light are measured inside the wait like any other theme: each is measured as
+    // written alone, nothing tinted, which a purlis-core test holds (`shipped_parts_tests.rs`).
     let Handed {
         built_in,
         built_in_mine,
@@ -539,11 +551,10 @@ pub(crate) const HANDED_AT_LOAD: [&str; 2] = ["built_in", "default_theme"];
 /// under the person's `layer`. What a pick of one draws in the frame it is made, without asking
 /// the core.
 ///
-/// **Only what costs the first frame nothing more**: the default is drawn anyway, and Classic
-/// draws no parts. Purlis's light is not handed: its parts are measured across every workspace
-/// tint before they are drawn (`theme::parts`), which is a pass a launch should not make for a
-/// pick that is not there, so a pick of `purlis-light` asks the core as any other theme's does
-/// (ADR 0026).
+/// **Only what costs the first frame nothing more**: the default is drawn anyway, and Classic's
+/// dark is one measure as written. The other shipped appearances are not handed: a launch should
+/// not measure a pick that is not there, so a pick of `purlis-light` asks the core as any other
+/// theme's does (ADR 0026), and its frame is measured inside the wait.
 #[cfg(test)]
 pub(crate) fn handed_built_ins(
     layer: &theme::Layer,
@@ -1049,6 +1060,73 @@ mod tests {
         let ticket = u32::try_from(frame["parts_later"].as_u64().unwrap()).unwrap();
         let parts = first_frame_parts(ticket).expect("the frame's parts");
         assert!(parts.contains("@layer parts"), "{parts}");
+    }
+
+    /// The first frame a window is created `on` with, where the levels choose `acme/sharp`, an
+    /// extension's theme, and the person's own theme is a heavy one nothing else in this process
+    /// measures, so the wait runs out and it stands in.
+    fn a_heavy_stand_in(places: &Places, on: Option<&CreatedOn>) -> serde_json::Value {
+        let written = MEASURED_IN_TINTS.replace("#ff000040", "#ff000042");
+        std::fs::write(
+            purlis_core::machine::dir(&places.config).join(windowprefs::THEME),
+            &written,
+        )
+        .unwrap();
+        let created = created_within(
+            std::time::Duration::ZERO,
+            &TheirsKept::new(),
+            Some(&places.config),
+            on,
+            Some(Contrast::Standard),
+        );
+        defined(&created.script)["first"]["frames"][0].clone()
+    }
+
+    #[test]
+    fn a_heavy_frame_standing_in_for_an_extension_s_theme_keeps_its_ticket_and_says_so() {
+        // #4410: a project on an extension's theme is drawn the person's own until the window
+        // asks what is in force, which answers the extension's. Landing the stand-in's parts at
+        // once would change the window twice at every launch: once for the parts, once for the
+        // answer. So it says it stands in, and the window asks for its parts only when that
+        // answer fails (#4722): the ticket is there for it.
+        let places = Places::new("[theme]\nuse = \"acme/sharp\"\n");
+        let on = places.on(None);
+        let frame = a_heavy_stand_in(&places, Some(&on));
+        assert_eq!(frame["theme"]["name"], "Heavy");
+        assert_eq!(frame["theme"]["parts"], "");
+        assert_eq!(frame["stands_in"], true);
+        let ticket = u32::try_from(frame["parts_later"].as_u64().expect("a ticket")).unwrap();
+        assert!(
+            first_frame_parts(ticket)
+                .expect("its parts")
+                .contains("@layer parts")
+        );
+    }
+
+    #[test]
+    fn a_window_with_no_project_in_front_stands_in_for_the_machine_default_s_extension_theme() {
+        // #4722: the person's machine default may choose an extension's theme with no project in
+        // front. The frame stands in for it the same way, with its ticket.
+        let places = Places::new("");
+        theme::choices::set(
+            &places.config,
+            theme::choices::Slot::Machine,
+            theme::Choice::new("acme/sharp", None),
+        )
+        .unwrap();
+        let frame = a_heavy_stand_in(&places, None);
+        assert_eq!(frame["theme"]["name"], "Heavy");
+        assert_eq!(frame["stands_in"], true);
+        assert!(frame["parts_later"].is_u64(), "{frame}");
+    }
+
+    #[test]
+    fn a_frame_the_levels_draw_themselves_does_not_stand_in() {
+        let places = Places::new("");
+        let frame = a_heavy_stand_in(&places, None);
+        assert_eq!(frame["theme"]["name"], "Heavy");
+        assert_eq!(frame["stands_in"], false);
+        assert!(frame["parts_later"].is_u64(), "{frame}");
     }
 
     #[test]

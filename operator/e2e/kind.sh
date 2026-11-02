@@ -192,8 +192,9 @@ kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/
 guide_run installed
 
 step "the guide's helm install makes what the chart above installed"
-# Rendered from the checkout, with the guide's own values, against the install CI ran.
-guide_install=$(guide_text install --value "<your registry>=${operator%/*}" --value "<operator digest>=${operator#*@}")
+# Rendered from the checkout, with the guide's own values, against the install CI ran. The guide
+# takes the published image the chart names by default, and kind runs the image it built.
+guide_install=$(guide_text install --value "<operator digest>=${operator#*@}")
 case $guide_install in
   "helm install "*) ;;
   *)
@@ -201,7 +202,7 @@ case $guide_install in
     exit 1
     ;;
 esac
-guide_rendered=$(cd "$repo" && sh -eu -c "helm template ${guide_install#helm install }")
+guide_rendered=$(cd "$repo" && sh -eu -c "helm template ${guide_install#helm install } --set image.repository=${operator%@*}")
 pinned_rendered=$(helm template purlis-cluster-operator "$install/charts/purlis-cluster-operator" --namespace purlis-system)
 if [ "$guide_rendered" != "$pinned_rendered" ]; then
   printf '%s\n' "$guide_rendered" >"$helm_home/guide.yaml"
@@ -272,7 +273,7 @@ CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context FAKE_GITHUB_P
   --test it -- a_chat_mints_on_a_cluster_runner_with_its_desktop_away:: --ignored --test-threads=1
 
 step "the guide's pool, its key and a teammate's rights"
-guide_run pool --value "<your registry>/purlis-runner@<runner digest>=$runner"
+guide_run pool --value "ghcr.io/purlis/purlis-runner@<runner digest>=$runner"
 tries=0
 until [ -n "$(guide_run pool-key)" ]; do
   tries=$((tries + 1))

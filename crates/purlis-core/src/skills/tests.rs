@@ -959,7 +959,11 @@ fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_on_every
     assert_eq!(at_the_root.spent.manual, 1);
     assert_eq!(
         at_the_root.spent.chars,
-        "Ships it.".len() + "Hands off.".len() + "Reviews a PR.".len()
+        // Claude Code's limit counts whole lines: each name, and 23 around it.
+        "deployShips it.".len()
+            + "purlis-handoffHands off.".len()
+            + "reviewReviews a PR.".len()
+            + 3 * 23
     );
     assert_eq!(at_the_root.spent.warns(), None);
 
@@ -1061,8 +1065,8 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
 fn a_set_at_four_fifths_of_its_harnesss_budget_warns() {
     let (tmp, bundle) = use_skill_plane();
     let root = tmp.path();
-    // 3 skills listed already; 21 more make 24, four fifths of 30.
-    for n in 0..21 {
+    // 3 skills listed already; 45 more make 48, four fifths of 60.
+    for n in 0..45 {
         let dir = root.join(format!("skills/s{n:02}"));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -1072,7 +1076,7 @@ fn a_set_at_four_fifths_of_its_harnesss_budget_warns() {
         .unwrap();
     }
     let chat = for_use_skill(&running(root, &bundle, None));
-    assert_eq!(chat.spent.skills, 24);
+    assert_eq!(chat.spent.skills, 48);
     assert_eq!(chat.spent.warns(), Some(Over::Skills));
 }
 
@@ -2756,6 +2760,48 @@ fn the_studio_lints_the_planes_own_skills_a_chat_gets_once_per_list() {
 }
 
 #[test]
+fn a_studio_row_says_why_a_skill_it_would_hand_to_no_chat_is_left_out_4352() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(plane.join("skills/respelled")).unwrap();
+    std::fs::create_dir_all(plane.join("skills/short")).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    std::fs::write(
+        plane.join("skills/respelled/SKILL.md"),
+        "---\nname: respelled\ndescription: Widens the chat it runs in.\nallowedTools: Bash\n---\n",
+    )
+    .unwrap();
+    // A lint that hands the skill all the same leaves it on.
+    std::fs::write(
+        plane.join("skills/short/SKILL.md"),
+        "---\nname: short\ndescription: Short.\n---\n",
+    )
+    .unwrap();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, None, None, &env);
+
+    let row = |name: &str| {
+        list.rows
+            .iter()
+            .find(|row| row.name == name && row.origin == Origin::Project)
+            .unwrap_or_else(|| panic!("{name} listed: {:?}", list.rows))
+    };
+    let why = row("respelled").left_out.as_deref().expect("left out");
+    assert!(why.starts_with("purlis hands it to no chat: "), "{why}");
+    assert!(!why.contains('\n'), "{why}");
+    // What it does stays, for its page, and Needs you keeps the problem.
+    assert_eq!(row("respelled").description, "Widens the chat it runs in.");
+    assert_eq!(row("respelled").lint, [why]);
+    assert_eq!(row("short").left_out, None);
+    assert!(!row("short").lint.is_empty());
+}
+
+#[test]
 fn a_list_read_for_needs_you_has_every_row_lint_and_clash_of_the_whole_and_no_badge() {
     // #3781: the persona view's count reads only what Needs you's items are worked out from.
     let (tmp, plane, _clone, built_in) = a_clone_with_a_secrets_skill_of_its_own();
@@ -2973,7 +3019,8 @@ fn each_harness_s_own_catalogue_is_measured_beside_purlis_s_budget_3324() {
         own(Harness::ClaudeCode),
         OwnCatalogue {
             skills: 1,
-            chars: described,
+            // Its limit counts whole lines: the name, and what the line takes around it.
+            chars: "review".len() + described + 23,
             manual: 1,
         },
         "Claude Code: review listed, quiet manual-only by its key"

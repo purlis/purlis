@@ -10,6 +10,7 @@ import { keepSays, revertKeySaid, useDraftHere } from "./themeDrafts";
 import { pressed } from "./keys/registry";
 import { Button } from "./ui/button/Button";
 import { AlertDialog } from "./ui/dialog/Dialog";
+import { useWindowLeft } from "./ui/windowLeft";
 
 /** What Keep asks once it has kept: the theme, and the level it went to. */
 type Kept = { folder: string; workspace: string | null; keptTo: string };
@@ -44,7 +45,7 @@ export function ThemeDraftStrip({
   const [said, setSaid] = useState<string>();
   const [keeping, setKeeping] = useState<Kept>();
   const [replacing, setReplacing] = useState(false);
-  const holding = useRef(false);
+  const holding = useRef<"pointer" | "keys" | null>(null);
   const draft =
     here !== null && here.plane === plane && here.workspace === workspace ? here.draft : null;
 
@@ -66,6 +67,17 @@ export function ThemeDraftStrip({
     return () => window.removeEventListener("keydown", heard, true);
   }, [draft, plane, workspace]);
 
+  const compare = (by: "pointer" | "keys" | null) => {
+    if ((holding.current === null) === (by === null)) return;
+    holding.current = by;
+    void compareWithKept(by !== null);
+  };
+  // Gone from the window with the button held, which an engine may not say on the button: the
+  // old theme would stay drawn (#4628). The pointer's going leaves the keyboard's hold alone.
+  useWindowLeft((why) => {
+    if (why === "focus" || holding.current === "pointer") compare(null);
+  }, draft !== null);
+
   if (draft === null) {
     return keeping === undefined ? null : (
       <KeepAsk
@@ -78,11 +90,6 @@ export function ThemeDraftStrip({
     );
   }
 
-  const compare = (held: boolean) => {
-    if (holding.current === held) return;
-    holding.current = held;
-    void compareWithKept(held);
-  };
   // Keep does what the strip showed: where it puts the draft, whether it replaces a folder there,
   // and whether that folder changed since the draft started, which the person agreed to before
   // this is called. The core refuses when any has changed since.
@@ -143,18 +150,18 @@ export function ThemeDraftStrip({
         </Button>
         <Button
           tooltip="Hold to see the theme as it was last kept"
-          onPointerDown={() => compare(true)}
-          onPointerUp={() => compare(false)}
-          onPointerLeave={() => compare(false)}
-          onBlur={() => compare(false)}
+          onPointerDown={() => compare("pointer")}
+          onPointerUp={() => compare(null)}
+          onPointerLeave={() => compare(null)}
+          onBlur={() => compare(null)}
           onKeyDown={(event) => {
             if (event.key === " " || event.key === "Enter") {
               event.preventDefault();
-              compare(true);
+              compare("keys");
             }
           }}
           onKeyUp={(event) => {
-            if (event.key === " " || event.key === "Enter") compare(false);
+            if (event.key === " " || event.key === "Enter") compare(null);
           }}
         >
           Compare

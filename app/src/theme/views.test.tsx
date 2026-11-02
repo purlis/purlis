@@ -1216,6 +1216,7 @@ const DEVICE_ANSWERS = {
   contacted: 1_800_000_000,
   holds: { open: [], browsers_open: [], chats: 2, browsers: 1 },
   ran_this_week: 7200,
+  held: false,
 };
 
 /** A runner's answer in each other state a Devices row draws. */
@@ -1302,6 +1303,30 @@ const STATES: State[] = [
     },
   },
   { name: "Saving", view: { from: null, view: "saving", key: "" }, drawn: /site/ },
+  {
+    name: "Agent identity, set up",
+    view: { from: null, view: "agent-identity", key: "" },
+    answers: {
+      agent_identities: {
+        rows: [
+          {
+            host: "github.com",
+            app: "Iv23li",
+            personas: ["steward"],
+            acts_as: "acme-purlis-agent",
+            repos: 12,
+            settings_page: "https://github.com/settings/apps/acme-purlis-agent",
+            trouble: null,
+            by_hand: false,
+          },
+        ],
+        pending: [],
+        owners: [],
+        personas: ["steward", "reviewer"],
+      },
+    },
+    drawn: /acme-purlis-agent on 12 repos/,
+  },
   {
     name: "Devices, runners that answer on another version, and the use per pool",
     view: { from: null, view: "devices", key: "" },

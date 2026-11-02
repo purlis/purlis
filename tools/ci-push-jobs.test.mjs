@@ -252,7 +252,9 @@ test("the command names every job's standing, and fails on a refused one", () =>
   try {
     const good = run([CI]);
     assert.equal(good.status, 0, good.stdout + good.stderr);
-    assert.match(good.stdout, /listed {2}parity/);
+    assert.match(good.stdout, /listed {2}changes/);
+    // Required since #4335: a required check names it, so it is not listed.
+    assert.match(good.stdout, /^required {2}parity$/m);
     const bad = join(dir, "ci.yml");
     writeFileSync(bad, `${readFileSync(CI, "utf8").trimEnd()}\n\n  extra:\n    runs-on: x\n    steps:\n      - run: false\n`);
     const refused = run([bad]);
@@ -278,6 +280,8 @@ test("ci.yml's standings are the ones this ticket read", () => {
   assert.deepEqual(ids(sorted.listed), Object.keys(LISTED).sort());
   assert.ok(ids(sorted.evidence).includes("outcome-bars"));
   assert.ok(ids(sorted.reached).includes("rust"));
+  assert.ok(ids(sorted.required).includes("parity"));
+  assert.ok(!("parity" in LISTED));
   assert.ok(ids(sorted.absent).includes("fedora"));
 });
 

@@ -162,6 +162,7 @@ fn a_login(keep: Option<KeptLogin>) -> LogIn {
         password: Secret::new("fixture-word".into()),
         keep,
         identity: None,
+        suggested: false,
     }
 }
 

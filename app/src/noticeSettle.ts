@@ -30,6 +30,7 @@ export const grants = (cause: string) =>
   cause.startsWith("sandbox-hosts:persona:") ||
   cause.startsWith("task-permission:") ||
   cause.startsWith("workspace-removal:") ||
+  cause.startsWith("browser-login:") ||
   cause === "dispatch-grants" ||
   cause.startsWith("dispatch-grant:");
 

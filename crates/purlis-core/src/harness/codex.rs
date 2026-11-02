@@ -8,6 +8,10 @@ use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, SkillToStart
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
+/// What Codex holds of its listing where it does not know the window (0.163.0, ADR 0102 as
+/// amended 2026-10-21; not measured again since).
+const LISTING_LIMIT: usize = 8_000;
+
 /// Codex's adapter.
 ///
 /// **What its reports can prove** (#3822): only the chat's token. Its hooks run inside
@@ -246,6 +250,20 @@ impl HarnessAdapter for Codex {
         }
     }
 
+    /// A budget past 8,000 characters is past what Codex holds where it does not know the
+    /// window. Its binary now also says "omitted from this bounded skills list", not run.
+    fn skill_limit_past(&self, budget: crate::skills::Budget) -> Option<String> {
+        (budget.chars > LISTING_LIMIT).then(|| {
+            format!(
+                "Codex: at {} characters this is past the {} it holds where it doesn't know its \
+                 window (2% of the window otherwise). Past its limit Codex leaves skills out of \
+                 its list.",
+                crate::skills::grouped(budget.chars),
+                crate::skills::grouped(LISTING_LIMIT),
+            )
+        })
+    }
+
     /// **Codex 0.163.0** (`skills/src/parser.rs:6-20`, research of 2026-10-20): its own parser
     /// reads `name`, `description` and `metadata.short-description`, and nothing else. A Codex
     /// chat is briefed on purlis's skills, though, and the model reads each `SKILL.md` as text,
@@ -469,6 +487,49 @@ fn permission_flag(binary: &std::path::Path) -> [String; 2] {
     ["-c".to_owned(), format!("hooks.PermissionRequest={value}")]
 }
 
+/// **The `PreToolUse` group that hands Codex's own question prompt to purlis** (#4558, ADR
+/// 0107): `purlis hook taskquestion` ([`super::hooked::QUESTION_WORD`]) on
+/// [`super::hooked::CODEX_QUESTION_TOOL`] alone.
+///
+/// **Read from Codex's source at `rust-v0.163.0`**, since no run could be made from purlis's
+/// sandbox: `request_user_input` takes the registry's default `pre_tool_use_payload`
+/// (`core/src/tools/registry.rs`), so its `PreToolUse` fires under its own name with its
+/// arguments as `tool_input`, before the tool asks anything and before its mode is checked;
+/// a hook's `deny` comes back to the model as the tool's result (`RespondToModel`), and its
+/// turn goes on (`hooks/src/events/pre_tool_use.rs`).
+///
+/// Not from the registry, as [`permission_flag`] is not: every `PreToolUse` word there is a
+/// guard, which refuses on a crash or a late answer, and a question refused that way would be
+/// lost. This one fails open: any failure prints nothing, and Codex asks in its pane. Codex
+/// asks the operator to trust it once, as it does each of purlis's hooks.
+fn question_group(binary: &std::path::Path) -> toml::Value {
+    let mut hook = toml::Table::new();
+    hook.insert("type".to_owned(), toml::Value::from("command"));
+    hook.insert(
+        "command".to_owned(),
+        toml::Value::from(crate::plugin::command_at(
+            binary,
+            super::hooked::QUESTION_WORD,
+        )),
+    );
+    hook.insert(
+        "timeout".to_owned(),
+        toml::Value::from(
+            i64::try_from(super::hooked::QUESTION_HOOK_TIMEOUT.as_secs()).unwrap_or(i64::MAX),
+        ),
+    );
+    let mut group = toml::Table::new();
+    group.insert(
+        "matcher".to_owned(),
+        toml::Value::from(super::hooked::CODEX_QUESTION_TOOL),
+    );
+    group.insert(
+        "hooks".to_owned(),
+        toml::Value::Array(vec![toml::Value::Table(hook)]),
+    );
+    toml::Value::Table(group)
+}
+
 /// The `-c` pairs that arm Codex's hooks on one session, out of [`crate::plugin::codex_handlers`].
 ///
 /// On the argument for the reason Claude Code's are: nothing is written, so nothing is left
@@ -514,6 +575,12 @@ fn session_flags(binary: &std::path::Path) -> Vec<String> {
                     toml::Value::Table(group)
                 })
                 .collect();
+            // One key per event, or the last `-c` of it would win: the question hook rides in
+            // the same `PreToolUse` as the guard ([`question_group`]).
+            let mut groups = groups;
+            if event == "PreToolUse" {
+                groups.push(question_group(binary));
+            }
             let value = toml::Value::Array(groups);
             ["-c".to_owned(), format!("hooks.{event}={value}")]
         })
