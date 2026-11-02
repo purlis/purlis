@@ -1540,6 +1540,11 @@ export const commands = {
 	cancelEngineDownload: __WINDOW_ONLY_RESULT,
 	useThisMachinesChrome: __WINDOW_ONLY_RESULT,
 	dockerPools: __WINDOW_ONLY_RESULT,
+	poolSetup: __WINDOW_ONLY_RESULT,
+	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
+	poolSetupName: __WINDOW_ONLY_RESULT,
+	poolSetupPool: __WINDOW_ONLY_RESULT,
+	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
@@ -8463,6 +8468,37 @@ export type PoolRow = {
 	 *  itself, as `runners.json` spells it (`24h`, `90m`; #3471).
 	 */
 	suspend_after: string,
+};
+
+/**  One step's next action. */
+export type PoolSetupAction = {
+	id: string,
+	label: string,
+	does: string,
+	command: string | null,
+	url: string | null,
+};
+
+/**  What the tab draws. */
+export type PoolSetupShown = {
+	/**  The pool this setup made. */
+	pool: string | null,
+	/**  The name typed on the Pool step, for the box to hold. */
+	name: string | null,
+	/**  The step the person has reached. */
+	at: string | null,
+	steps: PoolSetupStep[],
+};
+
+/**  One step as it stands. */
+export type PoolSetupStep = {
+	id: string,
+	name: string,
+	state: string,
+	line: string | null,
+	findings: string[],
+	next: PoolSetupAction | null,
+	skippable: boolean,
 };
 
 /**  What the person is asked. */

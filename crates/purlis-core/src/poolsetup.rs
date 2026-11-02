@@ -147,6 +147,8 @@ pub struct Action {
     pub label: String,
     pub does: String,
     pub command: Option<String>,
+    /// The official page it opens, where it opens one.
+    pub url: Option<String>,
 }
 
 /// One step as it stands.
@@ -270,6 +272,10 @@ pub struct Facts {
 pub struct Choices {
     /// The kind chosen on Where, before there is a pool.
     pub kind: Option<Kind>,
+    /// The name typed on the Pool step, for the box to hold.
+    pub name: Option<String>,
+    /// The pool this setup made, which it goes on with. A name typed never picks a pool.
+    pub pool: Option<String>,
     /// The steps skipped on each pool.
     pub skipped: BTreeMap<String, Vec<StepId>>,
 }
@@ -283,12 +289,22 @@ fn this_machine() -> &'static str {
     }
 }
 
+/// Docker's own install page for this system.
+fn docker_install_page() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "https://docs.docker.com/desktop/setup/install/mac-install/"
+    } else {
+        "https://docs.docker.com/engine/install/"
+    }
+}
+
 fn action(id: ActionId, label: &str, does: impl Into<String>) -> Option<Action> {
     Some(Action {
         id,
         label: label.to_owned(),
         does: does.into(),
         command: None,
+        url: None,
     })
 }
 
@@ -335,12 +351,15 @@ fn where_reading(facts: &Facts, choices: &Choices) -> Reading {
         Engine::Missing => Reading::attention(
             "You need Docker first. It runs your chats in a container on this machine, apart \
              from your files.",
-            action(
-                ActionId::GetDocker,
-                "Get Docker",
-                "Opens Docker's download page in your browser. purlis doesn't install anything, \
-                 and checks again by itself.",
-            ),
+            Some(Action {
+                id: ActionId::GetDocker,
+                label: "Open Docker's install page".to_owned(),
+                does: "Opens Docker's own page in your browser. purlis doesn't install anything, \
+                       and checks again by itself."
+                    .to_owned(),
+                command: None,
+                url: Some(docker_install_page().to_owned()),
+            }),
         ),
         Engine::NotAnswering => Reading::attention(
             "Docker needs to be running. purlis found it, and it isn't answering. If it is \
@@ -348,8 +367,9 @@ fn where_reading(facts: &Facts, choices: &Choices) -> Reading {
              names a socket on this machine.",
             action(
                 ActionId::StartDocker,
-                "Start Docker",
-                "Start Docker the way you usually do. purlis checks again by itself.",
+                "Open the Docker app",
+                "Opens Docker where purlis can. Otherwise, start it the way you usually do. \
+                 purlis checks again by itself.",
             ),
         ),
         Engine::Elsewhere => Reading::attention(
@@ -369,8 +389,8 @@ fn where_reading(facts: &Facts, choices: &Choices) -> Reading {
             "Docker is ready, so purlis recommends running chats there.",
             action(
                 ActionId::UseDocker,
-                "Use Docker",
-                "Saves your choice. Nothing changes on this machine.",
+                "Continue with Docker",
+                "Saves your choice. Nothing on this machine changes yet.",
             ),
         ),
     }
@@ -383,8 +403,7 @@ fn pool_reading(facts: &Facts) -> Reading {
             action(
                 ActionId::CreatePool,
                 "Create the pool",
-                "Makes one container, its runner, in Docker on this machine. Settings › Pools \
-                 has the form.",
+                "Makes one container, its runner, in Docker on this machine.",
             ),
         );
     };
@@ -400,7 +419,18 @@ fn pool_reading(facts: &Facts) -> Reading {
         )
     };
     match &pool.runner {
-        Runner::None => make_again(format!("Pool {name} has no runner.")),
+        // Adding a pool records it first, so this is usually a runner being made.
+        Runner::None => Reading::attention(
+            format!(
+                "Pool {name} has no runner yet. If it is being made, this clears by itself. If \
+                 not, remove the pool in Settings › Pools and add it again."
+            ),
+            action(
+                ActionId::CheckAgain,
+                "Check again",
+                "Asks Docker again. It changes nothing.",
+            ),
+        ),
         Runner::Gone => make_again(format!(
             "The runner of pool {name} was removed outside purlis."
         )),
@@ -503,6 +533,7 @@ fn sign_ins_reading(facts: &Facts) -> Reading {
                 does: "Opens the sign-in page in your browser. The sign-in stays on the runner."
                     .to_owned(),
                 command: Some(format!("purlis profile sign-in {profile} --pool {name}")),
+                url: None,
             }),
         );
     }
@@ -840,6 +871,8 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
     }
     Ok(Choices {
         kind: held.kind,
+        name: held.name,
+        pool: held.pool,
         skipped: held.skipped,
     })
 }
@@ -851,6 +884,10 @@ struct Held {
     version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     kind: Option<Kind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pool: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     skipped: BTreeMap<String, Vec<StepId>>,
 }
@@ -859,6 +896,8 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
     let held = Held {
         version: 1,
         kind: choices.kind,
+        name: choices.name,
+        pool: choices.pool,
         skipped: choices.skipped,
     };
     let text = serde_json::to_string_pretty(&held)
@@ -878,6 +917,55 @@ pub fn choose_kind(config: &Path, kind: Kind) -> Result<(), Refused> {
     let mut choices = read_choices(config)?;
     choices.kind = Some(kind);
     write_choices(config, choices)
+}
+
+/// **Keeps the name given on the Pool step**, or none, so a person who comes back finds it.
+///
+/// Refused for a name no pool could have, so the file stays small and what it holds stays a name.
+pub fn choose_name(config: &Path, name: Option<&str>) -> Result<(), Refused> {
+    if let Some(name) = name {
+        runners::usable_pool_name(name).map_err(Refused::Other)?;
+    }
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.name = name.map(str::to_owned);
+    write_choices(config, choices)
+}
+
+/// **Keeps that this setup goes on with pool `name`**, once it has made it. Refused for a pool
+/// this machine doesn't keep.
+pub fn choose_pool(config: &Path, name: &str) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    if !runners::pools(config)?.iter().any(|one| one.name() == name) {
+        return Err(Refused::Other(format!(
+            "there is no pool named {name} on this machine"
+        )));
+    }
+    let mut choices = read_choices(config)?;
+    choices.pool = Some(name.to_owned());
+    choices.name = None;
+    write_choices(config, choices)
+}
+
+/// **Where the person stopped**: the setup of the pool it made where that is still kept, else a
+/// new pool's, with the name typed.
+pub fn resumed(here: &Here<'_>) -> Result<(Setup, Option<String>), Refused> {
+    let choices = read_choices(here.config)?;
+    let kept = runners::pools(here.config)?;
+    let pool = choices
+        .pool
+        .as_deref()
+        .filter(|name| kept.iter().any(|pool| pool.name() == *name));
+    let setup = read(here, pool)?;
+    Ok((setup, choices.name))
+}
+
+/// **This machine's `docker`**, where it has one, found as a pool's is.
+#[must_use]
+pub fn docker_here() -> Option<Docker> {
+    let path = crate::envvar::var("PATH");
+    let home = crate::envvar::var_os("HOME").map(PathBuf::from);
+    Docker::on_this_machine(path.as_deref(), home.as_deref()).ok()
 }
 
 /// **Keeps that the person skipped `step` on pool `pool`.** Refused for a step later ones need.
@@ -914,7 +1002,11 @@ pub fn unskip(config: &Path, pool: &str, step: StepId) -> Result<(), Refused> {
 /// same name starts clean. Nothing is written where nothing was chosen for it.
 pub(crate) fn forget_pool_locked(config: &Path, pool: &str) -> Result<(), Refused> {
     let mut choices = read_choices(config)?;
-    if choices.skipped.remove(pool).is_some() {
+    let named = choices.pool.as_deref() == Some(pool);
+    if named {
+        choices.pool = None;
+    }
+    if choices.skipped.remove(pool).is_some() || named {
         write_choices(config, choices)?;
     }
     Ok(())

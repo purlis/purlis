@@ -8243,3 +8243,118 @@ nav.piece-files-head {
 .panel-list-held {
   display: contents;
 }
+
+/* Pool setup (spec #4469, #4480): the step list on the left, one step on the right. */
+.pool-setup {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+}
+.pool-setup-rail {
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-4);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+}
+.pool-setup-saved {
+  margin: auto var(--space-3) 0;
+  padding-top: var(--space-6);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+}
+.pool-setup-main {
+  min-height: 0;
+  overflow-y: auto;
+}
+.pool-setup-page,
+.pool-setup-alone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 660px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6);
+}
+.pool-setup-head {
+  display: grid;
+  gap: var(--space-2);
+}
+.pool-setup-title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--line-height-tight);
+  outline: none;
+}
+.pool-setup-lead {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-body);
+}
+.pool-setup-p {
+  margin: 0 0 var(--space-3);
+  color: var(--text-secondary);
+  line-height: var(--line-height-body);
+}
+.pool-setup-p:last-child {
+  margin-bottom: 0;
+}
+.pool-setup-p strong,
+.pool-setup-term strong {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-strong);
+}
+.pool-setup-terms {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--border-strong);
+}
+.pool-setup-term {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+}
+.pool-setup-action {
+  display: grid;
+  gap: var(--space-3);
+}
+.pool-setup-does {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+}
+.pool-setup-recheck,
+.pool-setup-busy {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.pool-setup-busy {
+  padding: var(--space-5) 0;
+  font-size: var(--font-size-base);
+}
+.pool-setup-command {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .pool-setup {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .pool-setup-rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+}

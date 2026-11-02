@@ -3084,6 +3084,19 @@ export const commands = {
 	useThisMachinesChrome: () => typedError<null, string>(__TAURI_INVOKE("use_this_machines_chrome")),
 	/**  **The Docker pools on this machine**, and a new pool's default limits. */
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
+	/**  **Each step's state, read now**: the pool this setup made, else a new one's. */
+	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
+	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
+	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
+	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
+	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
+	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
+	poolSetupPool: (name: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_pool", { name })),
+	/**
+	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
+	 *  elsewhere, with what to do instead.
+	 */
+	poolSetupOpenDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_open_docker")),
 	/**
 	 *  **Adds a Docker pool on this machine**: its runner is made from the image, confined and held
 	 *  to the pool's limits, paired with this desktop and kept. What fails is taken back.
@@ -10745,6 +10758,37 @@ export type PoolRow = {
 	 *  itself, as `runners.json` spells it (`24h`, `90m`; #3471).
 	 */
 	suspend_after: string,
+};
+
+/**  One step's next action. */
+export type PoolSetupAction = {
+	id: string,
+	label: string,
+	does: string,
+	command: string | null,
+	url: string | null,
+};
+
+/**  What the tab draws. */
+export type PoolSetupShown = {
+	/**  The pool this setup made. */
+	pool: string | null,
+	/**  The name typed on the Pool step, for the box to hold. */
+	name: string | null,
+	/**  The step the person has reached. */
+	at: string | null,
+	steps: PoolSetupStep[],
+};
+
+/**  One step as it stands. */
+export type PoolSetupStep = {
+	id: string,
+	name: string,
+	state: string,
+	line: string | null,
+	findings: string[],
+	next: PoolSetupAction | null,
+	skippable: boolean,
 };
 
 /**  What the person is asked. */
