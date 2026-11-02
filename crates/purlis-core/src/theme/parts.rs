@@ -786,6 +786,17 @@ const PART_LAID_ON: &[(&str, &str, &str)] = &[("titlebar", "count", "surface.dee
 /// the ground it stands on, and holds this list to them.
 const FIELD_ERROR_GROUNDS: &[&str] = &["surface.base", "surface.raised", "surface.overlay"];
 
+/// **What the window draws each see-through ground on** (#4648), by ground: the danger wash is
+/// a refusal's or an unrun command's box in a dialog (`App.css`), the approval of what an
+/// extension runs as you, and a pane's trouble Notice over the terminal's fill (`paneFrame.css`).
+/// The check reads a family on a wash laid over these alone, never over every opaque ground the
+/// family stands on (an active tab, a chosen row), since no wash is drawn there. A ground a theme
+/// makes see-through that is not here is read over each opaque ground its family names.
+const WASH_LAID_ON: &[(&str, &[&str])] = &[(
+    "danger.wash",
+    &["surface.base", "surface.overlay", "terminal.background"],
+)];
+
 /// A part of a family in a look, as a sentence names it: `button.root.primary`, or
 /// `text-input.root` for a family that has no variants.
 fn look_named(family: &Family, part: &str, variant: &str) -> String {
@@ -928,6 +939,10 @@ mod part_fills_tests;
 #[cfg(test)]
 #[path = "drawn_looks_tests.rs"]
 mod drawn_looks_tests;
+
+#[cfg(test)]
+#[path = "laid_grounds_tests.rs"]
+mod laid_grounds_tests;
 
 #[cfg(test)]
 #[path = "hot_count_tints_tests.rs"]
