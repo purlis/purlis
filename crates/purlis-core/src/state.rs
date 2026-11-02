@@ -625,6 +625,13 @@ pub struct Chat {
     /// only while the turn runs ([`Chat::background_turn`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     over_a_wait: bool,
+    /// **Its own work is still out, though the wait on it ended for the person** (#4647): the
+    /// wait lapsed ([`Chat::own_work_lapsed`]), a sandbox block's Notice went up during it
+    /// ([`Chat::blocked_while_waiting`]), or one went up in the turn that ended on it. A turn
+    /// that work wakes later is its own, not the person's reply ([`Chat::wakes_on_its_own_work`]).
+    /// A turn that is no background turn, a turn's end and a new session forget it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    own_work_out: bool,
     /// The tasks it asked for that came to nothing and the person has not looked at yet
     /// ([`FailedTask`], #1491), oldest first. **Each is a needs-you item of its own kind, and
     /// its next prompt does not clear it**: the chat is typed a line when a report lands, so a
@@ -720,6 +727,7 @@ impl Chat {
             held: false,
             own_work: None,
             over_a_wait: false,
+            own_work_out: false,
             failed: Vec::new(),
         }
     }
@@ -1062,6 +1070,7 @@ impl Chat {
                 self.state = State::Waiting;
                 self.asking = false;
                 self.own_work = None;
+                self.own_work_out = false;
             }
             // The turn that begins now is the one a waiting report is handed to, as context
             // (`handback`), so it is read and no longer waiting.
@@ -1075,6 +1084,7 @@ impl Chat {
                     self.needs_you = false;
                     self.refusals.clear();
                     self.needs.clear();
+                    self.own_work_out = false;
                 }
                 self.reports.clear();
                 self.stopped.clear();
@@ -1133,6 +1143,7 @@ impl Chat {
                 if waits.on_a_notice || work.at(waits.now).is_none() =>
             {
                 self.turn_ended(waits);
+                self.own_work_out = true;
             }
             // **Not the falling edge: waiting** (#1626, #3878). Its turn has ended while work of
             // its own is in flight, which wakes it, so the next move is nobody's yet: no item is
@@ -1147,6 +1158,7 @@ impl Chat {
                     self.asking = false;
                     self.held = false;
                     self.own_work = work.at(waits.now);
+                    self.own_work_out = false;
                 }
             }
             // Emphatically not `Stop`: a dispatched sub-agent finishing does not end the
@@ -1179,6 +1191,7 @@ impl Chat {
                 self.needs_you = false;
                 self.asking = false;
                 self.own_work = None;
+                self.own_work_out = false;
             }
             // Neither is a state a reader is shown, at any level.
             Said::Plan(_) | Said::Usage(_) => {}
@@ -1206,6 +1219,7 @@ impl Chat {
         self.state = State::Waiting;
         self.over_a_wait = false;
         self.own_work = None;
+        self.own_work_out = false;
         self.turn_over(waits);
         self.asking = false;
     }
@@ -1220,6 +1234,7 @@ impl Chat {
         }
         let was = self.seen();
         self.own_work = None;
+        self.own_work_out = true;
         self.needs_you = true;
         was != self.seen()
     }
@@ -1240,6 +1255,13 @@ impl Chat {
         self.own_work
     }
 
+    /// **Whether a turn that begins now may be its own work's wake** (#4647): it waits on its own
+    /// work, or that work is still out though the wait ended for the person. What tells a wake
+    /// from the person's reply ([`Waits::background_turn`]); read before the turn begins.
+    pub fn wakes_on_its_own_work(&self) -> bool {
+        self.own_work.is_some() || self.own_work_out
+    }
+
     /// **The wait on its own work has passed its limit at `now`** (seconds since 1970), and
     /// nothing woke it (#3878): its turn's end is what it would have been with nothing in
     /// flight, read with `waits`, what it waits on beside the person now. Nothing for a chat
@@ -1251,6 +1273,7 @@ impl Chat {
         }
         let was = self.seen();
         self.own_work = None;
+        self.own_work_out = true;
         self.turn_over(waits);
         was != self.seen()
     }
@@ -1831,6 +1854,14 @@ impl Board {
         self.chats
             .get(&number)
             .and_then(|tracked| tracked.chat.own_work())
+    }
+
+    /// Whether a turn chat `number` begins now may be its own work's wake
+    /// ([`Chat::wakes_on_its_own_work`], #4647).
+    pub fn wakes_on_its_own_work(&self, number: u32) -> bool {
+        self.chats
+            .get(&number)
+            .is_some_and(|tracked| tracked.chat.wakes_on_its_own_work())
     }
 
     /// The chats waiting on their own work with a limit, each with when its wait lapses, in
