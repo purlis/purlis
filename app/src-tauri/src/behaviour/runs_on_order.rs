@@ -46,7 +46,19 @@ fn in_a_docker_pool() {
         std::fs::write(folder.join("workspace.md"), format!("# {workspace}\n")).expect("written");
     }
     super::git(&root, &["add", "workspaces"]);
-    super::git(&root, &["commit", "-q", "-m", "two workspaces"]);
+    super::git(
+        &root,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "two workspaces",
+        ],
+    );
     purlis_core::machine::update(&machine.config, |store| {
         store.remember(&root, 1);
         store
