@@ -142,7 +142,8 @@ function core(): Asked[] {
     }
     if (cmd === "close_session") return null;
     // What a split asks, to start the chat beside the first one.
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: 2 };
     return null;
   });

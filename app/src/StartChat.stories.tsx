@@ -95,7 +95,13 @@ const OPTIONS: StartOptions = {
 };
 
 /** The dialog as the window opens it, and what was answered once it is gone. */
-function Window({ options = OPTIONS }: { options?: StartOptions }) {
+function Window({
+  options = OPTIONS,
+  pending = false,
+}: {
+  options?: StartOptions;
+  pending?: boolean;
+}) {
   const [open, setOpen] = useState(true);
   const [said, setSaid] = useState("Nothing started");
   return (
@@ -106,6 +112,7 @@ function Window({ options = OPTIONS }: { options?: StartOptions }) {
       {open && (
         <StartChat
           options={options}
+          pending={pending}
           place="smart-ide"
           onStart={(profile, persona, footer, label) => {
             setSaid(
@@ -293,6 +300,30 @@ export const SandboxAndApproval: Story = {
     await expect(page.getByRole("alert")).toHaveTextContent("opencode --port 0");
     await expect(boxOf(dialog)).toEqual(box);
     await expect(room()).toEqual(before);
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **The dialog before each row's details arrive** (#4736): it opens on the personas and the
+ * profiles, and every card says its billing and approval are being checked. The keyboard path is
+ * the dialog's own, the same as with the details in.
+ */
+export const DetailsPending: Story = {
+  args: { pending: true },
+  play: async ({ userEvent }) => {
+    const page = within(document.body);
+    await page.findByRole("dialog", { name: "Start a chat" });
+    await untilFocused(
+      () => page.getByRole("button", { name: "Cancel" }),
+      "Start a chat: the keyboard starts on Cancel",
+    );
+    await waitFor(() =>
+      expect(page.getAllByText(/Checking billing and approval…/)[0]).toBeVisible(),
+    );
+    await pictureNow();
+    await userEvent.keyboard("{Escape}");
+    await expect(page.getByRole("status")).toHaveTextContent("Cancelled");
     expectFocusInSight();
   },
 };

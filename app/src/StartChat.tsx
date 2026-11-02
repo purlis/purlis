@@ -108,6 +108,12 @@ const ASKS_THE_STAGE_EVERY_MS = 3000;
  * about to run and not about the profile's name. **No profile icon is drawn beside that
  * approval**: the footer's summary drops the harness's icon while Start is an approval (#2922).
  *
+ * **It opens before every row's details are known** (#4736): `pending` while each profile's
+ * approval, sandbox and billing are still being read, and each card says so until they arrive.
+ * A Start pressed meanwhile waits for them, then goes only where it is a plain start: a profile
+ * that turns out to ask for its approval, or one the sandbox cannot hold, is shown and asks, as
+ * it would have had the details been there first.
+ *
  * **The footer checkbox is asked here and nowhere else** (ADR 0029). Inside a pane
  * charter prints an empty line where its own footer would go, because the app's panels
  * already draw the plane — and this is where an operator says "not this chat". The choice is
@@ -153,6 +159,7 @@ const ASKS_THE_STAGE_EVERY_MS = 3000;
  */
 export function StartChat({
   options,
+  pending = false,
   repo,
   place,
   starting = false,
@@ -173,6 +180,8 @@ export function StartChat({
   onCancel,
 }: {
   options: StartOptions;
+  /** Whether the rows' approval, sandbox and billing are still being read (#4736). */
+  pending?: boolean;
   /** The repo whose clone this chat would start in, when it would start in one. */
   repo?: string;
   /** Where the chat starts, by name: its workspace, or the project's (R8). */
@@ -316,14 +325,20 @@ export function StartChat({
   // The words Start can reach in this dialog, and whether one is a grant (B1 of #3378's review):
   // the options are fixed while it is open, so the room kept for them never changes.
   // A mock or an older answer may leave a row's `approval` or `sandbox` out: read as none.
-  const canApprove = options.profiles.some((row) => Boolean(row.approval));
+  // A dialog opened before its details keeps the room of every word they could bring (#4736).
+  const [openedPending] = useState(pending);
+  const canApprove = openedPending || options.profiles.some((row) => Boolean(row.approval));
   const reach = {
     words: reachableWords({
       canApprove,
-      canOptOut: options.profiles.some(
-        (row) =>
-          row.sandbox != null && row.sandbox.locked === null && row.sandbox.state !== "unsandboxed",
-      ),
+      canOptOut:
+        openedPending ||
+        options.profiles.some(
+          (row) =>
+            row.sandbox != null &&
+            row.sandbox.locked === null &&
+            row.sandbox.state !== "unsandboxed",
+        ),
     }),
     grant: canApprove,
   };
@@ -369,12 +384,22 @@ export function StartChat({
     cancelled.current = true;
     onCancel();
   };
+  // A Start pressed before the details arrived (#4736): it waits for them.
+  const [pressedEarly, setPressedEarly] = useState(false);
   const start = () => {
+    if (pending) {
+      setPressedEarly(true);
+      return;
+    }
     if (picked?.approval) {
       if (picked.harness) noteHarness(picked.harness.name);
       onApprove(picked.name, persona, showFooter, picked.shown, label, newBranch, withoutSandbox);
       return;
     }
+    plainStart();
+  };
+  // A start that grants nothing: no approval, and the sandbox as the project has it.
+  const plainStart = () => {
     if (!profile) return;
     if (picked?.harness) noteHarness(picked.harness.name);
     onStart(profile, persona, showFooter, label, newBranch, withoutSandbox);
@@ -385,6 +410,14 @@ export function StartChat({
   // approval or a start without the sandbox (ADR 0097 §6), and nothing while one is running.
   const [savingLimit, setSavingLimit] = useState(false);
   const byKey = !approves && withoutSandbox === null && !unavailable && !starting && !savingLimit;
+  // Once the details are in, a Start pressed early goes, where it is a plain start; an approval
+  // or a start without the sandbox is shown instead, and is a press of its own (ADR 0097 §6).
+  const wentEarly = useRef(false);
+  useEffect(() => {
+    if (pending || !pressedEarly || wentEarly.current) return;
+    wentEarly.current = true;
+    if (byKey) plainStart();
+  });
   // Raising a limit starts the chat too, so it is offered only where that is a plain start of the
   // profile it was refused on: never an approval or a start without the sandbox (ADR 0097 §6).
   const raises =
@@ -573,7 +606,7 @@ export function StartChat({
       main={startAnswer({
         approves,
         withoutSandbox: withoutSandbox !== null,
-        starting: starting || savingLimit,
+        starting: starting || savingLimit || (pending && pressedEarly),
         unavailable,
         reach,
         onPress: start,
@@ -741,7 +774,7 @@ export function StartChat({
                   title={row.name}
                   // Its facts, the command first among them: the words about to run are read
                   // beside the card that runs them (V69).
-                  detail={<CardFacts row={row} />}
+                  detail={<CardFacts row={row} pending={pending} />}
                 />
               ))}
             </OptionCards>
@@ -894,10 +927,13 @@ export function StartChat({
  * **A harness card's facts, in two lines** (R25, R28): what the chat is billed to and the model,
  * then the command that runs — never cut from the card, since it is what is approved (V69) — with
  * where it was declared, whether it is the default and whether it asks for approval. The harness's
- * kind is said only where the profile's name does not say it already.
+ * kind is said only where the profile's name does not say it already. While the details are read
+ * (`pending`, #4736), it says it is checking them.
  */
-function CardFacts({ row }: { row: ProfileRow }) {
+function CardFacts({ row, pending }: { row: ProfileRow; pending: boolean }) {
   const bill = [
+    // Until the details arrive (#4736), what it is billed to and whether it asks are not known.
+    pending ? "Checking billing and approval…" : undefined,
     row.billed_to ? `Billed to ${row.billed_to}.` : undefined,
     row.model ? `Model: ${row.model}.` : undefined,
   ].filter((said) => said !== undefined);

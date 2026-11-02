@@ -148,7 +148,8 @@ function core(answers: (cmd: string, args: Record<string, unknown>) => unknown =
         asks_forge: null,
       };
     if (cmd === "plane_sidebar") return SIDEBAR;
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: 1, label: null };
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
@@ -601,7 +602,8 @@ describe("the first run", () => {
           },
           asks_forge: null,
         };
-      if (cmd === "start_options")
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first")
         return {
           ...START_OPTIONS,
           profiles: [{ ...START_OPTIONS.profiles[0], approval: "new" }],
@@ -976,7 +978,8 @@ describe("no harness found (FR-29)", () => {
         const all = found() as typeof NOTHING;
         return { harnesses: all.harnesses, local_models: all.local_models };
       }
-      if (cmd === "start_options")
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first")
         return {
           ...START_OPTIONS,
           profiles: [

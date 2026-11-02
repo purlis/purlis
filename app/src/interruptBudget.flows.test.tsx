@@ -132,7 +132,8 @@ function core(answers: Answers = () => undefined) {
         persona: "steward",
         unfiled: [],
       };
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: 1, label: null };
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
@@ -292,7 +293,8 @@ describe("opening someone else's project (#1078)", () => {
       if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
       if (cmd === "open_plane") return { plane: null, ask: asking(TWO, true) };
       if (cmd === "approve_plane") return TWO;
-      if (cmd === "start_options")
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first")
         return { ...START_OPTIONS, profiles: [{ ...START_OPTIONS.profiles[0], approval: "new" }] };
       if (cmd === "plane_sidebar" && args.plane === TWO)
         return { root: TWO, workspaces: [], personas: [], persona: null, unfiled: [] };

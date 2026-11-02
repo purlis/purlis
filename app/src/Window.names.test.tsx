@@ -114,7 +114,10 @@ function core() {
             unfiled: [],
             workspaces: [workspace("alpha", [chat(1), chat(2)]), workspace("beta")],
           };
+        case "start_details":
+          return [];
         case "start_options":
+        case "start_options_first":
           return START_OPTIONS;
         // The split's second chat (#629).
         case "start_chat":
