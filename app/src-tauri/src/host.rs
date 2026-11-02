@@ -704,6 +704,10 @@ pub trait ChatBoard: Send + Sync {
     /// it is asking, and the board's answer is the one to leave it with either way.
     fn ignored(&self, session: u32) -> Moved;
 
+    /// The person sent chat `session` a line, while a background turn ran over its wait on them
+    /// (#4562). Nothing where none did.
+    fn replied(&self, session: u32) -> Option<Moved>;
+
     /// A chat `session` handed work to, shown as `from`, has reported back to it
     /// (charter-app#259). Nothing when no reader would see a difference.
     fn reported_back(&self, session: u32, from: &str) -> Option<Moved>;
