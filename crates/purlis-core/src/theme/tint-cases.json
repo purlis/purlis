@@ -3302,6 +3302,7 @@
    "tokens": {
     "accent.base": "#403667",
     "accent.surface": "#dedcef",
+    "accent.text": "#403667",
     "accent.fill": "#6d58bb",
     "accent.fill-hover": "#745fc3",
     "accent.fill-edge": "#00000000",
@@ -3322,6 +3323,7 @@
    "tokens": {
     "accent.base": "#403667",
     "accent.surface": "#d4e2d2",
+    "accent.text": "#403667",
     "accent.fill": "#137824",
     "accent.fill-hover": "#1e7f2c",
     "accent.fill-edge": "#00000000",
