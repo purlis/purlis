@@ -498,13 +498,13 @@ fn coming_back_finds_the_name_given_before_the_pool_is_made() {
         docker: None,
         engine: Err("none".into()),
     };
-    let (setup, name) = resumed(&here).unwrap();
-    assert_eq!((setup.pool, name), (None, None));
+    let found = resumed(&here).unwrap();
+    assert_eq!((found.setup.pool, found.name), (None, None));
 
     choose_name(config.path(), Some("dev-box")).unwrap();
-    let (setup, name) = resumed(&here).unwrap();
-    assert_eq!(setup.pool, None, "not made yet");
-    assert_eq!(name.as_deref(), Some("dev-box"));
+    let found = resumed(&here).unwrap();
+    assert_eq!(found.setup.pool, None, "not made yet");
+    assert_eq!(found.name.as_deref(), Some("dev-box"));
 }
 
 #[test]
@@ -524,12 +524,16 @@ fn a_name_typed_never_picks_a_pool_and_the_pool_made_is_gone_on_with() {
     .unwrap();
 
     choose_name(config.path(), Some("dev-box")).unwrap();
-    assert_eq!(resumed(&here).unwrap().0.pool, None, "typed, not chosen");
+    assert_eq!(
+        resumed(&here).unwrap().setup.pool,
+        None,
+        "typed, not chosen"
+    );
 
     choose_pool(config.path(), "dev-box").unwrap();
-    let (setup, name) = resumed(&here).unwrap();
-    assert_eq!(setup.pool.as_deref(), Some("dev-box"));
-    assert_eq!(name, None);
+    let found = resumed(&here).unwrap();
+    assert_eq!(found.setup.pool.as_deref(), Some("dev-box"));
+    assert_eq!(found.name, None);
 
     let locked = runners::lock(config.path());
     runners::forget_pool_locked(config.path(), "dev-box", &locked).unwrap();
@@ -564,15 +568,11 @@ fn a_name_no_pool_could_have_is_refused_and_not_kept() {
 }
 
 fn a_pool_kept(config: &Path, name: &str) {
-    let image = crate::dockerpool::Image::pinned(&format!(
-        "{}@{}",
-        crate::dockerpool::PURLIS_RUNNER_IMAGE,
-        crate::dockerpool::tests::DIGEST
-    ))
+    runners::record_pool(
+        config,
+        &crate::runners::tests::pool(name, runners::Set::default()),
+    )
     .unwrap();
-    let pool = runners::Pool::new(name, image, runners::Set::default()).unwrap();
-    let locked = runners::lock(config);
-    runners::record_pool_locked(config, &pool, &locked).unwrap();
 }
 
 fn here(config: &Path) -> Here<'_> {

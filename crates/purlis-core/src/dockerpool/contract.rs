@@ -109,7 +109,7 @@ impl Docker {
             "--rm",
             "-i",
             "--name",
-            &name,
+            name.as_str(),
             "--network",
             "none",
             "--cap-drop",

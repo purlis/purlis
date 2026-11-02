@@ -145,7 +145,7 @@ describe("SignInsStep", () => {
     draw();
     await userEvent.click(await screen.findByRole("button", { name: "Leave this profile out" }));
     expect(screen.queryByText("personal is too big to send")).toBeNull();
-    expect(screen.getByRole("button", { name: "Save and continue" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
   });
 
   it("records the ticked profiles and signs each in inside the step", async () => {

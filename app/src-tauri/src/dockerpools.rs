@@ -9,11 +9,11 @@
 //! alone (`ui::WINDOW_ONLY`): only the person adds or removes a pool, which runs a container on
 //! their machine.
 
+use purlis_core::dockerpool::Limits;
 #[cfg(unix)]
 use purlis_core::dockerpool::Missing;
-use purlis_core::dockerpool::{Image, Limits};
 #[cfg(unix)]
-use purlis_core::runners::{Pool, Set};
+use purlis_core::runners::Pool;
 #[cfg(unix)]
 use purlis_session_protocol::browsing::LinkFrames;
 

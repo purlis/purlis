@@ -99,7 +99,7 @@ const meta = {
   render: (args) => <SignInsStep {...args} pool={`dev-box-${++pool}`} />,
   decorators: [
     (Story) => (
-      <div style={{ maxWidth: 720, display: "grid", gap: 16 }}>
+      <div style={{ maxWidth: 720 }} className="pool-setup-page">
         <Story />
       </div>
     ),

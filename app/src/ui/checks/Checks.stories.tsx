@@ -19,7 +19,7 @@ export const EveryVerdict: Story = {
       <>
         <CheckLine verdict="ok" title="A chat started on dev-box" trail="In 11 seconds" />
         <CheckLine verdict="missing" title="A user who isn't root">
-          The image runs as root. Add USER 10001:10001.
+          The image runs as root, and a runner needs another user.
         </CheckLine>
         <CheckLine verdict="running" title="The profile is signed in" />
         <CheckLine verdict="todo" title="Not checked yet" />

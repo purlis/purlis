@@ -288,6 +288,7 @@ pub struct PoolSetupSizes {
 }
 
 /// A count as the window takes it.
+#[cfg(unix)]
 fn small(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }

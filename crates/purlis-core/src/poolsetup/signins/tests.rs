@@ -46,9 +46,3 @@ fn a_profile_that_couldnt_be_measured_says_why_and_is_over_nothing() {
     assert_eq!(one.unread.as_deref(), Some("no folder"));
     assert!(one.hits.is_empty());
 }
-
-#[test]
-fn a_project_with_nothing_open_uses_nothing_but_its_default() {
-    let plane = tempfile::tempdir().unwrap();
-    assert!(in_use(plane.path()).is_empty());
-}

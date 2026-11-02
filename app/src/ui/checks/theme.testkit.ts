@@ -9,7 +9,7 @@ export default {
   forced: {
     drawn: {
       '[data-scope="checks"][data-part="item"][data-variant="missing"] [data-part="title"]': {
-        "font-weight": "var(--font-weight-strong)",
+        "font-weight": "bold",
       },
     },
   },

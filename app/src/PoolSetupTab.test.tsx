@@ -149,7 +149,9 @@ describe("PoolSetupTab", () => {
     );
     expect(calls.some((call) => call.cmd === "pool_setup_create")).toBe(false);
     await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
-    expect(await screen.findByRole("heading", { name: "Sign-ins" })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "Choose the profiles for this pool" }),
+    ).toBeTruthy();
     const added = calls.find((call) => call.cmd === "pool_setup_create");
     expect(added?.args).toMatchObject({ adding: { name: "dev-box", image: "img@sha256:a" } });
   });
@@ -184,13 +186,13 @@ describe("PoolSetupTab", () => {
       }),
     });
     const { unmount } = render(<PoolSetupTab plane="p" />);
-    expect(await screen.findByText(/new@sha256:b, from purlis 9\.9/)).toBeTruthy();
+    expect(await screen.findByText(/from purlis 9\.9\. An update to it is waiting/)).toBeTruthy();
     unmount();
     core(() => CHOSEN, {
       runner_image_of_this_version: () => ({ state: "none_named" }),
     });
     render(<PoolSetupTab plane="p" />);
-    expect(await screen.findByRole("textbox", { name: /Runner image/ })).toBeTruthy();
+    expect(await screen.findByRole("textbox", { name: /Image, by digest/ })).toBeTruthy();
   });
 
   it("makes nothing where Docker changed since the step was read", async () => {
@@ -247,7 +249,7 @@ describe("PoolSetupTab", () => {
       ),
     );
     await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
-    await screen.findByRole("heading", { name: "Sign-ins" });
+    await screen.findByRole("heading", { name: "Choose the profiles for this pool" });
     expect(calls.some((call) => call.cmd === "docker_pools")).toBe(true);
   });
 
@@ -269,7 +271,7 @@ describe("PoolSetupTab", () => {
     );
     expect(calls.some((call) => call.cmd === "pool_setup_pool")).toBe(false);
     await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
-    await screen.findByRole("heading", { name: "Sign-ins" });
+    await screen.findByRole("heading", { name: "Choose the profiles for this pool" });
     expect(calls.find((call) => call.cmd === "pool_setup_pool")?.args).toMatchObject({
       name: "dev-box",
     });
@@ -383,7 +385,7 @@ describe("Options and See what this does (#4481)", () => {
       expect(shown?.args).toMatchObject({ adding: { memory_mib: 8192 } });
     });
     await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
-    await screen.findByRole("heading", { name: "Sign-ins" });
+    await screen.findByRole("heading", { name: "Choose the profiles for this pool" });
     const shown = calls.filter((call) => call.cmd === "pool_setup_command").pop();
     const sent = calls.find((call) => call.cmd === "pool_setup_create");
     expect(sent?.args).toEqual(shown?.args);
