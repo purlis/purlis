@@ -1071,14 +1071,6 @@ fn what_became_of(held: &Held, sender: u32, id: &str) -> Answer {
         .rev()
         .find(|record| record.id.as_deref() == Some(id))
     else {
-        // **A chat on a pool's runner queues on the runner's disk** (#4560), beside the hook
-        // socket its runner's host gave it, where this app does not read: said plainly, so the
-        // chat does not wait on a message that never left.
-        if let Some(pool) =
-            crate::hooks::heard_from_a_pool().or_else(|| held.chats().pool_of(sender))
-        {
-            return no(queued_on_a_runner(&pool));
-        }
         return no(format!(
             "the app holds no record of the message this chat queued as {id}: `purlis \
              dispatch list` shows where this chat's messages stand"
@@ -1094,16 +1086,6 @@ fn what_became_of(held: &Held, sender: u32, id: &str) -> Answer {
             delivered: true,
         }),
     }
-}
-
-/// What a chat on pool `pool`'s runner is told of a message it queued there (#4560): the queue
-/// is on the runner's disk, and nothing carries it here yet.
-fn queued_on_a_runner(pool: &str) -> String {
-    format!(
-        "nothing was sent: this chat runs on pool {pool}'s runner, and purlis does not yet carry \
-         a message queued there to the app. Do not wait for an answer to it; carry on with what \
-         you can, and put what you would have sent in your report"
-    )
 }
 
 /// The kind of a queued message, and the chat it names, where it names one.
