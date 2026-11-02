@@ -9,8 +9,9 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { LEAST, leastAt } from "./fits";
 import { DEFAULT_TEXT } from "./textSize";
-import type { Moved, OpenChat } from "./bindings";
+import type { LaidOut, Moved, OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * The chat strip when it holds more than it has room for (ADR 0039, as amended).
@@ -132,7 +133,10 @@ function chat(session: number): OpenChat {
 
 /** The core, holding `open` chats and nothing else. There is no sidebar, so every chat is on
  *  one strip — which is what a window that has not read the plane yet draws (ADR 0036). */
-function core(open: OpenChat[]): { move: (moved: Moved) => void; ended: number[] } {
+function core(
+  open: OpenChat[],
+  laid: LaidOut | null = null,
+): { move: (moved: Moved) => void; ended: number[] } {
   const listeners = new Map<string, number>();
   const ended: number[] = [];
   mockIPC((cmd, args) => {
@@ -144,6 +148,7 @@ function core(open: OpenChat[]): { move: (moved: Moved) => void; ended: number[]
     if (cmd === "plane_at_launch")
       return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
     if (cmd === "opened_chats") return open;
+    if (cmd === "reopened_layout") return laid;
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "close_session") {
@@ -487,3 +492,121 @@ describe("the chat strip when it holds more than it has room for", () => {
     expect(room.live()).toBe(1);
   });
 });
+
+describe("the strip's tabs (#4762)", () => {
+  let room: Room;
+
+  beforeEach(() => {
+    room = measuring();
+  });
+
+  afterEach(() => {
+    room.stop();
+    cleanup();
+    clearMocks();
+  });
+
+  /** The tab named `name`: what its marks are drawn in. */
+  const tabNamed = (name: string) =>
+    within(strip())
+      .getAllByRole("tab")
+      .find((tab) => nameIn(tab) === name);
+
+  it("is drawn with one tab, its New tab beside it", async () => {
+    core([chat(1)]);
+    render(<App />);
+
+    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
+    expect(within(strip()).getByRole("button", { name: "New tab" })).toBeInTheDocument();
+  });
+
+  it("wears a split's focused pane, ⊟+N, and lists every pane on hover", async () => {
+    // One tab, two panes side by side, the second focused, as the record put it back.
+    core([chat(1), chat(2)], {
+      strip: null,
+      tabs: [
+        {
+          workspace: null,
+          pinned: false,
+          window: 0,
+          front: true,
+          focused: "b",
+          tree: {
+            kind: "split",
+            direction: "row",
+            share: 500,
+            a: { kind: "chat", chat: 1 },
+            b: { kind: "chat", chat: 2 },
+          },
+        },
+      ],
+    });
+    render(<App />);
+
+    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.2"]));
+    const tab = tabNamed("ide.2");
+    expect(tab?.querySelector(".tab-split-more")?.textContent).toBe("+1, split, 2 panes");
+    expect(await hoverTipOf(tab)).toBe("ide.1 · ide.2");
+  });
+
+  it("draws its pin before its icon", async () => {
+    core([chat(1), { ...chat(2), pinned: true }]);
+    render(<App />);
+
+    await vi.waitFor(() => expect(tabNames()).toHaveLength(2));
+    const marks = [...(tabNamed("ide.2")?.querySelectorAll(".pinned, .chat-persona") ?? [])];
+    expect(marks.map((one) => one.classList[0])).toEqual(["pinned", "chat-persona"]);
+  });
+
+  it("keeps a pinned tab out of the collapse, with the front tab beside it", async () => {
+    // With no sidebar read every chat is on one strip in its own order (ADR 0036): the pin
+    // keeps its place, and the room left draws the tab in front.
+    core([chat(1), chat(2), chat(3), { ...chat(4), pinned: true }]);
+    render(<App />);
+    await vi.waitFor(() => expect(tabNames()).toHaveLength(4));
+
+    room.roomFor(2);
+
+    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.4"]));
+    expect(
+      await screen.findByRole("button", { name: "Show 2 tabs the strip is not showing" }),
+    ).toBeInTheDocument();
+  });
+
+  it("draws pins as their icons only when they alone would take over half the strip", async () => {
+    core([chat(1), chat(2), { ...chat(3), pinned: true }, { ...chat(4), pinned: true }]);
+    render(<App />);
+    await vi.waitFor(() => expect(tabNames()).toHaveLength(4));
+
+    room.roomFor(4);
+    await vi.waitFor(() => expect(tabNames()).toHaveLength(4));
+    expect(within(strip()).getAllByRole("tab").filter(iconOnly)).toEqual([]);
+
+    room.roomFor(3);
+    await vi.waitFor(() =>
+      expect(within(strip()).getAllByRole("tab").filter(iconOnly).map(nameIn)).toEqual([
+        "ide.3",
+        "ide.4",
+      ]),
+    );
+  });
+
+  it("marks its tabs narrow under 140px each, and not while they are wider", async () => {
+    // jsdom draws no CSS: the × of a narrow tab shows only in front or hovered by the
+    // stylesheet (`tabs.css`), and the mark it keys on is what a test can read.
+    core([chat(1), chat(2)]);
+    render(<App />);
+    await vi.waitFor(() => expect(tabNames()).toHaveLength(2));
+
+    room.roomFor(2);
+    await vi.waitFor(() => expect(strip().querySelectorAll("[data-narrow]")).toHaveLength(2));
+
+    room.roomFor(4);
+    await vi.waitFor(() => expect(strip().querySelector("[data-narrow]")).toBeNull());
+  });
+});
+
+/** Whether `tab` is drawn as its icon alone. */
+const iconOnly = (tab: Element) => tab.closest("[data-icon-only]") !== null;
+/** The name a tab says. */
+const nameIn = (tab: Element) => tab.querySelector(".tab-name")?.textContent;

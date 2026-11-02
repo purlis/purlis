@@ -7,6 +7,7 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import type { LaidOut } from "./bindings";
 import {
   chipName,
   goToWorkspace,
@@ -154,7 +155,7 @@ function core(
       names.push(given.name as string);
       return [`✓ workspace ${String(given.name)} created`];
     }
-    if (cmd === "pin_chat" || cmd === "pin_workspace" || cmd === "pin_project") {
+    if (cmd === "pin_workspace" || cmd === "pin_project") {
       // A refusal is a THROWN value and not an `Error`, which is what `typedError` turns
       // into `{ status: "error" }` — the same shape the core's own refusals arrive in.
       if (refuse !== undefined) throw refuse;
@@ -200,14 +201,15 @@ const asked = (asks: Asked[], cmd: string) => asks.filter((one) => one.cmd === c
 beforeEach(() => inboxOpenAtLaunch());
 afterEach(() => forgetInboxOpen());
 
-describe("a pinned chat", () => {
+describe("a pinned tab (#4762: the one pin, the tab's)", () => {
   it("comes back pinned, and is drawn first on its strip", async () => {
-    // The pin rides the record the chat came back from, so a relaunch keeps the arrangement.
+    // A record from before tabs were recorded says the pin on the chat: read once, at the
+    // upgrade, onto its tab.
     core([chat(1, "one", "alpha"), chat(2, "two", "alpha"), chat(3, "three", "alpha", true)]);
     render(<App />);
 
     await vi.waitFor(() => expect(chatNames()).toEqual(["three", "one", "two"]));
-    expect(pinned()).toContain("pinned chat");
+    expect(pinned()).toContain("pinned tab");
   });
 
   it("is marked, and nothing unpinned is", async () => {
@@ -216,43 +218,26 @@ describe("a pinned chat", () => {
 
     await vi.waitFor(() => expect(chatNames()).toEqual(["two", "one"]));
     const marks = within(strip("Tabs")).getAllByRole("tab");
-    expect(within(marks[0]).getByRole("img", { name: "pinned chat" })).toBeInTheDocument();
-    expect(within(marks[1]).queryByRole("img", { name: "pinned chat" })).toBeNull();
+    expect(within(marks[0]).getByRole("img", { name: "pinned tab" })).toBeInTheDocument();
+    expect(within(marks[1]).queryByRole("img", { name: "pinned tab" })).toBeNull();
   });
 
-  it("is pinned by the palette, and the core is told", async () => {
+  it("is pinned by the palette as a tab, and the layout the core is told holds it", async () => {
     const { asked: asks } = core([chat(1, "one", "alpha"), chat(2, "two", "alpha")]);
     render(<App />);
-    await vi.waitFor(() => expect(chatNames()).toEqual(["one", "two"]));
+    await waitFor(() => expect(chatNames()).toEqual(["one", "two"]));
 
-    await runFromPalette("Pin chat two");
+    await runFromPalette("Pin tab two");
 
-    await vi.waitFor(() => expect(chatNames()).toEqual(["two", "one"]));
-    expect(asked(asks, "pin_chat").map((one) => one.args)).toEqual([
-      { plane: PLANE, session: 2, pinned: true },
-    ]);
-  });
-
-  it("is not moved on screen when the core refused to write the pin", async () => {
-    // The mark is what the operator reads as "this is pinned", so it must follow the core's
-    // write and never the click. A pin the next launch does not have is worse than none.
-    const { asked: asks } = core(
-      [chat(1, "one", "alpha"), chat(2, "two", "alpha")],
-      undefined,
-      "no",
-    );
-    render(<App />);
-    await vi.waitFor(() => expect(chatNames()).toEqual(["one", "two"]));
-
-    await runFromPalette("Pin chat two");
-
-    expect(asked(asks, "pin_chat")).toHaveLength(1);
-    // The palette stays up on a refusal, and it is modal — Radix marks everything behind it
-    // `aria-hidden`, so the strip is not reachable until it is answered. That is the app
-    // behaving correctly (`docs/ui-primitives.md`), so the test takes the route that exists.
-    await userEvent.keyboard("{Escape}");
-    expect(chatNames()).toEqual(["one", "two"]);
-    expect(pinned()).toEqual([]);
+    await waitFor(() => expect(chatNames()).toEqual(["two", "one"]));
+    await vi.waitFor(() => {
+      const laid = asked(asks, "window_layout").at(-1)?.args as { layout: LaidOut } | undefined;
+      expect(
+        laid?.layout.tabs.flatMap((tab) =>
+          tab.pinned && tab.tree.kind === "chat" ? [tab.tree.chat] : [],
+        ),
+      ).toEqual([2]);
+    });
   });
 
   it("offers Unpin once it is pinned, and nothing else", async () => {
@@ -262,11 +247,11 @@ describe("a pinned chat", () => {
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
-    await userEvent.keyboard("pin chat");
+    await userEvent.keyboard("pin tab");
 
     const rows = screen.getAllByRole("option").map((row) => row.textContent ?? "");
-    expect(rows.some((row) => row.includes("Unpin chat one"))).toBe(true);
-    expect(rows.some((row) => row.includes("Pin chat one"))).toBe(false);
+    expect(rows.some((row) => row.includes("Unpin tab one"))).toBe(true);
+    expect(rows.some((row) => row.includes("Pin tab one"))).toBe(false);
   });
 });
 

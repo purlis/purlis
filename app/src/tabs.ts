@@ -1031,6 +1031,24 @@ export function tabsIn(
 }
 
 /**
+ * **What Close other tabs closes** (#4762): every other tab on the strip tab `keep` is on, in
+ * the strip's order, except the pinned ones. A pin is the operator saying a tab stays, and a
+ * sweep of the strip is the act most likely to take it with the rest. The tab it was asked on
+ * stays, pinned or not.
+ */
+export function otherTabsToClose(
+  tabs: Tabs,
+  keep: number,
+  filedIn: FiledIn,
+  pinned: Pinned = nothingPinned,
+): number[] {
+  const strip = workspaceOf(tabs, keep, filedIn);
+  return tabs.order.filter(
+    (id) => id !== keep && !pinned(id) && workspaceOf(tabs, id, filedIn) === strip,
+  );
+}
+
+/**
  * When a chat last moved, as the core counts moves across every plane. Bigger is more recent.
  *
  * A function rather than a field, for the same reason `FiledIn` is: the count is the core's,

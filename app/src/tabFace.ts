@@ -8,8 +8,9 @@ import { contentsOf, type Tabs, type ViewRef } from "./tabs";
  * #4582): its focused pane's combined persona and state icon and its name, `⊟+N` where N other
  * panes share the tab, and every pane's name, in reading order, on hover.
  *
- * - A chat's pane: the chat's icon (`ChatPersonaState`) and the name its row has. A task the
- *   pane shows in its chat's place (#1486) is the strip's `› talk` after it, as before.
+ * - A chat's pane: the chat's icon (`ChatPersonaState`) and the name its row has; the first
+ *   pane, the tab's own name, which a rename sets and which says the task a pane shows in its
+ *   chat's place (#1486), as before.
  * - A view's pane: the view's mark and its name, and no state: a view is doing nothing.
  * - A pane with nothing in it: **New chat**, what pressing in it would do.
  *
@@ -45,13 +46,20 @@ export function faceOf(tabs: Tabs, id: number, naming: Naming): TabFace {
     if (content.kind === "view") return { pane, lead: { kind: "view", view: content.view } };
     return { pane, lead: { kind: "empty" } };
   });
+  const tab = tabs.byId[id];
+  // **The first pane is the tab's own**: its name is the tab's, which a rename sets and which
+  // says the task a chat's pane shows in its place (#1486). The others are named for what
+  // they hold.
+  const first = panes[0]?.pane;
   const nameOf = ({ pane, lead }: { pane: number; lead: Lead }) =>
-    lead.kind === "chat"
-      ? naming.chat(lead.session)
-      : lead.kind === "view"
-        ? naming.view(lead.view, pane)
-        : NEW_CHAT;
-  const focused = panes.find((one) => one.pane === tabs.byId[id]?.focused) ?? panes[0];
+    tab !== undefined && pane === first
+      ? tab.name
+      : lead.kind === "chat"
+        ? naming.chat(lead.session)
+        : lead.kind === "view"
+          ? naming.view(lead.view, pane)
+          : NEW_CHAT;
+  const focused = panes.find((one) => one.pane === tab?.focused) ?? panes[0];
   if (focused === undefined)
     return { lead: { kind: "empty" }, name: NEW_CHAT, more: 0, panes: [NEW_CHAT] };
   return {

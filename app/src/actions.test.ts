@@ -1574,7 +1574,7 @@ describe("the one list of actions", () => {
       expect(by(catalogue(now({ tabs: withView() })), "pane.split.right")?.available).toBe(true);
     });
 
-    it("pins the tab as the view it shows, since it has no chat to pin", () => {
+    it("pins the tab as the view it shows", () => {
       const tabs = withView();
       const id = tabs.inFront as number;
 
@@ -2113,6 +2113,21 @@ describe("a chat's work link (V60, ADR 0088)", () => {
 
     expect(hands.linkWorkItem).toHaveBeenCalledWith(7);
     expect(hands.unlinkWorkItem).toHaveBeenCalledWith(7);
+  });
+});
+
+describe("the one pin, a tab's (#4762)", () => {
+  it("is Pin tab on a chat's tab too, never Pin chat", () => {
+    const tabs = openTab(noTabs(), 7, "3 steward");
+    const id = tabs.inFront as number;
+
+    expect(by(catalogue(now({ tabs })), `tab.pin:${id}`)?.title).toBe("Pin tab 3 steward");
+    expect(
+      by(
+        catalogue(now({ tabs, pinned: { chats: [7], workspaces: [], projects: [] } })),
+        `tab.pin:${id}`,
+      )?.title,
+    ).toBe("Unpin tab 3 steward");
   });
 });
 

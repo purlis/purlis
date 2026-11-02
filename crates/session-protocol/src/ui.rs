@@ -1182,7 +1182,6 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "persona_profile",
     "pick_project",
     "piece_file",
-    "pin_chat",
     "pin_on_this_machine",
     "pin_project",
     "pin_workspace",

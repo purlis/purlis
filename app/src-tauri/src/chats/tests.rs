@@ -5240,37 +5240,44 @@ fn a_chat_put_back_is_one_the_next_quit_records_again() {
     assert_eq!(again.chats[0].resume, Some(SessionId::new(ID).unwrap()));
 }
 
-// ----- a pinned chat (ADR 0039, stored per ADR 0040) -----
+// ----- the pin is a tab's (#4762, ADR 0039 amended 2026-11-02) -----
 
 #[test]
-fn a_pin_is_written_into_the_record_so_it_outlives_the_app() {
-    // The record is the only thing that says a chat exists at all, which is why the pin
-    // is kept there and not in the machine store: a pin cannot outlive its chat.
+fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it() {
+    // The upgrade: a record written before tabs were recorded keeps each chat's pin until the
+    // window reports its layout, which carries it on the tab. From then on the chat's own
+    // field is never written again.
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
-        .unwrap();
+    let old = Record {
+        chats: vec![
+            Chat {
+                number: Some(3),
+                active: true,
+                ..chat(&a_claude(dir.path()), "ide.3", None)
+            },
+            Chat {
+                number: Some(4),
+                pinned: true,
+                ..chat(&a_claude(dir.path()), "ide.4", None)
+            },
+        ],
+        ..Record::default()
+    };
+    chats.put_back(&old, SIZE);
+    assert!(chats.record().chats[1].pinned, "carried until a layout");
 
-    chats.pin(session, true).expect("the chat is open");
+    let mut pinned = front_tab(Node::chat(4));
+    pinned.pinned = true;
+    chats.lay_out(on_ops(vec![pinned])).unwrap();
 
-    assert!(chats.record().chats[0].pinned);
-    let _ = chats.close(session);
-}
-
-#[test]
-fn a_pin_can_be_taken_off_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let chats = Chats::new();
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
-        .unwrap();
-    chats.pin(session, true).unwrap();
-
-    chats.pin(session, false).unwrap();
-
-    assert!(!chats.record().chats[0].pinned);
-    let _ = chats.close(session);
+    let record = chats.record();
+    assert!(
+        record.chats.iter().all(|one| !one.pinned),
+        "the chat's pin retired"
+    );
+    assert!(record.layout.expect("a layout").tabs[0].pinned);
+    chats.end_all();
 }
 
 // ----- every tab as a tree of panes (#4751) -----
@@ -5610,39 +5617,6 @@ fn a_record_with_no_tabs_list_is_read_the_old_way_until_the_window_reports_and_t
     );
     assert!(record.layout.is_some());
     chats.end_all();
-}
-
-#[test]
-fn a_chat_charter_does_not_have_open_cannot_be_pinned() {
-    // A pin is an arrangement of what is there. Inventing an entry to hold one would put
-    // a chat in the record that no start ever put there.
-    let chats = Chats::new();
-
-    assert!(chats.pin(7, true).is_err());
-    assert_eq!(chats.record(), Record::default());
-}
-
-#[test]
-fn pinning_what_is_already_pinned_writes_nothing() {
-    // The record is rewritten on every write and every write is a fingerprint the
-    // machine store then has to vouch for — `bring_to_front` skips a no-op for the same
-    // reason, and a pin pressed twice must not cost two writes.
-    let dir = tempfile::tempdir().unwrap();
-    let written = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let counting = std::sync::Arc::clone(&written);
-    let chats = Chats::recorded_by(Box::new(move |_| {
-        counting.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    }));
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
-        .unwrap();
-    chats.pin(session, true).unwrap();
-    let after_one = written.load(std::sync::atomic::Ordering::SeqCst);
-
-    chats.pin(session, true).unwrap();
-
-    assert_eq!(written.load(std::sync::atomic::Ordering::SeqCst), after_one);
-    let _ = chats.close(session);
 }
 
 // ----- a task chat is listed with no tab until the person opens it (#1447) -----

@@ -98,6 +98,17 @@ describe("the window's tabs as the core holds them (#4751)", () => {
     expect(back.pinnedViews).toHaveLength(1);
   });
 
+  it("a pinned chat tab comes back pinned by the layout, not by its chat (#4762)", () => {
+    // The pin is the tab's: the record's `tabs[].pinned` is what says it, and the chat's own
+    // field has retired. A tab is pinned by its first pane's chat, as the window reads it.
+    const before = openTab(openTab(noTabs(), 1), 2);
+    const laid = layoutOf(before, { ...onOps, pinned: (id) => id === before.order[1] });
+
+    const back = tabsOf(laid, noTabs(), allBack);
+
+    expect(back.pinnedChats).toEqual([2]);
+  });
+
   it("each strip records its front tab, and the strip outside every workspace is null", () => {
     let tabs = openTab(noTabs(), 1, "1");
     tabs = openTab(tabs, 2, "2");

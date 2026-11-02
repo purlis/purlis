@@ -24,7 +24,7 @@ function front(tabs: Tabs): number {
 
 describe("a tab's face", () => {
   it("is its one chat's icon and name", () => {
-    const tabs = openTab(noTabs(), 1);
+    const tabs = openTab(noTabs(), 1, "steward 1");
     expect(faceOf(tabs, front(tabs), naming)).toEqual({
       lead: { kind: "chat", session: 1 },
       name: "steward 1",
@@ -34,7 +34,11 @@ describe("a tab's face", () => {
   });
 
   it("is the focused pane's in a split, with how many panes are beside it", () => {
-    const tabs = splitFocusedPane(splitFocusedPane(openTab(noTabs(), 1), "row", 2), "column", 3);
+    const tabs = splitFocusedPane(
+      splitFocusedPane(openTab(noTabs(), 1, "steward 1"), "row", 2),
+      "column",
+      3,
+    );
     const face = faceOf(tabs, front(tabs), naming);
     expect(face.lead).toEqual({ kind: "chat", session: 3 });
     expect(face.name).toBe("talk");
@@ -42,7 +46,7 @@ describe("a tab's face", () => {
   });
 
   it("follows the focus to another pane", () => {
-    const split = splitFocusedPane(openTab(noTabs(), 1), "row", 2);
+    const split = splitFocusedPane(openTab(noTabs(), 1, "steward 1"), "row", 2);
     const id = front(split);
     const first = split.byId[id].layout;
     if (first.kind !== "split" || first.children[0].kind !== "pane") throw new Error("a split");
@@ -51,7 +55,11 @@ describe("a tab's face", () => {
   });
 
   it("lists every pane, in reading order, for the tooltip", () => {
-    const tabs = splitFocusedPane(splitFocusedPane(openTab(noTabs(), 1), "row", 2), "column", 3);
+    const tabs = splitFocusedPane(
+      splitFocusedPane(openTab(noTabs(), 1, "steward 1"), "row", 2),
+      "column",
+      3,
+    );
     expect(faceOf(tabs, front(tabs), naming).panes).toEqual(["steward 1", "devops 2", "talk"]);
   });
 
@@ -67,6 +75,15 @@ describe("a tab's face", () => {
       name: "Settings",
       more: 0,
     });
+  });
+
+  it("names its first pane by the tab's own name, which a rename sets", () => {
+    const tabs = openTab(noTabs(), 1, "the build");
+    expect(faceOf(tabs, front(tabs), naming).name).toBe("the build");
+    expect(faceOf(splitFocusedPane(tabs, "row", 2), front(tabs), naming).panes).toEqual([
+      "the build",
+      "devops 2",
+    ]);
   });
 
   it("says New chat for a tab that is not there to read", () => {

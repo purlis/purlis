@@ -293,7 +293,6 @@ macro_rules! app_commands {
                 thismachine::locate_project,
                 thismachine::revoke_approval,
                 thismachine::pin_on_this_machine,
-                pin_chat,
                 open_chat_tab,
                 close_chat_tab,
                 layout::window_layout,

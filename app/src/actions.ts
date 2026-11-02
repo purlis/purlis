@@ -2057,9 +2057,8 @@ export function catalogue(now: Now): Offer[] {
   // thing gets on its strip is a mark, and pressing the mark runs this same row.
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
-    // A tab is pinned as its own chat, or — a tab with none — as the view it opened on. The
-    // pin is stored with whichever it is (the chat's record, or the view tab's), so it goes
-    // away with the thing it pins.
+    // **The one pin is the tab's** (#4762): the window keys it by the tab's first pane, its
+    // chat or the view it opened on, and the record holds it on the tab.
     const chat = chatOf(now.tabs, tab);
     const first = contentsOf(now.tabs, tab)[0]?.content;
     const held =
@@ -2069,7 +2068,7 @@ export function catalogue(now: Now): Offer[] {
     offers.push({
       ...can(
         `tab.pin:${tab}`,
-        `${held ? "Unpin" : "Pin"} ${chat === undefined ? "tab" : "chat"} ${name}`,
+        `${held ? "Unpin" : "Pin"} tab ${name}`,
         { verb: "pinTab", tab, pinned: !held },
         name,
       ),
