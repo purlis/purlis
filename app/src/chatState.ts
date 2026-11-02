@@ -718,9 +718,9 @@ export function useChats(plane: PlaneId | undefined): Chats {
     };
   }, [store]);
 
-  // How many of this project's chats are working, for what the slow-answer log writes with each
-  // slow moment (`slowLog.ts`): counted when one is written, never on a move.
-  useEffect(() => countsHotChats(() => working(store.statesFor(showing.current))), [store]);
+  // How many of this project's chats are hot, for what the slow-answer log writes with each slow
+  // moment (`slowLog.ts`): counted when one is written, never on a move.
+  useEffect(() => countsHotChats(() => hotIn(store.statesFor(showing.current))), [store]);
 
   // And the first answer, once there is a plane to ask about. Asked AFTER the listener is
   // registered above, which is what makes the fold below safe.
@@ -759,10 +759,15 @@ export function useChats(plane: PlaneId | undefined): Chats {
   return useMemo(() => ({ store, plane }), [store, plane]);
 }
 
-/** How many chats are working: in their turn, by the state their hooks last said. */
-export function working(states: ChatStates): number {
+/**
+ * How many chats are hot (CONTEXT.md): their program still runs, whether starting, in its turn,
+ * waiting on the person or paused. A chat not yet heard from is starting; only `done` and
+ * `failed` say its program has ended. The count Copy diagnostics gives too (#4774).
+ */
+export function hotIn(states: ChatStates): number {
   let count = 0;
-  for (const state of Object.values(states.bySession)) if (state === "running") count += 1;
+  for (const state of Object.values(states.bySession))
+    if (state !== "done" && state !== "failed") count += 1;
   return count;
 }
 

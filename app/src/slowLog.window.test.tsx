@@ -149,7 +149,7 @@ describe("a stall in the window", () => {
       (callback) => {
         next = callback;
       },
-      () => true,
+      Object.assign(new EventTarget(), { visibilityState: "visible" as const }),
     );
     next?.(1_000);
     next?.(1_450);
