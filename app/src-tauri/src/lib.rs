@@ -21,6 +21,7 @@ macro_rules! tauri_context {
 
 mod about;
 mod activity;
+mod agentidentity;
 mod alerts;
 mod asking;
 mod asknotify;

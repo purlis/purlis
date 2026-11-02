@@ -9,6 +9,11 @@
   },
   "sites": [
     {
+      "at": "agentidentity.rs agent_identity_finish",
+      "writes": "this machine's network record",
+      "by": ["agentIdentityFinish"]
+    },
+    {
       "at": "asking.rs forget_sandbox_block",
       "writes": "this machine's network record",
       "by": ["forgetSandboxBlock"]
@@ -265,11 +270,6 @@
       "by": ["allowProjectExpects"]
     },
     {
-      "at": "sandboxing.rs allow_persona",
-      "writes": "this machine's answers about the project (sandbox-grants)",
-      "by": ["allowPersonaHosts"]
-    },
-    {
       "at": "sandboxing.rs allow_persona_grants",
       "writes": "this machine's network record",
       "by": ["allowPersonaGrants"]
@@ -283,6 +283,11 @@
       "at": "sandboxing.rs allow_project_expects",
       "writes": "this machine's network record",
       "by": ["allowProjectExpects"]
+    },
+    {
+      "at": "sandboxing.rs allow_shown",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["allowPersonaHosts", "agentIdentityFinish"]
     },
     {
       "at": "sandboxing.rs allow_sandbox_block",
