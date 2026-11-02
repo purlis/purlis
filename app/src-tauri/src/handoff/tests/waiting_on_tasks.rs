@@ -1004,3 +1004,65 @@ fn the_person_s_answer_during_a_background_turn_clears_the_wait_at_once() {
 
     assert!(!queue(&held).contains(&task));
 }
+
+/// What chat `chat`'s turn ended saying, as its harness's `Stop` hook hands it on (#4550).
+fn says(held: &Held, chat: u32, last: &str) {
+    crate::dispatched::said(
+        held,
+        purlis_core::hookwire::TurnOutput {
+            chat,
+            turn_output: purlis_core::hookwire::Output::last_message(last).expect("a message"),
+            speaker: purlis_core::hookwire::Speaker::default(),
+        },
+    );
+}
+
+/// The ask the registry lists for chat `chat`'s reply.
+fn reply_ask(held: &Held, chat: u32) -> Option<crate::asking::Shown> {
+    let ask = format!("question:{chat}");
+    crate::asking::every_ask(held)
+        .asks
+        .into_iter()
+        .find(|shown| shown.ask == ask)
+}
+
+#[test]
+fn a_background_turn_keeps_what_the_chat_asked_and_lists_it_before_its_newer_message() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    says(&held, steward, "Should I open the pull request now?");
+    let asked = reply_ask(&held, steward).expect("it waits on the person");
+    assert_eq!(
+        asked.last_message.as_deref(),
+        Some("Should I open the pull request now?")
+    );
+    assert_eq!(asked.earlier_messages, None);
+
+    // The task reports, and the turn purlis's line begins runs over the wait (#4562).
+    reports_as(&held, &id, task, Outcome::Done);
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    assert_eq!(
+        reply_ask(&held, steward).and_then(|ask| ask.last_message),
+        Some("Should I open the pull request now?".to_owned()),
+        "the turn took the question away while it ran"
+    );
+
+    // It ends on a message of its own: the last now, with the question just before it.
+    says(&held, steward, "check the queue reported.");
+    hears(&held, &told, steward, Event::Stop);
+    let after = reply_ask(&held, steward).expect("still waits on the person");
+    assert_eq!(
+        after.last_message.as_deref(),
+        Some("check the queue reported.")
+    );
+    assert_eq!(
+        after.earlier_messages,
+        Some(vec!["Should I open the pull request now?".to_owned()])
+    );
+
+    // Their reply clears every one.
+    held.operator_input(steward, b"open it\r").expect("sent");
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    assert_eq!(held.tasks().ledger().last_said(steward), None);
+    assert!(held.tasks().ledger().said_before(steward).is_empty());
+}

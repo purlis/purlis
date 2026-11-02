@@ -486,3 +486,14 @@
   flex: none;
   block-size: auto;
 }
+
+/* ---------------------------------------------------------------------------------------------
+   The waiting strip.
+   --------------------------------------------------------------------------------------------- */
+
+/* **Above the band, on the band's runway** (#4563): the top 8px of a pane are its fill, and the
+   strip keeps the band's inline room, so it lines up with the Notices under it. Never one of the
+   band's Notices: those stand two at a time, and the strip always stands. */
+.pane-top > .waiting-strip {
+  margin: var(--space-4) var(--space-4) 0;
+}

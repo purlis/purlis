@@ -642,10 +642,11 @@ pub struct Ledger {
     /// Tasks whose chats have closed, oldest first: who asked, what it was called, and its
     /// report where it sent one. So a wait on one says how it ended.
     gone: std::collections::VecDeque<(u32, Gone)>,
-    /// By chat, every chat's and not a task's alone (#4550): the last message its harness said a
-    /// turn of its ended on (#1981), masked by the app before it is kept, until its next turn
-    /// begins. **In memory only.** The one source of what a chat waiting on the person said.
-    last: HashMap<u32, String>,
+    /// By chat, every chat's and not a task's alone (#4550): the last [`SAID_KEPT`] messages its
+    /// harness said a turn of its ended on (#1981), oldest first, masked by the app before they
+    /// are kept, until a turn begins that is no background turn (#4563). **In memory only.** The
+    /// one source of what a chat waiting on the person said.
+    last: HashMap<u32, std::collections::VecDeque<String>>,
 }
 
 /// A task whose chat has closed.
@@ -758,6 +759,10 @@ pub fn output_text(name: &str, of: u32, finals: &[String], ran: &[Ran]) -> Strin
 
 /// How many of a task's last messages are kept for `purlis dispatch read` (#1981).
 pub const FINALS_KEPT: usize = 3;
+
+/// How many of a chat's turn-end messages are kept for the person (#4563): its last, and the
+/// few before it, which the waiting strip lets them read back.
+pub const SAID_KEPT: usize = 4;
 
 /// How many of a task's commands are kept for `purlis dispatch read` (#1981).
 pub const RAN_KEPT: usize = 20;
@@ -1530,7 +1535,11 @@ impl Ledger {
             }
             entry.heard.finals.push_back(text.clone());
         }
-        self.last.insert(chat, text);
+        let said = self.last.entry(chat).or_default();
+        if said.len() >= SAID_KEPT {
+            said.pop_front();
+        }
+        said.push_back(text);
     }
 
     /// Task `task` ran `ran` (#1981), masked by the app already. Kept for a task alone, the
@@ -1555,7 +1564,23 @@ impl Ledger {
 
     /// The last message chat `chat`'s turn ended on, as kept ([`Self::said_last`]).
     pub fn last_said(&self, chat: u32) -> Option<&str> {
-        self.last.get(&chat).map(String::as_str)
+        self.last
+            .get(&chat)
+            .and_then(|said| said.back())
+            .map(String::as_str)
+    }
+
+    /// **The few messages chat `chat`'s turns ended on before its last** (#4563), oldest first,
+    /// at most [`SAID_KEPT`] less one: what a question pushed aside by a later turn is read back
+    /// from.
+    pub fn said_before(&self, chat: u32) -> Vec<&str> {
+        let Some(said) = self.last.get(&chat) else {
+            return Vec::new();
+        };
+        said.iter()
+            .take(said.len().saturating_sub(1))
+            .map(String::as_str)
+            .collect()
     }
 
     /// **Task `task`'s turn ended** (#1981), and what is done about its report: `owes` says it
@@ -1581,7 +1606,7 @@ impl Ledger {
         if entry.report_asked {
             entry.report_asked = false;
             return Owing::Make {
-                last: self.last.get(&task).cloned(),
+                last: self.last_said(task).map(str::to_owned),
             };
         }
         self.landed(task, Landed::ReportOwed);
@@ -2156,6 +2181,13 @@ impl Ledger {
     /// handed every report that waited. And whatever the person had open in its pane is
     /// behind it.
     pub fn turn_began(&mut self, chat: u32) {
+        self.turn_began_as(chat, false);
+    }
+
+    /// [`Self::turn_began`], where `background` says the turn is a background turn over the
+    /// chat's wait on the person (#4562): no reply, so what its turns ended saying stays for the
+    /// person to read (#4563). Every other turn clears it.
+    pub fn turn_began_as(&mut self, chat: u32, background: bool) {
         // A turn after its report: the bound on the reporting turn ends nothing from here. A
         // prompt the person typed while it waited on its own work is one too (#3921): the hook
         // does not say whether its own work or a person began a turn, so every one is later.
@@ -2167,8 +2199,11 @@ impl Ledger {
                 entry.end = Some(End::Reported);
             }
         }
-        // What the last turn ended saying is not this turn's (#1981).
-        self.last.remove(&chat);
+        // What the last turn ended saying is not this turn's (#1981), unless the person has
+        // still to answer it (#4563).
+        if !background {
+            self.last.remove(&chat);
+        }
         self.landed.remove(&chat);
         self.typed.remove(&chat);
         self.keyed.remove(&chat);

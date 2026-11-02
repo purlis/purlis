@@ -37,6 +37,7 @@ import { NONE_RESTORING } from "./restoringChats";
 import { SessionPane } from "./SessionPane";
 import { droppedReference, overChat, useReferenceChats } from "./references";
 import { NoticeOf, NoticePaneRow } from "./Notice";
+import { WaitingStrip } from "./WaitingStrip";
 import { paneBand } from "./noticeSettle";
 import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
@@ -135,6 +136,7 @@ export function PaneFrame({
   harness,
   onOpenCard,
   workItem,
+  strip,
   notices,
   asked,
   others,
@@ -166,6 +168,9 @@ export function PaneFrame({
   onOpenCard: (glance: HarnessGlance) => void;
   /** The work item this chat works on, `Work item: <key>`, in the same corner (V60). */
   workItem?: string;
+  /** What the chat the pane shows waits on the person for (`WaitingStrip`, #4563): above the
+   *  band, and never one of its Notices, so none is ever put behind "+N more" over it. */
+  strip?: ReactNode;
   /** What purlis has to say of the chat the pane shows (`ChatNotices`). */
   notices: ReactNode;
   /** What it asks for several of the pane's tasks at once (#1508). */
@@ -203,6 +208,7 @@ export function PaneFrame({
           read and tabbed to (#1647); a terminal keeps Tab for its shell, so a control written
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
+        {strip}
         <PaneNotices
           band={pane === undefined ? undefined : paneBand(plane, pane)}
           notices={notices}
@@ -742,6 +748,8 @@ export function LayoutPanes({
         harness={glances[content.session]}
         onOpenCard={(glance) => onOpenView(harnessCardView(glance.name), glance.label)}
         workItem={workItems[content.session]}
+        // What the chat waits on the person for, whatever it writes after (#4563).
+        strip={<WaitingStrip session={content.session} waiting={waiting} />}
         notices={
           <>
             {noticesOf(content.session)}
