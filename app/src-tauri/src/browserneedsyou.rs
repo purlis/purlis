@@ -402,11 +402,7 @@ pub fn handed_back(projects: &[Arc<crate::planes::Held>], program: &str) {
                 let glance = held.board().glance(back.session);
                 (glance.state, glance.asking)
             },
-            |chat, text| {
-                held.chats()
-                    .sessions()
-                    .input(chat, crate::vaultroute::sent_as(text).as_bytes())
-            },
+            |chat, text| held.type_in_turn(chat, crate::vaultroute::sent_as(text).as_bytes()),
             |outcome| held.chats().tell_outcome(back.session, outcome),
         );
         tracing::info!(

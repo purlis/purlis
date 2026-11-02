@@ -2853,7 +2853,7 @@ fn tell_the_chat(held: &Held, chat: u32) -> bool {
 /// return, in one write.
 fn type_line(held: &Held, chat: u32, line: &str) -> Result<(), String> {
     let bytes = format!("{}\r", crate::curation::bracketed(line));
-    held.chats().sessions().input(chat, bytes.as_bytes())
+    held.type_in_turn(chat, bytes.as_bytes())
 }
 
 /// A report reached the project from chat `report.chat`'s harness: whatever was waiting for
