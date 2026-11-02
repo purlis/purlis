@@ -703,6 +703,7 @@ fn one_chat() -> Record {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
         chats: vec![Chat {
             program: "/bin/sh".into(),
@@ -927,6 +928,7 @@ fn a_pinned_chat_comes_back_pinned() {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
         chats: vec![
             Chat {
@@ -1002,6 +1004,7 @@ fn a_chat_comes_back_under_the_number_it_was_recorded_with() {
         dealt: 5,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     };
 
@@ -1063,6 +1066,7 @@ fn the_counter_written_down_is_never_below_a_number_the_record_names() {
             dealt: 1,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
     )
@@ -1120,6 +1124,7 @@ fn a_vault_s_tab_comes_back_under_any_name_charter_gives_a_vault() {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     };
 
@@ -1150,6 +1155,7 @@ fn a_view_tab_comes_back_as_it_was_recorded() {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     };
 

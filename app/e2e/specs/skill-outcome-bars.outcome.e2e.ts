@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { focusedChat } from "../menus.js";
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
@@ -89,7 +90,9 @@ async function fromThePalette(typed: string, id: string, effort: Effort): Promis
   await box.waitForDisplayed({ timeout: 10_000 });
   await box.addValue(typed);
   effort.characters += typed.length;
-  const row = await $(`[id^="${id}"]`);
+  // A chat's row is the focused chat's own (#4753): every chat has one, by its number.
+  const chat = await focusedChat();
+  const row = await $(`[id="${id}${chat}"]`);
   await row.waitForExist({ timeout: 20_000, timeoutMsg: `the palette never offered ${typed}` });
   await browser.execute((one: HTMLElement) => one.click(), row);
   effort.presses += 1;
@@ -263,7 +266,7 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       { timeout: 40_000, interval: 500, timeoutMsg: "the restarted chat never came back" },
     );
 
-    await fromThePalette("Use skill", "palette-row-tab.useskill:", effort);
+    await fromThePalette("Use skill", "palette-row-chat.useskill:", effort);
     await $('[data-testid="use-skill"]').waitForDisplayed({ timeout: 20_000 });
     await browser.waitUntil(
       async () => {
