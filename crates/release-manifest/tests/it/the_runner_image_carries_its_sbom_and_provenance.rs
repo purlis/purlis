@@ -69,7 +69,7 @@ fn the_runner_images_sbom_is_read_from_the_pushed_bytes_with_the_releases_own_sy
     assert_eq!(
         sbom.permissions(),
         Some(pairs(&[("contents", "read"), ("packages", "read")])),
-        "it reads the private image and writes nothing"
+        "it reads the image and writes nothing"
     );
     assert!(!sbom.can_mint_an_oidc_token());
 

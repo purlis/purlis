@@ -13,8 +13,8 @@ image:
   # the digest of each image it publishes (docs/cluster-operator.md).
   digest: ""
 
-# -- Secrets in the release's namespace that pull the image, as `[{name: ...}]`. The image is
-# a private package until purlis publishes it, so pulling it needs one.
+# -- Secrets in the release's namespace that pull the image, as `[{name: ...}]`. purlis's image
+# is public and needs none; set this for a private mirror of it.
 imagePullSecrets: []
 
 # -- The operator's CPU and memory, as a container's `resources`.
