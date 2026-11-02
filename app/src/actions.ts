@@ -108,6 +108,7 @@ import { SETTINGS_GROUPS } from "./settings/catalogue";
 
 /** The Workspace level's Skills group (#2767), behind the Skill studio's flag. */
 const WORKSPACE_SKILLS = "workspace.skills";
+const PROJECT_SKILLS = "project.skills";
 import { profilePage } from "./settings/profileAddress";
 import { askSettingsLink, linkToGroup, settingsPlace, type SettingsLink } from "./settings/links";
 import {
@@ -3776,7 +3777,10 @@ function settingsGroupRows(
     note: `On this machine, at ${one.label}.`,
   }));
   if (plane === undefined) return rows;
-  for (const one of SETTINGS_GROUPS.project)
+  // The Skills group only while the Skill studio's flag is on (#4610).
+  for (const one of SETTINGS_GROUPS.project.filter(
+    (group) => group.id !== PROJECT_SKILLS || skillStudio,
+  ))
     rows.push({
       ...can(
         `settings.group:${one.id}`,

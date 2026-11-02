@@ -117,3 +117,12 @@ fn what_was_given_reads_in_plain_words() {
         Some("pr: 42; focus: none; tone: short")
     );
 }
+
+#[test]
+fn a_when_to_use_is_read_on_its_line_or_from_a_block_under_it() {
+    let one = declared_in("---\nname: a\nwhen_to_use: On a release\n---\n");
+    assert_eq!(one.when_to_use.as_deref(), Some("On a release"));
+    let block =
+        declared_in("---\nname: a\nwhen_to_use: >-\n  On a release\n  or a tag\nb: c\n---\n");
+    assert_eq!(block.when_to_use.as_deref(), Some("On a release or a tag"));
+}

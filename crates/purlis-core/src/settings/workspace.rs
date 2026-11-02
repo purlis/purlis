@@ -29,6 +29,7 @@ use serde_json::{Map, Value as Json};
 use super::{Edit, Found, Refusal, Step, Value};
 use crate::extension::project;
 use crate::manifest::Ownership;
+use crate::skills::budget_setting::BUDGET;
 use crate::workspaces::{Plane, Workspace};
 
 /// The workspace's file.
@@ -48,7 +49,8 @@ pub const READ: &[&str] = &[
 
 /// The table that holds what a workspace turned off of the project skills granted to it
 /// (ADR 0099 §2, #2767): `settings.skills.off`, a list of skill names, read by
-/// `purlis_skills::turned_off`. A workspace's alone: the project's two files hold no `[skills]`.
+/// `purlis_skills::turned_off`. A workspace's alone: of `[skills]`, the project's Shared file
+/// holds only the budget ([`crate::skills::budget_setting`]).
 pub const SKILLS: &str = "skills";
 
 /// The key in [`SKILLS`] that lists the names turned off.
@@ -344,7 +346,7 @@ pub fn skills_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
     };
     let shape = format!(
         "a workspace's {SKILLS} are {{\"{SKILLS_OFF}\": [\"<skill>\", …], \"{SKILLS_PINNED}\": \
-         [\"<skill>\", …], \"{SKILLS_ROUTER}\": \"<router>\"}}"
+         [\"<skill>\", …], \"{SKILLS_ROUTER}\": \"<router>\", \"{BUDGET}\": {{…}}}}"
     );
     let Some(table) = table.as_table() else {
         return vec![Refusal::at(
@@ -352,8 +354,13 @@ pub fn skills_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
             &[SKILLS],
         )];
     };
+    let budget = table
+        .get(BUDGET)
+        .map(|value| crate::skills::budget_setting::refused_in_workspace(value, file))
+        .unwrap_or_default();
     table
         .iter()
+        .filter(|(key, _)| key.as_str() != BUDGET)
         .filter_map(|(key, value)| {
             let why = if key == SKILLS_ROUTER {
                 if value.is_str() {
@@ -383,6 +390,7 @@ pub fn skills_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
             };
             Some(Refusal::at(why, &[SKILLS, key.as_str()]))
         })
+        .chain(budget)
         .collect()
 }
 
