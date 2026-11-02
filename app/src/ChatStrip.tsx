@@ -41,6 +41,7 @@ import { closeOnDelete, renameOnF2 } from "./tabKeys";
 import { TabRename } from "./TabRename";
 import { type ChatRow } from "./chatsTree";
 import { showsStopping, TabMarks } from "./ChatRows";
+import { faceOf, type Naming, type TabFace } from "./tabFace";
 import type { Ref } from "./fits";
 import type { StateClock } from "./stateClock";
 import type { UsedReader } from "./tasksUsed";
@@ -119,6 +120,9 @@ export function ChatStrip({
   stopping,
   shells,
   personaOf,
+  naming,
+  pinsIconOnly,
+  narrow,
   sandboxOf,
   taskNameOf,
   taskTabOf,
@@ -281,6 +285,11 @@ export function ChatStrip({
                         // The first tab starts at the panel's edge, and flares on its right only.
                         first={place === 0}
                         data-dragging={sortable.isDragging || undefined}
+                        // A pinned tab at its icon only, where pins alone would take over half
+                        // the strip; its name is in its tooltip (#4762).
+                        data-icon-only={(pinsIconOnly && isPinned(id)) || undefined}
+                        // A crowded strip: the `×` only in front or under the pointer (#4762).
+                        data-narrow={narrow || undefined}
                         // A task's own tab (#1489): what its look is hung on.
                         data-task-tab={taskTabOf(id) === undefined ? undefined : ""}
                         // A file, a folder, lines or a search hit dropped on a chat's tab is
@@ -326,10 +335,12 @@ export function ChatStrip({
                                 ? WRAPPING_UP
                                 : panesOf(tabs, id).some((one) => restoring.has(one.session))
                                   ? RESTORING
-                                  : tabTip(
+                                  : // A split lists its panes on hover, in reading order (#4762).
+                                    (splitTip(faceOf(tabs, id, naming)) ??
+                                    tabTip(
                                       handedFrom[chatOf(tabs, id) ?? -1],
                                       workItems[chatOf(tabs, id) ?? -1],
-                                    )
+                                    ))
                             }
                             id={chatTabId(place)}
                             // What a press does that the tab's name does not say (#1486):
@@ -402,19 +413,15 @@ export function ChatStrip({
                             <TabMarks
                               tabs={tabs}
                               id={id}
-                              persona={personaOf(chatOf(tabs, id))}
+                              face={faceOf(tabs, id, naming)}
+                              personaOf={personaOf}
                               sandbox={sandboxOf?.(chatOf(tabs, id))}
                               shells={shells}
                               wrapping={wrapping}
                               stopping={stopping}
                               task={taskNameOf(id)}
                               taskOf={taskTabOf(id)}
-                              pin={
-                                <Pin
-                                  held={isPinned(id)}
-                                  what={chatOf(tabs, id) === undefined ? "tab" : "chat"}
-                                />
-                              }
+                              pin={<Pin held={isPinned(id)} what="tab" />}
                             />
                           </StripTab>
                         )}
@@ -517,7 +524,8 @@ export function ChatStrip({
                   <TabMarks
                     tabs={tabs}
                     id={id}
-                    persona={personaOf(chatOf(tabs, id))}
+                    face={faceOf(tabs, id, naming)}
+                    personaOf={personaOf}
                     sandbox={sandboxOf?.(chatOf(tabs, id))}
                     updates={planeUpdates}
                     shells={shells}
@@ -556,6 +564,11 @@ export function ChatStrip({
   );
 }
 
+/** What a split tab says on hover: every pane, in reading order. Nothing for one pane. */
+function splitTip(face: TabFace): string | undefined {
+  return face.more > 0 ? face.panes.join(" · ") : undefined;
+}
+
 /** Each is `PlaneView`'s own value of the same name: the strip reads them and holds none. */
 type ChatStripProps = {
   by: (id: string) => Offer | undefined;
@@ -592,6 +605,14 @@ type ChatStripProps = {
   stopping: ReadonlySet<number>;
   shells: ReadonlySet<number>;
   personaOf: (session: number | undefined) => string | null;
+  /** What each pane is called, for what a tab wears (`tabFace.ts`, #4762). */
+  naming: Naming;
+  /** Whether the pins go icon-only: alone at their floor they would take over half the strip
+   *  (`fits.pinnedFirst`, #4762). */
+  pinsIconOnly: boolean;
+  /** Whether the tabs' equal share is under 140px, where a tab shows its `×` only in front or
+   *  under the pointer (`fits.narrowTabs`, #4762). */
+  narrow: boolean;
   /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it. */
   sandboxOf?: (session: number | undefined) => SandboxSaid | null;
   taskNameOf: (id: number) => string | undefined;

@@ -33,7 +33,8 @@ import type { AtLimit, FinishedTask } from "./bindings";
 import { HelpersSaid } from "./ExplorerChats";
 import { ChatDoingLine } from "./ChatRowActivity";
 import { aCardIsUp, cardDown, cardUp, skipsTheRest, useCardUp } from "./chatCard";
-import { ChatPersonaState, ChatShownState } from "./ChatRows";
+import { ChatShownState } from "./ChatRows";
+import { ChatPersonaState } from "./ChatPersonaState";
 import { sameList, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { useTokensOnHover } from "./tasksUsed";
 import {

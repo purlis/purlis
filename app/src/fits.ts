@@ -75,8 +75,12 @@ import { onDrawn } from "./theme/theme";
 export const LEAST = {
   /** A workspace: inside a project, and narrower than one. */
   workspace: 104,
-  /** A chat: the innermost, and the one there are fifty of. */
-  chat: 88,
+  /**
+   * A chat tab: the innermost, and the one there are fifty of. Its floor holds the tab's icon,
+   * about eight letters of its name and a split's `⊟+N` (#4702, ADR 0039 as amended
+   * 2026-11-02): the name gives way first, `⊟+N` never.
+   */
+  chat: 120,
 } as const;
 
 export type Least = (typeof LEAST)[keyof typeof LEAST];
@@ -166,6 +170,63 @@ export function fitting<T>(
 
 /** Which of a strip's tabs are chips ({@link LEAST_CHIP}), and how wide one is drawn. */
 export type Chips<T> = { is: (one: T) => boolean; width: number };
+
+/**
+ * **Below this, a tab shows its `×` only when it is the front tab or under the pointer** (#4702,
+ * ADR 0039 as amended 2026-11-02), in pixels at {@link LEAST_TUNED_AT}: a crowded strip is a row
+ * of names, not a row of close buttons a pointer can land on by mistake.
+ */
+export const NARROW_TAB = 140;
+
+/**
+ * Whether `drawn` tabs sharing a strip `width` wide, less what its pins take (`pinned`), each get
+ * less than {@link NARROW_TAB}. Equal shares, as the strip is drawn (ADR 0039, amended
+ * 2026-09-22). Never of a strip nobody has measured.
+ */
+export function narrowTabs(
+  width: number,
+  drawn: number,
+  pinned = 0,
+  narrow: number = NARROW_TAB,
+): boolean {
+  if (width <= 0 || drawn <= 0) return false;
+  return (width - pinned) / drawn < narrow;
+}
+
+/** Which of a strip's tabs are pinned, and how wide one is drawn when it shows its icon only. */
+export type Pins<T> = { is: (one: T) => boolean; icon: number };
+
+/**
+ * {@link fitting}, with **pinned tabs taken out of the collapse** (ADR 0039, amended 2026-11-02):
+ * every pin is drawn, and the other tabs share what the pins leave, going behind show-more as
+ * {@link fitting} says, the front tab still drawn.
+ *
+ * **Pins go icon-only only when, at the floor, they alone would take more than half the strip**,
+ * so pins can never crowd every other tab off it. While everything fits, nothing changes.
+ */
+export function pinnedFirst<T>(
+  order: readonly T[],
+  selected: T | undefined,
+  width: number,
+  least: number,
+  pins: Pins<T>,
+  chips?: Chips<T>,
+): { shown: T[]; hidden: T[]; pinsIconOnly: boolean } {
+  const all = fitting(order, selected, width, least, chips);
+  if (all.hidden.length === 0) return { ...all, pinsIconOnly: false };
+  const pinned = order.filter(pins.is);
+  const pinsIconOnly = pinned.length * least > width / 2;
+  const taken = pinned.length * (pinsIconOnly ? pins.icon : least);
+  const rest = fitting(
+    order.filter((one) => !pins.is(one)),
+    selected !== undefined && pins.is(selected) ? undefined : selected,
+    Math.max(1, width - taken),
+    least,
+    chips,
+  );
+  const shown = new Set([...pinned, ...rest.shown]);
+  return { shown: order.filter((one) => shown.has(one)), hidden: rest.hidden, pinsIconOnly };
+}
 
 /**
  * Watches how wide a strip is, and how much of it its own controls have taken.

@@ -1734,6 +1734,37 @@ body {
   height: 0.75rem;
 }
 
+/* **A tab wears its focused pane's chat's combined icon** (#4762, `chatPersona.css`): at the
+   strip's mark size, its badge ringed in a ground the theme engine holds every state's mark
+   against (`state.*` on `surface.base` and `surface.raised`, `theme/check.rs`): the strip's own,
+   and the raised one under a chosen tab. */
+.tabs .tab {
+  /* Equal shares of the row up to 230px each (ADR 0039, amended 2026-11-02). */
+  --most: calc(230rem / 14);
+  --chat-persona-size: var(--space-6);
+  --chat-badge-ground: var(--surface-base);
+}
+
+.tabs .tab[data-selected] {
+  --chat-badge-ground: var(--surface-raised);
+}
+
+/* **`⊟+N`, a split's other panes** (#4762): after the name, and never cut. The name gives way
+   first, so it keeps the tab's floor. */
+.tabs .tab-split-more {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabs .tab-split-more > svg {
+  inline-size: var(--space-5);
+  block-size: var(--space-5);
+}
+
 /* The narrowest tab that also wears the hand has no room for a count beside it (the third
    step above). Asked of the tab's own cell, and only of a cell that wears the hand, so no
    other tab is measured any differently than it was. */
@@ -3424,8 +3455,6 @@ body {
    grey mark stands for seven states; its state is still the row's word to a screen reader and
    its tooltip's. */
 .chats-section .chat-persona {
-  position: relative;
-  display: inline-flex;
   /* The ground the badge is ringed in: the row's, at rest, under the pointer, chosen. */
   --chat-badge-ground: var(--panel-fill);
 }
@@ -3440,48 +3469,9 @@ body {
   --chat-badge-ground: var(--list-selected);
 }
 
-.chats-section .chat-persona > svg,
-.chats-section .chat-persona > .persona-mark {
-  inline-size: var(--chats-mark);
-  block-size: var(--chats-mark);
-}
-
-/* At rest, no badge. */
-.chats-section .chat-persona > .shown-state {
-  display: none;
-}
-
-/* The states that ask for the person or are at work. */
-.chats-section
-  .chat-persona:is(
-    [data-state="needs-you"],
-    [data-state="working"],
-    [data-state="asking"],
-    [data-state="waiting-on-tasks"],
-    [data-state="waiting-on-own-work"],
-    [data-state="failed"],
-    [data-state="unreported"],
-    [data-state="last-message"]
-  )
-  > .shown-state {
-  display: block;
-  position: absolute;
-  inset-block-end: calc(-1 * var(--space-2));
-  inset-inline-end: calc(-1 * var(--space-2));
-}
-
-.chats-section .chat-persona > .shown-state .shape {
-  display: grid;
-  place-items: center;
-  inline-size: calc(var(--space-4) + var(--space-2));
-  block-size: calc(var(--space-4) + var(--space-2));
-  border-radius: 50%;
-  background-color: var(--chat-badge-ground);
-}
-
-.chats-section .chat-persona > .shown-state .shape > svg {
-  inline-size: calc(var(--space-4) + var(--space-1));
-  block-size: calc(var(--space-4) + var(--space-1));
+/* The icon's look is `chatPersona.css`'s (#4762): the row sets only its size and its grounds. */
+.chats-section {
+  --chat-persona-size: var(--chats-mark);
 }
 
 /* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the
