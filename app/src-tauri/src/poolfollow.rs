@@ -22,6 +22,8 @@
 #[cfg(unix)]
 use purlis_core::dockerpool::Image;
 #[cfg(unix)]
+use purlis_core::pools::DrainLook;
+#[cfg(unix)]
 use tauri::Runtime;
 
 #[cfg(unix)]
@@ -434,16 +436,26 @@ pub fn follow_and_drain(
             kept.pool().to_owned(),
             kept.name().to_owned(),
         );
-        // A suspended runner runs no chat (#2051): it is not woken to be asked. One Docker no
-        // longer lists is not taken as idle on its own (#4149): Docker may only be pointing at
-        // another engine, and its chats run on where it is.
-        let suspended = matches!(machine.running(&kept), Ok(false));
-        // One that answered its unpairing cannot be asked, and takes no chat (#4146): only its
-        // removal is left.
-        let chats = if suspended || kept.unpaired {
-            Ok(0)
-        } else {
-            chats_on(&to)
+        // Nothing is woken to be asked (#2051). One Docker no longer lists is not taken as idle
+        // on its own (#4149): Docker may only be pointing at another engine, and its chats run
+        // on where it is. One that answered its unpairing cannot be asked, and takes no chat
+        // (#4146): only its removal is left.
+        let look = machine
+            .ran(&kept)
+            .map(|ran| purlis_core::pools::drain_look(&kept, ran));
+        let chats = match look {
+            _ if kept.unpaired => Ok(0),
+            Ok(DrainLook::Held) => {
+                lock_waiting().remove(&at);
+                said.push(format!(
+                    "draining runner {} stopped during its drain, so it stays with its home \
+                     until it is removed in Devices",
+                    kept.name()
+                ));
+                continue;
+            }
+            Ok(DrainLook::NoChat) => Ok(0),
+            Ok(DrainLook::Ask) | Err(_) => chats_on(&to),
         };
         match chats {
             Ok(0) => {

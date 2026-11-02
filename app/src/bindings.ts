@@ -3125,6 +3125,13 @@ export const commands = {
 	 *  a limit, through the edit ask (Q6), and never replaces a runner.
 	 */
 	dockerPoolReplaceRunner: (name: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_replace_runner", { name })),
+	/**
+	 *  **Removes the held runner `runner`, as the person pressed**: a draining runner that stopped
+	 *  during its drain, and what its chats left in its home with it
+	 *  ([`purlis_core::pools::remove_held`]). The window's alone: nothing else ends what a held runner
+	 *  keeps. What is left of it is said.
+	 */
+	dockerPoolRemoveHeldRunner: (runner: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_remove_held_runner", { runner })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**
@@ -12201,6 +12208,11 @@ export type RunnerAsked = {
 	 *  (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
 	 */
 	ran_this_week: number | null,
+	/**
+	 *  It stopped during its drain, so it stays with its home until the person removes it
+	 *  ([`purlis_core::pools::DrainLook::Held`]).
+	 */
+	held: boolean,
 };
 
 /**  One runner of a project, as the away summary reads it. */

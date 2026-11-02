@@ -288,7 +288,8 @@ pub fn follow(
         .and_then(|answered| {
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
         })
-        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked))
+        .inspect(|_| note_last_stops(config_root, docker, name, &locked));
     match kept {
         Ok(kept) => Ok(Some(kept)),
         Err(why) => Err(match docker.remove(&made) {
@@ -353,7 +354,8 @@ fn replace_as(
         .and_then(|answered| {
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
         })
-        .map(|kept| noted_where_made(config_root, docker, kept, &locked));
+        .map(|kept| noted_where_made(config_root, docker, kept, &locked))
+        .inspect(|_| note_last_stops(config_root, docker, name, &locked));
     match kept {
         Ok(kept) => Ok(Some(kept)),
         Err(why) => Err(match docker.remove(&made) {
@@ -662,6 +664,88 @@ fn clear_leftovers_locked(
     }))
 }
 
+/// **Notes when each of pool `pool`'s runners that began to drain last stopped**, as Docker says,
+/// for [`drain_look`]. Docker's own time against Docker's own time, so no clock is compared with
+/// another. One that could not be read stays unnoted, which holds it if it is found stopped.
+fn note_last_stops(config_root: &Path, docker: &Docker, pool: &str, locked: &runners::Locked) {
+    let draining = runners::draining(config_root).unwrap_or_default();
+    for kept in draining
+        .iter()
+        .filter(|kept| kept.pool() == pool && kept.last_stop.is_none())
+    {
+        let Ok(ran) = docker.ran(&kept.made) else {
+            continue;
+        };
+        let noted = runners::note_locked(
+            config_root,
+            kept.name(),
+            |kept| kept.last_stop = Some(ran.finished.unwrap_or(0)),
+            locked,
+        );
+        if let Err(why) = noted {
+            tracing::warn!(
+                "purlis: when runner {} last stopped was not noted, so it is held if it is \
+                 found stopped: {why}",
+                kept.name()
+            );
+        }
+    }
+}
+
+/// What a look makes of a draining runner's container ([`drain_look`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrainLook {
+    /// It runs as it has since its drain began: only it can say how many chats it has.
+    Ask,
+    /// It ran no chat as its drain began and starts none since, or its removal began once no
+    /// chat was left: it goes without being woken.
+    NoChat,
+    /// **It stopped during its drain, or it may have**, so it stays with its home until the
+    /// person removes it ([`remove_held`]). Asking cannot say otherwise: the chats a stop
+    /// ended are not listed by the host that runs after it, so a runner a link started again
+    /// answers none.
+    Held,
+}
+
+/// **What Docker's `ran` says of the draining runner `kept`**. A stopped runner is not an empty
+/// one: only a stop noted before its drain began says no chat was running on it.
+pub fn drain_look(kept: &Kept, ran: crate::dockerpool::Ran) -> DrainLook {
+    let stops_as_noted = kept.last_stop == Some(ran.finished.unwrap_or(0));
+    if kept.unpaired || (!ran.running && (kept.carried || kept.carry_failed)) {
+        DrainLook::NoChat
+    } else if ran.running && (stops_as_noted || kept.last_stop.is_none()) {
+        DrainLook::Ask
+    } else if !ran.running && stops_as_noted && ran.finished.is_some() {
+        DrainLook::NoChat
+    } else {
+        DrainLook::Held
+    }
+}
+
+/// **Removes the draining runner `name` the person chose to**, one [`DrainLook::Held`], as a
+/// drain removes one ([`drain`]), what its chats left in its home with it. Refused for any
+/// other, which a look removes once no chat is left on it.
+pub fn remove_held(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    unpair: Option<&Unpair<'_>>,
+) -> Result<Removed, Refused> {
+    let locked = runners::lock(config_root);
+    let kept = runners::named(config_root, name)?
+        .filter(|kept| kept.draining)
+        .ok_or_else(|| Refused::Other(format!("no runner {name} is draining on this machine")))?;
+    let ran = docker
+        .ran(&kept.made)
+        .map_err(|why| Refused::Other(why.0))?;
+    if drain_look(&kept, ran) != DrainLook::Held {
+        return Err(Refused::Other(format!(
+            "runner {name} is not held, so it goes once no chat is left on it"
+        )));
+    }
+    drain_locked(config_root, docker, name, unpair, &locked)
+}
+
 /// **Removes the draining runner `name`** (#2749), once its last chat has ended, as a runner is
 /// removed ([`runners::remove`]). Refused for a runner that is not draining.
 ///
@@ -684,6 +768,17 @@ pub fn drain(
     unpair: Option<&Unpair<'_>>,
 ) -> Result<Removed, Refused> {
     let locked = runners::lock(config_root);
+    drain_locked(config_root, docker, name, unpair, &locked)
+}
+
+/// [`drain`], under the lock `locked`.
+fn drain_locked(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    unpair: Option<&Unpair<'_>>,
+    locked: &runners::Locked,
+) -> Result<Removed, Refused> {
     match runners::named(config_root, name)? {
         Some(kept) if kept.draining => {
             // Another engine knows nothing of its container or its home (#4166).
@@ -700,12 +795,12 @@ pub fn drain(
             }
             if matches!(peer, Some(Ok(())))
                 && let Err(why) =
-                    runners::note_locked(config_root, name, |kept| kept.unpaired = true, &locked)
+                    runners::note_locked(config_root, name, |kept| kept.unpaired = true, locked)
             {
                 tracing::warn!("purlis: runner {name} may be asked again: {why}");
             }
-            carry_once(config_root, docker, &kept, false, &locked);
-            let mut removed = runners::remove_locked(config_root, docker, name, None, &locked)?;
+            carry_once(config_root, docker, &kept, false, locked);
+            let mut removed = runners::remove_locked(config_root, docker, name, None, locked)?;
             removed.peer = peer;
             Ok(removed)
         }
