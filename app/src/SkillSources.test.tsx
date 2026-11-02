@@ -764,7 +764,7 @@ describe("the install review", () => {
   });
 
   it("refuses as typed the name it had, a built-in's, a sibling's and a long one (#4530)", async () => {
-    const clash = { held_by: "held", offered: "example-deploy", taken: ["deploy", "secrets"] };
+    const clash = { held_by: "held", offered: "example-deploy", taken: ["deploy"] };
     core({
       answers: {
         skill_install_review: () => ({
@@ -782,7 +782,7 @@ describe("the install review", () => {
     await user.click(within(review).getByRole("radio", { name: "Install it under a new name" }));
     const named = within(review).getByRole("textbox", { name: "New name for deploy" });
     const install = within(review).getByRole("button", { name: "Install" });
-    for (const bad of ["deploy", "secrets", "notify", "a".repeat(65)]) {
+    for (const bad of ["deploy", "purlis-secrets", "notify", "a".repeat(65)]) {
       await user.clear(named);
       await user.type(named, bad);
       expect(install).toHaveAttribute("aria-disabled", "true");

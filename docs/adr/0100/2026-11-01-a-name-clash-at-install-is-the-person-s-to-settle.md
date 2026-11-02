@@ -4,7 +4,7 @@
 
 ## The ruling
 
-- **The install review stops on a clash.** A clash is a skill named for install whose name the level it lands in already holds, from any source or made there, or a built-in skill's name.
+- **The install review stops on a clash.** A clash is a skill named for install whose name the level it lands in already holds, from any source or made there, or a name of purlis's own (`purlis-`, ADR 0099 as amended 2026-11-01).
 - **A copy at another level does not stop it.** The narrowest-copy rule (ADR 0099) decides as it always does, and the review says so in one line.
 - **Two choices:** skip it, or install it under a new name. `<source>-<name>` is filled in and can be edited. `<source>` is the source's label.
 - **A new name changes only the `name:` line and the folder.** Prose references are never rewritten, in the skill or anywhere else.

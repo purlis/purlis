@@ -1158,7 +1158,7 @@ function newNameProblem(
   const wanted = newName(skill, settling).trim();
   if (wanted === "") return "Give it a name.";
   if (wanted.length > MOST_NAME) return `Use at most ${MOST_NAME} characters.`;
-  return nameProblem(wanted, "", [skill.name, ...(skill.clash?.taken ?? []), ...others], []);
+  return nameProblem(wanted, "", [skill.name, ...(skill.clash?.taken ?? []), ...others]);
 }
 
 /**
