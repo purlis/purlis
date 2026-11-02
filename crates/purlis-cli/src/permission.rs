@@ -111,6 +111,79 @@ fn redirected(
     hooked::refused_with(source, &message)
 }
 
+/// **`purlis hook taskquestion`: Codex's own question prompt, before it is asked** (#4558, ADR
+/// 0107), on the `PreToolUse` Codex runs for `request_user_input`
+/// ([`hooked::QUESTION_WORD`]). A task's question goes to its asking chat, and Codex is told
+/// so as the tool's result ([`codex_question_redirected`]).
+///
+/// **It fails open, and never drops a question.** No app, a payload that will not read, a
+/// harness that is not Codex, or a question the app says is the person's: it prints nothing,
+/// and Codex asks in its pane. There it is said to the app as a question waiting on the person
+/// ([`question_left_in_its_pane`]), so the chat is in the Inbox and does not wait unseen,
+/// since Codex says nothing of its own about it.
+pub fn taskquestion(payload: &str) -> ExitCode {
+    let Some(socket) = purlis_core::envvar::var_os(hookwire::SOCKET_ENV) else {
+        return ExitCode::SUCCESS;
+    };
+    let Ok(payload) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return ExitCode::SUCCESS;
+    };
+    let Some(source) =
+        Source::of_harness(hookwire::chat_harness(&purlis_core::envvar::var).as_deref())
+    else {
+        return ExitCode::SUCCESS;
+    };
+    if let Some(decision) = codex_question_redirected(source, &payload, &crate::dispatch::route) {
+        println!("{decision}");
+        return ExitCode::SUCCESS;
+    }
+    if source == Source::Codex
+        && let Some(report) =
+            question_left_in_its_pane(&payload, &|name| purlis_core::envvar::var(name))
+    {
+        // Best effort, as every report is: Codex asks in its pane either way.
+        let _ = hookwire::deliver_report(
+            std::path::Path::new(&socket),
+            hookwire::ChatToken::from_env().as_ref(),
+            &report,
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+/// **The hook's refusal of a Codex question `route` sent to the task's asking chat** (#4558), or
+/// none where it is no question of Codex's or the person is to be asked: then Codex asks in its
+/// pane. `route` is the app's to answer, from its own record of the chat, as for Claude Code's
+/// prompt ([`redirected`]).
+fn codex_question_redirected(
+    source: Source,
+    payload: &serde_json::Value,
+    route: &dyn Fn(&str) -> crate::dispatch::Routed,
+) -> Option<String> {
+    use crate::dispatch::Routed;
+    if source != Source::Codex {
+        return None;
+    }
+    let text = hooked::codex_asked_text(payload)?;
+    let message = match route(&text) {
+        Routed::AskingChat(to) => purlis_core::dispatchtalk::redirected(&to),
+        Routed::AlreadyAsking(why) => why,
+        Routed::ThePerson => return None,
+    };
+    Some(hooked::codex_question_refused(&message))
+}
+
+/// **The report that Codex's own question now waits in its pane** (#4558): a question waiting
+/// on the person, in the word purlis's opencode shim says opencode's in, which the app reads as
+/// one. Nothing of the question is on the line ([`notification`]).
+fn question_left_in_its_pane(
+    payload: &serde_json::Value,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<hookwire::Report> {
+    hooked::codex_asked_text(payload)?;
+    notification("question", payload, env)
+}
+
 /// How long this hook has run since `began`, in milliseconds, as its line says it.
 fn ran_for_ms(began: std::time::Instant) -> u64 {
     u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX)
@@ -257,6 +330,88 @@ mod tests {
         let began = std::time::Instant::now() - Duration::from_millis(1_500);
         let said = ran_for_ms(began);
         assert!((1_500..60_000).contains(&said), "{said}");
+    }
+
+    /// Codex's `request_user_input` on its `PreToolUse` (#4558).
+    fn a_codex_question() -> serde_json::Value {
+        serde_json::json!({
+            "session_id": "11111111-2222-4333-8444-555555555555",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "request_user_input",
+            "tool_input": { "questions": [{
+                "id": "host", "header": "Host", "question": "Which host?",
+                "options": [{ "label": "blue", "description": "the old one" }],
+            }] },
+        })
+    }
+
+    fn reason_of(decision: &str) -> String {
+        let said: serde_json::Value = serde_json::from_str(decision).expect("json");
+        assert_eq!(said["hookSpecificOutput"]["permissionDecision"], "deny");
+        said["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .expect("a reason")
+            .to_owned()
+    }
+
+    #[test]
+    fn a_codex_task_s_question_prompt_is_denied_with_where_it_went() {
+        use crate::dispatch::Routed;
+        let decision = codex_question_redirected(Source::Codex, &a_codex_question(), &|text| {
+            assert_eq!(text, "Which host?\n- blue: the old one");
+            Routed::AskingChat("steward 3".to_owned())
+        })
+        .expect("redirected");
+
+        assert_eq!(
+            reason_of(&decision),
+            purlis_core::dispatchtalk::redirected("steward 3")
+        );
+    }
+
+    #[test]
+    fn a_codex_task_paused_on_a_question_is_told_so_and_never_reaches_around_its_asking_chat() {
+        use crate::dispatch::Routed;
+        let decision = codex_question_redirected(Source::Codex, &a_codex_question(), &|_| {
+            Routed::AlreadyAsking("It is paused.".to_owned())
+        })
+        .expect("refused");
+
+        assert_eq!(reason_of(&decision), "It is paused.");
+    }
+
+    #[test]
+    fn a_codex_question_for_the_person_or_a_failed_redirect_is_asked_in_its_pane() {
+        use crate::dispatch::Routed;
+        assert_eq!(
+            codex_question_redirected(Source::Codex, &a_codex_question(), &|_| Routed::ThePerson),
+            None
+        );
+    }
+
+    #[test]
+    fn only_codex_s_own_question_is_routed_on_this_hook() {
+        use crate::dispatch::Routed;
+        let route = |_: &str| -> Routed { panic!("not routed") };
+        let bash = serde_json::json!({ "tool_name": "Bash", "tool_input": {"command": "ls"} });
+        assert_eq!(
+            codex_question_redirected(Source::Codex, &bash, &route),
+            None
+        );
+        for source in [Source::ClaudeCode, Source::Opencode] {
+            assert_eq!(
+                codex_question_redirected(source, &a_codex_question(), &route),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn a_codex_question_left_to_its_pane_is_reported_as_a_question_waiting_on_the_person() {
+        let report = question_left_in_its_pane(&a_codex_question(), &env).expect("a report");
+        assert_eq!(report.chat, 7);
+        assert_eq!(report.event, Event::Notification);
+        assert_eq!(report.detail.notified, Notified::Asks(Prompt::Question));
     }
 
     #[test]

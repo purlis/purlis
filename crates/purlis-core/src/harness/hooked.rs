@@ -304,6 +304,43 @@ pub fn refused_with(source: Source, message: &str) -> Option<String> {
     )
 }
 
+/// The word after `purlis hook` that Codex's own question prompt runs (#4558), on its
+/// `PreToolUse` for [`CODEX_QUESTION_TOOL`] (`harness::codex`, `question_group`).
+pub const QUESTION_WORD: &str = "taskquestion";
+
+/// Codex's own question tool, by the name its `PreToolUse` carries and matches
+/// (`core/src/tools/handlers/request_user_input_spec.rs`, `rust-v0.163.0`).
+pub const CODEX_QUESTION_TOOL: &str = "request_user_input";
+
+/// How long Codex waits on [`QUESTION_WORD`]: the app routes a question at once (a ticket
+/// takes two seconds at most), and a hook Codex has stopped waiting on asks in the pane.
+pub const QUESTION_HOOK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// **Codex's own question, as a task's asking chat is to read it** (#4558): each question of
+/// `request_user_input` in its own words, under it the answers it offers, as Claude Code's is
+/// read ([`asked_text`]). None for any other tool, and for one with no question in it, which
+/// Codex then asks in its pane.
+pub fn codex_asked_text(payload: &Value) -> Option<String> {
+    if payload["tool_name"].as_str() != Some(CODEX_QUESTION_TOOL) {
+        return None;
+    }
+    super::asked::question::questions_said(&payload["tool_input"])
+}
+
+/// **The hook's refusal of a Codex question it redirected**, in `message` (#4558): `PreToolUse`'s
+/// `deny`, whose reason Codex hands the model as the tool's result, and its turn goes on
+/// (`hooks/src/events/pre_tool_use.rs`, `rust-v0.163.0`).
+pub fn codex_question_refused(message: &str) -> String {
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": message,
+        }
+    })
+    .to_string()
+}
+
 /// Codex's `decision` for `choice`: `allow` or `deny` and nothing else, since codex-cli
 /// 0.147.0's schema fails closed on `updatedPermissions` and on `interrupt` (#1691).
 fn codex_decision(choice: &Choice) -> Value {

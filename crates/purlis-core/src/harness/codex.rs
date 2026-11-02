@@ -469,6 +469,49 @@ fn permission_flag(binary: &std::path::Path) -> [String; 2] {
     ["-c".to_owned(), format!("hooks.PermissionRequest={value}")]
 }
 
+/// **The `PreToolUse` group that hands Codex's own question prompt to purlis** (#4558, ADR
+/// 0107): `purlis hook taskquestion` ([`super::hooked::QUESTION_WORD`]) on
+/// [`super::hooked::CODEX_QUESTION_TOOL`] alone.
+///
+/// **Read from Codex's source at `rust-v0.163.0`**, since no run could be made from purlis's
+/// sandbox: `request_user_input` takes the registry's default `pre_tool_use_payload`
+/// (`core/src/tools/registry.rs`), so its `PreToolUse` fires under its own name with its
+/// arguments as `tool_input`, before the tool asks anything and before its mode is checked;
+/// a hook's `deny` comes back to the model as the tool's result (`RespondToModel`), and its
+/// turn goes on (`hooks/src/events/pre_tool_use.rs`).
+///
+/// Not from the registry, as [`permission_flag`] is not: every `PreToolUse` word there is a
+/// guard, which refuses on a crash or a late answer, and a question refused that way would be
+/// lost. This one fails open: any failure prints nothing, and Codex asks in its pane. Codex
+/// asks the operator to trust it once, as it does each of purlis's hooks.
+fn question_group(binary: &std::path::Path) -> toml::Value {
+    let mut hook = toml::Table::new();
+    hook.insert("type".to_owned(), toml::Value::from("command"));
+    hook.insert(
+        "command".to_owned(),
+        toml::Value::from(crate::plugin::command_at(
+            binary,
+            super::hooked::QUESTION_WORD,
+        )),
+    );
+    hook.insert(
+        "timeout".to_owned(),
+        toml::Value::from(
+            i64::try_from(super::hooked::QUESTION_HOOK_TIMEOUT.as_secs()).unwrap_or(i64::MAX),
+        ),
+    );
+    let mut group = toml::Table::new();
+    group.insert(
+        "matcher".to_owned(),
+        toml::Value::from(super::hooked::CODEX_QUESTION_TOOL),
+    );
+    group.insert(
+        "hooks".to_owned(),
+        toml::Value::Array(vec![toml::Value::Table(hook)]),
+    );
+    toml::Value::Table(group)
+}
+
 /// The `-c` pairs that arm Codex's hooks on one session, out of [`crate::plugin::codex_handlers`].
 ///
 /// On the argument for the reason Claude Code's are: nothing is written, so nothing is left
@@ -514,6 +557,12 @@ fn session_flags(binary: &std::path::Path) -> Vec<String> {
                     toml::Value::Table(group)
                 })
                 .collect();
+            // One key per event, or the last `-c` of it would win: the question hook rides in
+            // the same `PreToolUse` as the guard ([`question_group`]).
+            let mut groups = groups;
+            if event == "PreToolUse" {
+                groups.push(question_group(binary));
+            }
             let value = toml::Value::Array(groups);
             ["-c".to_owned(), format!("hooks.{event}={value}")]
         })

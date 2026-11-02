@@ -106,7 +106,15 @@ pub fn asked_text(payload: &Value) -> Option<String> {
     if payload["tool_name"].as_str() != Some(TOOL) {
         return None;
     }
-    let questions = payload["tool_input"]["questions"].as_array()?;
+    questions_said(&payload["tool_input"])
+}
+
+/// The questions of a question tool's `input`, each in its own words with the answers it
+/// offers under it: Claude Code's `AskUserQuestion` and Codex's `request_user_input` alike
+/// (#4558), which both hold `questions` of a `question` and `options` of a `label` and a
+/// `description`. None where one has no words, or there is none.
+pub fn questions_said(input: &Value) -> Option<String> {
+    let questions = input["questions"].as_array()?;
     let said: Option<Vec<String>> = questions.iter().map(one_said).collect();
     let said = said.filter(|said| !said.is_empty())?;
     Some(said.join("\n\n"))
