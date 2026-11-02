@@ -128,8 +128,13 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
                     }
                 };
                 // `file_type` does not follow a link.
-                if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-                    continue;
+                match entry.file_type() {
+                    Ok(kind) if kind.is_dir() => {}
+                    Ok(_) => continue,
+                    Err(e) => {
+                        unread.push(format!("{} could not all be read: {e}", shown(&id, &rel)));
+                        continue;
+                    }
                 }
                 let Ok(name) = entry.file_name().into_string() else {
                     unread.push(format!(
@@ -384,6 +389,18 @@ fn file_now(repo: &Path, path: &str) -> Result<Option<String>, String> {
 /// holds it, and has each of its commits reached from a ref here. Only then may the runner go.
 pub fn not_home(root: &Path, project: &str, held: &[Held], unread: &[String]) -> Vec<String> {
     let mut missing: Vec<String> = unread.to_vec();
+    // A runner is sent the project's own repository as a task starts there (D-4569-21): one that
+    // no longer lists it may hold, outside every clone, what no list shows.
+    if !held
+        .iter()
+        .any(|one| one.project == project && one.path.is_empty())
+    {
+        missing.push(
+            "the runner no longer holds the project's own repository, so what it holds outside \
+             the clones can't be listed"
+                .to_owned(),
+        );
+    }
     for one in held {
         let at = if one.path.is_empty() {
             "the project's own repository".to_owned()

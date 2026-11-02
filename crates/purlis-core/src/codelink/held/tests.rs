@@ -484,3 +484,23 @@ fn a_file_whose_name_is_not_text_keeps_the_runner() {
 
     assert!(says(&missing, "whose name is not text"), "{missing:?}");
 }
+
+/// **A runner that no longer holds the project's own repository keeps it** (D-4569-21): a task
+/// that removed it could hold, outside every clone, files no list shows.
+#[test]
+fn a_runner_whose_project_lost_its_own_repository_keeps_the_runner() {
+    let world = World::new();
+    std::fs::remove_dir_all(world.runner.join(".git")).unwrap();
+    std::fs::write(
+        world.runner.join("workspaces/app/report.md"),
+        "the task's\n",
+    )
+    .unwrap();
+
+    let missing = world.not_home();
+
+    assert!(
+        says(&missing, "no longer holds the project's own repository"),
+        "{missing:?}"
+    );
+}
