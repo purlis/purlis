@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: minimised and expanded pane notices (#4584)</title>
+<!--
+  PROTOTYPE, throwaway. Ticket purlis/purlis#4584 on map #4575 "Chats, tabs and panes: a chat isn't a tab".
+  Question: how pane notices look minimised and expanded: where the icon with its count sits, how a
+  consent or blocking question stays open when minimised, where Dismiss all lives, and what the count
+  says about urgency.
+  Fixed by earlier rulings, drawn the same in every variant:
+   - D7 (#4576): minimised is one icon with a count; expanded shows them all; a consent or blocking
+     question stays open when minimised; Dismiss all skips it; the choice is remembered across all panes.
+   - #3142 variant A: a band inside the pane, then the slim pane header (chips left, split/close right),
+     then the terminal pinned to its bottom; nothing draws over the terminal; no state change moves a
+     neighbour; a consent has no Dismiss; Esc on a focused notice dismisses it.
+   - #4551 / #4561: the task-question strip sits at the top of the pane and says "1 asking", no red.
+   - Never on a timer, never steals focus.
+  Variants (the bottom bar, or ?variant=A|B|C):
+   A  Header slot:  the icon + count sits in the pane header, a fixed slot before split/close. Blocking
+      cards stay full in the band. Dismiss all is on the band's head row when expanded. The count is
+      the notices folded away, neutral, with the trouble tone when one of them is trouble.
+   B  Band foot:    no icon in the header. The band folds to one line at its foot: icon, count, the
+      newest folded notice's words, Show all. Blocking cards stay full above it. Dismiss all sits on
+      that foot line when expanded. The count names the trouble: "4 · 1 trouble".
+   C  Compact asks: the icon + count sits at the left of the pane header, before the chips. Blocking
+      asks stay open as one-line rows with their buttons, full words on expand. Dismiss all sits beside
+      the icon when expanded. The count includes the asks, said in words: "2 asking · 4".
+  Stand-in data, in memory. Nothing calls the core. Tokens: the Purlis built-in theme.
+-->
+<style>
+:root {
+  --behind: #ffffff; --surface-base: #f7f7fd; --surface-raised: #eeeef5; --surface-overlay: #e4e4ec;
+  --surface-hover: #dbdce5; --control-base: #e4e4ec; --control-hover: #dbdce5;
+  --text-primary: #252329; --text-secondary: #3b3942; --text-muted: #5d5b67; --text-quiet: #61606c; --text-faint: #7c7a87;
+  --border-strong: #a9a7b5; --accent: #554691; --accent-surface: #dedcef; --focus-ring: #554691;
+  --term-bg: #e9e9f2; --term-fg: #252329;
+  --wash-warning: #5236011f; --danger-wash: #682e301f; --danger-base: #682e30; --info-wash: #4d3f8014;
+  --state-waiting: #523601; --state-failed: #682f2a; --ansi-green: #20562f; --ansi-link: #4d3f80;
+  --bar-bg: #252329; --bar-fg: #f7f7fd;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --r-control: 7px; --r-tab: 8px; --r-warn: 10px; --r-panel: 12px;
+}
+:root[data-theme="dark"] {
+  --behind: #121215; --surface-base: #17171b; --surface-raised: #1d1d22; --surface-overlay: #24242a;
+  --surface-hover: #2a2a31; --control-base: #24242a; --control-hover: #2a2a31;
+  --text-primary: #e6e4ec; --text-secondary: #c9c7d2; --text-muted: #a09eab; --text-quiet: #91909d; --text-faint: #74727f;
+  --border-strong: #55535f; --accent: #a99cf0; --accent-surface: #292735; --focus-ring: #a99cf0;
+  --term-bg: #202026; --term-fg: #e6e4ec;
+  --wash-warning: #e5c08a1f; --danger-wash: #f0a9a81f; --danger-base: #f0a9a8; --info-wash: #b3a8f214;
+  --state-waiting: #e5c08a; --state-failed: #f0aaa2; --ansi-green: #8fc79a; --ansi-link: #b3a8f2;
+  --bar-bg: #e6e4ec; --bar-fg: #17171b; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--behind); color: var(--text-primary); font: 14px/1.4 var(--font-ui); padding: 16px 16px 110px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.head { max-width: 1320px; margin: 0 auto 12px; }
+.head h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+.head p { margin: 0; color: var(--text-quiet); font-size: 12px; max-width: 120ch; }
+.work { max-width: 1320px; margin: 0 auto; display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 14px; align-items: start; }
+.side { display: grid; gap: 12px; }
+.card { background: var(--surface-raised); border-radius: var(--r-panel); padding: 12px 14px; }
+.card h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-quiet); }
+.state { margin: 0; font: 11px/1.45 var(--font-mono); color: var(--text-muted); white-space: pre-wrap; }
+.card ol, .card ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-secondary); display: grid; gap: 4px; }
+
+/* The window slice: two panes side by side in one tab. */
+.stage { background: var(--surface-base); border-radius: var(--r-panel); padding: 8px; height: 640px;
+  display: grid; grid-template-columns: minmax(0,1.4fr) minmax(0,1fr); gap: 8px; }
+.pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--term-bg); border-radius: var(--r-panel); overflow: hidden; position: relative; }
+.pane[data-focused] { box-shadow: inset 0 0 0 1px var(--border-strong); }
+
+/* #4561: the task-question strip at the top of the pane. */
+.qstrip { flex: none; display: flex; align-items: center; gap: 8px; margin: 8px 8px 0; padding: 6px 10px; border-radius: var(--r-warn);
+  background: var(--surface-overlay); font-size: 12.5px; }
+.qstrip b { font-weight: 600; }
+.qstrip .grow { flex: 1; min-width: 0; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The band: inside the pane, at most about half of it, scrolling inside past that. */
+.band { flex: none; max-height: 50%; overflow: auto; display: grid; gap: 6px; padding: 8px 8px 0; }
+.band:empty { display: none; }
+.bandhead { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-quiet); padding: 0 2px; min-height: 26px; }
+.bandhead .grow { flex: 1; }
+.n { border-radius: var(--r-warn); padding: 8px 10px; background: var(--info-wash); display: grid; gap: 6px; font-size: 13px; }
+.n[data-tone="warning"] { background: var(--wash-warning); }
+.n[data-tone="trouble"] { background: var(--danger-wash); }
+.n .top { display: flex; gap: 8px; align-items: flex-start; }
+.n .words { flex: 1; min-width: 0; }
+.n .label { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--text-quiet); text-transform: uppercase; margin-right: 6px; }
+.n .detail { color: var(--text-quiet); font-size: 12px; }
+.n .ways { display: flex; flex-wrap: wrap; gap: 6px; }
+.n[data-compact] { grid-template-columns: minmax(0,1fr) auto; align-items: center; padding: 5px 8px 5px 10px; }
+.n[data-compact] .words { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.n[data-compact] .detail { display: none; }
+.btn { border: 0; background: var(--control-base); padding: 3px 10px; border-radius: var(--r-control); cursor: pointer; font-size: 12.5px; }
+.btn:hover { background: var(--control-hover); }
+.btn.quiet { background: transparent; color: var(--text-muted); }
+.btn.quiet:hover { background: var(--control-hover); color: var(--text-primary); }
+.x { border: 0; background: transparent; color: var(--text-faint); width: 22px; height: 22px; border-radius: 5px; cursor: pointer; flex: none; }
+.x:hover { background: var(--control-hover); color: var(--text-primary); }
+.lock { font-size: 11px; margin-right: 3px; }
+
+/* Variant B's foot line. */
+.foot { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 8px; border-radius: var(--r-warn); background: var(--surface-overlay); font-size: 12.5px; min-height: 30px; }
+.foot .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+
+/* The slim pane header: chips left, the notice slot and split/close right (or left in C). */
+.phead { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12px; color: var(--text-quiet); }
+.chip { padding: 2px 8px; border-radius: 999px; background: var(--surface-overlay); white-space: nowrap; }
+.phead > span:first-child { white-space: nowrap; }
+.n[data-compact] .words { min-width: 12ch; }
+.phead .grow { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.icon { display: inline-flex; align-items: center; gap: 4px; height: 24px; min-width: 44px; padding: 0 7px; border: 0; border-radius: var(--r-control);
+  background: transparent; color: var(--text-muted); cursor: pointer; font-variant-numeric: tabular-nums; justify-content: flex-start; }
+.icon:hover { background: var(--control-hover); color: var(--text-primary); }
+.icon[aria-expanded="true"] { background: var(--accent-surface); color: var(--text-primary); }
+.icon[data-tone="trouble"] .count { color: var(--state-failed); font-weight: 600; }
+.icon[data-empty] { color: var(--text-faint); }
+.icon .count { min-width: 2ch; text-align: left; }
+.icon.wide { min-width: 96px; }
+.tool { border: 0; background: transparent; color: var(--text-faint); width: 24px; height: 24px; border-radius: var(--r-control); cursor: pointer; }
+.tool:hover { background: var(--control-hover); color: var(--text-primary); }
+
+/* The terminal: pinned to its bottom, so the band grows it from the top and the last line never moves. */
+.term { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px 12px 10px;
+  font: 12.5px/1.5 var(--font-mono); color: var(--term-fg); }
+.term .l { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.term .dim { color: var(--text-faint); }
+.term .g { color: var(--ansi-green); }
+.term .cursor { display: inline-block; width: 8px; height: 15px; background: var(--term-fg); vertical-align: -3px; }
+.rows { position: absolute; right: 8px; bottom: 6px; font: 10px var(--font-mono); color: var(--text-faint); }
+
+/* The prototype's bar: dashed, not the design. */
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: var(--bar-bg); color: var(--bar-fg);
+  border: 2px dashed var(--bar-fg); border-radius: 12px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center;
+  font-size: 12px; max-width: calc(100vw - 24px); z-index: 10; }
+.bar .grp { display: flex; gap: 3px; align-items: center; }
+.bar button { border: 0; background: transparent; color: var(--bar-fg); padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; opacity: .75; }
+.bar button[aria-pressed="true"] { opacity: 1; background: color-mix(in srgb, var(--bar-fg) 22%, transparent); font-weight: 600; }
+.bar button:hover { opacity: 1; }
+.bar .lbl { opacity: .6; margin-right: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<header class="head">
+  <h1>PROTOTYPE: minimised and expanded pane notices</h1>
+  <p>Ticket #4584 on the map "Chats, tabs and panes: a chat isn't a tab". Two panes of one tab. The left pane is focused. The minimised or expanded choice is one setting for every pane (D7), so pressing the icon on either pane changes both. The dashed bar is the prototype's: <b>A / B / C</b> switch the variant, <b>1–6</b> load a state, <b>+ note</b> and <b>+ ask</b> make one arrive. Keys: <code>[</code> <code>]</code> state, <code>v</code> variant, <code>t</code> theme. Esc on a focused notice dismisses it.</p>
+</header>
+<main class="work">
+  <section class="stage" id="stage" aria-label="One tab, two panes"></section>
+  <aside class="side">
+    <div class="card"><h2>This variant</h2><div id="about" style="font-size:12.5px;color:var(--text-secondary)"></div></div>
+    <div class="card"><h2>State</h2><pre class="state" id="state"></pre></div>
+    <div class="card"><h2>Same in every variant</h2><ol>
+      <li>The band sits inside the pane, above the slim header; the terminal is pinned to its bottom (#3142).</li>
+      <li>Nothing draws over the terminal. No popover, no overlay.</li>
+      <li>A consent or blocking ask has no Dismiss, stays open minimised, and Dismiss all skips it (D7).</li>
+      <li>Expanded shows every notice; past half the pane the band scrolls inside.</li>
+      <li>The icon holds a fixed slot, there with no count when there is nothing, so nothing beside it moves.</li>
+      <li>A new notice never takes focus and never opens the band. The count changes and is announced politely.</li>
+      <li>The task-question strip (#4561) stays its own row at the top and is not counted.</li>
+    </ol></div>
+  </aside>
+</main>
+<div class="sr" aria-live="polite" id="live"></div>
+<nav class="bar" aria-label="Prototype controls">
+  <span class="grp"><span class="lbl">variant</span><button data-v="A">A header slot</button><button data-v="B">B band foot</button><button data-v="C">C compact asks</button></span>
+  <span class="grp"><span class="lbl">state</span><button data-s="1">1</button><button data-s="2">2</button><button data-s="3">3</button><button data-s="4">4</button><button data-s="5">5</button><button data-s="6">6</button></span>
+  <span class="grp"><button id="addNote">+ note</button><button id="addAsk">+ ask</button><button id="theme">light/dark</button></span>
+</nav>
+<script>
+const ASKS = {
+  consent: { kind: "consent", tone: "warning", label: "Sandbox", words: "Blocked a connection to registry.npmjs.org:443", detail: "npm install, from this chat's sandbox.", ways: ["🔓 Allow for this chat", "Allow once", "Keep blocked"], short: "Allow registry.npmjs.org?" },
+  dispatch: { kind: "ask", tone: "warning", label: "Dispatch", words: "steward asks to dispatch a task to devops", detail: "No grant covers it. devops would run in workspace volaticloud.", ways: ["Allow", "Refuse"], short: "Dispatch to devops?" },
+  change: { kind: "ask", tone: "warning", label: "Proposed change", words: "This chat proposes a change to purlis's settings", detail: "notifications.sound: on → off", ways: ["Review", "Refuse"], short: "Apply a settings change?" },
+  removal: { kind: "ask", tone: "warning", label: "Remove workspace", words: "This chat asks to remove the workspace old-site", detail: "Its memory was promoted first.", ways: ["Remove", "Keep it"], short: "Remove old-site?" },
+};
+const NOTES = [
+  { kind: "note", tone: "trouble", label: "MCP", words: "The figma MCP server failed to start", detail: "It exited with code 1 before it answered.", ways: ["Restart"] },
+  { kind: "note", tone: "info", label: "Skills", words: "Two skills changed since this chat started", detail: "tdd and prototype. They reach it on a restart.", ways: ["Restart"] },
+  { kind: "note", tone: "info", label: "Start", words: "This repo has its own AGENTS.md", detail: "purlis/AGENTS.md was read at start.", ways: [] },
+  { kind: "note", tone: "trouble", label: "Host", words: "The session host lost this chat's runner", detail: "Last heard 2 minutes ago.", ways: ["Restart"] },
+  { kind: "note", tone: "info", label: "Skills", words: "Started without the skill grilling", detail: "Its persona names it; it isn't installed.", ways: ["Install"] },
+  { kind: "note", tone: "info", label: "Move", words: "Moved to the runner pool-a", detail: "Its folder followed it.", ways: [] },
+  { kind: "note", tone: "info", label: "Task", words: "The task 'tidy the inbox' has been quiet for 20 minutes", detail: "Its last line was a test run.", ways: ["Go to it"] },
+  { kind: "note", tone: "info", label: "Restart", words: "What you allowed reaches this chat when it restarts", detail: "Its harness does not say when a turn ends.", ways: ["Restart now"] },
+];
+const STATES = {
+  1: { name: "Nothing to say", left: [], right: [] },
+  2: { name: "Two notes, no asks", left: [0, 1], right: [] },
+  3: { name: "A consent and three notes", left: ["consent", 1, 2, 0], right: [5] },
+  4: { name: "Two asks, five notes, one trouble", left: ["dispatch", "change", 1, 2, 4, 5, 3], right: ["consent", 6] },
+  5: { name: "Too many: three asks, eight notes", left: ["consent", "dispatch", "change", 0, 1, 2, 3, 4, 5, 6, 7], right: [1, 2] },
+  6: { name: "With the task-question strip", left: [1, 6, 2], right: [], strip: true },
+};
+const ABOUT = {
+  A: "<b>Header slot.</b> The icon and its count sit in the pane header, in a fixed slot before split and close. Minimised, only the asks stay in the band, as full cards. The count is what's folded away: neutral, in the trouble colour when one of those is trouble. Expanded, the band gets a head row with <i>Dismiss all</i> and <i>Minimise</i>.",
+  B: "<b>Band foot.</b> No icon in the header. Minimised, the band ends in one line: the icon, the count and the newest folded notice's words, with <i>Show all</i>. The asks stay as full cards above it. Expanded, the same line holds <i>Dismiss all</i> and <i>Minimise</i>. The count names the trouble: “4 · 1 trouble”.",
+  C: "<b>Compact asks.</b> The icon sits at the left of the header, before the chips, and counts everything, in words: “2 asking · 4”. Minimised, each ask stays open as one line with its buttons; the full words come back expanded. Expanded, <i>Dismiss all</i> sits beside the icon in the header.",
+};
+let seq = 0;
+const make = (k) => ({ id: ++seq, ...(typeof k === "string" ? ASKS[k] : NOTES[k]) });
+const params = new URLSearchParams(location.search);
+const S = { variant: params.get("variant") ?? "A", state: 4, minimised: params.get("m") !== "exp", theme: params.get("t") ?? "dark", panes: [], strip: false, focusPane: 0, announced: "" };
+function load(n) {
+  const s = STATES[n]; S.state = n; S.strip = !!s.strip;
+  S.panes = [{ name: "steward 1", notices: s.left.map(make) }, { name: "tidy the inbox", notices: s.right.map(make) }];
+  render();
+}
+const blocking = (n) => n.kind !== "note";
+function countText(p) {
+  const asks = p.notices.filter(blocking).length, notes = p.notices.length - asks;
+  const trouble = p.notices.filter((n) => !blocking(n) && n.tone === "trouble").length;
+  if (S.variant === "A") return S.minimised ? (notes ? String(notes) : "") : (p.notices.length ? String(p.notices.length) : "");
+  if (S.variant === "B") return notes + (trouble ? ` · ${trouble} trouble` : "");
+  const parts = []; if (asks) parts.push(`${asks} asking`); if (notes) parts.push(String(notes));
+  return parts.join(" · ");
+}
+function spoken(p) {
+  const asks = p.notices.filter(blocking).length, notes = p.notices.length - asks;
+  const trouble = p.notices.filter((n) => !blocking(n) && n.tone === "trouble").length;
+  return `${p.name}: ${notes} notice${notes === 1 ? "" : "s"}${trouble ? `, ${trouble} in trouble` : ""}${asks ? `, ${asks} asking` : ""}`;
+}
+const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+function notice(n, pi, compact) {
+  const ways = n.ways.map((w, i) => `<button class="btn${blocking(n) && i === n.ways.length - 1 ? " quiet" : ""}" data-act="${pi}:${n.id}">${w.startsWith("🔓") ? `<span class="lock">🔓</span>${esc(w.slice(3))}` : esc(w)}</button>`).join("");
+  const x = blocking(n) ? "" : `<button class="x" title="Dismiss" aria-label="Dismiss: ${esc(n.words)}" data-x="${pi}:${n.id}">✕</button>`;
+  if (compact) return `<div class="n" data-compact data-tone="${n.tone}" tabindex="-1" data-id="${pi}:${n.id}"><div class="words"><span class="label">${n.label}</span>${esc(n.short)}</div><div class="ways">${ways}</div></div>`;
+  return `<div class="n" data-tone="${n.tone}" tabindex="-1" data-id="${pi}:${n.id}"><div class="top"><div class="words"><span class="label">${n.label}</span>${esc(n.words)}<div class="detail">${esc(n.detail)}</div></div>${x}</div>${ways ? `<div class="ways">${ways}</div>` : ""}</div>`;
+}
+const icon = (p, pi, cls = "") => {
+  const asks = p.notices.filter(blocking).length, notes = p.notices.length - asks;
+  const trouble = p.notices.some((n) => !blocking(n) && n.tone === "trouble");
+  const c = countText(p);
+  return `<button class="icon ${cls}" data-toggle="${pi}" aria-expanded="${!S.minimised}" ${trouble && S.variant !== "C" ? 'data-tone="trouble"' : ""} ${p.notices.length ? "" : "data-empty"}
+    aria-label="Notices, ${spoken(p)}. ${S.minimised ? "Show all" : "Minimise"}" title="${S.minimised ? "Show all notices" : "Minimise notices"}"><span aria-hidden="true">🔔</span><span class="count">${esc(c)}</span></button>`;
+};
+const dismissAll = (p, pi) => {
+  const n = p.notices.filter((x) => !blocking(x)).length;
+  return n ? `<button class="btn quiet" data-all="${pi}">Dismiss all ${n}</button>` : "";
+};
+function band(p, pi) {
+  const asks = p.notices.filter(blocking), notes = p.notices.filter((n) => !blocking(n));
+  const v = S.variant; let h = "";
+  if (v === "A") {
+    if (!S.minimised && p.notices.length) h += `<div class="bandhead"><span class="grow">${p.notices.length} notice${p.notices.length === 1 ? "" : "s"}${asks.length ? `, ${asks.length} waiting on you` : ""}</span>${dismissAll(p, pi)}<button class="btn quiet" data-toggle="${pi}">Minimise ▴</button></div>`;
+    h += asks.map((n) => notice(n, pi)).join("");
+    if (!S.minimised) h += notes.map((n) => notice(n, pi)).join("");
+  } else if (v === "B") {
+    h += asks.map((n) => notice(n, pi)).join("");
+    if (!S.minimised) h += notes.map((n) => notice(n, pi)).join("");
+    if (notes.length) {
+      const newest = notes[notes.length - 1];
+      h += `<div class="foot">${icon(p, pi, "wide")}<span class="grow">${S.minimised ? esc(newest.words) : ""}</span>${S.minimised ? `<button class="btn quiet" data-toggle="${pi}">Show all</button>` : `${dismissAll(p, pi)}<button class="btn quiet" data-toggle="${pi}">Minimise ▴</button>`}</div>`;
+    }
+  } else {
+    h += asks.map((n) => notice(n, pi, S.minimised)).join("");
+    if (!S.minimised) h += notes.map((n) => notice(n, pi)).join("");
+  }
+  return h;
+}
+function header(p, pi) {
+  const chips = `<span class="chip">claude</span><span class="chip">4 skills</span><span class="chip">ctx 38%</span>`;
+  const tools = `<button class="tool" title="Split" aria-label="Split">⊞</button><button class="tool" title="Close pane" aria-label="Close pane">✕</button>`;
+  if (S.variant === "A") return `${chips}<span class="grow"></span>${icon(p, pi)}${tools}`;
+  if (S.variant === "B") return `${chips}<span class="grow"></span>${tools}`;
+  return `${icon(p, pi, "wide")}${!S.minimised ? dismissAll(p, pi) : ""}${chips}<span class="grow"></span>${tools}`;
+}
+const TERM = [
+  ["dim", "› npm test -- --reporter=dot"], ["", "  ✓ inboxRules (14)"], ["", "  ✓ noticePlace (9)"], ["", "  ✓ ChipNotices (21)"],
+  ["g", "  Test Files  3 passed (3)"], ["", ""], ["", "⏺ The tests pass. Next I'll wire the count into the pane header."], ["", ""],
+  ["dim", "  Reading app/src/ChatNotices.tsx…"], ["", "⏺ Done. Two places draw a pane's asks today; one store feeds both."], ["", ""],
+];
+function render() {
+  document.documentElement.dataset.theme = S.theme ?? "dark";
+  const stage = document.getElementById("stage"); const keep = document.activeElement?.dataset?.id;
+  stage.innerHTML = S.panes.map((p, pi) => `
+    <section class="pane" ${pi === S.focusPane ? "data-focused" : ""} aria-label="Pane: ${p.name}">
+      ${pi === 0 && S.strip ? `<div class="qstrip"><b>1 asking</b><span class="grow">tidy the inbox: which label marks a question as answered?</span><button class="btn quiet">Answer</button></div>` : ""}
+      <div class="band" role="region" aria-label="Notices">${band(p, pi)}</div>
+      <div class="phead"><span style="color:var(--text-primary);font-weight:500">${p.name}</span>${header(p, pi)}</div>
+      <div class="term">${TERM.map(([c, t]) => `<div class="l ${c}">${esc(t) || " "}</div>`).join("")}<div class="l">❯ <span class="cursor"></span></div></div>
+      <span class="rows" data-rows="${pi}"></span>
+    </section>`).join("");
+  document.querySelectorAll("[data-rows]").forEach((el) => {
+    const term = el.parentElement.querySelector(".term"); el.textContent = `terminal ${Math.floor((term.clientHeight - 16) / 18.75)} rows`;
+  });
+  if (keep) document.querySelector(`[data-id="${keep}"]`)?.focus();
+  document.getElementById("about").innerHTML = ABOUT[S.variant];
+  document.querySelectorAll("[data-v]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === S.variant));
+  document.querySelectorAll("[data-s]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.s == S.state));
+  const st = {
+    variant: S.variant, state: `${S.state} ${STATES[S.state].name}`,
+    "remembered (every pane)": S.minimised ? "minimised" : "expanded",
+    panes: S.panes.map((p) => ({ pane: p.name, asks: p.notices.filter(blocking).map((n) => n.label), notes: p.notices.filter((n) => !blocking(n)).map((n) => n.label + (n.tone === "trouble" ? " (trouble)" : "")), icon: countText(p) || "(empty slot)", "screen reader": spoken(p) })),
+    "last announced": S.announced || "—",
+  };
+  document.getElementById("state").textContent = JSON.stringify(st, null, 1);
+  history.replaceState(null, "", `?variant=${S.variant}&s=${S.state}&m=${S.minimised ? "min" : "exp"}&t=${S.theme}`);
+}
+function find(key) { const [pi, id] = key.split(":").map(Number); return { p: S.panes[pi], pi, id }; }
+function remove(key) {
+  const { p, pi, id } = find(key); const at = p.notices.findIndex((n) => n.id === id); p.notices.splice(at, 1); render();
+  const next = document.querySelectorAll(`[data-id^="${pi}:"]`)[Math.min(at, 99)] ?? document.querySelectorAll(`[data-id^="${pi}:"]`)[0];
+  (next ?? document.querySelectorAll(".pane")[pi]?.querySelector(".term"))?.focus?.();
+}
+function announce(p) { S.announced = spoken(p); document.getElementById("live").textContent = S.announced; }
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("button"); if (!t) return;
+  if (t.dataset.v) { S.variant = t.dataset.v; render(); }
+  else if (t.dataset.s) load(Number(t.dataset.s));
+  else if (t.dataset.toggle !== undefined) { S.minimised = !S.minimised; render(); document.querySelector(`[data-toggle="${t.dataset.toggle}"]`)?.focus(); }
+  else if (t.dataset.all !== undefined) { const p = S.panes[t.dataset.all]; p.notices = p.notices.filter(blocking); render(); }
+  else if (t.dataset.x) remove(t.dataset.x);
+  else if (t.dataset.act) remove(t.dataset.act);
+  else if (t.id === "addNote") { const p = S.panes[S.focusPane]; p.notices.push(make(seq % NOTES.length)); render(); announce(p); }
+  else if (t.id === "addAsk") { const p = S.panes[S.focusPane]; const ks = Object.keys(ASKS); p.notices.splice(p.notices.filter(blocking).length, 0, make(ks[seq % ks.length])); render(); announce(p); }
+  else if (t.id === "theme") { S.theme = (S.theme ?? "dark") === "dark" ? "light" : "dark"; render(); }
+});
+document.addEventListener("keydown", (e) => {
+  const n = e.target.closest?.(".n");
+  if (e.key === "Escape" && n && n.querySelector(".x")) { remove(n.dataset.id); return; }
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "]") load(S.state % 6 + 1);
+  if (e.key === "[") load(((S.state + 4) % 6) + 1);
+  if (e.key === "v") { S.variant = { A: "B", B: "C", C: "A" }[S.variant]; render(); }
+  if (e.key === "t") { S.theme = (S.theme ?? "dark") === "dark" ? "light" : "dark"; render(); }
+});
+document.addEventListener("focusin", (e) => { const p = e.target.closest?.(".pane"); if (p) { const i = [...document.querySelectorAll(".pane")].indexOf(p); if (i !== S.focusPane) { S.focusPane = i; document.querySelectorAll(".pane").forEach((el, j) => el.toggleAttribute("data-focused", j === i)); } } });
+load(Number(params.get("s") ?? 4));
+</script>
+</body>
+</html>
