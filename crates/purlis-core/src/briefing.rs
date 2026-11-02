@@ -299,7 +299,7 @@ fn one_route_note(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
         .filter(|socket| !socket.is_empty())
         .map(|_| {
             format!(
-                "{ONE_ROUTE_IF} {ONE_ROUTE_TOOLS} {} {ONE_ROUTE_ONLY_THEN}",
+                "{ONE_ROUTE_IF} {ONE_ROUTE_TOOLS} {ONE_ROUTE_IS_A_TASK} {} {ONE_ROUTE_ONLY_THEN}",
                 crate::handoff::ONE_ROUTE
             )
         })
@@ -320,6 +320,16 @@ pub const ONE_ROUTE_TOOLS: &str = "Use purlis's tools for it first: `dispatch` s
      public and anything that amends a ruling are always passed on, and your own answer is \
      never the person's word. They need no shell; the `purlis dispatch` command does the same, \
      one call at a time.";
+
+/// What stands after the tools (#4773): which work is a task's and which a harness subagent's.
+/// A chat that started implementers as subagents by habit had each cut its own branch folder,
+/// out of the person's sight; the guard refuses a helper's `purlis worktree add`, `commit` and
+/// `push` ([`crate::dispatchguard::HELPER_TASKS_WORK`]), and this line is there so it rarely
+/// has to.
+pub const ONE_ROUTE_IS_A_TASK: &str = "Work that writes, commits, needs its own branch folder \
+     or runs long is a purlis task, through `dispatch`; a harness subagent is for read-only \
+     work (searching, reading, reviewing), and from inside one `purlis worktree add`, `commit` \
+     and `push` are refused.";
 
 /// What stands after it: the route is for work that must come back as an answer and that
 /// another chat has to do, and says nothing about work this chat can do itself.

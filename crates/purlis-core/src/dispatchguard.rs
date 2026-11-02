@@ -16,6 +16,18 @@
 //! Two calls are read: a Bash command that runs `purlis dispatch` in any segment
 //! ([`refusal`]), and a call of purlis's own `dispatch` chat tools ([`tool_refusal`]).
 //!
+//! **A task's work is refused to a helper too** (#4773): work that writes, commits, needs its
+//! own branch folder or runs long is a purlis task, through `dispatch`, and a harness's
+//! sub-agent is for read-only work. So [`refusal`] also refuses a helper's `purlis worktree
+//! add`, `commit` and `push`, read where a dispatch is read, in one line
+//! ([`HELPER_TASKS_WORK`]) under its own reason ([`REASON_SUBAGENT_WORKTREE`]). A chat that
+//! started implementers as sub-agents had each cut its own branch folder at once, out of the
+//! person's sight; the briefing says the rule first
+//! ([`crate::briefing::ONE_ROUTE_IS_A_TASK`]), so this rarely has to. Codex names a
+//! sub-agent's call as Claude Code does (measured live on codex-cli 0.147.0; 0.163.0's hook
+//! payload still serialises `agent_id`, read from its binary, not measured live), so a Codex
+//! helper is refused as well.
+//!
 //! **This is advice a sub-agent meets, not a boundary it cannot cross.** It is a recognition
 //! of the usual shapes and never a shell, as the handoff guard says of itself. It reads a
 //! dispatch in every text a shell is handed to run, at every level up to the nesting cap: a
@@ -61,10 +73,47 @@ const WORD: &str = "dispatch";
 ///
 /// Each over-match refuses only a sub-agent, which is the safe direction.
 pub fn runs_dispatch(cmd: &str) -> bool {
-    a_segment_runs_it(cmd)
-        || a_shell_string_runs_it(cmd)
+    runs(cmd, WORD, is_a_dispatch)
+}
+
+/// Whether `cmd` runs `purlis worktree add`, `commit` or `push` (#4773), read in the three
+/// places [`runs_dispatch`] reads a dispatch in: the work of a task, which a helper does not
+/// do. Each over-match refuses only a sub-agent, which is the safe direction.
+pub fn runs_a_tasks_branch_folder_work(cmd: &str) -> bool {
+    runs(cmd, WORKTREE, is_a_tasks_branch_folder_work)
+}
+
+/// Whether `cmd` runs, in any of [`runs_dispatch`]'s three places, a purlis command whose own
+/// words (after the program) `is` matches. `name` is a word every such command line holds, for
+/// the prefilter of the deeper walk.
+fn runs(cmd: &str, name: &str, is: fn(&[String]) -> bool) -> bool {
+    a_segment_runs(cmd, is)
+        || a_shell_string_runs(cmd, is)
         // Past the cap the text is not read, and a helper is refused all the same.
-        || further_in(cmd, |text| a_segment_runs_it(text).then_some(())).is_some()
+        || further_in(cmd, name, |text| a_segment_runs(text, is).then_some(())).is_some()
+}
+
+/// Whether purlis's own words are a dispatch.
+fn is_a_dispatch(words: &[String]) -> bool {
+    words.first().is_some_and(|w| w == WORD)
+}
+
+/// The word after the program that makes a command a branch folder's.
+const WORKTREE: &str = "worktree";
+
+/// The subcommands of `purlis worktree` that are a task's work (#4773): cutting a branch
+/// folder, committing in one and pushing its branch. Reading, updating and removing are not.
+const A_TASKS_WORK: [&str; 3] = ["add", "commit", "push"];
+
+/// Whether purlis's own words are `worktree add`, `commit` or `push`: the first word after
+/// `worktree` that is no flag, so a flag in front of the subcommand does not hide it.
+fn is_a_tasks_branch_folder_work(words: &[String]) -> bool {
+    words.first().is_some_and(|w| w == WORKTREE)
+        && words
+            .iter()
+            .skip(1)
+            .find(|w| !w.starts_with('-'))
+            .is_some_and(|sub| A_TASKS_WORK.contains(&sub.as_str()))
 }
 
 /// What `look` finds in a text a shell is handed to run, past what the first-level readings
@@ -75,10 +124,10 @@ pub fn runs_dispatch(cmd: &str) -> bool {
 /// `look` is handed each text as the shell reads it.
 ///
 /// A text handed on past the cap is not read: it is [`Nested::TooDeep`], for the caller to
-/// refuse. Asked only of a call that may name the subcommand at all ([`shellwrap::may_name`]),
-/// so a command that names none is not read again.
-fn further_in<T>(cmd: &str, look: impl Fn(&str) -> Option<T>) -> Option<Nested<T>> {
-    if !shellwrap::may_name(cmd, WORD) {
+/// refuse. Asked only of a call that may name `name` at all ([`shellwrap::may_name`]), so a
+/// command that names none is not read again.
+fn further_in<T>(cmd: &str, name: &str, look: impl Fn(&str) -> Option<T>) -> Option<Nested<T>> {
+    if !shellwrap::may_name(cmd, name) {
         return None;
     }
     let read = crate::heredoc::Heredocs::of(cmd);
@@ -87,12 +136,18 @@ fn further_in<T>(cmd: &str, look: impl Fn(&str) -> Option<T>) -> Option<Nested<T
     })
 }
 
-fn a_segment_runs_it(cmd: &str) -> bool {
-    shellseg::segment_argv(cmd).iter().any(|toks| {
-        let (prog, _env, argv) = shellwrap::split_env(toks);
-        charter_words(&prog, &argv).is_some_and(|words| words.first().is_some_and(|w| w == WORD))
-            || (names_our_binary(&prog) && argv.get(1).is_some_and(|word| word == WORD))
-    })
+/// purlis's own words in a segment, after the program, under any name it goes by or the
+/// variable that names its binary; `None` for any other program.
+fn purlis_words(toks: &[String]) -> Option<Vec<String>> {
+    let (prog, _env, argv) = shellwrap::split_env(toks);
+    charter_words(&prog, &argv)
+        .or_else(|| names_our_binary(&prog).then(|| argv.get(1..).unwrap_or_default().to_vec()))
+}
+
+fn a_segment_runs(cmd: &str, is: fn(&[String]) -> bool) -> bool {
+    shellseg::segment_argv(cmd)
+        .iter()
+        .any(|toks| purlis_words(toks).is_some_and(|words| is(&words)))
 }
 
 /// Whether a program word is the variable the app names purlis's binary in: `$NAME` or
@@ -111,7 +166,7 @@ fn names_our_binary(prog: &str) -> bool {
 }
 
 /// One level in, and no deeper: a string inside that string is [`further_in`]'s.
-fn a_shell_string_runs_it(cmd: &str) -> bool {
+fn a_shell_string_runs(cmd: &str, is: fn(&[String]) -> bool) -> bool {
     let Ok(toks) = shellseg::lex(&crate::heredoc::strip_reader_heredocs(cmd)) else {
         return false;
     };
@@ -122,15 +177,35 @@ fn a_shell_string_runs_it(cmd: &str) -> bool {
             let words: Vec<String> = seg.iter().map(|tok| tok.text.clone()).collect();
             shellwrap::shell_scripts(&words)
                 .iter()
-                .any(|inner| a_segment_runs_it(&crate::handoffguard::as_the_shell_reads(inner)))
+                .any(|inner| a_segment_runs(&crate::handoffguard::as_the_shell_reads(inner), is))
         })
 }
 
 /// `(trace reason, denial)` for a Bash command that dispatches from inside a sub-agent, or
 /// `None`.
+///
+/// And for one that does a task's work in a branch folder (#4773): `purlis worktree add`,
+/// `commit` or `push`, under [`REASON_SUBAGENT_WORKTREE`], told [`HELPER_TASKS_WORK`]. A
+/// dispatch is asked first, so a call that runs both is told the decision's own sentence.
 pub fn refusal(cmd: &str, caller: Caller<'_>) -> Option<(&'static str, String)> {
-    (caller.from_a_subagent() && runs_dispatch(cmd)).then(|| (REASON_SUBAGENT, helper_is_told()))
+    if !caller.from_a_subagent() {
+        return None;
+    }
+    if runs_dispatch(cmd) {
+        return Some((REASON_SUBAGENT, helper_is_told()));
+    }
+    runs_a_tasks_branch_folder_work(cmd)
+        .then(|| (REASON_SUBAGENT_WORKTREE, HELPER_TASKS_WORK.to_owned()))
 }
+
+/// The trace reason a helper's `purlis worktree add`, `commit` or `push` is refused under
+/// (#4773).
+pub const REASON_SUBAGENT_WORKTREE: &str = "worktree-subagent";
+
+/// What a helper that reaches for a branch folder is told (#4773), in one line: work that
+/// writes, commits or needs a branch folder of its own is a purlis task, which a chat
+/// dispatches and the person sees, and a helper's chat is the one to dispatch it.
+pub const HELPER_TASKS_WORK: &str = "this work is a purlis task, so ask your chat to dispatch it.";
 
 /// purlis's chat tools that dispatch, by the names [`crate::chattools`] gives them.
 const OUR_TOOLS: [&str; 12] = [
@@ -263,7 +338,7 @@ fn a_text_subcommand(cmd: &str) -> Option<TextSubcommand> {
     // unquotes it), so the one taken is one whose substitution is live, where any is.
     let further = || {
         let live_in_the_call = crate::livesub::live_substitution(cmd).is_some();
-        let found = further_in(cmd, |text| {
+        let found = further_in(cmd, WORD, |text| {
             in_a_segment(text)
                 .filter(|_| live_in_the_call || crate::livesub::live_substitution(text).is_some())
                 .map(|(sub, shape)| (sub, shape, text.to_owned()))
