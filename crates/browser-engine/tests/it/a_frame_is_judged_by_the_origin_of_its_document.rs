@@ -18,9 +18,13 @@ use std::time::{Duration, Instant};
 
 use common::drive::{find, next_id, open, ref_on};
 use common::site::started_judged;
-use purlis_browser_engine::drive::{Answer, Browser, Call, Field, Gate, Judge, Outbound, Refusal};
+use purlis_browser_engine::drive::{
+    Answer, Browser, Call, Field, Gate, Judge, Outbound, Refusal, Why,
+};
 
-/// A judge that keeps every address it is told, and asks about other.test.
+/// A judge that keeps every address it is told, and asks about other.test unless the page
+/// only reads: other.test's page loads in its frame and makes the blob frame, and what is typed
+/// there is asked about.
 fn judge() -> (Judge, Arc<Mutex<Vec<String>>>) {
     let told = Arc::new(Mutex::new(Vec::new()));
     let keep = Arc::clone(&told);
@@ -28,7 +32,7 @@ fn judge() -> (Judge, Arc<Mutex<Vec<String>>>) {
         keep.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(out.address.clone());
-        if out.address.starts_with("http://other.test/") {
+        if out.address.starts_with("http://other.test/") && out.why != Why::Reads {
             Gate::Ask {
                 site: "other.test:80".to_owned(),
             }
