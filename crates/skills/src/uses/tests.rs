@@ -10,7 +10,7 @@ fn names(list: &[&str]) -> Vec<String> {
 #[test]
 fn a_skill_names_project_and_built_in_skills_and_a_missing_one_is_broken() {
     let plane = names(&["deploy"]);
-    let built_in = names(&["secrets"]);
+    let built_in = names(&["purlis-secrets"]);
     let uses = uses_in(
         "Run skills:deploy, then skills:gone and purlis:secrets. Again skills:deploy.",
         "skills",

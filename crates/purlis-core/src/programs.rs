@@ -343,7 +343,7 @@ pub fn search_dirs() -> Vec<PathBuf> {
 ///
 /// **Why the app's own `charter` comes FIRST.** Nothing the app ships runs on a Python
 /// fallback (ADR 0025): a chat is the app's, so the `charter` it reaches by the bare
-/// word — the hand-off command the `handoff` skill runs, `charter workspace list`, a plane's
+/// word — the hand-off command the `purlis-handoff` skill runs, `charter workspace list`, a plane's
 /// own hook — is the one built and shipped with this app, whatever else the machine has
 /// installed. An operator with the Python charter in `~/.local/bin` used to get THAT one in
 /// every chat, because this directory went last: a hand-off then went through a program with

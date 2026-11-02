@@ -25,7 +25,7 @@ pub struct OpenRun {
     /// The skill, by the name its harness started it by.
     pub skill: String,
     /// The skill it is a run of, by its own name, as the core counts it
-    /// ([`purlis_core::skilluse::own_name`]): `secrets` for opencode's `purlis-secrets`. The
+    /// ([`purlis_core::skilluse::own_name`]): `purlis-secrets` for `purlis:purlis-secrets`. The
     /// skill whose tab its chip opens.
     pub name: String,
     /// The run's id, as the skill's Runs panel lists it.
@@ -342,7 +342,7 @@ fn now_ms() -> u64 {
 fn open_of(runs: &Tracker, key: &str) -> Option<OpenRun> {
     runs.inside(key).map(|open| OpenRun {
         skill: open.skill.clone(),
-        name: purlis_core::skilluse::own_name(&open.skill, open.whose.level).to_owned(),
+        name: purlis_core::skilluse::own_name(&open.skill, open.whose.level).into_owned(),
         id: open.id.clone(),
         tool_calls: open.signals.tool_calls,
         // Counted by the caller, outside the runs' lock ([`SkillRuns::with_tokens`]).

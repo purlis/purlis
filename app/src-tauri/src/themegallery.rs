@@ -830,7 +830,7 @@ pub async fn theme_open_folder(
 }
 
 /// **New theme** and **Edit with a chat** (#2333): a chat at the level `at` names, with a prompt
-/// that names purlis's theme skill typed into it and never sent (ADR 0061), as the Curate menu's
+/// that names purlis's purlis-theme skill typed into it and never sent (ADR 0061), as the Curate menu's
 /// Create a theme opens one. With `theme`, the prompt names that card's theme, of the level
 /// `from`; the card is one this level's gallery shows, never a name the window made up. The
 /// machine's level has no project for a chat to work in, so it is never asked. A refused start

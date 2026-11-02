@@ -89,6 +89,10 @@ pub struct Moved {
     /// `null` for every other chat.
     #[specta(optional)]
     pub own_work: Option<OwnWork>,
+    /// **A background turn runs over its wait on the person** (#4562): `state` says `waiting`,
+    /// as it did, and the chat is at work, so a restart or a move owed it waits. Absent otherwise.
+    #[specta(optional)]
+    pub background_turn: Option<bool>,
     /// Which snapshot of the board this is — bigger was taken later (charter-app#248).
     ///
     /// **What lets the window put its events back in order.** Every `Moved` is built under the
@@ -1114,6 +1118,7 @@ pub(crate) fn blocked_on(
 ) -> ChatBlocked {
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
     let offered = kept_in_place(harness, plane.root(), block, target)
+        .or_else(|| lifted_here(harness, plane.root(), block, target))
         .unwrap_or_else(|| offered_to(plane.root(), block, target, has_check));
     let (first, named, why) = for_its_harness(harness, offered);
     // Chosen by the person where nothing was named (#1884): said in place of "nothing to
@@ -1556,10 +1561,15 @@ fn held(
         }
         BlockOffer::Write => {
             let mut why = locks.write_grants_refused();
+            // A held folder is this chat's alone ([`lifted_here`]).
+            let held = target.as_deref().is_some_and(|path| {
+                purlis_core::sandbox::names_what_may_be_lifted(Path::new(path))
+            });
             // At the scopes policy leaves open alone (#1927): one it removed was drawn here
             // and then refused at the press.
             let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
                 .into_iter()
+                .filter(|level| !held || *level == GrantLevel::Chat)
                 .filter(|level| {
                     let refused = locks.scope_removed((*level).into());
                     if refused.is_some() && why.is_none() {
@@ -1652,6 +1662,38 @@ fn kept_in_place(
             Some(grant::GIT_FOLDER_KEPT.to_owned()),
         )
     })
+}
+
+/// **A refused write of a held folder a person may lift** ([`purlis_core::sandbox::grant::lift`]):
+/// Allow, naming the folder whole, for this chat alone, where purlis can write that into the
+/// chat's sandbox: a Seatbelt profile, which can name one path. `None` for any other block, for
+/// a wrap on Linux, and for Claude Code's own sandbox, whose globs can't.
+fn lifted_here(
+    harness: Option<purlis_core::harness::Harness>,
+    root: &Path,
+    block: &purlis_core::sandboxblock::Block,
+    target: Option<&str>,
+) -> Option<(BlockOffer, Option<String>, Option<String>)> {
+    use purlis_core::sandbox::{Machine, grant};
+    use purlis_core::sandboxblock::{Kind, Operation};
+    let harness = harness?;
+    let machine = Machine::this();
+    if block.ours
+        || block.kind != Kind::ProtectedFile
+        || !matches!(block.operation, Operation::Write | Operation::File)
+        || machine.purlis_wraps(harness)
+        || harness == purlis_core::harness::Harness::ClaudeCode
+    {
+        return None;
+    }
+    let ground = grant::Ground::of(root, root, &machine);
+    let folder = grant::liftable(Path::new(target?), &ground.place())?;
+    let folder = grant::lift(&folder.display().to_string(), &ground).ok()?;
+    Some((
+        BlockOffer::Write,
+        Some(folder.display().to_string()),
+        Some(grant::LIFT_SAID.to_owned()),
+    ))
 }
 
 /// [`offered`] to a chat whose sandbox was compiled with the system's certificate check
@@ -2150,8 +2192,8 @@ pub type Touches = Arc<dyn Fn(purlis_core::hookwire::Touching) + Send + Sync + '
 /// which measures a task's quiet stretch from it ([`Hooks::when_doing`]).
 pub type Doings = Arc<dyn Fn(u32, purlis_core::doing::Said) + Send + Sync + 'static>;
 
-/// What hears what a chat's turn put out (#1981): the project's own handler, which keeps it
-/// for a task alone ([`Hooks::when_output`]).
+/// What hears what a chat's turn put out (#1981): the project's own handler, which keeps the
+/// message it ended on, for every chat (#4550) ([`Hooks::when_output`]).
 pub type Outputs = Arc<dyn Fn(purlis_core::hookwire::TurnOutput) + Send + Sync + 'static>;
 
 /// The event the window is sent when a chat's file tool touches a file (FM-6).
@@ -3374,6 +3416,13 @@ impl ChatBoard for Hooks {
         seen_by(&board, &self.plane, session)
     }
 
+    fn replied(&self, session: u32) -> Option<Moved> {
+        let mut board = self.board();
+        board
+            .replied(session)
+            .then(|| seen_by(&board, &self.plane, session))
+    }
+
     fn reported_back(&self, session: u32, from: &str) -> Option<Moved> {
         let mut board = self.board();
         board
@@ -3511,9 +3560,10 @@ fn moving(
 }
 
 /// What the chat `report` names waits on, asked only of a report that can end its turn or
-/// nudge it after one: a `Stop` or a `Notification` of the chat's own. Every other report
-/// raises no needs-you item this could hold back, so the project's records are not read for
-/// it. **Asked before the board is taken**, never under it: the answer reads the chats, the
+/// nudge it after one, a `Stop` or a `Notification` of the chat's own, or begin one, a
+/// `UserPromptSubmit`, whose cause says whether it is the person's reply (#4562). Every other
+/// report moves no needs-you item this could bear on, so the project's records are not read
+/// for it. **Asked before the board is taken**, never under it: the answer reads the chats, the
 /// board and the tasks' ledger in turn.
 ///
 /// **Every report carries the app's clock** (`Waits::now`, #3878): what a turn's end on work of
@@ -3521,7 +3571,12 @@ fn moving(
 fn waits_at(waits: &Mutex<Option<WaitsOf>>, report: &Report) -> purlis_core::state::Waits {
     use purlis_core::state::Event;
     let now = chrono::Utc::now().timestamp();
-    if report.agent.is_some() || !matches!(report.event, Event::Stop | Event::Notification) {
+    if report.agent.is_some()
+        || !matches!(
+            report.event,
+            Event::Stop | Event::Notification | Event::UserPromptSubmit
+        )
+    {
         return purlis_core::state::Waits {
             now,
             ..purlis_core::state::Waits::default()
@@ -3618,7 +3673,7 @@ fn seen_by(board: &Board, plane: &PlaneId, session: u32) -> Moved {
         sequence: sequence(),
         plane: plane.clone(),
         session,
-        state: word(board.state(session)),
+        state: word(board.shown_state(session)),
         needs_you: queue.contains(&session),
         queue,
         moved_at: board.moved_at(session),
@@ -3638,6 +3693,7 @@ fn seen_by(board: &Board, plane: &PlaneId, session: u32) -> Moved {
         .filter(|needs| !needs.is_empty()),
         asking: board.waits_on_its_prompt(session).then_some(true),
         own_work: board.own_work(session).map(OwnWork::from),
+        background_turn: board.background_turn(session).then_some(true),
         counts_only: false,
         raised: false,
         children: board

@@ -178,6 +178,25 @@ const meta = {
   args: { width: 1100, plan: PLAN, grades: GRADES, card: CARD },
   beforeEach: ({ args }) => {
     let plans = 0;
+    // The grade running, at the step the app last told: none of its chats ran yet.
+    const running = () =>
+      args.plan.running === null
+        ? null
+        : {
+            plane: PLANE,
+            skill: "deploy",
+            level: { at: "project" as const, local: false },
+            grade: args.plan.running,
+            ran: 0,
+            of: args.plan.chats,
+            tokens: null,
+            cost_usd: null,
+            limit_usd: args.plan.cost_cap_usd,
+            cap: args.plan.token_cap,
+            asked: 0,
+            ended: null,
+            said: null,
+          };
     mockIPC((cmd) => {
       switch (cmd) {
         case "skill_studio":
@@ -200,25 +219,10 @@ const meta = {
             tests: args.plan.tests.length,
             evals: args.plan.evals.length,
             tests_refused: args.plan.tests_refused,
-            // The grade running, at the step the app last told: none of its chats ran yet.
-            running:
-              args.plan.running === null
-                ? null
-                : {
-                    plane: PLANE,
-                    skill: "deploy",
-                    grade: args.plan.running,
-                    ran: 0,
-                    of: args.plan.chats,
-                    tokens: null,
-                    cost_usd: null,
-                    limit_usd: args.plan.cost_cap_usd,
-                    cap: args.plan.token_cap,
-                    asked: 0,
-                    ended: null,
-                    said: null,
-                  },
+            running: running(),
           };
+        case "skill_grade_running":
+          return running();
         case "skill_grade_plan":
           plans += 1;
           // A plan that changed under the person: the second read consents to another.

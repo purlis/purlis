@@ -22,6 +22,7 @@ import { Tooltip } from "../ui/tooltip/Tooltip";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Badge } from "../ui/badge/Badge";
 import { Switch } from "../ui/choice/Switch";
+import { ClusterSetupGuide } from "./ClusterSetupGuide";
 import { PoolLimits } from "./PoolLimits";
 import { PoolProfiles } from "./PoolProfiles";
 
@@ -193,6 +194,7 @@ export function RemovePool({
             : cluster
               ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
               : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
+          {" Workspaces and projects set to run on it go back to this machine."}
         </p>
       }
       main={{ children: "Remove pool", variant: "danger", onPress: onRemove }}
@@ -548,6 +550,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
           {/* A project whose pool this machine cannot name is marked under the list. */}
           {marks(shown.filter((one) => rowOf(one) === undefined))}
           <Button onPress={() => startAddingAPool()}>Add a pool…</Button>
+          <ClusterSetupGuide />
         </div>
       ),
     };

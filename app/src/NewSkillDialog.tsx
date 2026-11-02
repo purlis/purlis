@@ -91,7 +91,6 @@ export function NewSkillDialog({
   levels,
   start,
   takenAt,
-  builtIns,
   busy,
   refused,
   onEdit,
@@ -107,8 +106,6 @@ export function NewSkillDialog({
   start: SkillLevel;
   /** The names `level` already holds, as far as the studio has read them. */
   takenAt: (level: SkillLevel) => readonly string[];
-  /** Every built-in skill's name, which no skill can take (S12). */
-  builtIns: readonly string[];
   busy: boolean;
   /** Why the core did not make the last skill asked for: its sentence, unchanged. */
   refused?: string;
@@ -166,7 +163,7 @@ export function NewSkillDialog({
   const wanted = name.trim();
   const said = description.trim();
   const writing = way === "write";
-  const problem = writing ? nameProblem(wanted, "", takenAt(level), builtIns) : undefined;
+  const problem = writing ? nameProblem(wanted, "", takenAt(level)) : undefined;
   const ready = !busy && said !== "" && (!writing || (wanted !== "" && problem === undefined));
   const lands = labelOf(levels, level);
   const back = {

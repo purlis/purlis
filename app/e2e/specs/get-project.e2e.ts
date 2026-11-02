@@ -105,8 +105,11 @@ async function toTheGetPage(): Promise<void> {
 async function chooseTheRunsFolder(): Promise<void> {
   theNextFolderPickAnswers(projects);
   await press(WELCOME, "Choose a folder…");
+  await browser.waitUntil(async () => !anAnswerIsWaiting(), {
+    timeout: 30_000,
+    timeoutMsg: "the folder pick was never asked",
+  });
   await untilSays(WELCOME, projects);
-  expect(anAnswerIsWaiting()).toBe(false);
 }
 
 /** Waits until the cloned project is open, or no longer is. */

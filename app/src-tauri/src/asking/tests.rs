@@ -98,6 +98,8 @@ struct World {
     /// Chats in the queue only for what is an update (#1693, #1694): tasks of theirs that came
     /// to nothing, a report with nowhere to go, a commit refused.
     only_updates: Vec<u32>,
+    /// What each chat's turn last ended on.
+    last_messages: Vec<(u32, &'static str)>,
     /// The hosts a chat's proxy holds a connection to now, and when that hold ends (#1709).
     held: Vec<(u32, &'static str, u32)>,
     /// When each ask began, by its key (#1700).
@@ -133,6 +135,7 @@ impl World {
             names: Vec::new(),
             askers: Vec::new(),
             only_updates: Vec::new(),
+            last_messages: Vec::new(),
             held: Vec::new(),
             since: Vec::new(),
             sign_ins: Vec::new(),
@@ -191,6 +194,12 @@ impl World {
             name_of: &name_of,
             asker_of: &asker_of,
             only_updates: &|session| self.only_updates.contains(&session),
+            last_message: &|session| {
+                self.last_messages
+                    .iter()
+                    .find(|(one, _)| *one == session)
+                    .map(|(_, said)| (*said).to_owned())
+            },
             held: &|session, target, _| {
                 self.held
                     .iter()
@@ -1111,6 +1120,37 @@ fn a_workspace_a_chat_asked_to_remove_is_an_ask_with_remove_and_keep() {
             todos: 3,
         }
     );
+}
+
+#[test]
+fn a_question_carries_what_its_chat_s_turn_ended_on_and_keeps_its_line() {
+    let mut world = World::new();
+    world.queue = vec![3, 4];
+    world.last_messages = vec![(3, "Which branch should I use?\nmain or dev?")];
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks[0].last_message.as_deref(),
+        Some("Which branch should I use?\nmain or dev?")
+    );
+    assert_eq!(asks[0].says, "Waiting on your reply");
+    // A chat whose turn said nothing the app heard has no message, and no words of another's.
+    assert_eq!(asks[1].last_message, None);
+}
+
+#[test]
+fn only_a_question_carries_a_last_message() {
+    // A prompt in its terminal is what the chat waits on, whatever its last turn ended on.
+    let mut world = World::new();
+    world.queue = vec![3];
+    world.at_prompt = vec![3];
+    world.last_messages = vec![(3, "Which branch should I use?")];
+
+    let asks = world.asks();
+
+    assert_eq!(asks[0].source, AskSource::Terminal);
+    assert_eq!(asks[0].last_message, None);
 }
 
 #[test]

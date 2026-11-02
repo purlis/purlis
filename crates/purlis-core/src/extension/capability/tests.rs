@@ -89,19 +89,31 @@ fn the_studio_words_are_unknown_while_the_flag_is_off_and_known_where_it_is_on()
 }
 
 #[test]
-fn a_studio_capability_is_said_to_be_experimental_and_needs_protocol_three() {
+fn a_studio_capability_needs_protocol_three_or_four_and_has_a_shape() {
     for studio in Capability::STUDIO {
         assert!(studio.is_studio());
         // The Grader's question is one of many lines, protocol 4's (#3236).
         let since = if studio == Capability::Grader { 4 } else { 3 };
         assert_eq!(studio.since(), since, "{}", studio.as_str());
         assert!(studio.has_shape());
-        assert!(
-            studio.asks().contains(", experimental — "),
-            "{}",
-            studio.asks()
-        );
     }
     assert!(!Capability::Briefing.is_studio());
     assert!(!Capability::Briefing.asks().contains("experimental"));
+}
+
+/// The operator's ruling of 2026-10-31 on #2786: capabilities not fully wired stay out of the
+/// freeze. Each word is named here, not read from the list that decides it.
+#[test]
+fn the_three_wired_words_are_version_one_and_the_others_are_still_said_to_be_experimental() {
+    let said = |word: Capability| word.asks().contains(", experimental — ");
+    // #3089 and #3092: an extension's source neither installs nor shows in Browse.
+    assert!(said(Capability::SkillSource));
+    // #3090: an extension's lint is not in the install review.
+    assert!(said(Capability::SkillLint));
+    // #3091: an extension's template does not land as a draft.
+    assert!(said(Capability::SkillTemplate));
+
+    assert!(!said(Capability::Grader), "{}", Capability::Grader.asks());
+    assert!(!said(Capability::StudioPanel));
+    assert!(!said(Capability::SkillRouter));
 }

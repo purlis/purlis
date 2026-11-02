@@ -704,6 +704,10 @@ pub trait ChatBoard: Send + Sync {
     /// it is asking, and the board's answer is the one to leave it with either way.
     fn ignored(&self, session: u32) -> Moved;
 
+    /// The person sent chat `session` a line, while a background turn ran over its wait on them
+    /// (#4562). Nothing where none did.
+    fn replied(&self, session: u32) -> Option<Moved>;
+
     /// A chat `session` handed work to, shown as `from`, has reported back to it
     /// (charter-app#259). Nothing when no reader would see a difference.
     fn reported_back(&self, session: u32, from: &str) -> Option<Moved>;
@@ -1031,6 +1035,16 @@ pub(crate) mod pretend {
         pub fn program_ends_with_its_runner(&self, id: u32) {
             lock(&self.seen.lost_with_runner).push(id);
             self.program_ends_with_its_host(id);
+        }
+
+        /// The runner of session `id`, whose program already ended with its host, goes for good
+        /// (#4421).
+        pub fn its_runner_goes_since(&self, id: u32) {
+            lock(&self.seen.lost_with_runner).push(id);
+            self.program_ends(
+                id,
+                Exit::Signal(crate::hostedsessions::ITS_RUNNER_WENT.to_owned()),
+            );
         }
 
         fn here(&self, id: u32) -> Result<(), String> {

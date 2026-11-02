@@ -35,7 +35,7 @@ fn here() -> Here {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().canonicalize().unwrap();
     let plugin = root.join("plugin");
-    skill(&plugin.join("skills"), "secrets");
+    skill(&plugin.join("skills"), "purlis-secrets");
     let shim = purlis_core::opencode::shim_in(&plugin);
     fs::create_dir_all(shim.parent().unwrap()).unwrap();
     fs::write(&shim, "// the shim, a stand-in\n").unwrap();
@@ -198,36 +198,25 @@ fn a_claude_code_chat_at_the_plane_root_loads_the_project_skill_as_a_plugin_of_l
 }
 
 #[test]
-fn an_opencode_chat_at_the_plane_root_is_handed_one_folder_of_the_built_in_and_the_project_skills()
-{
+fn an_opencode_chat_at_the_plane_root_is_handed_the_bundles_skills_and_a_folder_of_the_projects() {
     purlis_core::unsteered!();
     let here = here();
     let (_, env) = host_armed(Harness::Opencode, &here, None, &here.plane);
 
     let skills = opencode_skill_dirs(&env);
-    assert_eq!(skills.len(), 1, "{skills:?}");
-    let skills = &skills[0];
-    assert!(skills.starts_with(&here.sets), "{}", skills.display());
+    assert_eq!(skills.len(), 2, "{skills:?}");
+    assert_eq!(skills[0], here.plugin.join("skills"));
+    let laid_out = &skills[1];
+    assert!(laid_out.starts_with(&here.sets), "{}", laid_out.display());
     assert_eq!(
-        fs::read_link(skills.join("deploy/notes.md")).unwrap(),
+        fs::read_link(laid_out.join("deploy/notes.md")).unwrap(),
         here.plane.join("skills/deploy/notes.md")
     );
-    let mut names: Vec<String> = fs::read_dir(skills)
+    let names: Vec<String> = fs::read_dir(laid_out)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
         .collect();
-    names.sort();
-    assert_eq!(names, ["deploy", "purlis-secrets"], "no bare `secrets`");
-    assert_eq!(
-        fs::read_to_string(skills.join("purlis-secrets/SKILL.md")).unwrap(),
-        "---\nname: purlis-secrets\ndescription: Does secrets.\n---\n\nbody\n",
-        "its name is its folder's, as the skill format asks"
-    );
-    assert_eq!(
-        fs::read_link(skills.join("purlis-secrets/notes.md")).unwrap(),
-        here.plugin.join("skills/secrets/notes.md"),
-        "its files are the bundle's own"
-    );
+    assert_eq!(names, ["deploy"], "no copy of a built-in skill");
 }
 
 #[test]
@@ -242,13 +231,7 @@ fn an_opencode_chat_in_a_clone_with_its_own_secrets_skill_gets_both_by_distinct_
 
     let (_, env) = host_armed_on(false, Harness::Opencode, &here, None, &clone);
     let dirs = opencode_skill_dirs(&env);
-    assert_eq!(dirs.len(), 1, "{dirs:?}");
-    let ours = fs::read_to_string(dirs[0].join("purlis-secrets/SKILL.md")).unwrap();
-    assert!(ours.contains("name: purlis-secrets\n"), "{ours}");
-    assert!(
-        !dirs[0].join("secrets").exists(),
-        "no bare `secrets` from purlis"
-    );
+    assert_eq!(dirs, [here.plugin.join("skills")]);
 
     let repo = purlis_core::skills::repo_skills_of_chat(
         Harness::Opencode,
@@ -302,7 +285,7 @@ fn a_codex_chat_at_the_plane_root_is_briefed_on_the_project_skill_from_its_folde
         text.contains(&handed.join("skills/deploy/SKILL.md").display().to_string()),
         "the SKILL.md purlis wrote for it: {text}"
     );
-    assert!(text.contains("`secrets`"), "{text}");
+    assert!(text.contains("`purlis-secrets`"), "{text}");
 }
 
 #[test]
@@ -318,19 +301,12 @@ fn with_the_flag_off_every_harness_is_armed_with_the_built_in_skills_alone() {
     let lookup = |name: &str| var(&codex, name).map(str::to_owned);
     let text = purlis_core::skills::briefed(&here.plane, None, None, &lookup).expect("listed");
     assert!(!text.contains("`deploy`"), "{text}");
-    assert!(text.contains("`secrets`"), "{text}");
+    assert!(text.contains("`purlis-secrets`"), "{text}");
     assert!(!here.sets.exists(), "nothing laid out");
 
-    // opencode is handed the built-in skills under their own names, in a folder of their own.
     let (_, opencode) = host_armed_on(false, Harness::Opencode, &here, None, &here.plane);
-    let dirs = opencode_skill_dirs(&opencode);
-    assert_eq!(dirs.len(), 1, "{dirs:?}");
-    assert!(dirs[0].starts_with(&here.sets), "{}", dirs[0].display());
-    let names: Vec<String> = fs::read_dir(&dirs[0])
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-        .collect();
-    assert_eq!(names, ["purlis-secrets"], "the built-in skills alone");
+    assert_eq!(opencode_skill_dirs(&opencode), [here.plugin.join("skills")]);
+    assert!(!here.sets.exists(), "nothing laid out");
 }
 
 #[test]
@@ -347,7 +323,7 @@ fn a_chat_in_a_workspace_the_skill_was_not_granted_to_gets_the_built_in_skills_a
 }
 
 #[test]
-fn an_adapter_lays_nothing_out_itself_and_with_no_folder_hands_opencode_no_skills_folder() {
+fn an_adapter_lays_nothing_out_itself_and_with_no_folder_hands_opencode_the_bundles_skills() {
     purlis_core::unsteered!();
     // ADR 0063 as amended 2026-10-20: an adapter only turns the set into words. The host lays
     // the folder out; an adapter handed none writes none and names none.
@@ -369,8 +345,8 @@ fn an_adapter_lays_nothing_out_itself_and_with_no_folder_hands_opencode_no_skill
     assert_eq!(plugin_dirs(&claude), std::slice::from_ref(&here.plugin));
     assert_eq!(
         opencode_skill_dirs(&opencode),
-        Vec::<PathBuf>::new(),
-        "opencode is never handed the bundle's bare names"
+        [here.plugin.join("skills")],
+        "the bundle's alone"
     );
     assert!(!here.sets.exists(), "nothing laid out by an adapter");
 }
@@ -399,9 +375,8 @@ fn arming_every_harness_writes_nothing_in_the_plane_and_two_chats_share_one_fold
             // Beside the sets' folders: the lock a tidy takes turns on (SK-24).
             .filter(|entry| entry.as_ref().unwrap().file_name() != ".lock")
             .count(),
-        2,
-        "one set, one folder: Claude Code's and Codex's, and opencode's, which holds the \
-         built-in skills too"
+        1,
+        "one set, one folder, on every harness"
     );
 }
 

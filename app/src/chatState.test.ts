@@ -526,6 +526,10 @@ describe("a chat waiting on its own work (#3878)", () => {
     expect(inItsTurn(moved(nothingKnown, doing(3, "running")), 3)).toBe(true);
     expect(inItsTurn(moved(nothingKnown, doing(3, "waiting")), 3)).toBe(false);
     expect(inItsTurn(nothingKnown, 3)).toBe(false);
+    const overAWait = moved(nothingKnown, { ...doing(3, "waiting"), background_turn: true });
+    expect(inItsTurn(overAWait, 3)).toBe(true);
+    expect(atAPause(overAWait, 3)).toBe(false);
+    expect(inItsTurn(moved(overAWait, { ...doing(3, "waiting"), sequence: 99 }), 3)).toBe(false);
     // So it is no pause, and reads as mid-turn to what waits for one.
     expect(atAPause(waiting, 3)).toBe(false);
     expect(atAPause(moved(nothingKnown, doing(3, "waiting")), 3)).toBe(true);

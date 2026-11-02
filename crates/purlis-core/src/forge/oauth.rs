@@ -135,6 +135,11 @@ impl Answer {
         Answer { status, body }
     }
 
+    /// What the forge said at `key`, of any type.
+    pub fn value(&self, key: &str) -> Option<&Value> {
+        self.body.get(key)
+    }
+
     /// The text at `key`, when it is a string that is not empty.
     pub fn text(&self, key: &str) -> Option<&str> {
         self.body
