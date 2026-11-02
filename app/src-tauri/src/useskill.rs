@@ -45,6 +45,8 @@ pub struct ChatSkill {
     /// Why the router hid it from the chat's list, where it did (SK-15): Use skill… then asks
     /// the chat to load it.
     pub hidden: Option<crate::skillstudio::SkillHidden>,
+    /// The label of the source it was installed from (ADR 0100, amended 2026-11-01).
+    pub source_label: Option<String>,
 }
 
 /// Which part of a chat's skill budget its set warns of: at four fifths of it or past it.
@@ -298,6 +300,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
                 arguments: one.declared.arguments.clone(),
                 hint: one.declared.hint.clone(),
                 hidden: one.hidden.as_ref().map(Into::into),
+                source_label: one.source_label.clone(),
             })
             .collect(),
         budget: Some(SkillBudget {

@@ -20,6 +20,7 @@ const PROJECT: SkillLevel = { at: "project", local: false };
 
 /** The prototype's `deploy`, a project skill. */
 const DEPLOY: StudioSkill = {
+  source_label: null,
   name: "deploy",
   level: "project",
   label: "project",

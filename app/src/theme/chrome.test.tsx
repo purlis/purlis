@@ -396,6 +396,7 @@ const LAND: LandQuestion = {
 /** A project skill, for the dialogs that change one (#3685). */
 const SKILL: StudioSkill = {
   name: "deploy",
+  source_label: null,
   level: "project",
   label: "project",
   local: false,
@@ -719,6 +720,7 @@ const DIALOGS: Opened[] = [
             known: true,
             skills: [
               {
+                source_label: null,
                 name: "review",
                 level: "project",
                 label: "project",
@@ -730,6 +732,7 @@ const DIALOGS: Opened[] = [
                 hidden: null,
               },
               {
+                source_label: null,
                 name: "release",
                 level: "workspace",
                 label: "workspace",

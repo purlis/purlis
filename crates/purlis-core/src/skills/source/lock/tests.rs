@@ -8,6 +8,7 @@ use super::*;
 
 fn entry(level: Level) -> Locked {
     Locked {
+        source_name: None,
         name: "deploy".into(),
         level: AtLevel(level),
         source: Remote {

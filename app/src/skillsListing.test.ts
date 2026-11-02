@@ -36,6 +36,7 @@ const row = (one: StudioSkill, more: Partial<ListedSkill> = {}): ListedSkill => 
 
 /** A skill of a chat's set, as Use skill… reads it. */
 const given = (name: string, level: ChatSkill["level"] = "project"): ChatSkill => ({
+  source_label: null,
   name,
   level,
   label: level,

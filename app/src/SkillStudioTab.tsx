@@ -1077,7 +1077,12 @@ export function SkillStudioTab({
           data-testid={testids.get(skillRowId(skill))}
           data-row={skillRowId(skill)}
         >
-          <RowLabel>{skill.name}</RowLabel>
+          <RowLabel>
+            {skill.name}
+            {skill.source_label !== null && (
+              <span className="ui-text-secondary"> · {skill.source_label}</span>
+            )}
+          </RowLabel>
           <RowTrail>
             <Badge>{skill.label}</Badge>
             {mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}

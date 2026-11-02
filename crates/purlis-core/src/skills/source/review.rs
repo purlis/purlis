@@ -34,6 +34,18 @@ pub struct ReviewFile {
     pub risky: bool,
 }
 
+/// **A name that is taken where a skill would land** (ADR 0100, amended 2026-11-01): the review
+/// stops until the person skips it or gives it a new name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Clash {
+    /// What holds the name, as the end of a sentence.
+    pub held_by: String,
+    /// The new name offered: `<source>-<name>`.
+    pub offered: String,
+    /// The names a new name cannot take: the skills at that level, and the built-in skills'.
+    pub taken: Vec<String>,
+}
+
 /// **One skill in an install review**: what it is, what it does beyond its instructions, every
 /// file it installs, and every entry of its folder that is not installed and why.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -47,6 +59,13 @@ pub struct SkillReview {
     /// The skills it refers to that the level it lands in holds already (#4032): they are not
     /// brought along, and the install leaves them as they are.
     pub already: Vec<String>,
+    /// Every skill it refers to, each once, wherever it is met.
+    pub refers: Vec<String>,
+    /// Where its name is taken at the level it lands in.
+    pub clash: Option<Clash>,
+    /// A line each for what the review warns of and does not stop on: a copy at another level, and
+    /// a skill it refers to that is another source's here.
+    pub notes: Vec<String>,
     pub summary: summary::Summary,
     pub files: Vec<ReviewFile>,
     pub left_out: Vec<LeftOut>,
@@ -107,6 +126,48 @@ impl Accepted {
 }
 
 impl Review {
+    /// **Marks each skill with where it lands at `level`**: its clash, and its one-line notes.
+    fn marked(mut self, plane: &Path, reserved: &Reserved, level: &Level) -> Review {
+        let (locked, _) = lock::every(plane);
+        let label = self.source.remote.label();
+        let levels = Level::every(plane);
+        let held = names_at(plane, level);
+        for skill in &mut self.skills {
+            let name = skill.name.clone();
+            skill.clash = held_by(plane, &locked, reserved, level, &name).map(|held_by| Clash {
+                held_by,
+                offered: format!("{label}-{name}"),
+                taken: held.iter().cloned().chain(reserved.names()).collect(),
+            });
+            let others: Vec<String> = levels
+                .iter()
+                .filter(|other| *other != level && has(plane, other, &name))
+                .map(|other| other.to_string())
+                .collect();
+            if !others.is_empty() {
+                skill.notes.push(format!(
+                    "The {} skills have a {name} too: where a chat gets both, the narrowest copy \
+                     wins.",
+                    others.join(", ")
+                ));
+            }
+            for other in &skill.refers {
+                let theirs = locked.iter().find(|(_, one)| {
+                    one.name == *other
+                        && one.source != self.source.remote
+                        && (one.level.0.at == level.at || one.level.0.at == Whose::Project)
+                });
+                if let Some((_, one)) = theirs {
+                    skill.notes.push(format!(
+                        "It refers to {other}, which is {}'s here.",
+                        one.source.label()
+                    ));
+                }
+            }
+        }
+        self
+    }
+
     /// What accepting it says.
     pub fn accepted(&self) -> Accepted {
         Accepted::of(&self.commit, &self.skills)
@@ -147,6 +208,28 @@ pub(super) fn wrote(files: &[SourceFile]) -> Vec<lock::Wrote> {
             path: file.path(),
             executable: file.executable,
             sha256: sha256(&file.bytes),
+        })
+        .collect()
+}
+
+/// **The digest the record keeps of the file at `path` of a copy under a new name**: a `SKILL.md`'s
+/// without its name line ([`purlis_skills::change::without_name`]).
+pub(super) fn sha_renamed(path: &str, bytes: &[u8]) -> String {
+    let unnamed = (path == purlis_skills::FILE)
+        .then(|| std::str::from_utf8(bytes).ok())
+        .flatten()
+        .and_then(purlis_skills::change::without_name);
+    sha256(unnamed.as_deref().map_or(bytes, str::as_bytes))
+}
+
+/// What a lockfile records of `files`, written under a new name.
+pub(super) fn wrote_renamed(files: &[SourceFile]) -> Vec<lock::Wrote> {
+    files
+        .iter()
+        .map(|file| lock::Wrote {
+            path: file.path(),
+            executable: file.executable,
+            sha256: sha_renamed(&file.path(), &file.bytes),
         })
         .collect()
 }
@@ -226,10 +309,11 @@ pub(super) fn review_of(
         })
         .unwrap_or_default();
     let mut already = Vec::new();
-    for name in referenced(files) {
-        if name == found.name {
-            continue;
-        }
+    let refers: Vec<String> = referenced(files)
+        .into_iter()
+        .filter(|name| *name != found.name)
+        .collect();
+    for name in refers.iter().cloned() {
         if have(&name) {
             already.push(name);
         } else if !held.contains(&name) {
@@ -244,6 +328,9 @@ pub(super) fn review_of(
         folder: found.folder.clone(),
         brought_by,
         already,
+        refers,
+        clash: None,
+        notes: Vec::new(),
         files: files
             .iter()
             .map(|file| ReviewFile {
@@ -284,9 +371,9 @@ pub struct TooMuch {
 pub enum SetReview {
     Review {
         review: Review,
-        /// Those named that the level they land in holds already, from any source or made there
-        /// by hand (#4153): left out of the review and the install, which would refuse them, and
-        /// left as they are.
+        /// Those named that are installed from this source at the level they land in already,
+        /// under either name (#4153): left out of the review and the install, and left as they
+        /// are. A name held any other way is a [`Clash`].
         there: Vec<String>,
     },
     TooMuch(TooMuch),
@@ -438,8 +525,8 @@ impl Fetched {
 
     /// **The review of installing `names` together** from this commit, or which of them fit one
     /// read where all of them do not; `found` is what it offers, listed once, `holds` says which
-    /// names are taken where they land ([`taken`]), and `have` which references are met there
-    /// already. One named that is taken is left out and said to be there (#4153).
+    /// names are installed from this source where they land already, and `have` which references
+    /// are met there already. One installed already is left out and said to be there (#4153).
     fn set_review(
         &self,
         found: &[Found],
@@ -464,16 +551,47 @@ impl Fetched {
     }
 }
 
+/// **What holds `name` where a skill would land at `level`**, as the end of a sentence: a built-in
+/// skill, or a skill at `level` from another source or made there.
+fn held_by(
+    plane: &Path,
+    locked: &[(lock::Kept, lock::Locked)],
+    reserved: &Reserved,
+    level: &Level,
+    name: &str,
+) -> Option<String> {
+    if reserved.holds(name) {
+        return Some(format!("{name} belongs to a built-in skill"));
+    }
+    if !has(plane, level, name) {
+        return None;
+    }
+    Some(match locked.iter().find(|(_, one)| one.is(level, name)) {
+        Some((_, one)) => format!(
+            "the {level} skills have a {name} from {}",
+            one.source.label()
+        ),
+        None => format!("the {level} skills have a {name} made here"),
+    })
+}
+
+/// The names of the folders at `level`: what a new name there cannot be.
+fn names_at(plane: &Path, level: &Level) -> Vec<String> {
+    let mut names: Vec<String> = level
+        .rel()
+        .and_then(|rel| std::fs::read_dir(plane.join(rel)).ok())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+    names.sort();
+    names
+}
+
 /// Whether `level` holds a skill named `name`, from a source or made there.
 pub(super) fn has(plane: &Path, level: &Level, name: &str) -> bool {
     level.named(plane, name).is_some()
-}
-
-/// **Whether `name` is taken where a set lands**: `level` holds a skill of that name, or it
-/// belongs to a built-in skill (`reserved`). An install of one so named is refused, so a set
-/// review leaves it out and says it is there already (#4153, #4155).
-fn taken(plane: &Path, reserved: &Reserved, level: &Level, name: &str) -> bool {
-    reserved.holds(name) || has(plane, level, name)
 }
 
 /// **Whether a skill installed at `level` that refers to `name` has it met already**, so the
@@ -581,13 +699,15 @@ pub fn review(
     names: &[String],
     level: &Level,
 ) -> Result<Review, String> {
-    fetch(plane, source, None)?.review_with(names, &met_at(plane, built_in, level))
+    Ok(fetch(plane, source, None)?
+        .review_with(names, &met_at(plane, built_in, level))?
+        .marked(plane, &Reserved::of(built_in), level))
 }
 
 /// **The review of installing `names` from `source` together at `level`** (#4024), at its newest
 /// commit: one review and one install for the set, or, past what one read may take, the names
-/// that fit. One named that `level` holds already is left out, and said to be there (#4153): the
-/// window's list is ticked before the level is chosen.
+/// that fit. One installed from this source at `level` already is left out, and said to be there
+/// (#4153): the window's list is ticked before the level is chosen.
 pub fn review_set(
     plane: &Path,
     built_in: Option<&Path>,
@@ -597,19 +717,25 @@ pub fn review_set(
 ) -> Result<SetReview, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, _) = fetched.skills()?;
+    let installed = lock::every(plane).0;
     let reserved = Reserved::of(built_in);
-    fetched.set_review(
-        &found,
-        names,
-        &|name| taken(plane, &reserved, level, name),
-        &met_at(plane, built_in, level),
-    )
+    Ok(fetched
+        .set_review(
+            &found,
+            names,
+            &|name| {
+                installed_at(&installed, source, name)
+                    .iter()
+                    .any(|at| at == level)
+            },
+            &met_at(plane, built_in, level),
+        )?
+        .marked(plane, &reserved, level))
 }
 
 /// **The review of installing every skill of `source` not installed from it yet** (#4024,
-/// `purlis skill install <source> --all`), at its newest commit, landing at `level`; one `level`
-/// holds already, from anywhere, is left out too and said to be there, as its install would be
-/// refused (#4032, #4153). A review of no skill where every one is.
+/// `purlis skill install <source> --all`), at its newest commit, landing at `level`. A review of no
+/// skill where every one is.
 pub fn review_all(
     plane: &Path,
     built_in: Option<&Path>,
@@ -624,20 +750,31 @@ pub fn review_all(
         .filter(|skill| installed_at(&locked, source, &skill.name).is_empty())
         .map(|skill| skill.name.clone())
         .collect();
+    // Those it names are installed nowhere from this source, so none is there already.
     let reserved = Reserved::of(built_in);
-    fetched.set_review(
-        &found,
-        &names,
-        &|name| taken(plane, &reserved, level, name),
-        &met_at(plane, built_in, level),
-    )
+    Ok(fetched
+        .set_review(&found, &names, &|_| false, &met_at(plane, built_in, level))?
+        .marked(plane, &reserved, level))
+}
+
+impl SetReview {
+    /// [`Review::marked`], where it is a review.
+    fn marked(self, plane: &Path, reserved: &Reserved, level: &Level) -> SetReview {
+        match self {
+            SetReview::Review { review, there } => SetReview::Review {
+                review: review.marked(plane, reserved, level),
+                there,
+            },
+            other => other,
+        }
+    }
 }
 
 /// The levels `name` is installed at from `source`, by the lockfiles' entries `locked`.
 fn installed_at(locked: &[(lock::Kept, lock::Locked)], source: &Source, name: &str) -> Vec<Level> {
     locked
         .iter()
-        .filter(|(_, one)| one.name == name && one.source == source.remote)
+        .filter(|(_, one)| one.at_source() == name && one.source == source.remote)
         .map(|(_, one)| one.level.0.clone())
         .collect()
 }

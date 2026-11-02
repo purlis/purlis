@@ -401,6 +401,24 @@ pub struct ReviewLeftOut {
     pub said: String,
 }
 
+/// A name that is taken where a skill would land (ADR 0100, amended 2026-11-01).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ReviewClash {
+    /// What holds the name, as the end of a sentence.
+    pub held_by: String,
+    /// The new name offered: `<source>-<name>`.
+    pub offered: String,
+    /// The names at that level, which a new name cannot take.
+    pub taken: Vec<String>,
+}
+
+/// One skill installed under a new name: its name at the source, and the one it lands under.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SkillRename {
+    pub from: String,
+    pub to: String,
+}
+
 /// One skill of a review.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct ReviewSkill {
@@ -411,6 +429,10 @@ pub struct ReviewSkill {
     /// The skills it refers to that the level it lands in holds already (#4032): left as they
     /// are, not brought along.
     pub already: Vec<String>,
+    /// Where its name is taken at the level it lands in: the review waits for the person's choice.
+    pub clash: Option<ReviewClash>,
+    /// A line each for what the review warns of and does not stop on.
+    pub notes: Vec<String>,
     pub summary: ReviewSummary,
     pub files: Vec<ReviewFile>,
     pub left_out: Vec<ReviewLeftOut>,
@@ -425,6 +447,12 @@ impl From<&source::SkillReview> for ReviewSkill {
             folder: esc(&skill.folder),
             brought_by: skill.brought_by.as_deref().map(esc),
             already: skill.already.iter().map(|one| esc(one)).collect(),
+            clash: skill.clash.as_ref().map(|clash| ReviewClash {
+                held_by: esc(&clash.held_by),
+                offered: esc(&clash.offered),
+                taken: clash.taken.iter().map(|one| esc(one)).collect(),
+            }),
+            notes: skill.notes.iter().map(|one| esc(one)).collect(),
             summary: (&skill.summary).into(),
             files: skill
                 .files
@@ -1012,6 +1040,7 @@ pub(crate) async fn skill_install(
     level: SkillLevel,
     reviewed: Reviewed,
     grant: Option<SkillGrant>,
+    renames: Vec<SkillRename>,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("installing the skill", move || {
@@ -1019,12 +1048,16 @@ pub(crate) async fn skill_install(
         let accepted = Accepted::try_from(&reviewed)?;
         let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
         heard(held.root(), |cx| {
-            source::install(
+            source::install_named(
                 cx,
                 &source.core(),
                 &(&level).into(),
                 &accepted,
                 grant.as_ref(),
+                &renames
+                    .iter()
+                    .map(|one| (one.from.clone(), one.to.clone()))
+                    .collect(),
             )
         })
     })

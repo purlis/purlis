@@ -122,6 +122,7 @@ const REVIEW = skill("review", { level: "persona", folder: "personas/reviewer/sk
 /** A skill of a chat's set, as Use skill… reads it. */
 const given = (name: string, level: ChatSkill["level"] = "project"): ChatSkill => ({
   name,
+  source_label: null,
   level,
   label: level,
   description: `What ${name} does.`,

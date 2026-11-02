@@ -109,8 +109,9 @@ fn edited(plane: &Path, locked: &Locked) -> Option<Vec<String>> {
     for file in &now {
         let shown = file.parts.join("/");
         match locked.files.iter().find(|f| f.path == shown) {
-            Some(was) if was.sha256 == sha256(&file.bytes) && was.executable == file.executable => {
-            }
+            Some(was)
+                if was.sha256 == pinned_sha(locked, &shown, &file.bytes)
+                    && was.executable == file.executable => {}
             _ => changed.push(shown),
         }
     }
@@ -121,6 +122,17 @@ fn edited(plane: &Path, locked: &Locked) -> Option<Vec<String>> {
     }
     changed.sort();
     Some(changed)
+}
+
+/// **What the pinned-copy check digests of the file at `path` of `locked`**: its bytes, with the
+/// name line of a `SKILL.md` left out where it was installed under a new name, so that name is
+/// never read as an edit (ADR 0100, amended 2026-11-01).
+fn pinned_sha(locked: &Locked, path: &str, bytes: &[u8]) -> String {
+    if locked.source_name.is_some() {
+        super::review::sha_renamed(path, bytes)
+    } else {
+        sha256(bytes)
+    }
 }
 
 /// **Asks each source of an installed skill this machine may contact for its newest commit** —
@@ -367,6 +379,22 @@ fn locked_at(plane: &Path, level: &Level, name: &str) -> Result<(lock::Read, usi
     }
 }
 
+/// The bytes of a file of the copy of `locked` here, its `SKILL.md` under its name at the source
+/// where it has a new one, so a diff from the source never shows the new name as a change.
+fn named_at_source(parts: &[String], bytes: Vec<u8>, locked: &Locked) -> Vec<u8> {
+    let Some(name) = locked
+        .source_name
+        .as_deref()
+        .filter(|_| parts == [purlis_skills::FILE])
+    else {
+        return bytes;
+    };
+    std::str::from_utf8(&bytes)
+        .ok()
+        .and_then(|text| purlis_skills::change::with_name(text, name))
+        .map_or(bytes.clone(), String::into_bytes)
+}
+
 /// **The review of updating the installed skill `name` at `level`** to its source's newest
 /// commit, with the built-in skills in `built_in`, whose names a reference meets already (#4155).
 /// Refused where the pin is the newest, or where this machine may not contact the source.
@@ -378,6 +406,7 @@ pub fn update_review(
 ) -> Result<UpdateReview, String> {
     let (held, at) = locked_at(plane, level, name)?;
     let locked = &held.lock.skills[at];
+    let at_source = locked.at_source().to_owned();
     let source = source_of(plane, locked)?;
     let fetched = fetch(plane, &source, None)?;
     if fetched.commit == locked.commit {
@@ -392,9 +421,9 @@ pub fn update_review(
         .iter()
         .find(|f| f.dir == dir)
         .ok_or_else(|| format!("the source no longer holds {name} at {}", locked.folder))?;
-    if one.name != name {
+    if one.name != at_source {
         return Err(format!(
-            "the source renamed {name} to {}: install it under its new name",
+            "the source renamed {at_source} to {}: install it under its new name",
             one.name
         ));
     }
@@ -408,9 +437,9 @@ pub fn update_review(
             .ok_or_else(|| format!("{name}'s copy here could not be read"))?
             .into_iter()
             .map(|file| SourceFile {
+                bytes: named_at_source(&file.parts, file.bytes, locked),
                 parts: file.parts,
                 executable: file.executable,
-                bytes: file.bytes,
             })
             .collect();
     let edited = edited(plane, locked).unwrap_or_default();
@@ -420,7 +449,7 @@ pub fn update_review(
     };
     let was = pinned.unwrap_or_else(|| here.clone());
     let met_here = met_at(plane, built_in, level);
-    let reviewed = fetched.review_with(&[name.to_owned()], &met_here)?;
+    let reviewed = fetched.review_with(std::slice::from_ref(&at_source), &met_here)?;
     let mut skills = reviewed.skills.into_iter();
     let review = skills.next().unwrap_or_else(|| {
         let held_names: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
@@ -430,7 +459,7 @@ pub fn update_review(
             tree::left_in(&fetched.left, &one.dir),
             None,
             &held_names,
-            &|other| other != name && met_here(other),
+            &|other| other != at_source && met_here(other),
         )
     });
     let brought: Vec<SkillReview> = skills.collect();
@@ -477,10 +506,15 @@ pub fn update(
     crate::settings::writable(plane)?;
     let (held, at) = locked_at(plane, level, name)?;
     let locked = held.lock.skills[at].clone();
+    let at_source = locked.at_source().to_owned();
     let source = source_of(plane, &locked)?;
     let fetched = fetch(plane, &source, Some(&accepted.commit))?;
-    let reviewed = fetched.review_with(&[name.to_owned()], &met_at(plane, cx.built_in, level))?;
-    if !accepted.is(&reviewed.accepted()) || reviewed.skills.first().is_none_or(|s| s.name != name)
+    let reviewed = fetched.review_with(
+        std::slice::from_ref(&at_source),
+        &met_at(plane, cx.built_in, level),
+    )?;
+    if !accepted.is(&reviewed.accepted())
+        || reviewed.skills.first().is_none_or(|s| s.name != at_source)
     {
         return Err(
             "what the source holds is not what was reviewed, so nothing was updated: review it \
@@ -497,7 +531,7 @@ pub fn update(
             .find(|f| f.name == wanted)
             .ok_or_else(|| format!("the source no longer holds {wanted}"))
     };
-    let one = find(name)?;
+    let one = find(&at_source)?;
     if one.dir != dir {
         return Err(format!(
             "the source moved {name}: install it again from where it is now"
@@ -528,6 +562,12 @@ pub fn update(
     let level_dir = level_parts(level)?;
     let files = fetched.files_of(&one.dir)?;
     paths_fit(&level_dir, name, &files)?;
+    let renamed = locked
+        .source_name
+        .is_some()
+        .then(|| super::install::under_new_name(&files, name))
+        .transpose()?;
+    let files = renamed.as_ref().map_or(&files, |renamed| renamed);
     let mut lock = held.lock.clone();
     // The skills it brings along, first: each a new copy this update can take back.
     let mut written = Written::none(plane, level_dir.clone());
@@ -559,6 +599,7 @@ pub fn update(
         let their_wrote = wrote(&their);
         lock.skills.push(Locked {
             name: skill.name.clone(),
+            source_name: None,
             level: lock::AtLevel(level.clone()),
             source: locked.source.clone(),
             folder: other.folder.clone(),
@@ -590,7 +631,11 @@ pub fn update(
         written.take_back();
         return Err(format!("{why}, so nothing was updated"));
     }
-    let files_wrote = wrote(&files);
+    let files_wrote = if locked.source_name.is_some() {
+        super::review::wrote_renamed(files)
+    } else {
+        wrote(files)
+    };
     let mut parts = level_dir.clone();
     parts.push(name.to_owned());
     let gone: Vec<Vec<String>> = locked
