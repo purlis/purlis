@@ -25,7 +25,7 @@ import type {
   Studio,
   StudioSkill,
 } from "./bindings";
-import { SkillsView, type FrontChat } from "./SkillsView";
+import { SkillsView, type FrontChat, type SkillsViewProps } from "./SkillsView";
 import { skill, studio } from "./skillsListing.testkit";
 import {
   SKILL_STUDIO_TITLE,
@@ -38,6 +38,19 @@ import {
 import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { PLANE_ROOT, pieceFileView } from "./pieceViews";
 import { DEFAULT_SKILLS_VIEW, SKILLS_VIEW } from "./skillsViewPrefs";
+
+/** How many times the view's list of cards has been drawn: the real list, counted (#4351). */
+const listDrawn = vi.hoisted(() => ({ times: 0 }));
+vi.mock("./SkillsList", async (real: () => Promise<typeof import("./SkillsList")>) => {
+  const actual = await real();
+  return {
+    ...actual,
+    SkillsList: (props: Parameters<typeof actual.SkillsList>[0]) => {
+      listDrawn.times += 1;
+      return actual.SkillsList(props);
+    },
+  };
+});
 
 afterEach(() => {
   cleanup();
@@ -152,10 +165,8 @@ function opsCore(chat: ChatSkill[] = []) {
 }
 
 function view(
-  over: Partial<Parameters<typeof SkillsView>[0]> = {},
-): Required<
-  Pick<Parameters<typeof SkillsView>[0], "onOpenView" | "onUseSkill" | "onShowInExplorer">
-> {
+  over: Partial<SkillsViewProps> = {},
+): Required<Pick<SkillsViewProps, "onOpenView" | "onUseSkill" | "onShowInExplorer">> {
   const hands = {
     onOpenView: vi.fn(),
     onUseSkill: vi.fn(),
@@ -268,6 +279,46 @@ describe("whose skills the Skills view shows", () => {
       expect(screen.getByTestId("skills-view-whose")).toHaveTextContent("A new chat in ops"),
     );
     expect(asked.filter((one) => one.cmd === "chat_skills")).toHaveLength(1);
+  });
+
+  it("draws its cards no more when the window draws again with the same chat in front (#4351)", async () => {
+    opsCore([given("deploy")]);
+    const hands = {
+      onOpenView: vi.fn(),
+      onUseSkill: vi.fn(),
+      onShowInExplorer: vi.fn(),
+      onRestart: vi.fn(),
+    };
+    const { rerender } = render(
+      <SkillsView plane="p" workspace="ops" chat={{ ...STEWARD }} {...hands} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-whose")).toHaveTextContent("steward 5"),
+    );
+    const drawn = listDrawn.times;
+    // The window describes the chat in front afresh each time it draws: the same chat.
+    rerender(<SkillsView plane="p" workspace="ops" chat={{ ...STEWARD }} {...hands} />);
+    rerender(<SkillsView plane="p" workspace="ops" chat={{ ...STEWARD }} {...hands} />);
+    expect(listDrawn.times).toBe(drawn);
+    // Another chat in front is drawn.
+    rerender(
+      <SkillsView plane="p" workspace="ops" chat={{ ...STEWARD, name: "steward 6" }} {...hands} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-whose")).toHaveTextContent("steward 6"),
+    );
+    expect(listDrawn.times).toBeGreaterThan(drawn);
+    // And so is the same chat in a branch folder: a field one level down.
+    const named = listDrawn.times;
+    rerender(
+      <SkillsView
+        plane="p"
+        workspace="ops"
+        chat={{ ...STEWARD, name: "steward 6", branchFolder: { repo: "app", piece: "fix" } }}
+        {...hands}
+      />,
+    );
+    expect(listDrawn.times).toBeGreaterThan(named);
   });
 
   it("heads its middle group as the header says whose set it is (#3778)", async () => {

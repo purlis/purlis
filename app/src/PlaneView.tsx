@@ -240,7 +240,7 @@ import {
   type ViewId,
 } from "./regions";
 import { drawnOnlyPresent, previewsDrawn, type ViewPlace } from "./sideViews";
-import { SkillsView, type FrontChat } from "./SkillsView";
+import { SkillsView, type FrontChat, type SkillsViewProps } from "./SkillsView";
 import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
@@ -6745,6 +6745,32 @@ export const PlaneView = memo(function PlaneView({
     },
     [plane, setChatSkills],
   );
+  /**
+   * **What the Skills view's cards act through, held still** (#4351): the view, kept once shown,
+   * draws every skill's card, and draws them again only for something of its own. Opening a tab
+   * moves `showView` and the restart's ask with the window around them; these call whichever is
+   * current.
+   */
+  const skillsActs = useRef({ showView, openUseSkill, revealInExplorer, askRestart });
+  useLayoutEffect(() => {
+    skillsActs.current = { showView, openUseSkill, revealInExplorer, askRestart };
+  });
+  const skillsOpenView = useCallback<SkillsViewProps["onOpenView"]>(
+    (view, title) => skillsActs.current.showView(view, title),
+    [],
+  );
+  const skillsUse = useCallback<SkillsViewProps["onUseSkill"]>(
+    (session, skill) => skillsActs.current.openUseSkill(session, skill),
+    [],
+  );
+  const skillsShowInExplorer = useCallback<SkillsViewProps["onShowInExplorer"]>(
+    (place) => skillsActs.current.revealInExplorer(place),
+    [],
+  );
+  const skillsRestart = useCallback(
+    (session: number) => skillsActs.current.askRestart(session),
+    [],
+  );
   /** Use skill…, from a chat tab's menu or the palette. */
   const useSkill = useCallback(
     (id: number) => {
@@ -9638,10 +9664,10 @@ export const PlaneView = memo(function PlaneView({
                   plane={plane}
                   workspace={ofWorkspace}
                   chat={skillsChat}
-                  onOpenView={showView}
-                  onUseSkill={openUseSkill}
-                  onShowInExplorer={revealInExplorer}
-                  onRestart={askRestart}
+                  onOpenView={skillsOpenView}
+                  onUseSkill={skillsUse}
+                  onShowInExplorer={skillsShowInExplorer}
+                  onRestart={skillsRestart}
                 />
               ),
               // **Changes** (#1676, B-7): what the bottom region drew, the same content.
