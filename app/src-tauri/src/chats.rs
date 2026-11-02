@@ -1511,6 +1511,10 @@ impl Chats {
         let (Some(config), Some(pool)) = (&self.pools_in, self.sessions.pool_for(workspace)) else {
             return Ok(None);
         };
+        // A chat that has one stays on it, whatever starts it again: its conversation is there.
+        if let Ok(Some((_, kept))) = purlis_core::runners::fresh_runner_of(config, id) {
+            return Ok(Some(kept.link_name()));
+        }
         if !matches!(
             purlis_core::runners::cluster_runner_for(config, &pool),
             Ok(Some(_))
@@ -5772,7 +5776,9 @@ impl Chats {
         let Some((number, persona, harness, workspace)) = ran_as else {
             return;
         };
-        if self.sessions.pool_of(number).as_deref() != Some(pool) {
+        // Its pool, also where it was heard from a chat's own runner (#3818).
+        let of = pool.split_once("/fresh-").map_or(pool, |(pool, _)| pool);
+        if self.sessions.pool_of(number).as_deref() != Some(of) {
             return;
         }
         // Under this machine's own device, as a run of its own is: the runner keeps its own file

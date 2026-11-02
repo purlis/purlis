@@ -1587,7 +1587,7 @@ pub fn cluster_runner_still_yours(
     if kept != *judged || !cluster.owned() {
         return Err(changed());
     }
-    if crate::runnertaint::pool_ran_unsandboxed(config_root, name) {
+    if crate::runnertaint::pool_ran_unsandboxed(config_root, cluster.name()) {
         return Err(crate::runnertaint::sent_nothing_on(name));
     }
     Ok((cluster, kept))
