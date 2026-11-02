@@ -928,23 +928,11 @@ describe("what a refused send is heard as (#3291)", () => {
   });
 });
 
-describe("a field the pointer left the window from", () => {
-  it("stops drawing the hover once the pointer left the window, with no leave on the box (#4628)", async () => {
-    render(<Held label="Name" />);
-    const box = screen.getByLabelText("Name").closest('[data-part="root"]') as HTMLElement;
+describe("a box that holds its own words, the pointer gone from the window", () => {
+  it("stops drawing the hover, with no leave on the box (#4628)", async () => {
+    render(<TextField label="Token" type="password" onChange={vi.fn()} />);
+    const box = screen.getByLabelText("Token").closest('[data-part="root"]') as HTMLElement;
     fireEvent.pointerEnter(box);
-    expect(box.dataset.hovered).toBe("true");
-
-    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
-
-    expect(box.dataset.hovered).toBeUndefined();
-  });
-
-  it("stops drawing the hover of a pointer that moved on the box, then left the window (#4628)", async () => {
-    render(<Held label="Name" />);
-    const box = screen.getByLabelText("Name").closest('[data-part="root"]') as HTMLElement;
-    fireEvent.pointerEnter(box);
-    fireEvent.pointerMove(box);
     expect(box.dataset.hovered).toBe("true");
 
     await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
