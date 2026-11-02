@@ -667,6 +667,7 @@ macro_rules! app_commands {
                 settings::save_workspace_settings,
                 usage::chat_usage,
                 slowlog::record_slow,
+                slowlog::slow_log_recent,
                 tasksused::tasks_used,
                 pin::plane_pin,
                 about::about_charter,

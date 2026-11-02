@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { commands, type SlowMoment } from "./bindings";
 import { LATE_MS, forgetLateAnswers, timed, useLateAnswers } from "./answerWatch";
-import { countsHotChats, frontTabIs, viewOpening, watchForStalls } from "./slowLog";
+import { countsHotChats, frontTabIs, recentSlowLog, viewOpening, watchForStalls } from "./slowLog";
 
 /**
  * **A slow moment is written to the log, and only a slow one** (`slowLog.ts`, #4725): an answer
@@ -160,5 +160,19 @@ describe("a stall", () => {
     window.at(500);
     window.stop();
     expect(written).toMatchObject([{ kind: "stall", front: null, opening: false, hot: 0 }]);
+  });
+});
+
+describe("the recent entries", () => {
+  it("are the core's answer, newest last, and nothing when it could not read the log", async () => {
+    const entries: SlowMoment[] = [
+      { kind: "answer", command: "plane_sidebar", ms: 1_250, at: 1, hot: 3 },
+      { kind: "stall", ms: 340, at: 2, hot: 12, front: "steward 3", opening: true },
+    ];
+    vi.spyOn(commands, "slowLogRecent").mockResolvedValueOnce({ status: "ok", data: entries });
+    expect(await recentSlowLog()).toEqual(entries);
+
+    vi.spyOn(commands, "slowLogRecent").mockResolvedValueOnce({ status: "error", error: "no" });
+    expect(await recentSlowLog()).toBeNull();
   });
 });

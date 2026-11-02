@@ -130,3 +130,16 @@ export function watchForStalls(
   };
   return watching;
 }
+
+/**
+ * **The log's recent entries on this machine, newest last**, or `null` when the core could not
+ * read it: what a person's diagnostics carry (#4774). An empty list is a log with nothing in it.
+ */
+export async function recentSlowLog(): Promise<readonly SlowMoment[] | null> {
+  try {
+    const answer = await commands.slowLogRecent();
+    return answer.status === "ok" ? answer.data : null;
+  } catch {
+    return null;
+  }
+}

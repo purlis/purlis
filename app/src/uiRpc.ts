@@ -2201,6 +2201,11 @@ export const commands = {
 	 */
 	recordSlow: (moment: SlowMoment) => typedError<null, string>(__TAURI_INVOKE("record_slow", { moment })),
 	/**
+	 *  **The log's recent entries on this machine, newest last**, or none when there is no log
+	 *  (#4774): what a person's diagnostics carry. On a blocking thread, as the write is.
+	 */
+	slowLogRecent: () => typedError<SlowMoment[], string>(__TAURI_INVOKE("slow_log_recent")),
+	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
 	 *  session's own chat, said beside the total and not in it; `chats` its open tasks, and any it
