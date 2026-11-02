@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793626889792,
+  "lastUpdate": 1793631237028,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36330,6 +36330,48 @@ window.BENCHMARK_DATA = {
             "value": 102.24261899999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.693, 102.157, 102.243, 102.252, 103.645 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9070e52e8e4ce22110fc43a7157e63ff12c7ff84",
+          "message": "CI: the nightly macOS tests build one job at a time, and have the time they need (#4609)\n\n* CI: the nightly macOS tests build one job at a time, and fit their limit (#2458)\n\nOn the 7 GB runner macos-latest draws by lot, the workspace test targets\nswap side by side: 41 to 56 minutes to build, against 5 on the 15 GB one.\nOne rustc at a time does not swap (26 minutes). Each part gets 80 minutes\nand no longer saves a cache that is evicted before the next night.\n\nRefs #2458\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* TEMPORARY: run macos-tests on this pull request, to prove it (#2458)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* Revert \"TEMPORARY: run macos-tests on this pull request, to prove it (#2458)\"\n\nThis reverts commit 9ba28a1dbafb4e167b91ad63f833501ffd7080ef.\n\n* CI: each nightly macOS part has 100 minutes, from what three parts took (#2458)\n\nOn the M1 the parts took 69, 72 and 80 minutes, the last ended by a limit\nof 80 as its final test passed. 100 leaves a quarter over the worst of them.\n\nRefs #2458\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T10:10:39Z",
+          "tree_id": "c74fd60a6f88d1ae90111673bfa40f58351d6109",
+          "url": "https://github.com/purlis/purlis/commit/9070e52e8e4ce22110fc43a7157e63ff12c7ff84"
+        },
+        "date": 1793631233611,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.366363,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.345, 0.364, 0.366, 0.367, 0.378 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3619755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.020, 16.308, 16.362, 16.451, 16.633 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8775555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.963, 101.675, 101.878, 102.199, 103.286 ms"
           }
         ]
       }
