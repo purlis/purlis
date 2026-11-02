@@ -447,6 +447,15 @@ pub const PAIRS: &[Pair] = &[
     //   the window and the frame (#3177), held as words are, the icon being all it says.
     p("accent.text", "accent.wash", TEXT).over("surface.base"),
     p("accent.text", "accent.wash", TEXT).over("surface.deep"),
+    // - What else says "chosen" in the accent's words (#3100): a chosen option card's check and
+    //   mark and a chosen chip's check on the accent's surface (above), a tile's on the ground it
+    //   stands on, and a pinned switcher row's pin on the popover. On the selected row's fill
+    //   they are words too: an update pill's under the pointer, as well as the current explorer
+    //   row's icon, which alone would be a mark at 3:1.
+    p("accent.text", "surface.base", TEXT),
+    p("accent.text", "surface.raised", TEXT),
+    p("accent.text", "surface.overlay", TEXT),
+    p("accent.text", "list.selected", TEXT),
     // - The chosen title-bar chip (#3345, R101 as amended): its name in the primary words on the
     //   accent's wash laid on the frame, and on the stronger wash under the pointer.
     p("text.primary", "accent.wash", TEXT).over("surface.deep"),
