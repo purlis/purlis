@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **What a runner holds, and the proof that the desktop has it** (1.68, #4569): a chat's fresh
+//! **What a runner holds, and the proof that the desktop has it** (1.69, #4569): a chat's fresh
 //! runner goes only once its desktop has every commit it holds.
 //!
 //! **The runner lists everything** ([`repos_held`]): every repository in every project it keeps,
@@ -45,7 +45,7 @@ pub const MOST_FOLDERS: usize = 200_000;
 /// The ref under which `HEAD` is listed: the commit checked out, on a branch or on none.
 pub const HEAD: &str = "HEAD";
 
-/// **Every repository in the projects kept in `projects`** (1.68, #4569), each project a folder
+/// **Every repository in the projects kept in `projects`** (1.69, #4569), each project a folder
 /// named by its id, and what could not be looked through, in sentences. No link is followed, and
 /// nothing inside a repository's own git folder is looked through.
 pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {

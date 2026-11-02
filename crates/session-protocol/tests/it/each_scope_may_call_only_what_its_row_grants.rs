@@ -467,7 +467,7 @@ fn every_command() -> Vec<Command> {
             project: "01J9PRJCT00000000000000000".into(),
             workspace: "app".into(),
         },
-        // Every repository a host holds (1.68, #4569): the window's, and relayed.
+        // Every repository a host holds (1.69, #4569): the window's, and relayed.
         Command::ReposHeld,
         // Where the host's own event log ends (1.41, #3393): the window's, and relayed.
         Command::LogEnd,

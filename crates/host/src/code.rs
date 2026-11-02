@@ -118,7 +118,7 @@ pub trait Code: Send + Sync + 'static {
         Err(moves_no_chat())
     }
 
-    /// **Every repository in the projects this host keeps in `projects`** (1.68, #4569): each
+    /// **Every repository in the projects this host keeps in `projects`** (1.69, #4569): each
     /// one's project, path, refs and the files of its work tree no commit has, and what
     /// could not be looked through. A binary that moves no chat refuses it.
     fn repos_held(
@@ -360,7 +360,7 @@ impl Hosting {
         Ok(Answer::Clones { repos, origins })
     }
 
-    /// **Every repository in the projects the host keeps** (1.68, #4569): no stream, only what
+    /// **Every repository in the projects the host keeps** (1.69, #4569): no stream, only what
     /// the binary reads. A host that keeps no projects of its own holds none.
     pub(crate) async fn repos_held(&self) -> Result<Answer, Refusal> {
         let Some(projects) = self.projects_kept_in() else {
