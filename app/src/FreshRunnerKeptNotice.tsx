@@ -12,6 +12,11 @@ export const FRESH_RUNNERS_KEPT = "fresh-runners-kept";
 /** How many of a runner's missing pieces the line names before it counts the rest. */
 const NAMED_AT_MOST = 2;
 
+/** What the core said is kept, as a list: a window test's stand-in may answer nothing. */
+function listed(said: unknown): readonly FreshKept[] {
+  return Array.isArray(said) ? (said as FreshKept[]) : [];
+}
+
 /** What is missing, in at most a few of the core's sentences. */
 function missingSaid(why: readonly string[]): string {
   const named = why.slice(0, NAMED_AT_MOST).join(" ");
@@ -48,7 +53,7 @@ export function FreshRunnerKeptNotice({ plane }: { plane: PlaneId }) {
         const unlisten = await listen<FreshRunnersKept>(FRESH_RUNNERS_KEPT, (event) => {
           if (event.payload.plane !== plane) return;
           heard = true;
-          setKept({ plane, kept: event.payload.kept });
+          setKept({ plane, kept: listed(event.payload.kept) });
           setPutAway(new Set());
         });
         if (gone) unlisten();
@@ -58,7 +63,7 @@ export function FreshRunnerKeptNotice({ plane }: { plane: PlaneId }) {
       }
       try {
         const now = await commands.freshRunnersKept(plane);
-        if (!gone && !heard && now.status === "ok") setKept({ plane, kept: now.data });
+        if (!gone && !heard && now.status === "ok") setKept({ plane, kept: listed(now.data) });
       } catch {
         // What cannot be read shows nothing.
       }
