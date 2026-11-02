@@ -41,7 +41,7 @@ use std::path::Path;
 
 use purlis_session_protocol::hostlink::Pinned;
 
-use crate::dockerpool::{Docker, Missing, Runner};
+use crate::dockerpool::{Docker, Gone, Missing, Runner};
 use crate::runners::{self, Kept, Pool, Refused, Removed, Unpair};
 
 /// **Adds `pool` on this machine**, with `docker`: records it, makes and checks its runner,
@@ -826,18 +826,26 @@ pub fn remove_held(
         .filter(|kept| kept.draining)
         .ok_or_else(|| Refused::Other(format!("no runner {name} is draining on this machine")))?;
     // One already held may have lost its container to a prune, and its home is still the person's
-    // to remove.
-    if !kept.held {
-        let ran = docker
-            .ran(&kept.made)
-            .map_err(|why| Refused::Other(why.0))?;
-        if drain_look(&kept, ran) != DrainLook::Held {
+    // to remove. Docker may only be pointing at another engine, though: with no engine kept, only
+    // its home listed here says this is its engine (#4149).
+    let ran = docker.ran(&kept.made);
+    if kept.held {
+        if ran.is_err()
+            && kept.engine.is_none()
+            && !matches!(docker.gone(&kept.made), Ok(Some(Gone { home_kept: true })))
+        {
             return Err(Refused::Other(format!(
-                "runner {name} is not held, so it goes once no chat is left on it"
+                "Docker lists neither runner {name} nor its home, and may be pointing at another \
+                 engine, so nothing was removed"
             )));
         }
+    } else if drain_look(&kept, ran.map_err(|why| Refused::Other(why.0))?) != DrainLook::Held {
+        return Err(Refused::Other(format!(
+            "runner {name} is not held, so it goes once no chat is left on it"
+        )));
     }
-    drain_locked(config_root, docker, name, unpair, &locked)
+    // Its container may be gone, so only a home that is still its own gives sign-ins (#4167).
+    drain_locked(config_root, docker, name, unpair, true, &locked)
 }
 
 /// **Removes the draining runner `name`** (#2749), once its last chat has ended, as a runner is
@@ -867,15 +875,17 @@ pub fn drain(
             "runner {name} is held, so only the person removes it"
         )));
     }
-    drain_locked(config_root, docker, name, unpair, &locked)
+    drain_locked(config_root, docker, name, unpair, false, &locked)
 }
 
-/// [`drain`], under the lock `locked`.
+/// [`drain`], under the lock `locked`, its sign-ins carried only from a home still its own where
+/// `only_its_own_home` says so ([`carry_once`]).
 fn drain_locked(
     config_root: &Path,
     docker: &Docker,
     name: &str,
     unpair: Option<&Unpair<'_>>,
+    only_its_own_home: bool,
     locked: &runners::Locked,
 ) -> Result<Removed, Refused> {
     match runners::named(config_root, name)? {
@@ -898,7 +908,7 @@ fn drain_locked(
             {
                 tracing::warn!("purlis: runner {name} may be asked again: {why}");
             }
-            carry_once(config_root, docker, &kept, false, locked);
+            carry_once(config_root, docker, &kept, only_its_own_home, locked);
             let mut removed = runners::remove_locked(config_root, docker, name, None, locked)?;
             removed.peer = peer;
             Ok(removed)

@@ -1026,7 +1026,7 @@ fn the_settings_a_sign_in_names_are_an_empty_config_of_purliss_own() {
 /// `exec` with `paired`, after keeping its standard input, and `container ls` with
 /// `containers`; `run` fails where `run-fails` is there. `container rm` and `volume rm` exit
 /// with what `rm-fails-container` or `rm-fails-volume` holds, else what `rm-fails` holds, 0
-/// when there is none.
+/// when there is none. `inspect-once`, where it is there, answers one `container inspect` first.
 pub(crate) struct FakeDocker {
     dir: tempfile::TempDir,
 }

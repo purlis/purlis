@@ -766,8 +766,52 @@ fn a_held_runner_with_no_container_left_can_be_removed() {
     a_pool_draining(config.path(), &fake);
     hold(config.path(), "first").unwrap();
     fake.set("inspect", "no such container");
+    fake.set("volumes", "purlis-runner-first-home\n");
 
-    assert!(remove_held(config.path(), &fake.docker(), "first", None).is_ok());
+    let removed = remove_held(config.path(), &fake.docker(), "first", None).unwrap();
+
+    assert!(removed.forgotten, "{removed:?}");
+}
+
+/// **Nor does it take sign-ins from a home made since**, as a runner removed outside purlis does
+/// not (#4167): a prune took its home too, and a volume of that name is someone else's.
+#[test]
+fn a_held_runner_gives_nothing_from_a_home_made_since() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
+    a_pool_draining(config.path(), &fake);
+    hold(config.path(), "first").unwrap();
+    fake.set("inspect", "no such container");
+    fake.set("volumes", "purlis-runner-first-home\n");
+    home_prints(&fake, "2026-01-01T00:00:00Z");
+
+    remove_held(config.path(), &fake.docker(), "first", None).unwrap();
+
+    assert!(
+        !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// **With no engine kept, a Docker that lists neither its container nor its home may be another
+/// engine** (#4149): the press is refused, and the row stays to find it again.
+#[test]
+fn a_held_runner_docker_may_only_have_lost_sight_of_is_not_forgotten() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    hold(config.path(), "first").unwrap();
+    fake.set("inspect", "no such container");
+    fake.set("volumes", "");
+    fake.set("containers", "");
+
+    let refused = remove_held(config.path(), &fake.docker(), "first", None).unwrap_err();
+
+    assert!(refused.to_string().contains("another"), "{refused}");
+    assert!(runners::named(config.path(), "first").unwrap().is_some());
 }
 
 /// **The person removes a held runner, and only a held one**: its home goes as a drain's does.
