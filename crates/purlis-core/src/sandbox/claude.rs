@@ -131,6 +131,10 @@ pub struct Settings {
     pub made_empty: Vec<PathBuf>,
 }
 
+/// macOS's terminals, by a glob. Claude Code turns it into the regex `^/dev/ttys[^/]*(/.*)?$` in
+/// its profile.
+pub const TERMINALS: &str = "/dev/ttys*";
+
 /// The home's git config, a later-code name the floor holds ([`super::PLANTED`]). On Linux,
 /// Claude Code's sandbox puts a denied path that does not exist out of reach of a read as well,
 /// and git stops on a config it cannot read, so no git command would run in the chat. Made
@@ -190,6 +194,15 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
                 }
             }
         }
+    }
+    // On macOS, a chat's commands keep to its own terminal, at either level. They are given none
+    // of their own, and Claude Code and its hooks run outside the profile, so this holds only
+    // what a command opens by name. The floor denies the writes too ([`TERMINALS`]). Claude Code
+    // writes its pty rules after these, so its `allowPty`, were it ever set, would open them again.
+    if compiled.os == Os::MacOs {
+        deny_read.push(TERMINALS.to_owned());
+        read_rules.push(format!("Read(/{TERMINALS})"));
+        edit_rules.push(format!("Edit(/{TERMINALS})"));
     }
     // The later-code class (ruling V73b), by name at any depth: added to the names Claude
     // Code's own sandbox already keeps commands from writing, never in their place. A name
@@ -312,6 +325,10 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     // The floor (#2071): no folder limits, so every folder is written but what it holds.
     if compiled.level == Level::Floor {
         allow_write = vec!["/".to_owned()];
+        // The terminals, which the full sandbox already leaves out of what a command writes.
+        if compiled.os == Os::MacOs {
+            deny_write.push(TERMINALS.to_owned());
+        }
         // Every later-code name wherever it is, the home's among them: a relative `**/<name>`
         // is read against the chat's folder, and at the floor every folder is written.
         for planted in super::PLANTED
