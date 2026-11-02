@@ -6,6 +6,7 @@ import {
   curateRows,
   moveChatRows,
   curateSubjectOf,
+  menuOn,
   menuRows,
   moveRows,
   OUTSIDE_TITLE,
@@ -196,6 +197,8 @@ const stopped = (warns: string, said: Dress["said"] = unnamed): Dress => ({
  */
 const DRESS: Readonly<Record<string, Dress>> = {
   // A chat's one list (#4753): its pane head's ⋯, its sidebar row's ⋯ and right-click.
+  // Where policy locks all dispatch, the Ask row that says why, in Ask's place.
+  "chat.ask": { said: (offer) => offer.title, slot: "first" },
   "chat.smartclose.cancel": { said: SAID.cancelSmartClose, slot: "first" },
   "needs.dismiss": { said: SAID.dismiss, slot: "first" },
   "chat.rename": { said: SAID.rename, slot: "first", keys: () => RENAME_KEY_SAID },
@@ -507,6 +510,15 @@ function drawnAtAll(offer: Offer): boolean {
  */
 export function menuIsEmpty(what: MenuOn, offers: Catalogued): boolean {
   if (curateSubjectOf(what) !== undefined) return false;
+  // A chat's list by its ids alone (#4753): its Go to and Ask rows are scans, which a list of
+  // fifty rows must not pay per render, and a chat with any of them has a Rename… too.
+  if (what.on === "chat") {
+    const { above, below } = menuOn(what);
+    return ![...above, ...below].some((id) => {
+      const offer = offers.get(id);
+      return offer !== undefined && drawnAtAll(offer);
+    });
+  }
   const { above, below } = menuRows(what, offers);
   return ![...above, ...below].some(drawnAtAll);
 }
@@ -560,12 +572,22 @@ export function menuOf(what: MenuOn, offers: Catalogued): MenuDrawn {
   // **Move to ▸** (#2048): one row per place the chat can move, under its restart.
   if (what.on === "chat") {
     const asks = askRows(what.session, offers);
-    if (asks.length > 0)
+    if (asks.length > 0) {
       folded("ask", "first").groups[0].entries.push(
         ...asks.map((offer) =>
           plain(offer, offer.does.verb === "askPersona" ? offer.does.persona : offer.title, true),
         ),
       );
+      // **In the table's place** (`command-table.md`, rule 3): after Rename… and Use skill…,
+      // before the work link, not after every row the group already has.
+      const first = slots.first;
+      const ask = first.findIndex((entry) => entry.kind === "sub" && entry.key === "ask");
+      const lead = (entry: EntryDrawn) =>
+        entry.kind === "row" &&
+        (entry.offer.id.startsWith("chat.rename:") || entry.offer.id.startsWith("chat.useskill:"));
+      const after = first.length - 1 - [...first].reverse().findIndex(lead);
+      if (ask !== -1 && after < first.length) first.splice(after + 1, 0, ...first.splice(ask, 1));
+    }
     const moves = moveChatRows(what.session, offers);
     if (moves.length > 0)
       folded("moveTo", "run").groups[0].entries.push(

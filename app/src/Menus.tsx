@@ -105,22 +105,20 @@ export function ChatMenuButton({
   session,
   offers,
   onPress,
-  variant = "quiet",
 }: {
   session: number;
   offers: Catalogued;
   onPress: (offer: Offer) => void;
-  variant?: "quiet" | "ghost";
 }) {
   const on: MenuOn = { on: "chat", session };
   if (menuIsEmpty(on, offers)) return null;
   const name = offers.get(renameId(session))?.name;
-  const said = name === undefined ? "More for this chat" : `More for ${name}`;
+  const said = moreForSaid(name);
   return (
     // A row that went into Settings sent the keyboard there, not back to the button (#1206).
     <MenuTrigger onClosed={landSettingsFocus}>
       <IconButton
-        variant={variant}
+        variant="quiet"
         size="sm"
         aria-label={said}
         tooltip={said}
@@ -131,6 +129,11 @@ export function ChatMenuButton({
       <CatalogueMenu on={on} offers={offers} onPress={onPress} />
     </MenuTrigger>
   );
+}
+
+/** What a chat's ⋯ is called, on its pane and its row (#4753): for the chat it opens the list of. */
+export function moreForSaid(name: string | undefined): string {
+  return name === undefined ? "More for this chat" : `More for ${name}`;
 }
 
 /**

@@ -81,7 +81,7 @@ import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
 import { BrowserRows, type BrowserShown } from "./ChatBrowsersShown";
 import { HeadingOffer } from "./PanelSection";
 import { tasksIn } from "./taskBuckets";
-import { Menued } from "./Menus";
+import { Menued, moreForSaid } from "./Menus";
 import { menuIsEmpty } from "./menuModel";
 import { askForAMenu } from "./ui/menu/ContextMenu";
 import { useRevealedTask, type Reveal } from "./revealTask";
@@ -1643,7 +1643,7 @@ const Row = memo(function Row({
           <IconButton
             size="sm"
             variant="ghost"
-            aria-label={`More for ${name}`}
+            aria-label={moreForSaid(name)}
             excludeFromTabOrder
             icon={<Ellipsis aria-hidden="true" />}
             onPress={() => {

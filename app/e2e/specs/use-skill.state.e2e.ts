@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { focusedChat } from "../menus.js";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { endEveryChat, pressAndStart } from "../opening.js";
 import { USED_SKILL } from "../harness.js";
@@ -33,17 +34,15 @@ describe("Use skill… on a Codex chat", function () {
     const box = await $("#palette-query");
     await box.waitForDisplayed({ timeout: 10_000 });
     await box.addValue("Use skill");
+    // The chat in front's own row: every chat has one now (#4753).
+    const chat = await focusedChat();
     await browser.waitUntil(
       async () =>
-        browser.execute(() => {
-          // The chat in front's own row: every chat has one now (#4753).
-          const chat = document.querySelector<HTMLElement>(
-            '.pane.focused[data-session], [data-testid="pane"][data-session]',
-          )?.dataset.session;
-          const row = document.getElementById(`palette-row-chat.useskill:${chat ?? ""}`);
+        browser.execute((own: string) => {
+          const row = document.getElementById(`palette-row-chat.useskill:${own}`);
           row?.click();
           return row !== null;
-        }),
+        }, chat),
       { timeout: 20_000, interval: 100, timeoutMsg: "the palette never offered Use skill…" },
     );
 

@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { focusedChat } from "../menus.js";
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
@@ -90,12 +91,7 @@ async function fromThePalette(typed: string, id: string, effort: Effort): Promis
   await box.addValue(typed);
   effort.characters += typed.length;
   // A chat's row is the focused chat's own (#4753): every chat has one, by its number.
-  const chat = await browser.execute(
-    () =>
-      document.querySelector<HTMLElement>(
-        '.pane.focused[data-session], [data-testid="pane"][data-session]',
-      )?.dataset.session ?? "",
-  );
+  const chat = await focusedChat();
   const row = await $(`[id="${id}${chat}"]`);
   await row.waitForExist({ timeout: 20_000, timeoutMsg: `the palette never offered ${typed}` });
   await browser.execute((one: HTMLElement) => one.click(), row);

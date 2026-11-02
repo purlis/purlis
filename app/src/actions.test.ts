@@ -3466,7 +3466,7 @@ describe("Ask a persona from a chat", () => {
     ).toBeUndefined();
   });
 
-  it("takes a pair policy locks off that chat's list, and its palette row says who locked it", () => {
+  it("greys a pair policy locks on that chat's list, saying who locked it, as the palette does", () => {
     const why =
       "Policy forbids steward chats dispatching to devops. Locked by policy, set by the platform team in /etc/purlis/policy.json.";
     const offers = catalogue(
@@ -3477,8 +3477,9 @@ describe("Ask a persona from a chat", () => {
       }),
     );
 
-    expect(askRows(7, catalogued(offers)).map((offer) => offer.title)).toEqual([
-      "Ask steward from steward 3…",
+    expect(askRows(7, catalogued(offers)).map((offer) => [offer.title, offer.available])).toEqual([
+      ["Ask devops from steward 3…", false],
+      ["Ask steward from steward 3…", true],
     ]);
     expect(by(offers, askId(7, "devops"))).toMatchObject({
       title: "Ask devops from steward 3…",

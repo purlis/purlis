@@ -83,7 +83,9 @@ export async function openChatList(): Promise<void> {
         const frame =
           document.querySelector(".pane-frame[data-focused] .pane-doing") ??
           document.querySelector(".pane-frame .pane-doing");
-        const more = frame?.querySelector<HTMLElement>('button[aria-label^="More for "]');
+        const more = frame?.querySelector<HTMLElement>(
+          '[role="button"][aria-label^="More for "], button[aria-label^="More for "]',
+        );
         more?.click();
         return more != null;
       }),
@@ -92,5 +94,18 @@ export async function openChatList(): Promise<void> {
   await browser.waitUntil(
     async () => browser.execute(() => document.querySelector('[role="menu"]') !== null),
     { timeout: 10_000, timeoutMsg: "the pane's ⋯ opened no menu" },
+  );
+}
+
+/**
+ * **The number of the chat the focused pane shows** (#4753), as its pane carries it, or `""`
+ * where no pane is focused: what picks that chat's own row where every chat has one.
+ */
+export async function focusedChat(): Promise<string> {
+  return browser.execute(
+    () =>
+      document.querySelector<HTMLElement>(
+        '.pane.focused[data-session], [data-testid="pane"][data-session]',
+      )?.dataset.session ?? "",
   );
 }

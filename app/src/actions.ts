@@ -4029,7 +4029,12 @@ export function handedOffRows(listed: readonly ListedChat[]): Offer[] {
 
 /** The catalogue's id for the row that goes to chat `to`, which chat `from` handed off to. */
 export function handedOffId(from: number, to: number): string {
-  return `chat.handed:${from}:${to}`;
+  return `${handedPrefix(from)}${to}`;
+}
+
+/** What starts the id of every Go to row of chat `from`'s, the chats its work went to. */
+function handedPrefix(from: number): string {
+  return `chat.handed:${from}:`;
 }
 
 /** The catalogue's id for the row that shows a task. */
@@ -5085,6 +5090,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           dismissId(at),
           renameId(at),
           usingSkillId(at),
+          // Where policy locks all dispatch: the one Ask row, which cannot run and says why.
+          ASK_LOCKED_ID,
           workLinkId(at),
           workUnlinkId(at),
           // Where a task is drawn (#1489): a tab of its own, beside its session, or back.
@@ -5331,15 +5338,15 @@ export function moveChatRows(session: number, offers: Catalogued): Offer[] {
 
 /** The ids of chat `session`'s Go to rows, the chats its work was handed to, newest first. */
 function handedTo(session: number, offers: Catalogued): string[] {
-  const prefix = `chat.handed:${session}:`;
-  return [...offers.keys()].filter((id) => id.startsWith(prefix));
+  return [...offers.keys()].filter((id) => id.startsWith(handedPrefix(session)));
 }
 
-/** The rows whose ids start `prefix`, in the catalogue's order. Only what can run: a row that
- *  cannot is absent from a menu, and said in the palette. */
+/** The rows whose ids start `prefix`, in the catalogue's order. **A row that cannot run is one
+ *  of them**, drawn greyed with its reason (`command-table.md`, rule 2: state disables): an Ask
+ *  policy locks says who locked it on the chat's list as in the palette (#4753). */
 function scanned(prefix: string, offers: Catalogued): Offer[] {
   const rows: Offer[] = [];
-  for (const [id, offer] of offers) if (id.startsWith(prefix) && offer.available) rows.push(offer);
+  for (const [id, offer] of offers) if (id.startsWith(prefix)) rows.push(offer);
   return rows;
 }
 

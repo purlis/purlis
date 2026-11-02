@@ -449,9 +449,9 @@ describe("a chat's list (#4753)", () => {
     expect(said(menu)).toEqual([
       [
         "Rename…",
+        `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
         "Link to work item…",
         "Unlink work item",
-        `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
       ],
       // Its work went to qa 12, and chat 7 needs you, so it can be ignored until it asks again.
       ["Go to qa 12", "Open ▸ [Activity, Network]", "Ignore until it asks again"],
@@ -627,7 +627,7 @@ describe("the other tabs' menus", () => {
 
   it("a task's list, which has its own two ends and no End…", () => {
     expect(said(menuOf({ on: "chat", session: 11 }, offers))).toEqual([
-      ["Rename…", "Link to work item…", `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`],
+      ["Rename…", `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`, "Link to work item…"],
       [
         "Move to its own tab",
         "Open beside console-developer 16",

@@ -2471,7 +2471,7 @@ export const PlaneView = memo(function PlaneView({
    * is drawn or if it is drawn nowhere, its tasks with a pane of their own go back to the list,
    * and the core ends its program. Asked first (`EndingChat`), as every row that ends a chat is.
    */
-  const endChatNow = useCallback(
+  const endChat = useCallback(
     (session: number) => {
       const before = now.current;
       change((tabs) => closeChat(tabs, session, filedIn, isPinned, inTheBackground.current));
@@ -5366,7 +5366,7 @@ export const PlaneView = memo(function PlaneView({
    */
   const beginRename = useCallback(
     (session: number) => {
-      const own = now.current.order.find((id) => chatOf(now.current, id) === session);
+      const own = ownTabOf(now.current, session);
       if (own !== undefined) {
         bringToFront(own);
         setRenaming(own);
@@ -6223,7 +6223,7 @@ export const PlaneView = memo(function PlaneView({
    */
   const restartChat = useCallback(
     (session: number) => {
-      const tab = now.current.order.find((id) => chatOf(now.current, id) === session);
+      const tab = ownTabOf(now.current, session);
       if (tab === undefined) {
         restartListed(session);
         return;
@@ -6794,8 +6794,6 @@ export const PlaneView = memo(function PlaneView({
     },
     [plane, setChatSkills],
   );
-  /** Use skill…, from a chat's rows or the palette. */
-  const useSkill = useCallback((session: number) => openUseSkill(session), [openUseSkill]);
   /**
    * A skill picked in Use skill…: the core types it into the chat in its tool's own syntax and
    * sends nothing (`use_skill`), or copies it with why. Either way the dialog closes and the
@@ -6821,11 +6819,6 @@ export const PlaneView = memo(function PlaneView({
       });
     },
     [nameOf, plane, usingSkill],
-  );
-  /** Ask {persona}…, from a chat's rows or the palette. */
-  const askPersona = useCallback(
-    (session: number, persona: string) => openAskPersona(session, persona),
-    [openAskPersona],
   );
   /** Who already works where the dialog's task would, by the core's sentence (#1534). */
   const askingFrom = askingPersona?.session;
@@ -6923,9 +6916,10 @@ export const PlaneView = memo(function PlaneView({
       startFresh: askStartFresh,
       restartChat,
       moveChat,
-      endChat: endChatNow,
-      askPersona,
-      useSkill,
+      endChat,
+      // A chat's Ask {persona}… and Use skill… open their dialogs: the one way in to each.
+      askPersona: openAskPersona,
+      useSkill: openUseSkill,
       pinTab,
       pinWorkspace,
       pinProject: windowDoes.pinProject,
@@ -7048,12 +7042,12 @@ export const PlaneView = memo(function PlaneView({
       moveSideView,
       restartChat,
       moveChat,
-      endChatNow,
+      endChat,
       linkWorkItem,
       unlinkWorkItem,
       askStartFresh,
-      askPersona,
-      useSkill,
+      openAskPersona,
+      openUseSkill,
       askToStop,
       askToStopAll,
       askToEndTask,
@@ -11063,6 +11057,11 @@ type StopAllAsking = StopAllAsked & { session: number; busy: boolean; trouble?: 
 function untabbedName(chat: OpenChat): string {
   const who = whoOf(chat.persona, chat.harness);
   return chat.label ?? (who ? `${who} ${chat.name}` : chat.name);
+}
+
+/** The tab chat `session` is the own chat of, where it has one: where it renames in place. */
+function ownTabOf(tabs: Tabs, session: number): number | undefined {
+  return tabs.order.find((id) => chatOf(tabs, id) === session);
 }
 
 /** The tab that holds chat `session`, in any of its panes, where one does. */

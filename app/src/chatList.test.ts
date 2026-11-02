@@ -64,7 +64,8 @@ function world(over: Partial<Now> = {}): { now: Now; offers: Catalogued; palette
     chat(1, { tab: true }),
     chat(2, { tab: true }),
     chat(3),
-    chat(4, { mode: "task", parent: 1, from: "chat 1" }),
+    // A task asking the chat that dispatched it a question: its Answer row.
+    chat(4, { mode: "task", parent: 1, from: "chat 1", asking: "Which branch?" }),
     chat(5, { mode: "handoff", parent: 1, from: "chat 1" }),
     chat(6, { tab: true, shell: true, persona: null, harness: null }),
   ];
@@ -74,10 +75,19 @@ function world(over: Partial<Now> = {}): { now: Now; offers: Catalogued; palette
     workspaces: [OUTSIDE, "beta"],
     focused: "beta",
     plane: "/plane",
-    needsYou: [],
+    // Its state now, on every kind: chat 3 needs you, chat 1 wraps up (ADR 0064), and chat 5's
+    // smart close stopped without its record (SI-8f).
+    needsYou: [3],
+    wrappingUp: [1],
+    stopped: { 5: "it ended without writing its record" },
     nameOf: (session) => names.get(session) ?? String(session),
     listed,
-    ask: { personas: ["devops", "qa"], locked: null },
+    // qa is locked from chat 2 by policy: a row that cannot run, said on its list too.
+    ask: {
+      personas: ["devops", "qa"],
+      locked: null,
+      locked_for: [{ session: 2, persona: "qa", why: "Policy forbids it." }],
+    },
     skillStudio: true,
     askable: (session) => session !== 6,
     restartable: (session) => session !== 6,
@@ -97,7 +107,7 @@ function listOf(session: number, offers: Catalogued): string[] {
 
 /** Whether a catalogue row is one of chat `session`'s: its id names that chat. */
 function isChats(id: string, session: number): boolean {
-  return new RegExp(`^(chat|needs)\\.[a-z.]+:${session}(:|$)`).test(id);
+  return new RegExp(`^(chat|needs|task)\\.[a-z.]+:${session}(:|$)`).test(id);
 }
 
 /**
@@ -125,15 +135,12 @@ describe("a chat's one list (#4753)", () => {
         expect(list.filter((id) => !inThePalette.has(id))).toEqual([]);
       });
 
-      it("has every row of its in the palette on its list: none lives on one surface only", () => {
+      it("has every palette row of this chat on its list: none lives on one surface only", () => {
         const { offers, palette } = world();
         const list = new Set(listOf(session, offers));
 
         const paletteOnly = palette
           .filter((offer) => isChats(offer.id, session))
-          // A row that cannot run is drawn in the palette with its reason; a submenu of rows
-          // that can run (Ask ▸, Move to ▸) leaves it out, as the palette is where it is said.
-          .filter((offer) => offer.available || !/^chat\.(ask|move):/.test(offer.id))
           .filter((offer) => !THE_ROWS_PRESS.some((press) => press.test(offer.id)))
           .map((offer) => offer.id)
           .filter((id) => !list.has(id));
@@ -155,8 +162,12 @@ describe("a chat's one list (#4753)", () => {
 
   it("is the same list for a chat with a tab and one without", () => {
     const { offers } = world();
+    // Less the rows for each chat's own state now, which this world gives each a different one.
+    const state = /^(chat\.(smartclose\.cancel|answer)|needs\.(ignore|dismiss)):/;
     const shape = (session: number) =>
-      listOf(session, offers).map((id) => id.replace(`:${session}`, ":N"));
+      listOf(session, offers)
+        .filter((id) => !state.test(id))
+        .map((id) => id.replace(`:${session}`, ":N"));
 
     // A chat with no tab has every row a chat in a tab has, but what is chat 1's own: the work
     // link it holds, and the Go to of the handoff it made.
@@ -190,6 +201,14 @@ describe("a chat's one list (#4753)", () => {
     expect(kinds(4)).not.toContain("chat.end");
     expect(kinds(4)).toContain("task.stop");
     for (const session of [1, 2, 3, 5]) expect(kinds(session)).toContain("chat.end");
+  });
+
+  it("greys an Ask policy locks, with policy's sentence, inside Ask ▸ on the list", () => {
+    const { offers } = world();
+    const qa = rowsOf(menuOf({ on: "chat", session: 2 }, offers)).find(
+      (row) => row.offer.id === "chat.ask:2:qa",
+    );
+    expect(qa?.offer).toMatchObject({ available: false, reason: "Policy forbids it." });
   });
 
   it("greys a row that cannot run now, with its reason, and keeps it on the list", () => {
