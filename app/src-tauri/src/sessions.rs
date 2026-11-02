@@ -422,8 +422,8 @@ pub fn shell() -> String {
 }
 
 /// Bytes turned into text, holding back the start of a character split across two reads for
-/// the read that finishes it. Bytes that are no character at all become `U+FFFD`, which is
-/// what a terminal shows for them.
+/// the read that finishes it. Bytes that are no character at all become `U+FFFD`. A pane's
+/// terminal draws nothing for them instead: xterm's decoder skips them (#4745).
 ///
 /// For what reads a view's output as text (a behaviour's pane, a grade's screen). A pane in the
 /// window is never handed text: it is sent the bytes, and its terminal decodes them (#4745).
