@@ -2398,7 +2398,7 @@ export const commands = {
 /**  Every workspace's chats too. */
 { to: "all" } | 
 /**  The workspaces named. */
-{ to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_install", { plane, source, level, reviewed, grant })),
+{ to: "only"; workspaces: string[] } | null, renames: SkillRename[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_install", { plane, source, level, reviewed, grant, renames })),
 	/**  **The review of publishing `name` at `level` to `source`.** Nothing goes anywhere. */
 	skillPublishReview: (plane: PlaneId, level: SkillLevel, name: string, source: SkillSource) => typedError<PublishReviewView, string>(__TAURI_INVOKE("skill_publish_review", { plane, level, name, source })),
 	/**  **Sends what the person accepted**, and only that. */
@@ -3157,6 +3157,19 @@ export const commands = {
 	useThisMachinesChrome: () => typedError<null, string>(__TAURI_INVOKE("use_this_machines_chrome")),
 	/**  **The Docker pools on this machine**, and a new pool's default limits. */
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
+	/**  **Each step's state, read now**: the pool this setup made, else a new one's. */
+	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
+	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
+	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
+	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
+	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
+	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
+	poolSetupPool: (name: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_pool", { name })),
+	/**
+	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
+	 *  elsewhere, with what to do instead.
+	 */
+	poolSetupOpenDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_open_docker")),
 	/**
 	 *  **Adds a Docker pool on this machine**: its runner is made from the image, confined and held
 	 *  to the pool's limits, paired with this desktop and kept. What fails is taken back.
@@ -3626,6 +3639,13 @@ export const commands = {
 	 *  reach it.
 	 */
 	themeFont: (asset: string) => typedError<string, string>(__TAURI_INVOKE("theme_font", { asset })),
+	/**
+	 *  **The parts of a first frame drawn before they were measured** (#4410): the stylesheet of the
+	 *  theme a frame's `parts_later` names, waiting for the measure its creation left running. What
+	 *  the window asks as it starts, with no project known, so its parts land whatever the restore
+	 *  does. The window's alone: a link is handed no first frame.
+	 */
+	firstFrameParts: (ticket: number) => typedError<string, string>(__TAURI_INVOKE("first_frame_parts", { ticket })),
 	/**
 	 *  **The person's density, font override, motion, contrast and colours, read by the core's theme
 	 *  engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
@@ -6032,6 +6052,8 @@ export type ChatSkill = {
 	 *  the chat to load it.
 	 */
 	hidden: SkillHidden | null,
+	/**  The label of the source it was installed from (ADR 0100, amended 2026-11-01). */
+	source_label: string | null,
 };
 
 /**
@@ -10945,6 +10967,37 @@ export type PoolRow = {
 	suspend_after: string,
 };
 
+/**  One step's next action. */
+export type PoolSetupAction = {
+	id: string,
+	label: string,
+	does: string,
+	command: string | null,
+	url: string | null,
+};
+
+/**  What the tab draws. */
+export type PoolSetupShown = {
+	/**  The pool this setup made. */
+	pool: string | null,
+	/**  The name typed on the Pool step, for the box to hold. */
+	name: string | null,
+	/**  The step the person has reached. */
+	at: string | null,
+	steps: PoolSetupStep[],
+};
+
+/**  One step as it stands. */
+export type PoolSetupStep = {
+	id: string,
+	name: string,
+	state: string,
+	line: string | null,
+	findings: string[],
+	next: PoolSetupAction | null,
+	skippable: boolean,
+};
+
 /**  What the person is asked. */
 export type PoolSignInAsk = {
 	id: number,
@@ -12069,6 +12122,16 @@ export type RestoringChat = {
 	workspace: string | null,
 };
 
+/**  A name that is taken where a skill would land (ADR 0100, amended 2026-11-01). */
+export type ReviewClash = {
+	/**  What holds the name, as the end of a sentence. */
+	held_by: string,
+	/**  The new name offered: `<source>-<name>`. */
+	offered: string,
+	/**  The names at that level, which a new name cannot take. */
+	taken: string[],
+};
+
 /**  One file the review shows, one click away. */
 export type ReviewFile = {
 	path: string,
@@ -12126,6 +12189,10 @@ export type ReviewSkill = {
 	 *  are, not brought along.
 	 */
 	already: string[],
+	/**  Where its name is taken at the level it lands in: the review waits for the person's choice. */
+	clash: ReviewClash | null,
+	/**  A line each for what the review warns of and does not stop on. */
+	notes: string[],
 	summary: ReviewSummary,
 	files: ReviewFile[],
 	left_out: ReviewLeftOut[],
@@ -13894,6 +13961,12 @@ export type SkillPromptRouting = {
 	said: string,
 };
 
+/**  One skill installed under a new name: its name at the source, and the one it lands under. */
+export type SkillRename = {
+	from: string,
+	to: string,
+};
+
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
 /**  purlis's own. */
@@ -14712,6 +14785,8 @@ export type StudioSkill = {
 	 *  own budget: the chat still has it, through the index skill. Empty where every one lists it.
 	 */
 	hidden: SkillHiddenOn[],
+	/**  The label of the source it was installed from (ADR 0100, amended 2026-11-01). */
+	source_label: string | null,
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
 	/**

@@ -1441,9 +1441,7 @@ function ReposSection({
 }) {
   const { panels, pieces, piecesRefused } = state;
   const clones = panels?.repos ?? [];
-  const absent = notClonedRows(panels?.absent ?? [], clones, cloning);
-  /** A repo is cloning that the workspace does not name: it has one, on its way. */
-  const coming = absent.length > (panels?.absent ?? []).length;
+  const absent = notClonedRows(panels?.absent, clones, cloning);
   const open = (repo: string) => !folded.has(foldKey(workspace, repo));
   return (
     <Section
@@ -1537,7 +1535,7 @@ function ReposSection({
         <Pending>Reading the project…</Pending>
       ) : (
         clones.length === 0 &&
-        !coming && <p className="none ui-text-secondary">No repos in this workspace</p>
+        absent.length === 0 && <p className="none ui-text-secondary">No repos in this workspace</p>
       )}
 
       {/* Membership without a clone. There is nothing to explore in it and nothing to start

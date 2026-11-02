@@ -14,7 +14,13 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { focusWorkspace, press, theProjectsFoldersAreAccepted, untilSays } from "../acting.js";
+import {
+  focusWorkspace,
+  press,
+  textOf,
+  theProjectsFoldersAreAccepted,
+  untilSays,
+} from "../acting.js";
 import {
   type FakeGitLab,
   gitConfigFor,
@@ -108,6 +114,7 @@ const REPOS: Record<string, Served & { files: number }> = {
   "stopped-on-its-row": { way: "slowly", seconds: SLOWLY, files: 200 },
   "stopped-on-its-card": { way: "slowly", seconds: SLOWLY, files: 200 },
   "gone-silent": { way: "silently", files: 3 },
+  "silent-in-a-new-workspace": { way: "silently", files: 3 },
 };
 
 /** A project's GitLab listing of the forge's repos, in the shape the core's recording has. */
@@ -346,6 +353,10 @@ function nothingOf(plane: string, workspace: string, repo: string): void {
   });
 }
 
+/** Everything the window draws, in words. */
+const wordsOfTheWindow = (): Promise<string> =>
+  browser.execute(() => document.body.textContent ?? "");
+
 /** Words that would name a forge's CLI to the person. */
 const NAMES_A_CLI = /\b(gh|glab)\b/;
 
@@ -492,6 +503,8 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     // Its result comes once the clone has answered, on the status bar's card: read here, or it
     // would come up over the next case's.
     await untilSays('[data-chip="status/bar/notices"]', "Cloned first-repo").catch(() => undefined);
+    // The failure it stacked over before (#4394): the row's Retry took it away.
+    expect(await wordsOfTheWindow()).not.toContain("Could not clone first-repo");
     await theStatusBarsCardIsPutAway();
     const signed = forge.heard().filter((one) => one.repo === "first-repo" && one.signedIn);
     expect(signed.length).toBeGreaterThan(0);
@@ -550,10 +563,18 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     }
     // Its folder deleted by hand: the window has forgotten the clone, so the row offers it again.
     // Not before the clone has answered, or the window reads the deletion as a clone that failed.
-    await browser.waitUntil(async () => (await percentOf(cardMeterOf("long-clone"))) === null, {
-      timeout: 30_000,
-      timeoutMsg: "the landed clone's notice never stopped climbing",
-    });
+    // Its result says so. No meter says nothing: a card behind its dot draws none either.
+    await browser.waitUntil(
+      async () => {
+        if (!(await $(cardOf("long-clone")).isExisting())) await theChipsCardIsBack("long-clone");
+        return ((await textOf(cardOf("long-clone"))) ?? "").includes("Cloned 1 repo");
+      },
+      {
+        timeout: 30_000,
+        interval: 1_000,
+        timeoutMsg: "the landed clone's notice never said it had cloned",
+      },
+    );
     rmSync(landed, { recursive: true, force: true });
     await $(`${rowOf("long-repo")} button[aria-label^="Clone"]`).waitForExist({
       timeout: 60_000,
@@ -635,6 +656,30 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
       expect(said).toContain(forge.server);
       expect(said).not.toMatch(NAMES_A_CLI);
       nothingOf(plane, "silent", repo);
+    } finally {
+      rmSync(THE_RUNS_CLONE_STALL, { force: true });
+    }
+  });
+
+  it("a new workspace's clone that fails keeps its row, with Retry and Dismiss and no Remove", async () => {
+    writeFileSync(THE_RUNS_CLONE_STALL, SHORT_STALL);
+    try {
+      const repo = "silent-in-a-new-workspace";
+      await aNewWorkspaceCloning("silent-new", [repo]);
+      await $(`${rowOf(repo)} .trouble`).waitForExist({
+        timeout: 120_000,
+        timeoutMsg: "the failed clone of a repo the workspace does not name lost its row",
+      });
+      const pressable = await browser.execute((css: string) => {
+        const buttons = document.querySelectorAll(`${css} button`);
+        return [...buttons].map((one) => one.getAttribute("aria-label"));
+      }, rowOf(repo));
+      expect(pressable).toEqual([`Retry ${repo}`, `Dismiss ${repo}`]);
+      await press(rowOf(repo), `Dismiss ${repo}`);
+      await browser.waitUntil(async () => !(await $(rowOf(repo)).isExisting()), {
+        timeout: 30_000,
+        timeoutMsg: "Dismiss left the row",
+      });
     } finally {
       rmSync(THE_RUNS_CLONE_STALL, { force: true });
     }

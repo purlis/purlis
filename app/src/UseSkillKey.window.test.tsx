@@ -66,6 +66,7 @@ const SKILLS: ChatSkills = {
   skills: [
     {
       name: "deploy",
+      source_label: null,
       level: "project",
       label: "project",
       description: "Deploys.",

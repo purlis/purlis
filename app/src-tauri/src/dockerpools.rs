@@ -22,7 +22,7 @@ use crate::runnerlinks::{Machine, ToARunner};
 
 /// Why a pool is not kept here: the Docker pool runs on macOS and Linux alone.
 #[cfg(not(unix))]
-const NOT_HERE: &str = "purlis keeps Docker pools on macOS and Linux only.";
+pub(crate) const NOT_HERE: &str = "purlis keeps Docker pools on macOS and Linux only.";
 
 /// A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
 /// MiB.
