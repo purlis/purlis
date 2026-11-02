@@ -260,7 +260,7 @@ fn a_bare_repository_keeps_the_runner() {
 fn a_project_kept_under_another_id_keeps_the_runner() {
     // A project moved on the desktop, its id read again: the runner holds the old one too.
     let world = World::new();
-    let old = world.projects.join("01J9PRJCT0000000000000OLD0");
+    let old = world.projects.join("01J9PRJCT0000000000000D0D0");
     init(&old);
     commit(&old, "work.txt", "the task's work under the old id\n");
 
@@ -503,4 +503,16 @@ fn a_runner_whose_project_lost_its_own_repository_keeps_the_runner() {
         says(&missing, "no longer holds the project's own repository"),
         "{missing:?}"
     );
+}
+
+/// **What a host keeps beside its projects holds no task's work** (#4569): a transfer's scratch,
+/// which comes and goes, is not looked through.
+#[test]
+fn what_is_kept_beside_the_projects_is_not_looked_through() {
+    let world = World::new();
+    let scratch = world.projects.join(".tmpAbC123");
+    std::fs::create_dir_all(&scratch).unwrap();
+    std::fs::write(scratch.join("transfer.bundle"), "bytes\n").unwrap();
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
 }

@@ -64,7 +64,10 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
     for entry in entries {
         // What can't be read or named is said, never passed over (D-4569-22).
         match entry.map(|entry| entry.file_name().into_string()) {
-            Ok(Ok(id)) => ids.push(id),
+            // Only a project's folder: a host keeps each under its id, and what else is there
+            // (a transfer's scratch, which comes and goes) holds no work of a task.
+            Ok(Ok(id)) if a_project_id(&id) => ids.push(id),
+            Ok(Ok(_)) => {}
             Ok(Err(_)) => unread.push(
                 "a project folder on the runner has a name that is not text, so it was not looked \
                  through"
@@ -114,6 +117,8 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
             }
             let entries = match std::fs::read_dir(&dir) {
                 Ok(entries) => entries,
+                // Gone while it was looked through: nothing is there to hold.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(e) => {
                     unread.push(format!("{} could not be read: {e}", shown(&id, &rel)));
                     continue;
@@ -156,6 +161,16 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
     }
     held.sort_by(|a, b| (&a.project, &a.path).cmp(&(&b.project, &b.path)));
     (held, unread)
+}
+
+/// Whether `name` is a project's id as a host keeps its folder: a ULID, 26 of Crockford's base-32
+/// digits in upper case, the first at most `7`.
+fn a_project_id(name: &str) -> bool {
+    name.len() == 26
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b.is_ascii_uppercase() && !b"ILOU".contains(&b)))
+        && name.as_bytes()[0] <= b'7'
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
