@@ -1031,24 +1031,118 @@ pub fn remove_held(
 /// ([`Docker::conversations`]), so it is not started. A home made of its name since its container
 /// went is not its own and holds nothing of it. Refused where the home could not be read, which
 /// says nothing of it: the runner then stays as it is until a look reads it.
+///
+/// **The read runs outside the runners lock** (#4861): it may take minutes, and every runner
+/// operation of the window waits on that lock. So, once it found a conversation, the lock is
+/// taken and the runner is held only where it, and its pool's runner, still stand as they did
+/// before the read; otherwise it is refused, and the next look reads it again. **A read that
+/// failed is paced** ([`read_again_after`]): it is not tried again until its wait is over, and is
+/// refused, saying why, in the meantime.
 pub fn held_for_its_conversations(
     config_root: &Path,
     docker: &Docker,
     name: &str,
 ) -> Result<bool, Refused> {
-    let locked = runners::lock(config_root);
-    let kept = runners::named(config_root, name)?
+    let before = runners::named(config_root, name)?
         .filter(|kept| kept.draining)
         .ok_or_else(|| Refused::Other(format!("no runner {name} is draining on this machine")))?;
-    if kept.held {
+    if before.held {
         return Ok(true);
     }
-    let to = runners::runner_for(config_root, kept.pool())?;
-    if !holds_a_conversation(config_root, docker, &kept, &to.made)? {
+    let to = runners::runner_for(config_root, before.pool())?;
+    let whose = (config_root.to_path_buf(), name.to_owned());
+    if let Some(why) = conversation_reads().waiting(&whose, std::time::Instant::now()) {
+        return Err(Refused::Other(why));
+    }
+    let holds = holds_a_conversation(config_root, docker, &before, &to.made);
+    match &holds {
+        Ok(_) => conversation_reads().cleared(&whose),
+        Err(why) => {
+            conversation_reads().failed(&whose, &why.to_string(), std::time::Instant::now())
+        }
+    }
+    if !holds? {
         return Ok(false);
+    }
+    let locked = runners::lock(config_root);
+    let now = runners::named(config_root, name)?;
+    if now.as_ref().is_some_and(|now| now.held) {
+        return Ok(true);
+    }
+    let stands = now.as_ref() == Some(&before)
+        && runners::runner_for(config_root, before.pool())
+            .ok()
+            .as_ref()
+            == Some(&to);
+    if !stands {
+        return Err(Refused::Other(format!(
+            "runner {name} changed while its home was read, so it is read again at the next look"
+        )));
     }
     runners::note_locked(config_root, name, |kept| kept.held = true, &locked)?;
     Ok(true)
+}
+
+/// **How long a read of a home that failed `failures` times in a row waits before the next**
+/// (#4861): ten minutes, twice as long after each failure, and never more than four hours. The
+/// looks come every five minutes, so a Docker that cannot read a home is not asked at each.
+fn read_again_after(failures: u32) -> std::time::Duration {
+    const FIRST: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+    const MOST: std::time::Duration = std::time::Duration::from_secs(4 * 60 * 60);
+    FIRST
+        .checked_mul(1 << failures.saturating_sub(1).min(16))
+        .map_or(MOST, |wait| wait.min(MOST))
+}
+
+/// Whose read of a home is paced: this machine's config root and the runner's name.
+type Whose = (std::path::PathBuf, String);
+
+/// **The reads of homes that failed** (#4861), in memory: a restart reads each again at once.
+#[derive(Default)]
+struct ConversationReads {
+    held: std::sync::Mutex<std::collections::HashMap<Whose, (u32, std::time::Instant, String)>>,
+}
+
+impl ConversationReads {
+    fn waiting(&self, whose: &Whose, now: std::time::Instant) -> Option<String> {
+        let held = self
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (_, until, why) = held.get(whose)?;
+        let left = until
+            .checked_duration_since(now)
+            .filter(|left| !left.is_zero())?;
+        Some(format!(
+            "{why}; the home of runner {} is read again in about {} minutes",
+            whose.1,
+            left.as_secs().div_ceil(60)
+        ))
+    }
+
+    fn failed(&self, whose: &Whose, why: &str, now: std::time::Instant) {
+        let mut held = self
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let failures = held.get(whose).map_or(0, |(failures, ..)| *failures) + 1;
+        held.insert(
+            whose.clone(),
+            (failures, now + read_again_after(failures), why.to_owned()),
+        );
+    }
+
+    fn cleared(&self, whose: &Whose) {
+        self.held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(whose);
+    }
+}
+
+fn conversation_reads() -> &'static ConversationReads {
+    static READS: std::sync::OnceLock<ConversationReads> = std::sync::OnceLock::new();
+    READS.get_or_init(ConversationReads::default)
 }
 
 /// **Whether the home of `kept`, a runner whose drain began, holds a chat's conversation**

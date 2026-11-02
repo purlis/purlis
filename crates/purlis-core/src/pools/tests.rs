@@ -3928,6 +3928,68 @@ fn a_home_that_could_not_be_read_leaves_its_runner_as_it_was() {
     assert!(kept.draining && !kept.held, "{kept:?}");
 }
 
+/// **A runner discarded while its home was read is not said to be held** (#4861): the home is
+/// read outside the runners lock, so what changed meanwhile is looked at again under it, and a
+/// runner that no longer stands as it did is left to the next look.
+#[test]
+fn a_runner_discarded_while_its_home_was_read_is_not_said_to_be_held() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 2);
+    // Discard pressed during the read: the runner's row is gone once the read ends.
+    let file = |root: &Path| crate::machine::dir(root).join(crate::machine::RUNNERS_FILE);
+    let discarded = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(crate::machine::dir(discarded.path())).unwrap();
+    std::fs::copy(file(config.path()), file(discarded.path())).unwrap();
+    runners::forget(discarded.path(), "first").unwrap();
+    fake.set(
+        "during-run",
+        &format!(
+            "cat '{}' > '{}'\n",
+            file(discarded.path()).display(),
+            file(config.path()).display()
+        ),
+    );
+
+    let refused = held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap_err();
+
+    assert!(refused.to_string().contains("changed"), "{refused}");
+    assert!(runners::named(config.path(), "first").unwrap().is_none());
+}
+
+/// **A home whose read failed is not read again at once** (#4861): each failure waits longer
+/// before the next, so a Docker that cannot read it is not asked at every look.
+#[test]
+fn a_home_whose_read_failed_is_not_read_again_at_the_next_look() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 2);
+    fake.set("conversations", "");
+    held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap_err();
+    fake.set("conversations", "conversations 2 2 0\n");
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let refused = held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap_err();
+
+    assert!(refused.to_string().contains("read again"), "{refused}");
+    let log = fake.file("log");
+    assert!(!log.contains("run --rm"), "{log}");
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(kept.draining && !kept.held, "{kept:?}");
+}
+
+/// **A read that keeps failing waits twice as long each time**, from ten minutes to four hours.
+#[test]
+fn a_read_that_keeps_failing_waits_twice_as_long_each_time_up_to_four_hours() {
+    use std::time::Duration;
+    let minutes = |n: u64| Duration::from_secs(n * 60);
+    assert_eq!(read_again_after(1), minutes(10));
+    assert_eq!(read_again_after(2), minutes(20));
+    assert_eq!(read_again_after(5), minutes(160));
+    assert_eq!(read_again_after(6), minutes(240));
+    assert_eq!(read_again_after(u32::MAX), minutes(240));
+}
+
 /// **A home made of its name since its container went holds nothing of it** (#4167), so it is
 /// not read for its conversations.
 #[test]

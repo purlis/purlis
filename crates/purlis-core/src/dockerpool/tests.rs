@@ -1042,7 +1042,8 @@ impl FakeDocker {
              prev=$a; done; \
              exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$1 $2\" in\n  \
              'run --rm') [ -f '{copy_fails}' ] && \
-             {{ echo 'cp: cannot open' >&2; exit 1; }}; cat '{conversations}' 2>/dev/null; true ;;\n  \
+             {{ echo 'cp: cannot open' >&2; exit 1; }}; [ -f '{during_run}' ] && sh '{during_run}'; \
+             cat '{conversations}' 2>/dev/null; true ;;\n  \
              'run '*) [ -f '{run_fails}' ] && \
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') if [ -f '{inspect}-once' ]; then cat '{inspect}-once'; rm '{inspect}-once'; \
@@ -1076,6 +1077,7 @@ impl FakeDocker {
             containers = at("containers"),
             holds = at("holds"),
             conversations = at("conversations"),
+            during_run = at("during-run"),
             probe = PROBE_ID,
         );
         stand_in::program(dir.path(), "docker", &script);
