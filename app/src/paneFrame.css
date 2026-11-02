@@ -285,11 +285,14 @@
   padding-inline: var(--space-6);
 }
 
-/* **In a narrow pane the line keeps the room it had** (#3332): under about 24rem the breadcrumb's
+/* **In a narrow pane the line keeps the room it had** (#3332): under about 28rem the breadcrumb's
    line cannot hold the longest state word with anything else (`App.css`, `.pane-crumbs`), so
    the header keeps its former inset (space.5 at its start and space.3 at its end: 12 and 6, or 8
-   and 4 in compact), and the state word its room. */
-@container (max-width: 24rem) {
+   and 4 in compact), and the state word its room. It was 24rem until the bell (#4754) took its
+   fixed slot in the header, two controls wide (4rem), from the line: a pane of two in the
+   narrowest window, about 26rem, with five controls, cut the state word by a few pixels. A
+   container query's condition cannot read a token, so the length is written here. */
+@container (max-width: 28rem) {
   .pane-head {
     padding-inline: var(--space-5) var(--space-3);
   }
