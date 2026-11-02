@@ -806,6 +806,9 @@ pub(crate) mod pretend {
         /// The sessions whose program ended with a runner gone for good
         /// ([`Pretend::program_ends_with_its_runner`]).
         lost_with_runner: Mutex<Vec<u32>>,
+        /// The sessions reconnecting while the link to their runner is down
+        /// ([`Pretend::link_down`], #2496).
+        reconnecting: Mutex<Vec<u32>>,
         /// The sessions whose program ended with their host ([`Pretend::program_ends_with_its_host`]).
         lost: Mutex<Vec<u32>>,
         /// The chats left running from before this window, and the plan each ran in
@@ -1027,6 +1030,12 @@ pub(crate) mod pretend {
             self.program_ends(id, Exit::Signal("Hangup".to_owned()));
         }
 
+        /// The link to the runner sessions `ids` run on is down: they are reconnecting (#2496),
+        /// their programs still running there.
+        pub fn link_down(&self, ids: &[u32]) {
+            lock(&self.seen.reconnecting).extend_from_slice(ids);
+        }
+
         /// Session `id`'s program ends with a pool's runner gone for good (#4350).
         pub fn program_ends_with_its_runner(&self, id: u32) {
             lock(&self.seen.lost_with_runner).push(id);
@@ -1220,6 +1229,9 @@ pub(crate) mod pretend {
         }
         fn lost_with_its_runner(&self, id: u32) -> bool {
             lock(&self.seen.lost_with_runner).contains(&id)
+        }
+        fn reconnecting(&self) -> Vec<u32> {
+            lock(&self.seen.reconnecting).clone()
         }
         fn running(&self) -> Vec<u32> {
             lock(&self.seen.running).clone()
