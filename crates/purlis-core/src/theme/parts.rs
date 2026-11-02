@@ -2402,9 +2402,10 @@ fn hex<'a>(theme: &'a ResolvedTheme, token: &str) -> Option<&'a str> {
 }
 
 /// **The family's grounds as `theme` draws them**, never none: each opaque one as it is, its
-/// alpha read as drawn, and a wash laid over each opaque one, since a wash is drawn over what is
-/// under it. With no opaque ground, each is measured as its colour drawn opaque; with no ground
-/// purlis can read, on black and on white, the strictest.
+/// alpha read as drawn, and a wash laid over each ground the window draws it on
+/// ([`WASH_LAID_ON`], #4648), or over each opaque one the family names where nothing says. With
+/// no opaque ground, each is measured as its colour drawn opaque; with no ground purlis can read,
+/// on black and on white, the strictest.
 fn grounds(theme: &ResolvedTheme, family: &Family) -> Vec<String> {
     laid(theme, family.grounds)
 }
@@ -2466,10 +2467,29 @@ fn laid(theme: &ResolvedTheme, tokens: &[&str]) -> Vec<String> {
         };
     }
     let mut drawn = under.clone();
-    for one in given.iter().filter(|one| !is_opaque(one)) {
-        drawn.extend(under.iter().map(|below| onto(one, below)));
+    for (token, one) in tokens
+        .iter()
+        .filter_map(|token| Some((*token, hex(theme, token)?)))
+        .filter(|(_, one)| !is_opaque(one))
+    {
+        let on = washed(theme, token);
+        let on = if on.is_empty() { &under } else { &on };
+        drawn.extend(on.iter().map(|below| onto(one, below)));
     }
     drawn
+}
+
+/// **The opaque grounds the window draws the see-through `token` on** ([`WASH_LAID_ON`]), as
+/// `theme` draws them; none where nothing says, or where `theme` draws none of them opaque.
+fn washed(theme: &ResolvedTheme, token: &str) -> Vec<String> {
+    WASH_LAID_ON
+        .iter()
+        .filter(|(wash, _)| *wash == token)
+        .flat_map(|(_, under)| under.iter())
+        .filter_map(|below| hex(theme, below))
+        .filter(|below| is_opaque(below))
+        .map(solid)
+        .collect()
 }
 
 /// The lowest contrast `front` has on `fill` over each ground `on` ([`grounds`]).

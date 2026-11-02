@@ -122,11 +122,10 @@ fn a_surface_keeps_a_fill_only_an_undrawn_look_s_words_are_lost_on() {
 
 #[test]
 fn a_field_s_error_is_read_only_where_a_field_that_can_refuse_stands() {
-    // A look's first broken floor is the one it reports, and its help is read before its error, on
-    // every ground a field stands on and each with a wash over it: its quiet words miss 4.5:1 on
-    // danger's wash over an active tab. The help here reads on all of them, so the error is read.
+    // Its help, left as it is, reads on every ground a field stands on (#4648), so what falls is
+    // the part the theme sets.
     let field_fell = |part: &str, colour: &str| -> Vec<String> {
-        let parts = json!({ "field.help.text": "text.primary", part: colour });
+        let parts = json!({ part: colour });
         fallen(&shaped(json!({}), parts))
             .into_iter()
             .filter(|one| one.part.starts_with("field."))
