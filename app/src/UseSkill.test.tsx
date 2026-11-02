@@ -330,8 +330,8 @@ describe("the Skills chip on a chat's pane", () => {
   const QUICK = { fell_back: false, said: "Its last prompt took 4 ms." };
 
   /** The window's sets of chats 4 and 5 and the chip of 4, each read asked of a core that answers
-   *  `prompt()`; the reads, in order. Studio off where `on` says so. */
-  function chipReadBy(prompt: () => ChatSkills, on = true) {
+   *  `prompt()`; the reads, in order. */
+  function chipReadBy(prompt: () => ChatSkills) {
     const reads: number[] = [];
     mockIPC(
       (cmd, args) => {
@@ -345,7 +345,7 @@ describe("the Skills chip on a chat's pane", () => {
       { shouldMockEvents: true },
     );
     function Window() {
-      const [sets] = useChatSkillSets("p", [4, 5], on);
+      const [sets] = useChatSkillSets("p", [4, 5], true);
       return (
         <ChatSkillSetsHere.Provider value={sets}>
           <SkillsChip plane="p" session={4} />
@@ -384,10 +384,23 @@ describe("the Skills chip on a chat's pane", () => {
     expect(reads).toHaveLength(2);
   });
 
-  it("reads nothing for a telling while the Skill studio is off (#4445)", async () => {
-    const reads = chipReadBy(() => routedChat(SLOW), false);
+  it("reads nothing for a telling once the Skill studio is off (#4445)", async () => {
+    const reads: number[] = [];
+    mockIPC(
+      (cmd, args) => {
+        if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
+        reads.push((args as { session: number }).session);
+        return routedChat(QUICK);
+      },
+      { shouldMockEvents: true },
+    );
+    const { rerender } = renderHook(({ on }) => useChatSkillSets("p", [4], on), {
+      initialProps: { on: true },
+    });
+    await waitFor(() => expect(reads).toEqual([4]));
+    rerender({ on: false });
     await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
-    expect(reads).toEqual([]);
+    expect(reads).toEqual([4]);
   });
 
   it("shows the chat's skills at a glance and opens the Skills view on them, not Use skill… (S8)", async () => {

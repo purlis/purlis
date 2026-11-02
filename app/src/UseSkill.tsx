@@ -327,8 +327,8 @@ type HeldSet = Omit<ChatSkillsSaid, "changed"> & { budget: SkillBudget };
  * Where two reads of one chat land out of order, the later read's answer is kept.
  *
  * Each is the one `chat_skills` answer the chat's budget always came from, which says too how its
- * router did at its start and what it started without, both held in the core from its start: no
- * read is added to a chat's open. What changed since it started is `changed`, the window's own
+ * router did at its start and what it started without, both held in the core from its start, and
+ * on its latest prompt, held there as prompts go by: no read is added to a chat's open. What changed since it started is `changed`, the window's own
  * answer from `chats_plane_updated` (`usePlaneUpdated`), which its tab's mark reads too.
  */
 export function useChatSkillSets(

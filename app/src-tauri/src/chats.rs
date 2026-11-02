@@ -1406,7 +1406,8 @@ impl Chats {
     }
 
     /// Calls `tell` with the number of a chat as its latest prompt changes whether it fell back
-    /// (#4445): what its tab and the studio then read again. Never under a lock of these chats.
+    /// (#4445): what its tab and the studio then read again. Never with the open chats held, so
+    /// a read that hears it can answer.
     pub fn when_a_prompt_s_fallback_moves(&self, tell: PromptFallbackMoved) {
         *lock(&self.prompt_fallback_moved) = Some(tell);
     }

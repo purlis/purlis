@@ -385,8 +385,11 @@ describe("the Routing page (#3692)", () => {
     const [quick, ...others] = RELEVANCE.chats;
     const said = "Its last prompt went on with no pointer.";
     let prompt: { fell_back: boolean; said: string } | null = null;
+    let studioReads = 0;
+    const reads = () => studioReads;
     mockIPC(
       (cmd) => {
+        if (cmd === "skill_studio") studioReads += 1;
         if (cmd === "skill_studio")
           return studio([], {
             router: {
@@ -403,8 +406,12 @@ describe("the Routing page (#3692)", () => {
     renderStudio(inWorkspace("ops"), "routing");
     const row = await screen.findByTestId("routed-chat-3");
     expect(row).not.toHaveTextContent("Last prompt fell back");
+    const before = reads();
 
+    // A chat this page does not list reads nothing; this one reads it again.
     prompt = { fell_back: true, said };
+    await act(() => emit("chat-prompt-routing", { plane: PLANE, session: 99 }));
+    expect(reads()).toBe(before);
     await act(() => emit("chat-prompt-routing", { plane: PLANE, session: 3 }));
     await waitFor(() =>
       expect(screen.getByTestId("routed-chat-3")).toHaveTextContent("Last prompt fell back"),

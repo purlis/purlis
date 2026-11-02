@@ -12,10 +12,10 @@ The event names the chat and says nothing of how it did. The window reads the ro
 
 - **The Skills chip on a chat's pane** reads that chat's set again, and says a prompt's fallback as it says a start's, with the need's title. It is the warning look the chip already had.
 - **The Skills view** reads again where the chat is the one in front.
-- **The Skill studio** reads again, for its Routing page.
+- **The Skill studio** reads again where its Routing page lists the chat.
 
 A window with the studio off listens to nothing.
 
 ## What it leaves
 
-The window is still not told of a prompt that was answered, so the timing beside an answered prompt is the one of its last read. A chat's timing is not worth a read per prompt.
+The window is still not told of a prompt that was answered, so the timing beside an answered prompt is the one of its last read. Nor is it told of a fallback that follows a fallback, so a prompt that fell back for a new reason keeps the old reason's sentence until the next read. Neither changes the mark, and neither is worth a read per prompt.
