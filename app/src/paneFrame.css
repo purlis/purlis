@@ -301,13 +301,13 @@
 /* **The bell** (`PaneBell`, #4754): a fixed slot, as wide with no count as with two digits, so
    nothing beside it moves when a notice arrives. The count is neutral, and in the trouble colour
    while one note is trouble; told by its words too, never the colour alone. */
-.pane-doing > .pane-bell {
+.pane-actions > .pane-bell {
   justify-content: flex-start;
   min-inline-size: calc(var(--size-control) * 2);
   font-variant-numeric: tabular-nums;
 }
 
-.pane-doing > .pane-bell[data-trouble] [data-part="label"] {
+.pane-actions > .pane-bell[data-trouble] [data-part="label"] {
   color: var(--danger-text);
   font-weight: var(--font-weight-strong);
 }

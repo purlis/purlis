@@ -269,8 +269,8 @@ export function PaneHead({ doing, children }: { doing: ReactNode; children?: Rea
 }
 
 /**
- * **A pane's actions** (#3142, #3147): split it side by side, split it stacked, and close it, as
- * one cluster in its own place, the top right of the pane (`.pane-actions`, `paneFrame.css`).
+ * **A pane's actions** (#3142, #3147): the bell of a chat's pane (#4754), then split it side by
+ * side, split it stacked, and close it, as one cluster in its own place, the top right of the pane (`.pane-actions`, `paneFrame.css`).
  * A chat's pane draws it at the end of its header; a view's pane draws the same component, so
  * every pane's actions look and behave as one. What it offers is `PaneDoing`'s: the catalogue's
  * own rows, and the window's rule for when they are drawn.
@@ -278,6 +278,11 @@ export function PaneHead({ doing, children }: { doing: ReactNode; children?: Rea
 export function PaneActions(props: Parameters<typeof PaneDoing>[0]) {
   return (
     <div className="pane-actions">
+      {/* **The bell, in a fixed slot before split and close** (#4754): drawn in a chat's pane,
+          with its count or none, and always, where the controls after it are drawn only under
+          the pointer or the keyboard (`.pane-doing`, `App.css`): they keep their room hidden,
+          so nothing beside the bell moves when a notice arrives or they are drawn. */}
+      <PaneBell />
       <PaneDoing {...props} />
     </div>
   );
@@ -943,7 +948,6 @@ export function PaneDoing({
     "pane.split.down",
     ...(task && !minimise ? [] : ["pane.close"]),
   ];
-  const split = rows.indexOf("pane.split.right");
   return (
     <div className="pane-doing">
       {chat !== undefined && (
@@ -953,11 +957,7 @@ export function PaneDoing({
           onPress={(offer) => onPaneDoes(pane, offer)}
         />
       )}
-      {rows.slice(0, split).map(draw)}
-      {/* **The bell, in a fixed slot before split and close** (#4754): drawn in a chat's pane,
-          with its count or none, so nothing beside it moves when a notice arrives. */}
-      <PaneBell />
-      {rows.slice(split).map(draw)}
+      {rows.map(draw)}
     </div>
   );
   function draw(id: string) {

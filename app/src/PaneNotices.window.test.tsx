@@ -192,16 +192,20 @@ describe("a pane's notices, minimised (the default)", () => {
     expect([...top.children].map((one) => one.getAttribute("data-scope") ?? one.className)).toEqual(
       ["pane-head", "notice-row"],
     );
-    const doing = [...frame().querySelectorAll(".pane-doing > button")].map(
-      (one) => one.getAttribute("data-way") ?? one.getAttribute("aria-label"),
+    // A fixed slot, right before the splits and the close, and outside the cluster of them that
+    // is drawn only under the pointer or the keyboard (`.pane-doing`, `App.css`): the bell and
+    // its count are always on screen.
+    // (Its polite announcement is an unseen line beside it, `.sr-only`.)
+    const actions = [...(frame().querySelector(".pane-actions")?.children ?? [])].filter(
+      (one) => !one.classList.contains("sr-only"),
     );
-    // A fixed slot, right before the splits and the close.
-    expect(doing.indexOf("bell")).toBeGreaterThanOrEqual(0);
-    expect(doing.slice(doing.indexOf("bell") + 1, doing.indexOf("bell") + 3)).toEqual([
-      "Split right",
-      "Split down",
-    ]);
-    expect(doing).toHaveLength(doing.indexOf("bell") + 4);
+    expect(actions[0]).toBe(bell());
+    expect(bell().closest(".pane-doing")).toBeNull();
+    expect(actions[1]).toHaveClass("pane-doing");
+    const doing = [...actions[1].querySelectorAll("button")].map((one) =>
+      one.getAttribute("aria-label"),
+    );
+    expect(doing.slice(0, 2)).toEqual(["Split right", "Split down"]);
   });
 
   it("keeps the bell's slot with no count when there is nothing, and draws no band", async () => {
@@ -226,7 +230,7 @@ describe("a pane's notices, minimised (the default)", () => {
     expect(seen()).toEqual(["Remove workspace"]);
     expect(bell()).toHaveAttribute("aria-expanded", "false");
     expect(keep).toHaveFocus();
-    const said = frame().querySelectorAll('.pane-doing [aria-live="polite"]');
+    const said = frame().querySelectorAll('.pane-actions > [aria-live="polite"]');
     expect([...said].map((one) => one.textContent)).toContain("1 notice, 1 in trouble, 1 asking");
   });
 });

@@ -292,15 +292,15 @@ describe("the pane's rules", () => {
   });
 
   it("keeps the bell a fixed slot, its count in tabular figures (#4754)", () => {
-    const bell = rule("\\.pane-doing > \\.pane-bell");
+    const bell = rule("\\.pane-actions > \\.pane-bell");
     expect(bell).toMatch(/min-inline-size:\s*calc\(var\(--size-control\) \* 2\)/);
     expect(bell).toMatch(/font-variant-numeric:\s*tabular-nums/);
   });
 
   it("draws the bell's count in the trouble colour while one note is trouble (#4754)", () => {
-    expect(rule('\\.pane-doing > \\.pane-bell\\[data-trouble\\] \\[data-part="label"\\]')).toMatch(
-      /color:\s*var\(--danger-text\)/,
-    );
+    expect(
+      rule('\\.pane-actions > \\.pane-bell\\[data-trouble\\] \\[data-part="label"\\]'),
+    ).toMatch(/color:\s*var\(--danger-text\)/);
   });
 
   it("keeps the header one row that never gives way", () => {
