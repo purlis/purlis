@@ -232,3 +232,48 @@ fn a_flag_of_a_run_is_refused_without_the_run() {
     let out = p.run(&["skill", "grade", "deploy", "--yes"]);
     assert!(!out.status.success());
 }
+
+/// #4922: the plan at a terminal names a file it could not check, as the window's plan does, and
+/// a plan with none says nothing of it.
+#[test]
+fn skill_grade_names_an_eval_file_that_is_not_text_and_says_nothing_of_one_that_is() {
+    let p = Project::new();
+    let root = p.at.join("plane");
+    std::fs::create_dir_all(root.join("skills/deploy/evals/files")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/files/sample1.pdf"),
+        b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("skills/deploy/evals/files/notes.txt"), "plain").unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [
+            {"id": 1, "prompt": "ship v2", "files": ["evals/files/sample1.pdf"], "expectations": ["It ships"]},
+            {"id": 2, "prompt": "ship v3", "files": ["evals/files/notes.txt"], "expectations": ["It ships"]}
+        ]}"#,
+    )
+    .unwrap();
+    let out = p.run(&["skill", "grade", "deploy"]);
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let line = |id: &str| {
+        text.lines()
+            .find(|line| line.contains(&format!("Outcome eval {id}. ")))
+            .unwrap_or_else(|| panic!("no line for eval {id}: {text}"))
+            .to_owned()
+    };
+    assert!(
+        line("1").contains(
+            "evals/files/sample1.pdf isn't text: purlis couldn't check it for characters no \
+             reader would see, and a judge may not be able to read it"
+        ),
+        "{text}"
+    );
+    assert!(!line("2").contains("isn't text"), "{text}");
+    assert!(!text.contains("aren't text"), "{text}");
+}
