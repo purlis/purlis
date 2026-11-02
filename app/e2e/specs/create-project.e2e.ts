@@ -90,9 +90,14 @@ async function nameIt(name: string): Promise<string> {
   await typeInto(NAME_BOX, name);
   theNextFolderPickAnswers(projects);
   await press(WELCOME, "Choose a folder…");
+  // The pick is waited on first: a place picked by a test before is remembered, so the page can
+  // say the folder before this pick is answered (#2957).
+  await browser.waitUntil(async () => !anAnswerIsWaiting(), {
+    timeout: 30_000,
+    timeoutMsg: "the folder pick was never asked",
+  });
   const folder = join(projects, name);
   await untilSays(WELCOME, folder);
-  expect(anAnswerIsWaiting()).toBe(false);
   return folder;
 }
 
