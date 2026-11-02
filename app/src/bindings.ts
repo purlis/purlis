@@ -1275,9 +1275,10 @@ export const commands = {
 	resizeSession: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("resize_session", { plane, session, columns, rows })),
 	/**
 	 *  Opens a view of a session for a pane that is now on screen: the channel is sent the screen
-	 *  as it already is, and then the session's output. Answers with the id that closes the view.
+	 *  as it already is, and then the session's output, each piece the bytes it is (#4745).
+	 *  Answers with the id that closes the view.
 	 */
-	watchSession: (plane: PlaneId, session: number, output: Channel<string>) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output })),
+	watchSession: (plane: PlaneId, session: number, output: Channel<ArrayBuffer>) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output })),
 	/**  Closes a view, for a pane that has gone off screen. The session keeps running. */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
 	/**
