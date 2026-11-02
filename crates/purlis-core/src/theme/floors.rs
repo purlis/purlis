@@ -609,8 +609,7 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
                 .collect();
             if !turned.is_empty() {
                 floors.extend(failing.iter().map(|failure| failure.floor));
-                drawn.tint.leave(&turned);
-                untinted.extend(turned);
+                untinted.extend(drawn.tint.leave(&turned));
                 continue;
             }
         }
@@ -667,8 +666,7 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
             if tinted.is_empty() {
                 break;
             }
-            drawn.tint.leave(&tinted);
-            untinted.extend(tinted);
+            untinted.extend(drawn.tint.leave(&tinted));
             continue;
         }
         for (token, base) in &following {

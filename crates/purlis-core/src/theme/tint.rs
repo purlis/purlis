@@ -166,10 +166,14 @@ impl Tint {
     /// The recipe without `tokens`: a workspace's colour leaves them as the theme draws them. The
     /// accent's words go where the accent goes (#3100), so a chosen item's are never turned away
     /// from the accent beside them.
-    pub(super) fn leave(&mut self, tokens: &[&str]) {
+    /// What it left, the accent's words among them, for the Notice to name.
+    pub(super) fn leave(&mut self, tokens: &[&str]) -> Vec<&'static str> {
         let accent_left = tokens.contains(&"accent.base");
         let left = |token: &str| tokens.contains(&token) || (accent_left && token == ACCENT_WORDS);
-        self.tokens.retain(|token| !left(token));
+        let (gone, kept): (Vec<_>, Vec<_>) =
+            self.tokens.iter().copied().partition(|token| left(token));
+        self.tokens = kept;
+        gone
     }
 
     /// The hue a workspace's colour gives in this theme: a [`PALETTE`] name's hue here, or the

@@ -462,7 +462,7 @@ fn a_save_whose_tint_would_break_a_floor_is_held_under_its_own_recipe() {
     assert_eq!(drawn_with(&places, "dim").held, None);
     put(&places.project(), "dim", &dim(true));
     let held = drawn_with(&places, "dim").held.expect("held");
-    assert_eq!(held.untinted, ["accent.base"]);
+    assert_eq!(held.untinted, ["accent.base", "accent.text"]);
 }
 
 #[test]

@@ -8,7 +8,7 @@
  * its baseline (`docs/component-stories.md`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { ArrowUpCircle, Bell, Hand, Info, OctagonX } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
@@ -92,6 +92,32 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+/**
+ * **An accent set over Purlis, and not its words** (#3100): `accent.text` follows the accent the
+ * engine is given, so the pill's words and icon are the person's colour, and `accent.surface`,
+ * which does not follow, stays Purlis's. The two tokens are set here as the engine resolves them;
+ * no story picks a theme of its own.
+ */
+export const AnAccentOverPurlis: Story = {
+  render: (_, { globals }) => {
+    const accent = String(globals.appearance).startsWith("dark") ? "#5eead4" : "#0f5f58";
+    const drawn = {
+      "--accent-base": accent,
+      "--accent-text": accent,
+      display: "flex",
+      padding: "var(--space-3)",
+      background: "var(--surface-deep)",
+    } as CSSProperties;
+    return (
+      <div style={drawn}>
+        <StatusItem variant="accent" icon={<ArrowUpCircle aria-hidden="true" />}>
+          0.4.2-dev.1037
+        </StatusItem>
+      </div>
+    );
+  },
+};
 
 /**
  * Every pill is 24px tall with full corners, one Tab stop each; Enter and Space press it. An
