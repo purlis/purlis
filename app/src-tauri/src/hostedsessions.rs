@@ -4631,6 +4631,8 @@ impl SessionHost for HostedSessions {
 
     /// [`Self::left_running`], `None` where the host never said.
     fn left_known(&self, number: u32) -> Option<bool> {
+        // Asked first, so a host whose runner is on its way back is marked as not read.
+        self.left_running(number);
         // It answers once, in the hold: a link that holds nothing, or a host that never said, says
         // nothing of what it runs.
         let said = self.link().is_ok()
