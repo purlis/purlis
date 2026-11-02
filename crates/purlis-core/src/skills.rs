@@ -168,7 +168,7 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 pub const SHIPPED: [&str; 12] = [
     "purlis-add-curation-action",
     "purlis-browser",
-    "purlis-building-purlis-ui",
+    "purlis-building-ui",
     "purlis-compact",
     "purlis-handoff",
     "purlis-persona",

@@ -187,7 +187,7 @@ pub fn leaf_name(name: &str) -> &str {
 /// it reads as now where it was recorded by an older one (`purlis:secrets`, [`Reference::parse`]).
 pub fn run_name(name: &str) -> std::borrow::Cow<'_, str> {
     match Reference::parse(name) {
-        Some(Reference::BuiltIn(own)) if name.contains(':') => own.into(),
+        Some(Reference::BuiltIn(own)) => own.into(),
         _ => leaf_name(name).into(),
     }
 }
