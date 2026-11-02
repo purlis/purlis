@@ -46,13 +46,15 @@ fn in_a_docker_pool() {
         std::fs::write(folder.join("workspace.md"), format!("# {workspace}\n")).expect("written");
     }
     // The profile this machine starts its chats on is its own, and never a committed file.
-    let ignores = root.join(".gitignore");
-    let ignored = std::fs::read_to_string(&ignores).unwrap_or_default();
-    std::fs::write(
-        &ignores,
-        format!("{ignored}/{}\n", purlis_core::profiles::LOCAL_FILE),
-    )
-    .expect("its ignores");
+    {
+        use std::io::Write as _;
+        let mut ignores = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(root.join(".gitignore"))
+            .expect("its ignores");
+        writeln!(ignores, "/{}", purlis_core::profiles::LOCAL_FILE).expect("its ignores");
+    }
     super::git(&root, &["add", "workspaces", ".gitignore"]);
     super::git(
         &root,
