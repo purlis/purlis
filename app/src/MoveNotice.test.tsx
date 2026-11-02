@@ -33,6 +33,7 @@ const waiting = (kind = "claude"): ChatMove => ({
   to: "builds",
   stage: "signing-in",
   why: null,
+  limit: null,
   with: [],
   sign_in: {
     profile: "work",
@@ -377,16 +378,6 @@ describe("a move waiting on its profile's sign-in", () => {
 });
 
 describe("a move refused by a pool's limit (#4313)", () => {
-  const WHY = "it needs 150 MiB, over this pool's limit of 128 MiB";
-  const refusedMove: ChatMove = {
-    session: 3,
-    from: null,
-    to: "builds",
-    stage: "failed",
-    why: WHY,
-    with: [],
-    sign_in: null,
-  };
   const OFFER = {
     pool: "builds",
     hits: [
@@ -400,10 +391,20 @@ describe("a move refused by a pool's limit (#4313)", () => {
       },
     ],
   };
+  const WHY = "it needs 150 MiB, over this pool's limit of 128 MiB";
+  const refusedMove: ChatMove = {
+    session: 3,
+    from: null,
+    to: "builds",
+    stage: "failed",
+    why: WHY,
+    limit: OFFER,
+    with: [],
+    sign_in: null,
+  };
   beforeEach(() => {
     mockIPC((cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-      if (cmd === "pool_limit_offer_for_move") return OFFER;
       if (cmd === "pool_limits") return { groups: [], advanced: [] };
       return null;
     });
@@ -433,7 +434,6 @@ describe("a move refused by a pool's limit (#4313)", () => {
   it("keeps the form and doesn't move where the save was refused", async () => {
     mockIPC((cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-      if (cmd === "pool_limit_offer_for_move") return OFFER;
       if (cmd === "pool_limit_set") throw "there is no pool named builds on this machine";
       if (cmd === "pool_limits") return { groups: [], advanced: [] };
       return null;
@@ -450,7 +450,6 @@ describe("a move refused by a pool's limit (#4313)", () => {
     let saved: (() => void) | undefined;
     mockIPC((cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-      if (cmd === "pool_limit_offer_for_move") return OFFER;
       if (cmd === "pool_limit_set")
         return new Promise<null>((done) => {
           saved = () => done(null);
@@ -468,23 +467,22 @@ describe("a move refused by a pool's limit (#4313)", () => {
     expect(asked.some((one) => one.cmd === "move_chat")).toBe(false);
   });
 
-  it("offers nothing on any other refusal, and asks of the pool a move back here leaves", async () => {
-    mockIPC((cmd, args) => {
-      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-      return null;
-    });
+  it("offers nothing on a refusal that came with no limit, whatever its words say", async () => {
+    act(() => heardMove(PLANE, { ...refusedMove, limit: null }));
     render(<MoveNotice plane={PLANE} session={3} />);
-    await waitFor(() =>
-      expect(asked.some((one) => one.cmd === "pool_limit_offer_for_move")).toBe(true),
-    );
+    expect(await screen.findByText(/it needs 150 MiB/)).toBeTruthy();
     expect(screen.queryByRole("textbox")).toBeNull();
-    cleanup();
-    asked.length = 0;
-    // A move back here is asked of the pool it is leaving (#4397).
-    act(() => heardMove(PLANE, { ...refusedMove, to: null, from: "builds" }));
+    expect(asked).toEqual([]);
+  });
+
+  it("saves to the pool the refusal named, on a move back here too (#4397)", async () => {
+    act(() => heardMove(PLANE, { ...refusedMove, to: null, from: "builds", limit: OFFER }));
+    const user = userEvent.setup();
     render(<MoveNotice plane={PLANE} session={3} />);
-    await waitFor(() =>
-      expect(asked.some((one) => one.cmd === "pool_limit_offer_for_move")).toBe(true),
-    );
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and move" }));
+    await waitFor(() => expect(asked.some((one) => one.cmd === "move_chat")).toBe(true));
+    expect(asked.find((one) => one.cmd === "pool_limit_set")?.args).toMatchObject({
+      pool: "builds",
+    });
   });
 });

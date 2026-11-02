@@ -3,7 +3,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  commands,
   type ClusterPoolKey,
   type PoolAdding,
   type PoolLimitOffer,
@@ -473,10 +472,9 @@ function AddClusterPool() {
     });
     setBusy(undefined);
     if (refused === undefined) return;
-    setTrouble(refused);
-    // Out of the wait for its runner, what to raise it to: asked of the core (spec #4275).
-    const offer = await commands.poolLimitOfferForMove(name.trim(), refused).catch(() => null);
-    setLimitOffer(offer ?? undefined);
+    setTrouble(refused.words);
+    // Out of the wait for its runner, what to raise it to came with the refusal (spec #4275).
+    setLimitOffer(refused.limit ?? undefined);
   };
 
   const main =

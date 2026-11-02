@@ -44,6 +44,7 @@ import {
   type FinishedTask,
   type OpenChat,
   type PlaneId,
+  type LimitRefused,
   type PoolLimitOffer,
   type Refused,
   type Sidebar as SidebarModel,
@@ -3472,7 +3473,7 @@ export const PlaneView = memo(function PlaneView({
       newBranch: boolean,
       filedIn?: string,
       withoutSandbox: WithoutSandbox | null = null,
-    ): Promise<string | undefined> => {
+    ): Promise<LimitRefused | undefined> => {
       // A tab asked for in one directory starts there; everything else starts where the
       // explorer's pick says (charter-app#174).
       const cwd = ("in" in where ? where.in : undefined) ?? startIn;
@@ -3501,7 +3502,10 @@ export const PlaneView = memo(function PlaneView({
           STARTING_SIZE.columns,
           STARTING_SIZE.rows,
         )
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+        .catch((err: unknown) => ({
+          status: "error" as const,
+          error: { words: String(err), limit: null },
+        }));
       if (started.status === "error") return started.error;
       const session = started.data.session;
       // `?? []`, as the label's `?? null` below: an older core, or a stand-in, sends none.
@@ -3558,7 +3562,7 @@ export const PlaneView = memo(function PlaneView({
       startLeft.current = false;
       const thisStart = ++startRun.current;
       setStarting(true);
-      const refused = await startOn(
+      const started = await startOn(
         picking.where,
         kind,
         profile,
@@ -3574,19 +3578,11 @@ export const PlaneView = memo(function PlaneView({
         setStarting(false);
       });
       if (startRun.current !== thisStart || startLeft.current) return;
-      if (refused !== undefined) {
+      if (started !== undefined) {
         // In the picker, not behind it: the operator is still choosing, and a refusal they
         // cannot see beside the rows is one they cannot act on.
-        // Over a pool's limit, what to raise it to: asked of the core, as the sign-in below is.
-        // Said together, so a form on screen isn't taken down and drawn again between them.
-        const offer = await commands
-          .poolLimitOffer(
-            profile,
-            refused,
-            root ?? null,
-            ("in" in picking.where ? picking.where.in : undefined) ?? startIn ?? null,
-          )
-          .catch(() => null);
+        // Over a pool's limit, what to raise it to came with the refusal, as data.
+        const { words: refused, limit: offer } = started;
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
         setPickerLimit(offer === null ? undefined : { offer, refused, profile });
@@ -3611,7 +3607,7 @@ export const PlaneView = memo(function PlaneView({
       setPickerTrouble(undefined);
       setPickerSignIn(undefined);
     },
-    [picking, plane, root, startIn, startOn],
+    [picking, plane, startOn],
   );
 
   /** The approval IS this click. After it, the whole chain of checks runs again from the
@@ -4379,7 +4375,7 @@ export const PlaneView = memo(function PlaneView({
             options.data.persona !== null && options.data.personas.includes(options.data.persona)
               ? options.data.persona
               : null;
-          const refused = await startOn(
+          const started = await startOn(
             where,
             only.kind,
             only.name,
@@ -4391,14 +4387,12 @@ export const PlaneView = memo(function PlaneView({
             true,
             workspace,
           );
-          if (refused === undefined) {
+          if (started === undefined) {
             offerBeside();
             return;
           }
           // Over a pool's limit, the picker that comes up offers to raise it (spec #4275).
-          const offer = await commands
-            .poolLimitOffer(only.name, refused, root ?? null, where.in ?? startIn ?? null)
-            .catch(() => null);
+          const { words: refused, limit: offer } = started;
           setPickerTrouble(refused);
           setPickerLimit(offer === null ? undefined : { offer, refused, profile: only.name });
         } else setPickerTrouble(undefined);
@@ -6265,6 +6259,8 @@ export const PlaneView = memo(function PlaneView({
             to: moving?.to ?? null,
             stage: "failed",
             why,
+            // The core tells its own failed move too, in either order: its offer stands.
+            limit: chatMovesOf(plane)[session]?.limit ?? null,
             with: moving?.with ?? [],
             sign_in: null,
           });

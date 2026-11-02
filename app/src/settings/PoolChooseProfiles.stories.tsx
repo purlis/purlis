@@ -20,6 +20,7 @@ const a_profile = (name: string, kind = "claude"): PoolProfileRow => ({
   harness: kind === "claude" ? "Claude Code" : "Codex",
   standing: "signed-out",
   not_kept: null,
+  limit: null,
   plans: [],
 });
 

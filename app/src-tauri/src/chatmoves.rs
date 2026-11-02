@@ -46,8 +46,9 @@ pub(crate) enum Stage {
     Ready,
     /// Its switch is being made, for every chat of its workspace at once (#3453).
     Switching,
-    /// It did not happen, and why: the chat is where it was.
-    Failed(String),
+    /// It did not happen, and why, with the limits of a pool that refused it: the chat is where
+    /// it was.
+    Failed(String, Option<purlis_core::poollimits::Refused>),
 }
 
 /// A chat in a move, by its number and its name as its tab shows it.
@@ -90,6 +91,8 @@ pub(crate) struct ChatMove {
     pub(crate) stage: String,
     /// Why it failed, in a sentence: where it is `failed`.
     pub(crate) why: Option<String>,
+    /// What to raise, where a pool's limit is why it failed (#4313).
+    pub(crate) limit: Option<crate::poolprofiles::PoolLimitOffer>,
     /// The profile it waits on to sign in on the runner: where it is `signing-in` (#3477).
     pub(crate) sign_in: Option<MoveSignIn>,
     /// The other chats of its workspace that move with it, by name (#3453).
@@ -128,7 +131,11 @@ impl ChatMove {
             Stage::SigningIn(_) => ("signing-in", None),
             Stage::Ready => ("ready", None),
             Stage::Switching => ("switching", None),
-            Stage::Failed(why) => ("failed", Some(why.clone())),
+            Stage::Failed(why, _) => ("failed", Some(why.clone())),
+        };
+        let limit = match &one.stage {
+            Stage::Failed(_, refused) => refused.clone().map(crate::poolprofiles::offer_of),
+            _ => None,
         };
         let sign_in = match &one.stage {
             Stage::SigningIn(asked) => Some(MoveSignIn::of(asked)),
@@ -140,6 +147,7 @@ impl ChatMove {
             to: one.to.clone(),
             stage: stage.to_owned(),
             why,
+            limit,
             sign_in,
             with: one
                 .group
@@ -287,7 +295,7 @@ impl Moves {
                 .iter()
                 .filter(|member| {
                     all.get(&member.session)
-                        .is_some_and(|one| !matches!(one.stage, Stage::Failed(_)))
+                        .is_some_and(|one| !matches!(one.stage, Stage::Failed(..)))
                 })
                 .map(|member| member.name.clone())
                 .collect();
@@ -327,21 +335,21 @@ impl Moves {
         let spawned = std::thread::Builder::new()
             .name("purlis-chat-move".into())
             .spawn(move || {
-                let said = {
+                let (said, refused) = {
                     let mut run = lock(&prepare);
-                    (*run)()
+                    purlis_core::poollimits::attempt(|| (*run)())
                 };
                 let stage = match said {
                     Ok(()) => Stage::Ready,
                     Err(NotYet::SignIn(asked)) => Stage::SigningIn(asked),
-                    Err(NotYet::Refused(why)) => Stage::Failed(why),
+                    Err(NotYet::Refused(why)) => Stage::Failed(why, refused),
                 };
                 moves.reached_from(first, &group, stage, &prepare);
             });
         if let Err(why) = spawned {
             self.reached(
                 first,
-                Stage::Failed(format!("purlis could not prepare the move: {why}")),
+                Stage::Failed(format!("purlis could not prepare the move: {why}"), None),
             );
         }
     }
@@ -452,7 +460,7 @@ impl Moves {
                 asked.pool
             )),
             Stage::Switching => Due::NotYet("Its move is being made.".to_owned()),
-            Stage::Failed(_) => Due::NotMoving,
+            Stage::Failed(..) => Due::NotMoving,
             Stage::Ready if !at_a_pause(session) => Due::NotYet(NOT_AT_A_PAUSE.to_owned()),
             Stage::Ready => {
                 let busy = busy_in(&one.group, &at_a_pause);
@@ -493,10 +501,15 @@ impl Moves {
         self.tell_over(&one);
     }
 
-    /// Chat `session`'s switch failed, and why: it stays where it was, with every chat of its
-    /// move.
-    pub(crate) fn failed(&self, session: u32, why: String) {
-        self.reached(session, Stage::Failed(why));
+    /// Chat `session`'s switch failed, and why, with the limits that refused it: it stays where
+    /// it was, with every chat of its move.
+    pub(crate) fn failed(
+        &self,
+        session: u32,
+        why: String,
+        refused: Option<purlis_core::poollimits::Refused>,
+    ) {
+        self.reached(session, Stage::Failed(why, refused));
     }
 
     /// **Puts chat `session`'s move away**: one being prepared, waiting on a sign-in (#3477) or
@@ -513,7 +526,7 @@ impl Moves {
                 Stage::Switching => {
                     return Err(SWITCHING_NOT_CANCELLED.to_owned());
                 }
-                Stage::Failed(_) => {
+                Stage::Failed(..) => {
                     all.remove(&session);
                     None
                 }
@@ -969,13 +982,15 @@ impl crate::planes::Held {
             Due::NotYet(_) => return Ok(None),
             Due::Now(one) => one,
         };
-        match self.switch(session, &one, size, &at_a_pause) {
+        let (switched, refused) =
+            purlis_core::poollimits::attempt(|| self.switch(session, &one, size, &at_a_pause));
+        match switched {
             Ok(moved) => {
                 self.moves().moved(session);
                 Ok(Some(moved))
             }
             Err(why) => {
-                self.moves().failed(session, why.clone());
+                self.moves().failed(session, why.clone(), refused);
                 Err(why)
             }
         }

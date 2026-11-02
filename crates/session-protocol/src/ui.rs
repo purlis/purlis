@@ -797,8 +797,6 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_profile_remove",
     // A pool's limits (spec #4275): the person changes them directly, and a chat only proposes
     // through the edit ask (Q6), so only their own window saves one, or reads the offer to.
-    "pool_limit_offer",
-    "pool_limit_offer_for_move",
     "pool_limits",
     "pool_limit_check",
     "pool_limit_set",

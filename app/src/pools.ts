@@ -7,6 +7,7 @@ import {
   type ClusterContexts,
   type ClusterPoolAdding,
   type ClusterPoolKey,
+  type LimitRefused,
   type PlaneId,
   type RunnerStage,
   type PoolAdding,
@@ -244,8 +245,11 @@ export async function checkClusterPoolKey(
 /** Adds the cluster pool `adding`, pinning the key the person checked: `undefined` once it is
  *  added, else why not (#3292). It ends with nothing to sign in: its runner keeps no profile of
  *  this machine's. */
-export async function addClusterPool(adding: ClusterPoolAdding): Promise<string | undefined> {
-  const said = await caught(commands.addClusterPool(adding));
+export async function addClusterPool(adding: ClusterPoolAdding): Promise<LimitRefused | undefined> {
+  const said = await commands.addClusterPool(adding).catch((why: unknown) => ({
+    status: "error" as const,
+    error: { words: String(why), limit: null },
+  }));
   if (said.status === "error") return said.error;
   set((was) => ({ ...was, adding: false, said: undefined }));
   await rereadPools();

@@ -83,6 +83,7 @@ const a_profile = (name: string, standing: string): PoolProfileRow => ({
   harness: "Claude Code",
   standing,
   not_kept: null,
+  limit: null,
   plans: [],
 });
 

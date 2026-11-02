@@ -2,14 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import {
-  commands,
-  type ChatMove,
-  type MoveSignIn,
-  type PlaneId,
-  type PlanRow,
-  type PoolLimitOffer,
-} from "./bindings";
+import { type ChatMove, type MoveSignIn, type PlaneId, type PlanRow } from "./bindings";
 import {
   askMove,
   dismissMovedAfterSignIn,
@@ -122,8 +115,7 @@ function MoveFailed({
   one: ChatMove;
   words: string;
 }) {
-  const { from, to, why } = one;
-  const [offer, setOffer] = useState<PoolLimitOffer | null>(null);
+  const { from, to, limit: offer } = one;
   const [saving, setSaving] = useState(false);
   const [refused, setRefused] = useState<string>();
   // Dismissed or gone while the limit saves: the move isn't asked for after all.
@@ -134,21 +126,6 @@ function MoveFailed({
       left.current = true;
     };
   }, []);
-  useEffect(() => {
-    // A move back here is refused on the pool it is leaving (#4397).
-    const pool = to ?? from;
-    if (pool === null || why === null) return;
-    let gone = false;
-    void commands
-      .poolLimitOfferForMove(pool, why)
-      .catch(() => null)
-      .then((said) => {
-        if (!gone) setOffer(said);
-      });
-    return () => {
-      gone = true;
-    };
-  }, [to, from, why]);
   const apply = async (values: ReadonlyArray<readonly [string, number]>) => {
     if (offer === null) return;
     setSaving(true);

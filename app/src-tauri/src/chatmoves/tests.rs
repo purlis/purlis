@@ -121,11 +121,44 @@ fn a_chat_moves_once_at_a_time_and_again_after_a_failure() {
             .is_err()
     );
     let _ = (next(&told), next(&told));
-    moves.failed(6, "the switch was refused".into());
+    moves.failed(6, "the switch was refused".into(), None);
     assert_eq!(next(&told).stage, "failed");
     moves
         .begin(alone(6), None, Some("b".into()), || Ok(()))
         .unwrap();
+}
+
+/// **A move's refusal by a limit brings what to raise with it** (spec #4275), and the same words
+/// without a hit behind them bring nothing.
+#[test]
+fn a_move_refused_by_a_limit_tells_what_to_raise_and_the_same_words_alone_tell_nothing() {
+    use purlis_core::poollimits::{LimitId, hits_on};
+    let hit = LimitId::ProfileSize.limit().hit(128, 151, None);
+    let (moves, told) = heard();
+    moves
+        .begin(alone(6), None, Some("builds".into()), move || {
+            hits_on("builds", &[hit]);
+            Err(NotYet::Refused(hit.said()))
+        })
+        .unwrap();
+    let _ = next(&told);
+    let failed = next(&told);
+    assert_eq!(failed.stage, "failed");
+    let offer = failed.limit.expect("the limit it hit");
+    assert_eq!(offer.pool, "builds");
+    assert_eq!(offer.hits[0].needed, 151);
+
+    let (moves, told) = heard();
+    moves
+        .begin(alone(6), None, Some("builds".into()), move || {
+            Err(NotYet::Refused(hit.said()))
+        })
+        .unwrap();
+    let _ = next(&told);
+    let failed = next(&told);
+    assert_eq!(failed.stage, "failed");
+    assert_eq!(failed.why, Some(hit.said()));
+    assert_eq!(failed.limit, None);
 }
 
 #[test]
