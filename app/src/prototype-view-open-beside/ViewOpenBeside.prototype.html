@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: an extension view's Open beside and its offer notice (#4705)</title>
+<!--
+  PROTOTYPE, throwaway. Ticket purlis/purlis#4705 on map #4575 "Chats, tabs and panes: a chat isn't a tab".
+  Question: how do an extension view's Open beside and its offer notice look and behave?
+  Fixed by earlier rulings, drawn the same in every variant:
+   - #4703: a press (a view's heading button, a panel row, a palette row) opens the view in a tab of
+     its own, or brings that tab forward. The press's menu and the palette row also offer Open beside.
+     From a button on a view or a note on a pane it splits beside that pane; from the palette, beside
+     the focused pane. Focus moves there. Opening never takes a pane's place. Nothing opens without a
+     press: an extension can only offer, with one quiet notice "statistics offers a view · Open · Open
+     beside", in the pane band and the Notices centre. A second offer of a view offered or open adds
+     no second notice. The extension's program is asked nothing until the press.
+   - #4699 addendum: Open beside has no chord; ⌥ with a press, or ⌥Enter on a palette row.
+   - #4583: a split's direction follows the pane's shape; the minimum pane is about 40 x 8 (300 x 140 px).
+   - #4584: bell in the head's fixed slot, band under the head; minimised, notes fold into the count.
+   - #4585: the pane head; #4702: below the minimum Split greys out with its reason.
+  Stand-in data, in memory. Nothing calls the core. Tokens: the Purlis built-in theme, copied from
+  prototype/narrow-window.
+-->
+<style>
+:root {
+  --behind: #ffffff; --surface-base: #f7f7fd; --surface-raised: #eeeef5; --surface-overlay: #e4e4ec; --surface-sunken: #ececf3;
+  --surface-hover: #dbdce5; --control-base: #e4e4ec; --control-hover: #dbdce5;
+  --text-primary: #252329; --text-secondary: #3b3942; --text-muted: #5d5b67; --text-quiet: #61606c; --text-faint: #7c7a87;
+  --border-strong: #a9a7b5; --border-soft: #d6d5df; --accent: #554691; --accent-surface: #dedcef; --focus-ring: #554691;
+  --term-bg: #e9e9f2; --term-fg: #252329;
+  --wash-warning: #5236011f; --danger-wash: #682e301f; --info-wash: #4d3f8014;
+  --state-working: #20562f; --state-waiting: #523601; --state-failed: #682f2a; --ansi-green: #20562f;
+  --bar-bg: #252329; --bar-fg: #f7f7fd; --menu-bg: #ffffff; --shadow: 0 8px 28px #0002, 0 1px 3px #0002;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --r-control: 7px; --r-tab: 8px; --r-warn: 10px; --r-panel: 12px;
+}
+:root[data-theme="dark"] {
+  --behind: #121215; --surface-base: #17171b; --surface-raised: #1d1d22; --surface-overlay: #24242a; --surface-sunken: #141418;
+  --surface-hover: #2a2a31; --control-base: #24242a; --control-hover: #2a2a31;
+  --text-primary: #e6e4ec; --text-secondary: #c9c7d2; --text-muted: #a09eab; --text-quiet: #91909d; --text-faint: #74727f;
+  --border-strong: #55535f; --border-soft: #2c2c33; --accent: #a99cf0; --accent-surface: #292735; --focus-ring: #a99cf0;
+  --term-bg: #202026; --term-fg: #e6e4ec;
+  --wash-warning: #e5c08a1f; --danger-wash: #f0a9a81f; --info-wash: #b3a8f214;
+  --state-working: #8fc79a; --state-waiting: #e5c08a; --state-failed: #f0aaa2; --ansi-green: #8fc79a;
+  --bar-bg: #e6e4ec; --bar-fg: #17171b; --menu-bg: #24242a; --shadow: 0 8px 28px #0008, 0 1px 3px #0006; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--behind); color: var(--text-primary); font: 14px/1.4 var(--font-ui); padding: 14px 14px 150px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.head h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+.head p { margin: 0 0 10px; color: var(--text-quiet); font-size: 12.5px; max-width: 150ch; }
+.stage { overflow: auto; padding-bottom: 6px; }
+.below { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; margin-top: 12px; }
+.card { background: var(--surface-raised); border-radius: var(--r-panel); padding: 12px 14px; font-size: 12.5px; color: var(--text-secondary); }
+.card h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-quiet); }
+.card p { margin: 0 0 6px; } .card ol, .card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.state { margin: 0; font: 11px/1.45 var(--font-mono); color: var(--text-muted); white-space: pre-wrap; }
+
+/* The window. */
+.win { display: grid; grid-template-rows: 34px minmax(0,1fr) 24px; background: var(--surface-base); border-radius: var(--r-panel); overflow: hidden; border: 1px solid var(--border-soft); position: relative; }
+.tbar { display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--surface-sunken); font-size: 12.5px; color: var(--text-muted); border-bottom: 1px solid var(--border-soft); }
+.tbar .lights { display: flex; gap: 6px; margin-right: 8px; } .tbar .lights i { width: 11px; height: 11px; border-radius: 50%; background: var(--border-strong); }
+.tbar .wchip { padding: 2px 10px; border-radius: 999px; background: var(--surface-overlay); color: var(--text-primary); }
+.grow { flex: 1; min-width: 0; }
+.cols { display: grid; min-height: 0; }
+.sbar { display: flex; align-items: center; gap: 10px; padding: 0 10px; font-size: 11.5px; color: var(--text-muted); background: var(--surface-sunken); border-top: 1px solid var(--border-soft); }
+.sbar .nbtn { border: 0; background: transparent; border-radius: 6px; padding: 1px 7px; cursor: pointer; display: inline-flex; gap: 5px; align-items: center; color: var(--text-muted); }
+.sbar .nbtn:hover, .sbar .nbtn[aria-expanded="true"] { background: var(--control-hover); color: var(--text-primary); }
+
+.sb { background: var(--surface-sunken); padding: 8px 6px; display: flex; flex-direction: column; gap: 2px; overflow: auto; font-size: 13px; border-right: 1px solid var(--border-soft); }
+.sb h3 { margin: 8px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-quiet); }
+.row { display: flex; align-items: center; gap: 7px; padding: 3px 4px 3px 8px; border-radius: var(--r-control); cursor: pointer; position: relative; min-height: 30px; border: 0; background: transparent; text-align: left; width: 100%; }
+.row:hover, .row:focus-within { background: var(--surface-hover); }
+.row[data-shown]::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--border-strong); }
+.row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .sub { color: var(--text-faint); font-size: 11.5px; }
+.vrow { display: flex; align-items: center; border-radius: var(--r-control); }
+.vrow:hover, .vrow:focus-within { background: var(--surface-hover); }
+.vrow .row:hover { background: transparent; }
+.vrow .reveal { visibility: hidden; }
+.vrow:hover .reveal, .vrow:focus-within .reveal, .vrow .reveal[aria-expanded="true"] { visibility: visible; }
+
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.strip { flex: none; display: flex; align-items: flex-end; gap: 2px; height: 34px; padding: 6px 8px 0; background: var(--surface-sunken); }
+.tab { display: inline-flex; align-items: center; gap: 6px; max-width: 230px; height: 28px; padding: 5px 10px; border-radius: var(--r-tab) var(--r-tab) 0 0; color: var(--text-muted); cursor: pointer; font-size: 12.5px; border: 0; background: transparent; }
+.tab[aria-selected="true"] { background: var(--surface-base); color: var(--text-primary); }
+.tab .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .split { font-size: 11px; color: var(--text-faint); }
+.panes { position: relative; margin: 6px; flex: 1; min-height: 0; }
+.pane, .fold { position: absolute; }
+.pane { display: flex; flex-direction: column; min-width: 0; background: var(--term-bg); border-radius: var(--r-panel); overflow: hidden; }
+.pane[data-kind="view"] { background: var(--surface-raised); }
+.pane[data-focused] { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.pane[data-new] { animation: arrive .5s ease-out; }
+@keyframes arrive { from { box-shadow: inset 0 0 0 2px var(--accent); } }
+.phead { flex: none; display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 4px 0 10px; font-size: 12.5px; color: var(--text-quiet); }
+.phead .nm { color: var(--text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 3ch; }
+.phead .where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); min-width: 0; flex: 0 1 auto; }
+.tool { border: 0; background: transparent; color: var(--text-muted); min-width: 26px; height: 26px; border-radius: var(--r-control); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 5px; flex: none; }
+.tool:hover, .tool[aria-expanded="true"] { background: var(--control-hover); color: var(--text-primary); }
+.tool[aria-disabled="true"] { color: var(--text-faint); cursor: not-allowed; opacity: .55; }
+.tool svg { width: 15px; height: 15px; }
+.tool .count { font-variant-numeric: tabular-nums; font-size: 11.5px; min-width: 1ch; }
+.bell[data-empty] { color: var(--text-faint); }
+.bell[aria-pressed="true"] { background: var(--control-base); }
+.mark { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
+.mark .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--state-working); }
+.pi { position: relative; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex: none; }
+.pi[data-p="steward"] { background: #6b5bb5; } .pi[data-p="devops"] { background: #2f7a64; } .pi[data-p="docs"] { background: #9a5a2a; }
+.pi[data-p="reviewer"] { background: #3d6a9e; } .pi[data-p="view"] { background: #777; } .pi[data-p="ext"] { background: #8a6d1f; }
+.term { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 4px 12px 8px; font: 12px/1.5 var(--font-mono); color: var(--term-fg); }
+.term .l { white-space: pre; overflow: hidden; text-overflow: ellipsis; } .term .dim { color: var(--text-faint); } .term .g { color: var(--ansi-green); }
+.band { flex: none; display: grid; gap: 6px; padding: 2px 8px 4px; max-height: 50%; overflow: auto; }
+.bandhead { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-quiet); padding: 0 2px; min-height: 26px; }
+.n { border-radius: var(--r-warn); padding: 6px 8px 6px 10px; background: var(--info-wash); display: flex; gap: 8px; align-items: center; font-size: 12.5px; flex-wrap: wrap; }
+.n .grow { min-width: 14ch; }
+.n .x { border: 0; background: transparent; color: var(--text-faint); cursor: pointer; border-radius: 5px; width: 22px; height: 22px; }
+.n .x:hover { background: var(--control-hover); color: var(--text-primary); }
+.n[data-greyed] .btn { opacity: .5; cursor: not-allowed; }
+.btn { border: 0; background: var(--control-base); padding: 3px 10px; border-radius: var(--r-control); cursor: pointer; font-size: 12.5px; white-space: nowrap; }
+.btn:hover { background: var(--control-hover); }
+.btn.primary { background: var(--accent); color: var(--surface-base); }
+.btn.quiet { background: transparent; color: var(--text-muted); }
+.btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+
+/* A view's body. */
+.vbody { flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 12px; font-size: 13px; color: var(--text-secondary); }
+.vhead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 2px 10px 8px; }
+.vhead .says { color: var(--text-faint); font-size: 12px; margin-right: 4px; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 4px 0 10px; font-size: 12.5px; }
+.facts dt { color: var(--text-faint); } .facts dd { margin: 0; }
+.chart { display: flex; align-items: flex-end; gap: 6px; height: 90px; margin: 6px 0; }
+.chart i { flex: 1; background: var(--accent-surface); border-radius: 4px 4px 0 0; box-shadow: inset 0 2px 0 var(--accent); }
+.gone { flex: 1; display: grid; place-content: center; text-align: center; gap: 8px; color: var(--text-muted); font-size: 13px; padding: 12px; }
+.gone b { color: var(--text-primary); font-size: 14px; }
+
+/* The view button and its Open beside control, three ways (Q1). */
+.vb { display: inline-flex; align-items: stretch; border-radius: var(--r-control); background: var(--control-base); font-size: 12.5px; }
+.vb > button { border: 0; background: transparent; cursor: pointer; padding: 3px 9px 3px 7px; border-radius: var(--r-control); display: inline-flex; align-items: center; gap: 6px; }
+.vb > button:hover { background: var(--control-hover); }
+.vb > .part { padding: 3px 6px; border-left: 1px solid var(--border-soft); border-radius: 0 var(--r-control) var(--r-control) 0; color: var(--text-muted); }
+.vb > .part[aria-disabled="true"] { color: var(--text-faint); cursor: not-allowed; }
+.vb svg, .row svg, .pal svg { width: 14px; height: 14px; flex: none; }
+.besidebtn { border: 0; background: transparent; color: var(--text-muted); width: 26px; height: 26px; border-radius: var(--r-control); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.besidebtn:hover { background: var(--control-hover); color: var(--text-primary); }
+.besidebtn[aria-disabled="true"] { color: var(--text-faint); cursor: not-allowed; opacity: .55; }
+
+/* A folded side, for Q2 C (the #4702 rail). */
+.fold { background: var(--surface-raised); border-radius: var(--r-panel); display: flex; gap: 4px; padding: 6px 4px; overflow: hidden; }
+.fold[data-d="row"] { flex-direction: column; align-items: center; }
+.fold[data-d="col"] { flex-direction: row; align-items: center; padding: 3px 6px; }
+.fbtn { border: 0; background: transparent; border-radius: var(--r-control); cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 4px; color: var(--text-muted); font-size: 12px; }
+.fbtn:hover { background: var(--control-hover); }
+
+/* The Notices centre, a region at the window's right. */
+.centre { background: var(--surface-sunken); border-left: 1px solid var(--border-soft); padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow: auto; font-size: 12.5px; }
+.centre h3 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-quiet); display: flex; align-items: center; gap: 6px; }
+.centre .about { font-size: 11px; color: var(--text-faint); margin: 0 0 -4px 2px; }
+
+/* Menus, palette, toast. */
+.menu { position: fixed; z-index: 30; min-width: 240px; background: var(--menu-bg); border-radius: 10px; box-shadow: var(--shadow); padding: 5px; font-size: 13px; }
+.menu .mi { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; padding: 5px 9px; border-radius: 6px; cursor: pointer; }
+.menu .mi:hover:not([aria-disabled="true"]), .menu .mi:focus-visible { background: var(--control-hover); outline: none; }
+.menu .mi[aria-disabled="true"] { color: var(--text-faint); cursor: default; }
+.menu .mi .k { flex: 1; } .menu .mi .key { color: var(--text-faint); font-size: 11.5px; } .menu .mi .why { display: block; font-size: 11px; color: var(--text-faint); }
+.menu .hd { padding: 5px 9px 6px; font-weight: 600; border-bottom: 1px solid var(--border-soft); margin-bottom: 4px; font-size: 12.5px; }
+.pal { position: fixed; z-index: 40; left: 50%; top: 70px; transform: translateX(-50%); width: 600px; background: var(--menu-bg); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; font-size: 13px; }
+.pal input { width: 100%; border: 0; background: var(--surface-overlay); color: var(--text-primary); border-radius: 8px; padding: 8px 10px; font: inherit; margin-bottom: 6px; }
+.pal .mi { display: flex; gap: 10px; align-items: center; padding: 5px 6px 5px 10px; border-radius: 6px; cursor: pointer; min-height: 32px; }
+.pal .mi[aria-selected="true"] { background: var(--control-hover); }
+.pal .mi .k { flex: 1; } .pal .mi .grp { color: var(--text-faint); font-size: 11.5px; }
+.pal .mi .hint { color: var(--text-faint); font-size: 11.5px; white-space: nowrap; }
+.pal .mi .hint[data-no] { color: var(--state-failed); }
+.pal .mi .besidebtn { visibility: hidden; } .pal .mi[aria-selected="true"] .besidebtn, .pal .mi:hover .besidebtn { visibility: visible; }
+.pal .foot { border-top: 1px solid var(--border-soft); margin-top: 4px; padding: 6px 10px 2px; color: var(--text-faint); font-size: 11.5px; display: flex; gap: 14px; }
+.toast { position: fixed; left: 50%; bottom: 110px; transform: translateX(-50%); background: var(--text-primary); color: var(--surface-base); padding: 6px 8px 6px 12px; border-radius: 8px; font-size: 12.5px; z-index: 50; display: flex; gap: 10px; align-items: center; max-width: 640px; }
+.toast .btn { background: transparent; color: var(--surface-base); text-decoration: underline; }
+
+/* The prototype's own control bar. */
+.bar { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 60; background: var(--bar-bg); color: var(--bar-fg); border: 2px dashed var(--bar-fg); border-radius: 12px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; max-width: calc(100vw - 20px); }
+.bar .grp { display: flex; gap: 3px; align-items: center; }
+.bar .lbl { opacity: .7; margin-right: 3px; }
+.bar button { border: 1px solid transparent; background: transparent; color: var(--bar-fg); border-radius: 6px; padding: 2px 7px; cursor: pointer; font-size: 12px; }
+.bar button[aria-pressed="true"] { border-color: var(--bar-fg); font-weight: 600; }
+.bar input[type=range] { width: 110px; vertical-align: middle; }
+.bar .num { font-variant-numeric: tabular-nums; min-width: 8ch; display: inline-block; }
+.act { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.act .btn { font-size: 12px; }
+</style>
+</head>
+<body>
+<header class="head">
+  <h1>PROTOTYPE: an extension view's Open beside and its offer notice</h1>
+  <p>Ticket #4705 on the map "Chats, tabs and panes: a chat isn't a tab". Everything in the window presses. A plain press opens <b>Statistics</b> (the <code>statistics</code> extension's view) in a tab of its own; <b>⌥ with the press</b>, or the press's menu (right-click), opens it beside. The dashed bar is the prototype's, not the design: it picks the scene, the four answers being asked (Q1–Q4), the window's width and the theme. The card under the window says what to try in each scene, and the state card shows the tab's tree and what was announced. Keys: <code>[</code> <code>]</code> scene, <code>⌘K</code> / <code>Ctrl+K</code> palette.</p>
+</header>
+<div class="stage"><div class="win" id="win"></div></div>
+<div class="below">
+  <div class="card" id="try"></div>
+  <div class="card" id="asked"></div>
+  <div class="card"><h2>State</h2><pre class="state" id="state"></pre></div>
+</div>
+<div class="sr" aria-live="polite" id="live"></div>
+<div id="layer"></div>
+<div class="bar" id="bar"></div>
+<script>
+"use strict";
+/* ---------- Icons ---------- */
+const I = {
+  chart: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 13.5h11M4.5 11V7M8 11V3.5M11.5 11V6"/></svg>',
+  beside: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5"/><path d="M8 2.75v10.5M10 8h3M11.8 6.5 13.2 8l-1.4 1.5"/></svg>',
+  right: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5"/><path d="M8 2.75v10.5"/></svg>',
+  down: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5"/><path d="M1.75 8h12.5"/></svg>',
+  close: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg>',
+  more: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>',
+  bell: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1H3zM6.5 14h3"/></svg>',
+  chev: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>',
+};
+const MINW = 300, MINH = 140, GAP = 6, SIDEBAR = 250, CENTRE = 300;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+/* ---------- The questions ---------- */
+const Q = {
+  q1: { title: "Q1 · Where Open beside sits", A: "A beside icon after the button (always on a view's heading, on hover and focus on a panel row and the palette's selected row), plus ⌥-press and right-click", B: "A ▾ part on the button that opens Open in a tab / Open beside, plus ⌥-press", C: "Nothing drawn: ⌥-press and right-click only" },
+  q2: { title: "Q2 · When beside would go under 40 × 8", A: "Refused before the press: the control greys out with the reason; an ⌥-press says the reason with Open in a tab", B: "It opens in a tab instead, and a toast says why", C: "It splits anyway and the side without the focus folds to a rail (#4702)" },
+  q3: { title: "Q3 · An offer after you dismissed it", A: "Quiet for that view and subject until relaunch; the note's ⋯ has Stop offers from statistics, undone in Settings › Extensions", B: "Every later offer comes back as a new note", C: "Final: that view is never offered about that subject again" },
+  q4: { title: "Q4 · When the extension has gone", A: "The offer is withdrawn quietly; an open view keeps its pane with “Statistics is not here any more” and Close pane", B: "The offer stays, its buttons greyed “statistics was removed”, until dismissed; the open view as A", C: "The offer is withdrawn and open views close themselves, with a toast and Undo" },
+};
+const REC = { q1: "A", q2: "A", q3: "A", q4: "A" };
+
+/* ---------- Data ---------- */
+const CHATS = {
+  "steward 4": { p: "steward", L: "S", ws: "smart-ide", lines: ["<span class=dim>› </span>Read the map body and the five rulings.", "  Built the page; checking it in jsdom.", "<span class=g>✓</span> 6 scenes × 3 variants render"] },
+  "devops 2": { p: "devops", L: "D", ws: "smart-ide", lines: ["<span class=dim>$</span> kubectl get pods -n runner", "runner-7d9  1/1  Running  0  3h", "<span class=g>✓</span> rollout done"] },
+  "docs 3": { p: "docs", L: "d", ws: "smart-ide", lines: ["Rewording ADR 0043's amendment.", "<span class=dim>…</span>"] },
+  "reviewer 1": { p: "reviewer", L: "R", ws: "smart-ide", lines: ["Reading #4705's diff.", "<span class=dim>…</span>"] },
+};
+const VIEW_TITLE = { persona: "Steward", stats: "Statistics" };
+let uid = 1;
+const chat = (name) => ({ pane: { id: uid++, kind: "chat", name } });
+const view = (v, key) => ({ pane: { id: uid++, kind: "view", from: v === "stats" ? "statistics" : null, view: v, key } });
+const split = (dir, a, b, share = 500) => ({ dir, a, b, share });
+const vname = (p) => p.view === "stats" ? `Statistics · ${p.key || "whole plane"}` : `${VIEW_TITLE[p.view]}`;
+const sameView = (p, v) => p.kind === "view" && p.view === v.view && p.key === v.key;
+
+const SCENES = {
+  1: { name: "A view's heading button", W: 1280, H: 660, build() {
+        return { tabs: [{ tree: view("persona", "steward") }, { tree: chat("devops 2") }], front: 0 }; },
+       try: ["Press <b>Statistics</b> on Steward's tab: it opens in a tab of its own. Press it again from Steward: that tab comes forward, no second copy.", "<b>⌥-press</b> it, or use the Open beside control (Q1): it splits beside Steward, to the right because the pane is wider than tall, and focus moves into it.", "Right-click the button: the press's menu says <i>Open in a tab ↵</i> and <i>Open beside ⌥↵</i>."] },
+  2: { name: "A panel row", W: 1280, H: 660, build() {
+        return { tabs: [{ tree: split("row", chat("steward 4"), chat("devops 2")) }], front: 0, focus: "devops 2" }; },
+       try: ["The sidebar's <b>Views</b> panel lists what extensions offer this window. A row isn't on a pane, so <b>Open beside goes beside the focused pane</b> (devops 2). Click steward 4 first to move the focus and try again.", "Hover or Tab onto the row to see Q1's control. The row's press opens a tab, as everywhere."] },
+  3: { name: "The palette", W: 1280, H: 660, palette: true, build() {
+        return { tabs: [{ tree: split("row", chat("steward 4"), chat("devops 2")) }], front: 0, focus: "steward 4" }; },
+       try: ["The palette is open (<code>⌘K</code> brings it back). Arrow to a Statistics row: <b>Enter</b> opens a tab, <b>⌥Enter</b> opens beside the focused pane (steward 4).", "The row says both, on its right. Under Q2 A, a row that can't go beside says why there instead."] },
+  4: { name: "Too narrow to open beside", W: 1024, H: 640, build() {
+        return { tabs: [{ tree: split("col", split("row", view("persona", "steward"), chat("steward 4")), split("row", chat("devops 2"), chat("docs 3"))) }], front: 0, focus: "pane:persona" }; },
+       try: ["Four panes tiled at 1024 × 640. Steward's pane is wider than tall, so beside means right, and each half would be under 300 px (40 columns). Try ⌥-press, the control and the menu, under Q2 A, B and C.", "Widen the window with the slider past about 1480 and the same press splits."] },
+  5: { name: "The offer notice", W: 1280, H: 660, offer: true, build() {
+        return { tabs: [{ tree: split("row", chat("steward 4"), chat("devops 2")) }], front: 0, focus: "devops 2" }; },
+       try: ["statistics heard steward 4 finish a turn and offers its view: one quiet note on steward 4's band and in the Notices centre (the status bar's bell). It takes no pane, tab or focus, and nothing has asked statistics's program yet.", "Press the bell in steward 4's head to minimise or expand every band (#4584): minimised, the note folds into the count. Use the buttons below to offer again, offer about a chat not on screen, or dismiss and offer again (Q3).", "Open, or Open beside (beside steward 4, the pane the note sits on). From the Notices centre, Open beside goes beside the focused pane."] },
+  6: { name: "Its extension has gone", W: 1280, H: 660, offer: true, build() {
+        return { tabs: [{ tree: split("row", chat("steward 4"), view("stats", "steward"), 560) }, { tree: chat("devops 2") }], front: 0, focus: "steward 4", offerAbout: "devops 2" }; },
+       try: ["Statistics · steward is open beside steward 4, and statistics has offered a view about devops 2 (in the Notices centre, and on devops 2's band when its tab is in front).", "Press <b>Remove the statistics extension</b> below, and compare Q4 A, B and C. Then switch to the devops 2 tab."] },
+};
+
+/* ---------- State ---------- */
+const url = new URLSearchParams(location.search);
+const S = { scene: url.get("s") || "1", q1: url.get("q1") || "A", q2: url.get("q2") || "A", q3: url.get("q3") || "A", q4: url.get("q4") || "A",
+  theme: url.get("t") || "light", W: 1280, H: 660 };
+let M; // the scene's model
+function reset() {
+  uid = 1;
+  const sc = SCENES[S.scene];
+  S.W = +(url.get("w") || sc.W); S.H = sc.H;
+  const b = sc.build();
+  M = { tabs: b.tabs, front: b.front, focus: null, minimised: false, centre: !!sc.offer, offers: [], others: [{ id: "n0", text: "devops 2 finished: rollout done", about: "devops 2" }],
+        quiet: new Set(), stopped: false, gone: false, said: [], log: [], palette: !!sc.palette, palSel: 0, menu: null, toast: null, newPane: null, undo: null };
+  M.focus = findPane((p) => b.focus ? (b.focus.startsWith("pane:") ? p.view === b.focus.slice(5) : p.name === b.focus) : true)?.id;
+  if (sc.offer) offer({ view: "stats", key: b.offerAbout ? "devops" : "steward" }, b.offerAbout || "steward 4", true);
+  url.delete("w");
+}
+function leaves(t, out = []) { if (t.pane) out.push(t.pane); else { leaves(t.a, out); leaves(t.b, out); } return out; }
+function allPanes() { return M.tabs.flatMap((t, i) => leaves(t.tree).map((p) => ({ p, tab: i }))); }
+function findPane(fn) { for (const t of [M.tabs[M.front], ...M.tabs]) { const p = leaves(t.tree).find(fn); if (p) return p; } return null; }
+function tabOf(id) { return M.tabs.findIndex((t) => leaves(t.tree).some((p) => p.id === id)); }
+function paneById(id) { return allPanes().find((x) => x.p.id === id)?.p; }
+function say(s) { M.said.push(s); document.getElementById("live").textContent = s; }
+function log(s) { M.log.push(s); }
+
+/* ---------- Layout: arithmetic, so jsdom draws the same ---------- */
+function area() { return { w: S.W - SIDEBAR - (M.centre ? CENTRE : 0) - 2 - 12, h: S.H - 34 - 24 - 34 - 2 - 12 }; }
+function lay(t, x, y, w, h, out) {
+  if (t.pane) { out.push({ kind: "pane", p: t.pane, x, y, w, h }); return; }
+  const row = t.dir === "row", len = (row ? w : h) - GAP, min = row ? MINW : MINH;
+  let la = Math.round(len * t.share / 1000), lb = len - la;
+  if (la < min || lb < min) { // fold the side without the focus (#4702), drawn only
+    const focA = leaves(t.a).some((p) => p.id === M.focus), rail = row ? 40 : 32;
+    if (focA) { lb = rail; la = len - rail; } else { la = rail; lb = len - rail; }
+    const folded = focA ? t.b : t.a, kept = focA ? t.a : t.b;
+    const fx = focA ? (row ? x + la + GAP : x) : x, fy = focA ? (row ? y : y + la + GAP) : y;
+    out.push({ kind: "fold", d: t.dir, panes: leaves(folded), x: fx, y: fy, w: row ? rail : w, h: row ? h : rail });
+    const kx = focA ? x : (row ? x + rail + GAP : x), ky = focA ? y : (row ? y : y + rail + GAP);
+    lay(kept, kx, ky, row ? len - rail : w, row ? h : len - rail, out); return;
+  }
+  if (row) { lay(t.a, x, y, la, h, out); lay(t.b, x + la + GAP, y, lb, h, out); }
+  else { lay(t.a, x, y, w, la, out); lay(t.b, x, y + la + GAP, w, lb, out); }
+}
+function rects() { const a = area(), out = []; lay(M.tabs[M.front].tree, 0, 0, a.w, a.h, out); return out; }
+function rectOf(id) { return rects().find((r) => r.kind === "pane" && r.p.id === id); }
+/** Where beside goes from pane `id`, and whether it fits (#4583: by shape; the 40 × 8 floor). */
+function besideFrom(id) {
+  const r = rectOf(id);
+  if (!r) return { ok: false, why: "That pane isn't on screen" };
+  const dir = r.w > r.h ? "row" : "col";
+  const ok = dir === "row" ? (r.w - GAP) / 2 >= MINW : (r.h - GAP) / 2 >= MINH;
+  return { dir, ok, why: dir === "row" ? "Too narrow to open beside: each side needs 40 columns" : "Too short to open beside: each side needs 8 rows" };
+}
+function replaceLeaf(t, id, fn) { if (t.pane) return t.pane.id === id ? fn(t) : t; return { ...t, a: replaceLeaf(t.a, id, fn), b: replaceLeaf(t.b, id, fn) }; }
+
+/* ---------- Opening a view: the press, the only door ---------- */
+/** `from`: the pane the control sits on, or null for "the focused pane" (panel row, palette, centre). */
+function openView(v, how, from) {
+  if (M.gone) return;
+  const there = allPanes().find((x) => sameView(x.p, v));
+  const nm = vname({ view: v.view, key: v.key });
+  clearOffer(v);
+  if (there) { // already open: bring it forward, never a second copy
+    M.front = there.tab; M.focus = there.p.id; M.newPane = null;
+    say(`${nm} is already open. Brought it forward; focus is in it.`); log(`press (${how}) → ${nm} already open, brought forward`); return;
+  }
+  if (how === "tab") return openInTab(v, nm);
+  const anchor = from ?? M.focus;
+  const t = tabOf(anchor);
+  if (t !== M.front) M.front = t;
+  const b = besideFrom(anchor);
+  if (!b.ok && S.q2 === "A") {
+    toast(`Not opened beside: ${b.why.replace(/^Too (narrow|short) to open beside: /, "")}.`, "Open in a tab", () => openInTab(v, nm));
+    say(`Not opened beside: ${b.why}.`); log(`beside refused: ${b.why}`); return;
+  }
+  if (!b.ok && S.q2 === "B") { openInTab(v, nm); toast(`${b.why}, so ${nm} opened in a tab of its own.`); return; }
+  const np = view(v.view, v.key).pane;
+  M.tabs[M.front] = { ...M.tabs[M.front], tree: replaceLeaf(M.tabs[M.front].tree, anchor, (leaf) => split(b.dir, leaf, { pane: np })) };
+  M.focus = np.id; M.newPane = np.id;
+  const anchorName = nameOf(paneById(anchor));
+  say(`Opened ${nm} ${b.dir === "row" ? "right of" : "below"} ${anchorName}. Focus is in it.`);
+  log(`beside → split ${b.dir} at ${anchorName}, new pane #${np.id} focused${b.ok ? "" : " (folded the other side)"}`);
+  M.undo = null;
+  toast(`Opened ${nm} beside ${anchorName}.`, "Undo", () => { closePane(np.id, true); say("Undone. Nothing open beside."); });
+}
+function openInTab(v, nm) {
+  const np = view(v.view, v.key).pane;
+  M.tabs.push({ tree: { pane: np } }); M.front = M.tabs.length - 1; M.focus = np.id; M.newPane = np.id;
+  say(`Opened ${nm} in a tab of its own.`); log(`press → new tab "${nm}"`);
+}
+function closePane(id, quiet) {
+  const t = tabOf(id); if (t < 0) return;
+  const drop = (n) => n.pane ? (n.pane.id === id ? null : n) : (() => { const a = drop(n.a), b = drop(n.b); return a && b ? { ...n, a, b } : a || b; })();
+  const tree = drop(M.tabs[t].tree);
+  if (tree) M.tabs[t].tree = tree; else { M.tabs.splice(t, 1); M.front = Math.max(0, Math.min(M.front, M.tabs.length - 1)); }
+  if (M.focus === id) M.focus = leaves(M.tabs[M.front].tree)[0].id;
+  if (!quiet) log(`closed pane #${id}`);
+}
+function nameOf(p) { return p ? (p.kind === "chat" ? p.name : vname(p)) : "?"; }
+
+/* ---------- Offers ---------- */
+const vkey = (v) => `${v.view}/${v.key}`;
+function offer(v, about, first) {
+  const nm = vname({ view: v.view, key: v.key });
+  if (M.gone) { log("statistics is removed: no offer"); return; }
+  if (M.offers.some((o) => vkey(o.v) === vkey(v)) || allPanes().some((x) => sameView(x.p, v))) { log(`offer of ${nm} again → no second notice (one is standing or the view is open)`); if (!first) toast("No second notice: that view is already offered or open."); return; }
+  if (S.q3 === "A" && (M.quiet.has(vkey(v)) || M.stopped)) { log(`offer of ${nm} → held quiet (${M.stopped ? "offers stopped for statistics" : "dismissed this session"})`); if (!first) toast(M.stopped ? "Held: you stopped statistics's offers." : "Held: you dismissed this offer; quiet until relaunch."); return; }
+  if (S.q3 === "C" && M.quiet.has(vkey(v))) { log(`offer of ${nm} → refused for good (dismissed before)`); if (!first) toast("Held for good: you dismissed this offer before."); return; }
+  M.offers.push({ id: "o" + uid++, v, about, greyed: false });
+  log(`statistics offers ${nm}${about ? ` about ${about}` : ""} → one quiet note, no pane, no focus, program not asked`);
+}
+function clearOffer(v) { M.offers = M.offers.filter((o) => vkey(o.v) !== vkey(v)); }
+function dismissOffer(id) {
+  const o = M.offers.find((x) => x.id === id); if (!o) return;
+  M.offers = M.offers.filter((x) => x.id !== id);
+  if (S.q3 !== "B" && !o.greyed) M.quiet.add(vkey(o.v));
+  log(`dismissed the offer of ${vname(o.v)}${S.q3 === "A" ? " → quiet until relaunch" : S.q3 === "C" ? " → never again" : ""}`);
+}
+function removeExtension() {
+  if (M.gone) return; M.gone = true;
+  if (S.q4 === "B") M.offers.forEach((o) => (o.greyed = true)); else M.offers = [];
+  const open = allPanes().filter((x) => x.p.from === "statistics");
+  if (S.q4 === "C") { open.forEach((x) => closePane(x.p.id, true)); if (open.length) toast(`Statistics closed: statistics was removed.`, "Undo", () => toast("(Undo would put the pane back, showing “not here any more”.)")); }
+  log(`statistics removed → offers ${S.q4 === "B" ? "greyed" : "withdrawn"}; ${open.length} open view(s) ${S.q4 === "C" ? "closed" : "keep their pane"}`);
+}
+/** The notes a pane's band holds (#4584): this chat's offers and its other notes. */
+function notesOf(p) { if (p.kind !== "chat") return []; return [...M.others.filter((n) => n.about === p.name).map((n) => ({ ...n, kind: "note" })), ...M.offers.filter((o) => o.about === p.name).map((o) => ({ ...o, kind: "offer" }))]; }
+function centreNotes() { return [...M.others.map((n) => ({ ...n, kind: "note" })), ...M.offers.map((o) => ({ ...o, kind: "offer" }))]; }
+
+/* ---------- Drawing ---------- */
+function viewButton(v, from, where) {
+  // `where`: "head" (on a view, from = its pane), "row" (a panel row, from = null: the focused pane)
+  const nm = vname({ view: v.view, key: v.key }), b = besideFrom(from ?? M.focus);
+  const off = !b.ok && S.q2 === "A";
+  const besideLabel = off ? b.why : `Open ${nm} beside ${where === "row" ? "the focused pane" : "this pane"} (⌥-press)`;
+  const data = `data-view="${v.view}" data-key="${v.key}" data-from="${from ?? ""}"`;
+  const bb = `<button class="besidebtn ${where === "row" ? "reveal" : ""}" data-beside ${data} title="${esc(besideLabel)}" aria-label="${esc(besideLabel)}" ${off ? 'aria-disabled="true"' : ""}>${I.beside}</button>`;
+  if (where === "row") {
+    const main = `<button class="row" data-open ${data} title="Opens ${esc(nm)} in a tab of its own"><span class="pi" data-p="ext">▥</span><span class="nm">${esc(v.key ? "Statistics" : "Statistics")} <span class="sub">${esc(v.key || "whole plane")}</span></span></button>`;
+    if (S.q1 === "A") return `<div class="vrow">${main}${bb}</div>`;
+    if (S.q1 === "B") return `<div class="vrow">${main}<button class="besidebtn reveal" data-vmenu ${data} aria-haspopup="menu" aria-label="Ways to open ${esc(nm)}">${I.chev}</button></div>`;
+    return `<div class="vrow">${main}</div>`;
+  }
+  const main = `<button data-open ${data} title="Asks statistics, in a tab of its own">${I.chart}${esc(VIEW_TITLE[v.view])}</button>`;
+  if (S.q1 === "A") return `<span class="vb">${main}</span>${bb}`;
+  if (S.q1 === "B") return `<span class="vb">${main}<button class="part" data-vmenu ${data} aria-haspopup="menu" aria-label="Ways to open ${esc(nm)}">${I.chev}</button></span>`;
+  return `<span class="vb">${main}</span>`;
+}
+function noteHtml(n, paneId) {
+  if (n.kind === "note") return `<div class="n"><span class="grow">${esc(n.text)}</span><button class="x" data-dismiss-note="${n.id}" aria-label="Dismiss">✕</button></div>`;
+  const nm = vname(n.v), from = paneId ?? "";
+  const g = n.greyed ? `data-greyed` : "";
+  const dis = n.greyed ? 'aria-disabled="true" title="statistics was removed"' : "";
+  const words = n.greyed ? `<b>statistics</b> was removed · ${esc(nm)}` : `<b>statistics</b> offers a view · ${esc(nm)}`;
+  return `<div class="n" ${g} data-offer="${n.id}"><span class="pi" data-p="ext">▥</span><span class="grow">${words}</span>`
+    + `<button class="btn" data-offer-open="${n.id}" data-how="tab" data-from="${from}" ${dis}>Open</button>`
+    + `<button class="btn" data-offer-open="${n.id}" data-how="beside" data-from="${from}" ${dis}>Open beside</button>`
+    + (S.q3 === "A" ? `<button class="x" data-offer-more="${n.id}" aria-label="More for this offer">⋯</button>` : "")
+    + `<button class="x" data-dismiss-offer="${n.id}" aria-label="Dismiss the offer">✕</button></div>`;
+}
+function paneHtml(r) {
+  const p = r.p, foc = p.id === M.focus, st = `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px`;
+  const narrow = r.w < 300 + 1;
+  const splitR = (r.w - GAP) / 2 >= MINW, splitD = (r.h - GAP) / 2 >= MINH;
+  const tools = (cnt, trouble) => `<button class="tool" aria-label="More">${I.more}</button>`
+    + `<button class="tool bell" data-bell ${cnt ? "" : "data-empty"} aria-pressed="${!M.minimised && cnt ? "true" : "false"}" aria-label="${cnt} notices">${I.bell}<span class="count">${cnt || ""}</span></button>`
+    + `<button class="tool" ${splitR ? "" : 'aria-disabled="true"'} title="${splitR ? "Split right" : "Too narrow to split: each side needs 40 columns"}">${I.right}</button>`
+    + (narrow ? "" : `<button class="tool" ${splitD ? "" : 'aria-disabled="true"'} title="Split down">${I.down}</button>`)
+    + `<button class="tool" data-close="${p.id}" aria-label="Close pane">${I.close}</button>`;
+  if (p.kind === "chat") {
+    const c = CHATS[p.name], notes = notesOf(p);
+    let band = "";
+    if (notes.length && !M.minimised) band = `<div class="band"><div class="bandhead"><span class="grow">${notes.length} notice${notes.length > 1 ? "s" : ""}</span><button class="btn quiet" data-dismiss-all="${p.id}">Dismiss all ${notes.length}</button><button class="btn quiet" data-bell>Minimise ▴</button></div>${notes.map((n) => noteHtml(n, p.id)).join("")}</div>`;
+    return `<section class="pane" data-kind="chat" data-pane="${p.id}" ${foc ? "data-focused" : ""} ${M.newPane === p.id ? "data-new" : ""} style="${st}" aria-label="${esc(p.name)}">`
+      + `<div class="phead"><span class="pi" data-p="${c.p}">${c.L}</span><span class="nm">${esc(p.name)}</span>${narrow ? "" : `<span class="mark"><span class="dot"></span>working</span><span class="where">· claude · ${c.ws}</span>`}<span class="grow"></span>${tools(notes.length)}</div>`
+      + band + `<div class="term">${c.lines.map((l) => `<div class="l">${l}</div>`).join("")}</div></section>`;
+  }
+  const nm = vname(p);
+  let body;
+  if (p.from === "statistics" && M.gone) body = `<div class="gone"><b>Statistics is not here any more</b><span>The statistics extension was removed. Nothing is left to ask.</span><span><button class="btn" data-close="${p.id}">Close pane</button></span></div>`;
+  else if (p.view === "stats") body = `<div class="vhead"><span class="says">From statistics</span></div><div class="vbody"><dl class="facts"><dt>Turns this week</dt><dd>214</dd><dt>Median turn</dt><dd>48 s</dd><dt>Tokens</dt><dd>3.1 M</dd></dl><div class="chart">${[30, 55, 42, 80, 64, 90, 38].map((v) => `<i style="height:${v}%"></i>`).join("")}</div><div style="color:var(--text-faint);font-size:12px">Asked once, on the press that opened it.</div></div>`;
+  else body = `<div class="vhead">${M.gone ? "" : viewButton({ view: "stats", key: p.key }, p.id, "head")}</div><div class="vbody"><dl class="facts"><dt>Role</dt><dd>Control Plane Steward</dd><dt>Memory</dt><dd>270 own · 242 shared</dd><dt>Chats</dt><dd>steward 4 (working), steward 1 (ended)</dd></dl><div style="color:var(--text-faint);font-size:12px">Steward's persona view. Its heading row carries the views extensions add, here statistics's.</div></div>`;
+  return `<section class="pane" data-kind="view" data-pane="${p.id}" ${foc ? "data-focused" : ""} ${M.newPane === p.id ? "data-new" : ""} style="${st}" aria-label="${esc(nm)}">`
+    + `<div class="phead"><span class="pi" data-p="${p.view === "stats" ? "ext" : "steward"}">${p.view === "stats" ? "▥" : "S"}</span><span class="nm">${esc(nm)}</span>${narrow ? "" : `<span class="where">· ${p.from ? "statistics" : "persona"}</span>`}<span class="grow"></span>${tools(0)}</div>${body}</section>`;
+}
+function foldHtml(r) {
+  return `<div class="fold" data-d="${r.d}" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px">${r.panes.map((p) =>
+    `<button class="fbtn" data-unfold="${p.id}" aria-label="${esc(nameOf(p))}, folded. Press to open.">${p.kind === "chat" ? `<span class="pi" data-p="${CHATS[p.name].p}">${CHATS[p.name].L}</span>` : `<span class="pi" data-p="ext">▥</span>`}${r.d === "col" ? esc(nameOf(p)) : ""}</button>`).join("")}</div>`;
+}
+function tabHtml(t, i) {
+  const ls = leaves(t.tree), f = ls.find((p) => p.id === M.focus) || ls[0];
+  const ic = f.kind === "chat" ? `<span class="pi" data-p="${CHATS[f.name].p}">${CHATS[f.name].L}</span>` : `<span class="pi" data-p="${f.view === "stats" ? "ext" : "steward"}">${f.view === "stats" ? "▥" : "S"}</span>`;
+  return `<button class="tab" role="tab" data-tab="${i}" aria-selected="${i === M.front}">${ic}<span class="nm">${esc(nameOf(f))}</span>${ls.length > 1 ? `<span class="split">⊟+${ls.length - 1}</span>` : ""}</button>`;
+}
+function draw() {
+  document.documentElement.dataset.theme = S.theme;
+  const sc = SCENES[S.scene], a = area();
+  const shown = new Set(leaves(M.tabs[M.front].tree).filter((p) => p.kind === "chat").map((p) => p.name));
+  const total = centreNotes().length;
+  const rows = Object.keys(CHATS).map((n) => `<button class="row" data-chat="${esc(n)}" ${shown.has(n) ? "data-shown" : ""}><span class="pi" data-p="${CHATS[n].p}">${CHATS[n].L}</span><span class="nm">${esc(n)}</span></button>`).join("");
+  const vrows = M.gone ? `<div class="row" style="cursor:default;color:var(--text-faint)">No extension offers a view</div>` : viewButton({ view: "stats", key: "" }, null, "row") + viewButton({ view: "stats", key: "steward" }, null, "row");
+  const sb = `<nav class="sb"><h3>Chats</h3>${rows}<h3>Views</h3>${vrows}</nav>`;
+  const rs = rects();
+  const panes = rs.map((r) => r.kind === "pane" ? paneHtml(r) : foldHtml(r)).join("");
+  const main = `<div class="main"><div class="strip" role="tablist">${M.tabs.map(tabHtml).join("")}</div><div class="panes" style="width:${a.w}px;height:${a.h}px">${panes}</div></div>`;
+  const cn = centreNotes();
+  const centre = M.centre ? `<aside class="centre" aria-label="Notices centre"><h3><span class="grow">Notices</span><button class="btn quiet" data-centre>Hide</button></h3>${cn.length ? cn.map((n) => `<div class="about">${esc(n.about ? n.about : "this window")}</div>${noteHtml(n, null)}`).join("") : `<div style="color:var(--text-faint)">Nothing to see.</div>`}</aside>` : "";
+  const win = document.getElementById("win");
+  win.style.width = S.W + "px"; win.style.height = S.H + "px";
+  win.innerHTML = `<div class="tbar"><span class="lights"><i></i><i></i><i></i></span><span class="wchip">smart-ide</span><span class="grow"></span><span>${S.W} × ${S.H}</span></div>`
+    + `<div class="cols" style="grid-template-columns:${SIDEBAR}px minmax(0,1fr)${M.centre ? ` ${CENTRE}px` : ""}">${sb}${main}${centre}</div>`
+    + `<div class="sbar"><span>smart-ide</span><span class="grow"></span><button class="nbtn" data-centre aria-expanded="${M.centre}" aria-label="Notices centre, ${total} notices">${I.bell}<span>${total}</span></button></div>`;
+  // the try card
+  const acts = [];
+  if (S.scene === "5") acts.push(`<button class="btn" data-act="again">statistics offers again</button>`, `<button class="btn" data-act="docs">offer about docs 3 (not on screen)</button>`, `<button class="btn" data-act="relaunch">Relaunch (clears session quiet)</button>`);
+  if (S.scene === "6") acts.push(`<button class="btn" data-act="remove" ${M.gone ? 'aria-disabled="true"' : ""}>Remove the statistics extension</button>`, `<button class="btn" data-act="again">statistics offers again</button>`);
+  acts.push(`<button class="btn quiet" data-act="reset">Reset the scene</button>`);
+  document.getElementById("try").innerHTML = `<h2>Scene ${S.scene}: ${esc(sc.name)}</h2><ul>${sc.try.map((t) => `<li>${t}</li>`).join("")}</ul><div class="act">${acts.join("")}</div>`;
+  document.getElementById("asked").innerHTML = `<h2>Being asked (recommended: A on all four)</h2>${["q1", "q2", "q3", "q4"].map((k) => `<p><b>${Q[k].title}</b> — now <b>${S[k]}</b>: ${esc(Q[k][S[k]])}</p>`).join("")}`;
+  const tree = (t, d = "") => t.pane ? `${d}${t.pane.kind === "chat" ? "chat" : "view"} #${t.pane.id} ${nameOf(t.pane)}${t.pane.id === M.focus ? "  ← focus" : ""}\n` : `${d}split ${t.dir} ${t.share}\n${tree(t.a, d + "  ")}${tree(t.b, d + "  ")}`;
+  document.getElementById("state").textContent = M.tabs.map((t, i) => `tab ${i}${i === M.front ? " (front)" : ""}\n${tree(t.tree, "  ")}`).join("")
+    + `offers: ${M.offers.map((o) => `${vname(o.v)} about ${o.about || "—"}${o.greyed ? " (greyed)" : ""}`).join("; ") || "none"}\n`
+    + `quiet: ${[...M.quiet].join(", ") || "none"}${M.stopped ? " · statistics offers stopped" : ""} · extension ${M.gone ? "removed" : "installed"}\n`
+    + `bands: ${M.minimised ? "minimised" : "expanded"}\n\nlast events:\n${M.log.slice(-6).map((l) => "• " + l).join("\n")}\n\nannounced:\n${M.said.slice(-3).map((l) => "“" + l + "”").join("\n")}`;
+  drawLayer(); drawBar();
+}
+function drawLayer() {
+  let h = "";
+  if (M.menu) {
+    const m = M.menu, v = m.v, nm = vname(v), b = besideFrom(m.from ?? M.focus), off = !b.ok && S.q2 === "A";
+    h += `<div class="menu" role="menu" style="left:${m.x}px;top:${m.y}px"><div class="hd">${esc(nm)}</div>`
+      + `<button class="mi" role="menuitem" data-mopen="tab"><span class="k">Open in a tab</span><span class="key">↵</span></button>`
+      + `<button class="mi" role="menuitem" data-mopen="beside" ${off ? 'aria-disabled="true"' : ""}><span class="k">Open beside${off ? `<span class="why">${esc(b.why)}</span>` : ""}</span><span class="key">⌥↵</span></button></div>`;
+  }
+  if (M.palette) {
+    const items = palItems(), b = besideFrom(M.focus), off = !b.ok && S.q2 === "A";
+    h += `<div class="pal" role="dialog" aria-label="Command palette"><input id="palin" value="statistics" aria-label="Search"><div class="list" role="listbox">${items.map((it, i) =>
+      `<div class="mi" role="option" data-pal="${i}" aria-selected="${i === M.palSel}"><span class="pi" data-p="ext">▥</span><span class="k">Open view: ${esc(it.label)}</span><span class="grp">statistics</span>`
+      + (off ? `<span class="hint" data-no>⌥↵ ${esc(b.why.replace("Too narrow to open beside", "too narrow to open beside"))}</span>` : `<span class="hint">↵ tab · ⌥↵ beside ${esc(nameOf(paneById(M.focus)))}</span>`)
+      + (S.q1 === "A" ? `<button class="besidebtn" data-pal-beside="${i}" ${off ? 'aria-disabled="true"' : ""} aria-label="Open beside">${I.beside}</button>` : "") + `</div>`).join("") || `<div class="mi">No views: statistics was removed</div>`}</div>`
+      + `<div class="foot"><span>↵ Open in a tab</span><span>⌥↵ Open beside the focused pane</span><span>Esc close</span></div></div>`;
+  }
+  if (M.toast) h += `<div class="toast" role="status"><span>${esc(M.toast.text)}</span>${M.toast.act ? `<button class="btn" data-toast>${esc(M.toast.act)}</button>` : ""}</div>`;
+  document.getElementById("layer").innerHTML = h;
+  if (M.palette) document.getElementById("palin")?.focus?.();
+}
+function palItems() { return M.gone ? [] : [{ v: { view: "stats", key: "" }, label: "Statistics · whole plane" }, { v: { view: "stats", key: "steward" }, label: "Statistics · steward" }]; }
+function drawBar() {
+  const g = (k, label, opts) => `<span class="grp"><span class="lbl">${label}</span>${opts.map(([v, t]) => `<button data-${k}="${v}" aria-pressed="${S[k] === v}" title="${esc(t || "")}">${v}</button>`).join("")}</span>`;
+  document.getElementById("bar").innerHTML = g("s", "Scene", Object.keys(SCENES).map((k) => [k, SCENES[k].name]))
+    + ["q1", "q2", "q3", "q4"].map((k) => g(k, k.toUpperCase(), ["A", "B", "C"].map((v) => [v, Q[k][v]]))).join("")
+    + `<span class="grp"><span class="lbl">Width</span><input type="range" min="1024" max="1680" step="8" value="${S.W}" id="wr"><span class="num">${S.W}px</span></span>`
+    + g("t", "Theme", [["light"], ["dark"]]);
+}
+let toastTimer;
+function toast(text, act, fn) { M.toast = { text, act, fn }; clearTimeout(toastTimer); toastTimer = setTimeout(() => { M.toast = null; drawLayer(); }, 6000); }
+
+/* ---------- Events ---------- */
+const vOf = (el) => ({ view: el.dataset.view, key: el.dataset.key });
+const fromOf = (el) => el.dataset.from ? +el.dataset.from : null;
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("button, [data-pal]"); if (!el) { if (M.menu) { M.menu = null; draw(); } return; }
+  if (el.closest(".bar")) {
+    for (const k of ["s", "q1", "q2", "q3", "q4", "t"]) if (el.dataset[k]) { const key = k === "s" ? "scene" : k === "t" ? "theme" : k; S[key] = el.dataset[k]; if (k !== "t") reset(); }
+    syncUrl(); draw(); return;
+  }
+  const disabled = el.getAttribute("aria-disabled") === "true";
+  M.newPane = null;
+  if (el.dataset.mopen) { const m = M.menu; M.menu = null; if (!disabled) openView(m.v, el.dataset.mopen, m.from); draw(); return; }
+  M.menu = null;
+  if (el.hasAttribute("data-open")) openView(vOf(el), e.altKey ? "beside" : "tab", fromOf(el));
+  else if (el.hasAttribute("data-beside")) { if (disabled) { const b = besideFrom(fromOf(el) ?? M.focus); toast(`Not opened beside: ${b.why}.`, "Open in a tab", () => openView(vOf(el), "tab")); say(`Not opened beside: ${b.why}.`); } else openView(vOf(el), "beside", fromOf(el)); }
+  else if (el.hasAttribute("data-vmenu")) { const r = el.getBoundingClientRect(); M.menu = { v: vOf(el), from: fromOf(el), x: r.left, y: r.bottom + 4 }; }
+  else if (el.dataset.offerOpen) { if (!disabled) { const o = M.offers.find((x) => x.id === el.dataset.offerOpen); openView(o.v, el.dataset.how, fromOf(el)); } }
+  else if (el.dataset.offerMore) { const o = M.offers.find((x) => x.id === el.dataset.offerMore); M.offers = M.offers.filter((x) => x !== o); M.stopped = true; log("Stop offers from statistics → stopped (Settings › Extensions › statistics undoes it)"); toast("statistics won't offer views. Settings › Extensions › statistics turns offers back on."); }
+  else if (el.dataset.dismissOffer) dismissOffer(el.dataset.dismissOffer);
+  else if (el.dataset.dismissNote) M.others = M.others.filter((n) => n.id !== el.dataset.dismissNote);
+  else if (el.dataset.dismissAll) { const p = paneById(+el.dataset.dismissAll); notesOf(p).forEach((n) => n.kind === "offer" ? dismissOffer(n.id) : (M.others = M.others.filter((x) => x.id !== n.id))); }
+  else if (el.hasAttribute("data-bell")) { M.minimised = !M.minimised; log(`bands ${M.minimised ? "minimised" : "expanded"} (one setting for every pane)`); }
+  else if (el.hasAttribute("data-centre")) M.centre = !M.centre;
+  else if (el.dataset.close) closePane(+el.dataset.close);
+  else if (el.dataset.tab) { M.front = +el.dataset.tab; M.focus = leaves(M.tabs[M.front].tree)[0].id; }
+  else if (el.dataset.chat) { const n = el.dataset.chat, on = findPane((p) => p.name === n); if (on) { M.front = tabOf(on.id); M.focus = on.id; } else { const f = paneById(M.focus); if (f && f.kind === "chat") f.name = n; } }
+  else if (el.dataset.unfold) M.focus = +el.dataset.unfold;
+  else if (el.hasAttribute("data-toast")) { const f = M.toast.fn; M.toast = null; f && f(); }
+  else if (el.dataset.palBeside) { if (!disabled) { M.palette = false; openView(palItems()[+el.dataset.palBeside].v, "beside", null); } else e.stopPropagation(); }
+  else if (el.dataset.pal) { const it = palItems()[+el.dataset.pal]; M.palette = false; openView(it.v, e.altKey ? "beside" : "tab", null); }
+  else if (el.dataset.act) act(el.dataset.act);
+  draw();
+});
+document.addEventListener("mousedown", (e) => { const p = e.target.closest(".pane"); if (p && !e.target.closest("button")) { M.focus = +p.dataset.pane; draw(); } });
+document.addEventListener("contextmenu", (e) => {
+  const el = e.target.closest("[data-open]"); if (!el) return;
+  e.preventDefault(); M.menu = { v: vOf(el), from: fromOf(el), x: e.clientX, y: e.clientY }; draw();
+});
+document.addEventListener("input", (e) => { if (e.target.id === "wr") { S.W = +e.target.value; draw(); } });
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); M.palette = true; M.palSel = 0; draw(); return; }
+  if (M.palette) {
+    const n = palItems().length;
+    if (e.key === "Escape") { M.palette = false; draw(); }
+    else if (e.key === "ArrowDown") { M.palSel = (M.palSel + 1) % n; draw(); }
+    else if (e.key === "ArrowUp") { M.palSel = (M.palSel - 1 + n) % n; draw(); }
+    else if (e.key === "Enter" && n) { M.palette = false; M.newPane = null; openView(palItems()[M.palSel].v, e.altKey ? "beside" : "tab", null); draw(); }
+    return;
+  }
+  if (e.key === "Escape" && M.menu) { M.menu = null; draw(); return; }
+  if (e.target.matches("input")) return;
+  if (e.key === "Enter" && e.altKey) { const el = e.target.closest("[data-open]"); if (el) { e.preventDefault(); openView(vOf(el), "beside", fromOf(el)); draw(); } }
+  if (e.key === "]" || e.key === "[") { const ks = Object.keys(SCENES), i = ks.indexOf(S.scene); S.scene = ks[(i + (e.key === "]" ? 1 : ks.length - 1)) % ks.length]; reset(); syncUrl(); draw(); }
+});
+function act(a) {
+  if (a === "again") offer({ view: "stats", key: S.scene === "6" ? "devops" : "steward" }, S.scene === "6" ? "devops 2" : "steward 4");
+  if (a === "docs") offer({ view: "stats", key: "docs" }, "docs 3");
+  if (a === "relaunch") { M.quiet.clear(); log(S.q3 === "C" ? "relaunch → kept for good under C" : "relaunch → session quiet cleared"); if (S.q3 === "C") M.quiet.add("stats/steward"); }
+  if (a === "remove") removeExtension();
+  if (a === "reset") reset();
+}
+function syncUrl() { const u = new URLSearchParams({ s: S.scene, q1: S.q1, q2: S.q2, q3: S.q3, q4: S.q4, t: S.theme }); history.replaceState(null, "", "?" + u); }
+reset(); draw();
+</script>
+</body>
+</html>
