@@ -205,7 +205,9 @@ describe("a pane's notices, minimised (the default)", () => {
     const doing = [...actions[1].querySelectorAll("button")].map((one) =>
       one.getAttribute("aria-label"),
     );
-    expect(doing.slice(0, 2)).toEqual(["Split right", "Split down"]);
+    // The chat's ⋯ (#4753) leads that cluster, then the splits.
+    expect(doing[0]).toMatch(/^More for /);
+    expect(doing.slice(1, 3)).toEqual(["Split right", "Split down"]);
   });
 
   it("keeps the bell's slot with no count when there is nothing, and draws no band", async () => {
