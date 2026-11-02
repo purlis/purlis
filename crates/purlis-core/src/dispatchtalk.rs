@@ -386,6 +386,8 @@ struct KeptQuestion {
     asked_at: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     handed_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    clock_only: bool,
 }
 
 /// What became of a task's question as the task was brought back ([`Talk::restored`]).
@@ -554,8 +556,12 @@ struct Question {
     standing: Standing,
     /// When it was asked, in seconds since 1970.
     asked_at: u64,
-    /// When the asking chat had a turn in which it was handed over.
+    /// When its time started: the asking chat had a turn in which it was handed over, or that
+    /// chat was stuck and could take none ([`Talk::look`]).
     handed_at: Option<u64>,
+    /// **Its time was started by a stuck asking chat, and no turn has had it yet** (#4653): the
+    /// turn that does is still the one its `question.shown` is written for.
+    clock_only: bool,
 }
 
 impl Question {
@@ -591,7 +597,24 @@ impl Question {
             shown: self.shown,
             asked_at: self.asked_at,
             handed_at: self.handed_at,
+            clock_only: self.clock_only,
         }
+    }
+
+    /// **A turn of the asking chat's has it, at `now`**: its time starts here unless a stuck
+    /// chat started it already, and the first turn to have it is said on the trail once.
+    fn had_by_a_turn(&mut self, task: u32, now: u64, trail: &mut Vec<(u32, Step)>) {
+        if self.handed_at.is_some() && !self.clock_only {
+            return;
+        }
+        self.handed_at.get_or_insert(now);
+        self.clock_only = false;
+        trail.push((
+            task,
+            Step::Shown {
+                number: self.number,
+            },
+        ));
     }
 }
 
@@ -1084,11 +1107,7 @@ impl Talk {
                 .is_some_and(|name| names.iter().any(|one| one == name));
             if named {
                 question.file = None;
-                if question.handed_at.is_none() {
-                    question.handed_at = Some(now);
-                    let number = question.number;
-                    self.trail.push((*task, Step::Shown { number }));
-                }
+                question.had_by_a_turn(*task, now, &mut self.trail);
                 any = true;
             }
         }
@@ -1103,7 +1122,8 @@ impl Talk {
         self.questions
             .iter()
             .filter(|(_, question)| {
-                question.waits_on_its_asking_chat() && question.handed_at.is_none()
+                question.waits_on_its_asking_chat()
+                    && (question.handed_at.is_none() || question.clock_only)
             })
             .filter_map(|(task, _)| self.known.get(task).map(|known| known.asker))
             .collect()
@@ -1143,6 +1163,7 @@ impl Talk {
             let asker_gone = asker.is_some_and(|asker| gone.contains(&asker));
             if question.handed_at.is_none() && asker.is_some_and(|asker| stuck.contains(&asker)) {
                 question.handed_at = Some(now);
+                question.clock_only = true;
                 started = true;
             }
             let waited = question
@@ -1278,6 +1299,7 @@ impl Talk {
         });
         // The turn had it, and the app went before it wrote so.
         let left = file.as_ref().is_some_and(|file| file.exists());
+        let taken = file.is_some() && !left;
         let unhanded = kept.handed_at.is_none() && !left;
         self.questions.insert(
             task,
@@ -1290,6 +1312,7 @@ impl Talk {
                 standing: kept.standing,
                 asked_at: kept.asked_at,
                 handed_at: if unhanded { Some(now) } else { kept.handed_at },
+                clock_only: kept.clock_only && !taken,
             },
         );
         self.save();
@@ -1360,6 +1383,7 @@ impl Talk {
                 standing: Standing::WithAskingChat,
                 asked_at: secs(std::time::SystemTime::now()),
                 handed_at: None,
+                clock_only: false,
             },
         );
         // A new question: how the one before it was closed says nothing of this one, nor
@@ -1396,11 +1420,7 @@ impl Talk {
             .filter(|question| question.answer.is_none() && !question.shown)?;
         question.shown = true;
         // A wait of the asking chat's has it: that turn has seen it (#4556).
-        if question.handed_at.is_none() {
-            question.handed_at = Some(secs(std::time::SystemTime::now()));
-            let number = question.number;
-            self.trail.push((task, Step::Shown { number }));
-        }
+        question.had_by_a_turn(task, secs(std::time::SystemTime::now()), &mut self.trail);
         let text = question.text.clone();
         self.save();
         Some(text)

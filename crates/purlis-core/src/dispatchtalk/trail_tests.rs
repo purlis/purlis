@@ -188,3 +188,39 @@ fn a_question_that_does_not_read_back_is_a_failure_said_once() {
         }]
     );
 }
+
+#[test]
+fn a_question_whose_clock_a_stuck_chat_started_is_still_shown_when_a_turn_has_it() {
+    let (mut talk, number) = a_task_that_asked();
+    talk.look(NOW, &HashSet::new(), &HashSet::from([ASKER]));
+
+    talk.handed(&["q.json".to_owned()], NOW + 40);
+
+    assert_eq!(
+        steps(&mut talk),
+        vec![Step::Asked { number }, Step::Shown { number }]
+    );
+    assert_eq!(
+        talk.handed_at(TASK),
+        Some(NOW),
+        "the clock is not started again"
+    );
+}
+
+#[test]
+fn a_question_whose_clock_a_stuck_chat_started_is_still_shown_by_a_wait() {
+    let (mut talk, number) = a_task_that_asked();
+    talk.look(NOW, &HashSet::new(), &HashSet::from([ASKER]));
+
+    talk.show(TASK);
+
+    assert_eq!(
+        steps(&mut talk),
+        vec![Step::Asked { number }, Step::Shown { number }]
+    );
+    assert_eq!(
+        talk.handed_at(TASK),
+        Some(NOW),
+        "the clock is not started again"
+    );
+}
