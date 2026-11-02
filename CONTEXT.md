@@ -908,6 +908,24 @@ A task the person asked for themselves from that chat's tab is a task of that se
 nothing of it, and is told the person asked.
 _Avoid_: dispatcher, caller, parent (a parent run is a harness's child run's)
 
+**Task question**:
+Something a **task** needs answered to carry on. It goes to the task's **asking chat** first,
+which answers it or **passes it on**; with no asking chat to answer, it goes to the person. It is
+one kind of **ask**: a permission, a secret or a browser takeover is not a task question and
+stays the person's. An asking chat's answer is never the person's word (ADR 0107).
+_Avoid_: escalation, quiz (a quiz is how a question is drawn)
+
+**Passes on**:
+What an asking chat does with a **task question** only the person should answer: it reaches the
+person in the task's own words, with at most a short note marked as the asking chat's.
+_Avoid_: escalate, forward
+
+**Where you answer**:
+The person's one remembered setting for where a **task question** that has reached them appears:
+**from the top**, in the tab of the nearest chat above that has one, or **from each session**, in
+the task's own tab. It changes what is shown and never who is asked, and any task can still be
+opened and answered.
+
 **Persona chat**:
 The chat a dispatch starts, running as one persona for its whole life. It is told who asked,
 and it works under its own persona's charter and guards. One a task started is shown as a
@@ -1257,7 +1275,7 @@ _Avoid_: handoff, log, transcript
 
 **Smart close**:
 Closing a chat after it has written its session record: the app sends it one line naming
-purlis's `smart-close` skill (the operator's click is the consent, the exception to a curation
+purlis's `purlis-smart-close` skill (the operator's click is the consent, the exception to a curation
 action's never-sent prompt), and the tab closes when `purlis session record` tells the app the
 record is saved — never on anything the chat printed. Until then the chat is **wrapping up**:
 its tab says so, and the operator's Cancel smart close or their own typing stops it.
@@ -1265,9 +1283,9 @@ _Avoid_: save and close, archive
 
 **Smart-close pass**:
 What a person's own start of a smart close gives that chat: the tab's **Smart close**, or the
-person typing `/smart-close` into a waiting chat. It is bound to that chat and that close, ends
+person typing `/purlis-smart-close` into a waiting chat. It is bound to that chat and that close, ends
 with it, and is the only thing that lets a record close the tab. A chat can't give itself one: a
-typed `/smart-close` counts only beside the person's own Enter in the chat's pane (#1332).
+typed `/purlis-smart-close` counts only beside the person's own Enter in the chat's pane (#1332).
 _Avoid_: token, ticket (that is a handoff's), approval
 
 **Resume** (of a session record):

@@ -22,6 +22,7 @@ import { Tooltip } from "../ui/tooltip/Tooltip";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Badge } from "../ui/badge/Badge";
 import { Switch } from "../ui/choice/Switch";
+import { ClusterSetupGuide } from "./ClusterSetupGuide";
 import { PoolLimits } from "./PoolLimits";
 import { PoolProfiles } from "./PoolProfiles";
 
@@ -548,6 +549,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
           {/* A project whose pool this machine cannot name is marked under the list. */}
           {marks(shown.filter((one) => rowOf(one) === undefined))}
           <Button onPress={() => startAddingAPool()}>Add a pool…</Button>
+          <ClusterSetupGuide />
         </div>
       ),
     };

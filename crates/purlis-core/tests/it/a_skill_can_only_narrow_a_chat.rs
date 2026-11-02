@@ -121,11 +121,11 @@ fn claude_folder(args: &[String]) -> PathBuf {
 fn opencode_folder(env: &[(String, String)]) -> PathBuf {
     let config: serde_json::Value =
         serde_json::from_str(var(env, purlis_core::opencode::CONFIG_ENV).unwrap()).unwrap();
-    // One folder, the built-in skills in it beside the plane's.
+    // The bundle's skills, then the folder of the plane's.
     PathBuf::from(
-        config["plugin"][0][1]["skills"]
+        config["plugin"][0][1]["skills"][1]
             .as_str()
-            .expect("one directory"),
+            .expect("the plane's folder"),
     )
 }
 

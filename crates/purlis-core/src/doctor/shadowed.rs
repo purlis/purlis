@@ -44,8 +44,12 @@ pub(crate) fn shadowed(root: &Path) -> std::io::Result<Shadowed> {
             for entry in entries {
                 let entry = entry?;
                 let name = entry.file_name().to_string_lossy().into_owned();
-                if crate::skills::SHIPPED.contains(&name.as_str())
-                    && entry.path().join("SKILL.md").is_file()
+                // By a name from before the prefix too: that is the copy a project is left with.
+                if crate::skills::SHIPPED.iter().any(|shipped| {
+                    *shipped == name
+                        || shipped.strip_prefix(crate::skills::RESERVED_PREFIX)
+                            == Some(name.as_str())
+                }) && entry.path().join("SKILL.md").is_file()
                 {
                     skills.push(name);
                 }

@@ -18,11 +18,16 @@ export const BUILT_IN_FIXED =
 
 /** What a refused name is told, the core's own sentence (`skills::NAME_RESERVED`), said here
  *  before the copy is asked for. */
-export const NAME_RESERVED = "That name belongs to a built-in skill; pick another, or make a copy.";
+export const NAME_RESERVED = "A name starting with purlis- belongs to purlis; pick another.";
 
-/** What the copy's name starts as: the built-in's, made the person's. */
+/** Whether `name` is one of purlis's own (`skills::name_reserved`), in any case. */
+export function isReservedName(name: string): boolean {
+  return name.toLowerCase().startsWith("purlis-");
+}
+
+/** What the copy's name starts as: the built-in's without purlis's prefix, made the person's. */
 export function copyNameOf(name: string): string {
-  return `my-${name}`;
+  return `my-${name.replace(/^purlis-/, "")}`;
 }
 
 /** What the copy's description starts as (#3777): the built-in's, with a note that it is the
@@ -43,8 +48,8 @@ export function sameDescription(name: string): string {
  * is, and chats keep getting it beside the copy: a built-in skill is never replaced.
  *
  * A dialog, as a short choice is (S2): which built-in (where it was opened from the folded line,
- * not from one built-in's page), the new name, its description, and where it lands. A name a
- * built-in skill has is refused as it is typed, in the core's words, and the core refuses it
+ * not from one built-in's page), the new name, its description, and where it lands. A name of
+ * purlis's own is refused as it is typed, in the core's words, and the core refuses it
  * again when asked; what the core refuses is said in place, beside the fields the person is still
  * filling.
  *
@@ -65,8 +70,7 @@ export function SkillCopy({
   onCopy,
   onCancel,
 }: {
-  /** Every built-in skill's name, in its order: what a copy can be made of, and the names it
-   *  cannot take. */
+  /** Every built-in skill's name, in its order: what a copy can be made of. */
   builtIns: readonly string[];
   /** A built-in skill's description, which the copy's starts from. */
   descriptionOf: (name: string) => string;
@@ -93,7 +97,7 @@ export function SkillCopy({
   const [descriptionTyped, setDescriptionTyped] = useState(false);
   const [level, setLevel] = useState<SkillLevel>(start);
   const wanted = to.trim();
-  const reserved = builtIns.includes(wanted);
+  const reserved = isReservedName(wanted);
   const describedAs = description.trim();
   const same = name !== "" && describedAs === descriptionOf(name).trim();
   const ready = !busy && name !== "" && wanted !== "" && !reserved && describedAs !== "" && !same;
@@ -149,7 +153,7 @@ export function SkillCopy({
       )}
       <SettingRow
         label="New name"
-        help="Lowercase letters, digits and hyphens: not a built-in skill's name."
+        help="Lowercase letters, digits and hyphens, not starting with purlis-."
         control={(ids) => (
           <Field
             kind="text"

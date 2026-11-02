@@ -769,20 +769,16 @@ impl Held {
         {
             self.tell_smart_close(session, crate::smartclose::Phase::Cancelled);
         }
-        // **And the person submitting `/smart-close` into a chat that waits for them is what a
+        // **And the person submitting `/purlis-smart-close` into a chat that waits for them is what a
         // smart-close pass is issued on** (#1332): the line read from their own keys, never
         // what the chat reports (#1361). Marked before the bytes are sent, so it is there
         // before the hook the prompt fires can be.
-        let submitted = self.closing.person_typed(
-            session,
-            bytes,
-            std::time::Instant::now(),
-            self.chats.harness(session),
-            || {
-                let glance = self.board().glance(session);
-                glance.state == purlis_core::state::State::Waiting && !glance.asking
-            },
-        );
+        let submitted =
+            self.closing
+                .person_typed(session, bytes, std::time::Instant::now(), || {
+                    let glance = self.board().glance(session);
+                    glance.state == purlis_core::state::State::Waiting && !glance.asking
+                });
         // And a prompt the person sends a dispatched task is what its report says of them: that
         // they stepped in, and nothing of what they typed (#1442, #1463).
         crate::dispatched::person_typed(self, session, bytes, submitted);
@@ -3018,7 +3014,7 @@ impl Planes {
             })
         });
         // A curation chat's prompt is typed when its harness reports its start (ADR 0061), and
-        // the socket's thread is where that report arrives. A person's typed `/smart-close` is
+        // the socket's thread is where that report arrives. A person's typed `/purlis-smart-close` is
         // heard here too: only a report the board took, so a harness nested in the chat never
         // issues its chat a pass (#1332). Weak for the handoff's reason.
         // What a chat waits on that is not the person, asked as the end of its turn is applied

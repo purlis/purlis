@@ -595,7 +595,7 @@ fn a_stale_copy_and_a_copy_whose_charter_is_gone_are_offered_plugin_install() {
     let m = machine(&d.path().canonicalize().unwrap().join("machine"));
     ran(&fix::apply_for(&root, FixId::PluginInstall, &m));
     std::fs::write(
-        m.charter_dir.join("plugin/skills/handoff/SKILL.md"),
+        m.charter_dir.join("plugin/skills/purlis-handoff/SKILL.md"),
         "an older skill\n",
     )
     .unwrap();

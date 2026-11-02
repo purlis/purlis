@@ -1550,6 +1550,7 @@ export const commands = {
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
+	runnerStage: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
 	setClusterPoolOwned: __WINDOW_ONLY_RESULT,
 	poolsMintingWithoutAsking: __WINDOW_ONLY_RESULT,
@@ -3671,6 +3672,15 @@ export type ChatSkills = {
 	known: boolean,
 	/**  Every skill of its set, by name. */
 	skills: ChatSkill[],
+	/**
+	 *  The skills its program finds itself and it has (#4477): the Skills view's Use types them,
+	 *  and the picker's list and the budget hold none.
+	 */
+	program: ChatSkill[],
+	/**  The plugins on this machine it does not have. */
+	plugins_off: PluginOffShown[],
+	/**  What its program's own skills hold, in the core's words: the header's count. */
+	own: string | null,
 	/**  Its budget, where it is known. */
 	budget: SkillBudget | null,
 	/**
@@ -4004,7 +4014,7 @@ export type DeletedSkill = {
 	 */
 	in_history: boolean,
 	/**
-	 *  Whether its name belongs to a built-in skill now (a newer purlis ships one of that name),
+	 *  Whether its name belongs to purlis now (it starts with `purlis-`),
 	 *  so it comes back only under a new name (#3729).
 	 */
 	reserved: boolean,
@@ -7292,7 +7302,7 @@ export type OpenRun = {
 	skill: string,
 	/**
 	 *  The skill it is a run of, by its own name, as the core counts it
-	 *  ([`purlis_core::skilluse::own_name`]): `secrets` for opencode's `purlis-secrets`. The
+	 *  ([`purlis_core::skilluse::own_name`]): `purlis-secrets` for `purlis:purlis-secrets`. The
 	 *  skill whose tab its chip opens.
 	 */
 	name: string,
@@ -7857,7 +7867,7 @@ export type Phase =
 "not_sent" | 
 /**
  *  The chat finished a Smart close and saved its record with no pass: its harness said
- *  `/smart-close`, and no typed one of the person's was behind it. The tab stayed open, and
+ *  `/purlis-smart-close`, and no typed one of the person's was behind it. The tab stayed open, and
  *  the window offers Close tab, a plain close that grants nothing (D-1361-7).
  */
 "kept_open";
@@ -8247,6 +8257,18 @@ export type PlaneUpdated = {
 	skills_gone: string[],
 	/**  The skills it has that changed since it started, by name. */
 	skills_edited: string[],
+};
+
+/**  **A plugin on this machine a chat does not have** (#4477), as Left out says it. */
+export type PluginOffShown = {
+	/**  The name its skills are prefixed with. */
+	name: string,
+	/**  Why, in full: what closes its skills' run. */
+	said: string,
+	/**  Why, in the few words its folded line has room for. */
+	line: string,
+	/**  The command that puts it right, where one does. */
+	command: string | null,
 };
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
@@ -10022,6 +10044,16 @@ export type RunnerOnTheList = {
 	on: OnADevice,
 };
 
+/**  Where a chat's runner has got to, as the window waiting on it says it (#3709). */
+export type RunnerStage = {
+	/**  The stage, in the words the person reads. */
+	said: string,
+	/**  One line more about it. */
+	more: string,
+	/**  The cluster's own words for why it waits, where it gave them. */
+	cluster_said: string | null,
+};
+
 /**  Whether a runner's container runs (#2051). */
 export type RunnerStanding = { state: "running" } | 
 /**  Its container stopped, its home kept: it starts again as a chat next needs it. */
@@ -11503,7 +11535,7 @@ export type SkillUpdates = {
 
 /**  A skill another skill names. */
 export type SkillUse = {
-	/**  As the text writes it: `skills:deploy`, `purlis:secrets`. */
+	/**  As the text writes it: `skills:deploy`, `purlis:purlis-secrets`. */
 	said: string,
 	name: string,
 	/**  Whether it names one of the project's skills, not a built-in one. */
@@ -12001,6 +12033,8 @@ export type StudioHarness = {
 	 *  for a count of its needs.
 	 */
 	own: string | null,
+	/**  The plugins on this machine a new chat here would not have (#4477). */
+	plugins_off: PluginOffShown[],
 };
 
 /**  A level a skill can be moved to or made at, and its words. */

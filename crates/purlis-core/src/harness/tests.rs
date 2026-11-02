@@ -407,7 +407,6 @@ fn a_claude_code_chat_is_handed_the_skills_the_project_turned_off_as_overrides()
     let chosen = crate::harness_plugin::Chosen {
         plugins: BTreeMap::new(),
         skills_off: ["langfuse".to_owned(), "figma:frame".to_owned()].into(),
-        own_index: false,
     };
     let (args, _) = claude_with("/bin/charter", empty.path(), &chosen);
     let settings: serde_json::Value = serde_json::from_str(settings_of(&args)).expect("JSON");
@@ -466,7 +465,6 @@ fn a_codex_chat_is_handed_each_plugin_and_skill_the_project_turned_off_by_its_ow
     let chosen = crate::harness_plugin::Chosen {
         plugins: BTreeMap::from([("zp@zmkt".to_owned(), false)]),
         skills_off: ["langfuse".to_owned(), "zp:zp \"skill\"".to_owned()].into(),
-        own_index: false,
     };
     let StateHooks::ThisSessionOnly { args, .. } =
         Harness::Codex.state_hooks(kit("/bin/charter"), None, &chosen, None)
@@ -1960,9 +1958,7 @@ fn only_a_harness_that_cannot_load_the_skills_is_briefed_on_them() {
 }
 
 #[test]
-fn an_opencode_chat_is_told_the_set_s_folder_of_the_bundled_skills_through_the_shim() {
-    // The folder the host laid the built-in skills out in as `purlis-<name>`; never the bundle's
-    // own `skills/`, whose names a clone's skill could share.
+fn an_opencode_chat_is_told_the_bundles_skills_and_the_set_s_folder_through_the_shim() {
     let plugin = testing::bundled_plugin();
     let folder = std::path::Path::new("/data/skill-sets/0123");
     let env = env_of(Harness::Opencode.state_hooks(
@@ -1983,9 +1979,9 @@ fn an_opencode_chat_is_told_the_set_s_folder_of_the_bundled_skills_through_the_s
     let config: serde_json::Value =
         serde_json::from_str(&env["OPENCODE_CONFIG_CONTENT"]).expect("JSON");
     assert_eq!(
-        config["plugin"][0][1]["skills"].as_str(),
-        Some(folder.join("skills").display().to_string().as_str()),
-        "{config}"
+        config["plugin"][0][1]["skills"],
+        serde_json::json!(plugin.join("skills").display().to_string()),
+        "the set holds nothing the folder holds, so the bundle's alone: {config}"
     );
     assert!(
         config.get("skills").is_none(),
@@ -2050,92 +2046,4 @@ fn opencode_is_the_kind_and_the_command_of_the_same_harness() {
         said.contains("first prompt") && said.contains("quits"),
         "{said}"
     );
-}
-
-#[test]
-fn a_clones_own_skill_index_is_left_out_where_the_harness_keeps_purliss_and_only_there() {
-    // SK-15 (#2778): `skill-index` is purlis's index skill's name. Claude Code's `skillOverrides`
-    // reaches a skill outside a plugin and never `skills:skill-index`; Codex is briefed on
-    // purlis's copy apart from what it finds itself. opencode discovers purlis's folder as its
-    // own, so turning the name off there would take purlis's index too.
-    let plane = tempfile::tempdir().expect("a directory");
-    let clone = plane.path().join("workspaces/alpha/app");
-    let repo = [crate::skills::OutsideSkill {
-        skill: crate::skills::Skill {
-            name: crate::skills::INDEX.to_owned(),
-            description: "The repo's.".to_owned(),
-            path: clone.join("skills-of-the-repo/skill-index/SKILL.md"),
-        },
-        root: clone.clone(),
-        origin: crate::skills::Origin::Repo,
-        id: crate::skills::INDEX.to_owned(),
-        owner: crate::skills::Owner::Repo("app".to_owned()),
-        switch: crate::skills::Switch::Alone,
-        off: false,
-        unread: None,
-    }];
-    let kit = Kit {
-        skills: Some(crate::skills::PlaneSkills {
-            plane: plane.path(),
-            workspace: Some("alpha"),
-            repo: &repo,
-            routed: None,
-        }),
-        ..kit("/bin/charter")
-    };
-    let none = crate::harness_plugin::Chosen::new();
-    let armed = |harness: Harness| match harness.state_hooks(kit, Some(plane.path()), &none, None) {
-        StateHooks::ThisSessionOnly { args, env, .. } => (args, env),
-        StateHooks::None => panic!("{harness:?} is armed per session"),
-    };
-
-    let (args, _) = armed(Harness::ClaudeCode);
-    let settings: serde_json::Value = serde_json::from_str(settings_of(&args)).expect("JSON");
-    assert_eq!(
-        settings["skillOverrides"],
-        serde_json::json!({ "skill-index": "off" })
-    );
-    let (args, _) = armed(Harness::Codex);
-    assert!(
-        args.iter()
-            .any(|arg| arg == "skills.config=[{name=\"skill-index\",enabled=false}]"),
-        "{args:?}"
-    );
-    assert_eq!(
-        crate::skills::skills_off_for(kit, Harness::Opencode, &none),
-        Vec::<String>::new(),
-        "opencode knows purlis's index as `purlis-skill-index`, so the clone's \
-         `skill-index` is another skill and is left on"
-    );
-    // The harness's own copy, as the chat's start found it where its environment points
-    // (#3320), is turned off the same way.
-    let own = crate::harness_plugin::Chosen {
-        own_index: true,
-        ..crate::harness_plugin::Chosen::new()
-    };
-    let alone = Kit {
-        skills: Some(crate::skills::PlaneSkills {
-            plane: plane.path(),
-            workspace: Some("alpha"),
-            repo: &[],
-            routed: None,
-        }),
-        ..kit
-    };
-    for harness in [Harness::ClaudeCode, Harness::Codex] {
-        assert_eq!(
-            crate::skills::skills_off_for(alone, harness, &own),
-            [crate::skills::INDEX.to_owned()],
-            "{harness:?}"
-        );
-    }
-    // With no copy elsewhere, nothing is written, so the operator's own overrides stand. What
-    // this machine's harness holds is never read here (#3320): `none` says it holds no copy.
-    for harness in [Harness::ClaudeCode, Harness::Codex] {
-        assert_eq!(
-            crate::skills::skills_off_for(alone, harness, &none),
-            Vec::<String>::new(),
-            "{harness:?}"
-        );
-    }
 }

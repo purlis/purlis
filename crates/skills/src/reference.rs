@@ -16,7 +16,8 @@ pub const OLD_BUILT_IN_PREFIX: &str = BUILT_IN_PREFIXES[1];
 /// One entry of a persona's `skills:` list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reference {
-    /// `purlis:<name>` (or `charter:<name>`): a built-in skill.
+    /// `purlis:purlis-<name>`: a built-in skill, by its own name. `purlis:<name>` and
+    /// `charter:<name>` read as it ([`Reference::parse`]).
     BuiltIn(String),
     /// `<plugin>:<name>`: a skill of a harness plugin, which the harness loads.
     Harness { plugin: String, name: String },
@@ -28,7 +29,9 @@ pub enum Reference {
 
 impl Reference {
     /// The entry `written`, as a persona's `skills:` list holds it, or `None` for one that names
-    /// nothing: blank, or with a blank side to its `:`.
+    /// nothing: blank, or with a blank side to its `:`. A built-in skill written by a name from
+    /// before each took [`crate::RESERVED_PREFIX`] (`purlis:handoff`) reads as its name now
+    /// (ADR 0099 as amended 2026-11-01), so no plane has to change.
     pub fn parse(written: &str) -> Option<Self> {
         let written = written.trim();
         if written.is_empty() {
@@ -42,7 +45,7 @@ impl Reference {
             return None;
         }
         Some(if BUILT_IN_PREFIXES.contains(&prefix) {
-            Self::BuiltIn(name.to_owned())
+            Self::BuiltIn(built_in_named(name))
         } else {
             Self::Harness {
                 plugin: prefix.to_owned(),
@@ -92,6 +95,15 @@ impl Reference {
             }
         }
         seen
+    }
+}
+
+/// The built-in skill `name` says, under whichever of its names it was written.
+fn built_in_named(name: &str) -> String {
+    if name.starts_with(crate::RESERVED_PREFIX) {
+        name.to_owned()
+    } else {
+        format!("{}{name}", crate::RESERVED_PREFIX)
     }
 }
 

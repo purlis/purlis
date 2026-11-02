@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use purlis_skills::held::{Folder, Follow, Opened};
 use purlis_skills::{Origin, OutsideSkill, Owner, Skill, Switch, Unread};
 
-use super::{Adapter, Choices, Env, SkillsAt};
+use super::{Adapter, ChatFolder, Choices, Env, SkillsAt};
 
 /// One skill [`skills_in`] found: the skill, the root its `SKILL.md` is read from, and why
 /// purlis did not read it, where it did not.
@@ -38,11 +38,54 @@ enum Links {
 /// its plugins', in the order of its places and then of the skills' folder names, each turned off
 /// where `choices` say so. A skill one plugin has in two folders (two installs, or synced twice)
 /// is listed once: it is one skill to the harness.
+///
+/// A plugin `at` does not have brings nothing: its skills are [`plugin_skills_off`]'s.
 pub fn harness_skills(
     adapter: &dyn Adapter,
     env: &Env<'_>,
     choices: &Choices,
+    at: &ChatFolder,
 ) -> Vec<OutsideSkill> {
+    let off = adapter.plugins_here(env, at).unwrap_or_default().off;
+    harness_skills_but(adapter, env, choices, &off)
+}
+
+/// **Every skill of the harness's own places but those of the plugins in `off`**: what a chat
+/// has whose plugins its start read and held.
+pub fn harness_skills_but(
+    adapter: &dyn Adapter,
+    env: &Env<'_>,
+    choices: &Choices,
+    off: &[super::PluginOff],
+) -> Vec<OutsideSkill> {
+    harness_skills_split(adapter, env, choices, off).0
+}
+
+/// **The harness's own skills, in one read of its places, parted by `off`**: those a chat has,
+/// and those of a plugin it lacks, each with that plugin, which Left out lists with why.
+pub fn harness_skills_split(
+    adapter: &dyn Adapter,
+    env: &Env<'_>,
+    choices: &Choices,
+    off: &[super::PluginOff],
+) -> (Vec<OutsideSkill>, Vec<(OutsideSkill, super::PluginOff)>) {
+    let mut has = Vec::new();
+    let mut lacks = Vec::new();
+    for one in on_machine(adapter, env, choices) {
+        let plugin = match &one.owner {
+            Owner::Plugin(name) => off.iter().find(|plugin| plugin.name == *name),
+            Owner::You | Owner::Repo(_) => None,
+        };
+        match plugin {
+            Some(plugin) => lacks.push((one, plugin.clone())),
+            None => has.push(one),
+        }
+    }
+    (has, lacks)
+}
+
+/// Every skill of the harness's own places, whichever chat has it.
+fn on_machine(adapter: &dyn Adapter, env: &Env<'_>, choices: &Choices) -> Vec<OutsideSkill> {
     let mut out: Vec<OutsideSkill> = Vec::new();
     for (dir, plugin) in roots(&adapter.skills_at(env)) {
         let Some(held) = Folder::open(&dir, Follow::Link) else {

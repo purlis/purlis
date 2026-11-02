@@ -192,19 +192,8 @@ fn laid_out_on(
     kit: &Kit,
     harness: Harness,
 ) -> Option<PathBuf> {
-    let own_names = harness.skills().names_built_ins_its_own();
-    if at.is_none() && !own_names {
-        return None;
-    }
-    let Some(sets) = kit.skill_sets.as_deref() else {
-        if own_names {
-            tracing::warn!(
-                "purlis: this chat's skills have no folder to be laid out in; {}",
-                crate::skills::without_the_folder(harness)
-            );
-        }
-        return None;
-    };
+    let at = at?;
+    let sets = kit.skill_sets.as_deref()?;
     let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
     crate::skills::lay_out_for_chat(at, persona, built_in.as_deref(), sets, harness)
 }
@@ -235,9 +224,39 @@ pub struct ChatSkills {
     /// [`crate::skills::verbs::drafts::arm_router`]): what a Try it's scratch chat of that arm is
     /// routed by in place of a workspace's or persona's choice. `None` for every other chat.
     pub arm_router: Option<String>,
+    /// **What it has of its harness's plugins, read at its start and held** (#4477): a running
+    /// chat keeps what it started with. `None` where nothing here can say: a runner's chat.
+    pub plugins: Option<crate::harness_plugin::Plugins>,
+    /// The variables of its environment that say where its harness keeps its config, where it
+    /// was started with any: a profile may point it at another account's folder.
+    pub plugins_env: Vec<(String, String)>,
 }
 
 impl ChatSkills {
+    /// **These skills, with what the chat has of its harness's plugins** ([`Self::plugins`]),
+    /// in the environment `env` it starts with: `reads_project` is false where its start limits
+    /// it to the person's settings (`--setting-sources user`).
+    #[must_use]
+    pub fn plugins_read(
+        mut self,
+        harness: Option<Harness>,
+        cwd: Option<&Path>,
+        reads_project: bool,
+        env: &[(String, String)],
+    ) -> Self {
+        self.plugins_env = crate::harness_plugin::config_dirs_in(env);
+        self.plugins = harness.and_then(|harness| {
+            harness.adapter().plugins().plugins_here(
+                &crate::harness_plugin::Env::of(env),
+                &crate::harness_plugin::ChatFolder {
+                    cwd: cwd.map(Path::to_path_buf),
+                    reads_project,
+                },
+            )
+        });
+        self
+    }
+
     /// **The chat in the project at `root`, started in `cwd` on `harness` as `persona`**, with
     /// the plane's skills reaching it where `on` says so: its scope, its workspace and the repo
     /// skills of its clone, each read here once.
@@ -280,6 +299,8 @@ impl ChatSkills {
             repo,
             routed: None,
             arm_router,
+            plugins: None,
+            plugins_env: Vec::new(),
         }
     }
 
@@ -745,6 +766,7 @@ pub fn compose_ready(
             Some(&cwd),
             persona.as_deref(),
         )
+        .plugins_read(ready.harness, Some(&cwd), sandbox.is_none(), &ready.env)
         .routed_by(built_in.as_deref(), ready.harness, beside.router().as_ref())
     });
     let armed = armed(&Arming {

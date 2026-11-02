@@ -16,7 +16,7 @@ import { ComboBox } from "./ComboBox";
 
 afterEach(cleanup);
 
-const SKILLS = ["purlis:handoff", "purlis:persona", "deploy"];
+const SKILLS = ["purlis:purlis-handoff", "purlis:purlis-persona", "deploy"];
 
 function Box({
   onSend,
@@ -71,9 +71,9 @@ describe("the combobox", () => {
     expect(within(list).getAllByRole("option")).toHaveLength(SKILLS.length);
     const aimed = () => box().getAttribute("aria-activedescendant");
     const optionId = (name: string) => within(list).getByRole("option", { name }).id;
-    await waitFor(() => expect(aimed()).toBe(optionId("purlis:handoff")));
+    await waitFor(() => expect(aimed()).toBe(optionId("purlis:purlis-handoff")));
     await user.keyboard("{ArrowUp}");
-    expect(aimed()).toBe(optionId("purlis:handoff"));
+    expect(aimed()).toBe(optionId("purlis:purlis-handoff"));
     await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}");
     expect(aimed()).toBe(optionId("deploy"));
   });
@@ -86,7 +86,7 @@ describe("the combobox", () => {
     const list = await screen.findByRole("listbox");
     await waitFor(() => expect(within(list).getAllByRole("option")).toHaveLength(2));
     await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-    await waitFor(() => expect(box()).toHaveValue("purlis:persona"));
+    await waitFor(() => expect(box()).toHaveValue("purlis:purlis-persona"));
     await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
   });
 

@@ -102,7 +102,11 @@ export function UseSkill({
   onCancel: () => void;
 }) {
   const [query, setQuery] = useState(picks ?? "");
-  const named = picks === undefined ? undefined : skills?.skills.find((one) => one.name === picks);
+  // Its program's own skills (#4477) are typed from a card's Use, and are not in the list below.
+  const named =
+    picks === undefined
+      ? undefined
+      : [...(skills?.skills ?? []), ...(skills?.program ?? [])].find((one) => one.name === picks);
   const [picked, setPicked] = useState<ChatSkill | undefined>(() =>
     named?.takes_arguments ? named : undefined,
   );

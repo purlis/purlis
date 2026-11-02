@@ -260,8 +260,8 @@ const A_RECORD_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_se
 /// What becomes of the tab when nobody started a smart close for the chat: the sentence the
 /// skill relays to the operator.
 pub const NO_PASS: &str = "No smart close was started for this chat (the tab's Smart close, or \
-                           typing /smart-close), so its tab will not close by itself. Close it \
-                           when you are done.";
+                           typing /purlis-smart-close), so its tab will not close by itself. \
+                           Close it when you are done.";
 
 /// Hands the record to the app that started this chat, over the chat's hook socket (#1332).
 fn forwarded(here: &Here, title: &str, body: &str, pieces: &[String]) -> Forwarded {

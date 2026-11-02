@@ -737,8 +737,8 @@ fn a_drafted_new_skill_with_a_built_in_skills_name_is_not_accepted() {
     let tmp = plane();
     let root = tmp.path();
     for rel in [
-        "skills/secrets/SKILL.md",
-        "skills.local/browser/SKILL.md",
+        "skills/purlis-secrets/SKILL.md",
+        "skills.local/purlis-browser/SKILL.md",
         "workspaces/ops/skills/purlis-secrets/SKILL.md",
     ] {
         let name = rel.split('/').rev().nth(1).unwrap();

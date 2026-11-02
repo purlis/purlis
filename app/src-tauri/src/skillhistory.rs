@@ -106,7 +106,7 @@ pub struct SkillCopy {
 /// A skill another skill names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillUse {
-    /// As the text writes it: `skills:deploy`, `purlis:secrets`.
+    /// As the text writes it: `skills:deploy`, `purlis:purlis-secrets`.
     pub said: String,
     pub name: String,
     /// Whether it names one of the project's skills, not a built-in one.

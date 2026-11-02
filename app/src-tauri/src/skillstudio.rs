@@ -453,6 +453,8 @@ pub struct StudioHarness {
     /// budget. Null for a harness that finds none of its own, and where the studio was read only
     /// for a count of its needs.
     pub own: Option<String>,
+    /// The plugins on this machine a new chat here would not have (#4477).
+    pub plugins_off: Vec<crate::useskill::PluginOffShown>,
 }
 
 /// A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
@@ -1088,6 +1090,13 @@ fn harnesses(
                     .iter()
                     .cloned()
                     .map(outside_shown)
+                    .collect(),
+                plugins_off: one
+                    .plugins_off
+                    .iter()
+                    .map(|plugin| {
+                        crate::useskill::PluginOffShown::of(plugin, adapter.title(), false)
+                    })
                     .collect(),
                 own: one.own.and_then(|own| own.said(adapter.title())),
             }

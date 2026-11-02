@@ -47,13 +47,23 @@ fn a_copy_of_a_shipped_page_is_named() {
 fn a_copy_of_a_shipped_skill_is_named() {
     let dir = tempfile::tempdir().unwrap();
     let skills = dir.path().join(".claude/skills");
-    std::fs::create_dir_all(skills.join("secrets")).unwrap();
-    std::fs::write(skills.join("secrets/SKILL.md"), "---\nname: secrets\n---\n").unwrap();
+    std::fs::create_dir_all(skills.join("purlis-secrets")).unwrap();
+    std::fs::write(
+        skills.join("purlis-secrets/SKILL.md"),
+        "---\nname: purlis-secrets\n---\n",
+    )
+    .unwrap();
     // A directory is a copy only when it holds a skill, and only of a skill purlis ships.
-    std::fs::create_dir_all(skills.join("browser")).unwrap();
+    std::fs::create_dir_all(skills.join("purlis-browser")).unwrap();
     std::fs::create_dir_all(skills.join("ours")).unwrap();
     std::fs::write(skills.join("ours/SKILL.md"), "---\nname: ours\n---\n").unwrap();
-    assert_eq!(shadowed(dir.path()).unwrap().skills, ["secrets"]);
+    // And one kept from before the prefix.
+    std::fs::create_dir_all(skills.join("handoff")).unwrap();
+    std::fs::write(skills.join("handoff/SKILL.md"), "---\nname: handoff\n---\n").unwrap();
+    assert_eq!(
+        shadowed(dir.path()).unwrap().skills,
+        ["handoff", "purlis-secrets"]
+    );
 }
 
 #[test]

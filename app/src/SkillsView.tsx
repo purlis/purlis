@@ -148,7 +148,11 @@ async function readSkills(
     missing: "ok" in set ? set.ok.missing : null,
     changed: updated.find((one) => one.session === chat.session && one.skills) ?? null,
     // Its program's own catalogue (#3324), from the studio answer read above: no read of its own.
-    own: base.ok.harnesses.find((one) => one.harness === chat.harness)?.own ?? null,
+    // What this chat has of them (#4477), as its start read its plugins.
+    own:
+      "ok" in set
+        ? set.ok.own
+        : (base.ok.harnesses.find((one) => one.harness === chat.harness)?.own ?? null),
   };
   return {
     rows: [
@@ -156,6 +160,7 @@ async function readSkills(
         persona: chat.persona,
         harness: chat.harness,
         repos: given.repos,
+        ...("ok" in set ? { pluginsOff: set.ok.plugins_off } : {}),
       }),
       ...branchFolderRowsOf("ok" in branchFolder ? branchFolder.ok : []),
     ],

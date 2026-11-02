@@ -24,6 +24,35 @@ use crate::planes::{Held, PlaneId, Planes};
 use crate::references::Handed;
 use crate::skillstudio::Level;
 
+/// **A plugin on this machine a chat does not have** (#4477), as Left out says it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct PluginOffShown {
+    /// The name its skills are prefixed with.
+    pub name: String,
+    /// Why, in full: what closes its skills' run.
+    pub said: String,
+    /// Why, in the few words its folded line has room for.
+    pub line: String,
+    /// The command that puts it right, where one does.
+    pub command: Option<String>,
+}
+
+impl PluginOffShown {
+    /// `plugin`, of the chat in front where `chat`, else of a chat that would start.
+    pub(crate) fn of(
+        plugin: &purlis_core::harness_plugin::PluginOff,
+        title: &str,
+        chat: bool,
+    ) -> Self {
+        Self {
+            name: plugin.name.clone(),
+            said: plugin.said(title, chat),
+            line: plugin.line(title),
+            command: plugin.command(),
+        }
+    }
+}
+
 /// One skill Use skill… offers a chat.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct ChatSkill {
@@ -126,6 +155,13 @@ pub struct ChatSkills {
     pub known: bool,
     /// Every skill of its set, by name.
     pub skills: Vec<ChatSkill>,
+    /// The skills its program finds itself and it has (#4477): the Skills view's Use types them,
+    /// and the picker's list and the budget hold none.
+    pub program: Vec<ChatSkill>,
+    /// The plugins on this machine it does not have.
+    pub plugins_off: Vec<PluginOffShown>,
+    /// What its program's own skills hold, in the core's words: the header's count.
+    pub own: Option<String>,
     /// Its budget, where it is known.
     pub budget: Option<SkillBudget>,
     /// The clones of its workspace it works in, by name, whose repo skills its harness reads
@@ -212,6 +248,9 @@ impl ChatSkills {
             on,
             known: false,
             skills: Vec::new(),
+            program: Vec::new(),
+            plugins_off: Vec::new(),
+            own: None,
             budget: None,
             repos: Vec::new(),
             not_supported: None,
@@ -276,6 +315,21 @@ fn repos_of_the_chat(held: &Held, chat: &crate::chats::ChatForSkills) -> Vec<Str
         .collect()
 }
 
+/// One offered skill, for the window.
+fn offered_shown(one: &purlis_core::skills::Offered) -> ChatSkill {
+    ChatSkill {
+        name: one.effective.skill.name.clone(),
+        level: one.effective.origin.into(),
+        label: purlis_core::skills::level_shown(one.effective.origin, one.effective.local),
+        description: one.effective.skill.description.clone(),
+        manual: one.declared.manual,
+        takes_arguments: one.takes_arguments,
+        arguments: one.declared.arguments.clone(),
+        hint: one.declared.hint.clone(),
+        hidden: one.hidden.as_ref().map(Into::into),
+    }
+}
+
 /// `skills`, for the window: none for a chat that runs no tool purlis knows.
 pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSkills {
     let Some(skills) = skills else {
@@ -285,21 +339,16 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
     ChatSkills {
         on: true,
         known: true,
-        skills: skills
-            .offered
+        skills: skills.offered.iter().map(offered_shown).collect(),
+        program: skills.program.iter().map(offered_shown).collect(),
+        plugins_off: skills
+            .plugins_off
             .iter()
-            .map(|one| ChatSkill {
-                name: one.effective.skill.name.clone(),
-                level: one.effective.origin.into(),
-                label: purlis_core::skills::level_shown(one.effective.origin, one.effective.local),
-                description: one.effective.skill.description.clone(),
-                manual: one.declared.manual,
-                takes_arguments: one.takes_arguments,
-                arguments: one.declared.arguments.clone(),
-                hint: one.declared.hint.clone(),
-                hidden: one.hidden.as_ref().map(Into::into),
+            .map(|plugin| {
+                PluginOffShown::of(plugin, skills.harness.adapter().plugins().title(), true)
             })
             .collect(),
+        own: skills.own.said(skills.harness.adapter().plugins().title()),
         budget: Some(SkillBudget {
             skills: small(spent.skills),
             chars: small(spent.chars),
