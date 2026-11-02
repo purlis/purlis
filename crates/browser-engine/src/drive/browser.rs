@@ -818,10 +818,19 @@ impl State {
         let Some(id) = frame.get("id").and_then(Value::as_str) else {
             return;
         };
-        // A frame with a session of its own is that session's, whatever its parent says.
-        let owned_elsewhere = self.sessions.iter().any(|(s, kind)| {
-            s != session && matches!(kind, Session::Frame { frame, .. } if frame == id)
-        });
+        // A frame with a session of its own is that session's, whatever its parent says; of two,
+        // the one that attached last, as the older may not have been said to be gone yet.
+        let holds = |kind: &Session| matches!(kind, Session::Frame { frame, .. } if frame == id);
+        let its_own = self.sessions.get(session).is_some_and(holds)
+            && self
+                .page(&target)
+                .and_then(|page| page.frames.get(id))
+                .is_some_and(|frame| frame.session == session);
+        let owned_elsewhere = !its_own
+            && self
+                .sessions
+                .iter()
+                .any(|(s, kind)| s != session && holds(kind));
         self.generations += 1;
         let generation = self.generations;
         let text = |field: &str| {

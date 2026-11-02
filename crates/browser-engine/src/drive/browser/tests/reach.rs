@@ -533,6 +533,21 @@ fn a_tree_read_before_a_navigation_does_not_put_the_frame_back() {
 }
 
 #[test]
+fn a_frames_older_session_does_not_move_it_once_a_newer_one_attached() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    let third = "http://third.test/pay.html";
+    frame_moves(&engine, third, third, Duration::from_millis(1));
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": "PAYMENT-FRAME", "parentId": "PAGE-1", "name": "payment", "url": "http://other.test/older.html"}}),
+        Some("S-PAYMENT"),
+    );
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(frame_address(&browser, "PAYMENT-FRAME"), third);
+}
+
+#[test]
 fn a_tree_at_no_address_does_not_replace_the_address_a_frame_attached_at() {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
