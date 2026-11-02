@@ -21,12 +21,13 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Mondays, as default setup's weekly scan did.
+    # Weekly, as default setup was, so a new query reaches code that hasn't changed.
     - cron: '27 3 * * 1'
 
-# On main one scan runs at a time and the newest push waits, replacing any older one still waiting,
-# so a busy day costs about 24 Rust scans rather than one per push (72 on 2026-10-31). A new push to
-# a PR makes its running scan worthless, so that one is cancelled.
+# On main one run of this workflow, quick scans included, goes at a time and the newest push waits,
+# replacing any older one still waiting, so a busy day costs about 24 Rust scans rather than one per
+# push (72 on 2026-10-31). A new push to a PR makes its running scan worthless, so that one is
+# cancelled.
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
