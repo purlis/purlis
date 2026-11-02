@@ -265,7 +265,7 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearances_and_source() {
     let themes = ran.json()["themes"].clone();
     assert_eq!(themes[0]["id"], "purlis");
     assert_eq!(themes[0]["name"], "Purlis");
-    assert_eq!(themes[0]["combinations"], 3);
+    assert_eq!(themes[0]["combinations"], 4);
     // A built-in theme says whether it ships as a preview (#2336); none does since Purlis became
     // the default (#3034), and no other theme has the key.
     assert_eq!(themes[0]["preview"], false);
