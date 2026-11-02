@@ -480,7 +480,11 @@ manifest lists a new one.
 with alpha) shows the turned colour under it, so what another family draws on it (a button or a
 menu in a popover, the title bar's switcher rows) is held to the reading floors in every workspace
 tint as well as written. Words that fall only in a tint make the surface draw its family default,
-said as `what a button draws on it`. An opaque fill is read as written alone.
+said as `what a button draws on it`. An opaque fill is read in the tints too where a look drawn on
+it is see-through, a family default's wash included; an opaque fill under opaque looks is read as
+written alone. Each set of states that hold at once is read on the fill as well as each state alone.
+A `card` or `notice` fill needs none of this: the load refuses one that is not a ground the button
+family is held on, and on those a button is read already.
 
 **States that hold at once are held as one.** A button can be hovered and pressed, or focused and
 selected, at the same time, and the stylesheet's order decides which state's colour each property
@@ -964,7 +968,8 @@ screen draws them, as written and in every tint, or the window draws purlis's ow
 its mark's colour stays on it: when a floor takes either, or more contrast raises the mark, or a
 person's colour for the mark is drawn or left out, the count goes with it. A theme whose count is
 its own colour is held on its own. A rule on `activity.count` never reaches the hot count, and one
-whose fill comes that near the hot count draws the family default.
+whose fill comes that near the hot count, as written or at any hue the tint recipe turns it to,
+draws the family default.
 
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names
