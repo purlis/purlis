@@ -1128,6 +1128,11 @@ pub(crate) mod pretend {
             lock(&self.seen.reconnecting).extend_from_slice(ids);
         }
 
+        /// The link to the runner sessions `ids` run on is back: they are reconnecting no more.
+        pub fn link_back(&self, ids: &[u32]) {
+            lock(&self.seen.reconnecting).retain(|id| !ids.contains(id));
+        }
+
         /// Session `id`'s program ends with a pool's runner gone for good (#4350).
         pub fn program_ends_with_its_runner(&self, id: u32) {
             lock(&self.seen.lost_with_runner).push(id);
