@@ -31,7 +31,7 @@ import {
   type Catalogued,
   type Offer,
 } from "./actions";
-import { Menued } from "./Menus";
+import { ChatMenuButton, Menued } from "./Menus";
 import { RestoringPane } from "./RestoringPane";
 import { NONE_RESTORING } from "./restoringChats";
 import { SessionPane } from "./SessionPane";
@@ -43,6 +43,7 @@ import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
 import { SkillsChip } from "./UseSkill";
 import { harnessCardView, type Layout, type ViewRef } from "./tabs";
+import { shareOf, WHOLE } from "./laidOut";
 import { type Crumbs } from "./tabChats";
 import { BriefButton, type BriefAsk } from "./Brief";
 import { PaneCrumbs } from "./PaneCrumbs";
@@ -72,24 +73,6 @@ import { IconButton } from "./ui/button/Button";
  * (`LayoutPanes`), each pane's frame and breadcrumb (`PaneFrame`), the Notices that belong to
  * a pane, and the controls in a pane's top corner (`PaneDoing`).
  */
-
-/**
- * **The rows of a task's menu in the Chats list, for a pane to open the same menu on its
- * breadcrumb** (#1489): the catalogue's own rows, picked out by the ids that menu lists
- * (`actions.menuOn`), so the two cannot differ.
- */
-export function listedMenuOf(
-  session: number,
-  offerFor: (id: string) => Offer | undefined,
-): Catalogued {
-  const { above, below } = menuOn({ on: "listed", session });
-  return new Map(
-    [...above, ...below].flatMap((id) => {
-      const offer = offerFor(id);
-      return offer === undefined ? [] : [[id, offer] as const];
-    }),
-  );
-}
 
 /**
  * **The rows of the panes' menu, for a terminal to list under its own** (`TerminalMenu.tsx`):
@@ -225,7 +208,7 @@ export function PaneFrame({
                 <PaneCrumbs crumbs={crumbs} onShow={onShowChat} />
               ) : (
                 <Menued
-                  on={{ on: "listed", session: crumbMenu.session }}
+                  on={{ on: "chat", session: crumbMenu.session }}
                   offers={crumbMenu.offers}
                   onPress={crumbMenu.onPress}
                 >
@@ -420,6 +403,7 @@ export function LayoutPanes({
   focused,
   onFocus,
   offerFor,
+  offers,
   onPaneDoes,
   name,
   handedFrom,
@@ -443,6 +427,7 @@ export function LayoutPanes({
   memory,
   firstTask,
   split,
+  path = "",
 }: {
   /** The chats the launch has still to start (`restoring.rs`): each one's pane says so, in the
    *  place its terminal takes. */
@@ -491,6 +476,9 @@ export function LayoutPanes({
   onFocus: (pane: number) => void;
   /** The catalogue, by row id. There is one list of actions and the panes read it too. */
   offerFor: (id: string) => Offer | undefined;
+  /** The same catalogue, whole: what a chat's ⋯ reads, whose Ask ▸ and Move to ▸ are scans
+   *  of it (#4753). */
+  offers: Catalogued;
   onPaneDoes: (pane: number, offer: Offer | undefined) => void;
   /** The tab's name, which is the title of the view it opened on. */
   name: string;
@@ -538,11 +526,16 @@ export function LayoutPanes({
   };
   /** What the first task's tab asks the plane to do (FR-28). */
   firstTask: FirstTaskDoes;
-  /** Where a view's divider was, and where the operator moved it to (FM-2). */
+  /** Where a view's divider was, and where the operator moved it to (FM-2); and where a
+   *  split's handle was dragged to, by the split's path in the tab (#4751). */
   split: {
     of: (view: ViewRef) => number | undefined;
     moved: (view: ViewRef, split: number) => void;
+    shared?: (path: string, share: number) => void;
   };
+  /** This layout's path from its tab's root: `a` for a split's first child, `b` for its
+   *  second. The tab's own layout is `""`. */
+  path?: string;
 }) {
   if (layout.kind === "pane") {
     const content = layout.content;
@@ -645,6 +638,8 @@ export function LayoutPanes({
         // The task it shows inside its session's tab, which can be given a tab of its own or
         // opened beside its session from here (#1489).
         shows={crumb === undefined ? undefined : content.session}
+        // Its ⋯: the list of the chat it shows (#4753).
+        chat={{ session: content.session, offers }}
       />
     );
     const gone = away[layout.pane];
@@ -738,7 +733,7 @@ export function LayoutPanes({
           path !== undefined && path.path[path.path.length - 1].mode === "task"
             ? {
                 session: path.path[path.path.length - 1].session,
-                offers: listedMenuOf(path.path[path.path.length - 1].session, offerFor),
+                offers,
                 onPress: (offer) => onPaneDoes(layout.pane, offer),
               }
             : undefined
@@ -782,8 +777,22 @@ export function LayoutPanes({
       </PaneFrame>
     );
   }
+  // **Each side starts at the share the tab holds** (#4751), and a drag is said back by the
+  // split's path, so the record keeps it and a relaunch draws the split as it was. Only a drag
+  // or a resize key is the person saying how big they want it: the library reports a layout
+  // on mount too, which is a measurement purlis caused.
+  const share = shareOf(layout);
+  const sideOf = (side: number) => `${path}${side === 0 ? "a" : "b"}`;
+  const settled = (sizes: Record<string, number>, meta: { isUserInteraction: boolean }) => {
+    if (!meta.isUserInteraction) return;
+    const first = sizes[`pane-${sideOf(0)}`];
+    if (typeof first === "number") split.shared?.(path, Math.round(first * 10));
+  };
   return (
-    <Group orientation={layout.direction === "row" ? "horizontal" : "vertical"}>
+    <Group
+      orientation={layout.direction === "row" ? "horizontal" : "vertical"}
+      onLayoutChanged={settled}
+    >
       {layout.children.map((child, side) => (
         /* **Keyed by which side of the split it is, not by what is in it.**
          *
@@ -803,8 +812,12 @@ export function LayoutPanes({
          */
         <Fragment key={side}>
           {side === 1 && <Separator className="pane-split" aria-label="Resize the split" />}
-          <Panel>
+          <Panel
+            id={`pane-${sideOf(side)}`}
+            defaultSize={`${(side === 0 ? share : WHOLE - share) / 10}%`}
+          >
             <LayoutPanes
+              path={sideOf(side)}
               plane={plane}
               restoring={restoring}
               layout={child}
@@ -825,6 +838,7 @@ export function LayoutPanes({
               focused={focused}
               onFocus={onFocus}
               offerFor={offerFor}
+              offers={offers}
               onPaneDoes={onPaneDoes}
               name={name}
               handedFrom={handedFrom}
@@ -888,8 +902,12 @@ export function PaneDoing({
   onPaneDoes,
   task = false,
   shows,
+  chat,
 }: {
   pane: number;
+  /** The chat the pane shows, and the catalogue its ⋯ reads (#4753): the chat's one list, the
+   *  same its sidebar row's menu and the palette have. None for a pane showing a view. */
+  chat?: { session: number; offers: Catalogued };
   offerFor: (id: string) => Offer | undefined;
   /** This pane's close, which is not the focused pane's where the two differ (#1486): a pane
    *  beside one that shows a task still closes. For a task's own pane it is the minimise
@@ -914,6 +932,13 @@ export function PaneDoing({
   ];
   return (
     <div className="pane-doing">
+      {chat !== undefined && (
+        <ChatMenuButton
+          session={chat.session}
+          offers={chat.offers}
+          onPress={(offer) => onPaneDoes(pane, offer)}
+        />
+      )}
       {rows.map((id) => {
         const offer = id === "pane.close" ? closeOf(pane) : offerFor(id);
         if (!offer) return null;

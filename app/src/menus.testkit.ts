@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 
 /**
@@ -74,4 +74,22 @@ export async function pressMenuPath(...path: (string | RegExp)[]): Promise<void>
   await openSubmenus(...path.slice(0, -1));
   await waitFor(() => menuRow(last));
   await userEvent.click(menuRow(last));
+}
+
+/**
+ * **Opens chat `name`'s one list** (#4753): a right-click on its row in the Chats list, the
+ * list its pane's ⋯ and the palette have too, and answers the menu once it is up. A chat with no
+ * tab has it whole, and a tab's own menu has none of a chat's rows.
+ */
+export async function chatList(name: string): Promise<HTMLElement> {
+  const tree = await screen.findByRole("tree", { name: "Chats of this project" });
+  const row = await waitFor(() => {
+    const found = Array.from(tree.querySelectorAll<HTMLElement>('[role="treeitem"]')).find(
+      (one) => one.querySelector(".session")?.textContent === name,
+    );
+    if (found === undefined) throw new Error(`no row is named ${name}`);
+    return found;
+  });
+  fireEvent.contextMenu(row);
+  return screen.findByRole("menu");
 }

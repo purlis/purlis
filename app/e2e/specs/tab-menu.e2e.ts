@@ -3,12 +3,13 @@
 
 import { browser, expect } from "@wdio/globals";
 import { closeMenus, openMenuOn } from "../acting.js";
-import { menuNames, pressMenuPath, ROW, SUB } from "../menus.js";
+import { menuNames, openChatList, pressMenuPath, ROW, SUB } from "../menus.js";
 import { SELECTED_TAB, endChatsStartedHere, startAChat, type Started } from "../started.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
- * **A chat tab's menu, measured in the real WebView.**
+ * **A chat's list, measured in the real WebView** (#4753): the menu its pane's ⋯ opens, which its
+ * sidebar row's ⋯ and right-click open too. A tab's own menu holds the tab's rows only.
  *
  * A row of this menu is one line of short words (`docs/ui-primitives.md`, "Menus"): its note is
  * its tooltip, and only a row that cannot be undone, or one that cannot run, has a line under
@@ -19,8 +20,9 @@ import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
  * `Menus.test.tsx` hold the rules these come from, the second with twelve personas, which this
  * run's project does not have.
  *
- * **Ranges, never exact pixels.** The menu is opened with the event a right-click would have
- * sent (`acting.ts`), and a row is found by its name (`menus.ts`).
+ * **Ranges, never exact pixels.** The list is opened by the pane's ⋯ (`menus.openChatList`), a
+ * tab's menu with the event a right-click would have sent (`acting.ts`), and a row is found by
+ * its name (`menus.ts`).
  */
 
 /** What the innermost open menu measures: its box, its rows' boxes and sizes, and the window's. */
@@ -118,7 +120,7 @@ function notedForNothing(drawn: Measured): string[] {
     .map((row) => row.name);
 }
 
-describe("a chat tab's menu", () => {
+describe("a chat's list, and a tab's menu", () => {
   // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
   // #3077); the project rail hides itself there beside both sidebars.
   before(() => windowAt(WINDOW_1280));
@@ -139,7 +141,7 @@ describe("a chat tab's menu", () => {
   });
 
   it("draws one row per line, and a line under a row only where it cannot be undone or cannot run", async () => {
-    await openMenuOn(SELECTED_TAB);
+    await openChatList();
     const drawn = await measured();
     if (drawn === null) throw new Error("no menu is open");
 
@@ -159,13 +161,13 @@ describe("a chat tab's menu", () => {
     expect(drawn.rows.filter((row) => row.danger && row.note !== null).length).toBeGreaterThan(0);
   });
 
-  it("is a handful of rows that say no tab's name, with the kinds of row folded into submenus", async () => {
+  it("is a handful of rows that say no chat's name, with the kinds of row folded into submenus", async () => {
     const name = await browser.execute(
       (selected: string) =>
         document.querySelector(`${selected} .tab-name`)?.textContent?.trim() ?? "",
       SELECTED_TAB,
     );
-    await openMenuOn(SELECTED_TAB);
+    await openChatList();
     const drawn = await measured();
     if (drawn === null) throw new Error("no menu is open");
 
@@ -175,8 +177,9 @@ describe("a chat tab's menu", () => {
     expect(drawn.rows.filter((row) => row.name.includes(name)).map((row) => row.name)).toEqual([]);
     const names = drawn.rows.map((row) => row.name);
     expect(names).toContain(ROW.rename);
-    expect(names).toContain(ROW.pinned);
-    // The tab in front has no row that could only say it is in front.
+    expect(names).toContain(ROW.end);
+    // A tab's rows are the tab's (#4753): no pin and no switch on a chat's list.
+    expect(names).not.toContain(ROW.pinned);
     expect(names).not.toContain(ROW.switchTo);
     // Activity and Network are views of the chat: one row, which opens them.
     expect(names).not.toContain(ROW.activity);
@@ -188,7 +191,7 @@ describe("a chat tab's menu", () => {
   });
 
   it("writes each word at its role's size: a row at the body's, a line under it and a key smaller", async () => {
-    await openMenuOn(SELECTED_TAB);
+    await openChatList();
     const drawn = await measured();
     if (drawn === null) throw new Error("no menu is open");
 
@@ -208,7 +211,7 @@ describe("a chat tab's menu", () => {
   });
 
   it("ends inside the window without scrolling, no narrower than its least width nor wider than its most", async () => {
-    await openMenuOn(SELECTED_TAB);
+    await openChatList();
     const drawn = await measured();
     if (drawn === null) throw new Error("no menu is open");
 
@@ -230,7 +233,7 @@ describe("a chat tab's menu", () => {
   });
 
   it("opens Open beside it, inside the window, with a row per view", async () => {
-    await openMenuOn(SELECTED_TAB);
+    await openChatList();
     await pressMenuPath(SUB.open);
     await browser.waitUntil(async () => (await menuNames()).length === 2, {
       timeout: 10_000,
@@ -248,8 +251,19 @@ describe("a chat tab's menu", () => {
     expect(notedForNothing(sub)).toEqual([]);
   });
 
-  it("scrolls where it is given less room than its rows need, and squeezes none of them", async () => {
+  it("leaves a tab's own menu the tab's rows, and none of its chat's (#4753)", async () => {
     await openMenuOn(SELECTED_TAB);
+    const names = (await menuNames())[0];
+
+    // The tab in front: its pin and its close, and no row that could only say it is in front.
+    expect(names).toContain(ROW.pinned);
+    expect(names).not.toContain(ROW.switchTo);
+    for (const chats of [ROW.rename, ROW.restart, ROW.activity, SUB.open, SUB.stop])
+      expect(names).not.toContain(chats);
+  });
+
+  it("scrolls where it is given less room than its rows need, and squeezes none of them", async () => {
+    await openChatList();
     const drawn = await measured();
     if (drawn === null) throw new Error("no menu is open");
 

@@ -1392,6 +1392,29 @@ body {
   padding: 0 var(--space-4) var(--space-2) var(--chats-name-at);
 }
 
+/* **A chat row's ⋯** (#4753): the row's own menu, at the row's end. Its room is always kept,
+   so a row does not change width as the pointer arrives; it is drawn on hover and while the
+   row has the keyboard, and always where there is no hover. Opacity, as the explorer's row
+   action, so nothing moves. */
+.chats-section li > .chat-more {
+  display: flex;
+  align-items: center;
+  flex: none;
+  opacity: 0;
+}
+
+.chats-section li:hover > .chat-more,
+.chats-section li:focus-within > .chat-more,
+.chats-section li > .chat-more:has([data-pressed]) {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .chats-section li > .chat-more {
+    opacity: 1;
+  }
+}
+
 /* **What a restart asked for from a row says** (#1462): why it was refused, or why it waits,
    on one line under the row of a chat with no pane to say it on, as a task limit is. */
 .chats-section li:has(> .restart-said) {
@@ -2857,7 +2880,7 @@ body {
 }
 
 .explorer .spot[aria-current="true"] .node-icon {
-  color: var(--accent-base);
+  color: var(--accent-text);
 }
 
 /* A file's or a folder's icon (FM-3, #1106): drawn by `FileIcon.tsx` from the icon theme, each
