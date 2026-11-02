@@ -128,6 +128,9 @@ impl Default for Opening {
 /// where its own sandbox does not give them, and asks about (#2590).
 #[derive(Debug, Clone)]
 pub struct Named {
+    /// The runner it starts on where that is not its pool's own: a chat's fresh runner, by the
+    /// name a link reaches it by (#3818).
+    pub runner: Option<String>,
     pub chat: Option<String>,
     pub run: Option<String>,
     pub profile: Option<String>,

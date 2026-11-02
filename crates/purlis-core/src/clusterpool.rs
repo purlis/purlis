@@ -1599,6 +1599,7 @@ pub struct ClaimTo<'a> {
     pub namespace: &'a str,
     pub name: &'a str,
     pub desktop: &'a str,
+    pub keeping: Keeping,
 }
 
 /// **Whether a claim's runner keeps its work** (#2057).
@@ -1999,6 +2000,7 @@ pub fn claim_and_pair(
         namespace,
         name,
         desktop: label,
+        keeping,
     } = *to;
     // Claimed by name: a pool's name and namespace, each as Kubernetes names them.
     if !is_subdomain(pool) || !is_label(namespace) || !is_subdomain(name) {
@@ -2008,14 +2010,7 @@ pub fn claim_and_pair(
         )));
     }
     let requester = kubectl.whoami()?;
-    let uid = kubectl.claim_marked(
-        namespace,
-        name,
-        pool,
-        &requester,
-        Keeping::Kept,
-        Some(label),
-    )?;
+    let uid = kubectl.claim_marked(namespace, name, pool, &requester, keeping, Some(label))?;
     let claimed = Claimed {
         namespace: namespace.to_owned(),
         name: name.to_owned(),

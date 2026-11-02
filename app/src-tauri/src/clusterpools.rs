@@ -168,6 +168,44 @@ pub async fn cluster_contexts(kubeconfig: Option<String>) -> Result<ClusterConte
     .await
 }
 
+/// **A runner of the cluster pool `pool` for the chat `chat` alone** (#3818), made now or already
+/// made, waiting for it for at most the pool's `vouchWait`. Answers the name a link reaches it by.
+pub fn fresh_runner(config: &Path, pool: &str, chat: &str) -> Result<String, String> {
+    let keyring = purlis_core::linkkey::this_builds_keyring(config);
+    let desktop = purlis_core::linkkey::desktop(config, &*keyring)
+        .map_err(|why| why.to_string())?
+        .pinned();
+    let within = purlis_core::runners::cluster_pools(config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .find(|one| one.name() == pool)
+        .map_or(purlis_core::pools::VOUCHED_WITHIN, ClusterPool::vouch_wait);
+    purlis_core::pools::claim_fresh(config, &kubectl(config)?, pool, chat, &desktop, within)
+        .map(|kept| kept.link_name())
+        .map_err(|why| why.to_string())
+}
+
+/// **The chat `chat` ended, so its fresh runner goes** (#3818), on a thread of its own. A claim
+/// that could not be deleted keeps its record, and is tried as the chat is closed again.
+pub fn fresh_runner_ended(config: &Path, chat: &str) {
+    if !matches!(
+        purlis_core::runners::fresh_runner_of(config, chat),
+        Ok(Some(_))
+    ) {
+        return;
+    }
+    let (config, chat) = (config.to_path_buf(), chat.to_owned());
+    std::thread::spawn(move || {
+        let released = kubectl(&config).and_then(|kubectl| {
+            purlis_core::pools::release_fresh(&config, &kubectl, &chat)
+                .map_err(|why| why.to_string())
+        });
+        if let Err(why) = released {
+            tracing::warn!("purlis: a chat's fresh runner was not released: {why}");
+        }
+    });
+}
+
 /// [`cluster_pool_key`], with `kubectl`.
 pub fn key_with(
     kubectl: &Kubectl,

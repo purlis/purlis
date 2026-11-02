@@ -167,7 +167,10 @@ impl RoutedSessions {
         let to_a_pool: ToAPool = {
             let (connection, plane) = (Arc::clone(connection), plane.clone());
             Arc::new(move |pool| {
-                if pool.contains('/') {
+                if pool.contains("/fresh-") {
+                    purlis_core::runners::cluster_runner_for(&config, pool)
+                        .map_err(|why| format!("{why}."))?;
+                } else if pool.contains('/') {
                     purlis_core::runners::reachable(&config, pool)
                         .map_err(|why| format!("{why}."))?;
                 } else {
@@ -568,7 +571,9 @@ impl SessionHost for RoutedSessions {
         let Some(pool) = self.route(named.workspace.as_deref())? else {
             return self.here.open_named(wanted, named, hearing, announce);
         };
-        self.on_a_pool(&pool, wanted, |host, number| {
+        // A chat's own fresh runner, where it was made one (#3818).
+        let runner = named.runner.as_deref().unwrap_or(&pool);
+        self.on_a_pool(runner, wanted, |host, number| {
             host.open_named(Some(number), named, hearing, announce)
         })
     }
@@ -884,7 +889,13 @@ impl SessionHost for RoutedSessions {
     }
 
     fn pool_of(&self, id: u32) -> Option<String> {
-        lock(&self.shared.chats).get(&id).cloned()
+        // Its pool, wherever it runs: a chat's own fresh runner is named under it (#3818).
+        lock(&self.shared.chats)
+            .get(&id)
+            .map(|pool| match pool.split_once("/fresh-") {
+                Some((pool, _)) => pool.to_owned(),
+                None => pool.clone(),
+            })
     }
 
     /// Each pool's own host answers this, to the router: the router itself drains with nothing.

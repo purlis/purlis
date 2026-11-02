@@ -284,10 +284,8 @@ spec:
     the project held while its runner comes back says so at once.
     A look at a project already held wakes nothing. A runner
     with anything else on its Claim, an upstream object in the way among it, is not waited for.
-    **A fresh Claim's runner keeps nothing**, so it comes back with a new key, which its desktop
-    refuses as it does after `stopped`: make its Claim again. This reaches no one through purlis
-    today, since a desktop makes only kept Claims, and #4404 settles it as purlis starts making
-    fresh ones (#3709). A Pool or
+    **A fresh Claim's runner is never brought back**: a chat running there keeps it from
+    going idle, and the Claim goes as the chat closes. A Pool or
     Claim set `stopped` and back leaves an idle runner suspended. An idle Claim keeps no runner
     warm. A runner that says it is idle waits up to five minutes, serving nothing, for the
     operator to suspend it, and serves again if it does not. A running runner takes a change to
@@ -345,10 +343,10 @@ spec:
   - **A fresh Claim** (the default) takes a runner the pool keeps warm, when there is one, and
     keeps nothing past its pod: its home is a folder of the node's, as big as a kept Claim's
     volume.
-  - A desktop makes only kept Claims today. Its choice between them is written and not yet used
-    (#3709): kept for a chat a person works in and for any chat of a subscription profile, whose
-    sign-in lives on the volume; fresh for a short dispatched task, and a chat's "Keep this
-    runner's work" either way.
+  - purlis chooses between them (#3818): the pool's own kept Claim for a chat a person works in
+    and for any chat of a subscription profile, whose sign-in lives on the volume. **A short
+    dispatched task gets a fresh Claim of its own**, made as it starts and deleted as it closes.
+    A long task and a handoff stay on the pool's own runner.
 - **A Claim** lives in a namespace and names its `pool`, which never changes: another pool is
   another claim. Its `Ready` condition says whether its runner is running, and if not, why:
   `PoolNotFound` when there is no such pool, `PoolDeleted` when it was deleted after the

@@ -199,6 +199,26 @@ std::thread_local! {
         const { std::cell::RefCell::new(None) };
     /// Whether this thread runs a dispatch's start, which holds no lock around it (#4415).
     static A_DISPATCHS_START: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether this thread starts a short task, which purlis gives a fresh runner (#3818).
+    static A_SHORT_TASK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `start` as a short dispatched task's: a task, not a handoff, and not a long one (#3818).
+pub(crate) fn a_short_task<T>(start: impl FnOnce() -> T) -> T {
+    struct Forgets;
+    impl Drop for Forgets {
+        fn drop(&mut self) {
+            A_SHORT_TASK.set(false);
+        }
+    }
+    A_SHORT_TASK.set(true);
+    let _forgets = Forgets;
+    start()
+}
+
+/// Whether this thread starts a short dispatched task.
+pub(crate) fn is_a_short_task() -> bool {
+    A_SHORT_TASK.get()
 }
 
 /// Runs `start` as a dispatch's start: it waits for a runner on its way back as a person's does,
