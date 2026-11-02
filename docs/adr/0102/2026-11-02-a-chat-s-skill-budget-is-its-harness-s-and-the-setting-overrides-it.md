@@ -21,7 +21,7 @@ The 2026-10-21 record's "about 8,000 characters on a 200k-token window" holds fo
 
 The router gets the budget before the harness runs, and the window depends on model, provider, account and a credit latch. A budget by window would need a value that isn't there when it is needed. So the limit stops depending on the window.
 
-**The Claude Code adapter hands an absolute limit per chat**: `SLASH_COMMAND_TOOL_CHAR_BUDGET` in the `env` of the `--settings` it already passes. Measured, it ignores the window and beats `skillListingBudgetFraction`. The limit is the budget's characters plus Claude Code's own 6,848, and a tenth over both, so about 24,000 at the default. Where pins and skills no router hides spend more than the budget, the limit is worked out from what the routed list spends instead, so they keep their descriptions.
+**The Claude Code adapter hands an absolute limit per chat**: `SLASH_COMMAND_TOOL_CHAR_BUDGET` in the `env` of the `--settings` it already passes. Measured, it ignores the window and beats `skillListingBudgetFraction`. The limit is the budget's characters plus Claude Code's own 6,848, and a tenth over both, and never below 30,000, a 1M Claude 5 chat's own limit, so a larger default takes no room from anyone. It is a ceiling: a chat pays only for what it lists, and a person's own skills share it. So at the default it is 30,000, where the sum alone would be about 24,000. Where pins and skills no router hides spend more than the budget, the limit is worked out from what the routed list spends instead, so they keep their descriptions.
 
 ## Each adapter says its own numbers
 
@@ -48,7 +48,7 @@ Codex and opencode stay where they are until Codex is measured again. The Skill 
 ## What this costs, and what isn't measured
 
 - **About 91 tokens per skill**, measured on Haiku 5.5 with 250-character stand-in descriptions, cached: the listing is written once and read as cached prefix after that. Real prose may differ. 60 skills is about 5,460 tokens, 0.55% of a 1M window.
-- **A person's own skills share the handed limit and are not in it.** Claude Code counts them, purlis doesn't read their descriptions at a start, and a 1M Claude 5 chat's limit goes from 30,000 to about 24,000. Where the plane's skills and a person's own fill it, descriptions drop on a chat that kept them before.
+- **A person's own skills share the handed limit and are not in it.** Claude Code counts them, and purlis doesn't read their descriptions at a start. A 1M Claude 5 chat keeps its 30,000. A 200k one with a large set can now spend up to about 5% of its window (30,000 characters, about 10k tokens). A 1M Opus or Sonnet 4.6 chat falls from the 40,000 its code gives to 30,000, not run.
 - **That the variable beats the person's own environment, and how managed settings rank, are not measured.** The docs say a settings `env` entry replaces the shell's in most sessions, that a launch environment from Claude Desktop or a self-hosted runner goes first, and that managed settings outrank `--settings`.
 - **Compaction is not measured.** The docs say skill descriptions are re-injected after one, from 2.1.304.
 - **Support for the variable** was first read from the binary. `env-vars.md` documents it, as a legacy name.

@@ -944,6 +944,10 @@ const LISTING_LIMIT_ENV: &str = "SLASH_COMMAND_TOOL_CHAR_BUDGET";
 /// What Claude Code's own 14 entries take of its listing's limit (measured on 2.1.316).
 const OWN_LISTING: usize = 6_848;
 
+/// The limit a 1M Claude 5 chat has of its own (measured on 2.1.316), so a handed one takes no room
+/// from it.
+const LEAST_LISTING_LIMIT: usize = 30_000;
+
 /// What a listing line takes around a skill's name and description: about 16 measured on 2.1.316,
 /// and 7 for the `skills:` or `purlis:` it is known by.
 const LISTING_LINE: usize = 23;
@@ -953,9 +957,12 @@ const LISTING_LINE: usize = 23;
 /// 2.1.316 counts its own entries against the limit it is given, so on 200k, where 1% is 6,000,
 /// every plane skill's description used to go. `listed` is past the budget where pins or what no
 /// router hides are, so those keep their descriptions too.
+///
+/// **Never below [`LEAST_LISTING_LIMIT`].** A limit is a ceiling, so a chat pays only for what it
+/// lists, and a person's own skills share it uncounted.
 fn listing_limit(listed: usize) -> usize {
     let held = listed.saturating_add(OWN_LISTING);
-    held.saturating_add(held / 10)
+    held.saturating_add(held / 10).max(LEAST_LISTING_LIMIT)
 }
 
 /// The limit a test's [`settings`] is called with.
