@@ -1271,6 +1271,13 @@ mod cluster {
         )
         .unwrap();
 
+        // Made again by someone: its cluster says what it held is gone.
+        let mut another: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(cluster.path("claim.json")).unwrap())
+                .unwrap();
+        another["metadata"]["uid"] = serde_json::json!("0b2f1a54-4d7b-4a64-9c0e-000000000000");
+        cluster.write("claim.json", &another.to_string());
+
         remove_cluster(
             config.path(),
             Some(&cluster.kubectl()),
@@ -1280,8 +1287,48 @@ mod cluster {
         )
         .unwrap();
 
-        assert!(cluster.calls().contains(&claim));
+        assert!(
+            cluster
+                .calls()
+                .contains(&format!("delete claims.runners.purlis.dev {claim}"))
+        );
         assert_eq!(runners::fresh_runners(config.path()).unwrap(), []);
+    }
+
+    /// **No removal deletes a Claim that may hold a task's commits** (#4569): the person is told
+    /// what is left and how to delete it.
+    #[test]
+    fn removing_a_pool_leaves_a_fresh_runner_still_at_work_and_says_so() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            of_a_project(),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        let left = remove_cluster(
+            config.path(),
+            Some(&cluster.kubectl()),
+            "team",
+            Some(OURS),
+            None,
+        )
+        .unwrap();
+
+        assert!(
+            !cluster
+                .calls()
+                .contains(&format!("delete claims.runners.purlis.dev {claim}"))
+        );
+        assert!(left.expect("it says so").contains(&claim));
     }
 
     #[test]
@@ -1725,10 +1772,29 @@ mod cluster {
         assert!(fresh_runner_lost(config.path(), &cluster.kubectl(), "01CHAT").unwrap());
     }
 
+    /// **A task's fresh runner relies on its operator's word, and silence is a no** (#4569).
+    #[test]
+    fn only_an_operator_that_says_so_keeps_a_fresh_runner_through_idle() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let _ = added_and_a_second_runner(config.path(), &cluster);
+        let pool = runners::cluster_pools(config.path()).unwrap().remove(0);
+        assert!(!fresh_runners_stay(&pool, &cluster.kubectl()).unwrap());
+
+        let mut said: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(cluster.path("pool.json")).unwrap())
+                .unwrap();
+        said["status"]["capabilities"] = serde_json::json!(["fresh-runners-stay"]);
+        cluster.write("pool.json", &said.to_string());
+        assert!(fresh_runners_stay(&pool, &cluster.kubectl()).unwrap());
+
+        cluster.write("pool.json", "not an answer");
+        assert!(fresh_runners_stay(&pool, &cluster.kubectl()).is_err());
+    }
+
     /// Where a fresh runner's work goes back to.
     fn of_a_project() -> runners::FreshOf {
         runners::FreshOf {
-            plane: std::path::PathBuf::from("/a/project"),
+            plane: "01PROJECT".to_owned(),
             workspace: "app".to_owned(),
         }
     }

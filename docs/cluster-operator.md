@@ -352,15 +352,24 @@ spec:
   - purlis chooses between them (#3818): the pool's own kept Claim for a chat a person works in
     and for any chat of a subscription profile, whose sign-in lives on the volume. **A short
     dispatched task gets a fresh Claim of its own**, made as it starts and deleted as it closes,
-    once every branch its runner holds has come back to the desktop's clones, under
-    `refs/remotes/<pool>/fresh-<hash>/`, and a clone made there as a clone here. What it never
-    committed goes with its runner, as does a commit on no branch. A Claim whose work did not come
-    back stays, and purlis tries again as the window comes into focus and at its next launch.
-    A long task and a handoff stay on the pool's own runner. **The profile reaches that runner
-    as it reaches the pool's own**: an API-key or cloud profile, on a pool you marked as your own,
-    with no question, and vault values and tokens go under the same checks, each made of that
-    runner: a check that can't be made refuses. The window of the project the task ran in does
-    this, so a project left closed keeps its task's Claim until it's next opened.
+    once the branches of the project and of each clone of its workspace on that runner have come
+    back to the desktop, under `refs/remotes/<pool>/fresh-<hash>/`, and a clone made there as a
+    clone here. What it never committed goes with its runner, as do a commit on no branch and a
+    repository nested in a clone or submodule. A Claim whose work did not come back stays, and
+    purlis tries again as the window comes into focus and at its next launch. A long task and a
+    handoff stay on the pool's own runner.
+  - **A task gets a fresh runner only where that is safe.** The pool must be marked as your own,
+    its profile must have no credentials to hand (vault credentials reach no pool's runner in
+    this version), and its operator must say `fresh-runners-stay` in the Pool's
+    `status.capabilities`. On an older operator, or where the cluster can't be asked, the task
+    runs on the pool's own runner and its tab says why. Vault values and tokens reach a fresh
+    runner under the pool's checks, each made of that runner, and a check that can't be made
+    refuses. The window of the project the task ran in does all this, so a project left closed
+    keeps its task's Claim until it's next opened.
+  - **`stopped`, a lost node and a Pool's change reach a fresh runner too.** `stopped`, or a node
+    lost, ends its pod and what its home held that hadn't come back. After a change to the Pool's
+    image or template, the runner is no longer vouched for, so purlis can't fetch from it: its
+    Claim stays, and its work is reached by `kubectl exec` until you delete the Claim.
 - **A Claim** lives in a namespace and names its `pool`, which never changes: another pool is
   another claim. Its `Ready` condition says whether its runner is running, and if not, why:
   `PoolNotFound` when there is no such pool, `PoolDeleted` when it was deleted after the

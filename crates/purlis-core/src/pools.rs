@@ -289,12 +289,12 @@ pub fn workspaces_on_pools(
     on
 }
 
-/// **Each chat's fresh runner of the project at `plane`, with the workspace it came from** (#4569),
-/// by the name a link reaches it by: where a fetch finds what it has, whichever pool that workspace
-/// runs on now. Another project's are its own window's.
+/// **Each chat's fresh runner of the project `plane`, by its id, with the workspace it came from**
+/// (#4569), by the name a link reaches it by: where a fetch finds what it has, whichever pool that
+/// workspace runs on now. Another project's are its own window's.
 pub fn fresh_runners_of_plane(
     config_root: &Path,
-    plane: &Path,
+    plane: &str,
 ) -> std::collections::BTreeMap<String, Vec<String>> {
     runners::fresh_runners(config_root)
         .unwrap_or_default()
@@ -1013,7 +1013,7 @@ pub fn claim_fresh(
         pinned: paired.pinned,
         paired: runners::now(),
         chat: Some(chat.to_owned()),
-        of: Some(of),
+        of: Some(Box::new(of)),
     };
     let locked = runners::lock(config_root);
     match runners::keep_cluster_runner_locked(config_root, &kept, desktop, &locked) {
@@ -1046,10 +1046,28 @@ pub fn release_fresh(
     runners::forget_fresh_runner_locked(config_root, chat, &locked)
 }
 
+/// **Whether the operator of the cluster pool `pool` keeps a fresh Claim's runner through idle**
+/// (#4569), which a task's commits rely on while its desktop is away. Refused where it can't be
+/// asked: the caller takes that as no.
+pub fn fresh_runners_stay(
+    pool: &runners::ClusterPool,
+    kubectl: &crate::clusterpool::Kubectl,
+) -> Result<bool, Refused> {
+    let seen = pool
+        .kubectl(kubectl)
+        .pool(pool.pool())
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    Ok(seen
+        .capabilities
+        .iter()
+        .any(|said| said == crate::clusterpool::FRESH_RUNNERS_STAY))
+}
+
 /// **Whether the chat `chat`'s fresh runner holds nothing to fetch any more** (#4569): its claim is
-/// gone or is another's, or the operator vouches for another pod. Its home is the pod's own, so
-/// what was there went with it. A cluster that does not answer, and a runner not vouched for
-/// just now, are no such word: its work may still be there.
+/// gone or is another's, or the operator vouches for another pod or another key. Its home is the
+/// pod's own, so what was there went with it. A cluster that does not answer is refused, and a
+/// runner not vouched for now, or whose statement can't be read, is no such word: its work may
+/// still be there.
 pub fn fresh_runner_lost(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
@@ -1066,9 +1084,10 @@ pub fn fresh_runner_lost(
     if seen.is_none_or(|seen| seen.uid != kept.claimed.uid) {
         return Ok(true);
     }
-    let vouched = crate::clusterpool::vouched_for(&kubectl, &pool.pin()?, &kept.claimed)
-        .map_err(|why| Refused::Other(why.to_string()))?;
-    Ok(vouched.is_some_and(|vouched| vouched.pod != kept.pod))
+    let vouched = crate::clusterpool::vouched_for(&kubectl, &pool.pin()?, &kept.claimed);
+    Ok(vouched.is_ok_and(|vouched| {
+        vouched.is_some_and(|vouched| vouched.pod != kept.pod || vouched.key != kept.pinned.key)
+    }))
 }
 
 /// **The lock an add of the cluster pool `name` holds from start to end** (#3292): a removal of
@@ -1895,12 +1914,21 @@ pub fn remove_cluster(
         .filter(|fresh| fresh.name == name)
     {
         let (namespace, claim) = (&fresh.claimed.namespace, &fresh.claimed.name);
-        let deleted = kubectl
-            .is_some_and(|kubectl| pool.kubectl(kubectl).delete_claim(namespace, claim).is_ok());
+        // Only one its cluster says is gone: no removal deletes what may hold a task's commits.
+        let lost = fresh.chat.as_deref().is_some_and(|chat| {
+            kubectl.is_some_and(|kubectl| {
+                matches!(fresh_runner_lost(config_root, kubectl, chat), Ok(true))
+            })
+        });
+        let deleted = lost
+            && kubectl.is_some_and(|kubectl| {
+                pool.kubectl(kubectl).delete_claim(namespace, claim).is_ok()
+            });
         if !deleted {
             let said = format!(
-                "The claim {claim} may still hold a runner in the cluster: delete it with \
-                 kubectl delete claims.runners.purlis.dev {claim} --namespace {namespace}."
+                "The claim {claim} may still hold a runner and a task's work in the cluster: \
+                 delete it with kubectl delete claims.runners.purlis.dev {claim} --namespace \
+                 {namespace} once that work no longer matters."
             );
             left = Some(left.map_or(said.clone(), |left| format!("{left} {said}")));
         }

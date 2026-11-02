@@ -222,7 +222,7 @@ fn told_of_its_end(sessions: &RoutedSessions, goes: bool) -> Vec<String> {
     let (tell, told) = std::sync::mpsc::channel();
     sessions.take_back_fresh(
         FRESH,
-        "app",
+        Some("app"),
         Box::new(move |failed| {
             tell.send(failed).expect("the test waits");
             goes
@@ -249,6 +249,28 @@ fn a_fresh_runners_work_comes_back_before_it_goes_and_its_host_with_it() {
     );
     assert_eq!(fresh.let_go(), 1, "its link goes with it");
     assert!(!lock(&world.sessions.shared.pools).contains_key(FRESH));
+}
+
+/// A runner nothing ran on is asked nothing on its way out (#4569): a refused start's runner goes
+/// though the link that would fetch from it is what failed.
+#[test]
+fn a_runner_nothing_ran_on_goes_with_nothing_fetched() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    fresh.fetch_fails("the link went");
+    let (tell, told) = std::sync::mpsc::channel();
+    world.sessions.take_back_fresh(
+        FRESH,
+        None,
+        Box::new(move |failed| {
+            tell.send(failed).expect("the test waits");
+            true
+        }),
+    );
+    let failed: Vec<String> = told
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the end is told");
+    assert_eq!(failed, Vec::<String>::new());
+    assert!(fresh.fetched().is_empty());
 }
 
 /// A runner whose work did not come keeps its host, and is said to have failed: what ends it holds

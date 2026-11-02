@@ -42,8 +42,15 @@ on:
       - crates/purlis-core/tests/it/a_chat_mints_on_a_cluster_runner_with_its_desktop_away.rs
       # A short task's runner of its own, from its claim to its release (#4569).
       - crates/purlis-core/src/codelink*
-      - app/src-tauri/src/behaviour/fresh_runner.rs
+      - app/src-tauri/src/behaviour/tests/fresh_runner.rs
+      - app/src-tauri/src/behaviour.rs
+      - app/src-tauri/src/chats.rs
+      - app/src-tauri/src/chats/**
       - app/src-tauri/src/clusterpools.rs
+      - app/src-tauri/src/hostedsessions*
+      - app/src-tauri/src/poolprofiles*
+      - app/src-tauri/src/runnerlinks*
+      - crates/purlis-core/src/runners*
       - app/src-tauri/src/routedsessions*
       - app/src-tauri/src/runnercode*
       - crates/purlis-core/src/forge/mintport*
@@ -72,8 +79,15 @@ on:
       - crates/purlis-core/tests/it/a_chat_mints_on_a_cluster_runner_with_its_desktop_away.rs
       # A short task's runner of its own, from its claim to its release (#4569).
       - crates/purlis-core/src/codelink*
-      - app/src-tauri/src/behaviour/fresh_runner.rs
+      - app/src-tauri/src/behaviour/tests/fresh_runner.rs
+      - app/src-tauri/src/behaviour.rs
+      - app/src-tauri/src/chats.rs
+      - app/src-tauri/src/chats/**
       - app/src-tauri/src/clusterpools.rs
+      - app/src-tauri/src/hostedsessions*
+      - app/src-tauri/src/poolprofiles*
+      - app/src-tauri/src/runnerlinks*
+      - crates/purlis-core/src/runners*
       - app/src-tauri/src/routedsessions*
       - app/src-tauri/src/runnercode*
       - crates/purlis-core/src/forge/mintport*

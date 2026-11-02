@@ -379,6 +379,7 @@ pub fn pool_status(
     let current = keys.current.public();
     let mut status = PoolStatus {
         signing_key: Some(current.clone()),
+        capabilities: vec![crate::lifecycle::FRESH_RUNNERS_STAY.to_owned()],
         cluster: Some(cluster.to_owned()),
         next_signing_key: None,
         next_signing_key_vouch: None,

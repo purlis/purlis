@@ -1264,6 +1264,27 @@ struct OwnRunner {
     made: bool,
 }
 
+/// Where a start on a pool runs, as far as a runner of its own goes (#4569).
+#[derive(Default)]
+struct OwnRunnerOrNot {
+    own: Option<OwnRunner>,
+    /// Why a chat that would have one stays on the pool's own runner, for its tab.
+    stays_because: Option<String>,
+}
+
+/// Lets go of a fresh runner's end however it finishes, a panic and a thread never started among
+/// them, or that runner could never be tried again (#4569).
+struct FreshEnding {
+    ending: Arc<Mutex<std::collections::HashSet<String>>>,
+    id: String,
+}
+
+impl Drop for FreshEnding {
+    fn drop(&mut self) {
+        lock(&self.ending).remove(&self.id);
+    }
+}
+
 /// **A start that gives a chat a runner of its own, while it lasts** (#4569): no sweep takes the
 /// chat for gone meanwhile, and **a start that fails lets go of the runner it made**, whichever
 /// of its many steps failed, since a retry of a dispatch is a chat of another id. A runner a
@@ -1290,7 +1311,7 @@ impl Drop for StartOnItsOwnRunner<'_> {
         lock(&self.chats.fresh_starting).remove(&self.id);
         #[cfg(unix)]
         if self.made {
-            self.chats.fresh_runner_ends(&self.id);
+            self.chats.fresh_runner_ends(&self.id, false);
         }
     }
 }
@@ -1601,9 +1622,12 @@ impl Chats {
 
     /// **The chat `id` is over, so what its fresh runner holds comes back, and then it goes**
     /// (#3818, #4569). A runner whose work did not come stays, with its record, for
-    /// [`Self::sweeps_fresh_runners`]; one on its way already is left to that.
+    /// [`Self::sweeps_fresh_runners`]; one on its way already is left to that. `ran` is false for
+    /// a start that made a runner and failed: it holds nothing, and asking it could fail as that
+    /// start did. Said to be ending before a start's word is read, as a start says its word before
+    /// it reads this one, so one of the two always sees the other.
     #[cfg(unix)]
-    fn fresh_runner_ends(&self, id: &str) {
+    fn fresh_runner_ends(&self, id: &str, ran: bool) {
         let (Some(config), Some((runner, workspace))) = (&self.pools_in, self.own_runner_of(id))
         else {
             return;
@@ -1611,18 +1635,19 @@ impl Chats {
         if !lock(&self.fresh_ending).insert(id.to_owned()) {
             return;
         }
-        let (config, id, ending) = (
-            config.clone(),
-            id.to_owned(),
-            Arc::clone(&self.fresh_ending),
-        );
+        let ending = FreshEnding {
+            ending: Arc::clone(&self.fresh_ending),
+            id: id.to_owned(),
+        };
+        if self.holds_a_chat(id) {
+            return;
+        }
+        let config = config.clone();
         self.sessions.take_back_fresh(
             &runner,
-            &workspace,
+            ran.then_some(workspace.as_str()),
             Box::new(move |failed| {
-                let went = crate::clusterpools::fresh_runner_ended(&config, &id, &failed);
-                lock(&ending).remove(&id);
-                went
+                crate::clusterpools::fresh_runner_ended(&config, &ending.id, &failed)
             }),
         );
     }
@@ -1637,6 +1662,9 @@ impl Chats {
         let Some(config) = &self.pools_in else {
             return;
         };
+        let Ok(plane) = purlis_core::scaffold::planefile::id_to_hold_by(&self.project) else {
+            return;
+        };
         if !self.put_back_settled.load(Ordering::SeqCst) || self.ending.load(Ordering::SeqCst) {
             return;
         }
@@ -1648,11 +1676,11 @@ impl Chats {
             *swept = Some(std::time::Instant::now());
         }
         for kept in purlis_core::runners::fresh_runners(config).unwrap_or_default() {
-            let ours = kept.of.as_ref().is_some_and(|of| of.plane == self.project);
+            let ours = kept.of.as_ref().is_some_and(|of| of.plane == plane);
             if let (true, Some(id)) = (ours, &kept.chat)
                 && !self.holds_a_chat(id)
             {
-                self.fresh_runner_ends(id);
+                self.fresh_runner_ends(id, true);
             }
         }
     }
@@ -1661,48 +1689,68 @@ impl Chats {
     #[cfg(not(unix))]
     pub(crate) fn sweeps_fresh_runners(&self) {}
 
-    /// **The name of the runner of its own a chat starting in `workspace` runs on**, made now
-    /// (#3818): none but on a cluster pool, for a chat `kept_for` says keeps nothing. A profile
-    /// purlis can't say the sign-in of keeps its work, as a chat there always has. Answers whether
-    /// this start made it, which it then answers for.
+    /// **The runner of its own a chat starting in `workspace` runs on**, made now (#3818): none but
+    /// on a pool the person marked as their own, whose operator keeps such a runner until its work
+    /// is back, for a chat `kept_for` says keeps nothing. A profile purlis can't say the sign-in of
+    /// keeps its work, as a chat there always has, and so does one with credentials to hand,
+    /// which go to no pool's runner and are refused there in their own words.
     #[cfg(unix)]
     fn fresh_runner_for(
         &self,
         id: &str,
         workspace: Option<&str>,
         sign_in: Option<&purlis_core::profilesignin::AtStart>,
-    ) -> Result<Option<OwnRunner>, String> {
+    ) -> Result<OwnRunnerOrNot, String> {
         use purlis_core::clusterpool::{ChatOnARunner, Keeping, kept_for};
         use purlis_core::harness_declaration::SignInKind;
+        // Its runner is on its way out: what started there now would go with it.
+        if lock(&self.fresh_ending).contains(id) {
+            return Err(
+                "This task's runner is closing, so nothing was started. Start it again \
+                        in a moment."
+                    .to_owned(),
+            );
+        }
         // A chat that has one stays on it, whatever starts it again: its conversation is there.
         if let Some((name, _)) = self.own_runner_of(id) {
-            return Ok(Some(OwnRunner { name, made: false }));
+            return Ok(OwnRunnerOrNot {
+                own: Some(OwnRunner { name, made: false }),
+                stays_because: None,
+            });
         }
         let (Some(config), Some(workspace), Some(pool)) =
             (&self.pools_in, workspace, self.sessions.pool_for(workspace))
         else {
-            return Ok(None);
+            return Ok(OwnRunnerOrNot::default());
         };
-        if !matches!(
-            purlis_core::runners::cluster_runner_for(config, &pool),
-            Ok(Some(_))
-        ) {
-            return Ok(None);
-        }
+        let Ok(Some((held, _))) = purlis_core::runners::cluster_runner_for(config, &pool) else {
+            return Ok(OwnRunnerOrNot::default());
+        };
         let keeping = kept_for(&ChatOnARunner {
             dispatched: crate::hostedsessions::is_a_short_task(),
             sign_in: Some(sign_in.map_or(SignInKind::Subscription, |sign_in| sign_in.kind)),
             keep_work: None,
         });
-        if keeping == Keeping::Kept {
-            return Ok(None);
+        let to_hand = sign_in.is_some_and(|sign_in| !sign_in.credentials.is_empty());
+        if keeping == Keeping::Kept || to_hand || !held.owned() {
+            return Ok(OwnRunnerOrNot::default());
+        }
+        if let Some(why) = crate::clusterpools::why_no_fresh_runner(config, &held) {
+            return Ok(OwnRunnerOrNot {
+                own: None,
+                stays_because: Some(why),
+            });
         }
         let of = purlis_core::runners::FreshOf {
-            plane: self.project.clone(),
+            plane: purlis_core::scaffold::planefile::id_to_hold_by(&self.project)
+                .map_err(|why| format!("this project's id could not be read: {why}"))?,
             workspace: workspace.to_owned(),
         };
-        crate::clusterpools::fresh_runner(config, &pool, id, of)
-            .map(|name| Some(OwnRunner { name, made: true }))
+        let name = crate::clusterpools::fresh_runner(config, &pool, id, of)?;
+        Ok(OwnRunnerOrNot {
+            own: Some(OwnRunner { name, made: true }),
+            stays_because: None,
+        })
     }
 
     /// [`Self::fresh_runner_for`]: pools run on Unix alone.
@@ -1712,8 +1760,8 @@ impl Chats {
         _id: &str,
         _workspace: Option<&str>,
         _sign_in: Option<&purlis_core::profilesignin::AtStart>,
-    ) -> Result<Option<OwnRunner>, String> {
-        Ok(None)
+    ) -> Result<OwnRunnerOrNot, String> {
+        Ok(OwnRunnerOrNot::default())
     }
 
     /// Readies each chat's profile on the pool it starts on through `on_pools` (#2049).
@@ -3927,6 +3975,15 @@ impl Chats {
                 resumed_from: chat.identity.resumed_from.clone(),
             },
         };
+        // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
+        // composes its own line, and would start it with none of them.
+        if on_the_runner && chat.graded {
+            return Err(
+                "A grade's chat runs on this machine alone, and this project's chats are started \
+                 by a runner, so nothing was started."
+                    .to_owned(),
+            );
+        }
         // **A short task on a cluster pool gets a runner of its own** (#3818), kept only while it
         // lasts. Made before its profile is readied, since that is where the profile goes, and
         // said to be starting first, so no sweep takes it for one whose chat is gone (#4569).
@@ -3935,14 +3992,19 @@ impl Chats {
             .as_deref()
             .filter(|_| on_the_runner)
             .map(|id| StartOnItsOwnRunner::of(self, id));
+        let mut stays_on_the_pools = None;
         let own_runner = match (&mut own_start, identity.id.as_deref()) {
             (Some(start), Some(id)) => {
-                let own = self.fresh_runner_for(id, workspace.as_deref(), sign_in)?;
-                start.made = own.as_ref().is_some_and(|own| own.made);
-                own.map(|own| own.name)
+                let chosen = self.fresh_runner_for(id, workspace.as_deref(), sign_in)?;
+                stays_on_the_pools = chosen.stays_because;
+                start.made = chosen.own.as_ref().is_some_and(|own| own.made);
+                chosen.own.map(|own| own.name)
             }
             _ => None,
         };
+        // A restart there sends none of this machine's branches over what the chat did (#4569).
+        let its_code_is_there =
+            own_runner.is_some() && own_start.as_ref().is_some_and(|start| !start.made);
         // **Whose skills it has** (SK-15g, #3604): a runner's chat is armed by its runner, and
         // so is one this window reattaches from a runner, which its start armed there too. Its
         // skills are read here for neither, and its router is not asked again.
@@ -3953,15 +4015,6 @@ impl Chats {
                     .number
                     .is_some_and(|number| self.sessions.composes_the_harness_chat(number))
         });
-        // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
-        // composes its own line, and would start it with none of them.
-        if on_the_runner && chat.graded {
-            return Err(
-                "A grade's chat runs on this machine alone, and this project's chats are started \
-                 by a runner, so nothing was started."
-                    .to_owned(),
-            );
-        }
         // **Its profile is kept, and signed in, on the pool's runner before it starts there**
         // (#2049): signed in, it starts with nobody asked, a moved chat's too; signed out, it
         // starts nothing and waits as one Ask to sign it in on that pool. Settings over the pool's
@@ -3971,7 +4024,12 @@ impl Chats {
         }
         if on_the_runner
             && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
-            && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
+            // A chat's own runner's pool, wherever its workspace runs since (#4569).
+            && let Some(pool) = own_runner
+                .as_deref()
+                .and_then(|runner| runner.split_once('/'))
+                .map(|(pool, _)| pool.to_owned())
+                .or_else(|| self.sessions.pool_for(workspace.as_deref()))
         {
             match &own_runner {
                 Some(runner) => {
@@ -3986,6 +4044,10 @@ impl Chats {
             .as_deref()
             .filter(|_| on_the_runner)
             .and_then(purlis_core::profilestore::onrunner::left_out_said);
+        let left_out = match (left_out, stays_on_the_pools) {
+            (Some(left_out), Some(stays)) => Some(format!("{stays} {left_out}")),
+            (left_out, stays) => left_out.or(stays),
+        };
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
         // Never a port given for a grant to serve on alone: a runner opens no door (#2019).
@@ -4643,6 +4705,7 @@ impl Chats {
                     chat.number,
                     &crate::host::Named {
                         runner: own_runner.clone(),
+                        its_code_is_there,
                         chat: identity.id.clone(),
                         run: identity.run.clone(),
                         profile: chat.profile.clone(),
@@ -4967,8 +5030,10 @@ impl Chats {
         // Its own runner goes with it, what it holds back here first (#3818, #4569). Not as the
         // project is let go of: the record it just wrote brings the chat back to that runner.
         #[cfg(unix)]
-        if let Some(id) = last_of.filter(|_| !self.ending.load(Ordering::SeqCst)) {
-            self.fresh_runner_ends(&id);
+        // Nor where its close failed: what still runs there may commit, and the sweep comes back.
+        if let Some(id) = last_of.filter(|_| closed.is_ok() && !self.ending.load(Ordering::SeqCst))
+        {
+            self.fresh_runner_ends(&id, true);
         }
         // The folder of links to the plane's skills it used, once its program has ended, where
         // no other running chat uses it (SK-24).

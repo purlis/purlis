@@ -88,6 +88,10 @@ pub fn said_idle(pod: &Pod, now: Timestamp) -> bool {
         })
 }
 
+/// What a Pool's status says of this operator, for [`suspends_for_idle`]: a desktop gives a task a
+/// fresh runner only on this word. `crates/purlis-core/src/clusterpool.rs` reads the same words.
+pub const FRESH_RUNNERS_STAY: &str = "fresh-runners-stay";
+
 /// **Whether a runner's word that it is idle suspends it** (#4569): only a kept Claim's. A fresh
 /// Claim's home ends with its pod, and may hold what a task committed while its desktop was away,
 /// so its runner stays until its desktop has that work and deletes the Claim. It goes on saying

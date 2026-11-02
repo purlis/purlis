@@ -1509,21 +1509,21 @@ fn a_fresh_runners_row_keeps_its_project_and_workspace_and_no_other_row_has_them
         row
     };
     let fresh = row(serde_json::json!({
-        "chat": "01CHAT", "plane": "/a/project", "workspace": "app",
+        "chat": "01CHAT", "plane": "01PROJECT", "workspace": "app",
     }));
     let kept = cluster_runner_from_row(&fresh).expect("a fresh runner's row");
     let of = kept.of.clone().expect("where its work goes");
-    assert_eq!(of.plane, std::path::Path::new("/a/project"));
+    assert_eq!(of.plane, "01PROJECT");
     assert_eq!(of.workspace, "app");
     assert_eq!(cluster_runner_to_row(&kept), fresh);
 
     assert!(cluster_runner_from_row(&row(serde_json::json!({}))).is_some());
     for not in [
         serde_json::json!({ "chat": "01CHAT" }),
-        serde_json::json!({ "chat": "01CHAT", "plane": "/a/project" }),
-        serde_json::json!({ "plane": "/a/project", "workspace": "app" }),
-        serde_json::json!({ "chat": "01CHAT", "plane": "relative", "workspace": "app" }),
-        serde_json::json!({ "chat": "01CHAT", "plane": "/a/project", "workspace": "../up" }),
+        serde_json::json!({ "chat": "01CHAT", "plane": "01PROJECT" }),
+        serde_json::json!({ "plane": "01PROJECT", "workspace": "app" }),
+        serde_json::json!({ "chat": "01CHAT", "plane": "", "workspace": "app" }),
+        serde_json::json!({ "chat": "01CHAT", "plane": "01PROJECT", "workspace": "../up" }),
     ] {
         assert!(
             cluster_runner_from_row(&row(not.clone())).is_none(),

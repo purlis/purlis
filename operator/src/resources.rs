@@ -220,6 +220,11 @@ pub struct PoolStatus {
     /// whose link key it did not sign (#2056).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signing_key: Option<String>,
+    /// What this operator does that an older one does not, by name, for a desktop to read before
+    /// it relies on it (#4569). `fresh-runners-stay`: a fresh Claim's runner is not suspended for
+    /// being idle, so what its task committed waits for its desktop.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<String>,
     /// The cluster the Pool is in: the uid of its `kube-system` namespace. A desktop pins it with
     /// the key, and refuses a statement made in any other cluster (#3305).
     #[serde(default, skip_serializing_if = "Option::is_none")]

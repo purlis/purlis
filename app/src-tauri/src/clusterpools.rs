@@ -270,9 +270,36 @@ pub fn fresh_runner_ended(config: &Path, chat: &str, failed: &[String]) -> bool 
     }
 }
 
+/// **Why a short task on the cluster pool `pool` stays on the pool's own runner**, where it does
+/// (#4569): only an operator that keeps a fresh Claim's runner through idle holds a task's commits
+/// while its desktop is away. Not knowing is a no.
+pub fn why_no_fresh_runner(config: &Path, pool: &ClusterPool) -> Option<String> {
+    no_fresh_runner_said(
+        pool.name(),
+        kubectl(config).and_then(|kubectl| {
+            purlis_core::pools::fresh_runners_stay(pool, &kubectl).map_err(|why| why.to_string())
+        }),
+    )
+}
+
+/// [`why_no_fresh_runner`], of what its operator answered.
+fn no_fresh_runner_said(pool: &str, stays: Result<bool, String>) -> Option<String> {
+    match stays {
+        Ok(true) => None,
+        Ok(false) => Some(format!(
+            "This task runs on pool {pool}'s own runner: its cluster operator is too old to give a \
+             task a runner of its own. Update the operator to change that."
+        )),
+        Err(_) => Some(format!(
+            "This task runs on pool {pool}'s own runner: purlis could not ask its cluster whether \
+             a runner of its own would keep the task's work."
+        )),
+    }
+}
+
 /// **A fresh runner of the pool `name` that still holds a chat's work**, its chat's id, where
 /// there is one: a pool's removal would delete it with no fetch (#4569). A cluster that does not
-/// answer holds up nothing, since nothing could be fetched from it anyway.
+/// answer holds up nothing here, and [`purlis_core::pools::remove_cluster`] leaves its Claim.
 fn a_fresh_runner_at_work(config: &Path, kubectl: &Kubectl, name: &str) -> Option<String> {
     purlis_core::runners::fresh_runners(config)
         .unwrap_or_default()
@@ -523,7 +550,7 @@ pub fn remove_on(config: &Path, name: &str) -> Result<Option<String>, String> {
         tracing::info!("purlis: chat {at_work} keeps pool {name} from being removed");
         return Err(format!(
             "A task on pool {name} has a runner of its own, and its work has not come back. \
-             Close the task, then remove the pool."
+             Close the task, or open its project so purlis can fetch it, then remove the pool."
         ));
     }
     let left = purlis_core::pools::remove_cluster(

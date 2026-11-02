@@ -44,6 +44,10 @@ pub use moving::{
 /// Where a branch's snapshot of uncommitted work is kept, in a repository either end holds.
 pub const SNAPSHOTS: &str = "refs/purlis/snapshots/";
 
+/// What a runner answers for a clone it does not hold: nothing there to fetch.
+pub const NO_REPOSITORY_THERE: &str =
+    "the runner holds no repository there, so there is no code to send";
+
 /// Where a branch is.
 pub const HEADS: &str = "refs/heads/";
 
@@ -1025,9 +1029,7 @@ fn refs_under(repo: &Path, under: &[&str]) -> Result<Vec<Ref>, Refused> {
 /// anything to send.
 pub fn give(repo: &Path, have: &[String], into: &Path) -> Result<(Vec<Ref>, Bundled), Refused> {
     if !repo.join(".git").exists() {
-        return Err(not_allowed(
-            "the runner holds no repository there, so there is no code to send",
-        ));
+        return Err(not_allowed(NO_REPOSITORY_THERE));
     }
     let heads = refs_under(repo, &[HEADS])?;
     if heads.is_empty() {

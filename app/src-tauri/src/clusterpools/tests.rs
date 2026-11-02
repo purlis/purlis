@@ -218,3 +218,15 @@ fn a_definite_refusal_after_the_whole_wait_offers_nothing() {
     );
     assert_eq!(hits_said_in("ran-out-by-its-outcome", &ran_out).len(), 1);
 }
+
+/// **Only an operator's word gives a task a runner of its own** (#4569): an older operator ends
+/// such a runner's pod while its desktop is away, and not knowing is the same no.
+#[test]
+fn a_task_stays_on_the_pools_runner_unless_its_operator_says_otherwise() {
+    assert_eq!(no_fresh_runner_said("team", Ok(true)), None);
+    let older = no_fresh_runner_said("team", Ok(false)).expect("it says why");
+    assert!(older.contains("pool team's own runner"), "{older}");
+    assert!(older.contains("Update the operator"), "{older}");
+    let unknown = no_fresh_runner_said("team", Err("no answer".to_owned())).expect("it says why");
+    assert!(unknown.contains("pool team's own runner"), "{unknown}");
+}

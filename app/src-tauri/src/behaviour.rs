@@ -394,6 +394,7 @@ const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
 /// so an image that went missing never passes as nothing run.
 const PARITY: &str = "PURLIS_PARITY";
 
+#[path = "behaviour/tests/fresh_runner.rs"]
 mod fresh_runner;
 mod pool_journey;
 mod pool_setup;
@@ -484,7 +485,10 @@ pub(crate) struct WindowsHost {
 }
 
 /// [`WindowsHost`], on `machine`.
-pub(crate) fn a_windows_host_for(machine: &crate::runnerlinks::Machine) -> WindowsHost {
+pub(crate) fn a_windows_host_for(
+    machine: &crate::runnerlinks::Machine,
+    relays: purlis_host::RelaysTo,
+) -> WindowsHost {
     // The window's own host, as the window's binary composes it, relaying the project's links
     // to the pool's runner as the app's does (`crate::runnerlinks::relays_to`); it keeps the
     // device's event log in `data`.
@@ -499,10 +503,7 @@ pub(crate) fn a_windows_host_for(machine: &crate::runnerlinks::Machine) -> Windo
         .expect("a runtime");
     let host = runtime.block_on(async {
         a_host(folder.path(), data.path())
-            .relaying_with(crate::runnerlinks::relaying({
-                let machine = machine.clone();
-                move || Ok(machine.clone())
-            }))
+            .relaying_with(relays)
             .draining_with(crate::runnerlinks::drains_to(machine.config.clone()))
     });
     // The window's links to it, as the window's binary dials them: its own, and each relayed
@@ -580,7 +581,13 @@ pub(crate) fn a_window_again_on_a_pool_of(
         data,
         cuts,
         a_connection,
-    } = a_windows_host_for(&machine);
+    } = a_windows_host_for(
+        &machine,
+        crate::runnerlinks::relaying({
+            let machine = machine.clone();
+            move || Ok(machine.clone())
+        }),
+    );
     let again = AWindowAgain {
         cuts,
         connection: Arc::clone(&a_connection),
@@ -1803,6 +1810,7 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
 fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
     crate::host::Named {
         runner: None,
+        its_code_is_there: false,
         tools_allowed: None,
         plane_skills: false,
         chat: None,
@@ -3857,6 +3865,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
                 None,
                 &crate::host::Named {
                     runner: None,
+                    its_code_is_there: false,
                     tools_allowed,
                     ..named("run them", false)
                 },

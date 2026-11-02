@@ -652,6 +652,7 @@ fn following(
         next_signing_key: Some(next),
         next_signing_key_vouch: answered.statement.zip(answered.signature),
         mints_in_cluster: true,
+        capabilities: Vec::new(),
     };
     match pin.followed(&seen, now).map_err(|why| why.to_string())? {
         Following::Moves(moved) => {

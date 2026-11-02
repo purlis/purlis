@@ -131,6 +131,9 @@ pub struct Named {
     /// The runner it starts on where that is not its pool's own: a chat's fresh runner, by the
     /// name a link reaches it by (#3818).
     pub runner: Option<String>,
+    /// Whether its runner holds its code from an earlier start: a chat's fresh runner holds the
+    /// only copy of its work, which sending this machine's branches over would undo (#4569).
+    pub its_code_is_there: bool,
     pub chat: Option<String>,
     pub run: Option<String>,
     pub profile: Option<String>,
@@ -388,9 +391,12 @@ pub trait SessionHost: Send + Sync {
 
     /// **A chat's fresh runner `runner` is finished with** (#4569): what it has of `workspace`
     /// comes back ([`Self::fetch_back_whole`]), off this thread where it crosses a link, and
-    /// `done` is told what did not.
-    fn take_back_fresh(&self, runner: &str, workspace: &str, done: FreshDone) {
-        done(self.fetch_back_whole(workspace, runner));
+    /// `done` is told what did not. No workspace is a runner nothing ran on: `done` is told at
+    /// once, and nothing is sent or asked of it.
+    fn take_back_fresh(&self, runner: &str, workspace: Option<&str>, done: FreshDone) {
+        done(workspace.map_or_else(Vec::new, |workspace| {
+            self.fetch_back_whole(workspace, runner)
+        }));
     }
 
     /// **The way to a runner kept no more goes** (#4569): its link ends.

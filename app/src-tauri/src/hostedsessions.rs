@@ -4124,7 +4124,11 @@ impl SessionHost for HostedSessions {
         let (link, project) = self.link_of_a_start()?;
         // The workspace's clones as they are here, uncommitted work and all, before the chat
         // starts on them there (#2046).
-        if let (true, Some(workspace)) = (self.kept_on_the_runner, &named.workspace) {
+        if let (true, false, Some(workspace)) = (
+            self.kept_on_the_runner,
+            named.its_code_is_there,
+            &named.workspace,
+        ) {
             crate::runnercode::send_workspace(&link, &project, &self.root, workspace, &self.sent)?;
         }
         let id = self.number_for(wanted)?;

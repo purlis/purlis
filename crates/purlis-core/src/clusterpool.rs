@@ -365,7 +365,14 @@ pub struct PoolSeen {
     /// Whether its spec opts the pool in to minting GitHub App tokens in the cluster (#4204):
     /// [`mints_in_cluster`].
     pub mints_in_cluster: bool,
+    /// `status.capabilities`: what this operator says it does (#4569).
+    pub capabilities: Vec<String>,
 }
+
+/// **What a Pool's status says where its operator keeps a fresh Claim's runner through idle**
+/// (#4569): a task's commits wait for its desktop there. An older operator says nothing, and its
+/// pod and those commits end together. `operator/src/lifecycle.rs` writes the same words.
+pub const FRESH_RUNNERS_STAY: &str = "fresh-runners-stay";
 
 /// **Whether a Pool's `spec` opts it in to minting in the cluster** (#4204), read from the admin's
 /// Pool, never chosen by the person. `true` alone, with the key and the allow-list that go with
@@ -398,6 +405,16 @@ impl PoolSeen {
             next_signing_key_vouch: text("/nextSigningKeyVouch/statement")
                 .zip(text("/nextSigningKeyVouch/signature")),
             mints_in_cluster: false,
+            capabilities: status
+                .get("capabilities")
+                .and_then(serde_json::Value::as_array)
+                .map(|said| {
+                    said.iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 }

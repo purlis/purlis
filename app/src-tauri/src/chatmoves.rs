@@ -845,8 +845,8 @@ impl crate::planes::Held {
         // Its runner holds its clones alone, and goes with it (#4569).
         if chats.on_its_own_runner(session) {
             return Err(
-                "This task has a runner of its own, which goes when the task closes, so it was \
-                 not moved."
+                "This task has a runner of its own, so it was not moved. Close it when it's \
+                 done, and its work comes back here."
                     .to_owned(),
             );
         }

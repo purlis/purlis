@@ -115,7 +115,12 @@ impl ProfilesOnPools for Linked {
         profile: &str,
     ) -> Result<(), String> {
         let _readying = Readying::of(pool, profile);
+        // Unlike a pool's own runner, this one has nothing yet: a check that can't be made refuses
+        // the start, or the chat would run with no profile there.
         let yours = yours(&self.config, runner);
+        if let Err(why) = &yours {
+            return Err(why.clone());
+        }
         chosen_by_a_chat(&yours, &self.config, root, pool, profile);
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
             keep_on_as(yours.clone(), &self.config, runner, kept, Waking::Yes)

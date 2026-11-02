@@ -162,7 +162,9 @@ impl RoutedSessions {
             // workspace runs on now (#4569).
             Arc::new(move || {
                 let mut on = purlis_core::pools::workspaces_on_pools(&config, &plane);
-                on.extend(purlis_core::pools::fresh_runners_of_plane(&config, &plane));
+                if let Ok(id) = purlis_core::scaffold::planefile::id_to_hold_by(&plane) {
+                    on.extend(purlis_core::pools::fresh_runners_of_plane(&config, &id));
+                }
                 on
             })
         };
@@ -908,19 +910,19 @@ impl SessionHost for RoutedSessions {
     /// One fetch at a time, as every fetch into a clone is, and off the thread that closes the
     /// chat: a fetch crosses the link, and a cluster may be slow. A runner that went takes its host
     /// with it.
-    fn take_back_fresh(&self, runner: &str, workspace: &str, done: crate::host::FreshDone) {
+    fn take_back_fresh(&self, runner: &str, workspace: Option<&str>, done: crate::host::FreshDone) {
         let (shared, to_a_pool) = (Arc::clone(&self.shared), Arc::clone(&self.to_a_pool));
-        let (runner, workspace) = (runner.to_owned(), workspace.to_owned());
+        let (runner, workspace) = (runner.to_owned(), workspace.map(str::to_owned));
         let spawned = std::thread::Builder::new()
             .name("purlis-fresh-runner-end".into())
             .spawn(move || {
-                let failed = {
+                let failed = workspace.map_or_else(Vec::new, |workspace| {
                     let _one_at_a_time = lock(&shared.fetching);
                     match pool_of(&shared, &to_a_pool, &runner) {
                         Ok(host) => host.fetch_back_whole(&workspace, &runner),
                         Err(why) => vec![why],
                     }
-                };
+                });
                 if done(failed) {
                     lock(&shared.current).remove(&runner);
                     if let Some(host) = lock(&shared.pools).remove(&runner) {
@@ -928,7 +930,7 @@ impl SessionHost for RoutedSessions {
                     }
                 }
             });
-        // Tried again by the sweep ([`crate::chats::Chats::sweeps_fresh_runners`]).
+        // `done` went with it, which says this end is over: the sweep tries it again.
         if let Err(why) = spawned {
             tracing::warn!("purlis: a chat's fresh runner was not let go of: {why}");
         }
