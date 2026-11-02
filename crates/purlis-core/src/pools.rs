@@ -435,6 +435,29 @@ pub fn fresh_runners_of_plane(
         .collect()
 }
 
+/// **Whether `workspace` of the plane at `plane` has run a chat on `pool`** (#4591): one is kept
+/// there, its branches are still owed from there, or a clone of it keeps branches that came back
+/// from there ([`codelink::on_a_pool_left`]). What Start chat's row reads to say a first start
+/// there.
+pub fn has_run_on(config_root: &Path, plane: &Path, workspace: &str, pool: &str) -> bool {
+    if crate::machine::read(config_root)
+        .store
+        .ran_on(plane, workspace, pool)
+    {
+        return true;
+    }
+    let Ok(clones) = crate::codelink::clones_in(plane, workspace) else {
+        return false;
+    };
+    clones.iter().any(|clone| {
+        !crate::codelink::on_a_pool_left(
+            &plane.join("workspaces").join(workspace).join(clone),
+            pool,
+        )
+        .is_empty()
+    })
+}
+
 /// **Moves the pool `name` to `image`, the runner image of the desktop's version** (#2749): a
 /// runner of `image` is made beside the pool's, held to the pool's limits, checked, paired with
 /// `desktop` and kept as the pool's runner, and every runner of the pool before it is kept

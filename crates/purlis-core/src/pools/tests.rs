@@ -4030,3 +4030,50 @@ fn fetch_back_asks_a_workspace_following_the_projects_pool_only_once_it_ran_ther
         vec!["ide".to_owned()]
     );
 }
+
+#[test]
+fn a_workspace_has_run_on_a_pool_once_a_chat_of_it_is_kept_there_or_its_branches_came_back() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let plane = plane.path();
+    let clone = plane.join("workspaces").join("ide").join("web");
+    std::fs::create_dir_all(&clone).unwrap();
+    std::fs::create_dir_all(plane.join("workspaces").join("docs")).unwrap();
+    let git = |args: &[&str]| {
+        let done = crate::testgit::run(&clone, args);
+        assert!(done.ok(), "git {args:?} failed: {done:?}");
+    };
+    git(&["init", "-q", "-b", "main", "."]);
+    git(&[
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "one",
+    ]);
+    crate::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store.keep_chat_on_pool(
+            plane,
+            1,
+            crate::machine::ChatOnPool {
+                pool: "first".to_owned(),
+                workspace: "docs".to_owned(),
+            },
+        );
+    })
+    .unwrap();
+    assert!(has_run_on(config.path(), plane, "docs", "first"));
+    assert!(!has_run_on(config.path(), plane, "docs", "second"));
+    assert!(!has_run_on(config.path(), plane, "ide", "first"));
+    // What came back from a pool's runner stays in the clone once nothing is owed.
+    git(&["update-ref", "refs/remotes/first/main", "HEAD"]);
+    assert!(has_run_on(config.path(), plane, "ide", "first"));
+    assert!(!has_run_on(config.path(), plane, "ide", "second"));
+}
