@@ -26,6 +26,7 @@ const row = (name: string, standing: string | null = "signed-out") => ({
   harness: "Claude Code",
   standing,
   not_kept: null,
+  limit: null,
   plans: [],
 });
 

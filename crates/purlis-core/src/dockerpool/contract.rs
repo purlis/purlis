@@ -24,6 +24,16 @@ const MOST_PROBLEMS: usize = 12;
 /// The inits that reap the processes a runner's chats leave behind when it is PID 1.
 const INITS: [&str; 4] = ["tini", "dumb-init", "catatonit", "docker-init"];
 
+/// `said` as a sentence, as the config's problems are: a capital first, and a full stop.
+fn sentence(said: &str) -> String {
+    let mut chars = said.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    let end = if said.ends_with('.') { "" } else { "." };
+    format!("{}{}{end}", first.to_uppercase(), chars.as_str())
+}
+
 /// Eight hex digits drawn at random, so two checks never share a container's name. Refused where
 /// nothing could be drawn: a name two checks could share would let one remove the other's.
 fn drawn_name() -> Result<String, Refused> {
@@ -176,7 +186,7 @@ impl Docker {
             Ok(said) => problems.extend(
                 said.lines()
                     .filter(|line| !line.trim().is_empty())
-                    .map(crate::shown::short),
+                    .map(|line| sentence(&crate::shown::short(line))),
             ),
             Err(why) => problems.push(format!(
                 "purlis couldn't look inside it: {}",

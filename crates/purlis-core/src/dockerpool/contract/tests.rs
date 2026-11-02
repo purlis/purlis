@@ -74,3 +74,13 @@ fn an_image_is_looked_in_only_as_a_user_other_than_root() {
         }
     }
 }
+
+#[test]
+fn what_the_image_says_reads_as_a_sentence() {
+    assert_eq!(
+        sentence("there is no bash on PATH"),
+        "There is no bash on PATH."
+    );
+    assert_eq!(sentence("Done."), "Done.");
+    assert_eq!(sentence(""), "");
+}

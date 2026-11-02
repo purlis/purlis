@@ -34,6 +34,7 @@ const row = (name: string, harness: string, standing: string) => ({
   harness,
   standing,
   not_kept: null,
+  limit: null,
   plans: [],
 });
 
@@ -92,12 +93,9 @@ function faked(profiles: PoolProfiles, sizes: PoolSetupSizes) {
   };
 }
 
-let pool = 0;
 const meta = {
   component: SignInsStep,
   args: { step: STEP, pool: "dev-box", plane: "p", changed: () => undefined },
-  // Each story's pool is its own: the window holds what it read of a pool across stories.
-  render: (args) => <SignInsStep {...args} pool={`dev-box-${++pool}`} />,
   decorators: [
     (Story) => (
       <div style={{ maxWidth: 720 }} className="pool-setup-page">
