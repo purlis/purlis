@@ -285,8 +285,11 @@ export function DiscardHeldRunner({
   onGoOn: () => void;
   onCancel: () => void;
 }) {
+  // Each ask is a dialog of its own, so the second opens with the keyboard on its Cancel and not
+  // on the button the first was answered with: two presses never discard.
   return ask === "first" ? (
     <AlertDialog
+      key="first"
       onClose={onCancel}
       title={`Discard runner ${name}'s conversations?`}
       description={
@@ -299,6 +302,7 @@ export function DiscardHeldRunner({
     />
   ) : (
     <AlertDialog
+      key="again"
       onClose={onCancel}
       title="Discard them for good?"
       description={

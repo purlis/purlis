@@ -19,19 +19,27 @@ container was removed outside purlis.
    ended while it ran, so the person ended them.
 2. **How it is checked.** A short-lived container of the pool's runner's image, as the sign-in
    carry runs (#4011), with no network and no capability, mounts the old home read-only and lists
-   the places a harness keeps a conversation: Claude Code's transcripts and Codex's rollouts, in a
-   made profile's folder and in each harness's default folder, and opencode's sessions. The
-   runner is never started to be asked. A home that could not be read says nothing of it: the
-   runner stays as it is, neither held nor removed, and the next look reads it again.
+   every plain file in the folders a harness keeps its conversations in: Claude Code's `projects`
+   (its transcripts, and its subagents' and tool results beside them) and Codex's `sessions` and
+   `archived_sessions`, in a made profile's folder and in each harness's default folder, and
+   opencode's storage. The runner is never started to be asked. **It fails closed**: a program
+   the image lacks, a folder it cannot read, a Docker that does not answer whether the container
+   is there, or any read that does not finish says nothing of the home, so the runner stays as it
+   is, neither held nor removed, and the next look reads it again. It is never taken for an
+   empty home.
 3. **A home that holds one holds the runner** (`held`, as a stop during its drain does). The
    Notice is in Devices, one for each held runner, whatever held it.
-4. **Bring back conversations** puts each conversation at the same place in the pool's runner's
-   home, where its harness resumes it by its id, so a chat that ended with the old runner picks up
-   on the new one. Nothing is written through a link or over a file: one already there counts as
-   brought back only where it is the same. Only once none is left behind is the old runner removed,
-   as Remove runner removed it, its sign-ins carried. One left behind keeps it held, and the
-   Notice says how many came back. opencode keeps a conversation over many files that only its own
-   import reads, so its conversations are seen and kept but never brought back.
+4. **Bring back conversations** puts each of those files at the same place in the pool's runner's
+   home, where its harness resumes a conversation by its id. Nothing is written through a link or
+   over a file: one already there counts as brought back only where it is the same. Only once none
+   is left behind is the old runner removed, with the rest of its home, as Remove runner removed
+   it, its sign-ins carried; the Notice says so before the press. One left behind keeps it held,
+   and the window says how many came back. A home that holds no conversation is never removed by
+   it, which a runner held for a stop during its drain may be: that one goes only by Discard. A
+   held runner a link started again is stopped first, so nothing changes under the copy (no chat
+   starts on a draining runner). opencode keeps a conversation over many files that only its own
+   import reads, so its conversations are seen and kept but never brought back. Picking a chat up
+   from there in the window is still #4632's.
 5. **Bring back is refused**, and the runner stays held, where a chat ran on either runner without
    the sandbox, or the two run as different users: the same rules as the sign-in carry.
 6. **Discard asks twice**, then removes the runner and its home as Remove runner did. It replaces

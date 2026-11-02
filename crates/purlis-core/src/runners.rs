@@ -365,8 +365,9 @@ pub struct Kept {
     /// is held ([`crate::pools::drain_look`]). `None` where this was not read, a row from before
     /// it among them, which says nothing of when it stopped.
     pub last_stop: Option<u64>,
-    /// **It is held** ([`crate::pools::DrainLook::Held`]): it stays with its home until the person
-    /// removes it, whatever it answers, and running again changes nothing.
+    /// **It is held** ([`crate::pools::DrainLook::Held`], [`crate::pools::held_for_its_conversations`]):
+    /// it stays with its home until the person brings its chats' conversations back or discards
+    /// them, whatever it answers, and running again changes nothing.
     pub held: bool,
     /// The engine that made it, as `docker info` prints its id (#4166): only that engine's word
     /// says it was removed. `None` for a runner kept before this, or an engine that prints none.

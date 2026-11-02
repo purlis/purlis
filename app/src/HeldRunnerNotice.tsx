@@ -10,8 +10,9 @@ import { DiscardHeldRunner } from "./settings/pools";
  * **A runner purlis kept with its chats' conversations** (#4633, ruled 2026-11-02): an older
  * runner of a pool, stopped or removed outside purlis, whose home holds what its chats left. The
  * Notice offers to bring their conversations back to the pool's runner, where those chats resume,
- * or to discard them, which asks twice. Either way, once it is done the runner is gone and
- * `onDone` is told; what stopped it is said under it, and the runner stays as it was.
+ * or to discard them, which asks twice. Once either is done the runner is gone and `onDone` is
+ * told. Where it did not finish, as where some conversations could not be brought back, the
+ * runner stays and what stopped it is said under the line.
  */
 export function HeldRunnerNotice({
   runner,
@@ -60,7 +61,7 @@ export function HeldRunnerNotice({
           },
         ]}
       >
-        {`purlis kept runner ${runner} of pool ${pool}, with what its chats left in its home. Bring their conversations back to the pool's runner to pick those chats up there, or discard them.`}
+        {`purlis kept runner ${runner} of pool ${pool}, with what its chats left in its home. Bring their conversations back to the pool's runner, which then removes this runner and the rest of its home, or discard them.`}
       </Notice>
       {said !== undefined && (
         <Notice

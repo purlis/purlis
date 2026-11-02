@@ -354,7 +354,7 @@ describe("DevicesView", () => {
     expect(screen.getByText("Cannot connect to the Docker daemon").tagName).toBe("BDI");
   });
 
-  it("offers a held runner's conversations back, and discards them only once asked twice", async () => {
+  it("offers a held runner's Notice alone, and its Discard asks twice before anything goes", async () => {
     asked = { ...asked, "qa/qa": { ...(asked["qa/qa"] as RunnerAsked), held: true } };
     render(<DevicesView />);
     const notice = await waitFor(() => {
@@ -374,12 +374,22 @@ describe("DevicesView", () => {
     });
     await userEvent.click(within(first).getByRole("button", { name: "Discard…" }));
     const again = await screen.findByRole("alertdialog", { name: "Discard them for good?" });
+    // The second ask opens on its way back, so a second press of the same spot discards nothing.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(again).getByRole("button", { name: "Cancel" })),
+    );
     expect(heldRemoved).toEqual([]);
-    await userEvent.click(within(again).getByRole("button", { name: "Cancel" }));
+    await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(heldRemoved).toEqual([]);
+  });
 
-    await userEvent.click(within(notice).getByRole("button", { name: "Bring back conversations" }));
+  it("brings a held runner's conversations back on one press, removing nothing itself", async () => {
+    asked = { ...asked, "qa/qa": { ...(asked["qa/qa"] as RunnerAsked), held: true } };
+    render(<DevicesView />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Bring back conversations" }));
+
     await vi.waitFor(() => expect(broughtBack).toEqual(["qa"]));
     expect(heldRemoved).toEqual([]);
   });
@@ -407,7 +417,7 @@ describe("DevicesView", () => {
 
   it("says what stopped a bring back, and keeps the runner's Notice", async () => {
     asked = { ...asked, "qa/qa": { ...(asked["qa/qa"] as RunnerAsked), held: true } };
-    bringBackSays = { error: "1 of 2 conversations came back." };
+    bringBackSays = { error: "1 file of 2 files of its chats' conversations came back." };
     render(<DevicesView />);
 
     await userEvent.click(await screen.findByRole("button", { name: "Bring back conversations" }));
@@ -415,7 +425,9 @@ describe("DevicesView", () => {
     expect(
       await screen.findByText(/Bringing back runner qa's conversations did not finish:/),
     ).toBeInTheDocument();
-    expect(screen.getByText("1 of 2 conversations came back.").tagName).toBe("BDI");
+    expect(
+      screen.getByText("1 file of 2 files of its chats' conversations came back.").tagName,
+    ).toBe("BDI");
   });
 
   it("leads a key-changed runner's row to removing its pool, asking first", async () => {

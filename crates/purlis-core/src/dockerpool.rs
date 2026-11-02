@@ -137,27 +137,67 @@ pub const CARRIED_WITHIN: std::time::Duration = std::time::Duration::from_secs(1
 
 /// **What a runner's home holds of its chats' conversations, and bringing them back** (#4633,
 /// ruled 2026-11-02): the shell a container of the pool's runner's image runs
-/// ([`Made::conversations_args`]), handed `seen` or `bring`, the old home, the new home (`-` when
-/// only seen), and each place a harness keeps a conversation ([`CONVERSATIONS_IN_A_RUNNER_HOME`]),
-/// under the home, `*` any one name. Only a plain file inside the old home counts, never a link
-/// or what a folder linked out of it holds. It ends by printing `conversations <found> <left>`:
-/// how many it found, and how many of those it did not bring back.
+/// ([`Made::conversations_args`]), handed [`CONVERSATION_FILES`], `seen` or `bring`, the old home,
+/// the new home (`-` when only seen), and each folder or file a harness keeps its conversations
+/// in ([`CONVERSATIONS_IN_A_RUNNER_HOME`]), under the home, `*` any one name. Every plain file
+/// under one counts, a transcript and what its harness keeps beside it (Claude Code's subagents'
+/// transcripts and tool results, Codex's archived rollouts), never a link or what a folder linked
+/// out of the home holds. It ends by printing `conversations <found> <left> <seen>`: how many
+/// files it found, how many of those it did not bring back, and how many of those it only sees.
 ///
-/// Bringing one back puts it at the same place under the new home, where the harness resumes it
-/// by its id. The new runner serves chats as it runs, so its folders are walked to one at a time,
-/// never through a link, and held by their real path; a file goes only where nothing is (`set
-/// -C`), whole, by a link, and one already there counts as brought back only where it is the
-/// same. A place marked `!` is seen and never brought back: opencode keeps a conversation over
-/// many files a harness's own import reads, so it stays where it is. What it makes is the
-/// runner's user's alone.
+/// **It fails closed.** A program it needs that the image lacks, a folder it cannot read, or a
+/// file whose real path it cannot read ends it with no answer, which says nothing of the home
+/// ([`Docker::conversations`] refuses), so the runner stays. A home is never taken for an empty one
+/// on a read that did not finish.
 pub const CONVERSATIONS: &str = r#"set -u
 umask 077
-mode=$1 from=$2 to=$3
-shift 3
+for needed in cat cmp find ln mkdir realpath rm; do
+  command -v "$needed" >/dev/null 2>&1 || exit 1
+done
+one=$1 mode=$2 from=$3 to=$4
+shift 4
 from=$(cd -P "$from" && pwd -P) || exit 1
 if [ "$mode" = bring ]; then
   to=$(cd -P "$to" && pwd -P) || exit 1
 fi
+found=0 left=0 seen=0
+for place in "$@"; do
+  only_seen=
+  case $place in '!'*) only_seen=1 place=${place#?} ;; esac
+  for at in "$from"/$place; do
+    [ -e "$at" ] || [ -L "$at" ] || continue
+    [ ! -L "$at" ] || continue
+    real=$(realpath -- "$at") || exit 1
+    [ "$real" = "$at" ] || continue
+    said=$(find "$at" -type f -exec sh -c "$one" sh "$mode" "$from" "$to" "$only_seen" {} +)       || exit 1
+    for word in $said; do
+      found=$((found + 1))
+      case $word in
+        brought) ;;
+        seen) seen=$((seen + 1)) ;;
+        *) left=$((left + 1)) ;;
+      esac
+      [ "$word" != seen ] || [ "$mode" != bring ] || left=$((left + 1))
+    done
+  done
+done
+[ "$mode" = bring ] || left=$found
+echo "conversations $found $left $seen"
+"#;
+
+/// **What [`CONVERSATIONS`] does with each file it finds**, run by `find` over a batch of them:
+/// handed the mode, the old home, the new home, whether its place is only seen, and the files. It
+/// prints one word a file, `brought`, `left` or `seen`, and a file's name only on its error stream,
+/// so no name can be read as an answer. Bringing one back puts it at the same place under the new
+/// home, where the harness resumes it by its id. The new runner serves chats as it runs, so its
+/// folders are walked to one at a time, never through a link, and held by their real path; a file
+/// goes only where nothing is (`set -C`), whole, by a link from a name no one knew before, and one
+/// already there counts as brought back only where it is the same. What it makes is the runner's
+/// user's alone.
+pub const CONVERSATION_FILES: &str = r#"set -u
+umask 077
+mode=$1 from=$2 to=$3 only_seen=$4
+shift 4
 bring() (
   rel=$1
   cd -P "$to" || exit 1
@@ -179,52 +219,58 @@ bring() (
     exit
   fi
   set -C
-  [ ! -e "./$name.part" ] && [ ! -L "./$name.part" ] || exit 1
-  cat -- "$from/$rel" > "./$name.part" && ln "./$name.part" "./$name"
+  part=./.purlis-brought-$$
+  [ ! -e "$part" ] && [ ! -L "$part" ] || exit 1
+  cat -- "$from/$rel" > "$part" && ln "$part" "./$name"
   ok=$?
-  rm -f "./$name.part"
+  rm -f "$part"
   exit $ok
 )
-found=0 left=0
-for pattern in "$@"; do
-  only_seen=
-  case $pattern in '!'*) only_seen=1 pattern=${pattern#?} ;; esac
-  for at in "$from"/$pattern; do
-    [ -f "$at" ] && [ ! -L "$at" ] || continue
-    rel=${at#"$from/"}
-    [ "$(realpath -- "$at")" = "$from/$rel" ] || continue
-    found=$((found + 1))
-    [ "$mode" = bring ] || continue
-    if [ -n "$only_seen" ] || ! bring "$rel"; then
-      left=$((left + 1))
-      echo "not brought back: $rel" >&2
-    fi
-  done
+for at in "$@"; do
+  [ -f "$at" ] && [ ! -L "$at" ] || continue
+  rel=${at#"$from/"}
+  real=$(realpath -- "$at") || exit 1
+  [ "$real" = "$from/$rel" ] || continue
+  if [ -n "$only_seen" ]; then
+    echo seen
+  elif [ "$mode" != bring ]; then
+    echo found
+  elif bring "$rel"; then
+    echo brought
+  else
+    echo left
+    echo "not brought back: $rel" >&2
+  fi
 done
-echo "conversations $found $left"
 "#;
 
-/// **Where under a runner's home a harness keeps a chat's conversation** (#4633), for
-/// [`CONVERSATIONS`]: Claude Code's transcripts and Codex's rollouts, in a made profile's folder
-/// under either spelling of the data home and in each harness's default folder, and opencode's
-/// sessions, seen alone (`!`). Each harness's own layout, as `harness_declaration` reads it.
-pub const CONVERSATIONS_IN_A_RUNNER_HOME: [&str; 8] = [
-    ".local/share/*/profiles/*/config/projects/*/*.jsonl",
-    ".claude/projects/*/*.jsonl",
-    ".local/share/*/profiles/*/config/sessions/*/*/*/rollout-*.jsonl",
-    ".codex/sessions/*/*/*/rollout-*.jsonl",
-    "!.local/share/*/profiles/*/data/opencode/storage/session/*/*.json",
-    "!.local/share/opencode/storage/session/*/*.json",
+/// **Where under a runner's home a harness keeps its chats' conversations** (#4633), for
+/// [`CONVERSATIONS`], each folder whole: Claude Code's `projects` and Codex's `sessions` and
+/// `archived_sessions`, in a made profile's folder under either spelling of the data home and in
+/// each harness's default folder, and opencode's storage and database, seen alone (`!`): opencode
+/// keeps a conversation over many files that only its own import reads, so they stay where they
+/// are. Each harness's own layout, as `harness_declaration` reads it.
+pub const CONVERSATIONS_IN_A_RUNNER_HOME: [&str; 10] = [
+    ".local/share/*/profiles/*/config/projects",
+    ".claude/projects",
+    ".local/share/*/profiles/*/config/sessions",
+    ".local/share/*/profiles/*/config/archived_sessions",
+    ".codex/sessions",
+    ".codex/archived_sessions",
+    "!.local/share/*/profiles/*/data/opencode/storage",
+    "!.local/share/opencode/storage",
     "!.local/share/*/profiles/*/data/opencode/opencode.db",
     "!.local/share/opencode/opencode.db",
 ];
 
-/// **What [`CONVERSATIONS`] found in a runner's home** (#4633): how many conversations, and how
-/// many of them it did not bring back (all of them, where it only looked).
+/// **What [`CONVERSATIONS`] found in a runner's home** (#4633): how many files of its chats'
+/// conversations, how many of them it did not bring back (all of them, where it only looked), and
+/// how many of those are opencode's, which it only ever sees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Conversations {
     pub found: u32,
     pub left: u32,
+    pub seen: u32,
 }
 
 /// [`Conversations`], from what [`CONVERSATIONS`] printed: its last line, or `None` where it did
@@ -235,12 +281,16 @@ pub fn conversations_said(printed: &str) -> Option<Conversations> {
     if words.next() != Some("conversations") {
         return None;
     }
-    let found = words.next()?.parse().ok()?;
-    let left = words.next()?.parse().ok()?;
-    words
-        .next()
-        .is_none()
-        .then_some(Conversations { found, left })
+    let mut numbers = [0_u32; 3];
+    for number in &mut numbers {
+        *number = words.next()?.parse().ok()?;
+    }
+    let [found, left, seen] = numbers;
+    (words.next().is_none() && left <= found && seen <= left).then_some(Conversations {
+        found,
+        left,
+        seen,
+    })
 }
 
 /// How long reading or bringing back a home's conversations may take before it is ended (#4633).
@@ -950,6 +1000,7 @@ impl Made {
                 "-c",
                 CONVERSATIONS,
                 "sh",
+                CONVERSATION_FILES,
                 if bring_back { "bring" } else { "seen" },
                 "/from",
                 if bring_back { "/to" } else { "-" },
@@ -3337,6 +3388,21 @@ impl Docker {
                 with.runner.name()
             ))
         })
+    }
+
+    /// **Stops `made`'s container** (#4633), as a suspend does, keeping its home: one already
+    /// stopped stays so.
+    pub fn stop(&self, made: &Made) -> Result<(), Refused> {
+        self.run(
+            &[
+                "container".into(),
+                "stop".into(),
+                made.container.as_str().to_owned(),
+            ],
+            None,
+            MOST_INSPECTED,
+        )
+        .map(drop)
     }
 
     /// Remove `made`'s container and its home's volume, whatever state they are in.

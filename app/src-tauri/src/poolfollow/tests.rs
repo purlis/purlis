@@ -300,7 +300,7 @@ fn a_machine_whose_runners_are_suspended(config: &std::path::Path) -> Machine {
             "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in\n  'container inspect') \
              echo '[{{\"State\":{{\"Running\":false,\"FinishedAt\":\"{STOPPED_AT}\"}}}}]' ;;\n\
              'container ls') for a in \"$@\"; do case $a in id=*) echo \"${{a#id=}}\" ;; esac; done ;;\n\
-             'run --rm') cat '{conversations}' 2>/dev/null || echo 'conversations 0 0' ;;\n\
+             'run --rm') cat '{conversations}' 2>/dev/null || echo 'conversations 0 0 0' ;;\n\
              esac\nexit 0\n",
             config.join("log").display(),
             conversations = config.join("conversations").display(),
@@ -545,7 +545,7 @@ fn a_runner_that_stopped_before_its_drain_keeps_a_home_that_holds_a_conversation
     let machine = a_machine_whose_runners_are_suspended(config.path());
     a_pool_draining(&machine);
     drained_having_stopped_at(&machine, STOPPED_AT_SECS);
-    std::fs::write(config.path().join("conversations"), "conversations 3 3\n").unwrap();
+    std::fs::write(config.path().join("conversations"), "conversations 3 3 0\n").unwrap();
 
     let said = follow_and_drain(&machine, None, &|_| {
         panic!("a suspended runner is not asked")
@@ -636,7 +636,7 @@ fn a_pruned_draining_runner_keeps_a_home_that_holds_a_conversation() {
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine_whose_draining_runner_was_pruned(config.path());
     a_pool_draining_a_pruned_runner(&machine);
-    std::fs::write(config.path().join("conversations"), "conversations 1 1\n").unwrap();
+    std::fs::write(config.path().join("conversations"), "conversations 1 1 0\n").unwrap();
 
     let said = follow_and_drain(&machine, None, &|_| panic!("a pruned runner is not asked"));
 
@@ -658,7 +658,7 @@ fn a_pruned_draining_runner_whose_home_holds_none_is_forgotten() {
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine_whose_draining_runner_was_pruned(config.path());
     a_pool_draining_a_pruned_runner(&machine);
-    std::fs::write(config.path().join("conversations"), "conversations 0 0\n").unwrap();
+    std::fs::write(config.path().join("conversations"), "conversations 0 0 0\n").unwrap();
 
     let said = follow_and_drain(&machine, None, &|_| panic!("a pruned runner is not asked"));
 

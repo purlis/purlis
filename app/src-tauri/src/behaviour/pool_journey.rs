@@ -1041,18 +1041,24 @@ mod a_stopped_runners_conversation_comes_back {
             .expect("its runner")
             .name()
             .to_owned();
-        let conversation = ".claude/projects/-home-purlis-p/0b5e7c1d.jsonl";
-        old.runs(
-            false,
-            &format!(
-                "umask 077 && mkdir -p \"$HOME/{}\" && cat > \"$HOME/{conversation}\"",
-                Path::new(conversation)
-                    .parent()
-                    .expect("a folder")
-                    .display()
-            ),
-            b"{\"type\":\"user\",\"message\":\"what a suspend ended\"}\n",
-        );
+        // A chat's transcript in a made profile's folder, its subagent's beside it, and one in
+        // Claude Code's default folder: each where the harness keeps it.
+        let conversations = [
+            ".local/share/purlis/profiles/work/config/projects/-home-purlis-p/0b5e7c1d.jsonl",
+            ".local/share/purlis/profiles/work/config/projects/-home-purlis-p/0b5e7c1d/subagents/agent-a.jsonl",
+            ".claude/projects/-home-purlis-p/1c6f8d2e.jsonl",
+        ];
+        for conversation in conversations {
+            let folder = Path::new(conversation).parent().expect("a folder");
+            old.runs(
+                false,
+                &format!(
+                    "umask 077 && mkdir -p \"$HOME/{}\" && cat > \"$HOME/{conversation}\"",
+                    folder.display()
+                ),
+                format!("{{\"said\":\"{conversation}\"}}\n").as_bytes(),
+            );
+        }
         let stopped = purlis_core::forklock::output(
             std::process::Command::new(machine.docker.program()).args([
                 "container",
@@ -1068,7 +1074,9 @@ mod a_stopped_runners_conversation_comes_back {
         });
 
         assert!(
-            said.iter().any(|line| line.contains("conversations")),
+            said.iter()
+                .any(|line| line.contains(&old_name)
+                    && line.contains("holds its chats' conversations")),
             "{said:?}"
         );
         let held = purlis_core::runners::named(&machine.config, &old_name)
@@ -1080,15 +1088,17 @@ mod a_stopped_runners_conversation_comes_back {
             purlis_core::pools::bring_back(&machine.config, &machine.docker, &old_name, None)
                 .expect("its conversations are brought back");
 
-        assert_eq!((brought.found, brought.left), (1, 0), "{brought:?}");
+        assert_eq!((brought.found, brought.left), (3, 0), "{brought:?}");
         assert!(brought.removed.is_some_and(|removed| removed.forgotten));
         let now = the_runner(&machine, &pool);
         assert_ne!(now.container, old.container, "a runner of its own");
-        assert_eq!(
-            now.prints(&format!("cat \"$HOME/{conversation}\"")),
-            "{\"type\":\"user\",\"message\":\"what a suspend ended\"}\n",
-            "the conversation is where Claude Code resumes it on the new runner"
-        );
+        for conversation in conversations {
+            assert_eq!(
+                now.prints(&format!("cat \"$HOME/{conversation}\"")),
+                format!("{{\"said\":\"{conversation}\"}}\n"),
+                "each is where Claude Code resumes it on the new runner"
+            );
+        }
         assert!(
             purlis_core::runners::named(&machine.config, &old_name)
                 .expect("read")

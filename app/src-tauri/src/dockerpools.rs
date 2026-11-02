@@ -723,7 +723,12 @@ pub async fn docker_pool_bring_back_held_runner(
             )
             .map_err(|why| refused_said(&why.to_string()))?;
             let Some(removed) = brought.removed else {
-                return Err(left_behind_said(&runner, brought.found, brought.left));
+                return Err(left_behind_said(
+                    &runner,
+                    brought.found,
+                    brought.left,
+                    brought.seen,
+                ));
             };
             if removed.forgotten {
                 crate::poolfollow::forget_waiting_on(&machine.config, kept.pool(), &runner);
@@ -744,15 +749,31 @@ pub async fn docker_pool_bring_back_held_runner(
     }
 }
 
-/// What the window says when `left` of the `found` conversations of the held runner `runner`
-/// stayed where they were, so it is kept (#4633).
+/// What the window says when `left` of the `found` files of the held runner `runner`'s
+/// conversations stayed where they were, `seen` of them opencode's, so it is kept (#4633).
 #[cfg(unix)]
-fn left_behind_said(runner: &str, found: u32, left: u32) -> String {
-    let brought = found.saturating_sub(left);
+fn left_behind_said(runner: &str, found: u32, left: u32, seen: u32) -> String {
+    let files = |n: u32| {
+        if n == 1 {
+            "1 file".to_owned()
+        } else {
+            format!("{n} files")
+        }
+    };
+    let opencode = if seen == 0 {
+        String::new()
+    } else {
+        format!(
+            " {} of them opencode's, which stay where they are.",
+            files(seen)
+        )
+    };
     format!(
-        "{brought} of {found} conversations came back. The rest could not, so purlis keeps \
-         runner {runner} with them: opencode's conversations always stay where they are. \
-         Discard them to remove it."
+        "{} of {} of its chats' conversations came back. purlis keeps runner {runner} with the \
+         {} left.{opencode} Discard them to remove it.",
+        files(found.saturating_sub(left)),
+        files(found),
+        files(left),
     )
 }
 

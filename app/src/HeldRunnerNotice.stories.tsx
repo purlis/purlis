@@ -88,9 +88,16 @@ export const DiscardAsksAgain: Story = {
     within(first).getByRole("button", { name: "Discard…" }).focus();
     await userEvent.keyboard("{Enter}");
     const again = await page.findByRole("alertdialog", { name: "Discard them for good?" });
-    await untilFocused(() => again, "the second ask");
+    // It opens on Cancel, never on the button the first ask was answered with.
+    await untilFocused(
+      () => within(again).getByRole("button", { name: "Cancel" }),
+      "the second ask's Cancel",
+    );
     expectFocusInSight();
     await expect(again).toHaveTextContent("There is no undo.");
+    await userEvent.keyboard("{Escape}");
+    await untilFocused(() => discard, "Discard…, once Esc closed the second ask");
+    await expect(page.queryByRole("alertdialog")).toBeNull();
   },
 };
 
@@ -98,7 +105,7 @@ export const DiscardAsksAgain: Story = {
 export const BringBackDidNotFinish: Story = {
   play: async ({ canvas, userEvent }) => {
     bringBackSays =
-      "1 of 2 conversations came back. The rest could not, so purlis keeps runner builds with them: opencode's conversations always stay where they are. Discard them to remove it.";
+      "3 files of 5 files of its chats' conversations came back. purlis keeps runner builds with the 2 files left. 2 files of them opencode's, which stay where they are. Discard them to remove it.";
     const back = await canvas.findByRole("button", { name: "Bring back conversations" });
     back.focus();
     await userEvent.keyboard("{Enter}");

@@ -3609,7 +3609,10 @@ fn a_stopped_runner_draining(config: &std::path::Path, fake: &FakeDocker, found:
     stopped[0]["State"]["Running"] = false.into();
     stopped[0]["State"]["FinishedAt"] = "2026-11-01T00:00:00Z".into();
     fake.set("inspect", &stopped.to_string());
-    fake.set("conversations", &format!("conversations {found} {found}\n"));
+    fake.set(
+        "conversations",
+        &format!("conversations {found} {found} 0\n"),
+    );
     fake.set("containers", &format!("{ID}\n"));
     std::fs::write(fake.file_path("log"), "").unwrap();
 }
@@ -3704,12 +3707,16 @@ fn a_held_runner_goes_once_its_conversations_are_all_brought_back() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
     a_stopped_runner_draining(config.path(), &fake, 2);
+    let stopped = fake.file("inspect");
+    // Running as it was when its drain began: only it can say what it runs, so it is not held.
+    fake.set("inspect", &inspected().to_string());
 
     let refused = bring_back(config.path(), &fake.docker(), "first", None).unwrap_err();
     assert!(refused.to_string().contains("held"), "{refused}");
 
+    fake.set("inspect", &stopped);
     hold(config.path(), "first").unwrap();
-    fake.set("conversations", "conversations 2 1\n");
+    fake.set("conversations", "conversations 2 1 0\n");
     let brought = bring_back(config.path(), &fake.docker(), "first", None).unwrap();
     assert_eq!((brought.found, brought.left), (2, 1));
     assert!(brought.removed.is_none());
@@ -3726,7 +3733,7 @@ fn a_held_runner_goes_once_its_conversations_are_all_brought_back() {
         .expect(&into);
     assert!(into.contains("first-fedcba98-home,target=/to"), "{into}");
 
-    fake.set("conversations", "conversations 2 0\n");
+    fake.set("conversations", "conversations 2 0 0\n");
     let brought = bring_back(config.path(), &fake.docker(), "first", None).unwrap();
     assert!(brought.removed.is_some_and(|removed| removed.forgotten));
     assert!(runners::named(config.path(), "first").unwrap().is_none());
@@ -3760,4 +3767,48 @@ fn nothing_is_brought_back_across_a_runner_that_ran_without_the_sandbox() {
             .unwrap()
             .held
     );
+}
+
+/// **Bring back never removes a home that holds no conversation**, as a runner a stop during its
+/// drain held may: what is in it goes only by Discard, asked twice.
+#[test]
+fn bringing_back_from_a_home_with_no_conversation_removes_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 0);
+    hold(config.path(), "first").unwrap();
+
+    let refused = bring_back(config.path(), &fake.docker(), "first", None).unwrap_err();
+
+    assert!(refused.to_string().contains("no conversation"), "{refused}");
+    assert!(
+        runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .held
+    );
+    assert!(
+        !fake.file("log").contains("volume rm"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// **A held runner a link started again is stopped before its conversations are copied**, so
+/// none changes under the copy and none is cut short by the removal after it.
+#[test]
+fn a_held_runner_that_runs_again_is_stopped_before_its_conversations_come_back() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 1);
+    hold(config.path(), "first").unwrap();
+    fake.set("inspect", &inspected().to_string());
+    fake.set("conversations", "conversations 1 0 0\n");
+
+    bring_back(config.path(), &fake.docker(), "first", None).unwrap();
+
+    let log = fake.file("log");
+    let stopped = log.find(&format!("container stop {ID}")).expect(&log);
+    let copied = log.find("target=/to").expect(&log);
+    assert!(stopped < copied, "{log}");
 }

@@ -914,7 +914,8 @@ pub enum DrainLook {
     /// ([`held_for_its_conversations`], #4633).
     StoppedBefore,
     /// **It stopped during its drain, or it may have**, so it stays with its home until the
-    /// person removes it ([`remove_held`]). Asking cannot say otherwise: the chats a stop
+    /// person brings its chats' conversations back ([`bring_back`]) or discards them
+    /// ([`remove_held`]). Asking cannot say otherwise: the chats a stop
     /// ended are not listed by the host that runs after it, so a runner a link started again
     /// answers none.
     Held,
@@ -993,8 +994,13 @@ pub fn held_for_its_conversations(
         return Ok(true);
     }
     let to = runners::runner_for(config_root, kept.pool())?;
-    if matches!(docker.gone(&kept.made), Ok(Some(_)))
-        && !is_its_own_home(docker, &kept).map_err(|why| Refused::Other(why.0))?
+    // Docker not answering says nothing of it, and a mount of a home not there would make one.
+    let gone = docker
+        .gone(&kept.made)
+        .map_err(|why| Refused::Other(why.0))?;
+    if gone.is_some_and(|gone| !gone.home_kept)
+        || (gone.is_some()
+            && !is_its_own_home(docker, &kept).map_err(|why| Refused::Other(why.0))?)
     {
         return Ok(false);
     }
@@ -1008,12 +1014,14 @@ pub fn held_for_its_conversations(
     Ok(true)
 }
 
-/// **What bringing back a held runner's conversations did** (#4633): how many it found, how many
-/// it left where they were, and, once none was left, the runner removed as a drain removes one.
+/// **What bringing back a held runner's conversations did** (#4633): how many files it found, how
+/// many it left where they were and how many of those are opencode's, and, once none was left, the
+/// runner removed as a drain removes one.
 #[derive(Debug)]
 pub struct BroughtBack {
     pub found: u32,
     pub left: u32,
+    pub seen: u32,
     pub removed: Option<Removed>,
 }
 
@@ -1021,9 +1029,12 @@ pub struct BroughtBack {
 /// 2026-11-02), the person's press alone: each at its place in that runner's home, where a chat
 /// that ended with the held runner resumes, and then, only once none is left behind, the held
 /// runner is removed as [`remove_held`] removes it, its sign-ins carried. One left behind keeps
-/// it held, for the person to bring back again or discard. Refused for a runner not held, and,
-/// as a carry of sign-ins is ([`carry_sign_ins`]), where a chat ran on either runner without
-/// the sandbox or they run as different users.
+/// it held, for the person to bring back again or discard, and so does a home that holds none: a
+/// press of Bring back never removes a home the person did not see brought back. One that runs
+/// again, as a link can start it, is stopped first, so nothing changes under the copy: no chat
+/// starts on a draining runner, so a stop ends none. Refused for a runner not held, and, as a carry
+/// of sign-ins is ([`carry_sign_ins`]), where a chat ran on either runner without the sandbox or
+/// they run as different users.
 pub fn bring_back(
     config_root: &Path,
     docker: &Docker,
@@ -1032,8 +1043,15 @@ pub fn bring_back(
 ) -> Result<BroughtBack, Refused> {
     let locked = runners::lock(config_root);
     let kept = runners::named(config_root, name)?
-        .filter(|kept| kept.draining && kept.held)
+        .filter(|kept| kept.draining)
         .ok_or_else(|| Refused::Other(format!("no runner {name} is held on this machine")))?;
+    let ran = docker.ran(&kept.made);
+    // Held as the window shows it: noted, or as a look will note it.
+    if !kept.held && !matches!(&ran, Ok(ran) if drain_look(&kept, *ran) == DrainLook::Held) {
+        return Err(Refused::Other(format!(
+            "no runner {name} is held on this machine"
+        )));
+    }
     let pool = kept.pool();
     let to = runners::runner_for(config_root, pool)?;
     if to.name() == name {
@@ -1060,17 +1078,35 @@ pub fn bring_back(
             to.made.runner.user().spelled()
         )));
     }
-    if matches!(docker.gone(&kept.made), Ok(Some(_)))
-        && !is_its_own_home(docker, &kept).map_err(|why| Refused::Other(why.0))?
+    let gone = docker
+        .gone(&kept.made)
+        .map_err(|why| Refused::Other(why.0))?;
+    if gone.is_some_and(|gone| !gone.home_kept)
+        || (gone.is_some()
+            && !is_its_own_home(docker, &kept).map_err(|why| Refused::Other(why.0))?)
     {
         return Err(Refused::Other(format!(
-            "the home Docker lists for runner {name} was made since its container went, so it \
-             holds none of its conversations"
+            "Docker lists no home of runner {name}'s own, so none of its conversations is there \
+             to bring back"
         )));
+    }
+    if gone.is_none() && matches!(&ran, Ok(ran) if ran.running) {
+        docker
+            .stop(&kept.made)
+            .map_err(|why| Refused::Other(why.0))?;
+    }
+    if !kept.held {
+        runners::note_locked(config_root, name, |kept| kept.held = true, &locked)?;
     }
     let brought = docker
         .bring_back(&kept.made, &to.made, &runners::desktop_label(config_root))
         .map_err(|why| Refused::Other(why.0))?;
+    if brought.found == 0 {
+        return Err(Refused::Other(format!(
+            "runner {name}'s home holds no conversation to bring back, so it stays: discard it to \
+             remove it"
+        )));
+    }
     let removed = if brought.left == 0 {
         Some(drain_locked(
             config_root,
@@ -1086,6 +1122,7 @@ pub fn bring_back(
     Ok(BroughtBack {
         found: brought.found,
         left: brought.left,
+        seen: brought.seen,
         removed,
     })
 }

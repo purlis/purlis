@@ -3380,11 +3380,25 @@ fn conversations_run(
     from: &std::path::Path,
     to: Option<&std::path::Path>,
 ) -> (Option<Conversations>, String) {
+    conversations_run_on(from, to, None)
+}
+
+/// [`conversations_run`], with `path` as its `PATH` where one is given.
+#[cfg(unix)]
+fn conversations_run_on(
+    from: &std::path::Path,
+    to: Option<&std::path::Path>,
+    path: Option<&std::path::Path>,
+) -> (Option<Conversations>, String) {
     let mut command = std::process::Command::new("/bin/sh");
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
     command
         .arg("-c")
         .arg(CONVERSATIONS)
         .arg("sh")
+        .arg(CONVERSATION_FILES)
         .arg(if to.is_some() { "bring" } else { "seen" })
         .arg(from)
         .arg(to.map_or_else(|| "-".into(), |to| to.display().to_string()))
@@ -3424,7 +3438,11 @@ fn a_home_says_how_many_conversations_it_holds() {
     );
     assert_eq!(
         conversations_run(home.path(), None).0,
-        Some(Conversations { found: 0, left: 0 })
+        Some(Conversations {
+            found: 0,
+            left: 0,
+            seen: 0
+        })
     );
 
     for rel in [
@@ -3437,7 +3455,11 @@ fn a_home_says_how_many_conversations_it_holds() {
 
     assert_eq!(
         conversations_run(home.path(), None).0,
-        Some(Conversations { found: 3, left: 0 })
+        Some(Conversations {
+            found: 3,
+            left: 3,
+            seen: 1
+        })
     );
 }
 
@@ -3463,7 +3485,11 @@ fn a_link_in_a_home_is_no_conversation() {
 
     assert_eq!(
         conversations_run(home.path(), None).0,
-        Some(Conversations { found: 0, left: 0 })
+        Some(Conversations {
+            found: 0,
+            left: 0,
+            seen: 0
+        })
     );
 }
 
@@ -3488,7 +3514,15 @@ fn bringing_back_puts_each_conversation_at_its_place_in_the_new_home() {
 
     let (said, errors) = conversations_run(from.path(), Some(to.path()));
 
-    assert_eq!(said, Some(Conversations { found: 3, left: 1 }), "{errors}");
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 3,
+            left: 1,
+            seen: 1
+        }),
+        "{errors}"
+    );
     for rel in [A_CLAUDE_CONVERSATION, A_CODEX_CONVERSATION] {
         assert_eq!(
             std::fs::read_to_string(to.path().join(rel)).unwrap(),
@@ -3496,7 +3530,6 @@ fn bringing_back_puts_each_conversation_at_its_place_in_the_new_home() {
         );
     }
     assert!(!to.path().join(AN_OPENCODE_CONVERSATION).exists());
-    assert!(errors.contains(AN_OPENCODE_CONVERSATION), "{errors}");
     assert_eq!(
         std::fs::read_to_string(
             to.path()
@@ -3520,7 +3553,15 @@ fn bringing_back_overwrites_nothing() {
 
     let (said, errors) = conversations_run(from.path(), Some(to.path()));
 
-    assert_eq!(said, Some(Conversations { found: 2, left: 1 }), "{errors}");
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 2,
+            left: 1,
+            seen: 0
+        }),
+        "{errors}"
+    );
     assert_eq!(
         std::fs::read_to_string(to.path().join(A_CLAUDE_CONVERSATION)).unwrap(),
         "another\n"
@@ -3547,7 +3588,15 @@ fn bringing_back_writes_nothing_through_a_link_in_the_new_home() {
 
     let (said, errors) = conversations_run(from.path(), Some(to.path()));
 
-    assert_eq!(said, Some(Conversations { found: 1, left: 1 }), "{errors}");
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 1,
+            left: 1,
+            seen: 0
+        }),
+        "{errors}"
+    );
     assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
 }
 
@@ -3585,4 +3634,61 @@ fn a_homes_conversations_are_read_by_a_container_that_reaches_nothing() {
         brought.contains("type=volume,source=purlis-runner-first-fedcba98-home,target=/to"),
         "{brought}"
     );
+}
+
+/// **What a harness keeps beside a transcript comes back with it** (#4633): Claude Code's
+/// subagents' transcripts and tool results under the session's own folder, and Codex's archived
+/// rollouts, each at its place.
+#[cfg(unix)]
+#[test]
+fn bringing_back_takes_what_a_harness_keeps_beside_a_transcript() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let beside = [
+        ".claude/projects/-home-purlis-p/0b5e.jsonl",
+        ".claude/projects/-home-purlis-p/0b5e/subagents/agent-a.jsonl",
+        ".claude/projects/-home-purlis-p/0b5e/tool-results/t1.txt",
+        ".codex/archived_sessions/rollout-2026-10-01T10-00-00-0b5e.jsonl",
+    ];
+    for rel in beside {
+        put(from.path(), rel, &format!("{rel}\n"));
+    }
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 4,
+            left: 0,
+            seen: 0
+        }),
+        "{errors}"
+    );
+    for rel in beside {
+        assert_eq!(
+            std::fs::read_to_string(to.path().join(rel)).unwrap(),
+            format!("{rel}\n")
+        );
+    }
+}
+
+/// **A read that cannot finish gives no answer**, never one of none: an image with no `realpath`
+/// says nothing of a home that holds a conversation.
+#[cfg(unix)]
+#[test]
+fn a_read_that_cannot_finish_says_nothing_of_the_home() {
+    let (home, bin) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    put(home.path(), A_CLAUDE_CONVERSATION, "{}\n");
+    for program in ["cat", "cmp", "find", "ln", "mkdir", "rm", "sh"] {
+        let found = ["/bin", "/usr/bin"]
+            .iter()
+            .map(|dir| std::path::Path::new(dir).join(program))
+            .find(|at| at.exists())
+            .unwrap();
+        std::os::unix::fs::symlink(found, bin.path().join(program)).unwrap();
+    }
+
+    let (said, _) = conversations_run_on(home.path(), None, Some(bin.path()));
+
+    assert_eq!(said, None);
 }
