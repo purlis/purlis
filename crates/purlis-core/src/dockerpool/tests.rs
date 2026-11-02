@@ -1044,7 +1044,8 @@ impl FakeDocker {
              {{ echo 'cp: cannot open' >&2; exit 1; }}; true ;;\n  \
              'run '*) [ -f '{run_fails}' ] && \
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
-             'container inspect') cat '{inspect}' ;;\n  \
+             'container inspect') if [ -f '{inspect}-once' ]; then cat '{inspect}-once'; rm '{inspect}-once'; \
+             else cat '{inspect}'; fi ;;\n  \
              'volume inspect') cat '{volume}' ;;\n  \
              'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \
              'info '*) case \"$*\" in *.ID*) cat '{engine}' 2>/dev/null || true ;; \

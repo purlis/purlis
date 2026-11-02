@@ -22,7 +22,7 @@ it changes: a draining runner's poll still never wakes one.
    there. Holding these too would keep an old home for each update of a pool left suspended, on
    no one's press. This is the open part, #4633, and waits for the person's word.
 6. **Only the person's press ends a hold**: Remove runner on its row in Devices, from their window
-   alone, or removing its pool. A runner whose container was removed outside purlis stays held
-   with what is left of it.
+   alone, or removing its pool. A held runner whose container was removed outside purlis stays
+   held with what is left of it. One not yet held goes as #4168 has it, which is part of #4633.
 7. **A row from before `last_stop`** is held if a look finds it stopped, the safe side, and is
    asked as before while it runs.

@@ -457,6 +457,33 @@ fn a_runner_with_only_its_home_left_is_only_removed() {
     assert_eq!(names(&machine), ["first-fedcba98"]);
 }
 
+/// **A held runner with only its home left stays the person's**, though a carry had begun: a look
+/// neither removes it nor says so again.
+#[test]
+fn a_held_runner_with_only_its_home_left_is_left_alone() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_with_only_a_home_left(config.path());
+    a_pool_draining(&machine);
+    let locked = purlis_core::runners::lock(config.path());
+    purlis_core::runners::note_locked(
+        config.path(),
+        "first",
+        |kept| {
+            kept.carried = true;
+            kept.held = true;
+        },
+        &locked,
+    )
+    .unwrap();
+    drop(locked);
+    std::fs::remove_file(config.path().join("volume-stays")).unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("it is not asked"));
+
+    assert!(said.is_empty(), "{said:?}");
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+}
+
 /// **A Docker that lists neither its container nor its home may be another engine** (#4149): a row
 /// with no engine kept stays, though its drain began, and what is on its engine is not orphaned.
 #[test]
