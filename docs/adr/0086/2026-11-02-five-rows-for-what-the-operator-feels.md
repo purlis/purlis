@@ -17,10 +17,25 @@ the load it was felt under, with the fake harness, by one bench spec,
 | # | What | Limit | Where the limit comes from |
 |---|---|---|---|
 | L11 | frames while 20 agents stream behind an idle chat, 10 s | p95 ≤ 33 ms, no frame of 200 ms or more | L4's 30 fps floor; #4725's stall |
-| L12 | a chat switch at 50 busy chats, p95 of 20 | ≤ 100 ms | L2, the tab switch |
-| L13 | 3 keystrokes the moment each L12 switch has painted, p95 of 60 | ≤ 50 ms | L1, keystroke to screen ("the same budget as any other keystroke", #4724 story 3) |
-| L14 | the new-chat dialog, 200 personas, L12's load still on, p95 of 20 | ≤ 100 ms | L2: "opens at once" (#4724 item 6) |
-| L15 | answers of 1 s or longer in `slow.jsonl` during that run | 0 | #4725's threshold for a late answer |
+| L12 | a chat switch at 50 busy chats, to a chat just burst while hidden and not kept, p95 of 40 | ≤ 100 ms | L2, the tab switch |
+| L13 | 3 keystrokes the moment each L12 switch has painted, p95 of 120 | ≤ 50 ms | L1, keystroke to screen ("the same budget as any other keystroke", #4724 story 3) |
+| L14 | the new-chat dialog, 200 personas, L12's load still on, p95 of 40 | ≤ 100 ms | L2: "opens at once" (#4724 item 6) |
+| L15 | answers of 1 s or longer in `slow.jsonl` while L11 to L14 are measured | 0 | #4725's threshold for a late answer |
+
+**L12 switches to a chat that was working, not back to the last one.** The operator's symptom
+was switching to an opened chat under load and typing into it. Once the last three chats shown
+keep their terminals (#4724, item 5), switching back to the chat just left is the best case, and
+a row measured that way would say nothing. So L12 goes to six chats in turn, each sent its burst
+(2 MB or 13 MB, the spec's sizes, alternating) while in front and then left for three streaming
+chats, so it is not kept and its output arrives while hidden. The switch is timed once the burst
+has ended, because the fake harness answers a typed line only after its output: L13 is the echo
+of a chat that has just caught up, not of one still writing. Forty samples each, since the p95
+of twenty is the worst sample.
+
+**L15 counts only what a row measured.** The run's setup (fifty chats started, a project
+opened) asks commands the operator does not wait on, so only answers inside a measured phase
+count. A slow log that was never written is a miss, not a pass: the bench holds the window's
+thread once before the phases, and a log without that stall says nothing about the answers.
 
 **L9, revisited.** L9 is now measured with 20 agents streaming in the first of the ten projects
 the whole time (`app/e2e/bench/projects.bench.ts`). Its limit, statistic and press-to-paint
