@@ -75,18 +75,26 @@ impl Native {
 /// one. Where the levels' answer needs it, the first frame is the person's own theme in its
 /// first appearance for `contrast`, else Purlis, and the window draws the answer once it has it.
 pub fn first_frame(inputs: &LevelInputs<'_>) -> Drawn {
+    first_frame_standing_in(inputs).0
+}
+
+/// [`first_frame`], and whether what it draws **stands in** for an extension's theme the levels
+/// chose: the window draws something else once it asks what is in force, so nothing more of this
+/// frame (its parts, #4410) is worth landing before that answer.
+pub fn first_frame_standing_in(inputs: &LevelInputs<'_>) -> (Drawn, bool) {
     let mut surveyed = false;
     let drawn = resolve_levels(inputs, || {
         surveyed = true;
         Arc::from(Vec::new())
     });
     if !surveyed {
-        return drawn;
+        return (drawn, false);
     }
-    inputs.theirs.map_or_else(
+    let stand_in = inputs.theirs.map_or_else(
         || draw(default_for(inputs.contrast)),
         |theme| draw(theme.first_for(inputs.contrast)),
-    )
+    );
+    (stand_in, true)
 }
 
 /// A colour of the theme grammar ([`is_colour`]) as red, green and blue; its alpha left out.
