@@ -6786,6 +6786,11 @@ export type Moved = {
 	 */
 	own_work?: OwnWork | null,
 	/**
+	 *  **A background turn runs over its wait on the person** (#4562): `state` says `waiting`,
+	 *  as it did, and the chat is at work, so a restart or a move owed it waits. Absent otherwise.
+	 */
+	background_turn?: boolean | null,
+	/**
 	 *  Which snapshot of the board this is — bigger was taken later (charter-app#248).
 	 * 
 	 *  **What lets the window put its events back in order.** Every `Moved` is built under the
