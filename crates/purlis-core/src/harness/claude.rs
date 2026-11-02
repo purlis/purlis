@@ -944,9 +944,9 @@ const LISTING_LIMIT_ENV: &str = "SLASH_COMMAND_TOOL_CHAR_BUDGET";
 /// What Claude Code's own 14 entries take of its listing's limit (measured on 2.1.316).
 const OWN_LISTING: usize = 6_848;
 
-/// The limit a 1M Claude 5 chat has of its own (measured on 2.1.316), so a handed one takes no room
-/// from it.
-const LEAST_LISTING_LIMIT: usize = 30_000;
+/// The largest limit any model has of its own: 1M Opus or Sonnet 4.6, read from 2.1.316's code. So
+/// a handed one takes no room from a chat on any window.
+const LEAST_LISTING_LIMIT: usize = 40_000;
 
 /// What a listing line takes around a skill's name and description: about 16 measured on 2.1.316,
 /// and 7 for the `skills:` or `purlis:` it is known by.
