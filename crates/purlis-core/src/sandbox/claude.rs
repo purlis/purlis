@@ -528,7 +528,7 @@ fn floor(
         },
         made_folders: match &compiled.homes.home {
             Some(home) if compiled.level == Level::Floor => above_what_may_be_lifted(home),
-            None => Vec::new(),
+            _ => Vec::new(),
         },
     }
 }
