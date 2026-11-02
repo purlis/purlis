@@ -381,6 +381,15 @@ fn the_approval_says_it_runs_confined_and_names_its_hosts() {
         "{:?}",
         prompt.declares
     );
+    // Version 1 of the extension API is not said to be experimental (ADR 0101, amended 2026-11-02).
+    assert!(
+        prompt
+            .declares
+            .iter()
+            .any(|it| it.starts_with("the capability “grader” — ")),
+        "{:?}",
+        prompt.declares
+    );
 }
 
 fn a_manifest_naming_a_model_host_is_refused_whole() {

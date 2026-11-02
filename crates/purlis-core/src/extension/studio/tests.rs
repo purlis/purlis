@@ -1705,3 +1705,63 @@ fn a_routers_pointers_are_read_failing_closed() {
             .contains(&format!("more than {MOST_POINTED}"))
     );
 }
+
+#[test]
+fn the_manifest_of_version_one_reads_as_the_contract_records_it() {
+    let contract = version_one();
+    let read = read(&contract["manifest"].to_string(), true).expect("read");
+    assert_eq!(
+        read.capabilities,
+        [
+            Capability::Grader,
+            Capability::StudioPanel,
+            Capability::SkillRouter
+        ]
+    );
+    let studio = read.studio.expect("confined");
+    assert_eq!(studio.grader.as_deref(), Some("House grader"));
+    assert_eq!(studio.panels[0].id, "checks");
+    let router = studio.router.expect("a router");
+    assert_eq!(router.title, "House router");
+    assert!(router.reads_prompts);
+}
+
+#[test]
+fn every_answer_of_version_one_reads_as_the_contract_records_it() {
+    let contract = version_one();
+    let protocol = u32::try_from(contract["protocol"].as_u64().expect("a number")).expect("small");
+    // Each answer is read as a real one is: its line first, in the protocol it was asked in.
+    let answer = |of: &str, key: &str| {
+        let line = serde_json::to_vec(&contract[of]["answer"]).expect("a line");
+        crate::executor::reply_of("x", &line, protocol, &[key]).expect("an answer")
+    };
+
+    let blocks = blocks_of("x", &answer("panel", "blocks")).expect("a panel");
+    let crate::panel::Block::Table(table) = &blocks[0] else {
+        panic!("{blocks:?}");
+    };
+    assert_eq!(table.rows[0].cells, ["lint", "clean"]);
+
+    let hidden = routed_of("x", 1, &answer("route", "hidden")).expect("a routing");
+    assert_eq!(hidden[0].0, "pdf");
+
+    let pointed = pointed_of("x", &["pdf"], &answer("prompt", "pointed")).expect("pointers");
+    assert_eq!(pointed, ["pdf"]);
+}
+
+#[test]
+fn the_limits_of_version_one_are_the_ones_the_contract_records() {
+    let contract = version_one();
+    let limits = &contract["limits"];
+    let of = |key: &str| usize::try_from(limits[key].as_u64().expect("a number")).expect("small");
+    assert_eq!(
+        crate::executor::DEADLINE.as_secs(),
+        limits["answer_seconds"]
+    );
+    assert_eq!(ROUTER_DEADLINE.as_millis() as u64, limits["router_ms"]);
+    assert_eq!(crate::executor::MOST_ANSWER_BYTES, of("line_bytes"));
+    assert_eq!(MOST_PROMPT_BYTES, of("prompt_bytes"));
+    assert_eq!(MOST_POINTED, of("pointed"));
+    assert_eq!(MOST_PANELS, of("panels"));
+    assert_eq!(MOST_HOSTS, of("hosts"));
+}
