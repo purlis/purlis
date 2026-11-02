@@ -557,19 +557,7 @@ impl SkillGradePlan {
                     let prompt = grading::outcomes::outcome_prompt(eval);
                     GradeEval {
                         id: eval.id.to_string(),
-                        hides: purlis_unicode::hides(&prompt, purlis_unicode::Breaks::Kept)
-                            || eval
-                                .expectations
-                                .iter()
-                                .chain(&eval.expected_output)
-                                .chain(
-                                    eval.files
-                                        .iter()
-                                        .filter_map(|path| planned.copy.as_ref()?.inputs.get(path)),
-                                )
-                                .any(|text| {
-                                    purlis_unicode::hides(text, purlis_unicode::Breaks::Kept)
-                                }),
+                        hides: planned.eval_hides(eval),
                         prompt: purlis_unicode::marked(&prompt, purlis_unicode::Breaks::Marked),
                         files: eval.files.clone(),
                         expectations: u32::try_from(eval.expectations.len()).unwrap_or(u32::MAX),

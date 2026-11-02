@@ -19,8 +19,9 @@
 
 use std::path::Path;
 
+use purlis_core::counts::counted;
 use purlis_core::hookwire::SOCKET_ENV;
-use purlis_core::skills::grade::Arm;
+use purlis_core::skills::grade::{Arm, OutcomeScore};
 use purlis_core::skills::grades;
 use purlis_core::skills::verbs::Level;
 use purlis_session_protocol::session::{
@@ -51,6 +52,11 @@ const NO_HOST: &str = "No purlis session host is running, so nothing was run. Op
      start a host with `purlis serve`, then open this project in the purlis window: a grade runs \
      there";
 
+/// What a run naming outcome evals is told with no person at a terminal to say yes.
+const NEEDS_A_PERSON: &str = "An outcome eval runs only on a yes typed at a terminal, as its chats \
+     cost far more than a trigger test's, so nothing was run. Run this in your own terminal, \
+     with nothing piped in or out and without --yes";
+
 /// Whether this runs inside a chat, as every write of `purlis skill` asks: its number, its hook
 /// socket, or its sandbox.
 pub(crate) fn in_a_chat(env: &dyn Fn(&str) -> Option<String>) -> bool {
@@ -61,10 +67,23 @@ pub(crate) fn in_a_chat(env: &dyn Fn(&str) -> Option<String>) -> bool {
         || purlis_core::sandbox::chat_is_sandboxed_in(env)
 }
 
+/// Whether the person's yes can be taken as this run asks for it: a run naming outcome evals takes
+/// it typed at a terminal, never from `--yes` or a pipe. A run of trigger tests alone keeps both,
+/// for a script that read the plan (ADR 0105, amended 2026-11-02).
+fn yes_can_be_taken(evals_named: bool, skips_it: bool, at_a_terminal: bool) -> bool {
+    !evals_named || (!skips_it && at_a_terminal)
+}
+
 /// The grade `asked` of the project at `root`: the exit code.
 pub(crate) fn run(root: &Path, asked: &Asked) -> Code {
+    use std::io::IsTerminal as _;
     if in_a_chat(&purlis_core::envvar::var) {
         voice::err(IN_A_CHAT);
+        return 1;
+    }
+    let at_a_terminal = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    if !yes_can_be_taken(!asked.evals.is_empty(), asked.yes, at_a_terminal) {
+        voice::err(NEEDS_A_PERSON);
         return 1;
     }
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -139,7 +158,13 @@ async fn asking(root: &Path, asked: &Asked) -> Code {
         Ok(GradeAnswer::Started { .. }) => return refused("The window answered out of turn."),
         Err(why) => return refused(&refused_words(&why)),
     };
-    let planned = match grades::planned(root, &asked.level, &asked.name, None) {
+    let planned = match grades::planned_named(
+        root,
+        &asked.level,
+        &asked.name,
+        plan.profile.as_deref(),
+        &asked.evals,
+    ) {
         Ok(planned) => planned,
         Err(why) => return refused(&why),
     };
@@ -200,8 +225,8 @@ async fn asking(root: &Path, asked: &Asked) -> Code {
     let Some(last) = last else {
         return refused("The session host closed, so the grade ended with it.");
     };
-    if let Some(said) = &last.said {
-        voice::info(said.clone());
+    if let Some(said) = end_said(&last, plan.token_cap) {
+        voice::info(said);
     }
     let record = grades::grades_of(root, &asked.name, Some(&asked.level));
     if let Some(graded) = record.iter().find(|one| one.grade == grade) {
@@ -290,17 +315,34 @@ fn is_yes(line: &str) -> bool {
     matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
-/// **The grade's scorecard**: each test in each arm, with the chats that asked something.
+/// **How a grade ended, in a line**, as the window says it: a grade stopped short says what stopped
+/// it, or a paid run would end with no cause.
+fn end_said(step: &GradeStepTold, token_cap: u64) -> Option<String> {
+    use purlis_session_protocol::session::GradeEndTold;
+    let chats = counted(step.ran, "chat", "chats");
+    let scored = step.said.as_deref().unwrap_or("What ran is scored.");
+    match step.ended? {
+        GradeEndTold::Stopped => Some(format!("Stopped after {chats}. {scored}")),
+        GradeEndTold::OverCap => Some(format!(
+            "Stopped at its cap of {token_cap} tokens after {chats}. {scored}"
+        )),
+        GradeEndTold::OverLimit => Some(format!(
+            "Stopped at its dollar limit after {chats}. {scored}"
+        )),
+        GradeEndTold::SpendNotReported if step.said.is_none() => Some(format!(
+            "Stopped after {chats}: a chat did not say what it spent, so the grade could not be \
+             held to its cap."
+        )),
+        _ => step.said.clone(),
+    }
+}
+
+/// **The grade's scorecard**: each test in each arm, with the chats that asked something, then
+/// each outcome eval it ran.
 fn scorecard_said(graded: &grades::Graded) -> String {
     let mut text = String::from("\nScorecard:\n");
     for one in &graded.report.triggers {
-        let arm = match one.arm {
-            Arm::With => "with",
-            Arm::Without => "without",
-            Arm::Previous => "previous",
-            Arm::Router => "router",
-            Arm::BuiltInRouter => "built-in router",
-        };
+        let arm = one.arm.word();
         let verdict = match one.pass {
             Some(true) => "pass",
             Some(false) => "fail",
@@ -316,6 +358,47 @@ fn scorecard_said(graded: &grades::Graded) -> String {
             one.runs,
             purlis_core::skills::review::escaped_line(&one.query),
         ));
+    }
+    text.push_str(&outcomes_said(&graded.report.outcomes));
+    text
+}
+
+/// **Each outcome eval in each arm**: the share of its expectations that passed, the runs that
+/// share is over, each expectation that failed, and why each run that failed for a reason of its
+/// own did.
+fn outcomes_said(outcomes: &[OutcomeScore]) -> String {
+    let mut text = String::new();
+    for one in outcomes {
+        let rate = one.pass_rate.map_or_else(
+            || "not judged".to_owned(),
+            |stat| format!("{:.0}% passed", stat.mean * 100.0),
+        );
+        text.push_str(&format!(
+            "  eval {} {:<8} {rate} over {}\n",
+            one.eval,
+            one.arm.word(),
+            counted(one.runs, "run", "runs"),
+        ));
+        for (at, expectation) in one.expectations.iter().enumerate() {
+            let failed = one
+                .results
+                .iter()
+                .filter(|run| run.checks.get(at).is_some_and(|check| !check.passed))
+                .count();
+            if failed > 0 {
+                text.push_str(&format!(
+                    "    failed in {}: {}\n",
+                    counted(failed, "run", "runs"),
+                    purlis_core::skills::review::escaped_line(expectation)
+                ));
+            }
+        }
+        for failed in one.results.iter().filter_map(|run| run.failed.as_deref()) {
+            text.push_str(&format!(
+                "    {}\n",
+                purlis_core::skills::review::escaped_line(failed)
+            ));
+        }
     }
     text
 }

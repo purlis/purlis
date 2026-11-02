@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use purlis_core::skills::grade::{Check, OutcomeRun, Stat};
+use purlis_session_protocol::session::GradeEndTold;
 
 fn plan() -> GradePlanTold {
     GradePlanTold {
@@ -68,4 +70,103 @@ fn a_plan_that_cannot_start_says_why_before_a_yes_is_asked() {
         ..plan()
     };
     assert!(can_start(&running).unwrap_err().contains("running"));
+}
+
+#[test]
+fn a_named_eval_takes_its_yes_only_from_a_person_at_a_terminal() {
+    assert!(yes_can_be_taken(true, false, true));
+    assert!(!yes_can_be_taken(true, true, true), "--yes beside --eval");
+    assert!(!yes_can_be_taken(true, false, false), "a piped y");
+    assert!(!yes_can_be_taken(true, true, false));
+}
+
+#[test]
+fn a_grade_of_trigger_tests_alone_keeps_its_yes_for_a_script() {
+    assert!(yes_can_be_taken(false, true, false));
+    assert!(yes_can_be_taken(false, false, false));
+}
+
+#[test]
+fn the_scorecard_says_each_outcome_eval_in_each_arm_and_why_a_run_failed() {
+    let run = |passed: &[bool], failed: Option<&str>| OutcomeRun {
+        chat: None,
+        judge: None,
+        passed: None,
+        checks: passed
+            .iter()
+            .map(|passed| Check {
+                passed: *passed,
+                evidence: String::new(),
+            })
+            .collect(),
+        failed: failed.map(str::to_owned),
+        asked: false,
+    };
+    let said = outcomes_said(&[
+        OutcomeScore {
+            eval: 4,
+            arm: Arm::With,
+            expectations: vec!["It ships".into(), "It is dated".into()],
+            runs: 3,
+            pass_rate: Some(Stat {
+                mean: 2.0 / 3.0,
+                stddev: 0.0,
+                min: 0.0,
+                max: 1.0,
+            }),
+            results: vec![
+                run(&[true, false], None),
+                run(&[true, false], None),
+                run(&[], Some("The judge's answer was not whole.")),
+            ],
+        },
+        OutcomeScore {
+            eval: 4,
+            arm: Arm::Without,
+            expectations: vec!["It ships".into()],
+            runs: 0,
+            pass_rate: None,
+            results: vec![run(&[], None)],
+        },
+    ]);
+    assert_eq!(
+        said,
+        "  eval 4 with     67% passed over 3 runs\n\
+         \x20   failed in 2 runs: It is dated\n\
+         \x20   The judge's answer was not whole.\n\
+         \x20 eval 4 without  not judged over 0 runs\n"
+    );
+}
+
+#[test]
+fn a_grade_stopped_short_says_what_stopped_it() {
+    let ended = |ended, said: Option<&str>| GradeStepTold {
+        grade: "g".into(),
+        ran: 4,
+        of: 18,
+        tokens: None,
+        cost_micro_usd: None,
+        asked: 0,
+        ended: Some(ended),
+        said: said.map(str::to_owned),
+    };
+    let said = |step| end_said(&step, 200_000).unwrap();
+    assert_eq!(
+        said(ended(GradeEndTold::OverCap, None)),
+        "Stopped at its cap of 200000 tokens after 4 chats. What ran is scored."
+    );
+    assert_eq!(
+        said(ended(GradeEndTold::OverLimit, None)),
+        "Stopped at its dollar limit after 4 chats. What ran is scored."
+    );
+    assert!(said(ended(GradeEndTold::SpendNotReported, None)).contains("did not say"));
+    assert_eq!(
+        end_said(&ended(GradeEndTold::Whole, None), 200_000),
+        None,
+        "its scorecard follows"
+    );
+    assert_eq!(
+        said(ended(GradeEndTold::Failed, Some("A fault."))),
+        "A fault."
+    );
 }

@@ -423,7 +423,7 @@ async fn a_named_eval_is_in_the_plan_the_person_says_yes_to_and_in_the_start() {
         .await
         .unwrap();
     let said = terminal.await.unwrap();
-    assert!(said.contains("Outcome eval 1. ship v2  (on:"), "{said}");
+    assert!(said.contains("Outcome eval 1. ship v2  (on: "), "{said}");
     assert!(said.contains("Outcome eval 2. ship v3  (off:"), "{said}");
     assert!(said.contains("1 outcome eval"), "{said}");
     assert!(said.ends_with("exit 0"), "a whole grade succeeds: {said}");
