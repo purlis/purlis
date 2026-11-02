@@ -531,6 +531,7 @@ fn one_chat_on(program: &str) -> reopen::Record {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     }
 }

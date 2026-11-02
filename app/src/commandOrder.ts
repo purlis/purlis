@@ -60,6 +60,8 @@ export const LANES = {
       "allowPersonaGrants",
       // A proposed change applied to the project's manifest (#1975).
       "applyProposedChange",
+      // A browser login line added to the manifest from its notice (#4595).
+      "answerBrowserLogin",
       // It drops a listed folder that resolves elsewhere now, so it writes as it reads.
       "grantableFolders",
       "listGrantableFolder",

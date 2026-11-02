@@ -319,6 +319,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Reads what a chat was sent or said to another.
     "task_brief",
     "activity",
+    // A question's trail, opened from its line in the Activity above (#4567).
+    "question_trail",
     "task_question",
     // Answers as the person.
     "answer_task_question",
@@ -345,6 +347,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Whether a persona's browser logins may be filled on a pool's runner (#2050): the person's
     // answer alone. No chat opts itself in.
     "answer_pool_login",
+    // A browser login a chat suggested (#4595): the person's answer alone. No chat confirms the
+    // site it suggested.
+    "answer_browser_login",
     // Whether this desktop sends a persona's tool its vault values on a pool's runner (#2047):
     // the person's answer alone. No chat allows its own tool.
     "answer_pool_tool",
@@ -825,6 +830,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "follow_project_chats_run_on",
     "project_chats_run_on",
     "set_project_chats_run_on",
+    // What names a pool (#4678): which projects and workspaces of this machine run on it, read
+    // for the person's question before they remove it, in their window.
+    "pool_named_by",
     // What a workspace's sends to a runner leave out (#2046): the person's list, in their window.
     "send_leaves_out",
     "set_send_leaves_out",
@@ -1074,7 +1082,6 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "charter_windows",
     "chat_attended",
     "chat_doings",
-    "chat_in_front",
     // A chat whose program ended with its session host (#2007): what its pane says.
     "chat_lost_with_the_host",
     "chat_moves",
@@ -1194,6 +1201,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "relaunch_ask",
     "rename_chat",
     "reopened_focus",
+    "reopened_layout",
     "reopened_views",
     "repo_instructions",
     "resize_session",
@@ -1256,7 +1264,6 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "stale_clones",
     "start_options",
     "stopping_chats",
-    "tab_shows",
     "take_repos",
     "task_branch_merge_question",
     "task_changes",
@@ -1297,6 +1304,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "what_changed",
     "window_focus",
     "window_holds_planes",
+    "window_layout",
     "window_showing",
     "window_views",
     "workspace_at_risk",

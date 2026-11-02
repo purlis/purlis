@@ -65,10 +65,25 @@ pub fn recorded_base(clone: &Path, branch: &str) -> Option<String> {
 /// git did not write it.
 ///
 /// An empty `branch` is refused: git writes it as `[branch ""]`, and every git that then reads
-/// remotes, a fetch or a push among them, stops on that section (#4436).
+/// remotes, a fetch or a push among them, stops on that section (#4436). So is a name git
+/// itself would not take for a branch (`git check-ref-format`, git's own definition): no
+/// branch has it, so a base under it describes nothing (#4775). Either way the config is not
+/// touched.
 pub fn record_base(clone: &Path, branch: &str, base: &str) -> Result<(), String> {
-    name::branch_name_ok(branch).map_err(|e| e.to_string())?;
-    name::branch_name_ok(base).map_err(|e| e.to_string())?;
+    let refused = |why: String| format!("no base was recorded for '{branch}': {why}");
+    name::branch_name_ok(branch).map_err(|e| refused(e.to_string()))?;
+    name::branch_name_ok(base).map_err(|e| refused(e.to_string()))?;
+    let checked = git::run(
+        clone,
+        &["check-ref-format", &name::as_ref(branch)],
+        git::READ,
+    )
+    .map_err(|e| refused(e.to_string()))?;
+    if !checked.ok() {
+        return Err(refused(format!(
+            "git does not take '{branch}' as a branch name"
+        )));
+    }
     let wrote = git::run(
         clone,
         &["config", "--replace-all", &base_key(branch), base],

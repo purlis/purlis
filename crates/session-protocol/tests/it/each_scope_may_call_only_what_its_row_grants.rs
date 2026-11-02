@@ -372,6 +372,7 @@ fn every_command() -> Vec<Command> {
                 password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
                 keep: None,
                 identity: None,
+                suggested: false,
             },
         },
         // A login that keeps its login on this device once the browser ends (1.27, #2021): the
@@ -390,6 +391,7 @@ fn every_command() -> Vec<Command> {
                     address: "https://shop.example.test/login".into(),
                 }),
                 identity: None,
+                suggested: false,
             },
         },
         // A browser opened from kept logins (1.27, #2021): the window's alone, as a login is.

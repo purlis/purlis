@@ -237,15 +237,24 @@ function PoolStep({
       live = false;
     };
   }, [shown.pool]);
-  // Kept as it is typed, so a tab closed mid-word comes back with it: the wait outlives this step.
+  // Kept as it is typed, so a tab closed mid-word comes back with it. A step left before the
+  // wait ends keeps the name then, so no wait outlives it (#4823).
   // A name no pool could have yet is left unkept, and Create says why.
+  const unkept = useRef<string>(undefined);
+  const keep = useCallback(() => {
+    clearTimeout(keeping.current);
+    const to = unkept.current;
+    if (to === undefined) return;
+    unkept.current = undefined;
+    const kept = to.trim();
+    void commands.poolSetupName(kept === "" ? null : kept);
+  }, []);
+  useEffect(() => keep, [keep]);
   const typing = (to: string) => {
     adding.type(to);
+    unkept.current = to;
     clearTimeout(keeping.current);
-    keeping.current = setTimeout(() => {
-      const kept = to.trim();
-      void commands.poolSetupName(kept === "" ? null : kept);
-    }, KEEP_NAME_MS);
+    keeping.current = setTimeout(keep, KEEP_NAME_MS);
   };
 
   if (shown.pool !== null) {
