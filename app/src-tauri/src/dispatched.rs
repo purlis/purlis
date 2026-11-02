@@ -1534,8 +1534,10 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         );
     }
     if kind == Kind::Question {
-        // Its row says whom it is asking from now (#1484): no hook reports a question.
+        // Its row says whom it is asking from now (#1484): no hook reports a question. The row
+        // reads it from the asks registry (#4564), so the window reads that again too.
         held.rows_changed();
+        held.chats().asks_may_have_moved();
         // A command of the asking chat's that waits on this task is answered with it; a chat
         // that is waiting for the person is typed the line. A note is neither: it is read on
         // the asking chat's next turn, and starts none.
@@ -1544,9 +1546,6 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         // turn's end was held for this task, it is the one who must act and the person the
         // one who can see that (#1491): this task no longer counts toward its wait.
         woken(held, Wake::ToldOrSettled(asker));
-        if asker_gone {
-            held.chats().asks_may_have_moved();
-        }
     }
     let to = held
         .chats()
@@ -1614,8 +1613,9 @@ fn answer_it(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, Str
     };
     written_trail(held);
     crate::dispatches::answered(held, to, &message, number);
-    // Answered: its row stops saying it is asking (#1484).
+    // Answered: its row stops saying it is asking (#1484), as the asks registry says (#4564).
     held.rows_changed();
+    held.chats().asks_may_have_moved();
     held.tasks().changed();
     // Typed the line where it takes one; where it does not, its held end of turn is the
     // person's from here (#1491).
@@ -1935,6 +1935,11 @@ pub fn reached_the_person(held: &Held) -> Vec<(dispatchtalk::ReachedYou, TaskQue
             Some((one, question))
         })
         .collect()
+}
+
+/// **Every task question still with its asking chat** (#4564): what its task's row says.
+pub fn with_asking_chat(held: &Held) -> Vec<dispatchtalk::WithAskingChat> {
+    held.tasks().ledger().talk.with_asking_chat()
 }
 
 /// **The person answers question `number`, which task `task` put to its asking chat** (#1496,
