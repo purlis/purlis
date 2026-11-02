@@ -214,10 +214,12 @@ fn a_tab_past_the_panes_one_holds_is_dropped_and_a_tree_past_the_deepest_is_cut(
         deep =
             serde_json::json!({"direction": "row", "share": 500, "a": deep, "b": {"empty": true}});
     }
+    // Balanced, so it is well within the deepest and still past the panes one tab holds.
     let mut wide = serde_json::json!({"empty": true});
-    for _ in 0..MOST_PANES {
-        wide =
-            serde_json::json!({"direction": "row", "share": 500, "a": wide, "b": {"empty": true}});
+    let mut panes = 1;
+    while panes <= MOST_PANES {
+        wide = serde_json::json!({"direction": "row", "share": 500, "a": wide.clone(), "b": wide});
+        panes *= 2;
     }
     let json = serde_json::json!({"version": 1, "at": 0, "chats": [], "tabs": [
         {"tree": deep}, {"tree": wide}

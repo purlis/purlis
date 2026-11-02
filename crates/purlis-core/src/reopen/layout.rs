@@ -209,7 +209,7 @@ impl Node {
 
     /// `path` as far as it goes in this tree, then on into each split's first child until it
     /// ends at a pane.
-    fn to_a_pane(&self, path: &[Side]) -> Vec<Side> {
+    pub fn to_a_pane(&self, path: &[Side]) -> Vec<Side> {
         let mut held = Vec::new();
         let mut at = self;
         let mut rest = path.iter();
@@ -262,6 +262,16 @@ impl Layout {
         self.tabs
             .iter()
             .filter(|tab| tab.front && (tab.window != 0 || tab.workspace == self.strip))
+    }
+
+    /// This layout with each tab's focused path ending at a pane, as a record reads it back:
+    /// what the core holds is what the next launch reads.
+    #[must_use]
+    pub fn held(mut self) -> Self {
+        for tab in &mut self.tabs {
+            tab.focused = tab.tree.to_a_pane(&tab.focused);
+        }
+        self
     }
 
     /// Every chat in a pane of any tab, in strip order.

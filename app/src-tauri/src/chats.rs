@@ -4891,7 +4891,7 @@ impl Chats {
                 ));
             }
         }
-        let held = Some(layout);
+        let held = Some(layout.held());
         let changed = std::mem::replace(&mut *lock(&self.layout), held.clone()) != held;
         if changed {
             self.write_it_down();

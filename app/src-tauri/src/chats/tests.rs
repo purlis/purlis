@@ -5275,14 +5275,15 @@ fn a_pin_can_be_taken_off_again() {
 
 // ----- every tab as a tree of panes (#4751) -----
 
-/// A tab on `ops`'s strip in the project window, in front, holding `tree`.
+/// A tab on `ops`'s strip in the project window, in front, holding `tree`, its first pane
+/// focused.
 fn front_tab(tree: Node) -> Tab {
     Tab {
         workspace: Some("ops".to_owned()),
         pinned: false,
         window: 0,
         front: true,
-        focused: Vec::new(),
+        focused: tree.to_a_pane(&[]),
         tree,
     }
 }
@@ -5513,6 +5514,30 @@ fn a_pane_follows_its_chat_when_that_chat_is_started_again_under_a_new_number() 
 
     assert_eq!(chats.layout(), Some(split_of(one, 52)));
     assert_eq!(chats.record().layout, Some(split_of(one, 52)));
+    chats.end_all();
+}
+
+#[test]
+fn a_focused_path_that_stops_at_a_split_is_held_as_the_pane_a_relaunch_reads() {
+    // The record reads a focused path on to a pane, so the core holds it so too: what it holds
+    // is what the next launch reads back.
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let one = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let other = chats
+        .start(&chat(&a_claude(dir.path()), "ide.8", None), SIZE)
+        .unwrap();
+    let mut laid = split_of(one, other);
+    laid.tabs[0].focused = Vec::new();
+
+    chats.lay_out(laid).unwrap();
+
+    assert_eq!(
+        chats.layout().map(|held| held.tabs[0].focused.clone()),
+        Some(vec![purlis_core::reopen::layout::Side::A])
+    );
     chats.end_all();
 }
 
