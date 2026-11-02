@@ -414,6 +414,7 @@ macro_rules! app_commands {
                 taskbrief::task_brief,
                 activity::activity,
                 activity::activity_chat,
+                questiontrail::question_trail,
                 dispatched::task_question,
                 dispatched::answer_task_question,
                 resume_session,

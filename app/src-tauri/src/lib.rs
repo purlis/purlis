@@ -45,6 +45,7 @@ mod chats;
 mod clipath;
 mod createproject;
 mod curation;
+mod questiontrail;
 // The Devices view (#2052).
 mod clusterpools;
 mod devices;

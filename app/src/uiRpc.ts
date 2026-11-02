@@ -1286,6 +1286,7 @@ export const commands = {
 	 *  closed has none.
 	 */
 	activityChat: (plane: PlaneId, key: string) => typedError<number | null, string>(__TAURI_INVOKE("activity_chat", { plane, key })),
+	questionTrail: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
 	answerTaskQuestion: __WINDOW_ONLY_RESULT,
 	resumeSession: __WINDOW_ONLY_RESULT,
@@ -9281,6 +9282,22 @@ export type PushQuestion = {
 	destinations: PushDestination[],
 	/**  Each member that would not be pushed, in the core's words. */
 	not_pushed: string[],
+};
+
+/**  One step of a question's trail, as the window says it. */
+export type QuestionStep = {
+	/**  When it was written (UTC, RFC 3339). */
+	at: string,
+	/**  `asked`, `shown`, `passed_on`, `reached`, `answered`, `closed` or `failed`. */
+	step: string,
+	/**  On `passed_on`: the asking chat added a note. */
+	noted: boolean,
+	/**  On `reached`: why it reached the person, `passed_on`, `no_reply` or `asker_gone`. */
+	why: string | null,
+	/**  On `answered` and `closed`: who answered, `asking_chat`, `person` or `nobody`. */
+	by: string | null,
+	/**  On `failed`: what failed, `not_read_back` or `not_redirected`. */
+	what: string | null,
 };
 
 /**  One repo the picker offers: what the operator reads to choose it. */

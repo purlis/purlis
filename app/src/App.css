@@ -5915,6 +5915,42 @@ nav.piece-files-head {
   justify-self: stretch;
 }
 
+/* What happened to a task's question (#4567): a fold under its line, its steps a short list of
+   time and what, in the window's words. */
+.activity-line > .question-trail {
+  grid-column: 3;
+}
+
+.question-trail-quiet {
+  margin: var(--space-1) 0;
+  color: var(--text-muted);
+}
+
+.question-trail-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.question-trail-steps > li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding-block: var(--space-1);
+  color: var(--text-primary);
+}
+
+.question-trail-at {
+  color: var(--text-quiet);
+  font-variant-numeric: tabular-nums;
+}
+
+.question-trail-foot {
+  margin: var(--space-2) 0 0;
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+}
+
 /* The card the question stands in (the card family's), and its form inside it. */
 .answer-question {
   max-width: 44rem;

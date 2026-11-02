@@ -2582,6 +2582,13 @@ export const commands = {
 	 */
 	activityChat: (plane: PlaneId, key: string) => typedError<number | null, string>(__TAURI_INVOKE("activity_chat", { plane, key })),
 	/**
+	 *  **What happened to a task's question** (#4567): the steps of the question chat `key` (a
+	 *  line's `from_key`) asked at `at` (the line's time), from this machine's event log, oldest
+	 *  first. Empty where the log holds none of it. Read when the person opens it, off the window's
+	 *  thread, as it reads the log.
+	 */
+	questionTrail: (plane: PlaneId, key: string, at: string) => typedError<QuestionStep[], string>(__TAURI_INVOKE("question_trail", { plane, key, at })),
+	/**
 	 *  **The question a task is paused on, for the window to show before the person answers it**
 	 *  (#1496): chat `session`'s question to its asking chat. `null` where there is none to
 	 *  answer: the chat is no task, has reported or ended, or asks nothing now.
@@ -11613,6 +11620,22 @@ export type PushQuestion = {
 	destinations: PushDestination[],
 	/**  Each member that would not be pushed, in the core's words. */
 	not_pushed: string[],
+};
+
+/**  One step of a question's trail, as the window says it. */
+export type QuestionStep = {
+	/**  When it was written (UTC, RFC 3339). */
+	at: string,
+	/**  `asked`, `shown`, `passed_on`, `reached`, `answered`, `closed` or `failed`. */
+	step: string,
+	/**  On `passed_on`: the asking chat added a note. */
+	noted: boolean,
+	/**  On `reached`: why it reached the person, `passed_on`, `no_reply` or `asker_gone`. */
+	why: string | null,
+	/**  On `answered` and `closed`: who answered, `asking_chat`, `person` or `nobody`. */
+	by: string | null,
+	/**  On `failed`: what failed, `not_read_back` or `not_redirected`. */
+	what: string | null,
 };
 
 /**  One repo the picker offers: what the operator reads to choose it. */
