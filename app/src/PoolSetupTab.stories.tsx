@@ -264,8 +264,9 @@ export const MadeByHand: Story = {
     ],
   }),
   play: async ({ canvasElement }) => {
-    await fold(canvasElement, "Pool");
-    await within(canvasElement).findByText("Found pool dev-box");
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: /^Pool,/ }));
+    await canvas.findByText("Found pool dev-box");
   },
 };
 

@@ -367,7 +367,7 @@ export function PoolStep({
 
   // What See what this does shows is the core's spelling of what Create would send (Q30).
   useEffect(() => {
-    if (shown.pool !== null || wantedKey === undefined) return;
+    if (shown.pool !== null) return;
     const sent: PoolAdding | undefined = JSON.parse(wantedKey ?? "null") ?? undefined;
     let live = true;
     // A box that holds what no pool could have shows no command: never one for what was before.

@@ -139,7 +139,28 @@ export const OverItsLimit: Story = {
 
 /** Signing a profile in inside the step, through the harness's own flow. */
 export const SigningIn: Story = {
-  beforeEach: faked(PROFILES, SIZES),
+  beforeEach: () => {
+    let added = false;
+    mockIPC((cmd) => {
+      if (cmd === "pool_profiles")
+        return added
+          ? {
+              ...PROFILES,
+              kept: [...PROFILES.kept, row("personal", "Claude Code", "signed-out")],
+              addable: [PROFILES.addable[1]],
+            }
+          : PROFILES;
+      if (cmd === "pool_profile_add") {
+        added = true;
+        return null;
+      }
+      if (cmd === "pool_setup_sizes") return SIZES;
+      if (cmd === "pool_limits") return { groups: [], advanced: [], waiting: [] };
+      if (cmd === "pool_sign_in_start") return 1;
+      if (cmd === "pool_sign_in_next") return new Promise(() => undefined);
+      return null;
+    });
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Sign in 1 profile" }));
