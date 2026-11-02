@@ -8,8 +8,6 @@
 //! pool that is gone starts nothing anywhere.
 //! Run by the parity job.
 
-use std::process::Command;
-
 use purlis_core::machine::StartChoice;
 
 use crate::host::Named;
@@ -19,25 +17,6 @@ use super::*;
 /// A workspace that follows the project, and one set to this machine.
 const FOLLOWS: &str = "follows";
 const HERE: &str = "here";
-
-/// `git` in `root`, as a test's own commit.
-fn git(root: &Path, args: &[&str]) {
-    let ran = purlis_core::forklock::output(
-        Command::new("git")
-            .args([
-                "-c",
-                "user.name=Test",
-                "-c",
-                "user.email=test@example.invalid",
-                "-c",
-                "commit.gpgsign=false",
-            ])
-            .args(args)
-            .current_dir(root),
-    )
-    .expect("git runs");
-    assert!(ran.status.success(), "git {args:?}: {ran:?}");
-}
 
 #[test]
 fn in_a_docker_pool() {
@@ -66,8 +45,8 @@ fn in_a_docker_pool() {
         std::fs::create_dir_all(&folder).expect("its folder");
         std::fs::write(folder.join("workspace.md"), format!("# {workspace}\n")).expect("written");
     }
-    git(&root, &["add", "workspaces"]);
-    git(&root, &["commit", "-q", "-m", "two workspaces"]);
+    super::git(&root, &["add", "workspaces"]);
+    super::git(&root, &["commit", "-q", "-m", "two workspaces"]);
     purlis_core::machine::update(&machine.config, |store| {
         store.remember(&root, 1);
         store
@@ -130,7 +109,7 @@ fn in_a_docker_pool() {
         let chat = Named {
             workspace: Some(workspace.to_owned()),
             runs_on: start,
-            ..named("hello", false)
+            ..named("carry on with the plan", false)
         };
         let id = window
             .open_named(None, &chat, Hearing::default(), &|_| {})
@@ -150,7 +129,7 @@ fn in_a_docker_pool() {
     let gone = Named {
         workspace: Some(HERE.to_owned()),
         runs_on: Some(StartChoice::Pool("gone".to_owned())),
-        ..named("hello", false)
+        ..named("carry on with the plan", false)
     };
     let refused = window
         .open_named(None, &gone, Hearing::default(), &|_| {})
