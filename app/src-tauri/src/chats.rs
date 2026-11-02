@@ -6126,12 +6126,9 @@ impl Chats {
         }));
         Record {
             chats,
-            // The view tabs are panes of the tree once there is one (#4751).
-            views: if laid_out {
-                Vec::new()
-            } else {
-                lock(&self.views).clone()
-            },
+            // Kept beside the tree (#4751): what each view tab was, where it was, whether it was in
+            // front and where its divider was. The switch (#4758) retires it.
+            views: lock(&self.views).clone(),
             focus: lock(&self.focus).clone(),
             layout,
             // What the next launch must not deal again — charter-app#90. It is the high

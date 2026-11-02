@@ -5330,6 +5330,47 @@ fn two_chats_split_together_with_their_sizes_come_back_the_same_after_a_relaunch
 }
 
 #[test]
+fn view_tabs_and_a_file_tab_s_divider_are_still_written_beside_a_layout() {
+    // #4751 keeps `views[]` beside the tree: which view tab was in front and where a file
+    // tab's divider was are read from it, and the switch (#4758) retires it.
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let one = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let devops = View {
+        from: None,
+        view: "persona".to_owned(),
+        key: "devops".to_owned(),
+        title: "devops".to_owned(),
+        workspace: Some("ops".to_owned()),
+        at: 1,
+        active: true,
+        pinned: false,
+        split: None,
+    };
+    let files = View {
+        view: "piece-files".to_owned(),
+        key: "ops/svc/fix-login".to_owned(),
+        title: "fix-login".to_owned(),
+        at: 2,
+        active: false,
+        split: Some(31),
+        ..devops.clone()
+    };
+    chats.hold_views(vec![devops.clone(), files.clone()]);
+
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(one))]))
+        .unwrap();
+
+    let record = chats.record();
+    assert!(record.layout.is_some());
+    assert_eq!(record.views, vec![devops, files]);
+    let _ = chats.close(one);
+}
+
+#[test]
 fn a_view_beside_a_chat_comes_back_after_a_relaunch() {
     let dir = tempfile::tempdir().unwrap();
     let plane = tempfile::tempdir().unwrap();
