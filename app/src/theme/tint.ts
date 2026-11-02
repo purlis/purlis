@@ -63,15 +63,21 @@ export type Apart = {
   alone?: boolean;
 };
 
-/** One rule as a theme draws it: the value of each side, whether the tint turns each, and the
- *  distance it holds (`purlis_core::theme::Rule`). */
+/** One rule as a theme draws it: the value of each side, whether the tint turns each, whether
+ *  each is a side of a rule held alone, and the distance it holds
+ *  (`purlis_core::theme::Rule`). */
 export type Rule = {
   token: string;
   tokenTinted: boolean;
+  tokenAlone?: boolean;
   from: string;
   fromTinted: boolean;
+  fromAlone?: boolean;
   distance: number;
 };
+
+/** Which sides a search moves: told whether a side is held alone. */
+type Moves = (alone: boolean) => boolean;
 
 /** The step the chroma a tint gives is lowered by to hold its accent apart. */
 const CHROMA_STEP = 0.005;
@@ -84,14 +90,63 @@ const CHROMA_STEP = 0.005;
  * theme tints.
  */
 export function apartChroma(rules: readonly Rule[], hue: number): number | undefined {
-  // The same rules at the same hue give the same answer: a strip of tabs, a list of personas and
-  // every theme the core answers again ask it over and over, and where a rule is not held at
-  // full colour (Purlis's red, orange and pink, #3034) the answer is a search.
-  const key = `${hue} ${rules
-    .map((one) => `${one.token}${one.tokenTinted} ${one.from}${one.fromTinted} ${one.distance}`)
+  return remembered("apart", rules, hue, Number.POSITIVE_INFINITY, () => true);
+}
+
+/**
+ * **The most chroma the sides held alone are given at a hue** (#3388,
+ * `purlis_core::theme::alone_chroma_of`), with every other side drawn at `shared`, what
+ * {@link apartChroma} answered for the shared rules: `shared` when every rule holds there, else
+ * the largest multiple of {@link CHROMA_STEP} under it that holds them all, each side at the
+ * chroma it is drawn at; `undefined` when not even a grey does.
+ */
+export function aloneChroma(
+  rules: readonly Rule[],
+  shared: number,
+  hue: number,
+): number | undefined {
+  return remembered("alone", rules, hue, shared, (alone) => alone);
+}
+
+/**
+ * **The most chroma held tokens are given at a hue** (`purlis_core::theme::most_of`): `shared`,
+ * what the shared rules answer, and `alone`, for the sides of a rule held alone, with every rule
+ * measured as it will be drawn (#3388). Where no amount holds the sides held alone they are drawn
+ * as written, and if a rule breaks there too, nothing held is tinted at this hue.
+ */
+export function mostOf(
+  all: readonly Rule[],
+  shared: readonly Rule[],
+  hue: number,
+): { shared: number | undefined; alone: number | undefined } {
+  const most = apartChroma(shared, hue);
+  if (all.length === shared.length) return { shared: most, alone: most };
+  if (most === undefined) return { shared: undefined, alone: undefined };
+  const alone = aloneChroma(all, most, hue);
+  const holds = alone !== undefined || holdsAsWritten(all, hue, most);
+  return { shared: holds ? most : undefined, alone };
+}
+
+/** The search for `rules`, remembered: the same rules at the same hue give the same answer. */
+function remembered(
+  kind: "apart" | "alone",
+  rules: readonly Rule[],
+  hue: number,
+  ceiling: number,
+  moves: Moves,
+): number | undefined {
+  // A strip of tabs, a list of personas and every theme the core answers again ask it over and
+  // over, and where a rule is not held at full colour (Purlis's red, orange and pink, #3034) the
+  // answer is a search.
+  const key = `${kind} ${ceiling} ${hue} ${rules
+    .map(
+      (one) =>
+        `${one.token}${one.tokenTinted}${one.tokenAlone === true} ` +
+        `${one.from}${one.fromTinted}${one.fromAlone === true} ${one.distance}`,
+    )
     .join(" ")}`;
   if (answered.has(key)) return answered.get(key);
-  const answer = searchedChroma(rules, hue);
+  const answer = searchedChroma(rules, hue, ceiling, moves);
   if (answered.size >= MOST_ANSWERED) answered.delete(answered.keys().next().value as string);
   answered.set(key, answer);
   return answer;
@@ -103,27 +158,55 @@ const answered = new Map<string, number | undefined>();
 /** How many answers {@link answered} keeps. */
 const MOST_ANSWERED = 1024;
 
-/** {@link apartChroma}, worked out. */
-function searchedChroma(rules: readonly Rule[], hue: number): number | undefined {
-  const side = (value: string, tinted: boolean, most: number) =>
-    tinted ? tintHex(value, hue, most) : value;
-  const far = (most: number) =>
-    rules.every((rule) => {
-      const token = side(rule.token, rule.tokenTinted, most);
-      const from = side(rule.from, rule.fromTinted, most);
-      // A value that is not a colour has nothing to be near.
-      if (!token.startsWith("#") || !from.startsWith("#")) return true;
-      return apartIn(oklab(parse(token).rgb), oklab(parse(from).rgb)) >= rule.distance;
-    });
-  if (far(Number.POSITIVE_INFINITY)) return Number.POSITIVE_INFINITY;
+/** Whether `rule`'s sides, drawn at those chromas, are as far apart as it asks. `undefined` is
+ *  a side drawn as written. */
+function holdsAt(
+  rule: Rule,
+  hue: number,
+  tokenAt: number | undefined,
+  fromAt: number | undefined,
+): boolean {
+  const side = (value: string, tinted: boolean, most: number | undefined) =>
+    tinted && most !== undefined ? tintHex(value, hue, most) : value;
+  const token = side(rule.token, rule.tokenTinted, tokenAt);
+  const from = side(rule.from, rule.fromTinted, fromAt);
+  // A value that is not a colour has nothing to be near.
+  if (!token.startsWith("#") || !from.startsWith("#")) return true;
+  return apartIn(oklab(parse(token).rgb), oklab(parse(from).rgb)) >= rule.distance;
+}
+
+/** Whether every rule holds with the sides held alone as written and every other side at
+ *  `shared`. */
+function holdsAsWritten(rules: readonly Rule[], hue: number, shared: number): boolean {
+  const chroma = (alone: boolean | undefined) => (alone === true ? undefined : shared);
+  return rules.every((rule) => holdsAt(rule, hue, chroma(rule.tokenAlone), chroma(rule.fromAlone)));
+}
+
+/** The search both answers are (`purlis_core::theme::tint`'s `searched`): `ceiling` when every
+ *  rule holds there, else the largest multiple of {@link CHROMA_STEP} under it and under the
+ *  colour the moving sides have. A side `moves` is tried at each chroma; any other stays at
+ *  `ceiling`. */
+function searchedChroma(
+  rules: readonly Rule[],
+  hue: number,
+  ceiling: number,
+  moves: Moves,
+): number | undefined {
+  const far = (most: number) => {
+    const chroma = (alone: boolean | undefined) => (moves(alone === true) ? most : ceiling);
+    return rules.every((rule) =>
+      holdsAt(rule, hue, chroma(rule.tokenAlone), chroma(rule.fromAlone)),
+    );
+  };
+  if (far(ceiling)) return ceiling;
   // The most colour any tinted side is given: a grey is given {@link NEUTRAL_CHROMA}.
   let had = 0;
   for (const rule of rules) {
-    for (const [value, tinted] of [
-      [rule.token, rule.tokenTinted],
-      [rule.from, rule.fromTinted],
+    for (const [value, tinted, alone] of [
+      [rule.token, rule.tokenTinted, rule.tokenAlone],
+      [rule.from, rule.fromTinted, rule.fromAlone],
     ] as const) {
-      if (!tinted || !value.startsWith("#")) continue;
+      if (!tinted || !moves(alone === true) || !value.startsWith("#")) continue;
       const [, a, b] = oklab(parse(value).rgb);
       const own = Math.hypot(a, b);
       had = Math.max(had, own < GREY ? NEUTRAL_CHROMA : own);
@@ -131,7 +214,7 @@ function searchedChroma(rules: readonly Rule[], hue: number): number | undefined
   }
   for (let step = 80; step >= 0; step--) {
     const most = step * CHROMA_STEP;
-    if (most < had && far(most)) return most;
+    if (most < had && most < ceiling && far(most)) return most;
   }
   return undefined;
 }

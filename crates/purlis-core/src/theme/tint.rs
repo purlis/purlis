@@ -511,16 +511,31 @@ pub fn most_at(theme: &ResolvedTheme, hue: f64) -> Most {
     most_of(&held_rules(theme), &shared_rules(theme), hue)
 }
 
-/// [`Most`] of every held rule and of the shared ones among them.
+/// [`Most`] of every held rule and of the shared ones among them. The shared rules are answered
+/// first; then every rule is measured as it will be drawn (#3388): a side of a rule held alone at
+/// what the search tries, every other side at the shared answer ([`alone_chroma_of`]).
+///
+/// Where no amount holds the sides held alone they are drawn as written, and that is measured
+/// too, against the other sides as they are drawn. If a rule breaks there, nothing held is
+/// tinted at this hue: every side as written is the one drawing the floors vouch for.
 pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
     let shared_most = apart_chroma_of(shared, hue);
-    let alone = if all.len() == shared.len() {
-        shared_most
-    } else {
-        apart_chroma_of(all, hue)
+    if all.len() == shared.len() {
+        return Most {
+            shared: shared_most,
+            alone: shared_most,
+        };
+    }
+    let Some(ceiling) = shared_most else {
+        return Most {
+            shared: None,
+            alone: None,
+        };
     };
+    let alone = alone_chroma_of(all, ceiling, hue);
+    let holds = alone.is_some() || holds_as_written(all, hue, ceiling);
     Most {
-        shared: shared_most,
+        shared: holds.then_some(ceiling),
         alone,
     }
 }
@@ -593,30 +608,40 @@ pub(super) fn from_middle(of: f64) -> f64 {
 const CHROMA_STEP: f64 = 0.005;
 
 /// One rule of [`APART`] as a theme draws it: the value of each side, whether the recipe turns
-/// each, and the distance it holds.
+/// each, whether each is a side of a rule held alone ([`Most::alone`]), and the distance it holds.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rule<'a> {
     pub token: &'a str,
     pub token_tinted: bool,
+    pub token_alone: bool,
     pub from: &'a str,
     pub from_tinted: bool,
+    pub from_alone: bool,
     pub distance: f64,
 }
 
 impl Rule<'_> {
-    /// Each side as a tint at `hue` and `most` chroma draws it: turned when the recipe turns it.
-    fn sides(&self, hue: f64, most: f64) -> [String; 2] {
-        let side = |value: &str, tinted: bool| {
-            if tinted {
-                tint_hex_within(value, hue, most)
-            } else {
-                value.to_owned()
-            }
+    /// Each side as a tint at `hue` draws it, each at the chroma given for it: turned when the
+    /// recipe turns it and a chroma is given, and as written otherwise.
+    fn sides(&self, hue: f64, token: Option<f64>, from: Option<f64>) -> [String; 2] {
+        let side = |value: &str, tinted: bool, most: Option<f64>| match most {
+            Some(most) if tinted => tint_hex_within(value, hue, most),
+            _ => value.to_owned(),
         };
         [
-            side(self.token, self.token_tinted),
-            side(self.from, self.from_tinted),
+            side(self.token, self.token_tinted, token),
+            side(self.from, self.from_tinted, from),
         ]
+    }
+
+    /// Whether the two sides, drawn at those chromas, are as far apart as the rule asks.
+    fn holds(&self, hue: f64, token: Option<f64>, from: Option<f64>) -> bool {
+        let [token, from] = self.sides(hue, token, from);
+        match (oklab_of(&token), oklab_of(&from)) {
+            (Some(token), Some(from)) => distance(token, from) >= self.distance,
+            // A value that is not a colour has nothing to be near.
+            _ => true,
+        }
     }
 }
 
@@ -648,40 +673,69 @@ fn rules_where(theme: &ResolvedTheme, keep: impl Fn(&Apart) -> bool) -> Vec<Rule
         .map(|rule| Rule {
             token: theme.value(rule.token),
             token_tinted: tokens.contains(&rule.token),
+            token_alone: held_alone(rule.token),
             from: theme.value(rule.from),
             from_tinted: tokens.contains(&rule.from),
+            from_alone: held_alone(rule.from),
             distance: rule.distance,
         })
         .filter(|rule| rule.token_tinted || rule.from_tinted)
         .collect()
 }
 
-/// [`apart_chroma`] of the rules as drawn: what the shared fixture holds.
+/// [`apart_chroma`] of the rules as drawn, every side given the one chroma: what the shared
+/// fixture holds.
 pub fn apart_chroma_of(rules: &[Rule<'_>], hue: f64) -> Option<f64> {
+    searched(rules, hue, f64::INFINITY, |_| true)
+}
+
+/// **The most chroma the sides held alone are given at a hue** (#3388), with every other side
+/// drawn at `shared`, what [`apart_chroma_of`] answered for the shared rules: `shared` when every
+/// rule holds there, else the largest multiple of [`CHROMA_STEP`] under it that holds them all,
+/// each side at the chroma it is drawn at; `None` when not even a grey does. A side held alone
+/// never has more colour than the sides beside it. `tint.ts`' `aloneChroma` is the same.
+pub fn alone_chroma_of(rules: &[Rule<'_>], shared: f64, hue: f64) -> Option<f64> {
+    searched(rules, hue, shared, |alone| alone)
+}
+
+/// Whether every rule holds with the sides held alone as written and every other side at
+/// `shared`.
+fn holds_as_written(rules: &[Rule<'_>], hue: f64, shared: f64) -> bool {
+    let chroma = |alone: bool| (!alone).then_some(shared);
+    rules
+        .iter()
+        .all(|rule| rule.holds(hue, chroma(rule.token_alone), chroma(rule.from_alone)))
+}
+
+/// The search both answers are: `ceiling` when every rule holds there, else the largest multiple
+/// of [`CHROMA_STEP`] under it and under the colour the moving sides have. A side `moves` is
+/// tried at each chroma (it is told whether the side is held alone); any other stays at `ceiling`.
+fn searched(
+    rules: &[Rule<'_>],
+    hue: f64,
+    ceiling: f64,
+    moves: impl Fn(bool) -> bool,
+) -> Option<f64> {
     let far = |most: f64| {
-        rules.iter().all(|rule| {
-            let [token, from] = rule.sides(hue, most);
-            match (oklab_of(&token), oklab_of(&from)) {
-                (Some(token), Some(from)) => distance(token, from) >= rule.distance,
-                // A value that is not a colour has nothing to be near.
-                _ => true,
-            }
-        })
+        let chroma = |alone: bool| Some(if moves(alone) { most } else { ceiling });
+        rules
+            .iter()
+            .all(|rule| rule.holds(hue, chroma(rule.token_alone), chroma(rule.from_alone)))
     };
-    if far(f64::INFINITY) {
-        return Some(f64::INFINITY);
+    if far(ceiling) {
+        return Some(ceiling);
     }
     // The most colour any tinted side is given: a grey is given [`NEUTRAL_CHROMA`].
     let had = rules
         .iter()
         .flat_map(|rule| {
             [
-                (rule.token, rule.token_tinted),
-                (rule.from, rule.from_tinted),
+                (rule.token, rule.token_tinted, rule.token_alone),
+                (rule.from, rule.from_tinted, rule.from_alone),
             ]
         })
-        .filter(|(_, tinted)| *tinted)
-        .filter_map(|(value, _)| oklab_of(value))
+        .filter(|(_, tinted, alone)| *tinted && moves(*alone))
+        .filter_map(|(value, ..)| oklab_of(value))
         .map(|[_, a, b]| {
             let own = a.hypot(b);
             if own < GREY { NEUTRAL_CHROMA } else { own }
@@ -690,7 +744,7 @@ pub fn apart_chroma_of(rules: &[Rule<'_>], hue: f64) -> Option<f64> {
     (0..=80)
         .rev()
         .map(|step| f64::from(step) * CHROMA_STEP)
-        .filter(|most| *most < had)
+        .filter(|most| *most < had && *most < ceiling)
         .find(|most| far(*most))
 }
 

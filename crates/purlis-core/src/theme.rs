@@ -145,9 +145,9 @@ pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
 pub use tiers::Lifted;
 pub use tint::{
-    ACCENT_KIN, APART, Apart, Hue, Most, PALETTE, Rule, Tint, WAITING_KIN, apart_chroma,
-    apart_chroma_of, chroma_for, chroma_of, held_apart, hue_of, most_at, tint_hex, tint_hex_within,
-    tinted,
+    ACCENT_KIN, APART, Apart, Hue, Most, PALETTE, Rule, Tint, WAITING_KIN, alone_chroma_of,
+    apart_chroma, apart_chroma_of, chroma_for, chroma_of, held_apart, hue_of, most_at, tint_hex,
+    tint_hex_within, tinted,
 };
 pub use typed::Typed;
 use vocabulary::{
@@ -167,6 +167,8 @@ mod design_tokens_tests;
 mod draft7;
 #[cfg(test)]
 mod drafts_tests;
+#[cfg(test)]
+mod drawn_chroma_tests;
 #[cfg(test)]
 mod floors_tests;
 #[cfg(test)]

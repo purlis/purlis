@@ -22,7 +22,7 @@ import {
   type Token,
 } from "./theme";
 import { PURLIS_LIGHT, classicAppearances } from "./handed.testkit";
-import { apartChroma, chromaFor, hueOf, oklabDistance, tintHex } from "./tint";
+import { apartChroma, chromaFor, hueOf, mostOf, oklabDistance, tintHex } from "./tint";
 
 /**
  * **A workspace's colour** (charter-app#281): a hue that tints the tokens the theme's recipe
@@ -106,6 +106,43 @@ describe("the core's copy of the tint", () => {
       expect(tintHex(hex, hueIn(CLASSIC_THEME, colour) ?? Number.NaN), `${hex} in ${colour}`).toBe(
         want,
       );
+    // Each side measured at the chroma it is drawn at (#3388): the first `shared_rules` rules are
+    // the shared ones, `null` is no limit and "none" a chroma no amount holds.
+    const { most: answers } = cases as unknown as {
+      most: {
+        rules: {
+          token: string;
+          token_tinted: boolean;
+          token_alone: boolean;
+          from: string;
+          from_tinted: boolean;
+          from_alone: boolean;
+          distance: number;
+        }[];
+        shared_rules: number;
+        hue: number;
+        shared: number | null | "none";
+        alone: number | null | "none";
+      }[];
+    };
+    const answer = (value: number | null | "none") =>
+      value === null ? Number.POSITIVE_INFINITY : value === "none" ? undefined : value;
+    expect(answers.length).toBeGreaterThanOrEqual(6);
+    for (const { rules, shared_rules, hue, shared, alone } of answers) {
+      const all = rules.map((rule) => ({
+        token: rule.token,
+        tokenTinted: rule.token_tinted,
+        tokenAlone: rule.token_alone,
+        from: rule.from,
+        fromTinted: rule.from_tinted,
+        fromAlone: rule.from_alone,
+        distance: rule.distance,
+      }));
+      expect(mostOf(all, all.slice(0, shared_rules), hue), `${rules[0]?.token} at ${hue}`).toEqual({
+        shared: answer(shared),
+        alone: answer(alone),
+      });
+    }
     // The accent held apart from danger: the chroma held to, and the accent drawn.
     expect(cases.apart.length).toBeGreaterThanOrEqual(40);
     // The path where no chroma keeps them apart, and the tint is dropped, is held too, and so is
@@ -411,6 +448,29 @@ describe("the consent floors under every tint (#2526)", () => {
     const tint = tinted(light, "yellow");
     expect(tint.values["accent.base"]).toBe("#5e5d5e");
     expect(tint.values["accent.fill"]).toBe("#f1edda");
+  });
+
+  it("draws a rule between two chromas with its sides as far apart as the core does", () => {
+    // #3388: the accent gives way alone to the waiting amber, Keep blocked's edge keeps the shared
+    // chroma, and at this colour the two were drawn nearer than Allow's floor.
+    const edges = {
+      ...CLASSIC_THEME,
+      values: {
+        ...CLASSIC_THEME.values,
+        "accent.base": "#4d55df",
+        "border.control": "#014c88",
+        "state.waiting": "#ae2ca1",
+        "danger.base": "#00c000",
+      },
+      tint: { ...CLASSIC_THEME.tint, tabs: ["accent.base", "border.control"] },
+    } as Theme;
+    const tint = tinted(edges, "#240c1b");
+    expect(
+      oklabDistance(tint.values["accent.base"], tint.values["border.control"]),
+    ).toBeGreaterThanOrEqual(0.1);
+    expect(
+      oklabDistance(tint.values["accent.base"], tint.values["state.waiting"]),
+    ).toBeGreaterThanOrEqual(0.1);
   });
 
   it("is handed a rule keeping the accent and its edges apart from waiting, held alone", () => {
