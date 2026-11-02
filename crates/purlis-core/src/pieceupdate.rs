@@ -1360,7 +1360,7 @@ fn pushed(
         );
     }
     // The commit scanned, by its id: a branch moved since sends nothing unscanned.
-    let refspec = format!("{ours}:{local_ref}");
+    let refspec = git::push_refspec(&ours, &local_ref);
     // Leased to the very commit the update saw, which [`vouched`] matched to what was fetched:
     // a remote moved since is refused by the remote itself.
     let leased = over

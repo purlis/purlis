@@ -250,6 +250,8 @@ fn the_push_to_gitlab_is_one_refspec_to_the_printed_destination_with_no_force() 
     let world = World::new("schema = 1\n");
     let widget = world.gitlab_clone("widget");
     world.change(&[("widget", &[])]);
+    let head = run(&widget, &["rev-parse", BRANCH]);
+    let head = head.trim();
     let before = crate::worktree::git::tally::asked(&widget).len();
     let [w1, w2] = mr_opened("widget", 7, LONE_NEW);
     let (code, said, recorded) = lone_mr_push(
@@ -265,7 +267,7 @@ fn the_push_to_gitlab_is_one_refspec_to_the_printed_destination_with_no_force() 
     assert_eq!(code, 0, "{said}");
     assert_eq!(recorded.unspent(), Vec::new(), "{said}");
     let asked = crate::worktree::git::tally::asked(&widget)[before..].to_vec();
-    let refspec = format!("refs/heads/{BRANCH}:refs/heads/{BRANCH}");
+    let refspec = format!("{head}^{{commit}}:refs/heads/{BRANCH}");
     let push = asked
         .iter()
         .find(|argv| argv.iter().any(|a| a == "push"))

@@ -589,6 +589,28 @@ pub(crate) fn pushed_to_a_folder(folder: &Path, args: &[&str], what: &str) -> Re
     }
 }
 
+/// The refspec of a project's first push of `branch` ([`git::push_refspec`]). A repository made
+/// for the project can be one kept from an earlier try, with `branch` on it, so a first push is
+/// held to what every push is (#4515), and with nothing on it, a push of nothing would answer as
+/// one that landed.
+pub(crate) fn first_refspec(folder: &Path, branch: &str) -> Result<String, String> {
+    let to = crate::worktree::name::as_ref(branch);
+    git::commit_at(folder, &to)
+        .map(|commit| git::push_refspec(&commit, &to))
+        .ok_or_else(|| format!("{branch} names no commit, so nothing was pushed"))
+}
+
+/// `branch` set to follow `origin`, what `--set-upstream` would have, which reads a push's source
+/// as a branch and so says nothing of a commit. A branch that follows nothing costs a person a
+/// `git push -u`, and never the project, so this is not a reason to take a push back.
+pub(crate) fn follows_origin(folder: &Path, branch: &str) {
+    let merge = crate::worktree::name::as_ref(branch);
+    for (key, value) in [("remote", "origin"), ("merge", merge.as_str())] {
+        let key = format!("branch.{branch}.{key}");
+        let _ = git::run(folder, &["config", &key, value], git::READ);
+    }
+}
+
 /// The last thing git said, without its `fatal: `.
 pub(crate) fn git_words(run: &git::Run) -> String {
     let said = if run.err.trim().is_empty() {
@@ -681,11 +703,14 @@ impl Hands for OnThisMachine {
         if let Some(to) = &self.push_to {
             let to = to.display().to_string();
             git_in(folder, &["remote", "add", "origin", &to], "name the remote")?;
-            return pushed_to_a_folder(
+            let refspec = first_refspec(folder, BRANCH)?;
+            pushed_to_a_folder(
                 folder,
-                &["push", "-q", "--set-upstream", "origin", BRANCH],
+                &["push", "-q", "origin", &refspec],
                 "push the first commit",
-            );
+            )?;
+            follows_origin(folder, BRANCH);
+            return Ok(());
         }
         // purlis's own helper for the account on this host, and no other (#752): without a
         // sign-in, nothing is pushed rather than another helper asked.
@@ -701,13 +726,11 @@ impl Hands for OnThisMachine {
             &["remote", "add", "origin", made.clone_url()],
             "name the remote",
         )?;
-        let run = git::run_network(
-            folder,
-            Some(&helper),
-            &["push", "-q", "--set-upstream", "origin", BRANCH],
-        )
-        .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;
+        let refspec = first_refspec(folder, BRANCH)?;
+        let run = git::run_network(folder, Some(&helper), &["push", "-q", "origin", &refspec])
+            .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;
         if run.ok() {
+            follows_origin(folder, BRANCH);
             // The remote the person made, recorded as this project's: an automatic save pushes
             // to it with purlis's helper, and to no other (#752's push record).
             crate::forge::gitcredential::record_push_remote(folder, made.clone_url());

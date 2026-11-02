@@ -573,14 +573,27 @@ fn commit_push(
         (None, branch.clone())
     };
 
-    let refspec = format!("HEAD:refs/heads/{remote_branch}");
+    // The commit saved, by its id: `HEAD` over a ref gone bad can read as a push of nothing, which
+    // deletes the remote's branch and exits 0 (#4515).
+    let to = format!("refs/heads/{remote_branch}");
+    let named = git::is_a_ref_name(clone, &to)
+        .then(|| git::commit_at(clone, &head_sha))
+        .flatten();
+    let Some(commit) = named else {
+        let why = format!("{at}'s branch names no commit git can push");
+        say(Say::Warn(format!("Not pushed: {why}.").into()));
+        attempt.detail = why;
+        attempt.outcome = "failed";
+        return 1;
+    };
+    let refspec = git::push_refspec(&commit, &to);
     let push_args = ["push", https.as_str(), refspec.as_str()];
     // Its Git LFS objects first: a hook would have sent them, and purlis's git runs none (#4399).
     if let Err(why) = crate::lfsupload::before_push(&crate::lfsupload::Push {
         dir: clone,
         helper: Some(helper.as_str()),
         args: &push_args,
-        tip: &head_sha,
+        tip: &commit,
         remote: "origin",
     }) {
         say(Say::Warn(
