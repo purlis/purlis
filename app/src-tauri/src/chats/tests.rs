@@ -9578,6 +9578,7 @@ fn a_notification_is_not_lost_to_a_stale_layout_while_the_window_is_in_the_backg
         "and only held back while the window is in front"
     );
     chats.end_all();
+}
 
 /// **A start that chose a pool that is gone starts nothing, and says the pool can't be reached**
 /// (#4536, ruled 2026-11-01): the window then offers this machine for it, and nothing runs here
