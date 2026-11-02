@@ -8,9 +8,7 @@ import type { FamilyTheme } from "../../theme/families.testkit";
 export default {
   forced: {
     drawn: {
-      '[data-scope="checks"][data-part="item"][data-variant="missing"] [data-part="title"]': {
-        "font-weight": "bold",
-      },
+      '[data-scope="checks"][data-part="mark"]': { color: "CanvasText" },
     },
   },
 } satisfies FamilyTheme;
