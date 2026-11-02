@@ -168,6 +168,7 @@ fn a_plane() -> Plane {
             dealt: 2,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: Some(crate::reopen::Focus {
                 workspace: "alpha".into(),
                 repo: "svc".into(),
@@ -1169,4 +1170,45 @@ fn running_the_rename_again_leaves_the_lines_purlis_wrote_as_they_are() {
     let again: Vec<String> = files.iter().map(|rel| read(&ws.join(rel))).collect();
     assert_eq!(again, first);
     assert!(first[0].contains("note -w beta"), "{}", first[0]);
+}
+
+/// A tab records its strip (#4751), so a rename moves every tab on the old strip, the strip the
+/// window drew, and each view in a pane keyed by the old name, as it moves a view tab.
+#[test]
+fn a_move_follows_every_tab_on_the_strip_and_every_view_in_a_pane() {
+    use crate::reopen::layout::{Direction, EVEN, Layout, Node, Pane, PaneView, Tab};
+    let moved = Move::in_plane(Path::new("/p"), "alpha", "beta");
+    let pane = |key: &str| {
+        Node::Pane(Pane::View(PaneView {
+            from: None,
+            view: "changes".into(),
+            key: key.into(),
+            title: "Changes".into(),
+            split: None,
+        }))
+    };
+    let mut on_alpha = Tab::of_chat(Some("alpha"), 3);
+    on_alpha.tree = Node::split(Direction::Row, EVEN, Node::chat(3), pane("alpha"));
+    let mut record = Record {
+        layout: Some(Layout {
+            strip: Some("alpha".into()),
+            tabs: vec![on_alpha, Tab::of_chat(Some("other"), 4)],
+        }),
+        ..Record::default()
+    };
+
+    assert!(moved.record(&mut record));
+
+    let layout = record.layout.expect("still laid out");
+    assert_eq!(layout.strip.as_deref(), Some("beta"));
+    assert_eq!(layout.tabs[0].workspace.as_deref(), Some("beta"));
+    assert_eq!(
+        layout.tabs[0].tree,
+        Node::split(Direction::Row, EVEN, Node::chat(3), pane("beta"))
+    );
+    assert_eq!(
+        layout.tabs[1].workspace.as_deref(),
+        Some("other"),
+        "another strip stays"
+    );
 }

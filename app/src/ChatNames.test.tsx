@@ -273,10 +273,11 @@ describe("renaming a chat's tab", () => {
     expect(asked(asks, "close_session")).toEqual([]);
   });
 
-  it("opens from the tab's own menu", async () => {
+  it("opens on its tab from the chat's list (#4753)", async () => {
     await oneChat();
 
-    fireEvent.contextMenu(theTab());
+    // The chat's own list: its Rename… opens the name in place on the tab it is the own of.
+    await userEvent.click(await screen.findByRole("button", { name: "More for steward 1" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }));
 
     await waitFor(() => expect(renameBox()).toHaveFocus());
@@ -353,7 +354,10 @@ describe("renaming a chat's tab", () => {
     await userEvent.keyboard("{Meta>}k{/Meta}");
     const palette = await screen.findByRole("dialog", { name: "Command palette" });
 
-    expect(within(palette).getByRole("option", { name: /^End chat billing bug/ })).toBeTruthy();
+    // Its End…, and its tab's close, which still ends it until #4756.
+    expect(
+      within(palette).getAllByRole("option", { name: /^End chat billing bug/ }).length,
+    ).toBeGreaterThan(0);
   });
 });
 

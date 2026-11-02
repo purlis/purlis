@@ -3397,12 +3397,21 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
                 let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
             Err(refused) => {
-                tracing::warn!(
-                    "purlis: the session host did not say its programs: {}",
-                    refused.why
-                );
-                // A draining runner removed while it was asked took what it ran with it.
-                if !connection.asked_a_runner_kept_no_more() {
+                if refused.code == purlis_session_protocol::session::PROGRAMS_NOT_KNOWN {
+                    tracing::info!("purlis: {}", refused.why);
+                } else {
+                    tracing::warn!(
+                        "purlis: the session host did not say its programs: {}",
+                        refused.why
+                    );
+                }
+                // A draining runner removed while it was asked took what it ran with it. A runner
+                // its relay did not ask, one before 1.67, is marked no more than it was when it was
+                // answered for with none; what it runs is not known, so nothing kept there is
+                // settled as gone (#4684).
+                let not_asked =
+                    refused.code == purlis_session_protocol::session::PROGRAMS_NOT_KNOWN;
+                if !not_asked && !connection.asked_a_runner_kept_no_more() {
                     let _ = untrust_taking_back(connection, &link, &mut Vec::new());
                 }
             }
