@@ -98,3 +98,10 @@ there (`charter_core::shellguard`).
 - The Saving tab's "Open terminal here" is now a shell tab like any other, opened by the same
   function, named `shell <N>`.
 - A new CONTEXT.md term: **Shell tab**.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0062/`](0062/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).
