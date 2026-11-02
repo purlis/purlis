@@ -90,6 +90,11 @@ pub enum Move {
     ReportedToItsAsker,
     /// [`Board::commit_refused`].
     CommitRefused { what: String },
+    /// [`Board::keep_said`] (#4709): what its turns last ended saying, masked already.
+    Said {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        said: Vec<String>,
+    },
 }
 
 /// What is told each move a board makes, with the chat's number, in the order the board made
@@ -120,6 +125,24 @@ impl Kept {
     /// The chats it holds, by number.
     pub fn chats(&self) -> impl Iterator<Item = u32> + '_ {
         self.chats.keys().copied()
+    }
+
+    /// **The same board without what any chat said** (#4709): what a host answers where the
+    /// whole would not fit one answer, so a window still takes every chat's state and Needs
+    /// you, and only the strip's text is lost to the relaunch.
+    pub fn without_said(mut self) -> Self {
+        for tracked in self.chats.values_mut() {
+            tracked.said.clear();
+        }
+        self
+    }
+
+    /// What each chat's turns last ended saying, by number, for those that said any (#4709).
+    pub fn said(&self) -> impl Iterator<Item = (u32, &[String])> + '_ {
+        self.chats
+            .iter()
+            .filter(|(_, tracked)| !tracked.said.is_empty())
+            .map(|(number, tracked)| (*number, tracked.said.as_slice()))
     }
 }
 
@@ -188,6 +211,10 @@ impl Board {
                 false
             }
             Move::CommitRefused { what } => self.commit_refused(number, &what),
+            Move::Said { said } => {
+                self.keep_said(number, &said);
+                false
+            }
         }
     }
 
@@ -196,6 +223,29 @@ impl Board {
         Kept {
             chats: self.chats.clone(),
         }
+    }
+
+    /// **Chat `number`'s last turn-end messages are `said` now** (#4709), oldest first, as the
+    /// window's ledger keeps them: masked, bounded, cleared on the person's answer. Told to
+    /// whoever keeps this board where it changed. A chat not on the board keeps nothing.
+    pub fn keep_said(&mut self, number: u32, said: &[String]) {
+        let Some(tracked) = self.chats.get_mut(&number) else {
+            return;
+        };
+        if tracked.said == said {
+            return;
+        }
+        tracked.said = said.to_vec();
+        self.tell(number, || Move::Said {
+            said: said.to_vec(),
+        });
+    }
+
+    /// What chat `number`'s turns last ended saying, as kept ([`Board::keep_said`]).
+    pub fn said_of(&self, number: u32) -> &[String] {
+        self.chats
+            .get(&number)
+            .map_or(&[][..], |tracked| tracked.said.as_slice())
     }
 
     /// Takes `kept` as this board, whole, in place of what it held: every chat as it was
@@ -225,13 +275,38 @@ impl Board {
     pub fn hear_at(&mut self, heard: &crate::hookwire::relay::Heard, now: i64) -> bool {
         use crate::hookwire::relay::Heard;
         match heard {
-            Heard::Report(report) => self.reported_while(
-                report,
-                Waits {
-                    now,
-                    ..Waits::default()
-                },
-            ),
+            Heard::Report(report) => {
+                let changed = self.reported_while(
+                    report,
+                    Waits {
+                        now,
+                        ..Waits::default()
+                    },
+                );
+                // A turn the person began answers what the last ones said (#4709), as the
+                // window's ledger has it; a background turn over their wait leaves it.
+                if report.event == crate::state::Event::UserPromptSubmit
+                    && report.agent.is_none()
+                    && !self.background_turn(report.chat)
+                {
+                    self.keep_said(report.chat, &[]);
+                }
+                changed
+            }
+            // What a turn ended saying, kept as the window keeps it (#4709): masked and made a
+            // report's text, the last few.
+            Heard::Output(output) => {
+                if let crate::hookwire::Output::Final { text } = &output.turn_output
+                    && self.spoken_by(output.chat, &output.speaker)
+                {
+                    let mut said = self.said_of(output.chat).to_vec();
+                    said.push(crate::handback::last_message_summary(Some(text)));
+                    let over = said.len().saturating_sub(crate::dispatched::SAID_KEPT);
+                    said.drain(..over);
+                    self.keep_said(output.chat, &said);
+                }
+                false
+            }
             Heard::Refused(refused) => self.commit_refused(refused.chat, &refused.commit_refused),
             Heard::Tool(call) => {
                 // A refused root update raises nothing (#3877): the chat retries it with

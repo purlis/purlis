@@ -1532,6 +1532,13 @@ struct Tracked {
     /// kept before #3583.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     kept_from_the_window: bool,
+    /// **The last messages its turns ended on, as the window keeps them** (#4709, #4563):
+    /// oldest first, masked and bounded as a report's text is, told here by the window
+    /// ([`Board::keep_said`]) so they outlive it in the session host. Never read to decide
+    /// anything: a window that takes the board whole hands them back to the ledger, which is
+    /// what the strip reads. Empty in a board kept before #4709.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    said: Vec<String>,
 }
 
 impl Tracked {
@@ -1755,6 +1762,7 @@ impl Board {
                 adopted: false,
                 reports_pid,
                 kept_from_the_window,
+                said: Vec::new(),
             },
         );
     }

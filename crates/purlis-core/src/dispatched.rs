@@ -653,8 +653,9 @@ pub struct Ledger {
     gone: std::collections::VecDeque<(u32, Gone)>,
     /// By chat, every chat's and not a task's alone (#4550): the last [`SAID_KEPT`] messages its
     /// harness said a turn of its ended on (#1981), oldest first, masked by the app before they
-    /// are kept, until a turn begins that is no background turn (#4563). **In memory only.** The
-    /// one source of what a chat waiting on the person said.
+    /// are kept, until a turn begins that is no background turn (#4563). **In memory here**, and
+    /// told to the board the session host keeps, which hands them back to the next window
+    /// (#4709). The one source of what a chat waiting on the person said.
     last: HashMap<u32, std::collections::VecDeque<String>>,
 }
 
@@ -1577,6 +1578,27 @@ impl Ledger {
             .get(&chat)
             .and_then(|said| said.back())
             .map(String::as_str)
+    }
+
+    /// **Every message chat `chat`'s turns ended on, as kept**, oldest first: what the window
+    /// tells the board the session host keeps, so they outlive it (#4709).
+    pub fn said(&self, chat: u32) -> Vec<String> {
+        self.last
+            .get(&chat)
+            .map(|said| said.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// **Chat `chat`'s turns ended on `said`, as a board taken from the session host kept it**
+    /// (#4709), oldest first and masked by the app already: kept in place of what this ledger
+    /// heard, the last [`SAID_KEPT`], where it heard nothing since.
+    pub fn said_again(&mut self, chat: u32, said: Vec<String>) {
+        if self.last.contains_key(&chat) || said.is_empty() {
+            return;
+        }
+        let over = said.len().saturating_sub(SAID_KEPT);
+        self.last
+            .insert(chat, said.into_iter().skip(over).collect());
     }
 
     /// **The few messages chat `chat`'s turns ended on before its last** (#4563), oldest first,
