@@ -210,6 +210,12 @@ pub struct Chat {
     /// again without it. `None` is every other chat, and every record written before this
     /// field — not a format change, for [`Self::pinned`]'s reason.
     pub renamed_from: Option<String>,
+    /// **Where this chat's start chose to run it** (#4536): a pool for this start only, or this
+    /// machine against what its workspace or project names. `None` follows the levels
+    /// ([`crate::machine::Store::chat_place`]). Kept for a relaunch, since its conversation is
+    /// where it ran: a chat started on a pool is started there again, and refused in words where
+    /// that pool is gone, never moved here. Never a setting: nothing else reads it.
+    pub runs_on: Option<crate::machine::StartChoice>,
     /// Whether the chat's last run started without the sandbox in a project that has it on: a
     /// person's opt-out, or a system with no backend (ADR 0067 §7).
     ///
@@ -1611,6 +1617,10 @@ struct ChatOnDisk {
     /// [`Chat::renamed_from`]. A value that is not a workspace name reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     renamed_from: String,
+    /// Where the chat's start chose to run it, or absent — see [`Chat::runs_on`]:
+    /// `"this-machine"` or `"pool:<name>"`. Any other word reads as absent.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    runs_on: String,
     /// `"off"` where the chat's last run was unsandboxed — see [`Chat::unsandboxed`] — and
     /// absent otherwise. Any other word reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -1871,6 +1881,7 @@ impl From<&Record> for OnDisk {
                     shows: chat.shows.unwrap_or_default(),
                     beside: chat.beside.unwrap_or_default(),
                     renamed_from: chat.renamed_from.clone().unwrap_or_default(),
+                    runs_on: chat.runs_on.as_ref().map(runs_on_word).unwrap_or_default(),
                     sandbox: if chat.unsandboxed {
                         SANDBOX_OFF.to_owned()
                     } else {
@@ -1961,6 +1972,7 @@ impl From<ChatOnDisk> for Chat {
             beside: (chat.beside > 0).then_some(chat.beside),
             renamed_from: Some(chat.renamed_from)
                 .filter(|name| crate::contain::workspace_name_ok(name)),
+            runs_on: runs_on_read(&chat.runs_on),
             unsandboxed: chat.sandbox == SANDBOX_OFF,
             identity: Identity {
                 id: a_ulid(&chat.id),
@@ -1980,3 +1992,25 @@ impl From<ChatOnDisk> for Chat {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// [`Chat::runs_on`] as `reopen.json` spells it (#4536).
+const RUNS_ON_HERE: &str = "this-machine";
+/// What starts a pool's name in [`Chat::runs_on`]'s word: no pool's name has a colon.
+const RUNS_ON_POOL: &str = "pool:";
+
+fn runs_on_word(choice: &crate::machine::StartChoice) -> String {
+    match choice {
+        crate::machine::StartChoice::ThisMachine => RUNS_ON_HERE.to_owned(),
+        crate::machine::StartChoice::Pool(pool) => format!("{RUNS_ON_POOL}{pool}"),
+    }
+}
+
+/// [`runs_on_word`] read back, held to a name a pool may have: anything else follows the levels.
+fn runs_on_read(word: &str) -> Option<crate::machine::StartChoice> {
+    if word == RUNS_ON_HERE {
+        return Some(crate::machine::StartChoice::ThisMachine);
+    }
+    let pool = word.strip_prefix(RUNS_ON_POOL)?;
+    crate::runners::usable_pool_name(pool).ok()?;
+    Some(crate::machine::StartChoice::Pool(pool.to_owned()))
+}

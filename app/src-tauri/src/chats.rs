@@ -1611,6 +1611,7 @@ impl Chats {
         why: String,
         profile: Option<&str>,
         workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
     ) -> String {
         if !purlis_core::profilestore::sign_in::is_refusal(&why) {
             return why;
@@ -1618,7 +1619,7 @@ impl Chats {
         let (Some(on_pools), Some(profile), Some(pool)) = (
             &self.profiles_on_pools,
             profile,
-            self.sessions.pool_for(workspace),
+            self.sessions.pool_for(workspace, start),
         ) else {
             return why;
         };
@@ -1844,6 +1845,7 @@ impl Chats {
         &self,
         id: &str,
         workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
         sign_in: Option<&purlis_core::profilesignin::AtStart>,
     ) -> Result<OwnRunnerOrNot, String> {
         use purlis_core::clusterpool::{ChatOnARunner, Keeping, kept_for};
@@ -1864,7 +1866,7 @@ impl Chats {
             });
         }
         let (Some(config), Some(workspace), Some(pool)) =
-            (&self.pools_in, workspace, self.sessions.pool_for(workspace))
+            (&self.pools_in, workspace, self.sessions.pool_for(workspace, start))
         else {
             return Ok(OwnRunnerOrNot::default());
         };
@@ -1908,6 +1910,7 @@ impl Chats {
         &self,
         _id: &str,
         _workspace: Option<&str>,
+        _start: Option<&purlis_core::machine::StartChoice>,
         _sign_in: Option<&purlis_core::profilesignin::AtStart>,
     ) -> Result<OwnRunnerOrNot, String> {
         Ok(OwnRunnerOrNot::default())
@@ -4086,9 +4089,34 @@ impl Chats {
         // One that names a pool this machine does not keep starts nowhere, in words, and is
         // never run on this machine instead.
         let workspace = workspace_at_start(Some(&self.project), chat.cwd.as_deref());
+        // A start's own choice comes first (#4536): one for a pool that is gone, stopped or not
+        // reached starts nothing, and is offered this machine only by the person's press.
         #[cfg(unix)]
         if !reattaching && let Some(config) = &self.pools_in {
-            purlis_core::pools::runs_on(config, &self.project, workspace.as_deref())?;
+            purlis_core::pools::chat_place(
+                config,
+                &self.project,
+                workspace.as_deref(),
+                chat.runs_on.as_ref(),
+            )
+            .map_err(|why| {
+                let named = workspace.as_deref().map_or_else(
+                    || match &chat.runs_on {
+                        Some(purlis_core::machine::StartChoice::Pool(pool)) => Some(pool.clone()),
+                        _ => None,
+                    },
+                    |workspace| {
+                        purlis_core::machine::read(config)
+                            .store
+                            .chat_place(&self.project, workspace, chat.runs_on.as_ref())
+                            .pool
+                    },
+                );
+                match named {
+                    Some(pool) => crate::poolprofiles::unavailable(&pool, why),
+                    None => why,
+                }
+            })?;
         }
         // **A harness chat on a runner is started by its names** (#2446): the runner composes
         // it, with the sandbox, hooks and line it makes for itself, and writes its run and its
@@ -4099,7 +4127,7 @@ impl Chats {
             && harness.is_some()
             && (self
                 .sessions
-                .composes_its_harness_chats_in(workspace.as_deref())
+                .composes_its_harness_chats_in(workspace.as_deref(), chat.runs_on.as_ref())
                 // Its own runner, wherever its workspace runs since (#4569).
                 || chat
                     .identity
@@ -4144,7 +4172,12 @@ impl Chats {
         let mut stays_on_the_pools = None;
         let own_runner = match (&mut own_start, identity.id.as_deref()) {
             (Some(start), Some(id)) => {
-                let chosen = self.fresh_runner_for(id, workspace.as_deref(), sign_in)?;
+                let chosen = self.fresh_runner_for(
+                    id,
+                    workspace.as_deref(),
+                    chat.runs_on.as_ref(),
+                    sign_in,
+                )?;
                 stays_on_the_pools = chosen.stays_because;
                 start.made = chosen.own.as_ref().is_some_and(|own| own.made);
                 chosen.own.map(|own| own.name)
@@ -4178,7 +4211,10 @@ impl Chats {
                 .as_deref()
                 .and_then(|runner| runner.split_once('/'))
                 .map(|(pool, _)| pool.to_owned())
-                .or_else(|| self.sessions.pool_for(workspace.as_deref()))
+                .or_else(|| {
+                    self.sessions
+                        .pool_for(workspace.as_deref(), chat.runs_on.as_ref())
+                })
         {
             match &own_runner {
                 Some(runner) => {
@@ -4839,6 +4875,7 @@ impl Chats {
         #[cfg(unix)]
         self.puts_its_repos_on_its_claim(
             workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
+            chat.runs_on.as_ref(),
             chat.cwd.as_deref(),
             own_runner.as_deref(),
             // A start its runner is sure to refuse adds nothing to the Claim.
@@ -4865,6 +4902,7 @@ impl Chats {
                         // A person's own opt-out, which a runner takes from no link but its own
                         // window's: such a start is refused there, never run sandboxed silently.
                         without_sandbox: runner_without_sandbox,
+                        runs_on: chat.runs_on.clone(),
                         // A chat held from its persona's grants is armed with none of them.
                         tools_allowed: runs_as.as_deref().filter(|_| chat.held.is_none()).and_then(
                             |persona| {
@@ -4898,7 +4936,12 @@ impl Chats {
                     composed.number
                 })
                 .map_err(|why| {
-                    self.in_the_pools_words(why, chat.profile.as_deref(), workspace.as_deref())
+                    self.in_the_pools_words(
+                        why,
+                        chat.profile.as_deref(),
+                        workspace.as_deref(),
+                        chat.runs_on.as_ref(),
+                    )
                 }),
             _ => self.sessions.open(
                 // The number this chat already answers to, where it has one. A chat put
@@ -6295,6 +6338,7 @@ impl Chats {
     fn puts_its_repos_on_its_claim(
         &self,
         workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
         folder: Option<&std::path::Path>,
         own_runner: Option<&str>,
         clones: Option<&[purlis_core::forge::apptoken::Started]>,
@@ -6305,8 +6349,10 @@ impl Chats {
         // The Claim of the runner it runs on: a chat's fresh runner has one of its own (#4569).
         let pool = match own_runner {
             Some(runner) => runner.to_owned(),
-            None => match purlis_core::pools::runs_on(config, &self.project, workspace) {
-                Ok(Some(pool)) => pool,
+            None => match purlis_core::pools::chat_place(config, &self.project, workspace, start) {
+                Ok(purlis_core::machine::ChatPlace {
+                    pool: Some(pool), ..
+                }) => pool,
                 _ => return,
             },
         };

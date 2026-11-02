@@ -16,11 +16,20 @@ use crate::host::pretend::Pretend;
 
 /// `app` runs on pool `builds`, `stale` names a pool this machine does not keep, every other
 /// workspace runs here.
+/// A start's own choice comes first, as `purlis_core::machine::Store::chat_place` orders it.
 fn runs_on() -> RunsOn {
-    Arc::new(|workspace| match workspace {
-        "app" => Ok(Some("builds".to_owned())),
-        "stale" => Err("Workspace stale runs its chats on pool gone: it is not kept".to_owned()),
-        _ => Ok(None),
+    use purlis_core::machine::StartChoice;
+    Arc::new(|workspace, start| match (start, workspace) {
+        (Some(StartChoice::ThisMachine), _) => Ok(None),
+        (Some(StartChoice::Pool(pool)), _) if pool == "builds" => Ok(Some(pool.clone())),
+        (Some(StartChoice::Pool(pool)), _) => {
+            Err(format!("This chat was to start on pool {pool}: it is not kept"))
+        }
+        (None, Some("app")) => Ok(Some("builds".to_owned())),
+        (None, Some("stale")) => {
+            Err("Workspace stale runs its chats on pool gone: it is not kept".to_owned())
+        }
+        (None, _) => Ok(None),
     })
 }
 
@@ -172,7 +181,9 @@ impl AMachine {
     fn window(&self) -> RoutedSessions {
         let runs_on: RunsOn = {
             let setting = Arc::clone(&self.setting);
-            Arc::new(move |workspace| Ok(setting.lock().unwrap().get(workspace).cloned()))
+            Arc::new(move |workspace, _start| {
+                Ok(workspace.and_then(|workspace| setting.lock().unwrap().get(workspace).cloned()))
+            })
         };
         let on_pools: OnPools = {
             let setting = Arc::clone(&self.setting);
@@ -644,8 +655,8 @@ fn a_put_back_on_a_pool_a_workspace_runs_on_still_closes_all_it_did_not_take_bac
 #[test]
 fn a_chat_in_a_workspace_set_to_a_pool_starts_on_its_runner_and_every_command_follows_it() {
     let world = a_world();
-    assert!(world.sessions.composes_its_harness_chats_in(Some("app")));
-    assert!(!world.sessions.composes_its_harness_chats_in(Some("fleet")));
+    assert!(world.sessions.composes_its_harness_chats_in(Some("app"), None));
+    assert!(!world.sessions.composes_its_harness_chats_in(Some("fleet"), None));
     assert!(
         world.made.lock().unwrap().is_empty(),
         "no runner is reached to say so"
@@ -687,6 +698,64 @@ fn a_chat_in_a_workspace_set_to_a_pool_starts_on_its_runner_and_every_command_fo
     assert_eq!(world.here.running(), vec![shell]);
     world.sessions.input(shell, b"ls\r").unwrap();
     assert_eq!(world.here.typed(shell), vec![b"ls\r".to_vec()]);
+}
+
+#[test]
+fn a_start_that_chose_where_it_runs_runs_there_whatever_its_workspace_says() {
+    use purlis_core::machine::StartChoice;
+    let world = a_world();
+    let on_builds = Some(StartChoice::Pool("builds".to_owned()));
+    let here = Some(StartChoice::ThisMachine);
+    assert_eq!(
+        world.sessions.pool_for(Some("fleet"), on_builds.as_ref()),
+        Some("builds".to_owned())
+    );
+    assert_eq!(world.sessions.pool_for(Some("app"), here.as_ref()), None);
+    assert!(
+        world
+            .sessions
+            .composes_its_harness_chats_in(Some("fleet"), on_builds.as_ref())
+    );
+    assert!(
+        !world
+            .sessions
+            .composes_its_harness_chats_in(Some("app"), here.as_ref())
+    );
+
+    let chose_the_pool = Named {
+        runs_on: on_builds.clone(),
+        ..named_in("fleet")
+    };
+    let on_the_runner = world
+        .sessions
+        .open_named(None, &chose_the_pool, Default::default(), &|_| {})
+        .expect("started on the pool it chose")
+        .number;
+    assert_eq!(world.builds.named().len(), 1, "the runner composed it");
+    assert_eq!(world.sessions.pool_of(on_the_runner).as_deref(), Some("builds"));
+
+    let chose_here = Named {
+        runs_on: here,
+        ..named_in("app")
+    };
+    // This machine's stand-in composes no chat by its names: its own refusal says it went there.
+    let went_here = world
+        .sessions
+        .open_named(None, &chose_here, Default::default(), &|_| {})
+        .expect_err("this machine's stand-in composes none");
+    assert_eq!(went_here, crate::host::NOT_COMPOSED_HERE);
+    assert_eq!(world.builds.named().len(), 1, "nothing more went to the runner");
+
+    let chose_a_gone_pool = Named {
+        runs_on: Some(StartChoice::Pool("gone".to_owned())),
+        ..named_in("fleet")
+    };
+    let refused = world
+        .sessions
+        .open_named(None, &chose_a_gone_pool, Default::default(), &|_| {})
+        .expect_err("a pool that is gone starts nothing");
+    assert!(refused.contains("pool gone"), "{refused}");
+    assert!(world.here.named().is_empty(), "never started here in its place");
 }
 
 #[test]

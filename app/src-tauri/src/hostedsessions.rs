@@ -3037,8 +3037,16 @@ impl HostedSessions {
     /// [`Self::link`] for a chat's start, the one thing that wakes an idle runner: a project held
     /// on a link that is down is held again, and that hold waits for the runner (#4403, #4415).
     /// Its code goes with it.
+    ///
+    /// A pool's runner that isn't reached, or doesn't come back, refuses the start as a pool not
+    /// reached (#4536): the window offers this machine for it, and starts nothing here unasked.
     fn link_of_a_start(&self) -> Result<(Arc<HostLink>, String), String> {
-        let (link, project) = held_on(&self.holding(), true)?;
+        let (link, project) = held_on(&self.holding(), true).map_err(|why| {
+            match self.connection.pool().filter(|_| self.kept_on_the_runner) {
+                Some(pool) if why != START_CANCELLED => crate::poolprofiles::unavailable(pool, why),
+                _ => why,
+            }
+        })?;
         self.sends_the_code(&link, &project)?;
         Ok((link, project))
     }

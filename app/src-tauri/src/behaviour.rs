@@ -1815,6 +1815,7 @@ fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
     crate::host::Named {
         runner: None,
         its_code_is_there: false,
+        runs_on: None,
         tools_allowed: None,
         plane_skills: false,
         chat: None,

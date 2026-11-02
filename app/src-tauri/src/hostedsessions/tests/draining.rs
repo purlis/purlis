@@ -283,7 +283,7 @@ fn routed_on(window: &Arc<Connection>, root: &Path) -> crate::routedsessions::Ro
     crate::routedsessions::RoutedSessions::new(
         root,
         Box::new(HostedSessions::new(Arc::clone(window), root)),
-        Arc::new(|_| Ok(Some("builds".to_owned()))),
+        Arc::new(|_, _| Ok(Some("builds".to_owned()))),
         Arc::new(Default::default),
         Arc::new(move |name| {
             Ok(Box::new(HostedSessions::on_a_runner(
