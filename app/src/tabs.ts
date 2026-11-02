@@ -100,6 +100,15 @@ export const DEVICES_VIEW: ViewRef = { from: null, view: "devices", key: "" };
 export const DEVICES_TITLE = "Devices";
 
 /**
+ * **Agent identity** (#4485, spec #4469): what a chat acts as on a forge, set up, inspected and
+ * removed. One per project, whose tool lines and personas it reads.
+ */
+export const AGENT_IDENTITY_VIEW: ViewRef = { from: null, view: "agent-identity", key: "" };
+
+/** What the Agent identity tab is called. */
+export const AGENT_IDENTITY_TITLE = "Agent identity";
+
+/**
  * **Settings at a workspace's level** (SE-20, #1170; first a page of its own, charter-app#280):
  * the Settings tab keyed by the level and its target — the workspace — so there is one per
  * workspace, deduplicated by the same `viewKey` and filed on that workspace's strip. It keeps the

@@ -59,6 +59,8 @@ import { AddDockerPoolHost } from "../AddDockerPool";
 import { startAddingAPool } from "../pools";
 import { ReplaceRunner } from "../settings/PoolLimits";
 import { RemoveHeldRunner, RemovePool } from "../settings/pools";
+import { StartOverAsk } from "../AgentIdentityFlow";
+import { RemoveIdentity } from "../AgentIdentityTab";
 import { RemoveProfile } from "../settings/profiles";
 import { SpecimenDialog } from "../specimen/Specimen";
 import { LinkWorkItem } from "../LinkWorkItem";
@@ -996,6 +998,17 @@ const DIALOGS: Opened[] = [
     file: "settings/pools.tsx",
     open: async () =>
       render(<RemoveHeldRunner name="builds-old" onRemove={nothing} onCancel={nothing} />),
+  },
+  {
+    name: "starting an agent identity over",
+    file: "AgentIdentityFlow.tsx",
+    open: async () => render(<StartOverAsk onClose={nothing} onStartOver={nothing} />),
+  },
+  {
+    name: "removing an agent identity",
+    file: "AgentIdentityTab.tsx",
+    open: async () =>
+      render(<RemoveIdentity host="github.com" onClose={nothing} onRemove={nothing} />),
   },
   {
     name: "adding a pool",
