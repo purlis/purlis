@@ -467,8 +467,11 @@ export function PoolStep({
 /** What a create said went wrong, moved to as it is said: Create is at the page's foot. */
 function useShownWhenSaid(said: unknown) {
   const ref = useRef<HTMLDivElement>(null);
+  // What was said before the step was drawn again isn't said again: only a change is.
+  const before = useRef(said);
   useEffect(() => {
-    if (said) ref.current?.focus();
+    if (said && said !== before.current) ref.current?.focus();
+    before.current = said;
   }, [said]);
   return ref;
 }

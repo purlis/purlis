@@ -511,6 +511,17 @@ fn sign_ins_reading(facts: &Facts) -> Reading {
     };
     let name = &pool.name;
     let profiles = match &pool.sign_ins {
+        // Only a runner asleep is woken: one that couldn't be read is asked again.
+        SignIns::NotAsked if pool.runner != Runner::Asleep => {
+            return Reading::attention(
+                format!("purlis couldn't ask the runner of pool {name} how its sign-ins stand."),
+                action(
+                    ActionId::CheckAgain,
+                    "Check again",
+                    "Asks the runner again. It changes nothing.",
+                ),
+            );
+        }
         SignIns::NotAsked => {
             return Reading::to_do(
                 format!(

@@ -67,11 +67,7 @@ fn an_image_is_looked_in_only_as_a_user_other_than_root() {
         let mut image = keeping();
         image["Config"]["User"] = json!(user);
         let said = declared_user(&image);
-        if user == "10001:staff" {
-            assert_eq!(said, Some("10001".into()), "{user}");
-        } else {
-            assert_eq!(said, None, "{user}");
-        }
+        assert_eq!(said, None, "{user}");
     }
 }
 
@@ -83,4 +79,11 @@ fn what_the_image_says_reads_as_a_sentence() {
     );
     assert_eq!(sentence("Done."), "Done.");
     assert_eq!(sentence(""), "");
+}
+
+#[test]
+fn a_user_with_no_group_runs_as_its_number() {
+    let mut image = keeping();
+    image["Config"]["User"] = json!("10001");
+    assert_eq!(declared_user(&image), Some("10001".into()));
 }

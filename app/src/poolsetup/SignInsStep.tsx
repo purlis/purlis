@@ -111,11 +111,14 @@ export function SignInsStep({
         ]
       : undefined;
   const rows = read ?? (recording ? heldRows : undefined);
-  const skip = (skipped: boolean) =>
+  const skip = (skipped: boolean) => {
+    setSaid(undefined);
+    setLines(false);
     void commands.poolSetupSkip(pool, "signins", skipped).then((done) => {
       if (done.status === "error") setSaid(done.error);
       else changed();
     });
+  };
   const told = said && (
     <p className="pool-setup-does" role="status">
       {said}
@@ -169,6 +172,7 @@ export function SignInsStep({
             busy={recording}
             onMain={() => {
               setRecording(true);
+              setSaid(undefined);
               void commands.poolSetupWake(pool).then((woke) => {
                 setRecording(false);
                 if (woke.status === "error") setSaid(woke.error);
@@ -257,8 +261,8 @@ export function SignInsStep({
   const changes = rows.some((row) => row.kept !== ticked.has(row.name));
   const raise = (key: string, to: number) =>
     void saveLimits(pool, [[key, to]]).then((refused) => {
-      if (refused !== undefined) setSaid(refused);
-      else measure();
+      // Saving reads the pool's limits again, which measures again.
+      setSaid(refused);
     });
 
   const go = async () => {
@@ -316,6 +320,9 @@ export function SignInsStep({
         <PoolProfiles pool={pool} plane={plane} />
         {told}
         <Action main="Continue" onMain={changed}>
+          <Button variant="ghost" onPress={() => setLines(false)}>
+            Change the profiles
+          </Button>
           {skipButton}
         </Action>
       </>

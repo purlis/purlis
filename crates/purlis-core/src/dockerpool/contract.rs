@@ -15,7 +15,7 @@ const INSIDE: &str = include_str!("../../../../tools/runner-image-contract.sh");
 /// How long the check from inside has: a start of a shell, and a few looks.
 const INSIDE_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// What marks a check's container, so a sweep of purlis's own finds one a stopped window left.
+/// What marks a check's container as purlis's, for anyone looking at Docker's list.
 const CONTRACT_LABEL: &str = "dev.purlis.contract-check=1";
 
 /// Most problems said: an image that lists more says nothing a person can act on sooner.
@@ -55,11 +55,12 @@ fn declared_user(image: &serde_json::Value) -> Option<String> {
     if !number(uid) || uid.parse::<u32>().ok()? == 0 {
         return None;
     }
-    Some(if number(gid) {
-        format!("{uid}:{gid}")
-    } else {
-        uid.to_owned()
-    })
+    // A group by name can't be held to what the image means by it: it isn't run.
+    match gid {
+        "" => Some(uid.to_owned()),
+        gid if number(gid) => Some(format!("{uid}:{gid}")),
+        _ => None,
+    }
 }
 
 fn base(word: &str) -> &str {
@@ -135,6 +136,11 @@ impl Docker {
         // Run only as the user it declares, never as root: one that declares no other is told so
         // above, and nothing of it is run.
         let Some(user) = declared_user(config) else {
+            if problems.is_empty() {
+                problems.push(
+                    "Its user's group has to be a number, such as USER 10001:10001.".to_owned(),
+                );
+            }
             return Ok(problems);
         };
         // An image that has no shell, or none that runs, can't be looked in, which is its answer.

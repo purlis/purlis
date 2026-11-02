@@ -740,3 +740,11 @@ fn a_proof_is_kept_for_a_pool_kept_and_goes_with_the_pool() {
     forget_pool_locked(config.path(), "dev-box").unwrap();
     assert!(read_choices(config.path()).unwrap().tried.is_empty());
 }
+
+#[test]
+fn only_a_runner_asleep_is_offered_to_be_woken() {
+    let asleep = answer(&on_a_pool(Runner::Asleep, SignIns::NotAsked));
+    assert_eq!(next(&asleep, StepId::Signins), ActionId::WakeRunner);
+    let unread = answer(&on_a_pool(Runner::Running, SignIns::NotAsked));
+    assert_eq!(next(&unread, StepId::Signins), ActionId::CheckAgain);
+}

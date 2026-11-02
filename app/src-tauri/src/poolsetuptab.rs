@@ -400,10 +400,7 @@ pub async fn pool_setup_wake(pool: String) -> Result<(), String> {
             let machine = crate::runnerlinks::Machine::here(&config_root()?)?;
             let kept = purlis_core::runners::runner_for(&machine.config, &pool)
                 .map_err(|why| why.to_string())?;
-            machine
-                .docker
-                .resumed(&kept.made)
-                .map(drop)
+            crate::runnerlinks::checked_or_woken(&machine.docker, &machine.config, &kept, true)
                 .map_err(|why| why.0)
         })
         .await
