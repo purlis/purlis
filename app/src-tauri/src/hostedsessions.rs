@@ -709,7 +709,7 @@ impl Connection {
 
     /// **The runner this connection reaches is kept no more** (#4569): what the window holds of it
     /// goes, each link to it ended.
-    fn runner_went(&self) {
+    fn fresh_runner_went(&self) {
         let Some((window, named)) = &self.to_a_pool else {
             return;
         };
@@ -4518,7 +4518,7 @@ impl SessionHost for HostedSessions {
     /// Its links end, and the window keeps no connection under its name: no fresh runner's name
     /// is ever used again.
     fn let_go_of_runner(&self) {
-        self.connection.runner_went();
+        self.connection.fresh_runner_went();
     }
 
     /// Only of a link already open: a tab drawn never opens one to the runner.
