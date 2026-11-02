@@ -713,9 +713,11 @@ let cloneRuns = 0;
  * this project's report, and the window draws the one palette.
  *
  * Its panes stay with it: only the tab in front has panes drawn (`tabs.ts`), so a project kept
- * off the window keeps those terminals and their views of the session open, and no more. A
- * project that draws nothing has none, which costs it nothing: the core has held every
- * session's terminal all along, and a view opened again is sent the screen as it already is.
+ * off the window keeps those terminals and their views of the session open. A project that
+ * draws nothing has none, which costs it nothing: the core has held every session's terminal
+ * all along, and a view opened again is sent the screen as it already is. Apart from those, the
+ * last three chats shown across the window keep theirs (`keptTerminals.ts`), so a tab switched
+ * back to one of them starts nothing either.
  *
  * **Held (`memo`), so the window redrawing is not this view redrawing** (SC-3). Every chat move
  * reaches the window as this project's report — the quit warning's states, the project strip's

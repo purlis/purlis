@@ -16,6 +16,7 @@ import { forgetProjectThemes } from "./projectTheme";
 import { forgetSwitches } from "./switchClock";
 import { forgetUnappliedRepos } from "./unappliedRepos";
 import { forgetPaneBands } from "./noticeSettle";
+import { letGoOfKeptTerminals } from "./keptTerminals";
 
 // What each project has on is kept per plane for the window's life (`extensionsOn.ts`); every
 // test's window is a new one, and most of them share a plane path.
@@ -38,6 +39,9 @@ afterEach(() => {
   forgetEntering();
   // What each pane's band held is kept by the pane for the window's life (#3167).
   forgetPaneBands();
+  // The last chats shown keep their terminals for the window's life (#4735); every test's window
+  // is a new one, and most of them show chat 1 of one plane.
+  letGoOfKeptTerminals();
 });
 
 // jsdom's window is 1024px wide, the narrowest purlis supports, where the project rail hides

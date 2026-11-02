@@ -7,6 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Terminal } from "@xterm/xterm";
 import { SessionPane, screenReaderMode, setScreenReaderMode } from "./SessionPane";
+import { letGoOfKeptTerminals } from "./keptTerminals";
 import { ProjectShownProvider } from "./projectShown";
 import { forgetScreenReaderMode } from "./screenReader";
 import { DEFAULT_TEXT, forgetTextSizes, setTextSize } from "./textSize";
@@ -88,12 +89,14 @@ describe("a terminal and the theme in force", () => {
     expect(made[0].options.theme).toEqual(xtermTheme(LIGHT));
   });
 
-  it("stops following once the pane is gone", () => {
+  it("stops following once its terminal is let go of", () => {
     const { unmount } = pane();
     const was = made[0];
     unmount();
+    // The chat was shown last, so its terminal was kept (`keptTerminals.ts`) until now.
+    letGoOfKeptTerminals();
 
-    // A disposed terminal handed a theme throws in xterm; this is the pane having let go.
+    // A disposed terminal handed a theme throws in xterm; this is the terminal having let go.
     expect(() => drawIn(LIGHT)).not.toThrow();
     expect(was.options.theme).toEqual(xtermTheme(DEFAULT_THEME));
   });
@@ -127,10 +130,12 @@ describe("a terminal and the terminal text size (charter-app#283)", () => {
     expect(made[0].options.fontSize).toBe(13);
   });
 
-  it("stops following once the pane is gone", () => {
+  it("stops following once its terminal is let go of", () => {
     const { unmount } = pane();
     const was = made[0];
     unmount();
+    // The chat was shown last, so its terminal was kept (`keptTerminals.ts`) until now.
+    letGoOfKeptTerminals();
 
     expect(() => setTextSize("terminal", 19)).not.toThrow();
     expect(was.options.fontSize).toBe(13);
@@ -228,10 +233,12 @@ describe("a terminal and screen-reader mode (DS-6, #629)", () => {
     expect(made.map((one) => one.options.screenReaderMode)).toEqual([false, false]);
   });
 
-  it("stops following once the pane is gone", () => {
+  it("stops following once its terminal is let go of", () => {
     const { unmount } = pane();
     const was = made[0];
     unmount();
+    // The chat was shown last, so its terminal was kept (`keptTerminals.ts`) until now.
+    letGoOfKeptTerminals();
 
     expect(() => setScreenReaderMode(true)).not.toThrow();
     expect(was.options.screenReaderMode).toBe(false);
