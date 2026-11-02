@@ -815,3 +815,24 @@ fn an_index_read_back_takes_only_its_own_entries() {
         ]
     );
 }
+
+#[test]
+fn a_routed_set_spends_what_it_still_lists_and_pins_may_take_it_past_the_budget() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    let set = set_at_the_root(&plane, &built_in);
+    let budget = Budget {
+        skills: 1,
+        chars: 100_000,
+        per_description: None,
+        lists_paths: false,
+        per_line: Some(10),
+    };
+    let unrouted = set.spends(budget);
+    let hid_all = set.clone().routed(budget, &[]);
+    let index = budget.line(INDEX, INDEX_DESCRIPTION.chars().count());
+    assert!(hid_all.spends(budget) < unrouted + index);
+    let name = hid_all.effective[0].skill.name.clone();
+    let pinned = set.routed(budget, std::slice::from_ref(&name));
+    assert!(pinned.spends(budget) > hid_all.spends(budget));
+}

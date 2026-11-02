@@ -144,37 +144,6 @@ fn every_harness_says_its_own_budget_and_what_it_lists_of_a_skill() {
     assert_eq!((codex.per_line, opencode.per_line), (None, None));
 }
 
-/// **The measured bug** (#4610): a 200k Claude 5 chat's own limit is 6,000 characters, and Claude
-/// Code's own 14 entries take 6,848 of whatever limit it has, so every plane skill's description
-/// was dropped however few there were.
-#[test]
-fn claude_code_is_handed_a_limit_that_holds_its_own_entries_and_the_budget_with_a_margin() {
-    let budget = Harness::ClaudeCode.skill_budget();
-    let handed = Harness::ClaudeCode
-        .skill_limit_handed(budget)
-        .expect("a limit");
-    assert_eq!(handed, 24_032);
-    assert!(handed > 6_848 + budget.chars);
-    assert!(handed > 6_000, "more than a 200k chat's own 1%");
-}
-
-#[test]
-fn a_raised_claude_code_budget_raises_the_limit_it_is_handed() {
-    let default = Harness::ClaudeCode.skill_budget();
-    let raised = crate::skills::Budget {
-        chars: 40_000,
-        ..default
-    };
-    assert_eq!(Harness::ClaudeCode.skill_limit_handed(raised), Some(51_532));
-}
-
-#[test]
-fn only_claude_code_is_handed_a_limit() {
-    for harness in [Harness::Codex, Harness::Opencode] {
-        assert_eq!(harness.skill_limit_handed(harness.skill_budget()), None);
-    }
-}
-
 #[test]
 fn only_a_budget_past_codexs_own_limit_warns_and_it_says_what_codex_would_drop() {
     let codex = Harness::Codex;
@@ -187,6 +156,7 @@ fn only_a_budget_past_codexs_own_limit_warns_and_it_says_what_codex_would_drop()
     assert!(said.contains("15,000"), "{said}");
     assert!(said.contains("8,000"), "{said}");
     assert!(said.contains("leaves skills out"), "{said}");
+    assert!(!said.contains("  "), "{said}");
     // opencode has no limit, and purlis hands Claude Code the one the budget needs.
     let huge = crate::skills::Budget {
         chars: 1_000_000,

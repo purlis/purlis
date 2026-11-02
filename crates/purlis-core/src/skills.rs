@@ -14,7 +14,6 @@
 use std::path::{Path, PathBuf};
 
 /// The line format's one parser, and its `str.strip` and `str.splitlines` (#3482).
-pub use budget_setting::budget_in;
 pub use purlis_skills::change::{
     BuiltInTemplates, Offer, Problem, SkillTemplate, Template, TemplateId, check,
 };
@@ -41,6 +40,8 @@ pub use purlis_skills::{review, tree};
 pub mod source;
 pub use purlis_skills::{About, Deprecated, Lifecycle, about_of};
 pub mod budget_setting;
+pub use budget_setting::budget_in;
+
 pub mod first_open;
 pub mod grades;
 pub mod graph;
@@ -113,6 +114,15 @@ pub struct PlaneSkills<'a> {
     /// What the chat's router extension answered at its start (SK-15b), which every routing of
     /// its set applies again: `None` for a chat routed by the built-in router.
     pub routed: Option<&'a router::Routed>,
+}
+
+/// **The budget of a chat whose plane skills are `at`**: the adapter's numbers where it has none,
+/// so the numbers it is routed by and the numbers it is shown are one (#4610).
+pub fn budget_at(at: Option<PlaneSkills<'_>>, harness: Harness) -> Budget {
+    at.map_or_else(
+        || harness.skill_budget(),
+        |at| budget_in(at.plane, at.workspace, harness),
+    )
 }
 
 /// The skill set of a chat on `harness` armed with `kit`, asked of [`purlis_skills::skill_set`].
@@ -1101,22 +1111,30 @@ impl Running<'_> {
         (found, off)
     }
 
-    /// Its set, routed as its start routed it ([`lay_out_for_chat`]): from the same built-in
-    /// skills, harness, scope, workspace, persona and repo skills (#3245).
-    fn set(&self) -> SkillSet {
+    /// Where its plane skills are read from, as its start read them.
+    fn at(&self) -> Option<PlaneSkills<'_>> {
         // A start that read no plane skills (`on` off, or a runner's chat, whose host read
         // them) holds no scope of its own: the plane's root, and no clone.
         let start = self.start.filter(|start| start.on);
         let tried = start.is_some_and(|start| start.tried);
-        let at = self.plane_skills.then(|| PlaneSkills {
+        self.plane_skills.then(|| PlaneSkills {
             plane: start.map_or(self.plane, |start| start.root.as_path()),
             workspace: self.workspace.filter(|_| !tried),
             repo: start.map_or(&[], |start| start.repo.as_slice()),
             routed: start.and_then(|start| start.routed.as_deref()),
-        });
+        })
+    }
+
+    /// Its set, routed as its start routed it ([`lay_out_for_chat`]): from the same built-in
+    /// skills, harness, scope, workspace, persona and repo skills (#3245).
+    fn set(&self) -> SkillSet {
+        let tried = self
+            .start
+            .filter(|start| start.on)
+            .is_some_and(|start| start.tried);
         routed(
             self.built_in,
-            at,
+            self.at(),
             self.persona.filter(|_| !tried),
             self.harness,
         )
@@ -1198,7 +1216,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         offered
             .iter()
             .map(|one| (&one.effective.skill, &one.declared)),
-        budget_in(chat.plane, chat.workspace, chat.harness),
+        budget_at(chat.at(), chat.harness),
     );
     let held_env = chat
         .start
@@ -1380,10 +1398,7 @@ fn routed(
         persona,
         harness.skills(),
         None,
-        Some(at.map_or_else(
-            || harness.skill_budget(),
-            |at| budget_in(at.plane, at.workspace, harness),
-        )),
+        Some(budget_at(at, harness)),
     )
 }
 
