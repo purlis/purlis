@@ -443,6 +443,73 @@ export function PoolStep({
 
   const breaks = adding.breaks ?? [];
   return (
+    <NewPool
+      step={step}
+      adding={adding}
+      breaks={breaks}
+      named={named}
+      name={name}
+      typing={typing}
+      taken={taken}
+      others={shown.others}
+      changed={changed}
+      chosen={chosen}
+      team={team}
+      newer={newer?.version}
+      trouble={trouble}
+      reading={reading}
+      command={command}
+      create={() => void create()}
+    />
+  );
+}
+
+/** What a create said went wrong, moved to as it is said: Create is at the page's foot. */
+function useShownWhenSaid(said: unknown) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (said) ref.current?.focus();
+  }, [said]);
+  return ref;
+}
+
+function NewPool({
+  step,
+  adding,
+  breaks,
+  named,
+  name,
+  typing,
+  taken,
+  others,
+  changed,
+  chosen,
+  team,
+  newer,
+  trouble,
+  reading,
+  command,
+  create,
+}: {
+  step: PoolSetupStep;
+  adding: Adding;
+  breaks: readonly string[];
+  named: string | undefined;
+  name: string;
+  typing: (to: string) => void;
+  taken: boolean;
+  others: readonly string[];
+  changed: () => void;
+  chosen: Chosen;
+  team: boolean;
+  newer: string | undefined;
+  trouble: string | undefined;
+  reading: boolean;
+  command: string | undefined;
+  create: () => void;
+}) {
+  const said = useShownWhenSaid(breaks.length > 0 ? breaks.join("\n") : adding.refused);
+  return (
     <>
       <StepHead
         title="Name your pool"
@@ -460,7 +527,7 @@ export function PoolStep({
       ) : (
         <>
           {breaks.length > 0 && (
-            <>
+            <div ref={said} tabIndex={-1} className="pool-setup-said">
               <Say
                 tone="trouble"
                 title={`This image is missing ${breaks.length === 1 ? "1 thing" : `${breaks.length} things`} a runner needs`}
@@ -484,7 +551,7 @@ export function PoolStep({
                   <CheckLine key={problem} verdict="missing" title={problem} />
                 ))}
               </CheckList>
-            </>
+            </div>
           )}
           <TextField
             label="Name"
@@ -493,11 +560,11 @@ export function PoolStep({
             help="Small letters, digits and dashes."
             error={taken ? `You already have a pool called ${name.trim()}.` : undefined}
           />
-          {shown.others.length > 0 && (
+          {others.length > 0 && (
             <section className="pool-setup-others" aria-label="Your pools">
               <p className="pool-setup-does">Or carry on with a pool you already have:</p>
               <ButtonRow size="md">
-                {shown.others.map((other) => (
+                {others.map((other) => (
                   <Button
                     key={other}
                     onPress={() => void commands.poolSetupPool(other).then(changed)}
@@ -520,28 +587,30 @@ export function PoolStep({
           </dl>
           {newer && (
             <p className="pool-setup-does">
-              {`The image is from purlis ${newer.version}. An update to it is waiting.`}
+              {`The image is from purlis ${newer}. An update to it is waiting.`}
             </p>
           )}
           {!reading && named === undefined && (
             <p className="pool-setup-does">{trouble ?? IMAGE_NOT_NAMED}</p>
           )}
           {adding.refused && (
-            <Notice
-              cause="pool-setup.pool"
-              tone="trouble"
-              title="The pool wasn't made"
-              onDismiss={() => adding.set({ making: false })}
-            >
-              {adding.refused}
-            </Notice>
+            <div ref={said} tabIndex={-1} className="pool-setup-said">
+              <Notice
+                cause="pool-setup.pool"
+                tone="trouble"
+                title="The pool wasn't made"
+                onDismiss={() => adding.set({ making: false })}
+              >
+                {adding.refused}
+              </Notice>
+            </div>
           )}
           {!reading && (
             <NewPoolOptions
               chosen={chosen}
               choose={adding.choose}
               named={named}
-              version={newer?.version}
+              version={newer}
               refused={breaks.length > 0}
             />
           )}
@@ -552,7 +621,7 @@ export function PoolStep({
         does={step.next?.does}
         main={step.next?.label ?? "Create the pool"}
         busy={adding.making || reading}
-        onMain={() => void create()}
+        onMain={create}
       />
     </>
   );

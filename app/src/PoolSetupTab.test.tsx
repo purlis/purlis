@@ -417,6 +417,10 @@ describe("Options and See what this does (#4481)", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
     expect(await screen.findByText("This image is missing 2 things a runner needs")).toBeTruthy();
+    // Create is at the page's foot: why nothing was made is moved to, not left out of sight.
+    await waitFor(() =>
+      expect(document.activeElement?.textContent).toContain("This image is missing 2 things"),
+    );
     const line = screen.getByRole("list", { name: "What the image is missing" });
     expect(line.textContent).toContain("It runs as root.");
     expect(calls.some((call) => call.cmd === "pool_setup_pool")).toBe(false);

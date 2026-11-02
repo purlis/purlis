@@ -8574,6 +8574,11 @@ nav.piece-files-head {
   align-items: flex-start;
   justify-content: space-between;
 }
+.pool-setup-said {
+  display: grid;
+  gap: var(--space-3);
+  outline: none;
+}
 .pool-setup-say {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);

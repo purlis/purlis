@@ -222,6 +222,14 @@ export const ATeamsImageBreaksTheContract: Story = {
       if (cmd === "pool_setup") return { ...POOL_FORM, name: "dev-box" };
       if (cmd === "runner_image_of_this_version") return { state: "ours", image: "img@sha256:a" };
       if (cmd === "pool_setup_command") return "purlis pool add dev-box --image r@sha256:b";
+      if (cmd === "docker_pools")
+        return {
+          pools: [],
+          defaults: { cpus: "2", memory_mib: 4096, processes: 512, tmp_mib: 256 },
+          suspend_after: "24h",
+          frames: 10,
+          width: 1600,
+        };
       if (cmd === "pool_setup_create")
         return {
           breaks: [
@@ -239,6 +247,7 @@ export const ATeamsImageBreaksTheContract: Story = {
     await userEvent.type(canvas.getByRole("textbox", { name: /Image, by digest/ }), "r@sha256:b");
     await userEvent.click(canvas.getByRole("button", { name: "Create the pool" }));
     await canvas.findByText("This image is missing 2 things a runner needs");
+    await expect(canvas.getByRole("button", { name: "Use purlis's image instead" })).toBeVisible();
   },
 };
 
