@@ -648,6 +648,40 @@ pub async fn docker_pool_replace_runner(name: String) -> Result<(), String> {
     }
 }
 
+/// **Removes the held runner `runner`, as the person pressed**: a draining runner that stopped
+/// during its drain, and what its chats left in its home with it
+/// ([`purlis_core::pools::remove_held`]). The window's alone: nothing else ends what a held runner
+/// keeps. What is left of it is said.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_remove_held_runner(runner: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("removing a held runner", move || {
+            let machine = Machine::here(&config_root()?)?;
+            let kept = purlis_core::runners::named(&machine.config, &runner)
+                .map_err(|why| refused_said(&why.to_string()))?
+                .ok_or_else(|| format!("No runner {runner} is on this machine."))?;
+            let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)?;
+            let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
+            let removed = purlis_core::pools::remove_held(
+                &machine.config,
+                &machine.docker,
+                &runner,
+                Some(&unpair),
+            )
+            .map_err(|why| refused_said(&why.to_string()))?;
+            removed.left().map_or(Ok(()), Err)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = runner;
+        Err(NOT_HERE.to_owned())
+    }
+}
+
 /// **Which version the pool `name`'s runner runs, against this desktop's** (#2749).
 #[tauri::command]
 #[specta::specta]

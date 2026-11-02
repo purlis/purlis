@@ -69,9 +69,17 @@ impl Machine {
     /// it is read (#3492, [`purlis_core::runnerhours::seen`]). What could not be written is
     /// said, and the answer stands.
     pub fn running(&self, kept: &Kept) -> Result<bool, purlis_core::dockerpool::Refused> {
+        self.ran(kept).map(|ran| ran.running)
+    }
+
+    /// [`Self::running`], with when it last started and stopped.
+    pub fn ran(
+        &self,
+        kept: &Kept,
+    ) -> Result<purlis_core::dockerpool::Ran, purlis_core::dockerpool::Refused> {
         let ran = self.docker.ran(&kept.made)?;
         hours_seen(&self.config, kept, ran);
-        Ok(ran.running)
+        Ok(ran)
     }
 
     /// This desktop as a pool is added: its key made where it keeps none.

@@ -1216,6 +1216,7 @@ const DEVICE_ANSWERS = {
   contacted: 1_800_000_000,
   holds: { open: [], browsers_open: [], chats: 2, browsers: 1 },
   ran_this_week: 7200,
+  held: false,
 };
 
 /** A runner's answer in each other state a Devices row draws. */
