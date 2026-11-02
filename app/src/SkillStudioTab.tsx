@@ -346,7 +346,9 @@ export function SkillStudioTab({
   const studio = read?.key === key ? read.studio : undefined;
   const refused = read?.key === key ? read.refused : undefined;
   const on = studio?.on === true;
-  const wholeLibrary = useWholeLibrary(studio !== undefined);
+  const wholeLibrary =
+    useWholeLibrary(studio !== undefined) ||
+    (globalThis as { __allRows?: boolean }).__allRows === true; // DEBUG-4351
   // Read once the studio has said it is on: a scope picked later reads its skills, not these.
   const [opened, setOpened] = useState(false);
   if (on && !opened) setOpened(true);
@@ -362,7 +364,7 @@ export function SkillStudioTab({
   );
   // Asked before this tab's first paint rather than after it: the core reads on its own thread,
   // and that paint took a sixth of a second on a runner with the read not yet begun (#4351).
-  useLayoutEffect(() => {
+  ((globalThis as { __lateAsk?: boolean }).__lateAsk === true ? useEffect : useLayoutEffect)(() => { // DEBUG-4351
     let live = true;
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
       if (!live) return;

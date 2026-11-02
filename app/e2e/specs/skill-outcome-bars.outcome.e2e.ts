@@ -462,13 +462,33 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       expect(problems).toEqual([]);
     });
 
-    it("opens the studio in under 300 ms", async () => {
+    it("opens the studio in under 300 ms", async function () {
+      this.timeout(1_500_000);
       void openVerdict; // DEBUG-4351
-      const said = (phase: string, took: number[]) =>
-        console.log(`DEBUG-4351 ${phase} sorted ${JSON.stringify([...took].sort((x, y) => x - y).map(Math.round))}`);
-      said("chat", await theOpenings((await tabNames()).filter((one) => one !== "Skill studio"), "chat"));
+      const round = async (where: string) => {
+        for (const [name, allRows, lateAsk] of [
+          ["both", false, false],
+          ["allrows", true, false],
+          ["lateask", false, true],
+          ["neither", true, true],
+        ] as const) {
+          await browser.execute(
+            (rows: boolean, late: boolean) => {
+              const g = globalThis as { __allRows?: boolean; __lateAsk?: boolean };
+              g.__allRows = rows;
+              g.__lateAsk = late;
+            },
+            allRows,
+            lateAsk,
+          );
+          const phase = `${where}-${name}`;
+          const took = await theOpenings((await tabNames()).filter((one) => one !== "Skill studio"), phase);
+          console.log(`DEBUG-4351 ${phase} sorted ${JSON.stringify([...took].sort((x, y) => x - y).map(Math.round))}`);
+        }
+      };
+      await round("chat");
       await endTheChatsStartedSince(wereRunning);
-      said("nochat", await theOpenings((await tabNames()).filter((one) => one !== "Skill studio"), "nochat"));
+      await round("nochat");
     });
   });
 });
