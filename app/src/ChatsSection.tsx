@@ -96,7 +96,7 @@ import { useQuestionStanding, useQuestionsHere } from "./QuestionsHere";
 import {
   askingBelow,
   askingSaid,
-  questionWord,
+  questionWords,
   waitingOnYou,
   type QuestionStanding,
 } from "./taskQuestions";
@@ -1932,9 +1932,12 @@ const QuestionOrTime = memo(function QuestionOrTime({
 
 function QuestionWaits({ question }: { question: QuestionStanding }) {
   const now = useNow();
+  const { who, since } = questionWords(question, new Date(now));
+  // The asker's name gives way, as the row's name does; the time stays whole (#1675).
   return (
     <span className="question-waits chat-time ui-text-meta" aria-hidden="true">
-      {questionWord(question, new Date(now))}
+      <span className="question-who">{who}</span>
+      {since !== null && <span className="question-since">{` · ${since}`}</span>}
     </span>
   );
 }

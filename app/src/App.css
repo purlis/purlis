@@ -3595,6 +3595,31 @@ body {
   white-space: nowrap;
 }
 
+/* **A task question's words at its row's end** (#4564): `asking steward 2 · 1m`. The asker's
+   name gives way as the row's name does, so a name with no space to break at never pushes the
+   time out of the row; the time stays whole. */
+.chats-section .ui-row-trail:has(> .question-waits) {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}
+
+.chats-section .question-waits {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}
+
+.chats-section .question-who {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chats-section .question-since {
+  flex: none;
+  white-space: pre;
+}
+
 /* **Every tree in the window is the shared tree** (#1672, DS-12): `.ui-tree` and its
    `.ui-tree-row`s in `primitives/collections.css` draw the Chats tree, the explorer, the Changes
    view and a file tab's files, with their steps, straight guides, selected row and the

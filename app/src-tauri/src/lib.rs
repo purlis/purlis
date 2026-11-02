@@ -935,10 +935,10 @@ fn with_task_standing(
     if let Some(from) = drawn.from.as_mut() {
         from.asker_waiting = held.chats().waits_to_start(from.chat).then_some(true);
     }
-    if let Some(from) = drawn.from.as_mut().filter(|from| from.task) {
-        if from.reported || from.unreported {
-            from.outcome = outcomes.of_task(session).map(str::to_owned);
-        }
+    if let Some(from) = drawn.from.as_mut().filter(|from| from.task)
+        && (from.reported || from.unreported)
+    {
+        from.outcome = outcomes.of_task(session).map(str::to_owned);
     }
     drawn
 }
