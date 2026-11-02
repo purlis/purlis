@@ -80,7 +80,8 @@ button { font: inherit; color: inherit; }
 .qstrip .grow { flex: 1; min-width: 0; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* The band: inside the pane, at most about half of it, scrolling inside past that. */
-.band { flex: none; max-height: 50%; overflow: auto; display: grid; gap: 6px; padding: 8px 8px 0; }
+.band { flex: none; max-height: 50%; overflow: auto; display: grid; gap: 6px; padding: 0 8px 4px; }
+.qstrip + .band, .band:first-child { padding-top: 8px; }
 .band:empty { display: none; }
 .bandhead { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-quiet); padding: 0 2px; min-height: 26px; }
 .bandhead .grow { flex: 1; }
@@ -156,7 +157,7 @@ button { font: inherit; color: inherit; }
     <div class="card"><h2>This variant</h2><div id="about" style="font-size:12.5px;color:var(--text-secondary)"></div></div>
     <div class="card"><h2>State</h2><pre class="state" id="state"></pre></div>
     <div class="card"><h2>Same in every variant</h2><ol>
-      <li>The band sits inside the pane, above the slim header; the terminal is pinned to its bottom (#3142).</li>
+      <li>The band sits inside the pane; in A (accepted) under the slim header, so the header never moves when notices arrive. The terminal is pinned to its bottom (#3142).</li>
       <li>Nothing draws over the terminal. No popover, no overlay.</li>
       <li>A consent or blocking ask has no Dismiss, stays open minimised, and Dismiss all skips it (D7).</li>
       <li>Expanded shows every notice; past half the pane the band scrolls inside.</li>
@@ -198,7 +199,7 @@ const STATES = {
   6: { name: "With the task-question strip", left: [1, 6, 2], right: [], strip: true },
 };
 const ABOUT = {
-  A: "<b>Header slot.</b> The icon and its count sit in the pane header, in a fixed slot before split and close. Minimised, only the asks stay in the band, as full cards. The count is what's folded away: neutral, in the trouble colour when one of those is trouble. Expanded, the band gets a head row with <i>Dismiss all</i> and <i>Minimise</i>.",
+  A: "<b>Header slot.</b> The icon and its count sit in the pane header, in a fixed slot before split and close. Minimised, only the asks stay in the band, as full cards. The count is the notes this pane holds, the same number minimised and expanded; asks are never counted, since they are always open. Neutral, in the trouble colour when one note is trouble; expanded shows as the bell pressed. Expanded, the band gets a head row with <i>Dismiss all</i> and <i>Minimise</i>.",
   B: "<b>Band foot.</b> No icon in the header. Minimised, the band ends in one line: the icon, the count and the newest folded notice's words, with <i>Show all</i>. The asks stay as full cards above it. Expanded, the same line holds <i>Dismiss all</i> and <i>Minimise</i>. The count names the trouble: “4 · 1 trouble”.",
   C: "<b>Compact asks.</b> The icon sits at the left of the header, before the chips, and counts everything, in words: “2 asking · 4”. Minimised, each ask stays open as one line with its buttons; the full words come back expanded. Expanded, <i>Dismiss all</i> sits beside the icon in the header.",
 };
@@ -215,7 +216,7 @@ const blocking = (n) => n.kind !== "note";
 function countText(p) {
   const asks = p.notices.filter(blocking).length, notes = p.notices.length - asks;
   const trouble = p.notices.filter((n) => !blocking(n) && n.tone === "trouble").length;
-  if (S.variant === "A") return S.minimised ? (notes ? String(notes) : "") : (p.notices.length ? String(p.notices.length) : "");
+  if (S.variant === "A") return notes ? String(notes) : "";  // one meaning in both states: the notes this pane holds; asks are never counted, they are always open
   if (S.variant === "B") return notes + (trouble ? ` · ${trouble} trouble` : "");
   const parts = []; if (asks) parts.push(`${asks} asking`); if (notes) parts.push(String(notes));
   return parts.join(" · ");
@@ -275,14 +276,16 @@ const TERM = [
   ["g", "  Test Files  3 passed (3)"], ["", ""], ["", "⏺ The tests pass. Next I'll wire the count into the pane header."], ["", ""],
   ["dim", "  Reading app/src/ChatNotices.tsx…"], ["", "⏺ Done. Two places draw a pane's asks today; one store feeds both."], ["", ""],
 ];
+const phead = (p, pi) => `<div class="phead"><span style="color:var(--text-primary);font-weight:500">${p.name}</span>${header(p, pi)}</div>`;
 function render() {
   document.documentElement.dataset.theme = S.theme ?? "dark";
   const stage = document.getElementById("stage"); const keep = document.activeElement?.dataset?.id;
   stage.innerHTML = S.panes.map((p, pi) => `
     <section class="pane" ${pi === S.focusPane ? "data-focused" : ""} aria-label="Pane: ${p.name}">
       ${pi === 0 && S.strip ? `<div class="qstrip"><b>1 asking</b><span class="grow">tidy the inbox: which label marks a question as answered?</span><button class="btn quiet">Answer</button></div>` : ""}
+      ${S.variant === "A" ? phead(p, pi) : ""}
       <div class="band" role="region" aria-label="Notices">${band(p, pi)}</div>
-      <div class="phead"><span style="color:var(--text-primary);font-weight:500">${p.name}</span>${header(p, pi)}</div>
+      ${S.variant === "A" ? "" : phead(p, pi)}
       <div class="term">${TERM.map(([c, t]) => `<div class="l ${c}">${esc(t) || " "}</div>`).join("")}<div class="l">❯ <span class="cursor"></span></div></div>
       <span class="rows" data-rows="${pi}"></span>
     </section>`).join("");
