@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   commands,
@@ -342,6 +342,18 @@ export function PoolStep({
 }) {
   const name = adding.typed ?? shown.name ?? "";
   const keeping = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Kept as it is typed, so a tab closed mid-word comes back with it. A step left before the
+  // wait ends keeps the name then, so no wait outlives it (#4823).
+  const unkept = useRef<string>(undefined);
+  const keep = useCallback(() => {
+    clearTimeout(keeping.current);
+    const to = unkept.current;
+    if (to === undefined) return;
+    unkept.current = undefined;
+    const kept = to.trim();
+    void commands.poolSetupName(kept === "" ? null : kept);
+  }, []);
+  useEffect(() => keep, [keep]);
   const [offered, setOffered] = useState<ReleaseImage>();
   const [command, setCommand] = useState<string>();
   useEffect(() => {
@@ -400,15 +412,12 @@ export function PoolStep({
       />
     );
 
-  // Kept as it is typed, so a tab closed mid-word comes back with it: the wait outlives this step.
   // A name no pool could have yet is left unkept, and Create says why.
   const typing = (to: string) => {
     adding.type(to);
+    unkept.current = to;
     clearTimeout(keeping.current);
-    keeping.current = setTimeout(() => {
-      const kept = to.trim();
-      void commands.poolSetupName(kept === "" ? null : kept);
-    }, KEEP_NAME_MS);
+    keeping.current = setTimeout(keep, KEEP_NAME_MS);
   };
   const taken = shown.others.includes(name.trim());
 
