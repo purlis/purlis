@@ -18,7 +18,7 @@
  *   scorecard, from which each kept chat opens read-only: pages in the studio's history
  *   ({@link GradingAt}), with their own crumbs, never tabs of their own.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   commands,
@@ -190,12 +190,14 @@ function draftChecks(kind: CheckKind, text: string): string[] | undefined {
     const read: unknown = JSON.parse(text);
     const list = kind === "picked" ? read : (read as { evals?: unknown } | null)?.evals;
     if (!Array.isArray(list)) return undefined;
-    return list.map((one: unknown) => {
-      const said = (one as Record<string, unknown> | null)?.[
-        kind === "picked" ? "query" : "prompt"
-      ];
-      return typeof said === "string" ? said : "";
-    });
+    // Each check has its words where a grade reads them, or the file is not checks it can run.
+    const said = list.map(
+      (one: unknown) =>
+        (one as Record<string, unknown> | null)?.[kind === "picked" ? "query" : "prompt"],
+    );
+    return said.every((one) => typeof one === "string" && one !== "")
+      ? (said as string[])
+      : undefined;
   } catch {
     return undefined;
   }
@@ -224,13 +226,19 @@ function ChecksDraft({
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const kinds = (["picked", "job"] as const).flatMap((kind) => {
-    const file = draft.files.find(
-      (one) => one.path === (kind === "picked" ? TRIGGER_TESTS_FILE : OUTCOME_EVALS_FILE),
-    );
-    if (file === undefined) return [];
-    return [{ kind, checks: draftChecks(kind, file.after) }];
-  });
+  // Read once a draft: a tab drawn again (each step of a grade) parses nothing anew.
+  const kinds = useMemo(
+    () =>
+      (["picked", "job"] as const).flatMap((kind) => {
+        const path = kind === "picked" ? TRIGGER_TESTS_FILE : OUTCOME_EVALS_FILE;
+        const file = draft.files.find((one) => one.path === path);
+        if (file === undefined) return [];
+        return [{ kind, path, checks: draftChecks(kind, file.after) }];
+      }),
+    [draft.files],
+  );
+  // A file a grade could not run is said, and Accept waits: accepted, it would only be refused.
+  const unread = kinds.find((one) => one.checks === undefined);
   const answer = (act: () => Promise<{ status: "ok" } | { status: "error"; error: string }>) => {
     setBusy(true);
     void act()
@@ -254,11 +262,11 @@ function ChecksDraft({
       </CardTitle>
       {draft.stale && <Badge variant="waiting">Out of date</Badge>}
       <div className="skill-checks-kinds">
-        {kinds.map(({ kind, checks }) => (
+        {kinds.map(({ kind, path, checks }) => (
           <div key={kind} className="skill-checks-drafted">
             <p className="skill-checks-drafted-head">
               {checks === undefined
-                ? CHECK_KINDS[kind].question
+                ? `${CHECK_KINDS[kind].question} · ${path} can't be read as checks, so a grade couldn't run it.`
                 : `${CHECK_KINDS[kind].question} · ${checksSaid(kind, checks.length)}`}
             </p>
             {checks !== undefined && (
@@ -280,26 +288,34 @@ function ChecksDraft({
         {!draft.stale && (
           <Button
             variant="primary"
-            isDisabled={busy}
+            isDisabled={busy || unread !== undefined}
+            tooltip={
+              unread === undefined
+                ? undefined
+                : `${unread.path} can't be read as checks. Discard this draft and ask a chat again.`
+            }
             onPress={() => answer(() => commands.skillDraftAccept(plane, draft.id))}
           >
             Accept checks
           </Button>
         )}
-        <Button
-          isDisabled={busy}
-          onPress={() =>
-            askSkillChat({
-              plane,
-              kind: "redo",
-              id: draft.id,
-              name: draft.name,
-              chat: draft.chat_open ? draft.chat : null,
-            })
-          }
-        >
-          {draft.chat_open ? "Ask the chat to redo them" : "Ask a chat to redo them"}
-        </Button>
+        {/* A redo is for a draft whose files changed under it, as on Drafts (S9). */}
+        {draft.stale && (
+          <Button
+            isDisabled={busy}
+            onPress={() =>
+              askSkillChat({
+                plane,
+                kind: "redo",
+                id: draft.id,
+                name: draft.name,
+                chat: draft.chat_open ? draft.chat : null,
+              })
+            }
+          >
+            {draft.chat_open ? "Ask the chat to redo them" : "Ask a chat to redo them"}
+          </Button>
+        )}
         <Button
           variant="ghost"
           isDisabled={busy}
@@ -393,6 +409,8 @@ export function GradesTab({
 
   // Each answer is taken only in its own shape: a core that answers another leaves it unread.
   const rows = Array.isArray(grades.data?.grades) ? grades.data.grades : [];
+  // The job's columns are a grade's that ran outcome evals: a list with none draws without them.
+  const anyJob = rows.some((row) => row.outcome_arms !== null);
   const tests = typeof grades.data?.tests === "number" ? grades.data.tests : undefined;
   // A skill with outcome evals alone is graded too (SK-55).
   const evals = typeof grades.data?.evals === "number" ? grades.data.evals : 0;
@@ -451,6 +469,8 @@ export function GradesTab({
             : latest.arms
           : latest.outcome_arms;
     const file = kind === "picked" ? testsFile : evalsFile;
+    // Its own file says whether a chat's write to it would land in the skill.
+    const fileHeld = heldOf(file);
     const titleId = `skill-checks-${kind}`;
     return (
       <Card as="section" aria-labelledby={titleId} data-testid={titleId}>
@@ -466,8 +486,8 @@ export function GradesTab({
             <ButtonRow>
               <Button
                 size="sm"
-                isDisabled={held !== undefined}
-                tooltip={held}
+                isDisabled={fileHeld !== undefined}
+                tooltip={fileHeld}
                 onPress={() =>
                   askSkillChat({
                     plane,
@@ -502,8 +522,8 @@ export function GradesTab({
               <Button
                 size="sm"
                 variant="link"
-                isDisabled={heldOf(file) !== undefined}
-                tooltip={heldOf(file)}
+                isDisabled={fileHeld !== undefined}
+                tooltip={fileHeld}
                 onPress={() => {
                   if (file !== undefined && "open" in file) file.open();
                 }}
@@ -621,7 +641,7 @@ export function GradesTab({
                   variant={latest === undefined ? "primary" : "secondary"}
                   onPress={() => onGrading({ at: "plan" }, "go")}
                 >
-                  {`Grade ${name}…`}
+                  {latest === undefined ? `Grade ${name}…` : "Grade again…"}
                 </Button>
               </ButtonRow>
             </div>
@@ -641,70 +661,75 @@ export function GradesTab({
               {kindCard("job")}
             </div>
           </section>
-          {rows.length > 0 && (
-            <section aria-labelledby="skill-grades-title" className="skill-checks">
-              <PanelSectionTitle id="skill-grades-title">Grades</PanelSectionTitle>
-              {grades.data.said !== null && (
-                <p className="honest" role="note" data-testid="skill-grades-record">
-                  {grades.data.said}
-                </p>
-              )}
-              <Table aria-label={`Grades of ${name}`} data-testid="skill-grades-list">
-                <TableHeader>
-                  <TableColumn isRowHeader>Graded</TableColumn>
-                  <TableColumn>Version</TableColumn>
-                  <TableColumn>Ran on</TableColumn>
-                  <TableColumn align="end">Picked, with it</TableColumn>
-                  <TableColumn align="end">Without it</TableColumn>
-                  <TableColumn align="end">Previous</TableColumn>
-                  <TableColumn align="end">Does the job, with it</TableColumn>
-                  <TableColumn align="end">Without it</TableColumn>
-                  <TableColumn align="end">Spent</TableColumn>
-                  <TableColumn>Ended</TableColumn>
-                  <TableColumn hideName>Scorecard</TableColumn>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((row) => (
-                    <TableRow key={row.grade} id={row.grade} textValue={row.graded}>
-                      <TableCell>
-                        {row.after_edit ? `${row.graded} · after an edit` : row.graded}
-                      </TableCell>
-                      <TableCell>{row.version}</TableCell>
-                      <TableCell>{row.ran_on}</TableCell>
-                      <TableCell align="end">{pointsSaid(row.arms.with)}</TableCell>
-                      <TableCell align="end">{pointsSaid(row.arms.without)}</TableCell>
-                      <TableCell align="end">
-                        {row.arms.previous === null ? "—" : pointsSaid(row.arms.previous)}
-                      </TableCell>
-                      <TableCell align="end">
-                        {row.outcome_arms === null ? "—" : pointsSaid(row.outcome_arms.with)}
-                      </TableCell>
-                      <TableCell align="end">
-                        {row.outcome_arms === null ? "—" : pointsSaid(row.outcome_arms.without)}
-                      </TableCell>
-                      <TableCell align="end">{spentSaid(row)}</TableCell>
-                      <TableCell textValue={row.ended}>
-                        <Badge variant={OUTCOME_SAID[row.outcome].badge}>
-                          {row.outcome === "graded" ? OUTCOME_SAID.graded.said : row.ended}
-                        </Badge>
-                      </TableCell>
-                      <TableCell textValue="Scorecard">
-                        {/* Its name starts with the words it shows, so a voice user's words find it. */}
-                        <Button
-                          size="sm"
-                          aria-label={`${openSaid(row)} of the grade of ${row.graded}`}
-                          onPress={() => onGrading({ at: "scorecard", grade: row.grade }, "go")}
-                        >
-                          {openSaid(row)}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </section>
-          )}
         </>
+      )}
+      {/* Every grade, while it has any: its checks gone, its scorecards stay in reach. */}
+      {grades.refused === undefined && grades.data !== undefined && rows.length > 0 && (
+        <section aria-labelledby="skill-grades-title" className="skill-checks">
+          <PanelSectionTitle id="skill-grades-title">Grades</PanelSectionTitle>
+          {grades.data.said !== null && (
+            <p className="honest" role="note" data-testid="skill-grades-record">
+              {grades.data.said}
+            </p>
+          )}
+          <Table aria-label={`Grades of ${name}`} data-testid="skill-grades-list">
+            <TableHeader>
+              <TableColumn isRowHeader>Graded</TableColumn>
+              <TableColumn>Version</TableColumn>
+              <TableColumn>Ran on</TableColumn>
+              <TableColumn align="end">Picked, with it</TableColumn>
+              <TableColumn align="end">Picked, without it</TableColumn>
+              <TableColumn align="end">Previous</TableColumn>
+              {anyJob && <TableColumn align="end">Does the job, with it</TableColumn>}
+              {anyJob && <TableColumn align="end">Does the job, without it</TableColumn>}
+              <TableColumn align="end">Spent</TableColumn>
+              <TableColumn>Ended</TableColumn>
+              <TableColumn hideName>Scorecard</TableColumn>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.grade} id={row.grade} textValue={row.graded}>
+                  <TableCell>
+                    {row.after_edit ? `${row.graded} · after an edit` : row.graded}
+                  </TableCell>
+                  <TableCell>{row.version}</TableCell>
+                  <TableCell>{row.ran_on}</TableCell>
+                  <TableCell align="end">{pointsSaid(row.arms.with)}</TableCell>
+                  <TableCell align="end">{pointsSaid(row.arms.without)}</TableCell>
+                  <TableCell align="end">
+                    {row.arms.previous === null ? "—" : pointsSaid(row.arms.previous)}
+                  </TableCell>
+                  {anyJob && (
+                    <TableCell align="end">
+                      {row.outcome_arms === null ? "—" : pointsSaid(row.outcome_arms.with)}
+                    </TableCell>
+                  )}
+                  {anyJob && (
+                    <TableCell align="end">
+                      {row.outcome_arms === null ? "—" : pointsSaid(row.outcome_arms.without)}
+                    </TableCell>
+                  )}
+                  <TableCell align="end">{spentSaid(row)}</TableCell>
+                  <TableCell textValue={row.ended}>
+                    <Badge variant={OUTCOME_SAID[row.outcome].badge}>
+                      {row.outcome === "graded" ? OUTCOME_SAID.graded.said : row.ended}
+                    </Badge>
+                  </TableCell>
+                  <TableCell textValue="Scorecard">
+                    {/* Its name starts with the words it shows, so a voice user's words find it. */}
+                    <Button
+                      size="sm"
+                      aria-label={`${openSaid(row)} of the grade of ${row.graded}`}
+                      onPress={() => onGrading({ at: "scorecard", grade: row.grade }, "go")}
+                    >
+                      {openSaid(row)}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </section>
       )}
       <section aria-labelledby="skill-grades-after-edit" data-testid="skill-grades-after-edit">
         <PanelSectionTitle id="skill-grades-after-edit">Grade after each edit</PanelSectionTitle>

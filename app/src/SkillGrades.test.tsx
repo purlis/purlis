@@ -151,6 +151,12 @@ const DRAFT: SkillDraft = {
   ],
 };
 
+/** The Grades tab of deploy over a core that answers its grades `answer`. */
+function renderTabWith(answer: unknown) {
+  core({ skill_grades: answer });
+  return renderTab({ open: vi.fn() });
+}
+
 /** The Grades tab of deploy, and where each press went. */
 function renderTab(
   testsFile?: TestsFile,
@@ -313,7 +319,7 @@ describe("a skill's Grades tab (S6)", () => {
 
   it("offers a skill with only “picked” checks a chat for the job's, kept as a draft", async () => {
     core();
-    renderTab({ open: vi.fn() });
+    renderTab({ open: vi.fn() }, { evalsFile: { open: vi.fn() } });
     const job = await screen.findByRole("region", { name: "Does it do the job?" });
     expect(job).toHaveTextContent("None yet.");
     expect(within(job).queryByRole("group")).toBeNull();
@@ -382,6 +388,14 @@ describe("a skill's Grades tab (S6)", () => {
     expect(onGrading).toHaveBeenCalledWith({ at: "plan" }, "go");
   });
 
+  it("offers to grade again beside the heading once graded", async () => {
+    core();
+    const onGrading = renderTab();
+    const checks = await screen.findByTestId("skill-checks");
+    fireEvent.click(within(checks).getByRole("button", { name: "Grade again…" }));
+    expect(onGrading).toHaveBeenCalledWith({ at: "plan" }, "go");
+  });
+
   it("shows the checks a chat wrote as one draft, accepted whole", async () => {
     const asked = core({ skill_grades: grades([], 0), skill_draft_accept: { notes: [] } });
     renderTab({ open: vi.fn() }, { draft: DRAFT });
@@ -402,22 +416,102 @@ describe("a skill's Grades tab (S6)", () => {
     );
   });
 
-  it("discards a draft of checks, or asks its chat to redo them", async () => {
+  it("discards a draft of checks, and offers no redo while it is current", async () => {
     const asked = core({ skill_grades: grades([], 0), skill_draft_reject: null });
     renderTab({ open: vi.fn() }, { draft: DRAFT });
     const draft = await screen.findByTestId("skill-checks-draft");
-    const asks: SkillChatAsk[] = [];
-    const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
-    window.addEventListener(SKILL_CHAT, heard);
-    fireEvent.click(within(draft).getByRole("button", { name: "Ask the chat to redo them" }));
-    window.removeEventListener(SKILL_CHAT, heard);
-    expect(asks).toEqual([{ plane: "p", kind: "redo", id: "d1", name: "deploy", chat: 14 }]);
+    // A redo is for a draft whose files changed under it: a current one has nothing to redo.
+    expect(within(draft).queryByRole("button", { name: /redo/ })).toBeNull();
     fireEvent.click(within(draft).getByRole("button", { name: "Discard" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_draft_reject")?.args).toEqual({
         plane: "p",
         id: "d1",
       }),
+    );
+  });
+
+  it("asks the chat to redo a draft of checks that is out of date, and offers no Accept", async () => {
+    core({ skill_grades: grades([], 0) });
+    renderTab({ open: vi.fn() }, { draft: { ...DRAFT, stale: true } });
+    const draft = await screen.findByTestId("skill-checks-draft");
+    expect(draft).toHaveTextContent("Out of date");
+    expect(within(draft).queryByRole("button", { name: "Accept checks" })).toBeNull();
+    const asks: SkillChatAsk[] = [];
+    const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
+    window.addEventListener(SKILL_CHAT, heard);
+    fireEvent.click(within(draft).getByRole("button", { name: "Ask the chat to redo them" }));
+    window.removeEventListener(SKILL_CHAT, heard);
+    expect(asks).toEqual([{ plane: "p", kind: "redo", id: "d1", name: "deploy", chat: 14 }]);
+  });
+
+  it("says a drafted file it can't read as checks, and holds Accept", async () => {
+    core({ skill_grades: grades([], 0) });
+    const broken = {
+      ...DRAFT,
+      files: [
+        file("evals/triggers.json", '[{"query": "deploy the api"'),
+        file("evals/evals.json", JSON.stringify({ evals: [{ id: 1, task: "Deploy svc" }] })),
+      ],
+    };
+    renderTab({ open: vi.fn() }, { draft: broken });
+    const draft = await screen.findByTestId("skill-checks-draft");
+    expect(draft).toHaveTextContent(
+      "Does it get picked? · evals/triggers.json can't be read as checks, so a grade couldn't run it.",
+    );
+    expect(draft).toHaveTextContent(
+      "Does it do the job? · evals/evals.json can't be read as checks, so a grade couldn't run it.",
+    );
+    const accept = within(draft).getByRole("button", { name: "Accept checks" });
+    expect(accept.getAttribute("aria-disabled") === "true" || accept.hasAttribute("disabled")).toBe(
+      true,
+    );
+  });
+
+  it("keeps a skill's grades in reach after its checks are gone", async () => {
+    const onGrading = renderTabWith(grades(GRADES, 0));
+    await screen.findByTestId("skill-checks-none");
+    const list = await screen.findByRole("grid", { name: "Grades of deploy" });
+    fireEvent.click(
+      within(list).getByRole("button", { name: "Scorecard of the grade of 2026-10-28 10:00 UTC" }),
+    );
+    expect(onGrading).toHaveBeenLastCalledWith({ at: "scorecard", grade: "01C" }, "go");
+  });
+
+  it("names each kind's columns apart, and draws the job's only where a grade ran them", async () => {
+    core({
+      skill_grades: {
+        ...grades([row("01C", { outcome_arms: { with: 75, without: 20, previous: null } })]),
+        evals: 1,
+      },
+    });
+    renderTab();
+    const list = await screen.findByRole("grid", { name: "Grades of deploy" });
+    const names = within(list)
+      .getAllByRole("columnheader")
+      .map((one) => one.textContent);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "Picked, without it",
+        "Does the job, with it",
+        "Does the job, without it",
+      ]),
+    );
+    expect(new Set(names).size).toBe(names.length);
+    cleanup();
+    core();
+    renderTab();
+    const only = await screen.findByRole("grid", { name: "Grades of deploy" });
+    expect(within(only).queryByRole("columnheader", { name: /Does the job/ })).toBeNull();
+  });
+
+  it("holds each kind's ask by its own file", async () => {
+    core();
+    renderTab({ reason: "Its file is outside the project." }, { evalsFile: { open: vi.fn() } });
+    const job = await screen.findByRole("region", { name: "Does it do the job?" });
+    const offer = within(job).getByRole("button", { name: "Ask a chat to write these" });
+    expect(offer.getAttribute("aria-disabled") === "true" || offer.hasAttribute("disabled")).toBe(
+      false,
     );
   });
 
