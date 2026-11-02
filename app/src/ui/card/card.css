@@ -234,6 +234,8 @@
 [data-scope="card-button"][data-part="root"][data-variant="row"] {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
+  /* A row stretched to its neighbours keeps its title and line together. */
+  align-content: start;
   column-gap: var(--space-5);
   row-gap: var(--space-1);
   align-items: start;
