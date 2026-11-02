@@ -4289,13 +4289,14 @@ export function briefRows(listed: readonly ListedChat[]): Offer[] {
  * **Answer, for a task paused on a question to its asking chat** (#1496, #1551):
  * `chat.answer:<session>`, which opens a form that answers it as the person. On the task's row
  * menu in the Chats list, on its own tab's menu, and in the palette; a tab's menu offers it at
- * the end of the task's line. **Only while the task is asking**: the row is gone once it is
- * answered or has moved on, and a form opened just before says so itself. It sends nothing:
+ * the end of the task's line. **Only while the task has an open question**, with its asking
+ * chat or waiting on the person (#4564, spec #4551 story 30): the row is gone once it is
+ * answered, and a form opened just before says so itself. It sends nothing:
  * the form's Send does, so it is among a menu's ordinary rows.
  */
 export function answerRows(listed: readonly ListedChat[]): Offer[] {
   return listed
-    .filter((chat) => chat.mode === "task" && chat.asking !== null)
+    .filter((chat) => chat.mode === "task" && (chat.question ?? null) !== null)
     .map((chat) => ({
       ...can(
         answerId(chat.session),
