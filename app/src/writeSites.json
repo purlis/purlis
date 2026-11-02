@@ -262,12 +262,12 @@
     },
     {
       "at": "loginasks.rs pressed",
-      "writes": "the project's manifest and this machine's answers about it (sandbox-grants)",
+      "writes": "this machine's network record",
       "by": ["answerBrowserLogin"]
     },
     {
       "at": "loginasks.rs written",
-      "writes": "the project's manifest and this machine's answers about it (sandbox-grants)",
+      "writes": "the project's manifest and its local settings",
       "by": ["answerBrowserLogin"]
     },
     {
