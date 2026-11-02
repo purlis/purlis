@@ -1434,6 +1434,7 @@ fn an_outcome_chat_has_no_shell() {
             sandbox: serde_json::json!({"enabled": enabled}),
             deny: Vec::new(),
             made_empty: Vec::new(),
+            made_folders: Vec::new(),
         };
         let text = settings(
             std::path::Path::new("/bin/purlis"),

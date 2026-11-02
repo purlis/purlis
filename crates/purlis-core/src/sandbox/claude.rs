@@ -129,6 +129,28 @@ pub struct Settings {
     /// Files made, empty, where there is none, before the chat starts ([`Self::make_empty`]):
     /// on Linux at the floor, the home's git config ([`HOME_GIT_CONFIG`]).
     pub made_empty: Vec<PathBuf>,
+    /// Folders made, empty, where there is none, before the chat starts ([`Self::make_empty`]):
+    /// at the floor, each folder in the home above a name a person may lift
+    /// ([`super::MAY_LIFT`]). Claude Code pins every folder above a held path, so neither a
+    /// tool's first run nor a lift could make them in the chat.
+    pub made_folders: Vec<PathBuf>,
+}
+
+/// The folders above each name of [`super::MAY_LIFT`] in `home`, outermost first, `home` and the
+/// names themselves left out ([`Settings::made_folders`]).
+fn above_what_may_be_lifted(home: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    for name in super::MAY_LIFT {
+        let mut at = home.to_path_buf();
+        let parts: Vec<_> = Path::new(name).components().collect();
+        for part in &parts[..parts.len().saturating_sub(1)] {
+            at.push(part);
+            if !out.contains(&at) {
+                out.push(at.clone());
+            }
+        }
+    }
+    out
 }
 
 /// macOS's terminals, by a glob. Claude Code turns it into the regex `^/dev/ttys[^/]*(/.*)?$` in
@@ -207,11 +229,17 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     // The later-code class (ruling V73b), by name at any depth: added to the names Claude
     // Code's own sandbox already keeps commands from writing, never in their place. A name
     // that holds only itself (`.git`) is left out: a glob here denies what is below it too,
-    // and git writes there.
-    for planted in super::PLANTED
-        .iter()
-        .filter(|planted| planted.reach == super::Reach::AndBelow)
-    {
+    // and git writes there. A glob can't be written past one path, so a name a person lifted for
+    // this chat goes whole ([`super::grant::lift`]; its Notice says so).
+    let held = |planted: &&super::Planted| {
+        planted.reach == super::Reach::AndBelow
+            && !compiled
+                .widened
+                .lifted
+                .iter()
+                .any(|folder| folder.ends_with(planted.path))
+    };
+    for planted in super::PLANTED.iter().filter(held) {
         let glob = format!("**/{}", planted.path);
         deny_write.extend(plain_and_cased("**/", planted.path));
         edit_rules.push(format!("Edit({glob})"));
@@ -221,10 +249,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     // relative `**/<name>` is read against the chat's folder, so it is not known to hold in a
     // folder outside it (D-1342-3). The folder is the kernel's spelling already (D-1342-12).
     for folder in &compiled.writable {
-        for planted in super::PLANTED
-            .iter()
-            .filter(|planted| planted.reach == super::Reach::AndBelow)
-        {
+        for planted in super::PLANTED.iter().filter(held) {
             let glob = format!("{}/**/{}", folder.display(), planted.path);
             edit_rules.push(format!("Edit(/{glob})"));
             edit_rules.push(format!("Edit(/{glob}/**)"));
@@ -331,10 +356,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         }
         // Every later-code name wherever it is, the home's among them: a relative `**/<name>`
         // is read against the chat's folder, and at the floor every folder is written.
-        for planted in super::PLANTED
-            .iter()
-            .filter(|planted| planted.reach == super::Reach::AndBelow)
-        {
+        for planted in super::PLANTED.iter().filter(held) {
             let mut globs = vec![(
                 format!("/**/{}", planted.path),
                 format!("/**/{}", either_case(planted.path)),
@@ -453,6 +475,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         sandbox,
         deny,
         made_empty: Vec::new(),
+        made_folders: Vec::new(),
     }
 }
 
@@ -503,6 +526,10 @@ fn floor(
             Some(home) if compiled.os == Os::Linux => vec![home.join(HOME_GIT_CONFIG)],
             _ => Vec::new(),
         },
+        made_folders: match &compiled.homes.home {
+            Some(home) if compiled.level == Level::Floor => above_what_may_be_lifted(home),
+            None => Vec::new(),
+        },
     }
 }
 
@@ -513,10 +540,22 @@ impl Settings {
         self.sandbox.get("enabled") == Some(&Value::Bool(false))
     }
 
-    /// Makes each of [`Self::made_empty`], outside the sandbox, as an empty file where nothing
-    /// is there: a file already there keeps what it holds, and a link, even one to nothing, is
-    /// neither followed nor replaced. One not made is left to the chat, whose git then says why.
+    /// Makes each of [`Self::made_folders`], then each of [`Self::made_empty`], outside the
+    /// sandbox, empty, where nothing is there: what is already there keeps what it holds, and a
+    /// link, even one to nothing, is neither followed nor replaced. One not made is left to the
+    /// chat, whose tool then says why.
     pub fn make_empty(&self) {
+        for folder in &self.made_folders {
+            if std::fs::symlink_metadata(folder).is_ok() {
+                continue;
+            }
+            if let Err(err) = std::fs::create_dir(folder) {
+                tracing::warn!(
+                    "purlis: {} was not made for the chat ({err})",
+                    folder.display()
+                );
+            }
+        }
         for path in &self.made_empty {
             match std::fs::OpenOptions::new()
                 .write(true)

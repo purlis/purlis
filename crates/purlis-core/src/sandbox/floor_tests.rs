@@ -1875,6 +1875,13 @@ fn a_forge_programs_and_kubectls_settings_are_held_from_writing() {
         ".config/glab-cli",
         ".local/share/gh",
         ".kube/kuberc",
+        ".local/share/fish/vendor_conf.d",
+        ".local/share/fish/vendor_functions.d",
+        ".local/share/nvim/site/plugin",
+        ".local/share/nvim/site/ftplugin",
+        ".local/share/nvim/site/pack",
+        ".local/share/bash-completion/completions",
+        ".local/share/dbus-1/services",
         ".claude/rules",
     ] {
         assert!(
@@ -1910,6 +1917,40 @@ fn every_name_that_may_be_lifted_is_held() {
             assert!(!name.starts_with(never), "{name}");
         }
     }
+}
+
+/// A Claude Code chat's globs can't stop at one path: the name it was allowed goes whole, in its
+/// sandbox and for its Edit tool, at every depth and in the home, and its neighbours stay held.
+#[test]
+fn a_name_lifted_for_a_claude_code_chat_goes_whole_and_alone() {
+    let (_dir, root) = project();
+    let home = root.join("home");
+    std::fs::create_dir_all(&home).expect("a home");
+    let machine = homed(&home, &[]);
+    let mut chat = grant::Grants::default();
+    chat.add(&grant::What::Write(home.join(".config/gh")));
+    let compiled = Compiled::floor(&root, &machine, &chat);
+    assert_eq!(compiled.widened.lifted, vec![home.join(".config/gh")]);
+    let compile = compiler(Harness::ClaudeCode).expect("a compiler");
+    let Form::ClaudeCode(settings) = compile(&compiled).expect("compiled") else {
+        unreachable!();
+    };
+    for rules in [settings.sandbox.to_string(), settings.deny.join("\n")] {
+        assert!(!rules.contains(".config/gh"), "{rules}");
+        assert!(
+            !rules.contains(&claude::either_case(".config/gh")),
+            "{rules}"
+        );
+        for held in [".config/glab-cli", ".local/share/gh", ".claude/rules"] {
+            assert!(rules.contains(held), "{held}: {rules}");
+        }
+    }
+    // Nothing was lifted for another chat, whatever a compile of its own holds.
+    let other = Compiled::floor(&root, &machine, &grant::Grants::default());
+    let Form::ClaudeCode(settings) = compile(&other).expect("compiled") else {
+        unreachable!();
+    };
+    assert!(settings.sandbox.to_string().contains(".config/gh"));
 }
 
 /// What the floor makes is a later-code name it holds, the home's among them.
@@ -2127,4 +2168,41 @@ fn a_link_on_the_way_to_a_held_path_cannot_be_moved_away_at_the_floor() {
         String::from_utf8_lossy(&ran.stderr)
     );
     assert!(home.join("real/through").exists());
+}
+
+/// Claude Code pins every folder above a held path, so the floor makes the home's folders above
+/// each name a person may lift before the chat starts: a tool's first run, and a lift, write
+/// below them, only where none is there, and never through a link.
+#[test]
+fn the_folders_above_what_may_be_lifted_are_made_before_a_floor_chat() {
+    let (_dir, root) = project();
+    let home = root.join("home");
+    std::fs::create_dir_all(home.join(".config")).expect("a home");
+    let machine = homed(&home, &[]);
+    let compile = compiler(Harness::ClaudeCode).expect("a compiler");
+    let compiled = Compiled::floor(&root, &machine, &grant::Grants::default());
+    let Form::ClaudeCode(settings) = compile(&compiled).expect("compiled") else {
+        unreachable!();
+    };
+    for folder in [
+        ".kube",
+        ".local/share/nvim/site",
+        ".local/share/fish",
+        ".config",
+    ] {
+        assert!(
+            settings.made_folders.contains(&home.join(folder)),
+            "{folder}: {:?}",
+            settings.made_folders
+        );
+    }
+    assert!(!settings.made_folders.contains(&home.join(".config/gh")));
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(root.join("elsewhere"), home.join(".kube")).expect("a link");
+    settings.make_empty();
+    assert!(home.join(".local/share/nvim/site").is_dir());
+    assert!(!home.join(".local/share/nvim/site/plugin").exists());
+    assert!(!home.join(".config/gh").exists());
+    #[cfg(unix)]
+    assert!(!root.join("elsewhere").exists(), "the link was followed");
 }
