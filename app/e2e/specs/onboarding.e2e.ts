@@ -119,11 +119,20 @@ async function untilTheStep(heading: string, timeout = 30_000): Promise<void> {
 
 /** What the steps say of where the person is: "Step N of M: name". */
 async function stepSaid(): Promise<string> {
-  return browser.execute(
-    (css: string) =>
-      document.querySelector(`${css} .onboarding-count`)?.textContent?.replace(/\s+/g, " ") ?? "",
-    STEPS,
+  let said = "";
+  await browser.waitUntil(
+    async () => {
+      said = await browser.execute(
+        (css: string) =>
+          document.querySelector(`${css} .onboarding-count`)?.textContent?.replace(/\s+/g, " ") ??
+          "",
+        STEPS,
+      );
+      return said !== "";
+    },
+    { timeout: 10_000, timeoutMsg: "the steps never said where the person is" },
   );
+  return said;
 }
 
 /** Answers the trust question when it is up, until `done` holds. */
