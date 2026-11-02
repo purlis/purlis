@@ -1210,6 +1210,9 @@ describe("the Project level of a read-only project (#826)", () => {
       "Network: A service on this Mac",
       "Network: Allowed for",
       "Network: Open that page",
+      // Where this machine runs the project's chats, kept in its own store (#4536).
+      "Runs on: This machineChats run here, in this machine's sandbox.",
+      "Runs on: Add a pool…",
       "Extensions: Go to Extensions…",
       // Settings › Theme writes this machine alone (#2331); with no gallery from the mock core
       // it has no card and its buttons are off.
