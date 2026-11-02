@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793643197739,
+  "lastUpdate": 1793645101794,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36582,6 +36582,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9725155,
             "unit": "ms",
             "extra": "median of 5 runs: 101.554, 101.840, 101.973, 102.193, 103.525 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4376c0def59f39f0e8249f1bcd7b7ea6905d4873",
+          "message": "e2e: project-expects waits for the refusal and B in one read (#4665) (#4809)\n\nThe window draws B late: a refused Allow sets its sentence at once and reads the list again\nafter, so the Notice drawn in between says the sentence beside A's list. The spec read once on\nthe sentence (run 40655742573). #4136 added a wait for B; this makes it one bounded wait for\nboth, never a read of either alone.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6E3DXSQ635GS4ZWMK2DS39K\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T15:16:24Z",
+          "tree_id": "c04fe446ec1633d320a7e990e7ddbb3041aee376",
+          "url": "https://github.com/purlis/purlis/commit/4376c0def59f39f0e8249f1bcd7b7ea6905d4873"
+        },
+        "date": 1793645097976,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7048369999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.680, 0.692, 0.705, 0.713, 0.723 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.683329,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.381, 16.484, 16.683, 16.700, 16.707 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3812265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.778, 101.977, 102.381, 102.639, 103.505 ms"
           }
         ]
       }
