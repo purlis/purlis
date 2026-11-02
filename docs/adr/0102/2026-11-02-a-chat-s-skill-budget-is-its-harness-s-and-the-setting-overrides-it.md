@@ -42,7 +42,7 @@ Codex and opencode stay where they are until Codex is measured again. The Skill 
 - **A raised Claude Code budget raises the limit it is handed.**
 - **Past Codex's limit, Settings says so and what Codex would drop.** Nothing is refused for being large. Only what no reader takes is refused: a value that isn't a whole number of at least 1.
 - **Claude Code never warns**, because its limit follows the budget. opencode has none.
-- **A router extension is told each skill's cost.** `route` hands each skill a `chars`, what it costs of the budget on that harness, since on Claude Code that is its whole line. A router adds those up.
+- **A router extension isn't told each skill's cost.** Protocol 4's `route` is frozen (ADR 0101, amended 2026-11-02), so it holds each skill's name, description and pin as it did. Its `budget` and `besides` count what the harness counts, which on Claude Code is the whole line, so a router that adds description lengths under-counts there, and the chat falls back to the built-in router. The operator chose this over changing the frozen question; a protocol that carries each skill's cost is a ticket of its own.
 - **A running chat keeps what it was handed.** Use skill… works a chat's set out now, as the 2026-10-21 record says, so a budget changed after a chat started shows there at once, and its restart offer is the answer. The limit it was handed is the one from its start.
 
 ## What this costs, and what isn't measured

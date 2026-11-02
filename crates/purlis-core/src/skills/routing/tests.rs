@@ -1003,5 +1003,5 @@ fn a_written_budget_moves_the_line_the_router_hides_at_and_a_pin_still_keeps_a_s
     assert!(pin(root, &workspace, "skill-03", true).unwrap());
     let mut kept = laid_out(root, &bundle, None);
     kept.sort();
-    assert_eq!(kept, ["skill-03", INDEX]);
+    assert_eq!(kept, [INDEX, "skill-03"]);
 }

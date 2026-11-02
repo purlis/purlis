@@ -250,11 +250,10 @@ impl SkillSet {
             skills: parts
                 .could
                 .iter()
-                .map(|one| Candidate {
-                    name: one.0.skill.name.clone(),
-                    description: one.0.skill.description.clone(),
-                    pinned: parts.pins.contains(one.0.skill.name.as_str()),
-                    chars: cost(std::iter::once(one), budget).chars,
+                .map(|(e, _)| Candidate {
+                    name: e.skill.name.clone(),
+                    description: e.skill.description.clone(),
+                    pinned: parts.pins.contains(e.skill.name.as_str()),
                 })
                 .collect(),
             besides: cost(parts.fixed(), budget),
@@ -458,8 +457,6 @@ pub struct Candidate {
     pub name: String,
     pub description: String,
     pub pinned: bool,
-    /// What it costs of the budget's characters, as the harness's limit counts it.
-    pub chars: usize,
 }
 
 /// A set's listing, split by what a router may do with each skill.
