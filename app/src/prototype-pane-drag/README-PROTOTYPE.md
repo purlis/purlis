@@ -55,4 +55,4 @@ node src/prototype-pane-drag/capture.mjs
 
 ## Verdict
 
-Waiting on the person's review.
+Accepted by the person on 2026-11-02, the recommendation on all four: variant A (zones plus placement mode); another workspace's chat may land in a pane by drag only; every move found here is added to D6; Tile all tiles the tab's own panes, with Undo. The resolution is on #4583.
