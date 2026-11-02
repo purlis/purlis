@@ -1,0 +1,245 @@
+/* PROTOTYPE, throwaway (#4582). Theme tokens only, so light, dark and themes follow. */
+
+.ot-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding-block-end: 92px;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-base);
+}
+.ot-root[data-bare] { padding-block-end: 0; }
+.ot-root p { margin: 0; }
+.ot-grow { flex: 1; }
+.ot-glyph { inline-size: 16px; block-size: 16px; color: var(--text-secondary); flex: none; }
+
+/* Title bar with the chips (stand-ins of #3647's). */
+.ot-title {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  block-size: 38px;
+  padding-inline: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+}
+.ot-lights { display: inline-flex; gap: 8px; margin-inline-end: var(--space-4); }
+.ot-lights i { inline-size: 12px; block-size: 12px; border-radius: 50%; background: var(--border-subtle); }
+.ot-chip-wrap { position: relative; display: inline-flex; }
+.ot-chip {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  block-size: 26px;
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  cursor: default;
+}
+.ot-chip:hover { background: var(--surface-raised, var(--surface-base)); }
+.ot-chip[aria-current="page"] { color: var(--text-primary); background: var(--surface-base); box-shadow: inset 0 0 0 1px var(--border-subtle); }
+.ot-chip svg { inline-size: 15px; block-size: 15px; }
+.ot-chip:focus-visible, .ot-tab-press:focus-visible, .ot-row:focus-visible { outline: 2px solid var(--accent-base); outline-offset: -2px; }
+.ot-dot {
+  all: unset;
+  position: absolute;
+  inset-block-start: 1px;
+  inset-inline-end: -1px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--accent-base);
+  box-shadow: 0 0 0 2px var(--surface-sunken);
+  cursor: default;
+}
+.ot-hand { all: unset; display: inline-flex; gap: var(--space-1); align-items: center; padding-inline: var(--space-2); color: var(--text-secondary); }
+.ot-hand svg { inline-size: 16px; block-size: 16px; }
+
+.ot-body { flex: 1; min-block-size: 0; display: flex; }
+
+/* Sidebar; the row's frame is a stand-in, its icon is the real one. */
+.ot-side {
+  flex: none;
+  inline-size: 280px;
+  overflow: auto;
+  padding: var(--space-2) var(--space-2) var(--space-4);
+  background: var(--panel-fill);
+  border-inline-end: 1px solid var(--border-subtle);
+}
+.ot-side ul { list-style: none; margin: 0; padding: 0; }
+.ot-side-head { display: flex; align-items: center; justify-content: space-between; padding: var(--space-1) var(--space-2) var(--space-2); font-size: var(--font-size-sm); }
+.ot-side-ws { padding: var(--space-3) var(--space-2) var(--space-1); font-size: var(--font-size-xs, 11px); text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.ot-side-none { padding: var(--space-3); }
+.ot-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  block-size: 26px;
+  padding-inline-end: var(--space-1);
+  border-radius: var(--radius-sm, 4px);
+  cursor: default;
+  position: relative;
+}
+.ot-row:hover { background: var(--surface-sunken); }
+.ot-row[data-current] { background: var(--accent-surface, var(--surface-sunken)); }
+.ot-row[data-shown]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 5px;
+  inline-size: 2px;
+  border-radius: 1px;
+  background: var(--accent-base);
+  opacity: .55;
+}
+.ot-row-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ot-row-hand { inline-size: 13px; block-size: 13px; color: var(--state-waiting, var(--text-secondary)); }
+.ot-row-tab { all: unset; display: none; padding: 2px; color: var(--text-muted); }
+.ot-row-tab svg { inline-size: 13px; block-size: 13px; }
+.ot-row:hover .ot-row-tab { display: inline-flex; }
+
+.ot-main { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; }
+
+/* The strip. */
+.ot-strip {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: var(--space-1) var(--space-2) 0;
+  background: var(--surface-sunken);
+  border-block-end: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+.ot-tab {
+  display: inline-flex;
+  align-items: center;
+  max-inline-size: 220px;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  color: var(--text-muted);
+}
+.ot-tab[aria-selected="true"] { color: var(--text-primary); background: var(--surface-base); box-shadow: inset 0 0 0 1px var(--border-subtle); }
+.ot-tab-press {
+  all: unset;
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-inline-size: 0;
+  padding: 6px var(--space-1) 6px var(--space-3);
+  font-size: var(--font-size-sm);
+  cursor: default;
+}
+.ot-tab-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ot-tab-x { all: unset; display: inline-flex; padding: 3px; margin-inline-end: var(--space-1); border-radius: var(--radius-sm, 4px); opacity: 0; }
+.ot-tab:hover .ot-tab-x, .ot-tab[aria-selected="true"] .ot-tab-x { opacity: .7; }
+.ot-tab-x svg { inline-size: 12px; block-size: 12px; }
+.ot-pin { inline-size: 11px; block-size: 11px; color: var(--text-muted); }
+.ot-split-more { display: inline-flex; align-items: center; gap: 2px; font-size: var(--font-size-xs, 11px); color: var(--text-muted); }
+.ot-split-more svg { inline-size: 12px; block-size: 12px; }
+.ot-strip-plus { all: unset; display: inline-flex; padding: 6px; margin-block-end: 2px; color: var(--text-muted); }
+.ot-strip-plus svg { inline-size: 14px; block-size: 14px; }
+
+/* Variant C: a tab is its layout, one cell per pane. */
+.ot-layout { display: inline-flex; align-items: center; gap: 3px; }
+.ot-cell { display: inline-flex; padding: 1px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--border-subtle); }
+.ot-cell[data-focus] { box-shadow: inset 0 0 0 1.5px var(--accent-base); }
+.ot-layout[data-n="1"] .ot-cell { box-shadow: none; padding: 0; }
+
+/* Panes. */
+.ot-panes { flex: 1; min-block-size: 0; display: flex; gap: 1px; background: var(--border-subtle); }
+.ot-pane { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; background: var(--terminal-background, var(--surface-base)); }
+.ot-pane[data-focus] { box-shadow: inset 0 2px 0 var(--accent-base); }
+.ot-pane-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  block-size: 30px;
+  padding-inline: var(--space-3) var(--space-1);
+  font-size: var(--font-size-sm);
+  border-block-end: 1px solid var(--border-subtle);
+}
+.ot-pane-where { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ot-pane-body { flex: 1; min-block-size: 0; position: relative; display: flex; }
+.ot-term {
+  margin: 0;
+  flex: 1;
+  padding: var(--space-3);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--terminal-foreground, var(--text-primary));
+  white-space: pre-wrap;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.ot-view { padding: var(--space-5); }
+.ot-view h2 { margin: 0 0 var(--space-2); font-size: var(--font-size-lg, 16px); }
+.ot-empty { flex: 1; display: flex; position: relative; }
+.ot-empty > [data-scope="empty-state"] { flex: 1; }
+.ot-empty-x { position: absolute; inset-block-start: var(--space-1); inset-inline-end: var(--space-1); }
+
+.ot-status {
+  flex: none;
+  block-size: 24px;
+  display: flex;
+  align-items: center;
+  padding-inline: var(--space-3);
+  font-size: var(--font-size-xs, 11px);
+  border-block-start: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+}
+
+/* The handoff card hanging from its chip. */
+.ot-card-at { position: fixed; z-index: 20; inline-size: 340px; }
+.ot-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+.ot-card-head { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); }
+.ot-card-acts { display: flex; gap: var(--space-2); }
+
+/* The prototype's bar: not the design. */
+.ot-bar {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 30;
+  padding: 6px 12px 8px;
+  background: #1d1b24;
+  color: #eee;
+  border-block-start: 2px dashed #f0b44c;
+  font: 12px/1.4 system-ui, sans-serif;
+}
+.ot-bar-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ot-bar button, .ot-bar select {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: #2e2b38;
+  color: #eee;
+  cursor: default;
+}
+.ot-bar button svg { inline-size: 14px; block-size: 14px; }
+.ot-bar button[aria-pressed="true"] { background: #f0b44c; color: #1d1b24; }
+.ot-bar-sep { inline-size: 1px; block-size: 18px; background: #444; margin-inline: 4px; }
+.ot-bar-says { margin-block-start: 4px; color: #cfcbd9; }
+.ot-bar-time { color: #9d98ad; }
+
+/* The combined icon off the sidebar: App.css scopes it to `.chats-section`, so the window wears
+   that class here; each surface says the ground the badge is ringed in. */
+.ot-root { --chats-mark: 18px; }
+.ot-strip .chat-persona { --chat-badge-ground: var(--surface-sunken); }
+.ot-tab[aria-selected="true"] .chat-persona, .ot-pane-head .chat-persona { --chat-badge-ground: var(--surface-base); }
+.ot-pane-head .chat-persona { --chat-badge-ground: var(--terminal-background, var(--surface-base)); }
+.ot-card .chat-persona { --chat-badge-ground: var(--surface-raised, var(--surface-base)); }
+.ot-row:hover .chat-persona { --chat-badge-ground: var(--surface-sunken); }
+.ot-row[data-current] .chat-persona { --chat-badge-ground: var(--accent-surface, var(--surface-sunken)); }
+.ot-cell .chat-persona { --chat-badge-ground: var(--surface-sunken); }
+.ot-side li.ot-li { display: block; }
