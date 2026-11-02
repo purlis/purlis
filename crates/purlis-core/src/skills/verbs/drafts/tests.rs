@@ -850,7 +850,7 @@ fn a_draft_not_out_of_date_keeps_adding_to_its_own_copy() {
 #[test]
 fn the_redo_prompt_names_the_skills_file_and_asks_a_new_chat_for_the_change() {
     let same = redoing(&Level::project(), "deploy", &["notes.md"], true);
-    assert!(same.contains("skills/deploy/notes.md"), "{same}");
+    assert!(same.contains("notes.md in skills/deploy "), "{same}");
     assert!(
         !same.contains("SKILL.md"),
         "only the files out of date: {same}"
@@ -864,9 +864,7 @@ fn the_redo_prompt_names_the_skills_file_and_asks_a_new_chat_for_the_change() {
         false,
     );
     assert!(
-        new.contains(
-            "personas/reviewer/skills/triage/SKILL.md, personas/reviewer/skills/triage/check.sh"
-        ),
+        new.contains("SKILL.md, check.sh in personas/reviewer/skills/triage changed"),
         "{new}"
     );
     assert!(new.ends_with("The change should "), "{new}");
@@ -939,7 +937,10 @@ fn the_improve_prompt_reads_the_runs_and_grades_of_that_copy_and_ends_in_a_draft
         prompt.contains("purlis skill grade deploy --json"),
         "{prompt}"
     );
-    assert!(prompt.contains("the deploy skill in skills/deploy "), "{prompt}");
+    assert!(
+        prompt.contains("the project copy of the deploy skill, in skills/deploy,"),
+        "{prompt}"
+    );
     assert!(
         !prompt.chars().any(char::is_control),
         "one line: {prompt:?}"
@@ -951,7 +952,7 @@ fn the_improve_prompt_reads_the_runs_and_grades_of_that_copy_and_ends_in_a_draft
         local.contains("purlis skill grade mine --local --json"),
         "{local}"
     );
-    assert!(local.contains("skills.local/mine "), "{local}");
+    assert!(local.contains("skills.local/mine,"), "{local}");
 
     std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
     a_skill_named(root, "workspaces/ops/skills/ship", "ship");
@@ -1224,6 +1225,9 @@ fn every_skill_studio_prompt_reads_whole_in_every_harness_it_is_typed_into() {
         said.push(improving_from_runs(root, &level, &name).unwrap());
         said.push(asking(&level, &"x".repeat(2_000)));
         said.push(asking(&level, ""));
+        let stale = ["SKILL.md", "evals/evals.json", "evals/triggers.json", "scripts/run.sh"];
+        said.push(redoing(&level, &name, &stale, true));
+        said.push(redoing(&level, &name, &stale, false));
     }
     let drawn: Vec<String> = said
         .iter()
@@ -1255,6 +1259,7 @@ fn each_skill_studio_prompt_names_the_skill_that_holds_its_steps() {
         asking_for_trigger_tests(root, &level, "deploy").unwrap(),
         asking_for_outcome_evals(root, &level, "deploy").unwrap(),
         improving_from_runs(root, &level, "deploy").unwrap(),
+        redoing(&level, "deploy", &["SKILL.md"], false),
     ] {
         assert!(prompt.starts_with(&use_it), "{prompt}");
         assert!(!prompt.chars().any(char::is_control), "{prompt:?}");

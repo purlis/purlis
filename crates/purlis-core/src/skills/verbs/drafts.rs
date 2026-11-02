@@ -1450,36 +1450,32 @@ pub fn improving_from_runs(root: &Path, level: &Level, name: &str) -> Result<Str
     let at = told_folder(root, level, name, "improve it")?;
     let flags = level_flags(level);
     Ok(format!(
-        "Use the {STUDIO_SKILL} skill to improve the {name} skill in {at} from its runs and its \
-         grades (purlis skill grade {name}{flags} --json)."
+        "Use the {STUDIO_SKILL} skill to improve the {level} copy of the {name} skill, in {at}, \
+         from its runs and its grades (purlis skill grade {name}{flags} --json)."
     ))
 }
 
 /// **The prompt "Ask the chat to redo it" types** (S9), unsent, for the draft of the skill in
 /// `folder` at `level` whose files `stale` (below the skill's folder) the project changed since:
 /// into the chat that drafted it where it is still open (`same_chat`), else into a new chat that
-/// starts where `level`'s skills are reached from, as [`asking`]'s does. It asks for each whole
-/// file, which [`take`] drafts afresh on the project's copy. One line; a new chat's ends where
-/// the person says what the change was.
+/// starts where `level`'s skills are reached from, as [`asking`]'s does, naming [`STUDIO_SKILL`].
+/// It asks for each whole file, which [`take`] drafts afresh on the project's copy. The skill's
+/// folder is named once and each file from it, so a long folder is not said once a file (#4714).
+/// One line; a new chat's ends where the person says what the change was.
 pub fn redoing(level: &Level, folder: &str, stale: &[&str], same_chat: bool) -> String {
-    let dir = skills_dir_told(level);
-    let files = stale
-        .iter()
-        .map(|path| format!("{dir}/{folder}/{path}"))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let at = format!("{}/{folder}", skills_dir_told(level));
+    let files = stale.join(", ");
     if same_chat {
         format!(
-            "The project's copy of {files} changed since you drafted your change to it, so purlis \
-             cannot accept your draft. Read it again and write each whole file once more with \
-             your change on top of it; purlis keeps it as a draft in the Skill studio for me to \
-             try."
+            "The project's copy of {files} in {at} changed since you drafted your change to it, so \
+             purlis cannot accept your draft. Read it again and write each whole file once more \
+             with your change on top of it; purlis keeps it as a draft in the Skill studio for me \
+             to try."
         )
     } else {
         format!(
-            "The project's copy of {files} changed since a chat drafted a change to it. Read it and \
-             write each whole file again with the change on top of it; purlis keeps it as a draft \
-             in the Skill studio for me to try. The change should "
+            "Use the {STUDIO_SKILL} skill to redo a draft: the project's copy of {files} in {at} \
+             changed since a chat drafted a change to it. The change should "
         )
     }
 }

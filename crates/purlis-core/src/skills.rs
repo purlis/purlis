@@ -174,7 +174,7 @@ pub const SHIPPED: [&str; 13] = [
     "purlis-persona",
     "purlis-safe-remove",
     "purlis-secrets",
-    "purlis-skill-studio",
+    verbs::drafts::STUDIO_SKILL,
     "purlis-smart-close",
     "purlis-theme",
     "purlis-update",
