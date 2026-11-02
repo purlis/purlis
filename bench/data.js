@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793622781797,
+  "lastUpdate": 1793626889792,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36288,6 +36288,48 @@ window.BENCHMARK_DATA = {
             "value": 102.607091,
             "unit": "ms",
             "extra": "median of 5 runs: 102.216, 102.599, 102.607, 102.880, 103.087 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "50fc096e75fcbf2b182b3bdcbb4d64263c804d89",
+          "message": "Time a specimen's millis as its budget is, and always take the canary down (#4720)\n\nA specimen's millis began before its theme lookup and font read, while the\napp's 5 s budget begins at paint. On a loaded macOS runner a slow read made\na picture the app accepted measure past the budget in the e2e (5135, 5137 ms).\nmillis now counts the drawing, as Painted::millis and BUDGET say; the lookup\nkeeps its own bound (LOOKUP). The gallery card path is timed the same way.\nThe e2e drops its wall clock around the WebDriver round trip.\n\nThe specimen e2e takes its full-window canary down in afterEach, so a failed\nspecimen test no longer fails the next spec too.\n\nRefs #3022. Closes #4712.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DQYBHYMJPFQYYW8NHX2DHH\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T10:01:03Z",
+          "tree_id": "b5cb5e9ede5c3c1da9272114adf83122b6a2f8f7",
+          "url": "https://github.com/purlis/purlis/commit/50fc096e75fcbf2b182b3bdcbb4d64263c804d89"
+        },
+        "date": 1793626886108,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6641905,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.659, 0.660, 0.664, 0.667, 0.671 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.524087,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.381, 16.486, 16.524, 16.598, 16.811 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.24261899999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.693, 102.157, 102.243, 102.252, 103.645 ms"
           }
         ]
       }
