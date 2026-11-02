@@ -32,14 +32,13 @@
 import { Fragment, useState } from "react";
 import { List, ListRow, ListRowSection } from "./ui/list/List";
 import { RowDescription, RowLabel, RowTrail } from "./ui/list/Row";
-import { AlertDialog } from "./ui/dialog/Dialog";
 import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
 import { Notice } from "./Notice";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import type { DevicesShown, PlaneId } from "./bindings";
 import { removeHeldRunner, removePool } from "./pools";
-import { RemovePool } from "./settings/pools";
+import { RemoveHeldRunner, RemovePool } from "./settings/pools";
 import {
   arranged,
   contactSaid,
@@ -374,20 +373,10 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
         </Notice>
       )}
       {askingHeld !== undefined && (
-        <AlertDialog
-          onClose={() => setAskingHeld(undefined)}
-          title={`Remove runner ${askingHeld}?`}
-          description={
-            <p className="came-back">
-              Its container and home are removed from your Docker, with everything chats left in
-              them. There is no undo.
-            </p>
-          }
-          main={{
-            children: "Remove runner",
-            variant: "danger",
-            onPress: () => removeHeld(askingHeld),
-          }}
+        <RemoveHeldRunner
+          name={askingHeld}
+          onCancel={() => setAskingHeld(undefined)}
+          onRemove={() => removeHeld(askingHeld)}
         />
       )}
       {asking !== undefined && (

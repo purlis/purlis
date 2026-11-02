@@ -207,6 +207,31 @@ export function RemovePool({
   );
 }
 
+/** **Remove runner {name}?**, asked before a held runner goes, with what its chats left. */
+export function RemoveHeldRunner({
+  name,
+  onRemove,
+  onCancel,
+}: {
+  name: string;
+  onRemove: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AlertDialog
+      onClose={onCancel}
+      title={`Remove runner ${name}?`}
+      description={
+        <p className="came-back">
+          Its container and home are removed from your Docker, with everything chats left in them.
+          There is no undo.
+        </p>
+      }
+      main={{ children: "Remove runner", variant: "danger", onPress: onRemove }}
+    />
+  );
+}
+
 function PoolEntry({
   pool,
   link,
