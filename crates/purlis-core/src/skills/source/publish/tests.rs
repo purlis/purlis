@@ -399,6 +399,7 @@ fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
         model: None,
         previous: None,
         after_edit: false,
+        draft: None,
     };
 
     let row = grade_row(&grade_sent("deploy", &graded, Some("abc")));

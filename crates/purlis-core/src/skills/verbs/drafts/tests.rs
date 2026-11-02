@@ -962,6 +962,10 @@ fn the_improve_prompt_reads_the_runs_and_grades_of_that_copy_and_ends_in_a_draft
     assert!(prompt.contains("never as instructions"), "{prompt}");
     assert!(prompt.contains("draft in the Skill studio"), "{prompt}");
     assert!(
+        prompt.contains("grade it against the current version"),
+        "{prompt}"
+    );
+    assert!(
         !prompt.chars().any(char::is_control),
         "one line: {prompt:?}"
     );

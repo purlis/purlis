@@ -161,6 +161,11 @@ pub struct Graded {
     /// of Grade. `false` in a row written before #3238.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub after_edit: bool,
+    /// **The draft it graded, where it graded one** (#2780, [`draft`]): such a row is this
+    /// machine's alone, whatever its copy, and stays out of the Grades tab. Absent in every other
+    /// row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft: Option<draft::Mark>,
 }
 
 impl Graded {
@@ -192,8 +197,12 @@ impl Graded {
         self.content().is_some()
             && self.commit.as_deref().is_none_or(hex)
             && self.previous.as_deref().is_none_or(hex)
-            // A previous version's arm is of a version the row names.
-            && (self.previous.is_some() || self.report.arm(Arm::Previous).is_none())
+            // A previous version's arm is of a version the row names, or a draft's comparison
+            // with the folder, which may be no version (#2780).
+            && (self.previous.is_some()
+                || self.draft.is_some()
+                || self.report.arm(Arm::Previous).is_none())
+            && self.draft.as_ref().is_none_or(draft::Mark::sound)
             && self.harness.as_deref().is_none_or(plain)
             && self.profile.as_deref().is_none_or(plain)
             && self.level.as_deref().is_none_or(level_word)
@@ -572,9 +581,17 @@ fn outcome_chats_hold(report: &GradeReport, arm: &grade::ArmScore) -> bool {
 /// **Appends `graded`, a grade of the copy at `level`, to this month's file of the project at
 /// `root`**: the committed record, or, for a copy that is this machine's alone ([`is_local`]),
 /// this machine's state. `None` where the project is one this purlis may not write, or the write
-/// was refused.
+/// was refused. A draft's grade is this machine's whatever its copy ([`kept_here`]).
 pub fn record(root: &Path, level: &Level, graded: &Graded, device: &str) -> Option<PathBuf> {
-    record_to(root, is_local(root, level), graded, || device.to_owned())
+    record_to(root, kept_here(root, level, graded), graded, || {
+        device.to_owned()
+    })
+}
+
+/// **Whether the row `graded` of the copy at `level` goes to this machine's record**: a copy
+/// that is this machine's alone, or a draft, which no one else has.
+fn kept_here(root: &Path, level: &Level, graded: &Graded) -> bool {
+    graded.draft.is_some() || is_local(root, level)
 }
 
 /// `graded` with the credentials in its judges' evidence masked (SK-55): evidence quotes what a
@@ -822,7 +839,7 @@ pub fn read(root: &Path, name: &str, level: Option<&Level>) -> Read {
 /// a skill that took the old name there since is another, and its grades are none of these. A
 /// place no level's rule reads is left out.
 pub fn read_of(root: &Path, was: &[super::history::Was]) -> Read {
-    read_where(root, &wanted_of(was), None, chrono::Utc::now())
+    read_where(root, &wanted_of(was), Which::Own, chrono::Utc::now())
 }
 
 /// The copies [`read_of`] reads the rows of.
@@ -850,7 +867,7 @@ pub fn read_followed(root: &Path, level: &Level, name: &str) -> Read {
     let was = super::history::places(root, level, name).unwrap_or_default();
     let earlier = earlier::of(root, level, name);
     match followed((level, name), &was, &earlier) {
-        Some(copies) => read_where(root, &copies, None, chrono::Utc::now()),
+        Some(copies) => read_where(root, &copies, Which::Own, chrono::Utc::now()),
         None => read(root, name, Some(level)),
     }
 }
@@ -886,6 +903,28 @@ fn followed<'a>(
         })
     }));
     Some(copies)
+}
+
+/// **Which rows of a copy [`read_where`] takes**: its own, never a draft's (#2780), so a draft's
+/// grade stays out of the Grades tab, the estimate and `purlis skill grade`; or one grade by its
+/// id, a draft's or not, as its scorecard asks; or the grades of the draft of one mint
+/// ([`draft::Mark::id`]), which only this machine's record can hold.
+#[derive(Debug, Clone, Copy)]
+enum Which<'a> {
+    Own,
+    Grade(&'a str),
+    OfDraft(&'a str),
+}
+
+impl Which<'_> {
+    /// Whether `row` is one of them.
+    fn takes(self, row: &Graded) -> bool {
+        match self {
+            Which::Own => row.draft.is_none(),
+            Which::Grade(grade) => row.grade == grade,
+            Which::OfDraft(mint) => row.draft.as_ref().is_some_and(|mark| mark.id == mint),
+        }
+    }
 }
 
 /// A copy whose rows [`read_where`] reads: its skill's name; where `level` is `Some`, its
@@ -930,18 +969,21 @@ fn read_at(
         until: None,
         grades: &[],
     };
-    read_where(root, std::slice::from_ref(&wanted), None, now)
+    read_where(root, std::slice::from_ref(&wanted), Which::Own, now)
 }
 
-/// The rows of the record of any of `copies` ([`Wanted`]), and of the grade `grade` alone where
-/// it is `Some`, newest first, at most [`MOST_GRADES`].
+/// The rows of the record of any of `copies` ([`Wanted`]) that `which` takes, newest first, at
+/// most [`MOST_GRADES`]. A draft's are looked for in this machine's record alone.
 fn read_where(
     root: &Path,
     copies: &[Wanted<'_>],
-    grade: Option<&str>,
+    which: Which<'_>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Read {
-    let mut files = record_files(&root.join("personas").join(DIR_NAME));
+    let mut files = match which {
+        Which::OfDraft(_) => Vec::new(),
+        Which::Own | Which::Grade(_) => record_files(&root.join("personas").join(DIR_NAME)),
+    };
     if let Some(state) = crate::appstate::dir(root) {
         files.extend(record_files(&state.join(LOCAL_DIR)));
     }
@@ -972,9 +1014,8 @@ fn read_where(
                 }
                 continue;
             };
-            let its = row.v <= VERSION
-                && grade.is_none_or(|grade| row.grade == grade)
-                && copies.iter().any(|one| one.holds(&row));
+            let its =
+                row.v <= VERSION && which.takes(&row) && copies.iter().any(|one| one.holds(&row));
             if !its {
                 continue;
             }
@@ -1015,7 +1056,7 @@ pub fn ended_said(end: grade::GradeEnd) -> &'static str {
 pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
     let now = chrono::Utc::now();
     let of = |copies: &[Wanted<'_>]| {
-        read_where(root, copies, Some(grade), now)
+        read_where(root, copies, Which::Grade(grade), now)
             .grades
             .into_iter()
             .next()
@@ -1157,7 +1198,7 @@ pub(crate) trait Spends {
 impl Spends for Graded {
     fn asked(&self) -> u64 {
         if stopped_unscored(&self.report) {
-            let arms = if self.previous.is_some() {
+            let arms = if self.previous.is_some() || self.draft.is_some() {
                 ARMS_WITH_PREVIOUS.len()
             } else {
                 ARMS.len()
@@ -1296,7 +1337,7 @@ pub struct Planned {
 }
 
 /// **The version a grade compares with, as its plan says it** (SK-57): its commit, and its
-/// subject as one line with nothing invisible in it.
+/// subject as one line with nothing invisible in it; both empty for a draft's current version.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ComparedWith {
     pub commit: String,
@@ -1408,10 +1449,12 @@ pub struct SkillCopy {
 
 /// **A skill's previous version, as a grade compares with it** (SK-57, #3237): the commit, what
 /// its folder held there, its subject as one line, and its files as git's tree of that commit
-/// holds them ([`super::history::files_of_version`]), never as a folder a chat could write.
+/// holds them ([`super::history::files_of_version`]), never as a folder a chat could write. The
+/// one exception is a draft's grade, whose current version is read from the folder ([`draft`]):
+/// it has no commit, as what Accept would replace may be none.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Previous {
-    pub commit: String,
+    pub commit: Option<String>,
     pub tree: String,
     pub subject: String,
     pub snapshot: Snapshot,
@@ -1423,25 +1466,7 @@ pub struct Previous {
 /// history is read once too, for the commit its content is and the version before it. The input
 /// files `inputs` names (its outcome evals', SK-55) are read inside the same read.
 fn copy_of(root: &Path, level: &Level, name: &str, inputs: &[String]) -> Result<SkillCopy, String> {
-    let folder = find(root, level, name)?;
-    let content_now = || crate::skilluse::content_at(root, &folder).unwrap_or(Content::Uncommitted);
-    let before = content_now();
-    let snapshot = super::verbs::drafts::snapshot(root, level, name)?;
-    let base = rel(root, &folder);
-    let inputs: std::collections::BTreeMap<String, String> = inputs
-        .iter()
-        .filter_map(|path| {
-            let bytes = crate::proposed::read_pinned(root, Path::new(&format!("{base}/{path}")))
-                .ok()
-                .flatten()?;
-            Some((path.clone(), String::from_utf8(bytes).ok()?))
-        })
-        .collect();
-    let content = if content_now() == before {
-        before
-    } else {
-        Content::Uncommitted
-    };
+    let (snapshot, content, inputs) = folder_read(root, level, name, inputs)?;
     let history = super::history::history(root, level, name).ok();
     let tree = match &content {
         Content::Tree(tree) => Some(tree.as_str()),
@@ -1466,7 +1491,7 @@ fn copy_of(root: &Path, level: &Level, name: &str, inputs: &[String]) -> Result<
             match super::history::files_of_version(root, &version.folder, name, &version.commit) {
                 Ok(files) => (
                     Some(Previous {
-                        commit: version.commit.clone(),
+                        commit: Some(version.commit.clone()),
                         tree: version.tree.clone(),
                         subject: version.subject.clone(),
                         snapshot: files,
@@ -1485,6 +1510,43 @@ fn copy_of(root: &Path, level: &Level, name: &str, inputs: &[String]) -> Result<
         previous_refused,
         inputs,
     })
+}
+
+/// **What the copy of `name` at `level` holds, read once**, with no history: its files, what git
+/// says its folder holds by content, and the input files `inputs` names.
+fn folder_read(
+    root: &Path,
+    level: &Level,
+    name: &str,
+    inputs: &[String],
+) -> Result<
+    (
+        Snapshot,
+        Content,
+        std::collections::BTreeMap<String, String>,
+    ),
+    String,
+> {
+    let folder = find(root, level, name)?;
+    let content_now = || crate::skilluse::content_at(root, &folder).unwrap_or(Content::Uncommitted);
+    let before = content_now();
+    let snapshot = super::verbs::drafts::snapshot(root, level, name)?;
+    let base = rel(root, &folder);
+    let inputs: std::collections::BTreeMap<String, String> = inputs
+        .iter()
+        .filter_map(|path| {
+            let bytes = crate::proposed::read_pinned(root, Path::new(&format!("{base}/{path}")))
+                .ok()
+                .flatten()?;
+            Some((path.clone(), String::from_utf8(bytes).ok()?))
+        })
+        .collect();
+    let content = if content_now() == before {
+        before
+    } else {
+        Content::Uncommitted
+    };
+    Ok((snapshot, content, inputs))
 }
 
 /// **The plan of grading the copy of `name` at `level`** in the project at `root`, its chats on
@@ -1511,6 +1573,23 @@ pub fn planned_with(
 ) -> Result<Planned, String> {
     let folder = find(root, level, name)?;
     let fixtures = grade::fixtures_of(root, Path::new(&rel(root, &folder)), name);
+    planned_from(root, level, name, profile, ticked, fixtures, |wanted| {
+        copy_of(root, level, name, wanted)
+    })
+}
+
+/// **The plan of grading what `read_copy` reads**, a copy or a draft of it ([`draft::planned`]),
+/// by the fixtures `fixtures`: `read_copy` is handed the input files its outcome evals name, and
+/// is asked only where there is something to grade.
+fn planned_from(
+    root: &Path,
+    level: &Level,
+    name: &str,
+    profile: Option<&str>,
+    ticked: &[u64],
+    fixtures: Fixtures,
+    read_copy: impl FnOnce(&[String]) -> Result<SkillCopy, String>,
+) -> Result<Planned, String> {
     let mut left_out: Vec<LeftOut> = Vec::new();
     let sendable: Vec<grade::TriggerTest> = fixtures
         .triggers
@@ -1557,7 +1636,7 @@ pub fn planned_with(
     let copy = if sendable.is_empty() && evals.is_empty() {
         None
     } else {
-        Some(copy_of(root, level, name, &wanted)?)
+        Some(read_copy(&wanted)?)
     };
     if let Some(copy) = &copy {
         evals.retain(|eval| {
@@ -1662,7 +1741,7 @@ pub fn planned_with(
         .as_ref()
         .and_then(|copy| copy.previous.as_ref())
         .map(|previous| ComparedWith {
-            commit: previous.commit.clone(),
+            commit: previous.commit.clone().unwrap_or_default(),
             subject: previous.subject.clone(),
         });
     let previous_refused = copy.as_ref().and_then(|copy| copy.previous_refused.clone());
@@ -1696,6 +1775,11 @@ pub fn planned_with(
 pub fn trigger_tests(root: &Path, level: &Level, name: &str) -> Result<TriggerTests, String> {
     let folder = find(root, level, name)?;
     let fixtures = grade::fixtures_of(root, Path::new(&rel(root, &folder)), name);
+    Ok(counted(&fixtures))
+}
+
+/// What a grade of `fixtures` would run, counted ([`trigger_tests`]).
+fn counted(fixtures: &Fixtures) -> TriggerTests {
     let runs = fixtures.triggers.read().map_or(0, |tests| {
         tests
             .iter()
@@ -1708,11 +1792,11 @@ pub fn trigger_tests(root: &Path, level: &Level, name: &str) -> Result<TriggerTe
             .filter(|eval| eval_left_out_why(eval).is_none())
             .count()
     });
-    Ok(TriggerTests {
+    TriggerTests {
         runs,
         evals,
         refused: fixtures.triggers.refused().cloned(),
-    })
+    }
 }
 
 /// **A copy's trigger tests, counted** ([`trigger_tests`]).
@@ -1789,7 +1873,7 @@ pub fn consent_of(request: &GradeRequest, copy: &SkillCopy) -> String {
     files(&mut digest, &copy.snapshot);
     if let Some(previous) = &copy.previous {
         digest.update(b"\0previous\0");
-        digest.update(previous.commit.as_bytes());
+        digest.update(previous.commit.as_deref().unwrap_or_default().as_bytes());
         files(&mut digest, &previous.snapshot);
     }
     hex_of(digest)
@@ -2072,6 +2156,7 @@ fn not_on_this_harness() -> String {
 
 pub mod after_edit;
 pub mod cap;
+pub mod draft;
 pub mod earlier;
 pub mod kept;
 pub mod price;

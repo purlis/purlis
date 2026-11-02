@@ -28,6 +28,7 @@ vi.stubGlobal("matchMedia", (query: string) => ({
 }));
 
 const CARD: GradeScorecard = {
+  draft: false,
   grade: "01GRADE",
   skill: "deploy",
   level: { at: "project", local: false },
@@ -180,6 +181,12 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
       ", this version made a difference of +25 points against its previous version fedcba987654, and the skill +75 against no skill.",
     );
     expect(differenceSaid({ ...CARD, delta: null })).toBe(".");
+    expect(differenceSaid({ ...CARD, draft: true, delta: 17, delta_without: 59 })).toBe(
+      ", the draft made a difference of +17 points against the current version, and +59 against no skill.",
+    );
+    expect(differenceSaid({ ...CARD, draft: true, delta: 59 })).toBe(
+      ", the draft made a difference of +59 points.",
+    );
   });
 
   it("shows the previous version's arm, and says a grade a saved edit started (SK-57, SK-58)", async () => {

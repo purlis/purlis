@@ -102,6 +102,31 @@ fn a_skills_newest_grades_keep_their_chats_and_the_older_ones_go() {
 }
 
 #[test]
+fn a_drafts_grades_never_push_out_the_skills_own_chats() {
+    let plane = project();
+    let root = plane.path();
+    keep(root, "deploy", "01A", "c", "own").unwrap();
+    for grade in ["01B", "01C", "01D", "01E"] {
+        keep_of(root, &of_draft("deploy"), grade, "c", grade).unwrap();
+    }
+
+    sweep(root, "deploy");
+    sweep_of(root, &of_draft("deploy"));
+
+    assert_eq!(kept(root, "deploy", "01A", "c").as_deref(), Some("own"));
+    assert_eq!(
+        kept(root, "deploy", "01E", "c").as_deref(),
+        Some("01E"),
+        "read by its id"
+    );
+    assert_eq!(
+        kept(root, "deploy", "01B", "c"),
+        None,
+        "a draft keeps its own newest"
+    );
+}
+
+#[test]
 fn a_sweep_of_a_name_of_dots_takes_nothing() {
     let plane = project();
     let root = plane.path();

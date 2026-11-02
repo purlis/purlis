@@ -181,7 +181,8 @@ export function GradesTab({
       now.plane === plane && now.skill === name && sameLevel(now.level, ours.current);
     const ended = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
       const now = event.payload;
-      if (!isOurs(now)) return;
+      // A draft's grade is the draft's page's: it moves nothing on the skill's own tab (#2780).
+      if (now.draft !== null || !isOurs(now)) return;
       // A grade that starts while the tab is open (one after an edit) is read, so it is shown.
       if (now.ended === null) {
         if (runningNow.current !== now.grade) setAgain((n) => n + 1);
@@ -455,6 +456,7 @@ export function GradingPage({
   changed,
   onGrading,
   onGradedAt,
+  draft,
 }: {
   plane: string;
   name: string;
@@ -463,6 +465,8 @@ export function GradingPage({
   changed: number;
   onGrading: GradingGo;
   onGradedAt?: (level: SkillLevel) => void;
+  /** The draft of it these pages grade (#2780), by its id; `undefined` is the skill itself. */
+  draft?: string;
 }) {
   switch (grading.at) {
     case "plan":
@@ -473,6 +477,7 @@ export function GradingPage({
           level={level}
           changed={changed}
           afterEdit={grading.afterEdit === true}
+          draft={draft}
           onStarted={(grade) => onGrading({ at: "running", grade }, "replace")}
           onAfterEdit={() => onGrading(undefined, "replace")}
           onRunning={(grade) => onGrading({ at: "running", grade }, "go")}
@@ -486,6 +491,7 @@ export function GradingPage({
           name={name}
           level={level}
           grade={grading.grade}
+          draft={draft}
           onEnded={() => onGrading({ at: "scorecard", grade: grading.grade }, "replace")}
           // Leave it running, and its end's Back to its grades: the Grades tab, no new step.
           onBack={() => onGrading(undefined, "back")}

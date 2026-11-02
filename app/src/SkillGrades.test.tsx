@@ -75,6 +75,7 @@ const step = (grade: string, level: SkillLevel = LEVEL) => ({
   asked: 0,
   ended: null,
   said: null,
+  draft: null,
 });
 
 /** deploy's grades `grades`, its `tests` trigger tests, and a grade `running` where one is. */
@@ -371,6 +372,22 @@ describe("a skill's Grades tab (S6)", () => {
     started = true;
     await emit("skill-grade", step("01NEW"));
     await screen.findByTestId("skill-grades-running");
+  });
+
+  it("is not moved by a grade of a draft of the skill (#2780)", async () => {
+    let reads = 0;
+    core({
+      skill_grades: () => {
+        reads += 1;
+        return grades(GRADES, 2, null);
+      },
+    });
+    renderTab();
+    await screen.findByRole("group", { name: "The latest grade of deploy" });
+    const before = reads;
+    await emit("skill-grade", { ...step("01DRAFT"), draft: "d1" });
+    await emit("skill-grade", { ...step("01OWN") });
+    await waitFor(() => expect(reads).toBe(before + 1));
   });
 
   it("says in place why its grades could not be read, with Try again", async () => {

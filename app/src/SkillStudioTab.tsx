@@ -430,7 +430,8 @@ export function SkillStudioTab({
 
   /** Goes to a grading page under the chosen skill (S6), or back to its Grades tab. */
   const grading: GradingGo = (to, how) => {
-    const next: StudioPlace = { ...at, tab: "grades" };
+    // A draft's grading pages stand under the draft, which has no tabs.
+    const next: StudioPlace = page === "drafts" ? { ...at } : { ...at, tab: "grades" };
     if (to === undefined) delete next.grading;
     else next.grading = to;
     if (how === "go") go(next);
@@ -938,6 +939,7 @@ export function SkillStudioTab({
             ? undefined
             : `Chat ${routedChat.session}`;
   const inSources = page === "sources" ? at.sources : undefined;
+  const draftGraded = page === "drafts" ? drafts.find((one) => one.id === at.item) : undefined;
   const path: Crumb[] = [
     { id: page, label: STUDIO_PAGE_NAMES[page] },
     ...(chosen !== undefined
@@ -951,6 +953,9 @@ export function SkillStudioTab({
       : []),
     ...((chosen !== undefined || gradingDrawn) && at.grading !== undefined
       ? gradingPath(at.grading)
+      : []),
+    ...(page === "drafts" && draftGraded !== undefined && at.grading !== undefined
+      ? [{ id: "draft", label: draftGraded.name }, ...gradingPath(at.grading)]
       : []),
     ...(inSources === undefined ? [] : sourcesPath(inSources)),
     ...(chosen !== undefined && at.publishing !== undefined
@@ -994,6 +999,7 @@ export function SkillStudioTab({
                 ...(at.skill === undefined ? {} : { skill: at.skill }),
               });
             });
+          else if (crumb.id === "draft") grading(undefined, "back");
           else if (crumb.id === "tab") {
             setDoing(undefined);
             edits.stop();
@@ -1351,7 +1357,18 @@ export function SkillStudioTab({
     );
     itemChosen = draft !== undefined;
     item =
-      draft !== undefined ? (
+      draft !== undefined && at.grading !== undefined ? (
+        <GradingPage
+          key={`${draft.id}:${at.grading.at}:${"grade" in at.grading ? at.grading.grade : ""}`}
+          plane={plane}
+          name={draft.name}
+          level={draft.level}
+          grading={at.grading}
+          changed={changed + done}
+          onGrading={grading}
+          draft={draft.id}
+        />
+      ) : draft !== undefined ? (
         <DraftPage
           key={draft.id}
           plane={plane}
@@ -1359,6 +1376,8 @@ export function SkillStudioTab({
           label={draftLevel(draft)}
           local={draft.level.local}
           busy={busy}
+          changed={changed + done}
+          onGrading={grading}
           onBack={() => go({ page: "drafts", scope })}
           onAccept={(one) =>
             change(

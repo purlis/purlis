@@ -8091,6 +8091,27 @@ nav.piece-files-head {
   gap: var(--space-2);
 }
 
+/* A draft's grade in its footer (#2780): the line over what Accept does. */
+.skill-draft-summary {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.skill-draft-summary p {
+  margin: 0;
+}
+
+.skill-draft-figures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.skill-draft-figure b {
+  font-variant-numeric: tabular-nums;
+}
+
 .skill-draft-try {
   display: flex;
   flex-wrap: wrap;

@@ -173,6 +173,11 @@ struct Record {
     /// Each file the draft changed, and the SHA-256 of what the project held there when the
     /// draft first changed it (`None`: nothing).
     bases: BTreeMap<String, Option<String>>,
+    /// **What tells this draft from the next of the same skill** (#2780): its id is one a skill,
+    /// so a draft accepted and a new one drafted later share it, and their grades must not.
+    /// Minted with the record; `None` in a draft from before it, which goes by its id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mint: Option<String>,
 }
 
 /// **A draft skill**, as the studio lists it.
@@ -188,6 +193,9 @@ pub struct Draft {
     /// Whether the level holds no skill of that folder yet.
     pub new: bool,
     pub files: Vec<DraftFile>,
+    /// What its grades are marked with (#2780, `grades::draft::Mark::id`): its own, where the
+    /// next draft of the skill has the same id.
+    pub mint: String,
 }
 
 /// One file of a draft: what the project holds there now, and what the draft makes it.
@@ -201,14 +209,41 @@ pub struct DraftFile {
     pub stale: bool,
 }
 
+impl DraftFile {
+    /// Whether it is one of the skill's fixtures, which no arm of a grade is handed.
+    pub fn in_evals(&self) -> bool {
+        self.path.split('/').next() == Some(EVALS)
+    }
+}
+
 impl Draft {
     /// Whether any of its files changed in the project since it was drafted.
     pub fn stale(&self) -> bool {
         self.files.iter().any(|file| file.stale)
     }
 
+    /// **Whether it changes only the skill's fixtures** (#2780): nothing a chat would read, so a
+    /// grade would run the same skill twice.
+    pub fn only_evals(&self) -> bool {
+        !self.files.is_empty() && self.files.iter().all(DraftFile::in_evals)
+    }
+
+    /// **The digest of what it writes** (#2780): its grade is marked with it, so a draft changed
+    /// since says so.
+    pub fn digest(&self) -> String {
+        use sha2::Digest as _;
+        let mut hash = sha2::Sha256::new();
+        for file in &self.files {
+            hash.update(file.path.as_bytes());
+            hash.update([0]);
+            hash.update(file.after.as_bytes());
+            hash.update([0]);
+        }
+        hex(&hash.finalize())
+    }
+
     /// What its `SKILL.md` would be once accepted: the draft's, else the project's.
-    fn instructions(&self) -> Option<&str> {
+    pub fn instructions(&self) -> Option<&str> {
         self.files
             .iter()
             .find(|file| file.path == "SKILL.md")
@@ -302,12 +337,16 @@ pub fn take(root: &Path, chat: u32, file: &SkillFile, change: &Change) -> Result
     let state = state_with(root, DRAFTS_DIR)?;
     super::store::made(&state, &[DRAFTS_DIR, &id], true).map_err(|why| why.to_string())?;
     let was_record = record_of(&state, &id)?;
-    let mut record = was_record.clone().unwrap_or_else(|| Record {
-        level: file.level.clone(),
-        folder: file.folder.clone(),
-        chat: None,
-        bases: BTreeMap::new(),
-    });
+    let mut record = match was_record.clone() {
+        Some(record) => record,
+        None => Record {
+            level: file.level.clone(),
+            folder: file.folder.clone(),
+            chat: None,
+            bases: BTreeMap::new(),
+            mint: Some(random_id()?),
+        },
+    };
     if !record.bases.contains_key(&file.inner) && record.bases.len() >= MOST_FILES {
         return Err(format!(
             "this draft holds {} already, the most a draft holds: accept or reject it first",
@@ -405,6 +444,7 @@ fn one_in(root: &Path, state: &Path, id: &str) -> Result<Draft, String> {
         .dir(root)
         .is_none_or(|dir| std::fs::symlink_metadata(dir.join(&record.folder)).is_err());
     Ok(Draft {
+        mint: record.mint.unwrap_or_else(|| id.to_owned()),
         id: id.to_owned(),
         level,
         name: record.folder,
@@ -1468,7 +1508,7 @@ pub fn improving_from_runs(root: &Path, level: &Level, name: &str) -> Result<Str
          most, say why from what you read, and write the smallest edit to its files that does \
          it, leaving its evals folder as it is (where you cannot write a file, write it in your \
          own folder and run purlis propose with --from); purlis keeps it as a draft in the Skill \
-         studio for me to accept or discard."
+         studio, where I can grade it against the current version, then accept or discard it."
     ))
 }
 

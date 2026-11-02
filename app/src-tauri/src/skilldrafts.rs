@@ -186,6 +186,7 @@ pub(crate) async fn skill_draft_accept(
     crate::off_the_window("accepting the draft", move || {
         crate::skillchange::flag_on()?;
         let changed = crate::skillchange::heard(held.root(), |cx| drafts::accept(cx, &id))?;
+        crate::skillgrade::drafted::stop(&plane, &id);
         held.chats().asks_may_have_moved();
         Ok(changed)
     })
@@ -241,6 +242,7 @@ pub(crate) async fn skill_draft_reject(
     crate::off_the_window("rejecting the draft", move || {
         crate::skillchange::flag_on()?;
         drafts::reject(held.root(), &id)?;
+        crate::skillgrade::drafted::stop(&plane, &id);
         held.chats().asks_may_have_moved();
         Ok(())
     })
