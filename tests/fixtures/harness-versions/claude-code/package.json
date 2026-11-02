@@ -1,0 +1,12 @@
+{
+  "name": "purlis-ci-claude-code",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "The Claude Code build CI runs, at the version tests/fixtures/harness-versions/claude.txt names. Installed with npm ci, so every tarball is checked against package-lock.json's integrity; npm installs only the optional dependency that matches the runner's os and cpu.",
+  "optionalDependencies": {
+    "@anthropic-ai/claude-code-darwin-arm64": "2.1.300",
+    "@anthropic-ai/claude-code-darwin-x64": "2.1.300",
+    "@anthropic-ai/claude-code-linux-arm64": "2.1.300",
+    "@anthropic-ai/claude-code-linux-x64": "2.1.300"
+  }
+}
