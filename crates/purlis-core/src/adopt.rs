@@ -127,6 +127,24 @@ pub fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// **The system this build runs on**, for a report a person pastes (Copy diagnostics, #4774):
+/// the kernel's name and release as `uname` gives them, and the processor the build is for, as
+/// `Darwin 27.2.0, aarch64` or `Linux 6.8.0-45-generic, x86_64`. Never the host's name.
+pub fn system() -> String {
+    #[cfg(unix)]
+    let named = {
+        let uname = rustix::system::uname();
+        format!(
+            "{} {}",
+            uname.sysname().to_string_lossy(),
+            uname.release().to_string_lossy()
+        )
+    };
+    #[cfg(not(unix))]
+    let named = std::env::consts::OS.to_owned();
+    format!("{named}, {}", std::env::consts::ARCH)
+}
+
 /// The Cargo profile this build was made with: `release` for a stable build, `dev-release` for
 /// a dev channel build, `debug` for a local one (ADR 0092). `build.rs` says where it is read.
 pub fn build_profile() -> &'static str {
