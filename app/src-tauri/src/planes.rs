@@ -1561,6 +1561,13 @@ impl Held {
     ///
     /// The snapshot is built under the board's hold (`ChatBoard::ignored`), and numbered there,
     /// so a report racing it is put in order by the window rather than by which thread won.
+    /// The person sent `session` a line: a background turn's wait on them is over (#4562).
+    pub fn person_replied(&self, session: u32) {
+        if let Some(moved) = self.board().replied(session) {
+            (self.tell)(moved);
+        }
+    }
+
     pub fn ignore_needs_you(&self, session: u32) {
         (self.tell)(self.board().ignored(session));
     }

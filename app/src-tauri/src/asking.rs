@@ -2142,7 +2142,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 failed: !hooks.failed_tasks(session).is_empty(),
                 for_itself: hooks.needs_you_for_itself(session),
                 reasons,
-                waiting: hooks.state(session) == purlis_core::state::State::Waiting,
+                waiting: hooks.shown_state(session) == purlis_core::state::State::Waiting,
                 at_its_prompt: hooks.waits_on_its_prompt(session),
             })
         },

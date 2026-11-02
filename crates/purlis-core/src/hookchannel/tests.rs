@@ -125,11 +125,12 @@ fn place_of(moved: &crate::state::Move) -> usize {
         Move::Closed => 18,
         Move::OwnWorkLapsed { .. } => 19,
         Move::BlockedWhileWaiting => 20,
+        Move::Replied => 21,
     }
 }
 
 /// How many places [`place_of`] names.
-const EVERY_MOVE: usize = 21;
+const EVERY_MOVE: usize = 22;
 
 /// One of every move, in an order in which each moves something a reader can see: chat 1 takes
 /// them all, and chat 2 is opened only to be closed.
@@ -253,6 +254,18 @@ fn one_of_every_move() -> Vec<(u32, crate::state::Move)> {
             },
         ),
         (1, Move::BlockedWhileWaiting),
+        // A background turn over the wait that raised, which the person's line ends (#4562).
+        (
+            1,
+            Move::Reported {
+                report: a_report(1, Event::UserPromptSubmit),
+                waits: Waits {
+                    background_turn: true,
+                    ..Waits::default()
+                },
+            },
+        ),
+        (1, Move::Replied),
         (
             1,
             Move::Reported {

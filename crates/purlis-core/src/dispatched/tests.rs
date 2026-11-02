@@ -3128,3 +3128,35 @@ fn an_ask_held_open_in_the_window_is_a_prompt_whatever_the_harness_said() {
         Ends::End
     );
 }
+
+#[test]
+fn a_turn_begun_by_purlis_s_line_or_the_chat_s_own_work_is_a_background_turn() {
+    let mut ledger = Ledger::default();
+    assert!(
+        !ledger.background_turn(5, false),
+        "a turn nobody named is the person's"
+    );
+    assert!(ledger.background_turn(5, true), "its own work woke it");
+
+    ledger.line_typed(5);
+
+    assert!(ledger.background_turn(5, false));
+}
+
+#[test]
+fn a_line_the_person_sent_makes_the_next_turn_theirs_until_a_turn_begins_or_ends() {
+    let mut ledger = Ledger::default();
+    ledger.line_typed(5);
+    ledger.person_sent(5);
+    assert!(!ledger.background_turn(5, true));
+
+    ledger.turn_began(5);
+    assert!(
+        ledger.background_turn(5, true),
+        "the next wake is its own again"
+    );
+
+    ledger.person_sent(5);
+    ledger.turn_ended(5);
+    assert!(ledger.background_turn(5, true));
+}
