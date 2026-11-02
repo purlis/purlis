@@ -243,7 +243,7 @@ describe("making a project", () => {
     await userEvent.click(await createProject(dialog));
 
     expect(calls("create_project").map((one) => one.args)).toEqual([
-      { path: MADE, planeIsThisRepo: false, adopt: null, forge: null },
+      { path: MADE, planeIsThisRepo: false, adopt: null, forge: null, template: null },
     ]);
   });
 
@@ -259,7 +259,7 @@ describe("making a project", () => {
     await userEvent.click(await createProject(dialog));
 
     expect(calls("create_project").map((one) => one.args)).toEqual([
-      { path: MADE, planeIsThisRepo: false, adopt: REPO, forge: null },
+      { path: MADE, planeIsThisRepo: false, adopt: REPO, forge: null, template: null },
     ]);
   });
 
@@ -284,6 +284,7 @@ describe("making a project", () => {
       planeIsThisRepo: true,
       adopt: null,
       forge: null,
+      template: null,
     });
   });
 
@@ -314,8 +315,8 @@ describe("making a project", () => {
 
     await vi.waitFor(() =>
       expect(calls("create_project").map((one) => one.args)).toEqual([
-        { path: MADE, planeIsThisRepo: false, adopt: null, forge: null },
-        { path: MADE, planeIsThisRepo: false, adopt: null, forge: "github" },
+        { path: MADE, planeIsThisRepo: false, adopt: null, forge: null, template: null },
+        { path: MADE, planeIsThisRepo: false, adopt: null, forge: "github", template: null },
       ]),
     );
     expect(await screen.findByRole("dialog", { name: "Open this project?" })).toBeInTheDocument();

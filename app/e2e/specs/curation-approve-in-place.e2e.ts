@@ -77,10 +77,47 @@ describe("a curation action refused for its profile's approval", function () {
     // Refused, with the approval offered beside the refusal; nothing started.
     // By its accessible name, as the person and the screen reader get it.
     const offer = await $("aria/Approve and start…");
-    await offer.waitForClickable({
-      timeout: 30_000,
-      timeoutMsg: "the refusal offered no Approve and start…",
-    });
+    await offer
+      .waitForClickable({
+        timeout: 30_000,
+        timeoutMsg: "the refusal offered no Approve and start…",
+      })
+      .catch(async (why: unknown) => {
+        const seen = await browser.execute(() => ({
+          text: document.body.innerText.slice(0, 2500),
+          said: [...document.querySelectorAll(".said, .refusal, [data-scope='notice']")].map((e) =>
+            (e.textContent ?? "").slice(0, 300),
+          ),
+          approve: [...document.querySelectorAll("button")]
+            .filter((b) => (b.textContent ?? "").includes("Approve"))
+            .map((b) => {
+              const r = b.getBoundingClientRect();
+              const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+              return {
+                text: b.textContent,
+                rect: [r.x, r.y, r.width, r.height],
+                top: at === null ? null : at.outerHTML.slice(0, 200),
+                path: (() => {
+                  const chain: string[] = [];
+                  for (let e: Element | null = b; e; e = e.parentElement)
+                    chain.push(`${e.tagName}.${String(e.className).slice(0, 40)}`);
+                  return chain.join(" < ").slice(0, 600);
+                })(),
+              };
+            }),
+          blocked: [...document.querySelectorAll("[aria-hidden='true'], [inert]")]
+            .filter((e) => e.querySelector("button") !== null)
+            .map((e) => `${e.tagName}.${String(e.className).slice(0, 60)}`)
+            .slice(0, 20),
+          dialogs: [...document.querySelectorAll("[role='dialog'], [role='alertdialog']")].map((e) =>
+            (e.textContent ?? "").slice(0, 300),
+          ),
+          welcome: document.querySelector(".welcome") !== null,
+          panes: document.querySelectorAll(".window-notices-at").length,
+        }));
+        console.log(`DIAG-4604 ${JSON.stringify(seen)}`);
+        throw why;
+      });
     expect(await runningIn(plane)).toEqual(wereRunning);
     await offer.click();
 

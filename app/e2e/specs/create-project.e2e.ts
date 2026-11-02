@@ -55,8 +55,8 @@ const projects = (() => {
 
 type MachineProject = { path: string; name: string; gone: string | null };
 
-/** Draws the welcome from the strip's `+`, goes through the Create door, and picks GitHub. */
-async function toCreateOnGitHub(): Promise<void> {
+/** Draws the welcome from the strip's `+`, goes through the Create door, and picks where. */
+async function toCreateOn(where: "mac" | "github"): Promise<void> {
   if (await $(NAME_BOX).isExisting()) await press(WELCOME, "Back");
   const pressed = await browser.execute((css: string) => {
     const button = document.querySelector<HTMLElement>(css);
@@ -68,12 +68,17 @@ async function toCreateOnGitHub(): Promise<void> {
   await press(DOORS, "Create a project");
   // A native radio of the radio group (#2907), clicked as the driver's pointerless click reaches
   // it: React Aria takes a virtual press on the input, not on its label.
-  const github = await $(`${WHERE} input[type="radio"][value="github"]`);
-  await github.waitForExist({
+  const radio = await $(`${WHERE} input[type="radio"][value="${where}"]`);
+  await radio.waitForExist({
     timeout: 20_000,
     timeoutMsg: "Create a project asked no Where it lives",
   });
-  await browser.execute((el: HTMLElement) => el.click(), github as unknown as HTMLElement);
+  await browser.execute((el: HTMLElement) => el.click(), radio as unknown as HTMLElement);
+}
+
+/** Create a project on GitHub, with the stand-in forge's account picked. */
+async function toCreateOnGitHub(): Promise<void> {
+  await toCreateOn("github");
   // The owners come from the stand-in forge's account: the account itself is picked.
   await browser.waitUntil(
     async () =>
@@ -158,6 +163,35 @@ describe("creating a project on a forge", function () {
       timeout: 60_000,
       timeoutMsg: "the made project never opened",
     });
+
+    await closeProject(`${PROJECTS} [role="tab"][aria-label="${basename(folder)}"]`);
+    await browser.waitUntil(async () => !(await ask<string[]>("open_planes")).includes(folder), {
+      timeout: 60_000,
+      timeoutMsg: "the made project stayed open",
+    });
+  });
+
+  // The real core, because a stand-in hid that this act did nothing (#4599): a project with no repo
+  // and no forge named asks which forge, and the window must never leave that unanswered.
+  it("makes a project from its name alone on this Mac, with no forge", async () => {
+    await toCreateOn("mac");
+    const folder = await nameIt("meadow");
+    made.push(folder);
+
+    await press(WELCOME, "Create project");
+    const asking = await $('[role="dialog"]');
+    await asking.waitForExist({
+      timeout: 90_000,
+      timeoutMsg: `the trust question never came; ${folder} ${
+        existsSync(folder) ? "was laid out" : "was not laid out"
+      }`,
+    });
+    await asking.$("button=Open project").click();
+    await browser.waitUntil(async () => (await ask<string[]>("open_planes")).includes(folder), {
+      timeout: 60_000,
+      timeoutMsg: "the made project never opened",
+    });
+    expect(existsSync(join(folder, "charter.toml"))).toBe(true);
 
     await closeProject(`${PROJECTS} [role="tab"][aria-label="${basename(folder)}"]`);
     await browser.waitUntil(async () => !(await ask<string[]>("open_planes")).includes(folder), {
