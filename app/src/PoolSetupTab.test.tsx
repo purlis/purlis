@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -212,6 +212,19 @@ describe("PoolSetupTab", () => {
     render(<PoolSetupTab plane="p" />);
     await userEvent.type(await screen.findByRole("textbox", { name: /Name/ }), "dev");
     await waitFor(() => expect(calls.some((call) => call.cmd === "pool_setup_name")).toBe(true));
+  });
+
+  it("keeps a name typed just before the tab closes, at once, and leaves no wait behind (#4823)", async () => {
+    const calls = core(() => CHOSEN);
+    const { unmount } = render(<PoolSetupTab plane="p" />);
+    const box = await screen.findByRole("textbox", { name: /Name/ });
+    vi.useFakeTimers();
+    fireEvent.change(box, { target: { value: "dev" } });
+    const kept = () => calls.filter((call) => call.cmd === "pool_setup_name");
+    expect(kept()).toEqual([]);
+    unmount();
+    expect(kept().map((call) => call.args)).toEqual([{ name: "dev" }]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("tells the rest of the window a pool was made", async () => {
