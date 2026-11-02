@@ -1470,7 +1470,8 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         return Err(dispatchtalk::ALREADY_REPORTED.to_owned());
     }
     let asker = from.chat;
-    let asker_gone = seen(held, asker).ended;
+    // **A chat ending because the app quits has not gone** (#4553): it comes back with the app.
+    let asker_gone = seen(held, asker).ended && !held.chats().ending();
     if asker_gone && kind != Kind::Question {
         return Err(format!(
             "'{}', the chat that asked for this task, has closed, so nobody is left to read a \
@@ -1716,9 +1717,10 @@ pub fn await_answer(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer
                 Err(why) => return no(why),
             }
         }
-        let asker_gone = seen(&held, from.chat).ended;
+        // As in [`send_up`]: a quit is no chat going.
+        let asker_gone = seen(&held, from.chat).ended && !held.chats().ending();
         let hung_up = held.hooks().asker_gone(connection);
-        let mut ledger = tasks.ledger();
+        let ledger = tasks.ledger();
         if let Some(given) = ledger.talk.answered(sender) {
             return task(Answered::Replied {
                 what: Reply::Answered {
@@ -1732,13 +1734,10 @@ pub fn await_answer(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer
             return no("this chat has no question waiting for an answer".to_owned());
         }
         if asker_gone {
-            // The question is the person's from here, and this task's turn may end (#4556).
-            ledger.talk.reach(
-                sender,
-                dispatchtalk::Reached::AskerGone,
-                None,
-                now_secs(SystemTime::now()),
-            );
+            // The question is the person's from here, and this task's turn may end (#4556). The
+            // one look moves it, so the window, the bell and the trail hear of it.
+            drop(ledger);
+            look_at_questions(&held);
             return task(Answered::Replied {
                 what: Reply::AskerGone,
             });
@@ -1804,16 +1803,29 @@ pub fn question_of(held: &Held, task: u32) -> Option<TaskQuestion> {
 /// record of who has gone. And each question closed unanswered since the last look is said once,
 /// as one Update and one line of the log.
 pub fn look_at_questions(held: &Held) {
+    // **A quit ends every chat, and none of them has gone**: each comes back with the app, and
+    // what a question stood at is what the next launch reads (#4553).
+    if held.chats().ending() {
+        return;
+    }
     let askers = ledger(held).talk.askers();
-    let gone: std::collections::HashSet<u32> = askers
-        .into_iter()
-        .filter(|asker| seen(held, *asker).ended)
-        .collect();
+    let mut gone = std::collections::HashSet::new();
+    let mut stuck = std::collections::HashSet::new();
+    for asker in askers {
+        let seen = seen(held, asker);
+        if seen.ended {
+            gone.insert(asker);
+        } else if seen.prompt_showing() {
+            // Stopped on an ask, or on a usage limit, which a harness says as a prompt that
+            // waits for Enter: it can take no turn, so its time starts now.
+            stuck.insert(asker);
+        }
+    }
     let now = now_secs(SystemTime::now());
     let (moved, closed) = {
         let mut ledger = ledger(held);
         (
-            ledger.talk.look(now, &gone),
+            ledger.talk.look(now, &gone, &stuck),
             ledger.talk.take_closed_unanswered(),
         )
     };
@@ -1914,11 +1926,14 @@ pub fn keep_update(root: &std::path::Path, update: purlis_core::inboxupdates::Up
 /// **Every task question waiting on the person**, oldest first (ADR 0107): each one the task
 /// may still be answered in ([`question_of`]), read from the one state behind the row, the ✋
 /// and the Inbox. The asks registry derives its items from this and stores none.
-pub fn reached_the_person(held: &Held) -> Vec<dispatchtalk::ReachedYou> {
+pub fn reached_the_person(held: &Held) -> Vec<(dispatchtalk::ReachedYou, TaskQuestion)> {
     let reached = held.tasks().ledger().talk.reached();
     reached
         .into_iter()
-        .filter(|one| question_of(held, one.task).is_some())
+        .filter_map(|one| {
+            let question = question_of(held, one.task)?;
+            Some((one, question))
+        })
         .collect()
 }
 
@@ -2382,10 +2397,23 @@ pub fn brought_back(
 /// died with the last run.
 pub fn question_brought_back(held: &Held, task: u32) {
     let key = key(held, task);
+    let me = crate::dispatches::chat_ref(held, task);
+    // Asked only where the record of questions could not say: it reads the dispatch records.
+    let asked = || {
+        me.as_ref().is_some_and(|me| {
+            purlis_core::dispatchrecord::list(held.root())
+                .iter()
+                .any(|record| {
+                    record.running()
+                        && purlis_core::dispatchrecord::same_chat(&record.worker.chat, me)
+                        && purlis_core::dispatchrecord::asked_and_unanswered(&record.talk)
+                })
+        })
+    };
     let mut ledger = ledger(held);
     let back = ledger
         .talk
-        .restored(task, &key, held.root(), now_secs(SystemTime::now()));
+        .restored(task, &key, held.root(), now_secs(SystemTime::now()), &asked);
     if back == dispatchtalk::Restored::Open
         && ledger.talk.handed_at(task).is_none()
         && let Some(asker) = ledger.talk.asked_of(task)
@@ -2394,10 +2422,21 @@ pub fn question_brought_back(held: &Held, task: u32) {
     }
 }
 
-/// A launch has put back the tasks with the keys `back`: what was kept of a question of any
-/// other is let go, its task having ended (#4553).
+/// A launch has put back the tasks with the keys `back`: a question kept for any other closes,
+/// its task having ended, and is said (#4553).
 pub fn only_these_came_back(held: &Held, back: &[String]) {
     ledger(held).talk.only_these_came_back(back);
+    look_at_questions(held);
+}
+
+/// **Each asking chat that has a question it was never handed is told** (#4553): the line it was
+/// due died with the last run, and an idle chat would otherwise have no turn to see it. Typed
+/// where it may be typed one; else it reaches the chat when it next moves.
+pub fn askers_told_again(held: &Held) {
+    let askers = ledger(held).talk.askers_not_handed();
+    for asker in askers {
+        tell_the_chat(held, asker);
+    }
 }
 
 /// Seconds since 1970 at `at`.
@@ -3057,6 +3096,8 @@ pub fn closed(held: &Held, chat: u32, task_of: Option<(u32, String)>) {
     // A message is for one chat's turn, and this chat will have no more.
     dispatchtalk::forget(held.root(), chat);
     reopen_settled(held, chat, true);
+    // A question put to it reaches the person at once, and one of its own closes (#4556).
+    look_at_questions(held);
     // The chat that asked for it may have been waiting for it to go before its own program
     // is ended (#1485). A look only: called under a close's lock, it ends nothing here.
     if let Some((asker, _)) = task_of {

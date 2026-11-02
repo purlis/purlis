@@ -46,7 +46,7 @@ impl Project {
     /// The app starts again, and the task is brought back.
     fn restarted(&self) -> (Talk, Restored) {
         let mut after = self.app();
-        let back = after.restored(TASK, "task-id", self.root.path(), NOW);
+        let back = after.restored(TASK, "task-id", self.root.path(), NOW, &|| true);
         (after, back)
     }
 }
@@ -225,7 +225,7 @@ fn a_saved_question_past_a_message_s_bound_does_not_read_back_and_the_task_is_to
     assert_eq!(told.len(), 1, "{told:?}");
     assert!(person_said(&told[0]).contains("ask it again"), "{told:?}");
     // And again from a kept record, nothing is told twice: it no longer reads as a question.
-    let again = after.restored(TASK, "task-id", project.root.path(), NOW);
+    let again = after.restored(TASK, "task-id", project.root.path(), NOW, &|| true);
     assert_eq!(again, Restored::Nothing);
     assert_eq!(after.from_person(TASK).len(), 1);
 }
@@ -270,15 +270,62 @@ fn a_record_that_does_not_read_tells_each_task_brought_back_to_ask_again() {
     );
 }
 
-#[test]
-fn a_record_from_a_build_that_kept_no_questions_is_read_as_questions_lost() {
-    let project = Project::new();
+/// A record from a build that kept no questions: it reads, and holds none.
+fn a_record_of_an_older_build(project: &Project) {
     let mut before = project.app();
     before.instruction("asker-id");
     let read = std::fs::read(&project.record).expect("kept");
     let mut kept: serde_json::Value = serde_json::from_slice(&read).expect("json");
     kept["v"] = serde_json::json!(1);
     std::fs::write(&project.record, serde_json::to_vec(&kept).expect("json")).expect("written");
+}
+
+#[test]
+fn an_older_record_tells_nothing_to_a_task_whose_dispatch_shows_no_question_open() {
+    let project = Project::new();
+    a_record_of_an_older_build(&project);
+
+    let mut after = project.app();
+    let back = after.restored(TASK, "task-id", project.root.path(), NOW, &|| false);
+
+    assert_eq!(back, Restored::Nothing);
+    assert!(after.from_person(TASK).is_empty());
+    assert!(after.take_trail().is_empty(), "no failure to say");
+}
+
+#[test]
+fn a_record_that_does_not_read_tells_nothing_to_a_task_that_asked_nothing() {
+    let project = Project::new();
+    std::fs::create_dir_all(project.record.parent().expect("a folder")).expect("a folder");
+    std::fs::write(&project.record, b"not json").expect("written");
+
+    let mut after = project.app();
+    let back = after.restored(TASK, "task-id", project.root.path(), NOW, &|| false);
+
+    assert_eq!(back, Restored::Nothing);
+    assert!(after.from_person(TASK).is_empty());
+}
+
+#[test]
+fn a_question_of_a_task_that_ended_while_the_app_was_away_closes_and_is_said() {
+    let project = Project::new();
+    let mut before = project.app();
+    let number = project.asks(&mut before, "Which host?");
+
+    let mut after = project.app();
+    after.only_these_came_back(&[]);
+
+    assert_eq!(
+        after.take_closed_unanswered(),
+        vec![ClosedUnanswered { task: TASK, number }]
+    );
+    assert_eq!(after.take_closed_unanswered(), vec![]);
+}
+
+#[test]
+fn a_record_from_a_build_that_kept_no_questions_is_read_as_questions_lost() {
+    let project = Project::new();
+    a_record_of_an_older_build(&project);
 
     let (mut after, back) = project.restarted();
 
@@ -325,7 +372,7 @@ fn a_question_handed_before_a_restart_keeps_when_and_one_never_handed_waits_for_
 
     // The file went before the app wrote that it was handed: the turn had it.
     let mut before = project.app();
-    let _ = before.restored(TASK, "task-id", project.root.path(), NOW);
+    let _ = before.restored(TASK, "task-id", project.root.path(), NOW, &|| true);
     take(project.root.path(), ASKER);
     let (after, _) = project.restarted();
     assert_eq!(after.handed_at(TASK), Some(NOW));
@@ -340,7 +387,7 @@ fn a_chat_started_again_under_a_new_number_keeps_its_question_across_a_restart()
     before.followed(TASK, 40);
 
     let mut after = project.app();
-    let back = after.restored(40, "task-id", project.root.path(), NOW);
+    let back = after.restored(40, "task-id", project.root.path(), NOW, &|| true);
 
     assert_eq!(back, Restored::Open);
     assert_eq!(after.asked_of(40), Some(30));

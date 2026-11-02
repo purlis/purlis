@@ -27,7 +27,7 @@ fn a_task_that_asked() -> Talk {
 fn a_question_no_turn_was_handed_waits_however_long_it_has_been() {
     let mut talk = a_task_that_asked();
 
-    assert_eq!(talk.look(NOW + 86_400, &nobody()), vec![]);
+    assert_eq!(talk.look(NOW + 86_400, &nobody(), &nobody()), vec![]);
 
     assert_eq!(talk.standing(TASK), Some(&Standing::WithAskingChat));
 }
@@ -39,11 +39,11 @@ fn the_clock_starts_when_a_turn_is_handed_the_question() {
 
     assert_eq!(talk.handed_at(TASK), Some(NOW));
     assert_eq!(
-        talk.look(NOW + A_QUESTION_WAITS_SECS - 1, &nobody()),
+        talk.look(NOW + A_QUESTION_WAITS_SECS - 1, &nobody(), &nobody()),
         vec![]
     );
     assert_eq!(
-        talk.look(NOW + A_QUESTION_WAITS_SECS, &nobody()),
+        talk.look(NOW + A_QUESTION_WAITS_SECS, &nobody(), &nobody()),
         vec![(TASK, Reached::NoReply)]
     );
     assert_eq!(talk.reached()[0].why, Reached::NoReply);
@@ -67,7 +67,7 @@ fn a_wait_that_shows_the_asking_chat_the_question_starts_the_clock_too() {
 fn a_closed_or_crashed_asking_chat_sends_the_question_at_once_with_its_reason() {
     let mut talk = a_task_that_asked();
 
-    let moved = talk.look(NOW, &HashSet::from([ASKER]));
+    let moved = talk.look(NOW, &HashSet::from([ASKER]), &nobody());
 
     assert_eq!(moved, vec![(TASK, Reached::AskerGone)]);
 }
@@ -76,11 +76,11 @@ fn a_closed_or_crashed_asking_chat_sends_the_question_at_once_with_its_reason() 
 fn a_question_that_reached_the_person_stays_with_no_limit_and_no_answer_of_its_own() {
     let mut talk = a_task_that_asked();
     talk.handed(&["q.json".to_owned()], NOW);
-    talk.look(NOW + A_QUESTION_WAITS_SECS, &nobody());
+    talk.look(NOW + A_QUESTION_WAITS_SECS, &nobody(), &nobody());
     let reached = talk.reached();
 
     assert_eq!(
-        talk.look(NOW + 30 * 86_400, &HashSet::from([ASKER])),
+        talk.look(NOW + 30 * 86_400, &HashSet::from([ASKER]), &nobody()),
         vec![]
     );
 
@@ -101,7 +101,7 @@ fn a_question_answered_in_its_time_goes_nowhere() {
     };
     talk.answer(TASK, ASKER, "task", given).expect("answered");
 
-    assert_eq!(talk.look(NOW + 500, &nobody()), vec![]);
+    assert_eq!(talk.look(NOW + 500, &nobody(), &nobody()), vec![]);
     assert!(talk.reached().is_empty());
 }
 
@@ -152,4 +152,42 @@ fn an_answered_question_closes_with_nothing_to_say() {
     talk.close(TASK);
 
     assert_eq!(talk.take_closed_unanswered(), vec![]);
+}
+
+#[test]
+fn an_asking_chat_stuck_on_a_prompt_or_a_limit_starts_the_clock_without_a_turn() {
+    let mut talk = a_task_that_asked();
+    let stuck = HashSet::from([ASKER]);
+
+    assert_eq!(talk.look(NOW, &nobody(), &stuck), vec![]);
+    assert_eq!(talk.handed_at(TASK), Some(NOW));
+    assert_eq!(
+        talk.look(NOW + A_QUESTION_WAITS_SECS - 1, &nobody(), &stuck),
+        vec![]
+    );
+
+    assert_eq!(
+        talk.look(NOW + A_QUESTION_WAITS_SECS, &nobody(), &stuck),
+        vec![(TASK, Reached::NoReply)]
+    );
+}
+
+#[test]
+fn a_clock_a_stuck_chat_started_is_not_started_again() {
+    let mut talk = a_task_that_asked();
+    talk.handed(&["q.json".to_owned()], NOW);
+
+    talk.look(NOW + 50, &nobody(), &HashSet::from([ASKER]));
+
+    assert_eq!(talk.handed_at(TASK), Some(NOW));
+}
+
+#[test]
+fn the_asking_chats_not_yet_handed_a_question_are_the_ones_told_again() {
+    let mut talk = a_task_that_asked();
+    assert_eq!(talk.askers_not_handed(), HashSet::from([ASKER]));
+
+    talk.handed(&["q.json".to_owned()], NOW);
+
+    assert!(talk.askers_not_handed().is_empty());
 }

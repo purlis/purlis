@@ -136,14 +136,18 @@ pub(crate) fn finish(
         // And how it came back across the restart (#3900).
         crate::dispatched::brought_back(held, open.session, &records, kept.contains(&open.session));
     }
-    // A question of a task that did not come back ended with it (#4553).
-    let back: Vec<String> = launch
-        .back
-        .chats
-        .iter()
-        .filter_map(|chat| chat.identity.id.clone())
-        .collect();
-    crate::dispatched::only_these_came_back(held, &back);
+    // A question of a task that did not come back ended with it (#4553), where this launch
+    // knows that. And each chat asked one it never saw is told.
+    if settles {
+        let back: Vec<String> = launch
+            .back
+            .chats
+            .iter()
+            .filter_map(|chat| chat.identity.id.clone())
+            .collect();
+        crate::dispatched::only_these_came_back(held, &back);
+    }
+    crate::dispatched::askers_told_again(held);
     after_put_back(held, &launch, coming, settles);
     // What the chats queued while the app was away is delivered now that their tasks are back
     // (#3902), with nobody acting.
@@ -489,6 +493,7 @@ pub(crate) fn retrying(
     let started = coming_back_as(held, id, start);
     if let Ok(task) = &started {
         crate::dispatched::question_brought_back(held, *task);
+        crate::dispatched::askers_told_again(held);
     }
     started
 }

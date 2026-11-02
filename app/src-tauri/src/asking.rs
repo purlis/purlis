@@ -2222,18 +2222,9 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     };
     let task_questions: Vec<Shown> = crate::dispatched::reached_the_person(held)
         .into_iter()
-        .map(|reached| {
-            let session = reached.task;
-            let from = asker_in(chats, session)
-                .and_then(|asker| chats.shown_name(asker))
-                .map_or_else(String::new, |name| {
-                    purlis_core::dispatchtalk::chat_shown(&name)
-                });
-            task_question(
-                reached,
-                from,
-                chain(session, waiting.name_of, waiting.asker_of),
-            )
+        .map(|(reached, question)| {
+            let chain = chain(reached.task, waiting.name_of, waiting.asker_of);
+            task_question(reached, question.asked, chain)
         })
         .collect();
     Asking {

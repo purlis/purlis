@@ -7110,7 +7110,7 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   `purlis_core::dispatchtalk::Talk`. Keyed by each chat's id, which a restart keeps: what became
   of the messages a chat sent lately, its instruction numbers, and (#4553, ADR 0107) **each task's
   open question**.
-  - An entry of `questions` is `number`, `text`, `asker` (the chat asked, by number), `standing`
+  - An entry of `questions` is `number`, `task` (by number), `text`, `asker` (the chat asked, by number), `standing`
     (`with_asking_chat`, or `reached_person` with `why`: `passed_on`, `no_reply` or `asker_gone`,
     `at`, and the asking chat's one-line `note`), `file` (the file's name in that chat's
     `said-<chat>/`), `shown`, `asked_at` and `handed_at`.
@@ -7118,9 +7118,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     rule. **The person's answer is never here**: a restart before the task has it leaves the
     question open.
   - `asked` is how many questions the project has asked, so a number is never used twice.
-  - **Version 1** has no `questions`: it reads, and each task brought back is told to ask again.
-    A file that does not read is started afresh and tells them the same; an entry that does not
-    read tells that task alone.
+  - **Version 1** has no `questions`: it reads, and a task brought back whose dispatch record
+    shows a question with no answer after it is told to ask again. A file that does not read is
+    started afresh and tells them the same; an entry that does not read tells that task alone.
 
 ### `app/spool/keys.json`
 - **Format:** JSON, `{"v": 2, "keys": [{"id": "<16 hex>", "chat": <n>, "key": "<64 hex>",

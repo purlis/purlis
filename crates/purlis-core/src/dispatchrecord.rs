@@ -918,6 +918,17 @@ pub fn last_note_of(record: &Record) -> Option<LastNote> {
     Some(LastNote { at, text })
 }
 
+/// **Whether the last word about a question on a dispatch's `talk` is the question itself**
+/// (#4553): it asked, and nothing there answered it. What says a question was really lost where
+/// the record of open questions could not be read.
+pub fn asked_and_unanswered(talk: &[Said]) -> bool {
+    use crate::dispatchtalk::Kind;
+    talk.iter()
+        .rev()
+        .find(|said| matches!(said.kind, Kind::Question | Kind::Answer))
+        .is_some_and(|said| said.kind == Kind::Question)
+}
+
 impl LastNote {
     /// How long before `now` it was sent; nothing for a note dated after `now`.
     pub fn ago(&self, now: std::time::SystemTime) -> std::time::Duration {
