@@ -227,3 +227,52 @@ fn only_claude_code_reads_a_question() {
         Action::Tool { .. }
     ));
 }
+
+#[test]
+fn a_question_for_a_task_s_asking_chat_reads_as_one_message_with_what_it_offers() {
+    let payload = asked(serde_json::json!([
+        one("Which host?", &["blue", "green"]),
+        one("And when?", &["now"]),
+    ]));
+
+    assert_eq!(
+        asked_text(Source::ClaudeCode, &payload).as_deref(),
+        Some(
+            "Which host?\n- blue: why it fits\n- green: why it fits\n\n\
+             And when?\n- now: why it fits"
+        )
+    );
+}
+
+#[test]
+fn a_question_with_none_in_it_and_any_other_tool_are_not_redirected() {
+    let empty = asked(serde_json::json!([]));
+    assert_eq!(asked_text(Source::ClaudeCode, &empty), None);
+    let other = serde_json::json!({ "tool_name": "Bash", "tool_input": { "command": "ls" } });
+    assert_eq!(asked_text(Source::ClaudeCode, &other), None);
+}
+
+#[test]
+fn a_harness_with_no_adapter_keeps_its_prompt() {
+    let payload = asked(serde_json::json!([one("Which host?", &["blue"])]));
+    for source in [Source::Codex, Source::Opencode] {
+        assert_eq!(asked_text(source, &payload), None);
+        assert_eq!(refused_with(source, "sent"), None);
+    }
+}
+
+#[test]
+fn a_redirected_question_is_refused_in_the_harness_s_own_words_and_its_turn_goes_on() {
+    let said: Value = serde_json::from_str(
+        &refused_with(Source::ClaudeCode, "It went to your asking chat.").expect("a decision"),
+    )
+    .expect("json");
+
+    assert_eq!(
+        said["hookSpecificOutput"],
+        serde_json::json!({
+            "hookEventName": "PermissionRequest",
+            "decision": { "behavior": "deny", "message": "It went to your asking chat." },
+        })
+    );
+}

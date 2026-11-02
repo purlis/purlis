@@ -579,6 +579,16 @@ fn task_tool(name: &str) -> Option<TaskTool> {
                 &dispatch_text(args, "text", chattools::DISPATCH_ANSWER)?,
             )
         },
+        chattools::DISPATCH_PASS_ON => |args| {
+            let note = match args.get("note") {
+                None => None,
+                Some(_) => Some(dispatch_text(args, "note", chattools::DISPATCH_PASS_ON)?),
+            };
+            dispatch::pass_on(
+                dispatch_task(args, chattools::DISPATCH_PASS_ON)?,
+                note.as_deref(),
+            )
+        },
         chattools::DISPATCH_CANCEL => {
             |args| dispatch::cancel(dispatch_task(args, chattools::DISPATCH_CANCEL)?)
         }
@@ -689,6 +699,20 @@ async fn ask_operator(
         Ok(question) => question,
         Err(why) => return Ok(done(Err(why))),
     };
+    // A task's plain question takes the task's route (#4555, ADR 0107), by the app's own
+    // record of the chat. A browser takeover never comes here, and any other chat, or an app
+    // that does not answer, goes on as it always did. Not on a retried call: that one holds
+    // the person's answer.
+    if request.input_responses.is_none() {
+        let asked = question.clone();
+        let routed = tokio::task::spawn_blocking(move || crate::dispatch::ask_routed(&asked))
+            .await
+            .ok()
+            .flatten();
+        if let Some(answered) = routed {
+            return Ok(done(answered));
+        }
+    }
     let state = chattools::question_state(&question);
     if let Some(answer) = request
         .input_responses

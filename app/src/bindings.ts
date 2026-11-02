@@ -4893,6 +4893,12 @@ export type AnswerPath =
  *  the chat that asked (#2047).
  */
 { via: "pool-tool"; run: number } | 
+/**
+ *  `answer_task_question`, through the form that reads the question from the core: the
+ *  task's own words, with `why` it reached the person. `note` is the asking chat's own
+ *  line, `from` being that chat, and is never the task's words.
+ */
+{ via: "task-question"; why: ReachedWhy; from: string; note: string | null } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5031,6 +5037,8 @@ export type AskSource =
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
 "question" | 
+/**  **A task's question that has reached the person** (ADR 0107): in the task's own words. */
+"task-question" | 
 /**
  *  A profile a chat could not start on, because its harness says it is not signed in on
  *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
@@ -11357,6 +11365,15 @@ export type ReachedBy =
 /**  An Allowed host: for this chat, this project on this machine, or everyone in it. */
 "allowed";
 
+/**  Why a task's question reached the person ([`AnswerPath::TaskQuestion`]). */
+export type ReachedWhy = 
+/**  Its asking chat passed it on. */
+"passed-on" | 
+/**  Its asking chat had its turn and did nothing with it in time. */
+"no-reply" | 
+/**  Its asking chat closed or crashed. */
+"asker-gone";
+
 /**  Why this purlis reads a project and writes nothing to it. */
 export type ReadOnlyProject = {
 	/**
@@ -15040,7 +15057,11 @@ export type UpdateKind =
  */
 "root-update-refused" | 
 /**  A chat asked the person to take its browser over, and the browser ended first (#2015). */
-"browser-ask-ended";
+"browser-ask-ended" | 
+/**  A task ended with its question unanswered (#4556). */
+"question-closed" | 
+/**  A task's question could not be taken its route (#4557). */
+"question-failed";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

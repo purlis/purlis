@@ -439,6 +439,7 @@ fn every_pre_allowed_dispatch_subcommand_is_alone_or_refused_unless_it_looks() {
         "purlis dispatch note \"half way\"",
         "purlis dispatch ask \"which cluster?\"",
         "purlis dispatch answer 12 \"the staging one\"",
+        "purlis dispatch pass-on 12 --note \"yours\"",
         "purlis dispatch close 12",
     ];
     // One spelling here for each rule the chat is handed, so a rule added there is met here.

@@ -101,6 +101,8 @@ pub const DISPATCH_TELL: &str = "dispatch_tell";
 /// The tool that answers the question a task this chat dispatched asked it (#3786): `purlis
 /// dispatch answer`.
 pub const DISPATCH_ANSWER: &str = "dispatch_answer";
+/// The tool a chat passes a task's question on to the person with (#4554, ADR 0107).
+pub const DISPATCH_PASS_ON: &str = "dispatch_pass_on";
 
 /// The tool that cancels a task this chat dispatched (#3786): `purlis dispatch cancel`.
 pub const DISPATCH_CANCEL: &str = "dispatch_cancel";
@@ -537,11 +539,12 @@ pub(crate) fn one_string(key: &str, description: &str) -> Value {
 /// of a task it dispatched, and a task's note, question and report to the chat that asked,
 /// each reaching only what the app's record lets its caller reach. Named apart from
 /// [`PRE_ALLOWED`], which is the tools that only read.
-pub const DISPATCH_TOOLS: [&str; 8] = [
+pub const DISPATCH_TOOLS: [&str; 9] = [
     DISPATCH,
     DISPATCH_REPORT,
     DISPATCH_TELL,
     DISPATCH_ANSWER,
+    DISPATCH_PASS_ON,
     DISPATCH_CANCEL,
     DISPATCH_CLOSE,
     DISPATCH_NOTE,
@@ -579,7 +582,7 @@ fn wait_seconds() -> Value {
 }
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 27] = [
+pub static TOOLS: [Tool; 28] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
@@ -1001,6 +1004,29 @@ pub static TOOLS: [Tool; 27] = [
         read_only: false,
     },
     Tool {
+        name: DISPATCH_PASS_ON,
+        description: "Pass the question a task this chat dispatched asked it on to the person, \
+                      when only they should answer it: anything about security, cost, \
+                      something public, or amending a ruling always is. It reaches them in the \
+                      task's own words, so this takes no question text, only your one-line note.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "chat": a_task(),
+                    "note": {
+                        "type": "string",
+                        "description": "Your context for the person, on one line. It is shown \
+                                        as your note, apart from the task's words.",
+                    },
+                },
+                "required": ["chat"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
         name: DISPATCH_CANCEL,
         description: "Cancel a task this chat dispatched: its turn is ended and it is asked for \
                       one short report of what it did, which arrives with the outcome \
@@ -1091,9 +1117,9 @@ pub static TOOLS: [Tool; 27] = [
     },
     Tool {
         name: DISPATCH_ASK,
-        description: "From a dispatched task: ask the chat that asked a question, and wait for \
-                      its answer. A question only the person can answer is not asked this \
-                      way: ask them in this chat. If the wait runs out, end the turn: the \
+        description: "From a dispatched task: ask a question, and wait for its answer. It goes \
+                      to the chat that asked, which answers it or passes it on to the person, \
+                      and you are told who answered. If the wait runs out, end the turn: the \
                       answer is handed to the next one.",
         schema: || {
             json!({
@@ -1114,7 +1140,8 @@ pub static TOOLS: [Tool; 27] = [
     Tool {
         name: ASK_OPERATOR,
         description: "Ask the operator a question and wait for the answer, through this \
-                      harness's own prompt. Never ask for a password, token or other secret: \
+                      harness's own prompt. From a dispatched task the question goes to the chat \
+                      that asked first, and you are told who answered. Never ask for a password, token or other secret: \
                       a credential is used through `purlis secret`, never typed in. When a page \
                       in one of your browsers needs a person (a CAPTCHA, a second factor, a \
                       consent page), name that browser in `browser`: the person is asked to \
@@ -1176,6 +1203,7 @@ pub fn call(
         DISPATCH_WAIT,
         DISPATCH_TELL,
         DISPATCH_ANSWER,
+        DISPATCH_PASS_ON,
         DISPATCH_CANCEL,
         DISPATCH_CLOSE,
         DISPATCH_REPORT,

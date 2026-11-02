@@ -15,6 +15,11 @@
 //! compatibility forms) offer no answer here:
 //! the question is still listed, and the person answers it in its pane. A question the window
 //! cannot show whole offers none either ([`super::super::hooked::shown_in_full`]).
+//!
+//! **A task's question is redirected** (#4555, ADR 0107): this adapter reads the tool's call as
+//! one message for the task's asking chat ([`asked_text`]), and the hook refuses the prompt
+//! with the sentence that says where it went (`hooked::refused_with`). Where the redirect fails,
+//! the question is an ask here as it was, in the pane and the Inbox.
 
 use serde_json::Value;
 
@@ -92,6 +97,39 @@ fn read_as(label: &str) -> String {
     use unicode_normalization::UnicodeNormalization as _;
 
     label.nfkc().collect::<String>().to_lowercase()
+}
+
+/// **A `PermissionRequest` `payload` for [`TOOL`] as one message** (#4555), for a task's asking
+/// chat to read: each question in the tool's own words, under it the answers it offers. None
+/// for any other tool, and for one with no question in it, which is left to the pane.
+pub fn asked_text(payload: &Value) -> Option<String> {
+    if payload["tool_name"].as_str() != Some(TOOL) {
+        return None;
+    }
+    let questions = payload["tool_input"]["questions"].as_array()?;
+    let said: Option<Vec<String>> = questions.iter().map(one_said).collect();
+    let said = said.filter(|said| !said.is_empty())?;
+    Some(said.join("\n\n"))
+}
+
+/// One question of the tool's and the answers it offers.
+fn one_said(question: &Value) -> Option<String> {
+    let asked = question["question"]
+        .as_str()
+        .filter(|one| !one.is_empty())?;
+    let mut said = asked.to_owned();
+    for option in question["options"].as_array().into_iter().flatten() {
+        let Some(label) = option["label"].as_str() else {
+            continue;
+        };
+        said.push_str("\n- ");
+        said.push_str(label);
+        if let Some(why) = option["description"].as_str().filter(|why| !why.is_empty()) {
+            said.push_str(": ");
+            said.push_str(why);
+        }
+    }
+    Some(said)
 }
 
 /// The tool input `choice` answers `payload`'s question with: its own input, and `answers`

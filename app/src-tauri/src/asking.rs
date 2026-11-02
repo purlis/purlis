@@ -156,6 +156,8 @@ pub enum AskSource {
     Terminal,
     /// A chat whose turn ended with the next move the person's.
     Question,
+    /// **A task's question that has reached the person** (ADR 0107): in the task's own words.
+    TaskQuestion,
     /// A profile a chat could not start on, because its harness says it is not signed in on
     /// this device (#2035): answered by running the harness's own sign-in in a shell tab.
     SignIn,
@@ -248,8 +250,39 @@ pub enum AnswerPath {
     /// `answer_pool_tool`, allowing for Allow this run and not for Keep off, for run `run` of
     /// the chat that asked (#2047).
     PoolTool { run: u32 },
+    /// `answer_task_question`, through the form that reads the question from the core: the
+    /// task's own words, with `why` it reached the person. `note` is the asking chat's own
+    /// line, `from` being that chat, and is never the task's words.
+    TaskQuestion {
+        why: ReachedWhy,
+        from: String,
+        note: Option<String>,
+    },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
+}
+
+/// Why a task's question reached the person ([`AnswerPath::TaskQuestion`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReachedWhy {
+    /// Its asking chat passed it on.
+    PassedOn,
+    /// Its asking chat had its turn and did nothing with it in time.
+    NoReply,
+    /// Its asking chat closed or crashed.
+    AskerGone,
+}
+
+impl From<purlis_core::dispatchtalk::Reached> for ReachedWhy {
+    fn from(why: purlis_core::dispatchtalk::Reached) -> Self {
+        use purlis_core::dispatchtalk::Reached;
+        match why {
+            Reached::PassedOn => Self::PassedOn,
+            Reached::NoReply => Self::NoReply,
+            Reached::AskerGone => Self::AskerGone,
+        }
+    }
 }
 
 /// One answer an ask offers.
@@ -902,6 +935,34 @@ pub fn question(session: u32) -> Shown {
         chain: Vec::new(),
         answer: AnswerPath::InItsPane,
         since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+    }
+}
+
+/// **The task question adapter** (ADR 0107): a question that has reached the person, one item
+/// for the ✋ and the Inbox, in the task's own words, masked as any ask's line is. Its
+/// `chain` says which tasks it came through.
+pub fn task_question(
+    reached: purlis_core::dispatchtalk::ReachedYou,
+    from: String,
+    chain: Vec<String>,
+) -> Shown {
+    use purlis_core::dispatchrecord::masked;
+    Shown {
+        session: reached.task,
+        ask: format!("task-question:{}:{}", reached.task, reached.number),
+        says: purlis_core::shown::one_line(&masked(&reached.text), purlis_core::shown::NO_CLIP),
+        options: Vec::new(),
+        source: AskSource::TaskQuestion,
+        chain,
+        answer: AnswerPath::TaskQuestion {
+            why: reached.why.into(),
+            from,
+            note: reached.note,
+        },
+        since: u32::try_from(reached.at).ok(),
         held_until: None,
         writes: None,
         lines: None,
@@ -2159,12 +2220,20 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         },
         runner_of: &|session| chats.runner_of(session),
     };
+    let task_questions: Vec<Shown> = crate::dispatched::reached_the_person(held)
+        .into_iter()
+        .map(|(reached, question)| {
+            let chain = chain(reached.task, waiting.name_of, waiting.asker_of);
+            task_question(reached, question.asked, chain)
+        })
+        .collect();
     Asking {
         plane: plane.clone(),
         // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
         // first ask, with that end, and none of its asks is listed.
         asks: derive(&waiting)
             .into_iter()
+            .chain(task_questions)
             .filter(|ask| !chats.kept_from_the_window(ask.session))
             // The old `[harness_plugins]` keys: Needs you holds their Ask while the Skill studio
             // is on (#3689), so it is in the Inbox only while the studio is off.

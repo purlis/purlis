@@ -12,6 +12,10 @@
 //! chose ([`purlis_core::harness::hooked::decision`]), and the harness carries it out without
 //! the pane ever having focus.
 //!
+//! **A task's own question goes to its asking chat** (#4555, ADR 0107): before anything is held,
+//! the app is asked to route it ([`redirected`]), and the hook refuses the prompt with the
+//! sentence that says where it went. Where that fails, it is an ask as any other.
+//!
 //! **Every other way out prints nothing**, and then the harness's own prompt decides in the
 //! pane: no app listening, a payload that will not read, an app that will not hold the ask,
 //! the deadline passing. This hook never allows or denies anything by itself.
@@ -49,6 +53,10 @@ pub fn permissionrequest(payload: &str) -> ExitCode {
     else {
         return ExitCode::SUCCESS;
     };
+    if let Some(decision) = redirected(source, &payload, &crate::dispatch::route) {
+        println!("{decision}");
+        return ExitCode::SUCCESS;
+    }
     let asked = PermissionAsked {
         chat,
         permission_request: source,
@@ -82,6 +90,25 @@ pub fn permissionrequest(payload: &str) -> ExitCode {
         Err(why) => eprintln!("purlis: the app did not take this permission ask ({why})"),
     }
     ExitCode::SUCCESS
+}
+
+/// **The hook's refusal of a question `route` sent to the task's asking chat** (#4555), or none
+/// where it is no question, the harness has no adapter, or the person is to be asked: then the
+/// hook goes on as for any ask, and the question is in the pane and the Inbox. `route` is the
+/// app's to answer, from its own record of the chat.
+fn redirected(
+    source: Source,
+    payload: &serde_json::Value,
+    route: &dyn Fn(&str) -> crate::dispatch::Routed,
+) -> Option<String> {
+    use crate::dispatch::Routed;
+    let text = hooked::asked_text(source, payload)?;
+    let message = match route(&text) {
+        Routed::AskingChat(to) => purlis_core::dispatchtalk::redirected(&to),
+        Routed::AlreadyAsking(why) => why,
+        Routed::ThePerson => return None,
+    };
+    hooked::refused_with(source, &message)
 }
 
 /// How long this hook has run since `began`, in milliseconds, as its line says it.
@@ -147,6 +174,69 @@ mod tests {
             hookwire::SOCKET_ENV => Some("/tmp/s.sock".to_owned()),
             _ => None,
         }
+    }
+
+    fn a_question() -> serde_json::Value {
+        serde_json::json!({
+            "tool_name": "AskUserQuestion",
+            "tool_input": { "questions": [{
+                "question": "Which host?",
+                "options": [{ "label": "blue" }],
+            }] },
+        })
+    }
+
+    fn message_of(decision: &str) -> String {
+        let said: serde_json::Value = serde_json::from_str(decision).expect("json");
+        said["hookSpecificOutput"]["decision"]["message"]
+            .as_str()
+            .expect("a message")
+            .to_owned()
+    }
+
+    #[test]
+    fn a_task_s_question_prompt_is_refused_with_where_it_went() {
+        use crate::dispatch::Routed;
+        let decision = redirected(Source::ClaudeCode, &a_question(), &|text| {
+            assert_eq!(text, "Which host?\n- blue");
+            Routed::AskingChat("steward 3".to_owned())
+        })
+        .expect("redirected");
+
+        assert_eq!(
+            message_of(&decision),
+            purlis_core::dispatchtalk::redirected("steward 3")
+        );
+    }
+
+    #[test]
+    fn a_task_paused_on_a_question_is_told_so_and_never_reaches_around_its_asking_chat() {
+        use crate::dispatch::Routed;
+        let decision = redirected(Source::ClaudeCode, &a_question(), &|_| {
+            Routed::AlreadyAsking("It is paused.".to_owned())
+        })
+        .expect("refused");
+
+        assert_eq!(message_of(&decision), "It is paused.");
+    }
+
+    #[test]
+    fn a_question_for_the_person_or_a_failed_redirect_goes_on_as_any_ask() {
+        use crate::dispatch::Routed;
+        assert_eq!(
+            redirected(Source::ClaudeCode, &a_question(), &|_| Routed::ThePerson),
+            None
+        );
+    }
+
+    #[test]
+    fn a_permission_and_a_harness_with_no_adapter_are_never_routed() {
+        use crate::dispatch::Routed;
+        let route = |_: &str| -> Routed { panic!("not routed") };
+        let bash = serde_json::json!({ "tool_name": "Bash", "tool_input": {"command": "ls"} });
+        assert_eq!(redirected(Source::ClaudeCode, &bash, &route), None);
+        assert_eq!(redirected(Source::Codex, &a_question(), &route), None);
+        assert_eq!(redirected(Source::Opencode, &a_question(), &route), None);
     }
 
     #[test]

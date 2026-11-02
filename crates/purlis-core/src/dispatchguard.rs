@@ -133,13 +133,14 @@ pub fn refusal(cmd: &str, caller: Caller<'_>) -> Option<(&'static str, String)> 
 }
 
 /// purlis's chat tools that dispatch, by the names [`crate::chattools`] gives them.
-const OUR_TOOLS: [&str; 11] = [
+const OUR_TOOLS: [&str; 12] = [
     crate::chattools::DISPATCH,
     crate::chattools::DISPATCH_LIST,
     crate::chattools::DISPATCH_READ,
     crate::chattools::DISPATCH_WAIT,
     crate::chattools::DISPATCH_TELL,
     crate::chattools::DISPATCH_ANSWER,
+    crate::chattools::DISPATCH_PASS_ON,
     crate::chattools::DISPATCH_CANCEL,
     crate::chattools::DISPATCH_CLOSE,
     crate::chattools::DISPATCH_REPORT,
@@ -205,10 +206,11 @@ pub const REASON_TEXT_SOURCE: &str = "dispatch-text-source";
 
 /// The subcommands of `purlis dispatch` that send text as it is written, each with the shape
 /// its refusal tells the chat to write instead.
-const SENDS_TEXT: [(&str, &str); 5] = [
+const SENDS_TEXT: [(&str, &str); 6] = [
     ("report", "report --outcome done \"<summary>\""),
     ("tell", "tell <chat> \"<text>\""),
     ("answer", "answer <chat> \"<answer>\""),
+    ("pass-on", "pass-on <chat> --note \"<note>\""),
     ("note", "note \"<note>\""),
     ("ask", "ask \"<question>\""),
 ];

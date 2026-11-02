@@ -124,6 +124,7 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "dispatch_wait",
             "dispatch_tell",
             "dispatch_answer",
+            "dispatch_pass_on",
             "dispatch_cancel",
             "dispatch_close",
             "dispatch_report",
@@ -1013,6 +1014,7 @@ fn every_dispatch_subcommand_has_a_tool_a_claude_code_chat_runs_without_asking()
         (DISPATCH_WAIT, true),
         (DISPATCH_TELL, false),
         (DISPATCH_ANSWER, false),
+        (DISPATCH_PASS_ON, false),
         (DISPATCH_CANCEL, false),
         (DISPATCH_CLOSE, false),
         (DISPATCH_REPORT, false),
@@ -1089,6 +1091,8 @@ fn a_dispatch_tool_names_its_task_by_number_and_its_text_whole() {
         // `chat`, or `all` for every task still working (#3904).
         (DISPATCH_TELL, json!(["text"])),
         (DISPATCH_ANSWER, json!(["chat", "text"])),
+        // It takes no question: the wording cannot change on its way (#4554).
+        (DISPATCH_PASS_ON, json!(["chat"])),
         (DISPATCH_CANCEL, json!(["chat"])),
         (DISPATCH_CLOSE, json!(["chat"])),
         // `text`, or `ack` alone (#3904).
