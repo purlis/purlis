@@ -74,7 +74,7 @@ use purlis_core::hookwire::relay::{Heard, Replied, Reply};
 use crate::hooks::Relayed;
 use crate::host::{Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching};
 use crate::reconnecting::Reconnection;
-use crate::sessions::{ENDED, STOPPED, Utf8Stream};
+use crate::sessions::{ENDED, STOPPED};
 
 /// The start-time switch: set to `0`, it runs this launch's chats in the window's own process,
 /// the way back while the window's own path is still built (#2004). Read once, as the app
@@ -1197,12 +1197,12 @@ struct Paced {
 }
 
 impl TextSink {
-    /// Hand `text` to the pane: `bytes` of the stream of `epoch`, counted once it is drawn.
-    fn hand(&mut self, epoch: u32, bytes: usize, text: String) {
+    /// Hand `piece` to the pane: `bytes` of the stream of `epoch`, counted once it is drawn.
+    fn hand(&mut self, epoch: u32, bytes: usize, piece: Vec<u8>) {
         if let Some(paced) = self.paced.as_mut() {
             paced.handed.push_back((epoch, bytes));
         }
-        (self.sink)(text);
+        (self.sink)(piece);
     }
 
     /// The pane drew `pieces` more of what it was handed: the bytes of the current stream they
@@ -2486,9 +2486,9 @@ async fn take_views(mut views: Acceptor, shared: Arc<Shared>) {
     }
 }
 
-/// Draw one stream of a view into its pane, as text, acknowledging what was handed over. A
-/// stream after the first (the view fell behind, and came back at its next epoch) starts its
-/// pane over.
+/// Draw one stream of a view into its pane, each chunk handed over as the bytes it is (#4745),
+/// acknowledging what was handed over, or, for a paced pane, what it drew. A stream after the
+/// first (the view fell behind, and came back at its next epoch) starts its pane over.
 async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
     let view = reader.view().0;
     let frames = lock(&shared.views)
@@ -2503,13 +2503,10 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
     }
     let epoch = reader.epoch().0;
     let mut drawn = paced_stream(&shared, view, epoch);
-    let mut text = Utf8Stream::default();
     if epoch > 1 {
-        give(&shared, view, epoch, 0, RESET.to_owned());
+        give(&shared, view, epoch, 0, RESET.as_bytes().to_vec());
     }
     let mut first = true;
-    // Bytes read and not yet in a piece handed over: a character cut between two chunks.
-    let mut unhanded = 0;
     loop {
         let chunk = tokio::select! {
             chunk = reader.next() => chunk,
@@ -2532,10 +2529,9 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
         let bytes = match chunk {
             Chunk::Snapshot(bytes) | Chunk::Live(bytes) => bytes,
         };
-        unhanded += bytes.len();
-        if give(&shared, view, epoch, unhanded, text.push(&bytes)) {
-            unhanded = 0;
-        }
+        // Each chunk is one piece, and carries exactly its own bytes: a character cut between
+        // two chunks is the pane's terminal's to put together, so nothing is held back here.
+        give(&shared, view, epoch, bytes.len(), bytes.to_vec());
         // It draws a snapshot, which comes only over a link that is up: whatever was said of its
         // runner's link, it is reconnected (#2496).
         if std::mem::take(&mut first) {
@@ -2667,16 +2663,15 @@ fn paced_stream(
     Some(drawn)
 }
 
-/// Hand `text`, which carries `bytes` of the stream of `epoch`, to view `view`'s pane, if it
-/// still has one. Whether it was handed: nothing is, for no text.
-fn give(shared: &Shared, view: u32, epoch: u32, bytes: usize, text: String) -> bool {
-    if text.is_empty() {
-        return false;
+/// Hand `piece`, which carries `bytes` of the stream of `epoch`, to view `view`'s pane, if it
+/// still has one. Nothing is handed for an empty piece.
+fn give(shared: &Shared, view: u32, epoch: u32, bytes: usize, piece: Vec<u8>) {
+    if piece.is_empty() {
+        return;
     }
     if let Some(sink) = text_sink(shared, view) {
-        lock(&sink).hand(epoch, bytes, text);
+        lock(&sink).hand(epoch, bytes, piece);
     }
-    true
 }
 
 /// The view ended for good, and its last bytes are drawn: its pane is told, once.
@@ -2692,7 +2687,7 @@ fn finish_view(shared: &Shared, view: u32) {
         }
     };
     match sink {
-        Some(Draws::Text(sink)) => lock(&sink).hand(0, 0, ENDED.to_owned()),
+        Some(Draws::Text(sink)) => lock(&sink).hand(0, 0, ENDED.as_bytes().to_vec()),
         Some(Draws::Frames(sink)) => (lock(&sink).frames)(None, bytes::Bytes::new()),
         None => {}
     }

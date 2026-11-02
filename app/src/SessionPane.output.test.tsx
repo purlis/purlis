@@ -58,14 +58,21 @@ const frame = () =>
   });
 
 /** The view's output channel, as the pane handed it to the core. */
-let output: Channel<string> | undefined;
+let output: Channel<ArrayBuffer> | undefined;
 let index = 0;
-/** One chunk from the core, delivered as Tauri delivers a channel's message. */
-const send = (message: string) =>
+/**
+ * One chunk from the core, delivered as Tauri delivers a channel's raw body: an `ArrayBuffer`
+ * of the bytes the program wrote (#4745). Text is written as its UTF-8.
+ */
+const send = (chunk: string | Uint8Array) =>
   act(() => {
     if (!output) throw new Error("the pane has opened no view");
+    const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk;
+    const message = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     window.__TAURI_INTERNALS__.runCallback(output.id, { index: index++, message });
   });
+/** What one terminal write carried, as text. */
+const text = (written: unknown) => new TextDecoder().decode(written as Uint8Array);
 
 beforeEach(() => {
   made.length = 0;
@@ -80,7 +87,7 @@ beforeEach(() => {
   vi.stubGlobal("cancelAnimationFrame", (id: number) => queued.delete(id));
   mockIPC((cmd, args) => {
     if (cmd === "watch_session") {
-      output = (args as { output: Channel<string> }).output;
+      output = (args as { output: Channel<ArrayBuffer> }).output;
       return { view: 1, columns: 80, rows: 24, scrollback: 5000, newline: null };
     }
     return null;
@@ -115,7 +122,7 @@ describe("a chat's output reaching its terminal (#4732)", () => {
     frame();
 
     expect(writes).toHaveBeenCalledTimes(1);
-    expect(writes.mock.calls[0][0]).toBe("first second third");
+    expect(text(writes.mock.calls[0][0])).toBe("first second third");
   });
 
   it("writes once more for the chunks of the next frame, and nothing for a frame with none", async () => {
@@ -128,7 +135,7 @@ describe("a chat's output reaching its terminal (#4732)", () => {
     await send("three");
     frame();
 
-    expect(writes.mock.calls.map(([text]) => text)).toEqual(["one", "twothree"]);
+    expect(writes.mock.calls.map(([written]) => text(written))).toEqual(["one", "twothree"]);
   });
 
   it("writes nothing once the pane is gone, even for chunks it had gathered", async () => {
@@ -142,6 +149,36 @@ describe("a chat's output reaching its terminal (#4732)", () => {
   });
 });
 
+describe("a chat's output reaching its terminal as the bytes it is (#4745)", () => {
+  it("writes the bytes the program wrote, unchanged, as one write per frame", async () => {
+    const { writes } = await openPane();
+    const wrote = [
+      new Uint8Array([0x63, 0x61, 0x66, 0xc3]),
+      new Uint8Array([0xa9, 0x1b, 0x5b, 0x6d]),
+    ];
+
+    await send(wrote[0]);
+    await send(wrote[1]);
+    frame();
+
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(writes.mock.calls[0][0]).toEqual(new Uint8Array([...wrote[0], ...wrote[1]]));
+  });
+
+  it("draws a character the program's output cut between two frames whole", async () => {
+    await openPane();
+
+    await send(new Uint8Array([0x63, 0x61, 0x66, 0xc3]));
+    frame();
+    await send(new Uint8Array([0xa9, 0x21]));
+    frame();
+
+    await waitFor(() =>
+      expect(made[0].buffer.active.getLine(0)?.translateToString(true)).toBe("café!"),
+    );
+  });
+});
+
 describe("what the terminal drew, told back to the core (#4733)", () => {
   /** Each `session_drawn` the pane sent, as it sent it. */
   let reports: unknown[] = [];
@@ -149,7 +186,7 @@ describe("what the terminal drew, told back to the core (#4733)", () => {
     reports = [];
     mockIPC((cmd, args) => {
       if (cmd === "watch_session") {
-        output = (args as { output: Channel<string> }).output;
+        output = (args as { output: Channel<ArrayBuffer> }).output;
         return { view: 1, columns: 80, rows: 24, scrollback: 5000, newline: null };
       }
       if (cmd === "session_drawn") reports.push(args);

@@ -199,8 +199,9 @@ pub const MOVES_NO_CHAT: &str = "chats do not move to or from where this one run
 pub const NOT_COMPOSED_HERE: &str =
     "a chat in the window is started from what the window composed, never by its names alone";
 
-/// Where a view's text goes. It is called on the view's own thread, one batch at a time.
-pub type Sink = Box<dyn FnMut(String) + Send>;
+/// Where a view's output goes: the bytes its program wrote, as it wrote them, never decoded on
+/// the way (#4745). It is called on the view's own thread, one batch at a time.
+pub type Sink = Box<dyn FnMut(Vec<u8>) + Send>;
 
 /// Told how each session ended, as it ends, with the session's id. An `Arc` so each session
 /// can hold it for as long as its program runs.

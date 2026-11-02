@@ -8,13 +8,16 @@ import { writePerFrame, type Write } from "./paneWrites";
 function terminal() {
   const written: string[] = [];
   const unparsed: (() => void)[] = [];
-  const write: Write = (text, parsed) => {
-    written.push(text);
+  const write: Write = (bytes, parsed) => {
+    written.push(new TextDecoder().decode(bytes));
     if (parsed) unparsed.push(parsed);
   };
   const parse = () => unparsed.splice(0).forEach((then) => then());
   return { written, unparsed, write, parse };
 }
+
+/** `text` as the bytes a program writes. */
+const bytes = (text: string) => new TextEncoder().encode(text);
 
 /** Frames the test runs by hand. */
 function frames() {
@@ -41,9 +44,9 @@ describe("a pane's output, gathered per frame (#4732)", () => {
     const writes = writePerFrame(into.write, clock.next);
     const told: string[] = [];
 
-    writes.add("a", () => told.push("a"));
-    writes.add("b");
-    writes.add("c", () => told.push("c"));
+    writes.add(bytes("a"), () => told.push("a"));
+    writes.add(bytes("b"));
+    writes.add(bytes("c"), () => told.push("c"));
     clock.run();
     expect(into.written).toEqual(["abc"]);
     expect(told).toEqual([]);
@@ -58,7 +61,7 @@ describe("a pane's output, gathered per frame (#4732)", () => {
     const clock = frames();
     const writes = writePerFrame(into.write, clock.next);
 
-    writes.add("plain");
+    writes.add(bytes("plain"));
     clock.run();
 
     expect(into.written).toEqual(["plain"]);
@@ -75,9 +78,9 @@ describe("a pane's output, gathered per frame (#4732)", () => {
       },
     );
 
-    writes.add("x");
-    writes.add("y");
-    writes.add("z");
+    writes.add(bytes("x"));
+    writes.add(bytes("y"));
+    writes.add(bytes("z"));
 
     expect(asked).toBe(1);
   });
