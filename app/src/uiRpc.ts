@@ -1619,6 +1619,8 @@ export const commands = {
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
+	poolSetupCommand: __WINDOW_ONLY_RESULT,
+	poolSetupCreate: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -8832,6 +8834,20 @@ export type PoolSetupAction = {
 };
 
 /**  What the tab draws. */
+/**
+ *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
+ *  contract; none where the pool was made.
+ */
+export type PoolSetupCreated = {
+	breaks: string[],
+};
+
+/**  A step by hand: the exact commands, and what running them means (#4481). */
+export type PoolSetupSee = {
+	note: string,
+	text: string,
+};
+
 export type PoolSetupShown = {
 	/**  The pool this setup made. */
 	pool: string | null,
@@ -8840,6 +8856,10 @@ export type PoolSetupShown = {
 	/**  The step the person has reached. */
 	at: string | null,
 	steps: PoolSetupStep[],
+	/**  The pool was made by hand under the name typed, and purlis noticed (#4481). */
+	noticed: boolean,
+	/**  Pools this machine keeps that this setup isn't on. */
+	others: string[],
 };
 
 /**  One step as it stands. */
@@ -8851,6 +8871,7 @@ export type PoolSetupStep = {
 	findings: string[],
 	next: PoolSetupAction | null,
 	skippable: boolean,
+	see: PoolSetupSee | null,
 };
 
 /**  What the person is asked. */

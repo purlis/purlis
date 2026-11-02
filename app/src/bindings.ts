@@ -3217,6 +3217,16 @@ export const commands = {
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
 	poolSetupPool: (name: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_pool", { name })),
 	/**
+	 *  **The command that does what the Pool step's button would do with `adding`**: See what this
+	 *  does, from the value the button sends (Q30). It reads nothing and changes nothing.
+	 */
+	poolSetupCommand: (adding: PoolAdding) => typedError<string, string>(__TAURI_INVOKE("pool_setup_command", { adding })),
+	/**
+	 *  **Makes the pool `adding` asks for**, on the Pool step's own button: what `purlis pool add`
+	 *  runs, a team's image held to the contract first.
+	 */
+	poolSetupCreate: (adding: PoolAdding) => typedError<PoolSetupCreated, string>(__TAURI_INVOKE("pool_setup_create", { adding })),
+	/**
 	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 	 *  elsewhere, with what to do instead.
 	 */
@@ -11194,6 +11204,20 @@ export type PoolSetupAction = {
 };
 
 /**  What the tab draws. */
+/**
+ *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
+ *  contract; none where the pool was made.
+ */
+export type PoolSetupCreated = {
+	breaks: string[],
+};
+
+/**  A step by hand: the exact commands, and what running them means (#4481). */
+export type PoolSetupSee = {
+	note: string,
+	text: string,
+};
+
 export type PoolSetupShown = {
 	/**  The pool this setup made. */
 	pool: string | null,
@@ -11202,6 +11226,10 @@ export type PoolSetupShown = {
 	/**  The step the person has reached. */
 	at: string | null,
 	steps: PoolSetupStep[],
+	/**  The pool was made by hand under the name typed, and purlis noticed (#4481). */
+	noticed: boolean,
+	/**  Pools this machine keeps that this setup isn't on. */
+	others: string[],
 };
 
 /**  One step as it stands. */
@@ -11213,6 +11241,7 @@ export type PoolSetupStep = {
 	findings: string[],
 	next: PoolSetupAction | null,
 	skippable: boolean,
+	see: PoolSetupSee | null,
 };
 
 /**  What the person is asked. */

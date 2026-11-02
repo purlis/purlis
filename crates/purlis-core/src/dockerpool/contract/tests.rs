@@ -1,0 +1,61 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+use super::*;
+use serde_json::json;
+
+fn keeping() -> serde_json::Value {
+    json!({
+        "Os": "linux",
+        "Config": {
+            "User": "10001:10001",
+            "Env": ["HOME=/home/purlis"],
+            "Entrypoint": ["/usr/bin/tini", "--"],
+            "Cmd": ["/usr/local/bin/purlis", "serve"],
+        }
+    })
+}
+
+#[test]
+fn an_image_that_keeps_the_contract_has_no_problem() {
+    assert_eq!(config_problems(&keeping()), Vec::<String>::new());
+}
+
+#[test]
+fn an_image_for_another_system_says_so() {
+    let mut image = keeping();
+    image["Os"] = json!("windows");
+    assert!(config_problems(&image)[0].contains("Linux"));
+}
+
+#[test]
+fn root_a_name_or_no_user_is_refused_since_a_cluster_checks_a_number() {
+    for user in ["0:0", "root", ""] {
+        let mut image = keeping();
+        image["Config"]["User"] = json!(user);
+        let said = config_problems(&image);
+        assert_eq!(said.len(), 1, "{user}: {said:?}");
+        assert!(said[0].contains("number other than 0"), "{said:?}");
+    }
+}
+
+#[test]
+fn no_absolute_home_is_a_problem() {
+    let mut image = keeping();
+    image["Config"]["Env"] = json!(["HOME=relative"]);
+    assert!(config_problems(&image)[0].contains("HOME"));
+}
+
+#[test]
+fn its_command_has_to_end_in_purlis_serve() {
+    let mut image = keeping();
+    image["Config"]["Cmd"] = json!(["/usr/local/bin/purlis", "serve", "--more"]);
+    assert!(config_problems(&image)[0].contains("end in purlis serve"));
+}
+
+#[test]
+fn purlis_serve_as_pid_one_is_refused_since_nothing_reaps() {
+    let mut image = keeping();
+    image["Config"]["Entrypoint"] = json!([]);
+    assert!(config_problems(&image)[0].contains("init that reaps"));
+}

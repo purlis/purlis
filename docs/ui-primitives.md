@@ -857,6 +857,19 @@ reached. A step's variant is its state (`done`, `current`, `attention`, `skipped
 `later`), told apart by its mark and its words as well as its colour. A `later` step can't be
 pressed. Pool setup's Where and Pool steps are its first user (`PoolSetupTab.stories.tsx`).
 
+## The checks family
+
+**A list of things checked is the checks family** (`app/src/ui/checks/`, #4481): `CheckList` and
+`CheckLine`. A line's variant is its verdict (`ok`, `missing`, `running`, `todo`, `warn`, `skip`),
+told apart by its mark and its words as well as its colour. Nothing in it is pressed. Pool setup's
+contract check and Try it use it.
+
+## The code family
+
+**Text to read and copy is the code family** (`app/src/ui/code/`, #4481): `CodeBlock`, a command or
+YAML in a box with its Copy button, which says it copied or that it couldn't. The text can be
+reached by the keyboard, so it can be scrolled there. See what this does in Pool setup uses it.
+
 ## The meter family
 
 **A value drawn as a bar is the meter family** (`app/src/ui/meter/`, #3674, on React Aria's

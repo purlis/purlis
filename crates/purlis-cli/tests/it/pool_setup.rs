@@ -66,3 +66,69 @@ fn a_pool_this_machine_has_not_is_refused_in_words() {
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(said.contains("no pool named nowhere"), "{said}");
 }
+
+fn pool_add(config: &Path, args: &[&str]) -> std::process::Output {
+    support::purlis()
+        .args(["pool", "add"])
+        .args(args)
+        .current_dir(config)
+        .env("PURLIS_CONFIG_HOME", config.join("config"))
+        .env("HOME", config)
+        .env("PATH", config)
+        .output()
+        .expect("the binary runs")
+}
+
+#[test]
+fn adding_a_pool_needs_its_image_by_flag() {
+    let config = tempfile::tempdir().unwrap();
+    let out = pool_add(config.path(), &["dev-box"]);
+    assert!(!out.status.success(), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--image"));
+}
+
+#[test]
+fn adding_a_pool_with_no_docker_says_so_and_keeps_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let image = format!("ghcr.io/purlis/purlis-runner@sha256:{}", "0".repeat(64));
+    let out = pool_add(config.path(), &["dev-box", "--image", &image]);
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no docker"),
+        "{out:?}"
+    );
+    assert!(!config.path().join("config/runners.json").exists());
+}
+
+#[test]
+fn adding_a_pool_in_a_chat_is_refused_in_words() {
+    let config = tempfile::tempdir().unwrap();
+    let image = format!("ghcr.io/purlis/purlis-runner@sha256:{}", "0".repeat(64));
+    let out = support::purlis()
+        .args(["pool", "add", "dev-box", "--image", &image])
+        .current_dir(config.path())
+        .env("PURLIS_CONFIG_HOME", config.path().join("config"))
+        .env("HOME", config.path())
+        .env(purlis_core::hookwire::CHAT_ENV, "1")
+        .output()
+        .expect("the binary runs");
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("a chat doesn't reach"),
+        "{out:?}"
+    );
+}
+
+#[test]
+fn no_fetch_belongs_to_a_check() {
+    let config = tempfile::tempdir().unwrap();
+    let out = support::purlis()
+        .args(["profile", "sign-in", "work", "--no-fetch"])
+        .current_dir(config.path())
+        .env("PURLIS_CONFIG_HOME", config.path().join("config"))
+        .env("HOME", config.path())
+        .output()
+        .expect("the binary runs");
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--check"));
+}

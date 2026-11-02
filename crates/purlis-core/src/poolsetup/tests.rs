@@ -562,3 +562,94 @@ fn a_name_no_pool_could_have_is_refused_and_not_kept() {
     assert!(choose_name(config.path(), Some(&"x".repeat(70_000))).is_err());
     assert_eq!(read_choices(config.path()).unwrap().name, None);
 }
+
+fn a_pool_kept(config: &Path, name: &str) {
+    let image = crate::dockerpool::Image::pinned(&format!(
+        "{}@{}",
+        crate::dockerpool::PURLIS_RUNNER_IMAGE,
+        crate::dockerpool::tests::DIGEST
+    ))
+    .unwrap();
+    let pool = runners::Pool::new(name, image, runners::Set::default()).unwrap();
+    let locked = runners::lock(config);
+    runners::record_pool_locked(config, &pool, &locked).unwrap();
+}
+
+fn here(config: &Path) -> Here<'_> {
+    Here {
+        config,
+        plane: None,
+        docker: None,
+        engine: Err("no engine here".to_owned()),
+    }
+}
+
+#[test]
+fn a_pool_made_by_hand_under_the_name_typed_is_noticed() {
+    let config = tempfile::tempdir().unwrap();
+    choose_name(config.path(), Some("dev-box")).unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    let found = resumed(&here(config.path())).unwrap();
+    assert_eq!(found.setup.pool.as_deref(), Some("dev-box"));
+    assert!(found.noticed);
+}
+
+#[test]
+fn a_name_typed_never_picks_a_pool_that_was_there_before_it() {
+    let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    choose_name(config.path(), Some("dev-box")).unwrap();
+    let found = resumed(&here(config.path())).unwrap();
+    assert_eq!(found.setup.pool, None);
+    assert!(!found.noticed);
+    assert_eq!(found.setup.others, ["dev-box"]);
+}
+
+#[test]
+fn a_pool_this_setup_went_on_with_is_not_a_notice() {
+    let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    choose_pool(config.path(), "dev-box").unwrap();
+    let found = resumed(&here(config.path())).unwrap();
+    assert_eq!(found.setup.pool.as_deref(), Some("dev-box"));
+    assert!(!found.noticed);
+    assert!(found.setup.others.is_empty());
+}
+
+#[test]
+fn a_removed_pool_s_name_doesn_t_pick_the_next_pool_of_that_name() {
+    let config = tempfile::tempdir().unwrap();
+    choose_name(config.path(), Some("dev-box")).unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    forget_pool_locked(config.path(), "dev-box").unwrap();
+    let chose = read_choices(config.path()).unwrap();
+    assert_eq!(chose.name, None);
+    assert!(!chose.name_free);
+}
+
+#[test]
+fn signing_in_by_hand_is_the_command_the_step_shows() {
+    let setup = answer(&on_a_pool(
+        Runner::Running,
+        SignIns::Read(vec![
+            ("work".into(), Profile::Standing(Standing::SignedIn)),
+            ("oss".into(), Profile::Standing(Standing::SignedOut)),
+        ]),
+    ));
+    let see = setup
+        .step(StepId::Signins)
+        .and_then(|step| step.see.clone())
+        .expect("commands");
+    assert_eq!(see.text, "purlis profile sign-in oss --pool dev-box");
+}
+
+#[test]
+fn where_says_how_it_asks_and_that_it_only_reads() {
+    let setup = answer(&facts(Engine::Ready));
+    let see = setup
+        .step(StepId::Where)
+        .and_then(|step| step.see.clone())
+        .expect("commands");
+    assert_eq!(see.text, "docker version");
+    assert!(see.note.contains("only reads"));
+}

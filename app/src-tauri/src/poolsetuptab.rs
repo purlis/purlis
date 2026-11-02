@@ -5,6 +5,7 @@
 //! the window reads it, and the choices the person makes there. Reading changes nothing here;
 //! each change happens on its own button.
 
+use crate::dockerpools::PoolAdding;
 use crate::planes::{PlaneId, Planes};
 
 /// One step's next action.
@@ -17,6 +18,13 @@ pub struct PoolSetupAction {
     pub url: Option<String>,
 }
 
+/// A step by hand: the exact commands, and what running them means (#4481).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupSee {
+    pub note: String,
+    pub text: String,
+}
+
 /// One step as it stands.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSetupStep {
@@ -27,6 +35,7 @@ pub struct PoolSetupStep {
     pub findings: Vec<String>,
     pub next: Option<PoolSetupAction>,
     pub skippable: bool,
+    pub see: Option<PoolSetupSee>,
 }
 
 /// What the tab draws.
@@ -39,6 +48,17 @@ pub struct PoolSetupShown {
     /// The step the person has reached.
     pub at: Option<String>,
     pub steps: Vec<PoolSetupStep>,
+    /// The pool was made by hand under the name typed, and purlis noticed (#4481).
+    pub noticed: bool,
+    /// Pools this machine keeps that this setup isn't on.
+    pub others: Vec<String>,
+}
+
+/// What the Pool step's button did: nothing made, and why, where a team's image breaks the
+/// contract; none where the pool was made.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupCreated {
+    pub breaks: Vec<String>,
 }
 
 /// A core value's word, as it serializes.
@@ -52,10 +72,17 @@ fn word(value: &impl serde::Serialize) -> String {
 
 /// What the core answered, as the window takes it.
 #[cfg(unix)]
-pub fn shown(setup: &purlis_core::poolsetup::Setup, name: Option<String>) -> PoolSetupShown {
+pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
+    let purlis_core::poolsetup::Resumed {
+        setup,
+        name,
+        noticed,
+    } = found;
     PoolSetupShown {
         pool: setup.pool.clone(),
         name,
+        noticed,
+        others: setup.others.clone(),
         at: setup.at.as_ref().map(word),
         steps: setup
             .steps
@@ -74,6 +101,10 @@ pub fn shown(setup: &purlis_core::poolsetup::Setup, name: Option<String>) -> Poo
                     url: next.url.clone(),
                 }),
                 skippable: step.skippable,
+                see: step.see.as_ref().map(|see| PoolSetupSee {
+                    note: see.note.clone(),
+                    text: see.text.clone(),
+                }),
             })
             .collect(),
     }
@@ -106,8 +137,9 @@ pub async fn pool_setup(
                 docker: docker.as_ref(),
                 engine: Docker::engine_on_this_machine(),
             };
-            let (setup, name) = poolsetup::resumed(&here).map_err(|why| why.to_string())?;
-            Ok(shown(&setup, name))
+            Ok(shown(
+                poolsetup::resumed(&here).map_err(|why| why.to_string())?,
+            ))
         })
         .await
     }
@@ -173,6 +205,51 @@ pub async fn pool_setup_pool(name: String) -> Result<(), String> {
     #[cfg(not(unix))]
     {
         let _ = name;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **The command that does what the Pool step's button would do with `adding`**: See what this
+/// does, from the value the button sends (Q30). It reads nothing and changes nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_command(adding: PoolAdding) -> Result<String, String> {
+    #[cfg(unix)]
+    {
+        Ok(adding.asked().command())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = adding;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Makes the pool `adding` asks for**, on the Pool step's own button: what `purlis pool add`
+/// runs, a team's image held to the contract first.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_create(adding: PoolAdding) -> Result<PoolSetupCreated, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("adding a pool", move || {
+            use purlis_core::poolsetup::asked::{self, Created};
+            let machine = crate::runnerlinks::Machine::here(&config_root()?)?;
+            let desktop = machine.desktop_made()?.pinned();
+            let made = asked::create(&machine.config, &machine.docker, &adding.asked(), &desktop)
+                .map_err(|why| crate::dockerpools::refused_said(&why.to_string()))?;
+            Ok(PoolSetupCreated {
+                breaks: match made {
+                    Created::Added => Vec::new(),
+                    Created::Breaks(problems) => problems,
+                },
+            })
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = adding;
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }

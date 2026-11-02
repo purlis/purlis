@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **Pool setup's Where and Pool steps** (#4480): every state a person meets them in, drawn, held to
+ * **Pool setup's Where and Pool steps** (#4480, #4481): every state a person meets them in, drawn, held to
  * axe, walked by the keyboard and pictured in every pictured theme cell. The core is faked at its
  * command boundary. These stories are the design's record (the person's ruling of 2026-11-01).
  */
@@ -22,6 +22,7 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     findings: [],
     next: null,
     skippable: id === "signins" || id === "identity",
+    see: null,
     ...more,
   }) as PoolSetupStep;
 
@@ -35,6 +36,8 @@ const WHERE = (where: Partial<PoolSetupStep>, state: string): PoolSetupShown => 
   pool: null,
   name: null,
   at: "where",
+  noticed: false,
+  others: [],
   steps: [step("where", "Where chats run", state, where), step("pool", "Pool", "later"), ...LATER],
 });
 
@@ -52,6 +55,8 @@ const POOL_FORM: PoolSetupShown = {
   pool: null,
   name: null,
   at: "pool",
+  noticed: false,
+  others: [],
   steps: [
     DONE_WHERE,
     step("pool", "Pool", "current", {
@@ -67,7 +72,16 @@ function faked(shown: PoolSetupShown, image: unknown = { state: "ours", image: "
     mockIPC((cmd) => {
       if (cmd === "pool_setup") return shown;
       if (cmd === "runner_image_of_this_version") return image;
-      if (cmd === "add_docker_pool") throw "a pool named dev-box is on this machine";
+      if (cmd === "docker_pools")
+        return {
+          pools: [],
+          defaults: { cpus: "2", memory_mib: 4096, processes: 512, tmp_mib: 256 },
+          suspend_after: "24h",
+          frames: 10,
+          width: 1600,
+        };
+      if (cmd === "pool_setup_create") throw "a pool named dev-box is on this machine";
+      if (cmd === "pool_setup_command") return "purlis pool add dev-box --image img@sha256:a";
       return null;
     });
   };
@@ -166,6 +180,94 @@ export const ThePoolWasRefused: Story = {
   },
 };
 
+const fold = async (canvasElement: HTMLElement, name: string) => {
+  const canvas = within(canvasElement);
+  await userEvent.click(await canvas.findByRole("button", { name }));
+};
+
+/** Options open: the image, and every limit with what purlis recommends. */
+export const OptionsOpen: Story = {
+  beforeEach: faked(POOL_FORM),
+  play: async ({ canvasElement }) => {
+    await fold(canvasElement, "Options");
+    const canvas = within(canvasElement);
+    const ours = await canvas.findByRole("radio", { name: /purlis's image/ });
+    ours.focus();
+    await expect(ours).toHaveFocus();
+    await expectFocusInSight();
+    await userEvent.keyboard("{ArrowDown}");
+    await expect(canvas.getByRole("radio", { name: /My team's own image/ })).toBeChecked();
+    await expect(canvas.getByRole("textbox", { name: /Image, by digest/ })).toBeTruthy();
+  },
+};
+
+/** See what this does open: the command the button runs, to copy. */
+export const SeeWhatThisDoesOpen: Story = {
+  beforeEach: faked({ ...POOL_FORM, name: "dev-box" }),
+  play: async ({ canvasElement }) => {
+    await fold(canvasElement, "See what this does");
+    const canvas = within(canvasElement);
+    await canvas.findByText("purlis pool add dev-box --image img@sha256:a");
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: /^Copy/ })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+/** A team's image that breaks the contract: what's wrong, and nothing made. */
+export const ATeamsImageBreaksTheContract: Story = {
+  beforeEach: () => {
+    mockIPC((cmd) => {
+      if (cmd === "pool_setup") return { ...POOL_FORM, name: "dev-box" };
+      if (cmd === "runner_image_of_this_version") return { state: "ours", image: "img@sha256:a" };
+      if (cmd === "pool_setup_command") return "purlis pool add dev-box --image r@sha256:b";
+      if (cmd === "pool_setup_create")
+        return {
+          breaks: [
+            "Its user has to be a number other than 0, such as USER 10001, so it never runs as root.",
+            "there is no purlis plugin at /usr/local/lib/purlis/plugin, beside /usr/local/bin/purlis",
+          ],
+        };
+      return null;
+    });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await fold(canvasElement, "Options");
+    await userEvent.click(await canvas.findByRole("radio", { name: /My team's own image/ }));
+    await userEvent.type(canvas.getByRole("textbox", { name: /Image, by digest/ }), "r@sha256:b");
+    await userEvent.click(canvas.getByRole("button", { name: "Create the pool" }));
+    await canvas.findByText("This image is missing 2 things a runner needs");
+  },
+};
+
+/** The name is taken, with a press to carry on with that pool. */
+export const ThatNameIsTaken: Story = {
+  beforeEach: faked({ ...POOL_FORM, name: "dev-box", others: ["dev-box", "builds"] }),
+};
+
+/** Made by hand from See what this does: purlis noticed, and setup follows it. */
+export const MadeByHand: Story = {
+  beforeEach: faked({
+    pool: "dev-box",
+    name: "dev-box",
+    at: "signins",
+    noticed: true,
+    others: [],
+    steps: [
+      DONE_WHERE,
+      step("pool", "Pool", "done", { line: "dev-box" }),
+      step("signins", "Sign-ins", "current"),
+      step("identity", "Agent identity", "later"),
+      step("try", "Try it", "later"),
+    ],
+  }),
+  play: async ({ canvasElement }) => {
+    await fold(canvasElement, "Pool");
+    await within(canvasElement).findByText("Found pool dev-box");
+  },
+};
+
 export const NoRunnerImageNamed: Story = {
   beforeEach: faked(POOL_FORM, { state: "none_named" }),
 };
@@ -175,6 +277,8 @@ export const ThePoolIsMade: Story = {
     pool: "dev-box",
     name: "dev-box",
     at: "signins",
+    noticed: false,
+    others: [],
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -199,6 +303,8 @@ export const TheRunnerWasRemoved: Story = {
     pool: "dev-box",
     name: "dev-box",
     at: "pool",
+    noticed: false,
+    others: [],
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {
@@ -270,6 +376,8 @@ export const ARunnerBeingMade: Story = {
     pool: "dev-box",
     name: "dev-box",
     at: "pool",
+    noticed: false,
+    others: [],
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {

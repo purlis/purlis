@@ -10,9 +10,8 @@
 //! - **Everything is read on each call** ([`read`]) from Docker, the pool's record, its runner and
 //!   the plane, so work done by hand or elsewhere is picked up on the next read. Reading changes
 //!   nothing of the person's: a runner that is asleep is not woken to ask it anything, and an
-//!   Allow is only looked at. One thing happens on a running runner: asking how a profile stands
-//!   is its `purlis profile sign-in --check`, which fetches a harness version the profile pins, as
-//!   any look at that profile does.
+//!   Allow is only looked at. Asking a running runner how a profile stands fetches nothing: it
+//!   answers from what is installed (#4507).
 //! - **A Docker that isn't on this machine, or a runner that ran a chat without the sandbox, is
 //!   asked nothing about its runners**, as for a sign-in. What Docker or a runner says is shown
 //!   only as escaped text ([`crate::shown::short`]).
@@ -20,6 +19,10 @@
 //!   they chose and the steps they skipped. What is found always wins over a skip.
 //!
 //! What the facts mean is one pure function ([`of`]); what reads them is [`read`].
+//!
+//! **Each step also says what it does by hand** ([`Step::see`], #4481, Q30): the commands behind
+//! its See what this does, from the same source as its button, so what a person copies and runs
+//! is picked up by the next read. The Pool step's are [`asked::Asked::command`].
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,6 +32,8 @@ use serde::{Deserialize, Serialize};
 use crate::dockerpool::{Docker, Missing};
 use crate::profilestore::sign_in::Standing;
 use crate::runners::{self, Refused};
+
+pub mod asked;
 
 /// The file a person's choices are kept in, in this machine's folder.
 const CHOICES_FILE: &str = "pool-setup.json";
@@ -151,6 +156,13 @@ pub struct Action {
     pub url: Option<String>,
 }
 
+/// **A step by hand** (Q30): the exact commands, and what running them means.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct See {
+    pub note: String,
+    pub text: String,
+}
+
 /// One step as it stands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Step {
@@ -162,6 +174,8 @@ pub struct Step {
     pub findings: Vec<String>,
     pub next: Option<Action>,
     pub skippable: bool,
+    /// See what this does, where the step has commands of its own.
+    pub see: Option<See>,
 }
 
 /// The whole answer.
@@ -172,6 +186,8 @@ pub struct Setup {
     /// The first step that isn't finished. `None` once all are.
     pub at: Option<StepId>,
     pub steps: Vec<Step>,
+    /// Pools this machine keeps that this setup isn't on, for a person to go on with by pressing.
+    pub others: Vec<String>,
 }
 
 impl Setup {
@@ -274,6 +290,8 @@ pub struct Choices {
     pub kind: Option<Kind>,
     /// The name typed on the Pool step, for the box to hold.
     pub name: Option<String>,
+    /// That no pool had `name` when it was typed: one that has it now was made since, by hand.
+    pub name_free: bool,
     /// The pool this setup made, which it goes on with. A name typed never picks a pool.
     pub pool: Option<String>,
     /// The steps skipped on each pool.
@@ -677,6 +695,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             findings: if says { reading.findings } else { Vec::new() },
             next: if says { reading.next } else { None },
             skippable: id.skippable(),
+            see: see_of(id, facts),
         });
     }
     Setup {
@@ -684,7 +703,54 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
         pool,
         at,
         steps,
+        others: Vec::new(),
     }
+}
+
+/// **What `id` does by hand**, where it has commands of its own. The Pool step's, before there is
+/// a pool, depend on what the person chose, so they are [`asked::Asked::command`]'s.
+fn see_of(id: StepId, facts: &Facts) -> Option<See> {
+    if true {
+        return None;
+    }
+    let pool = facts.pool.as_ref();
+    match (id, pool) {
+        (StepId::Where, _) => Some(See {
+            note: "This is how purlis asks after Docker. It only reads.".to_owned(),
+            text: "docker version".to_owned(),
+        }),
+        (StepId::Pool, Some(pool)) => Some(See {
+            note: "This lists the pool's limits. It only reads.".to_owned(),
+            text: format!("purlis pool limits {}", shell_quote(&pool.name)),
+        }),
+        (StepId::Signins, Some(pool)) => {
+            let SignIns::Read(profiles) = &pool.sign_ins else {
+                return None;
+            };
+            let lines: Vec<String> = profiles
+                .iter()
+                .filter(|(_, profile)| *profile != Profile::Standing(Standing::SignedIn))
+                .map(|(profile, _)| {
+                    format!(
+                        "purlis profile sign-in {} --pool {}",
+                        shell_quote(profile),
+                        shell_quote(&pool.name)
+                    )
+                })
+                .collect();
+            (!lines.is_empty()).then(|| See {
+                note: "This is the sign-in the button runs. Run it yourself if you prefer, and \
+                       purlis marks this step done."
+                    .to_owned(),
+                text: lines.join("\n"),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn shell_quote(word: &str) -> String {
+    crate::shellseg::shell_quote(word)
 }
 
 /// Where a read looks.
@@ -801,7 +867,7 @@ fn sign_ins_of(here: &Here<'_>, docker: &Docker, name: &str) -> SignIns {
     };
     let mut read = Vec::with_capacity(profiles.len());
     for profile in profiles {
-        match docker.standing_on_runner(&kept.made, engine, &profile) {
+        match docker.standing_as_installed(&kept.made, engine, &profile) {
             Ok(standing) => {
                 let standing = standing.map_or(Profile::NotKept, Profile::Standing);
                 read.push((profile, standing));
@@ -872,6 +938,7 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
     Ok(Choices {
         kind: held.kind,
         name: held.name,
+        name_free: held.name_free,
         pool: held.pool,
         skipped: held.skipped,
     })
@@ -886,6 +953,8 @@ struct Held {
     kind: Option<Kind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    name_free: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pool: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -897,6 +966,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         version: 1,
         kind: choices.kind,
         name: choices.name,
+        name_free: choices.name_free,
         pool: choices.pool,
         skipped: choices.skipped,
     };
@@ -928,6 +998,8 @@ pub fn choose_name(config: &Path, name: Option<&str>) -> Result<(), Refused> {
     }
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
+    let kept = runners::pools(config)?;
+    choices.name_free = name.is_some_and(|name| !kept.iter().any(|pool| pool.name() == name));
     choices.name = name.map(str::to_owned);
     write_choices(config, choices)
 }
@@ -944,20 +1016,45 @@ pub fn choose_pool(config: &Path, name: &str) -> Result<(), Refused> {
     let mut choices = read_choices(config)?;
     choices.pool = Some(name.to_owned());
     choices.name = None;
+    choices.name_free = false;
     write_choices(config, choices)
 }
 
-/// **Where the person stopped**: the setup of the pool it made where that is still kept, else a
-/// new pool's, with the name typed.
-pub fn resumed(here: &Here<'_>) -> Result<(Setup, Option<String>), Refused> {
+/// **Where the person stopped** ([`resumed`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resumed {
+    pub setup: Setup,
+    /// The name typed, for the box to hold.
+    pub name: Option<String>,
+    /// The pool was made by hand, from the name typed, and purlis noticed.
+    pub noticed: bool,
+}
+
+/// **Where the person stopped**: the setup of the pool it made where that is still kept, else of a
+/// pool made since under the name typed, by hand from See what this does, else a new pool's.
+///
+/// A name typed never picks a pool that was already there: only one that came after it does.
+pub fn resumed(here: &Here<'_>) -> Result<Resumed, Refused> {
     let choices = read_choices(here.config)?;
     let kept = runners::pools(here.config)?;
-    let pool = choices
-        .pool
+    let is_kept = |name: &&str| kept.iter().any(|pool| pool.name() == *name);
+    let chosen = choices.pool.as_deref().filter(is_kept);
+    let by_hand = choices
+        .name
         .as_deref()
-        .filter(|name| kept.iter().any(|pool| pool.name() == *name));
-    let setup = read(here, pool)?;
-    Ok((setup, choices.name))
+        .filter(|_| chosen.is_none() && choices.name_free)
+        .filter(is_kept);
+    let mut setup = read(here, chosen)?;
+    setup.others = kept
+        .iter()
+        .map(|pool| pool.name().to_owned())
+        .filter(|name| setup.pool.as_ref() != Some(name))
+        .collect();
+    Ok(Resumed {
+        setup,
+        name: choices.name,
+        noticed: by_hand.is_some() && false,
+    })
 }
 
 /// **This machine's `docker`**, where it has one, found as a pool's is.
@@ -1006,7 +1103,13 @@ pub(crate) fn forget_pool_locked(config: &Path, pool: &str) -> Result<(), Refuse
     if named {
         choices.pool = None;
     }
-    if choices.skipped.remove(pool).is_some() || named {
+    // A name that picked this pool by hand must not pick the next one of that name.
+    let typed = choices.name.as_deref() == Some(pool);
+    if typed {
+        choices.name = None;
+        choices.name_free = false;
+    }
+    if choices.skipped.remove(pool).is_some() || named || typed {
         write_choices(config, choices)?;
     }
     Ok(())
