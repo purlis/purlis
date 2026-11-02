@@ -392,3 +392,26 @@ fn a_chat_started_again_under_a_new_number_keeps_its_question_across_a_restart()
     assert_eq!(back, Restored::Open);
     assert_eq!(after.asked_of(40), Some(30));
 }
+
+#[test]
+fn a_clock_a_stuck_chat_started_keeps_across_a_restart_and_the_turn_after_is_still_shown() {
+    use crate::eventlog::questions::Step;
+    let project = Project::new();
+    let mut before = project.app();
+    let number = project.asks(&mut before, "Which host?");
+    before.look(NOW, &HashSet::new(), &HashSet::from([ASKER]));
+
+    let (mut after, _) = project.restarted();
+    let (name, _) = waiting(project.root.path(), ASKER).remove(0);
+    after.handed(&[name], NOW + 40);
+
+    assert_eq!(
+        after.handed_at(TASK),
+        Some(NOW),
+        "the clock is not started again"
+    );
+    assert!(
+        after.take_trail().contains(&(TASK, Step::Shown { number })),
+        "the turn that had it is said"
+    );
+}

@@ -842,14 +842,32 @@ test("the search finds a Rust path named whole, in pieces, or from a URL", () =>
   ]);
 });
 
-// A file that names a Rust path but is no test of `npm test`, and what holds it.
+// A file that names a Rust path but is no test of `npm test`, and what holds it. A test that
+// imports one is a reader through it.
 const READERS_HELD_ELSEWHERE = {
   "app/.storybook/handed.plugin.ts": "the stories: READ_BY_WEB runs everything",
   "app/e2e/recordedForge.ts": "imported by recordedForge.test.ts, a reader, and a scenario spec",
+  "app/src/ui/field/fieldCalls.testkit.ts":
+    "imported by fieldHelp.guard.test.ts and refusingFields.guard.test.ts, readers",
 };
 
+// The tests that import one of `held`'s files by a relative path: they read its Rust as their own.
+function importersOf(files, readFile, held) {
+  const tests = files.filter((f) => /^app\/(src|e2e)\/.*\.test\.(ts|tsx)$/.test(f));
+  return tests.filter((file) =>
+    [...readFile(file).matchAll(/from\s+"(\.{1,2}\/[^"]+)"/g)].some((m) => {
+      const target = posix.normalize(posix.join(posix.dirname(file), m[1]));
+      return held.some((h) => h === target || h.replace(/\.(ts|tsx)$/, "") === target);
+    }),
+  );
+}
+
 test("every vitest file that names a Rust path is a reader, and every reader names one", () => {
-  const readers = new Set(rustNamedByWindow(git("ls-files"), read).values());
+  const files = git("ls-files");
+  const readers = new Set(rustNamedByWindow(files, read).values());
+  for (const file of importersOf(files, read, Object.keys(READERS_HELD_ELSEWHERE))) {
+    readers.add(file);
+  }
   for (const file of readers) {
     assert.ok(
       file in READERS_HELD_ELSEWHERE || RUST_READERS.includes(file.slice("app/".length)),

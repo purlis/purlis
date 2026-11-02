@@ -8,7 +8,7 @@ import type { ViewRef } from "./tabs";
  * what it was refused, read once from the core (`chat_network`) as the tab opens.
  *
  * It is a view tab, `{ from: null, view: "chat-network", key: "<session>" }`: one per chat,
- * opened from the chat tab's menu and from the palette (`tab.network:<tab>`), and keyed by the
+ * opened from the chat's list and from the palette (`chat.network:<session>`), and keyed by the
  * chat's number as a chat's Activity is (`activity.ts`). A tab a launch brings back asks for
  * that number again, and says the chat is not open where the launch did not bring it back.
  */

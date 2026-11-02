@@ -191,3 +191,11 @@ fn the_asking_chats_not_yet_handed_a_question_are_the_ones_told_again() {
 
     assert!(talk.askers_not_handed().is_empty());
 }
+
+#[test]
+fn an_asking_chat_whose_clock_started_while_it_was_stuck_is_still_told_again() {
+    let mut talk = a_task_that_asked();
+    talk.look(NOW, &nobody(), &HashSet::from([ASKER]));
+
+    assert_eq!(talk.askers_not_handed(), HashSet::from([ASKER]));
+}

@@ -1538,8 +1538,6 @@ export const commands = {
 	 *  again whenever the plane changes on disk.
 	 */
 	chatsPlaneUpdated: (plane: PlaneId) => typedError<PlaneUpdated[], string>(__TAURI_INVOKE("chats_plane_updated", { plane })),
-	/**  Says which chat is in front, so the record brings that one back in front. */
-	chatInFront: (plane: PlaneId, session: number | null) => typedError<null, string>(__TAURI_INVOKE("chat_in_front", { plane, session })),
 	/**  What this operator has pinned in this project. */
 	planePins: (plane: PlaneId) => typedError<Pins, string>(__TAURI_INVOKE("plane_pins", { plane })),
 	/**  Pins or unpins the project itself. */
@@ -1769,17 +1767,27 @@ export const commands = {
 	 */
 	closeChatTab: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("close_chat_tab", { plane, session })),
 	/**
-	 *  **Where chat `session`'s pane is and what it shows**: chat `shown` in place of its own, or
-	 *  its own again with none (#1486); and the chat whose tab the pane is in, `beside`, or none
-	 *  for a chat that is its tab's own or has no pane (#1489). The record keeps both on that
-	 *  chat's entry, so a reloaded window and the next launch put each pane back.
+	 *  **Every tab the window has, told whenever it changes** (#4751): the record keeps it, so a
+	 *  relaunch puts each split, its sizes, its views and each strip's front tab back, and what is
+	 *  on screen is derived from it (`Chats::looked_at`).
 	 * 
-	 *  **The one way the window says what is on screen** beside which chat is in front
-	 *  (`chat_in_front`): `Chats::looked_at` reads these, so a reported task is not ended under
-	 *  the person in any pane of the tab in front, and none of them is notified about. A window
-	 *  command only: no chat can call it.
+	 *  **A press sends its new layout here, in the same call** that shows the chat, so a task the
+	 *  person presses onto is held from that moment and is not ended under them. A layout that
+	 *  names a chat twice, or a chat that is not open, is refused with why, and nothing changes. A
+	 *  window command only: no chat can call it.
 	 */
-	tabShows: (plane: PlaneId, session: number, shown: number | null, beside: number | null) => typedError<null, string>(__TAURI_INVOKE("tab_shows", { plane, session, shown, beside })),
+	windowLayout: (plane: PlaneId, layout: LaidOut) => typedError<null, string>(__TAURI_INVOKE("window_layout", { plane, layout })),
+	/**
+	 *  The tabs the record put back, or `null` for a record written before tabs were recorded,
+	 *  which the window puts back the old way: each chat a tab of its own, a task beside the chat
+	 *  its record names. Asked once, when the window first draws a project.
+	 */
+	reopenedLayout: (plane: PlaneId) => typedError<{
+	/**  The strip drawn: a workspace, or `null` for the strip outside every workspace. */
+	strip: string | null,
+	/**  Every tab, in each strip's order from the left. */
+	tabs: LaidTab[],
+} | null, string>(__TAURI_INVOKE("reopened_layout", { plane })),
 	/**
 	 *  The order the chat strip draws this project's chats in, by session, so the record lists
 	 *  them in it and the next launch — or a reloaded window — puts them back in it (SI-6).
@@ -2583,6 +2591,13 @@ export const commands = {
 	 *  closed has none.
 	 */
 	activityChat: (plane: PlaneId, key: string) => typedError<number | null, string>(__TAURI_INVOKE("activity_chat", { plane, key })),
+	/**
+	 *  **What happened to a task's question** (#4567): the steps of the question chat `key` (a
+	 *  line's `from_key`) asked at `at` (the line's time), from this machine's event log, oldest
+	 *  first. Empty where the log holds none of it. Read when the person opens it, off the window's
+	 *  thread, as it reads the log.
+	 */
+	questionTrail: (plane: PlaneId, key: string, at: string) => typedError<QuestionStep[], string>(__TAURI_INVOKE("question_trail", { plane, key, at })),
 	/**
 	 *  **The question a task is paused on, for the window to show before the person answers it**
 	 *  (#1496): chat `session`'s question to its asking chat. `null` where there is none to
@@ -3444,6 +3459,8 @@ export const commands = {
 	projectChatsRunOn: (plane: PlaneId) => typedError<ProjectChatsRunOn, string>(__TAURI_INVOKE("project_chats_run_on", { plane })),
 	/**  **Sets where a project's workspaces run their chats by default** (#4536). */
 	setProjectChatsRunOn: (plane: PlaneId, pool: string | null) => typedError<ProjectChatsRunOn, string>(__TAURI_INVOKE("set_project_chats_run_on", { plane, pool })),
+	/**  **What names a pool** (#4678): the projects and workspaces its removal sets back to this machine. */
+	poolNamedBy: (name: string) => typedError<PoolNamedBy[], string>(__TAURI_INVOKE("pool_named_by", { name })),
 	/**
 	 *  **What a workspace's sends to a pool's runner leave out** besides what a save to the forge
 	 *  refuses (#2046, the operator's ruling of 2026-10-25): `settings.runners.leave_out` in its
@@ -4609,6 +4626,8 @@ export const commands = {
 };
 
 /* Constants */
+export const A_QUESTION_WAITS_SECS = 100 as const;
+
 export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
 
 export const ENGINE_DOWNLOAD = "engine-download" as const;
@@ -8770,6 +8789,39 @@ export type KubeContext = {
 	refused: string | null,
 };
 
+/**  Which way a split divides. */
+export type LaidDirection = "row" | "column";
+
+/**
+ *  A pane (a chat by its number, a view as a view tab spells it, or nothing) or a split: two
+ *  nodes side by side (`row`) or one above the other (`column`), the first holding `share` in
+ *  tenths of a percent (0 to 1000). A view's `workspace`, `at`, `active` and `pinned` are its
+ *  tab's and are not read here.
+ */
+export type LaidNode = { kind: "chat"; chat: number } | { kind: "view"; view: ViewTab } | { kind: "empty" } | { kind: "split"; direction: LaidDirection; share: number; a: LaidNode; b: LaidNode };
+
+/**  Every tab the window has, and the strip its project window draws. */
+export type LaidOut = {
+	/**  The strip drawn: a workspace, or `null` for the strip outside every workspace. */
+	strip: string | null,
+	/**  Every tab, in each strip's order from the left. */
+	tabs: LaidTab[],
+};
+
+/**  One tab. */
+export type LaidTab = {
+	/**  Its strip: a workspace, or `null` for the strip outside every workspace. */
+	workspace: string | null,
+	pinned: boolean,
+	/**  `0` for the project window. */
+	window: number,
+	/**  Whether it is its strip's front tab. */
+	front: boolean,
+	/**  The focused pane's path from the root: `a` for a split's first child, `b` for its second. */
+	focused: string,
+	tree: LaidNode,
+};
+
 /**
  *  What a Land would do, before it does any of it: the request, the head its checks passed at,
  *  and how it lands. Handed back whole by the yes.
@@ -10967,6 +11019,21 @@ export type PoolLink =
  */
 { state: "on_another_engine" };
 
+/**
+ *  **A project, and its workspaces, that name a pool** (#4678): what removing the pool sets back
+ *  to this machine, which its question names first.
+ */
+export type PoolNamedBy = {
+	/**  The path this machine keeps the project under. */
+	path: string,
+	/**  What to call it: the directory's own name. */
+	name: string,
+	/**  Whether the project itself names the pool. */
+	project: boolean,
+	/**  The workspaces of it that name the pool, by name. */
+	workspaces: string[],
+};
+
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
 	name: string,
@@ -11678,6 +11745,22 @@ export type PushQuestion = {
 	destinations: PushDestination[],
 	/**  Each member that would not be pushed, in the core's words. */
 	not_pushed: string[],
+};
+
+/**  One step of a question's trail, as the window says it. */
+export type QuestionStep = {
+	/**  When it was written (UTC, RFC 3339). */
+	at: string,
+	/**  `asked`, `shown`, `passed_on`, `reached`, `answered`, `closed` or `failed`. */
+	step: string,
+	/**  On `passed_on`: the asking chat added a note. */
+	noted: boolean,
+	/**  On `reached`: why it reached the person, `passed_on`, `no_reply` or `asker_gone`. */
+	why: string | null,
+	/**  On `answered` and `closed`: who answered, `asking_chat`, `person` or `nobody`. */
+	by: string | null,
+	/**  On `failed`: what failed, `not_read_back` or `not_redirected`. */
+	what: string | null,
 };
 
 /**  One repo the picker offers: what the operator reads to choose it. */
@@ -15908,6 +15991,11 @@ export type WindowApart = {
 	distance: number | null,
 	/**  Whether the rule is held alone: only its own sides give way to it (#3130). */
 	alone: boolean,
+	/**
+	 *  Whether the rule is the accent's words' (#3100): measured only once the accent is
+	 *  answered, so it costs the accent no colour.
+	 */
+	words: boolean,
 };
 
 /**  One theme draft, as the strip and the close of its chat name it. */

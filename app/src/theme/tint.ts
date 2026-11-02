@@ -61,6 +61,9 @@ export type Apart = {
   distance: number;
   /** A rule held alone gives less colour only to its own sides (#3130). */
   alone?: boolean;
+  /** A rule of the accent's words (#3100): measured only once the accent is answered, so it
+   *  costs the accent no colour; see {@link wordsChroma}. */
+  words?: boolean;
 };
 
 /** One rule as a theme draws it: the value of each side, whether the tint turns each, whether
@@ -128,6 +131,24 @@ export function mostOf(
   const alone = aloneChroma(all, shared, most, hue);
   const holds = alone !== undefined || holdsAsWritten(all, hue, most);
   return { shared: holds ? most : undefined, alone };
+}
+
+/**
+ * **The chroma the accent's words are drawn at** (#3100, `purlis_core::theme::words_chroma_of`):
+ * the accent's own, `alone`, where the words' rules `words` hold at it, the other side of each
+ * drawn as it will be (at `alone` for a side held alone, else at `shared`); `undefined`, the words
+ * as written, where they do not. Where no chroma holds the accent's words apart from the waiting
+ * colour (a yellow or green workspace), they keep the theme's colour, and the accent its tint.
+ */
+export function wordsChroma(
+  words: readonly Rule[],
+  hue: number,
+  shared: number | undefined,
+  alone: number | undefined,
+): number | undefined {
+  if (alone === undefined) return undefined;
+  const at = (sideAlone: boolean | undefined) => (sideAlone === true ? alone : shared);
+  return words.every((rule) => holdsAt(rule, hue, alone, at(rule.fromAlone))) ? alone : undefined;
 }
 
 /** The search for `rules`, remembered: the same rules at the same hue give the same answer. */
@@ -240,8 +261,11 @@ export function chromaFor(
   most: number | undefined,
   rules: readonly Apart[],
   alone: number | undefined,
+  words: number | undefined,
 ): number | undefined {
   const side = (rule: Apart) => rule.token === token || rule.from === token;
+  // The accent's words, at what {@link wordsChroma} answers (#3100).
+  if (rules.some((rule) => rule.words === true && rule.token === token)) return words;
   // A side of a rule held alone gives way to every rule together (#3130): `alone`.
   if (rules.some((rule) => rule.alone === true && side(rule))) return alone;
   return rules.some(side) ? most : Number.POSITIVE_INFINITY;

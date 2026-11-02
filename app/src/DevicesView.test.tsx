@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { DevicesShown, DiskHeld, RunnerAsked } from "./bindings";
+import type { DevicesShown, DiskHeld, PoolNamedBy, RunnerAsked } from "./bindings";
 import { DevicesView } from "./DevicesView";
 import { answerWithinForTests, forgetDevicesForTests } from "./devices";
 import { userEvent } from "@testing-library/user-event";
@@ -29,6 +29,8 @@ let disk: DiskHeld;
 /** The pools the core was asked to remove, and what it answers. */
 let removed: string[];
 let removeSays: string | null;
+/** What `pool_named_by` says names a pool (#4678). */
+let namedBy: PoolNamedBy[];
 /** The held runners the core was asked to remove. */
 let heldRemoved: string[];
 let devicesRead: number;
@@ -89,6 +91,7 @@ beforeEach(() => {
   };
   removed = [];
   removeSays = null;
+  namedBy = [];
   heldRemoved = [];
   devicesRead = 0;
   runnersAsked = [];
@@ -103,6 +106,7 @@ beforeEach(() => {
       return structuredClone(shown);
     }
     if (cmd === "devices_disk") return structuredClone(disk);
+    if (cmd === "pool_named_by") return structuredClone(namedBy);
     if (cmd === "remove_docker_pool") {
       removed.push(a.name ?? "");
       return removeSays;
@@ -384,6 +388,10 @@ describe("DevicesView", () => {
       }),
     );
     const again = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    // Remove pool is pressed once the question names what goes back (#4678).
+    await waitFor(() =>
+      expect(within(again).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
     await userEvent.click(within(again).getByRole("button", { name: "Remove pool" }));
     await waitFor(() => expect(removed).toEqual(["builds"]));
     // What could not be removed is said, and every device is read again.
@@ -391,5 +399,42 @@ describe("DevicesView", () => {
       await screen.findByText(/runner builds's home volume could not be removed/),
     ).toBeInTheDocument();
     await waitFor(() => expect(devicesRead).toBeGreaterThan(read));
+  });
+
+  it("asks the same question as Settings, naming what names the pool", async () => {
+    asked["builds/builds"] = { ...asked["builds/builds"], link: { state: "key_changed" } };
+    namedBy = [
+      { path: "/home/op/docs", name: "docs", project: false, workspaces: ["site", "wiki"] },
+    ];
+    render(<DevicesView />);
+    const builds = await waitFor(() => section("Runner builds of pool builds"));
+    await userEvent.click(
+      await within(builds).findByRole("button", { name: "Remove pool builds" }),
+    );
+    const asking = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    const list = await within(asking).findByRole("list", {
+      name: "These go back to this machine:",
+    });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["Workspace site in docs", "Workspace wiki in docs"]);
+    expect(removed).toEqual([]);
+  });
+
+  it("leaves the line out of the question where nothing names the pool", async () => {
+    asked["builds/builds"] = { ...asked["builds/builds"], link: { state: "key_changed" } };
+    render(<DevicesView />);
+    const builds = await waitFor(() => section("Runner builds of pool builds"));
+    await userEvent.click(
+      await within(builds).findByRole("button", { name: "Remove pool builds" }),
+    );
+    const asking = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    // Once the question has read what names the pool, it says nothing of any.
+    await waitFor(() =>
+      expect(within(asking).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
+    expect(within(asking).queryByText(/go back to this machine/)).toBeNull();
   });
 });

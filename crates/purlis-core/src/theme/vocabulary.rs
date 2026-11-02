@@ -186,6 +186,7 @@ pub const LONGEST: u32 = 10_000;
 pub const TINTED: &[&str] = &[
     "accent.base",
     "accent.surface",
+    "accent.text",
     "accent.fill",
     "accent.fill-hover",
     "accent.fill-edge",
@@ -399,12 +400,17 @@ pub const KIN: [(&str, &str); 10] = [
 /// Purlis Classic that colours its accent's surface still fills its primary with it, as it did
 /// before the primary had a fill of its own; one over Purlis, whose filled primary is its own,
 /// keeps Purlis's.
+///
+/// **The accent's words follow the accent whatever `below` draws** (#3100): `accent.text` is what
+/// a chosen item says, in the accent, and an accent given without it must reach those words, or
+/// a teal option over Purlis, or a person's teal over Purlis, says them in Purlis's lavender.
 pub fn follow_kin(
     given: &mut std::collections::BTreeMap<&'static str, String>,
     below: &std::collections::BTreeMap<&'static str, String>,
 ) {
     for (token, drew) in KIN {
-        if given.contains_key(token) || below.get(token) != below.get(drew) {
+        let follows = below.get(token) == below.get(drew) || token == ACCENT_WORDS;
+        if given.contains_key(token) || !follows {
             continue;
         }
         if let Some(value) = given.get(drew).cloned() {
@@ -413,20 +419,25 @@ pub fn follow_kin(
     }
 }
 
-/// **The hot count and the needs-you mark it follows**, by the count's token (#3098): where a theme
-/// draws one of these alike, it follows the mark, so holding a floor or raising the contrast moves
-/// the two together and the mark and its count never disagree. A theme whose count is its own
-/// colour is held on its own.
-pub const HOT_COUNT_KIN: [(&str, &str); 2] = [
+/// The accent's words on a chosen item (#3100), and what they follow ([`follow_kin`]).
+pub const ACCENT_WORDS: &str = "accent.text";
+
+/// **The tokens drawn as what they follow**, each by its own token: the hot count and the
+/// needs-you mark (#3098), and the accent's words and the accent (#3100). Where a theme draws one
+/// of these alike, the first follows the second, so holding a floor or raising the contrast moves
+/// the two together and they never disagree. A theme that draws the first in a colour of its own
+/// has it held on its own.
+pub const BOUND_KIN: [(&str, &str); 3] = [
     ("needs-you.count", "needs-you.base"),
     ("needs-you.count-text", "needs-you.text"),
+    (ACCENT_WORDS, "accent.base"),
 ];
 
-/// The pairs of [`HOT_COUNT_KIN`] that `theme` draws alike.
-pub fn hot_count_following(
+/// The pairs of [`BOUND_KIN`] that `theme` draws alike.
+pub fn drawn_alike(
     values: &std::collections::BTreeMap<&'static str, String>,
 ) -> Vec<(&'static str, &'static str)> {
-    HOT_COUNT_KIN
+    BOUND_KIN
         .into_iter()
         .filter(|(count, mark)| values.get(count) == values.get(mark))
         .collect()

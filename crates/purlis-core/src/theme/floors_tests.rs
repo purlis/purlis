@@ -152,7 +152,7 @@ fn an_accent_in_purlis_s_danger_colour_is_drawn_as_purlis_s_accent() {
     // purlis's too.
     assert_eq!(
         held.expect("held").tokens,
-        ["accent.base", "accent.fill-edge"]
+        ["accent.base", "accent.fill-edge", "accent.text"]
     );
 }
 
@@ -376,7 +376,7 @@ fn an_allow_edged_in_keep_blocked_s_colour_is_drawn_with_purlis_s_accent() {
     assert_eq!(drawn.value("text.primary"), "#eeeeee");
     let held = held.expect("the floor was held");
     assert_eq!(held.floors, [Floor::AllowApart]);
-    assert_eq!(held.tokens, ["accent.base"]);
+    assert_eq!(held.tokens, ["accent.base", "accent.text"]);
     assert!(
         held.said()
             .contains("Allow is distinguishable from Keep blocked")
@@ -394,7 +394,7 @@ fn an_allow_whose_edge_vanishes_on_the_control_s_ground_is_drawn_with_purlis_s_a
     assert_eq!(drawn.value("control.base"), ours("control.base"));
     let held = held.expect("the floor was held");
     assert_eq!(held.floors, [Floor::AllowApart]);
-    assert_eq!(held.tokens, ["accent.base"]);
+    assert_eq!(held.tokens, ["accent.base", "accent.text"]);
     assert_eq!(consent_failures(&drawn), []);
 }
 
@@ -915,4 +915,31 @@ fn a_theme_that_names_its_count_is_held_on_its_own() {
     assert_eq!(drawn.value("needs-you.count"), "#d08030");
     assert_eq!(drawn.value("needs-you.count-text"), "#000000");
     assert!(!held.tokens.contains(&"needs-you.count"), "{held:?}");
+}
+
+// ---------------------------------------------------------------------------------------
+// The accent's words (#3100)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn accent_words_drawn_as_the_accent_fall_with_it() {
+    let mine = theme("Hidden", json!({ "accent.base": ours("control.base") }));
+    assert_eq!(mine.first().value("accent.text"), ours("control.base"));
+    let (drawn, held) = drawn_of(&mine);
+    let held = held.expect("the floor was held");
+    assert_eq!(drawn.value("accent.base"), ours("accent.base"));
+    assert_eq!(drawn.value("accent.text"), ours("accent.text"));
+    assert!(held.tokens.contains(&"accent.text"), "{held:?}");
+}
+
+#[test]
+fn accent_words_in_a_colour_of_their_own_stay_when_the_accent_falls() {
+    let mine = theme(
+        "Hidden",
+        json!({ "accent.base": ours("control.base"), "accent.text": "#e8d8a0" }),
+    );
+    let (drawn, held) = drawn_of(&mine);
+    assert_eq!(drawn.value("accent.base"), ours("accent.base"));
+    assert_eq!(drawn.value("accent.text"), "#e8d8a0");
+    assert_eq!(held.expect("held").tokens, ["accent.base"]);
 }
