@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793571590867,
+  "lastUpdate": 1793578400619,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35532,6 +35532,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2106725,
             "unit": "ms",
             "extra": "median of 5 runs: 101.166, 101.567, 102.211, 102.792, 103.102 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "04add866a0262b6db0d2607086ba910ebaa3c65b",
+          "message": "deps: clear RUSTSEC advisories flagged by Scorecard (#4505)\n\ntauri-plugin-updater 2.14.1 asks for zip 9, so the yanked zip 4.6.1 leaves\nthe tree with RUSTSEC-2026-0367, -0368 and -0369 and Dependabot's three zip\nalerts. The zip 4 ignores in deny.toml were to go when the updater moved,\nand they go. zod in the app's dev tree moves to 4.6.7, past\nGHSA-mrhx-c7xc-m3w5.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6BW92B6JDMYKNEV62KBE82V\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T21:23:10Z",
+          "tree_id": "52e553a6e9a0ba2069010f863283bcd0a42f81c9",
+          "url": "https://github.com/purlis/purlis/commit/04add866a0262b6db0d2607086ba910ebaa3c65b"
+        },
+        "date": 1793578396913,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.343172,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.313, 0.342, 0.343, 0.344, 0.345 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.593425000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.242, 16.544, 16.593, 16.607, 16.738 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5163905,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.834, 100.854, 101.516, 101.986, 102.149 ms"
           }
         ]
       }
