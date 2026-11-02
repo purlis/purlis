@@ -82,6 +82,14 @@ env:
   RUSTFLAGS: -D warnings
   # The test runner the `rust` job installs, one exact version (`.config/nextest.toml`).
   NEXTEST_VERSION: "0.9.146"
+  # Cargo's network retries, 10 instead of its default 3, for every cargo run in every job, the
+  # `cargo metadata` that `npm run build:e2e`'s notices plugin runs among them. On 2026-11-02
+  # (job 125136983810, macOS scenario part 2, in the merge queue) the runner could not resolve
+  # index.crates.io: cargo tried each index file 4 times inside a few seconds, gave up, and the
+  # queue started its 5 pull requests again, about 45 minutes each. Cargo's pause grows by 3.5 s a
+  # try up to 10 s, so 10 tries ride out about a minute of a dead resolver; a run with a network
+  # that works never waits on it.
+  CARGO_NET_RETRY: "10"
 
 jobs:
   # Which scopes this change needs (`tools/ci-scope.mjs`, `.github/actions/change-scope`).
