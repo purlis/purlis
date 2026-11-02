@@ -108,7 +108,12 @@ const ROUTER: StudioRouter = {
   problem: false,
   extension: "relevance",
   written: "relevance",
-  budget: { skills: 30, chars: 6000 },
+  budget: [
+    { program: "Claude Code", skills: 60, chars: 15000 },
+    { program: "Codex", skills: 30, chars: 6000 },
+    { program: "opencode", skills: 30, chars: 6000 },
+  ],
+  past_limits: [],
   preview:
     "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
   grade:

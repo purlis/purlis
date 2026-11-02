@@ -967,7 +967,7 @@ pub struct RouteSkill {
     pub pinned: bool,
 }
 
-/// Skills and characters of their descriptions: a chat's budget, or what part of its listing
+/// Skills and characters of what is listed of them: a chat's budget, or what part of its listing
 /// spends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct RouteBudget {
