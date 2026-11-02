@@ -31,6 +31,35 @@ fn paths(out: &Outgoing) -> Vec<String> {
 }
 
 #[test]
+fn a_skill_with_a_name_of_purlis_s_own_goes_nowhere() {
+    let plane = tempfile::tempdir().unwrap();
+    skill_at(
+        plane.path(),
+        &Level::project(),
+        "purlis-mine",
+        "---\nname: purlis-mine\ndescription: Mine, from before the prefix was reserved.\n---\n",
+        &[],
+    );
+    for purpose in [Purpose::Export, Purpose::Publish] {
+        assert_eq!(
+            gather(
+                plane.path(),
+                None,
+                &Level::project(),
+                "purlis-mine",
+                purpose
+            )
+            .err(),
+            Some(
+                "purlis-mine cannot be shared: a name starting with purlis- belongs to purlis, \
+                 so rename it first"
+                    .to_owned()
+            ),
+        );
+    }
+}
+
+#[test]
 fn a_skills_files_go_out_with_its_scripts_still_executable() {
     use std::os::unix::fs::PermissionsExt as _;
     let plane = tempfile::tempdir().unwrap();

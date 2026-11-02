@@ -198,7 +198,7 @@ fn every_chat_keeps_its_skills_on_every_program_and_the_clone_loses_its_copy() {
     }
     // Every reference resolved, or said with why.
     assert!(
-        report.contains("the persona ops names purlis:nope: its persona names it, and purlis has no built-in skill of this name"),
+        report.contains("the persona ops names purlis:purlis-nope: its persona names it, and purlis has no built-in skill of this name"),
         "{report}"
     );
     assert!(!report.contains("names purlis:handoff"), "{report}");
@@ -300,11 +300,11 @@ fn a_chat_is_refused() {
 fn a_skill_a_chat_would_lose_is_refused_before_anything_moves() {
     purlis_core::unsteered!();
     let f = project();
-    // A built-in skill's name is never taken, so this copy would be left out of every chat.
+    // A name of purlis's own is never taken, so this copy would be left out of every chat.
     let at = f.plane.join(".claude/skills/hand-off/SKILL.md");
     std::fs::create_dir_all(at.parent().unwrap()).unwrap();
-    // In any case: `Handoff` is purlis's `handoff` to every program that folds case.
-    std::fs::write(&at, "---\nname: Handoff\ndescription: Mine.\n---\n").unwrap();
+    // In any case: `Purlis-Handoff` is purlis's to every program that folds case.
+    std::fs::write(&at, "---\nname: Purlis-Handoff\ndescription: Mine.\n---\n").unwrap();
     f.commit(&f.plane, "mine");
     let head_was = head(&f.plane);
 
@@ -315,7 +315,7 @@ fn a_skill_a_chat_would_lose_is_refused_before_anything_moves() {
         "{why}"
     );
     assert!(
-        why.contains("this name belongs to a built-in skill"),
+        why.contains("a name starting with purlis- is purlis's own"),
         "{why}"
     );
     assert_eq!(head(&f.plane), head_was);

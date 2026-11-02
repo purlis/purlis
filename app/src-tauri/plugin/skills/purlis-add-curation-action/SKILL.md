@@ -1,5 +1,5 @@
 ---
-name: add-curation-action
+name: purlis-add-curation-action
 description: Add a curation action to a purlis persona — a chat the operator can open on a workspace, a persona or the plane with a prompt already typed. Use when asked to add, write or change a persona's curation action, or to give a persona a new entry in the Curate menu.
 ---
 

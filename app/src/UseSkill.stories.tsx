@@ -39,7 +39,7 @@ const SKILLS: ChatSkills = {
   plugins_off: [],
   own: null,
   skills: [
-    skill("secrets", "Uses a vault's secret without its value entering the chat.", {
+    skill("purlis-secrets", "Uses a vault's secret without its value entering the chat.", {
       level: "built-in",
       label: "built-in",
     }),
@@ -112,7 +112,7 @@ export const QuickPicker: Story = {
     const names = within(dialog)
       .getAllByTestId("use-skill-row")
       .map((row) => row.querySelector('[data-part="label"]')?.textContent);
-    await expect(names).toEqual(["deploy", "review-pr", "release-notes", "secrets"]);
+    await expect(names).toEqual(["deploy", "review-pr", "release-notes", "purlis-secrets"]);
     await expect(within(dialog).queryByRole("status")).toBeNull();
     await pictureNow();
 

@@ -173,7 +173,7 @@ describe("the Skill studio's changes", () => {
     const rename = within(dialog).getByRole("button", { name: "Rename" });
     for (const [typed, says] of [
       ["Ship", /lowercase letters, digits and hyphens/],
-      ["secrets", NAME_RESERVED],
+      ["purlis-secrets", NAME_RESERVED],
       ["triage", "There is already a skill named triage here."],
     ] as const) {
       await user.clear(box);

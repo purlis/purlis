@@ -1,5 +1,5 @@
 ---
-name: safe-remove
+name: purlis-safe-remove
 description: Remove a purlis workspace or persona without losing what it learned — audit it, promote durable learnings to shared memory, a persona's memory or the plane's docs, then run the guarded remove. Use when asked to remove, delete, retire or clean up a workspace or a persona.
 ---
 

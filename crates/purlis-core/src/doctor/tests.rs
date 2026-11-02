@@ -2090,7 +2090,7 @@ fn an_older_copy_is_stale_and_one_whose_charter_is_gone_is_named() {
 
     // A copy an older app wrote, whose skills differ from this one's, is.
     std::fs::write(
-        m.charter_dir.join("plugin/skills/handoff/SKILL.md"),
+        m.charter_dir.join("plugin/skills/purlis-handoff/SKILL.md"),
         "an older skill\n",
     )
     .unwrap();

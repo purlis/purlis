@@ -28,7 +28,7 @@ impl Project {
         std::fs::write(root.join("charter.toml"), "[plane]\n").unwrap();
         std::fs::write(
             log.join("2026-03.laptop.jsonl"),
-            "{\"persona\": \"ops\", \"skill\": \"purlis:secrets\", \"ts\": \"2026-03-02T09:00:00+00:00\"}\n",
+            "{\"persona\": \"ops\", \"skill\": \"purlis:purlis-secrets\", \"ts\": \"2026-03-02T09:00:00+00:00\"}\n",
         )
         .unwrap();
         std::fs::write(
@@ -86,7 +86,8 @@ fn skill_runs_lists_every_run_newest_first_with_its_signals_and_never_a_verdict(
         "{text}"
     );
     assert!(
-        lines[3].contains("purlis:secrets") && lines[3].contains("from before runs were recorded")
+        lines[3].contains("purlis:purlis-secrets")
+            && lines[3].contains("from before runs were recorded")
     );
     for word in ["pass", "fail"] {
         assert!(!text.to_lowercase().contains(word), "signals only: {text}");
@@ -97,13 +98,13 @@ fn skill_runs_lists_every_run_newest_first_with_its_signals_and_never_a_verdict(
 fn skill_runs_of_one_skill_matches_it_with_or_without_its_namespace_and_answers_json() {
     let p = Project::new();
 
-    let out = p.run(&["skill", "runs", "secrets", "--json"], "1");
+    let out = p.run(&["skill", "runs", "purlis-secrets", "--json"], "1");
 
     assert!(out.status.success());
     let runs: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let runs = runs["runs"].as_array().unwrap();
     assert_eq!(runs.len(), 1, "{runs:#?}");
-    assert_eq!(runs[0]["skill"], "purlis:secrets");
+    assert_eq!(runs[0]["skill"], "purlis:purlis-secrets");
     assert_eq!(runs[0]["started_by"], serde_json::Value::Null);
     assert_eq!(runs[0]["device"], "laptop");
 

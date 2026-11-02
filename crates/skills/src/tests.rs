@@ -607,11 +607,11 @@ fn a_narrower_copy_that_is_left_out_hides_nothing() {
 fn a_workspace_or_local_skill_never_takes_a_built_in_skills_name() {
     let plane = Plane::new();
     let built_in = plane.root.join("../plugin/skills");
-    skill(&built_in, "handoff", &whole("handoff"));
+    skill(&built_in, "purlis-handoff", &whole("purlis-handoff"));
     skill(
         &plane.workspace_local("smart-ide"),
-        "handoff",
-        &whole("handoff"),
+        "purlis-handoff",
+        &whole("purlis-handoff"),
     );
 
     let set = skill_set(
@@ -633,10 +633,13 @@ fn a_workspace_or_local_skill_never_takes_a_built_in_skills_name() {
         },
     );
 
-    assert_eq!(effective(&set), [("handoff", Origin::BuiltIn, false)]);
+    assert_eq!(
+        effective(&set),
+        [("purlis-handoff", Origin::BuiltIn, false)]
+    );
     assert_eq!(
         left_out(&set)[0].3,
-        "a built-in skill has this name, and a built-in skill is never replaced"
+        "a name starting with purlis- is purlis's own, so this skill never loads: rename it"
     );
 }
 
@@ -931,13 +934,45 @@ fn a_persona_skill_never_takes_a_built_in_skills_name() {
 }
 
 #[test]
+fn a_repo_or_harness_skill_of_a_built_in_skills_name_loads_beside_it_and_is_a_clash_by_how_the_route_reads_it()
+ {
+    let plane = Plane::new();
+    let built_in = plane.root.join("../plugin/skills");
+    skill(&built_in, "purlis-secrets", &whole("purlis-secrets"));
+
+    for (route, outcome) in [
+        (Route::Config, Outcome::EitherOne),
+        (Route::Plugin, Outcome::BothLoad),
+        (Route::Briefing, Outcome::BothLoad),
+    ] {
+        let got = built_in_set(&plane, &built_in, route).with_outside(
+            route,
+            [outside("purlis-secrets", Origin::Repo, repo("api"), false)],
+        );
+        assert_eq!(
+            effective(&got),
+            [
+                ("purlis-secrets", Origin::BuiltIn, false),
+                ("purlis-secrets", Origin::Repo, false),
+            ],
+            "{route:?}"
+        );
+        assert_eq!(
+            got.clashes.iter().map(|c| c.outcome).collect::<Vec<_>>(),
+            [outcome],
+            "{route:?}"
+        );
+    }
+}
+
+#[test]
 fn a_built_in_skill_named_with_either_prefix_is_the_built_in_one_and_a_missing_one_says_so() {
     let plane = Plane::new();
     let built_in = plane.root.join("../plugin/skills");
     skill(
         &built_in,
-        "working-in-a-clone",
-        &whole("working-in-a-clone"),
+        "purlis-working-in-a-clone",
+        &whole("purlis-working-in-a-clone"),
     );
 
     let set = plane.as_persona(
@@ -946,6 +981,7 @@ fn a_built_in_skill_named_with_either_prefix_is_the_built_in_one_and_a_missing_o
         &[
             "charter:working-in-a-clone",
             "purlis:working-in-a-clone",
+            "purlis:purlis-working-in-a-clone",
             "purlis:gone",
         ],
         Some(&built_in),
@@ -954,12 +990,12 @@ fn a_built_in_skill_named_with_either_prefix_is_the_built_in_one_and_a_missing_o
 
     assert_eq!(
         effective(&set),
-        [("working-in-a-clone", Origin::BuiltIn, false)]
+        [("purlis-working-in-a-clone", Origin::BuiltIn, false)]
     );
     assert_eq!(
         left_out(&set),
         [(
-            "purlis:gone",
+            "purlis:purlis-gone",
             Origin::BuiltIn,
             false,
             "its persona names it, and purlis has no built-in skill of this name".to_owned()
@@ -1056,15 +1092,15 @@ fn a_plane_skill_the_persona_names_is_never_also_looked_for_on_the_machine() {
 fn a_reference_is_read_by_its_prefix() {
     assert_eq!(
         Reference::parse(" charter:handoff "),
-        Some(Reference::BuiltIn("handoff".to_owned()))
+        Some(Reference::BuiltIn("purlis-handoff".to_owned()))
     );
     assert_eq!(
-        Reference::parse("purlis:handoff").map(|r| r.to_string()),
-        Some("purlis:handoff".to_owned())
+        Reference::parse("purlis:purlis-handoff").map(|r| r.to_string()),
+        Some("purlis:purlis-handoff".to_owned())
     );
     assert_eq!(
         Reference::parse("charter:handoff").map(|r| r.to_string()),
-        Some("purlis:handoff".to_owned()),
+        Some("purlis:purlis-handoff".to_owned()),
         "the old prefix is said as the new one"
     );
     assert_eq!(
@@ -1389,189 +1425,6 @@ fn built_in_set(plane: &Plane, built_in: &Path, route: Route) -> SkillSet {
             harness: HarnessSkills { route },
         },
     )
-}
-
-#[test]
-fn a_built_in_skill_on_the_config_route_goes_by_a_name_of_its_own() {
-    // opencode's route: the harness reads every skill by its bare name, purlis's and the clone's
-    // alike, so purlis's `secrets` is `purlis-secrets` there and nowhere else.
-    let plane = Plane::new();
-    let built_in = plane.root.join("../plugin/skills");
-    skill(&built_in, "secrets", &whole("secrets"));
-
-    let set = built_in_set(&plane, &built_in, Route::Config);
-    assert_eq!(
-        effective(&set),
-        [("purlis-secrets", Origin::BuiltIn, false)]
-    );
-    assert_eq!(
-        set.effective[0].skill.path,
-        built_in.join("secrets/SKILL.md"),
-        "still the bundle's own skill"
-    );
-    assert_eq!(
-        set.in_the_folder()
-            .map(|e| e.skill.name.as_str())
-            .collect::<Vec<_>>(),
-        ["purlis-secrets"],
-        "the set's folder holds it, under that name"
-    );
-
-    for route in [Route::Plugin, Route::Briefing, Route::Mcp] {
-        let set = built_in_set(&plane, &built_in, route);
-        assert_eq!(
-            effective(&set),
-            [("secrets", Origin::BuiltIn, false)],
-            "{route:?} is as it was"
-        );
-        assert_eq!(set.in_the_folder().count(), 0, "{route:?}");
-    }
-}
-
-#[test]
-fn on_the_config_route_a_repo_or_harness_skill_of_a_built_in_skills_bare_name_is_another_skill() {
-    let plane = Plane::new();
-    let built_in = plane.root.join("../plugin/skills");
-    skill(&built_in, "secrets", &whole("secrets"));
-
-    let got = built_in_set(&plane, &built_in, Route::Config).with_outside(
-        Route::Config,
-        [
-            outside("secrets", Origin::Repo, repo("api"), false),
-            outside("secrets", Origin::Harness, Owner::You, false),
-        ],
-    );
-
-    assert_eq!(
-        effective(&got),
-        [
-            ("purlis-secrets", Origin::BuiltIn, false),
-            ("secrets", Origin::Repo, false),
-            ("secrets", Origin::Harness, false),
-        ],
-        "both are in the set, each by its own name"
-    );
-    assert!(got.left_out.is_empty(), "{:?}", got.left_out);
-    assert!(got.clashes.is_empty(), "{:?}", got.clashes);
-}
-
-#[test]
-fn on_the_config_route_a_built_in_skills_own_name_is_kept_from_the_plane_and_a_clash_elsewhere() {
-    let plane = Plane::new();
-    let built_in = plane.root.join("../plugin/skills");
-    skill(&built_in, "secrets", &whole("secrets"));
-    skill(&plane.project(), "purlis-secrets", &whole("purlis-secrets"));
-    skill(&plane.project(), "secrets", &whole("secrets"));
-    skill(&plane.project(), "purlis-deploy", &whole("purlis-deploy"));
-
-    let got = built_in_set(&plane, &built_in, Route::Config).with_outside(
-        Route::Config,
-        [
-            outside("purlis-secrets", Origin::Repo, repo("api"), false),
-            outside("purlis-secrets", Origin::Harness, Owner::You, false),
-        ],
-    );
-
-    // opencode reads the repo's and the person's copies itself, beside purlis's, under the one
-    // name: both stay in the set, and each is a clash in which the chat may use either.
-    assert_eq!(
-        effective(&got),
-        [
-            ("purlis-deploy", Origin::Project, false),
-            ("purlis-secrets", Origin::BuiltIn, false),
-            ("purlis-secrets", Origin::Repo, false),
-            ("purlis-secrets", Origin::Harness, false),
-        ],
-        "a `purlis-` name no built-in skill takes is the plane's to use"
-    );
-    let clashes: Vec<(&str, Origin, Origin, Outcome)> = got
-        .clashes
-        .iter()
-        .map(|c| (c.name.as_str(), c.plane.origin, c.outside, c.outcome))
-        .collect();
-    assert_eq!(
-        clashes,
-        [
-            (
-                "purlis-secrets",
-                Origin::BuiltIn,
-                Origin::Repo,
-                Outcome::EitherOne
-            ),
-            (
-                "purlis-secrets",
-                Origin::BuiltIn,
-                Origin::Harness,
-                Outcome::EitherOne
-            ),
-        ]
-    );
-    // The plane's copy is purlis's to leave out, and is.
-    assert_eq!(
-        left_out(&got),
-        [
-            (
-                "purlis-secrets",
-                Origin::Project,
-                false,
-                "purlis's own skill goes by this name in this program, so this skill never \
-                 loads: rename it"
-                    .to_owned()
-            ),
-            (
-                "secrets",
-                Origin::Project,
-                false,
-                "a built-in skill has this name, and a built-in skill is never replaced".to_owned()
-            ),
-        ],
-        "the bare name stays the built-in skill's, as on every route"
-    );
-
-    // Elsewhere a plane skill may be named so: Claude Code knows it as `skills:purlis-secrets`.
-    let plugin = built_in_set(&plane, &built_in, Route::Plugin);
-    assert!(
-        effective(&plugin).contains(&("purlis-secrets", Origin::Project, false)),
-        "{:?}",
-        plugin.left_out
-    );
-}
-
-#[test]
-fn a_persona_names_a_built_in_skill_by_its_bare_name_on_the_config_route_too() {
-    let plane = Plane::new();
-    let built_in = plane.root.join("../plugin/skills");
-    skill(&built_in, "secrets", &whole("secrets"));
-    let names = [Reference::BuiltIn("secrets".to_owned())];
-
-    let set = skill_set(
-        Some(&plane.root),
-        &Machine {
-            built_in: Some(&built_in),
-            kept_local: Some(&|_| Ok(())),
-            harness: None,
-            made_since: None,
-        },
-        &Chat {
-            workspace: None,
-            persona: Some("reviewer"),
-            names: &names,
-            turned_off: &[],
-            harness: HarnessSkills {
-                route: Route::Config,
-            },
-        },
-    );
-
-    assert_eq!(
-        effective(&set),
-        [("purlis-secrets", Origin::BuiltIn, false)]
-    );
-    assert!(
-        set.left_out.is_empty(),
-        "never \"no such built-in\": {:?}",
-        set.left_out
-    );
 }
 
 // ---- lifecycle (SK-19, #2782) -------------------------------------------------------------
@@ -2053,13 +1906,11 @@ fn every_reason_reads_as_one_line() {
         Reason::NotOnThisMachine,
         Reason::NoSuchBuiltIn,
         Reason::OffForTheHarness,
-        Reason::BuiltInsOwnName,
+        Reason::ReservedName,
         Reason::RepoUnread { repo: repo.clone() },
         Reason::HiddenByRepo { repo },
         Reason::Archived,
         Reason::MadeWhileAChatRan(said),
-        Reason::IndexName,
-        Reason::HiddenByIndex,
     ];
     for reason in &reasons {
         let line = reason.to_string();

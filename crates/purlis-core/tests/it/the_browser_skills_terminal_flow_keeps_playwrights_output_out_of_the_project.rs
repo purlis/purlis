@@ -5,7 +5,7 @@
 //!
 //! `playwright-cli` writes its snapshots, logs and traces under `.playwright-cli/` in the folder
 //! it runs from, and a trace of a logged-in run holds that run's cookies. A project's autosave
-//! commits files it does not ignore. So the flow the `browser` skill shows points Playwright's
+//! commits files it does not ignore. So the flow the `purlis-browser` skill shows points Playwright's
 //! output folder (`PLAYWRIGHT_MCP_OUTPUT_DIR`, read when a session opens, as the secrets file
 //! is) at a private folder of its own outside the project before the session opens, refuses to
 //! go on where that folder could not be made, and removes it with the session when the flow
@@ -15,7 +15,7 @@ use std::path::Path;
 
 fn browser_skill() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../app/src-tauri/plugin/skills/browser/SKILL.md");
+        .join("../../app/src-tauri/plugin/skills/purlis-browser/SKILL.md");
     std::fs::read_to_string(&path).unwrap_or_else(|why| panic!("{}: {why}", path.display()))
 }
 
@@ -27,7 +27,11 @@ fn terminal_flow() -> String {
         .skip(1)
         .filter_map(|rest| rest.split("\n```").next())
         .collect();
-    assert_eq!(blocks.len(), 1, "the browser skill shows one bash flow");
+    assert_eq!(
+        blocks.len(),
+        1,
+        "the purlis-browser skill shows one bash flow"
+    );
     blocks[0].to_owned()
 }
 

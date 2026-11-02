@@ -1,5 +1,5 @@
 ---
-name: building-purlis-ui
+name: purlis-building-purlis-ui
 description: Build or change purlis's own window — its screens, dialogs and component families in a purlis/purlis checkout's `app/src` — from the families in `app/src/ui`, with stories, axe, keyboard tests and screenshot baselines, until every check is green. Use when asked to add, change, fix or restyle a part of the purlis app's UI, or a component family and its theme parts.
 ---
 

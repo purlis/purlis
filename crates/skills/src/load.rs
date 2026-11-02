@@ -97,12 +97,16 @@ pub(crate) fn narrowing(text: &str) -> Narrowing {
 /// name, whatever is on disk.
 pub fn by_name<'a>(set: &'a SkillSet, name: &str) -> Option<&'a Effective> {
     let name = name.trim();
+    // A built-in skill by any of its names: never the plane's skill of an old one's leaf.
+    if name.contains(':')
+        && let Some(crate::Reference::BuiltIn(own)) = crate::Reference::parse(name)
+    {
+        return set.effective.iter().find(|effective| {
+            effective.origin == crate::Origin::BuiltIn && effective.skill.name == own
+        });
+    }
     let bare = match name.rsplit_once(':') {
-        Some((namespace, leaf))
-            if namespace == "skills" || crate::BUILT_IN_PREFIXES.contains(&namespace) =>
-        {
-            leaf
-        }
+        Some(("skills", leaf)) => leaf,
         _ => name,
     };
     set.effective

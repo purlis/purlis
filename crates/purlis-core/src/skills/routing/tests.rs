@@ -48,8 +48,8 @@ fn a_plane_of(count: usize) -> (tempfile::TempDir, PathBuf) {
     }
     let bundle = root.join("bundle");
     write(
-        &bundle.join("handoff"),
-        "---\nname: handoff\ndescription: Hands off.\n---\n",
+        &bundle.join("purlis-handoff"),
+        "---\nname: purlis-handoff\ndescription: Hands off.\n---\n",
     );
     (tmp, bundle)
 }
@@ -92,12 +92,12 @@ fn hidden(skills: &ChatSkills) -> Vec<&str> {
 /// The set's folder laid out for a chat in `smart-ide`, as `persona` or on none.
 fn the_folder(root: &Path, bundle: &Path, persona: Option<&str>) -> PathBuf {
     crate::skills::lay_out_for_chat(
-        Some(crate::skills::PlaneSkills {
+        crate::skills::PlaneSkills {
             plane: root,
             workspace: Some("smart-ide"),
             repo: &[],
             routed: None,
-        }),
+        },
         persona,
         Some(bundle),
         &root.join("sets"),
@@ -119,17 +119,15 @@ fn laid_out(root: &Path, bundle: &Path, persona: Option<&str>) -> Vec<String> {
 
 #[test]
 fn above_the_budget_an_opencode_chat_is_handed_the_index_as_purlis_skill_index() {
-    // opencode reads every skill by its bare name, a clone's `skill-index` too, so purlis's index
-    // is `purlis-skill-index` there, beside the built-in skills under their own names.
     let (tmp, bundle) = a_plane_of(MOST + 5);
     let root = tmp.path();
     let folder = crate::skills::lay_out_for_chat(
-        Some(crate::skills::PlaneSkills {
+        crate::skills::PlaneSkills {
             plane: root,
             workspace: Some("smart-ide"),
             repo: &[],
             routed: None,
-        }),
+        },
         None,
         Some(&bundle),
         &root.join("sets"),
@@ -141,7 +139,7 @@ fn above_the_budget_an_opencode_chat_is_handed_the_index_as_purlis_skill_index()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     names.sort();
-    assert_eq!(names, ["purlis-handoff", "purlis-skill-index"]);
+    assert_eq!(names, ["purlis-skill-index"]);
     let index = std::fs::read_to_string(
         folder
             .join(DIR_IN_BUNDLE)
@@ -236,10 +234,10 @@ fn a_workspaces_pin_and_a_personas_pin_are_never_hidden() {
     );
     assert_eq!(
         laid_out(root, &bundle, Some("reviewer")),
-        ["skill-03", "skill-09", INDEX]
+        [INDEX, "skill-03", "skill-09"]
     );
     // A chat on no persona has the workspace's pin alone.
-    assert_eq!(laid_out(root, &bundle, None), ["skill-03", INDEX]);
+    assert_eq!(laid_out(root, &bundle, None), [INDEX, "skill-03"]);
     let chat = for_use_skill(&running(root, &bundle, Some("reviewer")));
     assert!(!hidden(&chat).contains(&"skill-03"));
     assert!(!hidden(&chat).contains(&"skill-09"));
@@ -334,7 +332,7 @@ fn the_studio_says_why_each_harnesss_router_hid_a_skill_and_which_are_pinned() {
     assert!(row("skill-03").pinned);
     assert!(row("skill-03").hidden.is_empty());
     assert!(
-        row("handoff").hidden.is_empty(),
+        row("purlis-handoff").hidden.is_empty(),
         "a built-in skill is never hidden"
     );
 }
@@ -465,9 +463,7 @@ fn use_skill_asks_a_chat_to_load_a_hidden_skill_and_holds_no_run_for_it() {
             crate::skills::Start::ByLoad,
             "the load opens the run"
         );
-        let built_in = chat
-            .typed(&harness.skills().built_in_name("handoff"), &[], &salt)
-            .unwrap();
+        let built_in = chat.typed("purlis-handoff", &[], &salt).unwrap();
         assert!(
             matches!(built_in.start, crate::skills::Start::Held(_)),
             "a listed skill is typed as before"
@@ -511,12 +507,12 @@ fn a_briefed_chat_over_the_budget_is_briefed_on_the_index_and_not_on_what_it_hid
     let (tmp, bundle) = a_plane_of(MOST + 5);
     let root = tmp.path();
     let folder = crate::skills::lay_out_for_chat(
-        Some(crate::skills::PlaneSkills {
+        crate::skills::PlaneSkills {
             plane: root,
             workspace: Some("smart-ide"),
             repo: &[],
             routed: None,
-        }),
+        },
         None,
         Some(&bundle),
         &root.join("sets"),
@@ -785,12 +781,12 @@ fn use_skill_and_the_stamp_of_a_chat_in_a_clone_route_its_repo_skills_as_its_fol
     let repo = crate::skills::repo_skills_of_chat(Harness::Codex, root, "smart-ide", &clone);
     assert_eq!(repo.len(), 5, "{repo:?}");
     let folder = crate::skills::lay_out_for_chat(
-        Some(crate::skills::PlaneSkills {
+        crate::skills::PlaneSkills {
             plane: root,
             workspace: Some("smart-ide"),
             repo: &repo,
             routed: None,
-        }),
+        },
         None,
         Some(&bundle),
         &root.join("sets"),

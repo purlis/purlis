@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis browser install` is retired (#2575): a chat purlis starts drives a browser with
-//! purlis's own browser tools, which the `browser` skill teaches. The words are still taken,
+//! purlis's own browser tools, which the `purlis-browser` skill teaches. The words are still taken,
 //! with whatever a script still passes, and answer one sentence naming what to use instead.
 //!
 //! A stand-in `npx` on `$PATH` records any run, so the tests hold that nothing is generated.
@@ -73,7 +73,7 @@ fn retired(said: &str) -> bool {
     said.starts_with("✗ `purlis browser install` is retired")
         && said.contains("wrote nothing")
         && said.contains("browser tools")
-        && said.contains("`browser` skill")
+        && said.contains("`purlis-browser` skill")
         && said.lines().count() == 1
 }
 
@@ -107,7 +107,7 @@ fn the_retired_command_is_not_offered_and_its_help_names_what_replaced_it() {
     let said = purlis(&s, &["browser", "--help"]);
     let help = out(&said);
     assert!(
-        help.contains("browser tools") && help.contains("`browser` skill"),
+        help.contains("browser tools") && help.contains("`purlis-browser` skill"),
         "{help}"
     );
     for internal in ["#2575", "purlis_core", "install"] {

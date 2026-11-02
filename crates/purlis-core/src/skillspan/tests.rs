@@ -296,7 +296,7 @@ fn a_debug_dump_of_a_salt_or_of_a_prompts_marks_shows_neither() {
 
 #[test]
 fn a_prompts_lead_alone_is_marked_and_a_short_first_line_is_its_own_lead() {
-    let long = "Use purlis's compact skill to compact and improve the persona ops.";
+    let long = "Use the purlis-compact skill to compact and improve the persona ops.";
     let marks = PromptMarks::lead_of(long, &salt());
     assert!(marks.holds(Prompted::of(StartedBy::Curation, long, &salt()).lead));
     assert!(!marks.holds(PromptMarks::digest("improve the persona ops.", &salt())));
@@ -336,7 +336,7 @@ fn started(skill: &str, started_by: StartedBy) -> ToolCall {
     call
 }
 
-const CURATION: &str = "Use purlis's compact skill to compact and improve the persona ops.";
+const CURATION: &str = "Use the purlis-compact skill to compact and improve the persona ops.";
 
 #[test]
 fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_action() {
@@ -346,7 +346,7 @@ fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_actio
     let opened = tracker
         .call(
             "4",
-            &started("purlis:compact", StartedBy::SkillTool),
+            &started("purlis:purlis-compact", StartedBy::SkillTool),
             1,
             || None,
         )
@@ -364,7 +364,7 @@ fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_actio
     let next = tracker
         .call(
             "4",
-            &started("purlis:compact", StartedBy::SkillTool),
+            &started("purlis:purlis-compact", StartedBy::SkillTool),
             5,
             || None,
         )
@@ -380,7 +380,7 @@ fn a_curation_prompt_the_person_replaced_before_sending_starts_nothing_of_its_ow
     let opened = tracker
         .call(
             "4",
-            &started("purlis:compact", StartedBy::McpLoad),
+            &started("purlis:purlis-compact", StartedBy::McpLoad),
             1,
             || None,
         )
@@ -397,7 +397,7 @@ fn a_curation_prompt_is_held_until_it_is_sent_and_goes_with_the_session() {
     let opened = tracker
         .call(
             "4",
-            &started("purlis:compact", StartedBy::SkillTool),
+            &started("purlis:purlis-compact", StartedBy::SkillTool),
             1,
             || None,
         )
@@ -421,7 +421,7 @@ fn only_a_curation_action_or_a_trigger_is_held_for_a_prompt() {
     let opened = tracker
         .call(
             "4",
-            &started("purlis:compact", StartedBy::SkillTool),
+            &started("purlis:purlis-compact", StartedBy::SkillTool),
             1,
             || None,
         )

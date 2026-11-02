@@ -182,7 +182,7 @@ pub enum SkillCommand {
         /// The deleted skill's name.
         name: Option<String>,
         /// Restore it under this new name instead: its `SKILL.md`'s `name:` and its folder are
-        /// renamed to match. A skill whose name belongs to a built-in skill now comes back only so.
+        /// renamed to match. A skill whose name belongs to purlis now comes back only so.
         #[arg(long = "as", value_name = "NEW_NAME", requires = "name")]
         under: Option<String>,
     },
@@ -801,12 +801,11 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 println!("No deleted skill can be restored here.");
             }
             let now = std::time::SystemTime::now();
-            let reserved = purlis_core::skills::Reserved::of(built_in.as_deref());
             for one in deleted {
                 let line = restorable(&one.name, &one.level, &one.stays(now));
-                // Its name a built-in skill took (#3729): it comes back under a new one.
-                let line = if reserved.holds(&one.name) {
-                    line.own(" · its name belongs to a built-in skill now: restore it with --as <new-name>")
+                // Its name is purlis's own now (#3729): it comes back under a new one.
+                let line = if purlis_core::skills::name_reserved(&one.name) {
+                    line.own(" · its name belongs to purlis now: restore it with --as <new-name>")
                 } else {
                     line
                 };
@@ -1019,7 +1018,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             ..
         } => {
             let level = at.level();
-            let update = match source::update_review(root, built_in.as_deref(), &level, &name) {
+            let update = match source::update_review(root, &level, &name) {
                 Ok(update) => update,
                 Err(why) => {
                     voice::err(esc(&why).to_string());
@@ -1828,16 +1827,23 @@ fn install(
         }
     };
     let review = match named {
-        Named::These(names) => source::review(root, cx.built_in, source, names, level),
-        Named::All => match source::review_all(root, cx.built_in, source, level) {
+        Named::These(names) => source::review(root, source, names, level),
+        Named::All => match source::review_all(root, source, level) {
             Ok(source::SetReview::Review { review, there }) => {
                 // Those the level has already, made there or from another source, or a
-                // built-in's name: left as they are, and said (#4153).
+                // name of purlis's own: left as they are, and said (#4153).
                 for name in &there {
-                    voice::info(format!(
-                        "{} is there already at {level}, so it is left as it is.",
-                        esc(name)
-                    ));
+                    voice::info(if purlis_core::skills::name_reserved(name) {
+                        format!(
+                            "{} is left out: a name starting with purlis- belongs to purlis.",
+                            esc(name)
+                        )
+                    } else {
+                        format!(
+                            "{} is there already at {level}, so it is left as it is.",
+                            esc(name)
+                        )
+                    });
                 }
                 if review.skills.is_empty() {
                     voice::info(format!(

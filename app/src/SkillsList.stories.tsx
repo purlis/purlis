@@ -31,9 +31,9 @@ const OPS: ListedSkill[] = [
     accept: "workspaces/ops/skills",
     left_out: "A chat made its folder: accept it to use it.",
   }),
-  skill("secrets", {
+  skill("purlis-secrets", {
     level: "built-in",
-    folder: "/app/skills/secrets",
+    folder: "/app/skills/purlis-secrets",
     description: "Uses a vault's secret without its value entering the chat.",
   }),
   skill("deploy", { description: "Deploys the service to staging, then production." }),
@@ -205,13 +205,15 @@ export const InThisChat: Story = {
     const line = row("1 built-in skill");
     await untilFocused(() => line, "Skills: Down reaches the built-in skills' quiet line");
     await userEvent.keyboard("{Enter}");
-    await waitFor(() => expect(row(/^secrets/)).toBeVisible());
+    await waitFor(() => expect(row(/^purlis-secrets/)).toBeVisible());
     await expect(
       row("They ship with purlis: they can't be edited, turned off or replaced."),
     ).toBeVisible();
     await untilFocused(() => line, "Skills: the keyboard stays on the quiet line");
     await userEvent.keyboard(" ");
-    await waitFor(() => expect(within(list).queryByRole("row", { name: /^secrets/ })).toBeNull());
+    await waitFor(() =>
+      expect(within(list).queryByRole("row", { name: /^purlis-secrets/ })).toBeNull(),
+    );
     await userEvent.keyboard("{ArrowDown}");
     const leftOut = row(/^Left out/);
     await untilFocused(() => leftOut, "Skills: Down reaches Left out");

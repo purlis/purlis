@@ -25,7 +25,12 @@ describe("a persona's skills in the Skill studio", () => {
     const changed = vi.fn();
 
     render(
-      <PersonaSkillAdd plane="p" persona="ops" known={["purlis:handoff"]} onChanged={changed} />,
+      <PersonaSkillAdd
+        plane="p"
+        persona="ops"
+        known={["purlis:purlis-handoff"]}
+        onChanged={changed}
+      />,
     );
     fireEvent.change(screen.getByTestId("persona-skill-name"), { target: { value: " deploy " } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
@@ -41,7 +46,7 @@ describe("a persona's skills in the Skill studio", () => {
       <PersonaSkillAdd
         plane="p"
         persona="ops"
-        known={["purlis:handoff", "deploy", "deploy"]}
+        known={["purlis:purlis-handoff", "deploy", "deploy"]}
         onChanged={() => {}}
       />,
     );
@@ -50,7 +55,7 @@ describe("a persona's skills in the Skill studio", () => {
     const offered = within(list)
       .getAllByRole("option")
       .map((one) => one.textContent);
-    expect(offered).toEqual(["purlis:handoff", "deploy"]);
+    expect(offered).toEqual(["purlis:purlis-handoff", "deploy"]);
     await user.click(within(list).getByRole("option", { name: "deploy" }));
     expect(screen.getByRole("combobox", { name: "Add a skill" })).toHaveValue("deploy");
   });
@@ -79,10 +84,10 @@ describe("a persona's skills in the Skill studio", () => {
       throw new Error(`unexpected ${cmd}`);
     });
 
-    expect(await changePersonaSkill("p", "ops", "purlis:handoff", "remove")).toBeUndefined();
+    expect(await changePersonaSkill("p", "ops", "purlis:purlis-handoff", "remove")).toBeUndefined();
 
     expect(asked).toEqual([
-      { plane: "p", persona: "ops", written: "purlis:handoff", change: "remove" },
+      { plane: "p", persona: "ops", written: "purlis:purlis-handoff", change: "remove" },
     ]);
   });
 });

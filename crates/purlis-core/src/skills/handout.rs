@@ -45,8 +45,7 @@ pub(super) struct Handed {
 pub(super) fn of(effective: &Effective, honours: &Honours) -> Result<Handed, Refusal> {
     let folder = SkillFolder::of(effective)?;
     let own = folder.skill_md()?;
-    // Named as the set holds it: a built-in skill handed under a name of its own says that name.
-    let text = purlis_skills::handed_text_as(&own, honours, &effective.skill.name)?;
+    let text = purlis_skills::handed_text(&own, honours)?;
     Ok(Handed {
         name: effective.skill.name.clone(),
         folder: folder.path().to_path_buf(),

@@ -1,5 +1,5 @@
 ---
-name: update
+name: purlis-update
 description: Update purlis to a newer version and say what it brings — the app installs the new version, then this skill relays what `purlis news` says each version brought. Use when asked to update or upgrade purlis, whether a newer purlis is published, what a version added, or how to adopt a new purlis feature.
 ---
 

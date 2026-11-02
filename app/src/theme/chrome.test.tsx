@@ -1339,7 +1339,6 @@ const DIALOGS: Opened[] = [
           skill={SKILL}
           level={{ at: "project", local: false }}
           taken={["review"]}
-          builtIns={["secrets"]}
           busy={false}
           refused="the project is opened read-only"
           onEdit={nothing}
@@ -1408,7 +1407,6 @@ const DIALOGS: Opened[] = [
           levels={[{ level: { at: "project", local: false }, label: "project" }]}
           start={{ at: "project", local: false }}
           takenAt={() => []}
-          builtIns={["secrets"]}
           busy={false}
           onEdit={nothing}
           onMake={nothing}

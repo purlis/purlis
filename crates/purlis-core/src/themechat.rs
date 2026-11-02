@@ -5,7 +5,7 @@
 //!
 //! The gallery's **New theme** and **Edit with a chat** open a chat with a prompt typed into it
 //! and never sent, as a curation action does (ADR 0061): the person reads it and presses Enter.
-//! Both name purlis's `theme` skill, which holds the procedure. New theme is purlis's own
+//! Both name purlis's `purlis-theme` skill, which holds the procedure. New theme is purlis's own
 //! "Create a theme" action ([`crate::curation::CREATE_THEME`]) on the level the gallery is at,
 //! the same prompt the Curate menu types; Edit with a chat is that action with one more thing
 //! named: the theme, by the id `purlis theme list` gives it, so the chat starts on the theme the
@@ -74,7 +74,7 @@ pub fn chat(root: &Path, workspace: Option<&str>, asked: Asked<'_>) -> Result<Re
     Ok(Resolved {
         label: EDIT_LABEL.to_owned(),
         prompt: format!(
-            "Use purlis's theme skill to edit the theme \"{theme}\" for the {} {name}.",
+            "Use the purlis-theme skill to edit the theme \"{theme}\" for the {} {name}.",
             subject.kind.as_str()
         ),
         ..create

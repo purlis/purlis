@@ -222,26 +222,26 @@ pub const BUILTINS: [Builtin; 4] = [
     Builtin {
         id: "safe-remove",
         label: "Safe remove",
-        skill: "safe-remove",
+        skill: "purlis-safe-remove",
         on: &[Kind::Workspace, Kind::Persona],
         at_plane_root: true,
-        template: "Use purlis's safe-remove skill to remove the {subject.kind} {subject.name}.",
+        template: "Use the purlis-safe-remove skill to remove the {subject.kind} {subject.name}.",
     },
     Builtin {
         id: "compact",
         label: "Compact & improve",
-        skill: "compact",
+        skill: "purlis-compact",
         on: &[Kind::Workspace, Kind::Persona],
         at_plane_root: false,
-        template: "Use purlis's compact skill to compact and improve the {subject.kind} {subject.name}.",
+        template: "Use the purlis-compact skill to compact and improve the {subject.kind} {subject.name}.",
     },
     Builtin {
         id: "add-curation-action",
         label: "Add curation action",
-        skill: "add-curation-action",
+        skill: "purlis-add-curation-action",
         on: &[Kind::Persona],
         at_plane_root: false,
-        template: "Use purlis's add-curation-action skill to add a curation action to the persona \
+        template: "Use the purlis-add-curation-action skill to add a curation action to the persona \
                    {subject.name}.",
     },
     // The first of purlis's own on the plane (spec #2313, #2333): a chat at the plane root makes
@@ -249,10 +249,10 @@ pub const BUILTINS: [Builtin; 4] = [
     Builtin {
         id: CREATE_THEME,
         label: "Create a theme",
-        skill: "theme",
+        skill: "purlis-theme",
         on: &[Kind::Workspace, Kind::Plane],
         at_plane_root: false,
-        template: "Use purlis's theme skill to create a theme for the {subject.kind} {subject.name}.",
+        template: "Use the purlis-theme skill to create a theme for the {subject.kind} {subject.name}.",
     },
 ];
 

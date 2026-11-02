@@ -1,5 +1,5 @@
 ---
-name: theme
+name: purlis-theme
 description: Create, edit, check or share a purlis theme — from a brand colour, an image or screenshot, a Figma frame, an imported theme or another theme — through a theme draft the window draws live, checked until it is clean. Use when asked to make, change, fix, check, export or share a theme, or to make purlis look a certain way.
 ---
 

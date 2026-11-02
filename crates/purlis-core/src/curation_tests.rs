@@ -701,7 +701,7 @@ fn create_a_theme_runs_where_its_theme_is_made_in_the_workspace_or_at_the_plane_
     assert!(
         action
             .prompt
-            .starts_with("Use purlis's theme skill to create a theme for the plane "),
+            .starts_with("Use the purlis-theme skill to create a theme for the plane "),
         "{}",
         action.prompt
     );
@@ -773,7 +773,7 @@ fn each_builtin_prompt_is_one_plain_line_naming_its_skill_and_its_subject() {
         );
         assert!(!template.contains('\n'), "{} is not one line", builtin.id);
         assert!(
-            template.starts_with(&format!("Use purlis's {} skill ", builtin.skill)),
+            template.starts_with(&format!("Use the {} skill ", builtin.skill)),
             "{} does not name its skill first: {template}",
             builtin.id
         );

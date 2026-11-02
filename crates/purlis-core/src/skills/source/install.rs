@@ -134,8 +134,8 @@ pub fn install(
     // its review fits it for its install too (#4024).
     // A skill they refer to that is met at `level` already is left as it is, as the review left
     // it (#4032, #4155).
-    let reviewed = review::reviewed(&fetched, &names, &review::met_at(plane, cx.built_in, level))
-        .map_err(Unread::said)?;
+    let reviewed =
+        review::reviewed(&fetched, &names, &review::met_at(plane, level)).map_err(Unread::said)?;
     let now = Accepted {
         commit: fetched.commit.clone(),
         skills: reviewed
@@ -162,7 +162,7 @@ pub fn install(
     {
         if cx.reserved(&skill.name) {
             return Err(format!(
-                "{} cannot be installed: its name belongs to a built-in skill",
+                "{} cannot be installed: a name starting with purlis- belongs to purlis",
                 skill.name
             ));
         }

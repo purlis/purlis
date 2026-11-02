@@ -1275,7 +1275,7 @@ _Avoid_: handoff, log, transcript
 
 **Smart close**:
 Closing a chat after it has written its session record: the app sends it one line naming
-purlis's `smart-close` skill (the operator's click is the consent, the exception to a curation
+purlis's `purlis-smart-close` skill (the operator's click is the consent, the exception to a curation
 action's never-sent prompt), and the tab closes when `purlis session record` tells the app the
 record is saved — never on anything the chat printed. Until then the chat is **wrapping up**:
 its tab says so, and the operator's Cancel smart close or their own typing stops it.
@@ -1283,9 +1283,9 @@ _Avoid_: save and close, archive
 
 **Smart-close pass**:
 What a person's own start of a smart close gives that chat: the tab's **Smart close**, or the
-person typing `/smart-close` into a waiting chat. It is bound to that chat and that close, ends
+person typing `/purlis-smart-close` into a waiting chat. It is bound to that chat and that close, ends
 with it, and is the only thing that lets a record close the tab. A chat can't give itself one: a
-typed `/smart-close` counts only beside the person's own Enter in the chat's pane (#1332).
+typed `/purlis-smart-close` counts only beside the person's own Enter in the chat's pane (#1332).
 _Avoid_: token, ticket (that is a handoff's), approval
 
 **Resume** (of a session record):

@@ -317,10 +317,8 @@ pub struct Kit<'a> {
     /// where the harness can be told so. Anything else still asks, and ends it.
     pub writes_its_piece: bool,
     /// The set's folder the host laid out before arming the chat
-    /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set, and on a route that
-    /// names the built-in skills their own (`purlis-<name>`,
-    /// [`crate::skills::Route::names_built_ins_its_own`]) those too. `None` where it laid out
-    /// none: a harness that needs the folder is then handed none of what it holds.
+    /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set. `None` where it laid
+    /// out none: a harness that needs the folder is then handed none of what it holds.
     pub laid_out: Option<&'a std::path::Path>,
 }
 
