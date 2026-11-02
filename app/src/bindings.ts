@@ -13140,6 +13140,12 @@ export type Shown = {
 	 *  one: their count, and each as [`Shown::says`] shows it. Absent for an action on one line.
 	 */
 	lines?: LinesShown | null,
+	/**
+	 *  **What its chat's turn ended on** (#4550): on a chat waiting on the person's reply, its
+	 *  last message, masked and bounded as a report's text is, over the lines it has. Data,
+	 *  never markup. Absent where the app heard none, and on every other ask.
+	 */
+	last_message?: string | null,
 };
 
 /**

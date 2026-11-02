@@ -3084,8 +3084,8 @@ impl Planes {
                 }
             })
         });
-        // What a chat's turn ended saying (#1981): kept for a task alone, in memory. Weak for
-        // the handoff's reason.
+        // What a chat's turn ended saying (#1981, #4550): kept in memory, for every chat. Weak
+        // for the handoff's reason.
         held.hooks.when_output({
             let held = Arc::downgrade(&held);
             Arc::new(move |output| {

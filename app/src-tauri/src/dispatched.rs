@@ -2569,10 +2569,16 @@ pub fn heard(held: &Held, report: &Report) {
 }
 
 /// **What chat `output.chat`'s turn put out** (#1981), heard on its own line before the turn's
-/// end: kept, masked and made a report's text (`handback::last_message_summary`), for a task
-/// alone, in memory, until its next turn begins. The chat is the one the line's token is
-/// for, and the board has judged the line its adopted run's.
+/// end. The message it ended on is kept for every chat, masked and made a report's text
+/// (`handback::last_message_summary`), in memory, until its next turn begins: what a question in
+/// the Inbox shows (#4550) and, for a task, what a report is made from. Everything else is a
+/// task's alone. The chat is the one the line's token is for, and the board has judged the line
+/// its adopted run's.
 pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
+    if let purlis_core::hookwire::Output::Final { text } = &output.turn_output {
+        let kept = purlis_core::handback::last_message_summary(Some(text));
+        held.tasks().ledger().said_last(output.chat, kept);
+    }
     let task = held
         .chats()
         .handed_from(output.chat)
@@ -2582,26 +2588,21 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
     }
     // What a turn put out is activity (#1981).
     crate::silence::heard(held, output.chat, false);
-    match output.turn_output {
-        purlis_core::hookwire::Output::Final { text } => {
-            let kept = purlis_core::handback::last_message_summary(Some(&text));
-            held.tasks().ledger().said_last(output.chat, kept);
-        }
-        purlis_core::hookwire::Output::Ran {
-            command,
-            exit,
-            failed,
-        } => {
-            let ran = dispatched::Ran::shown(&command, exit, failed);
-            let mut ledger = held.tasks().ledger();
-            ledger.ran(output.chat, ran);
-            // When it last ran a command, for its liveness (#3900).
-            ledger.heard_doing(
-                output.chat,
-                purlis_core::dispatchliveness::Did::RanACommand,
-                SystemTime::now(),
-            );
-        }
+    if let purlis_core::hookwire::Output::Ran {
+        command,
+        exit,
+        failed,
+    } = output.turn_output
+    {
+        let ran = dispatched::Ran::shown(&command, exit, failed);
+        let mut ledger = held.tasks().ledger();
+        ledger.ran(output.chat, ran);
+        // When it last ran a command, for its liveness (#3900).
+        ledger.heard_doing(
+            output.chat,
+            purlis_core::dispatchliveness::Did::RanACommand,
+            SystemTime::now(),
+        );
     }
 }
 

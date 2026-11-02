@@ -14,6 +14,7 @@ import {
   NOT_CHECKED,
   NOTHING_WAITS,
   NOTICES,
+  NO_MESSAGE,
   UPDATES,
   hiddenSaid,
   landOnGroup,
@@ -786,6 +787,77 @@ describe("answering in place", () => {
     expect(screen.getByText("deep failed")).toBeTruthy();
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.getByRole("button", { name: "Go to chat steward 6" })).toBeTruthy();
+  });
+
+  it("shows what a chat waiting on a reply said, whole, and its waiting line once", () => {
+    core();
+    const said = "I checked both branches.\nWhich should I use, main or dev?";
+    draw([{ ...QUESTION, last_message: said }]);
+
+    const card = screen.getByRole("listitem", { name: "Waiting on your reply", description: said });
+    const words = within(card).getByText(/I checked both branches/);
+    expect(words.textContent).toBe(said);
+    expect(words.className).not.toContain("inbox-clamped");
+    expect(within(card).getAllByText("Waiting on your reply")).toHaveLength(1);
+    expect(within(card).getByRole("textbox", { name: "Reply to steward 6" })).toBeTruthy();
+  });
+
+  it("says once that a chat waiting on a reply has no message to show", () => {
+    core();
+    draw([QUESTION]);
+    expect(screen.getAllByText(NO_MESSAGE)).toHaveLength(1);
+    expect(screen.getAllByText("Waiting on your reply")).toHaveLength(1);
+  });
+
+  it("keeps what a chat said under the reason it also waits for", () => {
+    core();
+    draw([{ ...QUESTION, last_message: "Which branch?" }], {
+      whyOf: (session) => (session === 6 ? "its report has nowhere to go" : undefined),
+      asked: (session) => session === 6,
+    });
+    expect(screen.getByText("its report has nowhere to go")).toBeTruthy();
+    expect(screen.getByText("Which branch?")).toBeTruthy();
+    // Heard on the card: a screen reader on it goes on to the box from there.
+    expect(
+      screen.getByRole("listitem", {
+        name: "its report has nowhere to go",
+        description: "Waiting on your reply Which branch?",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("reaches a reply box from its card with one Tab and ↓, past the message", async () => {
+    core();
+    draw([{ ...QUESTION, last_message: "Which branch?" }]);
+    await userEvent.tab();
+    expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Reply to steward 6" }),
+    );
+    await userEvent.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
+    await userEvent.tab({ shift: true });
+    expect(document.querySelector("li.inbox-ask")?.contains(document.activeElement)).toBe(false);
+  });
+
+  it("says once under the reason it also waits for that it has no message to show", () => {
+    core();
+    draw([QUESTION], {
+      whyOf: (session) => (session === 6 ? "its report has nowhere to go" : undefined),
+      asked: (session) => session === 6,
+    });
+    expect(screen.getByText("its report has nowhere to go")).toBeTruthy();
+    expect(screen.getAllByText(NO_MESSAGE)).toHaveLength(1);
+  });
+
+  it("shows no message on a chat that asked nothing, whose card is its reason", () => {
+    core();
+    draw([{ ...QUESTION, last_message: "All done." }], {
+      whyOf: (session) => (session === 6 ? "deep failed" : undefined),
+    });
+    expect(screen.queryByText("All done.")).toBeNull();
+    expect(screen.queryByText(NO_MESSAGE)).toBeNull();
   });
 
   it("sends nothing for an empty reply", () => {

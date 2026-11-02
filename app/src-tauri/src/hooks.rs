@@ -2150,8 +2150,8 @@ pub type Touches = Arc<dyn Fn(purlis_core::hookwire::Touching) + Send + Sync + '
 /// which measures a task's quiet stretch from it ([`Hooks::when_doing`]).
 pub type Doings = Arc<dyn Fn(u32, purlis_core::doing::Said) + Send + Sync + 'static>;
 
-/// What hears what a chat's turn put out (#1981): the project's own handler, which keeps it
-/// for a task alone ([`Hooks::when_output`]).
+/// What hears what a chat's turn put out (#1981): the project's own handler, which keeps the
+/// message it ended on, for every chat (#4550) ([`Hooks::when_output`]).
 pub type Outputs = Arc<dyn Fn(purlis_core::hookwire::TurnOutput) + Send + Sync + 'static>;
 
 /// The event the window is sent when a chat's file tool touches a file (FM-6).
