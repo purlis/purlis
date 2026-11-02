@@ -1002,6 +1002,7 @@ pub fn task_question(
         writes: None,
         lines: None,
         last_message: None,
+        earlier_messages: None,
     }
 }
 
