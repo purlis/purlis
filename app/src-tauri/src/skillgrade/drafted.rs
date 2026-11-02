@@ -13,15 +13,49 @@ use serde::Serialize;
 use specta::Type;
 use tauri::Manager as _;
 
-use purlis_core::skills::grades::{self, Planned};
+use purlis_core::skills::grades::{self, Graded};
 use purlis_core::skills::verbs::drafts;
 
 use super::{
-    Begin, ByGrader, DraftBegun, GradeRow, On, RunningStep, SkillGradePlan, SkillGradeStep, begin,
-    chats_on, evals_can_run, flag_on, grader_picked, grader_takes, graders_here, plan_by,
-    plan_holds, running, set_cap, ticked,
+    Begin, ByGrader, DraftBegun, GradeArms, GradeGrader, GradeRow, RunningStep, SkillGradePlan,
+    SkillGradeStep, begin, chats_on, evals_can_run, flag_on, grader_picked, grader_takes,
+    graders_here, plan_by, plan_holds, running, set_cap, tests_said, ticked,
 };
 use crate::planes::{PlaneId, Planes};
+
+/// **What a draft's grade measured of one kind of fixture**: each arm's rate in points, and the
+/// draft's difference from what it is weighed against, which the core leaves out where that arm
+/// did not run.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct DraftScore {
+    /// Its outcome evals, rather than its trigger tests.
+    pub evals: bool,
+    pub arms: GradeArms,
+    pub delta: Option<f64>,
+}
+
+impl DraftScore {
+    /// What `graded` measured: its trigger tests', and its outcome evals', each where the draft's
+    /// arm scored any.
+    fn all_of(graded: &Graded) -> Vec<DraftScore> {
+        let points = |delta: Option<f64>| delta.map(|delta| (delta * 100.0).round());
+        [
+            DraftScore {
+                evals: false,
+                arms: GradeArms::of(graded),
+                delta: points(graded.report.delta),
+            },
+            DraftScore {
+                evals: true,
+                arms: GradeArms::by(graded, |score| score.outcome_pass_rate),
+                delta: points(graded.report.outcome_delta),
+            },
+        ]
+        .into_iter()
+        .filter(|score| score.arms.with.is_some())
+        .collect()
+    }
+}
 
 /// **What a draft's page says of its grade.**
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
@@ -33,8 +67,10 @@ pub struct SkillDraftGrade {
     pub tests: u32,
     pub evals: u32,
     pub tests_refused: Option<String>,
-    /// Its newest grade, the chats that grade asked for, and whether the draft changed since.
+    /// Its newest grade, what that measured, the chats its plan ran, and whether the draft
+    /// changed since.
     pub latest: Option<GradeRow>,
+    pub scores: Vec<DraftScore>,
     pub asked: u32,
     pub changed: bool,
     /// The grade of it running now, at its latest step.
@@ -42,27 +78,19 @@ pub struct SkillDraftGrade {
 }
 
 impl SkillDraftGrade {
-    fn of(said: &grades::draft::Said, running: Option<SkillGradeStep>) -> Self {
-        let (tests, evals, tests_refused) = match &said.tests {
-            Ok(tests) => (
-                u32::try_from(tests.runs).unwrap_or(u32::MAX),
-                u32::try_from(tests.evals).unwrap_or(u32::MAX),
-                tests
-                    .refused
-                    .as_ref()
-                    .map(purlis_core::skills::grade::Refused::in_window),
-            ),
-            Err(why) => (0, 0, Some(why.clone())),
-        };
+    fn of(said: grades::draft::Said, running: Option<SkillGradeStep>) -> Self {
+        let (tests, evals, tests_refused) = tests_said(said.tests);
+        let latest = said.latest.as_deref();
         SkillDraftGrade {
             only_evals: said.only_evals,
             tests,
             evals,
             tests_refused,
-            latest: said.latest.as_deref().map(GradeRow::of),
-            asked: said.latest.as_deref().map_or(0, |row| {
-                u32::try_from(row.chats_asked()).unwrap_or(u32::MAX)
-            }),
+            latest: latest.map(GradeRow::of),
+            scores: latest.map_or_else(Vec::new, DraftScore::all_of),
+            asked: latest
+                .and_then(|row| row.draft.as_ref())
+                .map_or(0, |mark| mark.chats),
             changed: said.changed,
             running,
         }
@@ -103,31 +131,34 @@ pub(crate) async fn skill_draft_grade(
         flag_on()?;
         let one = drafts::one(held.root(), &draft)?;
         Ok(SkillDraftGrade::of(
-            &grades::draft::of(held.root(), &one),
+            grades::draft::of(held.root(), &one),
             step_of(&plane, &draft),
         ))
     })
     .await
 }
 
-/// The plan of the draft `draft`, its chats `on`, as the window draws it.
+/// The plan of the draft `draft` of the project at `root`, as the window draws it.
 fn plan_of_draft(
-    planned: &Planned,
+    root: &std::path::Path,
     plane: &PlaneId,
     draft: &str,
-    on: On,
-    offered: Vec<super::GradeGrader>,
-    grader: Option<&str>,
-) -> SkillGradePlan {
+    (profile, model): (Option<String>, Option<String>),
+    evals: &[String],
+    (offered, grader): (Vec<GradeGrader>, Option<&str>),
+) -> Result<SkillGradePlan, String> {
+    let one = drafts::one(root, draft)?;
+    let on = chats_on(root, profile, model);
+    let planned = grades::draft::planned(root, &one, on.profile.as_deref(), &ticked(evals))?;
     let mut plan = plan_by(
-        planned,
+        &planned,
         step_of(plane, draft).map(|step| step.grade),
         on,
         offered,
         grader,
     );
     plan.draft = true;
-    plan
+    Ok(plan)
 }
 
 /// **What grading the draft `draft` would run**, before anything runs.
@@ -149,19 +180,14 @@ pub(crate) async fn skill_draft_grade_plan(
     let executor = views.executor();
     crate::off_the_window("reading what a grade runs", move || {
         flag_on()?;
-        let one = drafts::one(held.root(), &draft)?;
-        let on = chats_on(held.root(), profile, model);
-        let planned =
-            grades::draft::planned(held.root(), &one, on.profile.as_deref(), &ticked(&evals))?;
-        let offered = graders_here(&executor, held.root());
-        Ok(plan_of_draft(
-            &planned,
+        plan_of_draft(
+            held.root(),
             &plane,
             &draft,
-            on,
-            offered,
-            grader.as_deref(),
-        ))
+            (profile, model),
+            &evals,
+            (graders_here(&executor, held.root()), grader.as_deref()),
+        )
     })
     .await
 }
@@ -188,19 +214,14 @@ pub(crate) async fn skill_draft_grade_set_cap(
     crate::off_the_window("setting a grade's cap", move || {
         flag_on()?;
         set_cap(held.root(), tokens)?;
-        let one = drafts::one(held.root(), &draft)?;
-        let on = chats_on(held.root(), profile, model);
-        let planned =
-            grades::draft::planned(held.root(), &one, on.profile.as_deref(), &ticked(&evals))?;
-        let offered = graders_here(&executor, held.root());
-        Ok(plan_of_draft(
-            &planned,
+        plan_of_draft(
+            held.root(),
             &plane,
             &draft,
-            on,
-            offered,
-            grader.as_deref(),
-        ))
+            (profile, model),
+            &evals,
+            (graders_here(&executor, held.root()), grader.as_deref()),
+        )
     })
     .await
 }
@@ -240,7 +261,8 @@ pub(crate) async fn skill_draft_grade_start(
             &one.name,
             "nothing was started",
         )?;
-        let mark = grades::draft::Mark::of(&one);
+        let chats = planned.plan.map_or(0, |plan| plan.chats);
+        let mark = grades::draft::Mark::of(&one, chats);
         begin(
             app,
             held,

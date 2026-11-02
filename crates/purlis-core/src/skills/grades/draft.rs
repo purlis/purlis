@@ -22,7 +22,7 @@ use purlis_skills::grade;
 use super::super::verbs::drafts::{Draft, Snapshot};
 use super::super::verbs::{Level, find, rel};
 use super::{
-    Graded, Planned, Previous, SkillCopy, TriggerTests, Wanted, Which, copy_of, counted,
+    Graded, Planned, Previous, SkillCopy, TriggerTests, Wanted, Which, counted, folder_read,
     planned_from, read_where,
 };
 use crate::skilluse::Content;
@@ -38,14 +38,18 @@ pub struct Mark {
     pub id: String,
     /// What it wrote when it was graded ([`Draft::digest`]).
     pub digest: String,
+    /// The chats its plan ran: what "stopped after 18 of 54" counts against, as a stopped
+    /// report counts only those asked for before it stopped.
+    pub chats: u32,
 }
 
 impl Mark {
-    /// The mark of `draft` as it is now.
-    pub fn of(draft: &Draft) -> Mark {
+    /// The mark of a grade of `chats` chats of `draft` as it is now.
+    pub fn of(draft: &Draft, chats: u32) -> Mark {
         Mark {
             id: draft.mint.clone(),
             digest: draft.digest(),
+            chats,
         }
     }
 
@@ -91,20 +95,18 @@ fn copy_of_draft(root: &Path, draft: &Draft, inputs: &[String]) -> Result<SkillC
     let current = if draft.new {
         None
     } else {
-        Some(copy_of(root, &draft.level, &draft.name, inputs)?)
+        Some(folder_read(root, &draft.level, &draft.name, inputs)?)
     };
     let mut files = current
         .as_ref()
-        .map(|copy| copy.snapshot.files.clone())
+        .map(|(snapshot, ..)| snapshot.files.clone())
         .unwrap_or_default();
-    for file in &draft.files {
-        if file.path.split('/').next() != Some(grade::EVALS_DIR) {
-            files.insert(file.path.clone(), file.after.clone());
-        }
+    for file in draft.files.iter().filter(|file| !file.in_evals()) {
+        files.insert(file.path.clone(), file.after.clone());
     }
     let mut read = current
         .as_ref()
-        .map(|copy| copy.inputs.clone())
+        .map(|(_, _, read)| read.clone())
         .unwrap_or_default();
     for path in inputs {
         if let Some(text) = drafted(draft, path) {
@@ -118,11 +120,11 @@ fn copy_of_draft(root: &Path, draft: &Draft, inputs: &[String]) -> Result<SkillC
         },
         content: Content::Uncommitted,
         commit: None,
-        previous: current.map(|copy| Previous {
-            commit: copy.commit.unwrap_or_default(),
-            tree: copy.content.word().to_owned(),
+        previous: current.map(|(snapshot, content, _)| Previous {
+            commit: None,
+            tree: content.word().to_owned(),
             subject: String::new(),
-            snapshot: copy.snapshot,
+            snapshot,
         }),
         previous_refused: None,
         inputs: read,

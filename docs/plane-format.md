@@ -8020,7 +8020,8 @@ refuses a `<data>` under a project or inside any git work tree.
   (SK-16, #2779, the review of #3229). Written `0600` through no link (`grades::record`), read
   beside the committed record by `grades::grades_of`, held to the same limits.
   **A draft's grade goes here whatever its copy** (#2780, ADR 0105 as amended 2026-11-02): the row
-  adds `draft`, `{id, digest}`, the draft's mint and the SHA-256 of what it wrote, and may hold a
+  adds `draft`, `{id, digest, chats}`, the draft's mint, the SHA-256 of what it wrote and the
+  chats its plan ran, and may hold a
   `previous` arm with no `previous` commit, as the current version it compared with is read from
   the folder. It is left out of `grades::grades_of`; only its id
   (`grades::grade_of`) or the draft's page (`grades::draft::of`) reads it.
@@ -8147,6 +8148,8 @@ refuses a `<data>` under a project or inside any git work tree.
   `report.triggers[].chats` names it) are plain names. Each folder `0700` and never a link, each file `0600`, written and read through no
   link (`grades::kept`). When a grade ends, the chats of every grade of its skill but the three
   newest are removed (`grades::kept::sweep`).
+  A grade of a draft (#2780) keeps its chats under `<skill>.draft`, a name no skill can take, so
+  they never push out the skill's own.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Machine, device-bound, transient — what this machine's chats showed, kept for the skill's newest
   grades; losing it loses only the read-only view of those chats. A teammate who pulls the eval

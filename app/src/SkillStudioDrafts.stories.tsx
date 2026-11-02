@@ -102,6 +102,7 @@ const UNGRADED: SkillDraftGrade = {
   evals: 0,
   tests_refused: null,
   latest: null,
+  scores: [],
   asked: 0,
   changed: false,
   running: null,
@@ -110,6 +111,7 @@ const UNGRADED: SkillDraftGrade = {
 const gradedAs = (row: Partial<GradeRow>, more: Partial<SkillDraftGrade> = {}) => ({
   ...UNGRADED,
   latest: { ...ROW, ...row },
+  scores: [{ evals: false, arms: ROW.arms, delta: 17 }],
   asked: 54,
   ...more,
 });
@@ -263,19 +265,18 @@ export const GradeRunning = gradeStory(
 );
 export const GradeBetter = gradeStory(gradedAs({}), "+17 points");
 export const GradeWorse = gradeStory(
-  gradedAs({ arms: { with: 58, without: 33, previous: 75 } }),
+  gradedAs({}, { scores: [{ evals: false, arms: { ...ROW.arms, with: 58 }, delta: -17 }] }),
   "-17 points",
 );
 export const GradeNoDifference = gradeStory(
-  gradedAs({ arms: { with: 75, without: 33, previous: 75 } }),
+  gradedAs({}, { scores: [{ evals: false, arms: { ...ROW.arms, with: 75 }, delta: 0 }] }),
   "No difference",
 );
 export const GradeStoppedEarly = gradeStory(
-  gradedAs({
-    outcome: "stopped",
-    arms: { with: 80, without: 33, previous: 70 },
-    spent: { ...ROW.spent, chats: 18 },
-  }),
+  gradedAs(
+    { outcome: "stopped", spent: { ...ROW.spent, chats: 18 } },
+    { scores: [{ evals: false, arms: { with: 80, without: 33, previous: 70 }, delta: 10 }] },
+  ),
   "Stopped after 18 of 54 chats",
 );
 export const GradeDraftChanged = gradeStory(

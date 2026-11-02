@@ -54,10 +54,9 @@ fn row_of(id: &str, draft: &Draft, plan: &Planned) -> Graded {
             .copy
             .as_ref()
             .and_then(|copy| copy.previous.as_ref())
-            .map(|previous| previous.commit.clone())
-            .filter(|commit| !commit.is_empty()),
+            .and_then(|previous| previous.commit.clone()),
         after_edit: false,
-        draft: Some(Mark::of(draft)),
+        draft: Some(Mark::of(draft, 12)),
     }
 }
 
@@ -95,6 +94,10 @@ fn a_draft_is_graded_as_accept_would_write_it_against_the_folders_current_versio
     );
     let previous = copy.previous.as_ref().unwrap();
     assert_eq!(previous.snapshot.files["SKILL.md"], current);
+    assert_eq!(
+        previous.commit, None,
+        "read from the folder, it may be no commit"
+    );
     assert_eq!(copy.content.word(), "uncommitted");
 }
 

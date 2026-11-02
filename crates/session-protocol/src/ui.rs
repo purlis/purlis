@@ -690,6 +690,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // window.
     "router_grade_set_cap",
     "skill_grade_set_cap",
+    // A draft's grade started, and the cap set from its plan (#2780): as a skill's grade's.
+    "skill_draft_grade_start",
+    "skill_draft_grade_set_cap",
     // Grading after each edit turned on or off (SK-58, #3238): on, it spends the person's
     // account at each edit they save, within what the plan showed. The person's own press in
     // their window, never a link's.
@@ -1200,8 +1203,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_grade_chat",
     "skill_grade_plan",
     "skill_grade_scorecard",
-    // A skill's grades, for its Grades tab (S6, #3688): read only.
+    // A skill's grades, for its Grades tab (S6, #3688), and a draft's (#2780): read only.
     "skill_grades",
+    "skill_draft_grade",
+    "skill_draft_grade_plan",
     "skill_lint",
     "skill_move_needs_grant",
     "skill_panels",

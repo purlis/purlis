@@ -12,13 +12,13 @@ import { listen } from "@tauri-apps/api/event";
 import {
   commands,
   SKILL_GRADE,
-  type GradeArms,
+  type DraftScore,
   type GradeRow,
   type SkillDraftGrade,
   type SkillGradeStep,
 } from "./bindings";
 import { counted } from "./dispatches";
-import { pointsSaid } from "./GradeScorecard";
+import { pointsSaid, signed } from "./GradeScorecard";
 import { useRead } from "./SkillPanels";
 import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
@@ -29,14 +29,21 @@ export type DraftGradeState =
   | { at: "not-graded" }
   | { at: "running"; step: SkillGradeStep }
   /** A grade, whole, stopped early (`stopped`) or of what the draft held before (`changed`). */
-  | { at: "graded"; row: GradeRow; stopped: string | null; changed: boolean }
+  | {
+      at: "graded";
+      row: GradeRow;
+      scores: readonly DraftScore[];
+      stopped: string | null;
+      changed: boolean;
+    }
   /** A grade that ended with nothing to compare. */
   | { at: "nothing-compared"; said: string }
   | { at: "only-evals" }
   | { at: "no-tests"; refused: string | null };
 
 /** How a grade that compared nothing ended, in a sentence. */
-const NOTHING_SAID: Record<Exclude<GradeRow["outcome"], "graded">, string> = {
+const NOTHING_SAID: Record<GradeRow["outcome"], string> = {
+  graded: "Finished with nothing to compare.",
   stopped: "Stopped before anything could be compared.",
   "at-limit": "Stopped at its limit before anything could be compared.",
   interrupted: "Interrupted before anything could be compared.",
@@ -48,16 +55,18 @@ export function draftGradeState(grade: SkillDraftGrade): DraftGradeState {
   if (grade.running !== null) return { at: "running", step: grade.running };
   const row = grade.latest;
   if (row !== null) {
-    if (row.outcome !== "graded" && row.arms.with === null)
+    if (grade.scores.length === 0)
       return { at: "nothing-compared", said: NOTHING_SAID[row.outcome] };
+    const of = grade.asked === 0 ? "" : ` of ${grade.asked}`;
     return {
       at: "graded",
       row,
+      scores: grade.scores,
       changed: grade.changed,
       stopped:
         row.outcome === "graded"
           ? null
-          : `Stopped after ${row.spent.chats} of ${counted(grade.asked, "chat", "chats")}, so this compares what ran.`,
+          : `Stopped after ${row.spent.chats}${of} chats, so this compares what ran.`,
     };
   }
   if (grade.tests === 0 && grade.evals === 0)
@@ -65,12 +74,12 @@ export function draftGradeState(grade: SkillDraftGrade): DraftGradeState {
   return { at: "not-graded" };
 }
 
-/** The draft's difference from what it is weighed against, as the line says it. */
-function differenceOf(arms: GradeArms): { said: string; up: boolean | null } {
-  const base = arms.previous ?? arms.without;
-  const by = (arms.with ?? 0) - (base ?? 0);
-  if (by === 0) return { said: "No difference", up: null };
-  return { said: `${by > 0 ? "+" : ""}${by} points`, up: by > 0 };
+/** The draft's difference from what it is weighed against, the core's word on it: none where
+ *  that arm did not run, as a difference from nothing is no difference. */
+function Difference({ delta }: { delta: number | null }) {
+  if (delta === null) return null;
+  if (delta === 0) return <Badge>No difference</Badge>;
+  return <Badge variant={delta > 0 ? "ok" : "waiting"}>{`${signed(delta)} points`}</Badge>;
 }
 
 /** One arm's pass rate, as the line says it. */
@@ -107,18 +116,21 @@ export function DraftGradeLine({ name, state }: { name: string; state: DraftGrad
         <p>{state.refused ?? `${name} has no trigger tests yet, so a grade has nothing to run.`}</p>
       );
     case "graded": {
-      const { arms } = state.row;
-      const difference = differenceOf(arms);
       return (
         <>
-          <div className="skill-draft-figures" data-testid="skill-draft-figures">
-            <Figure label="Draft" points={arms.with} />
-            {arms.previous !== null && <Figure label="Current" points={arms.previous} />}
-            <Figure label="No skill" points={arms.without} />
-            <Badge variant={difference.up === null ? undefined : difference.up ? "ok" : "waiting"}>
-              {difference.said}
-            </Badge>
-          </div>
+          {state.scores.map(({ evals, arms, delta }) => (
+            <div
+              className="skill-draft-figures"
+              data-testid="skill-draft-figures"
+              key={String(evals)}
+            >
+              {evals && <span>Outcome evals</span>}
+              <Figure label="Draft" points={arms.with} />
+              {arms.previous !== null && <Figure label="Current" points={arms.previous} />}
+              <Figure label="No skill" points={arms.without} />
+              <Difference delta={delta} />
+            </div>
+          ))}
           {state.changed && (
             <p>
               <Badge variant="waiting">Out of date</Badge>{" "}

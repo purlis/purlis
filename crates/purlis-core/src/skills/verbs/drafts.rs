@@ -209,6 +209,13 @@ pub struct DraftFile {
     pub stale: bool,
 }
 
+impl DraftFile {
+    /// Whether it is one of the skill's fixtures, which no arm of a grade is handed.
+    pub fn in_evals(&self) -> bool {
+        self.path.split('/').next() == Some(EVALS)
+    }
+}
+
 impl Draft {
     /// Whether any of its files changed in the project since it was drafted.
     pub fn stale(&self) -> bool {
@@ -218,8 +225,7 @@ impl Draft {
     /// **Whether it changes only the skill's fixtures** (#2780): nothing a chat would read, so a
     /// grade would run the same skill twice.
     pub fn only_evals(&self) -> bool {
-        let evals = |file: &DraftFile| file.path.split('/').next() == Some(EVALS);
-        !self.files.is_empty() && self.files.iter().all(evals)
+        !self.files.is_empty() && self.files.iter().all(DraftFile::in_evals)
     }
 
     /// **The digest of what it writes** (#2780): its grade is marked with it, so a draft changed

@@ -3,7 +3,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { GradeRow, SkillDraftGrade, SkillGradeStep } from "./bindings";
+import type { DraftScore, GradeRow, SkillDraftGrade, SkillGradeStep } from "./bindings";
 import { DraftGradeActions, DraftGradeLine, draftGradeState } from "./SkillDraftGrade";
 
 const ROW: GradeRow = {
@@ -24,16 +24,26 @@ const NOTHING: SkillDraftGrade = {
   evals: 0,
   tests_refused: null,
   latest: null,
+  scores: [],
   asked: 0,
   changed: false,
   running: null,
 };
+
+const tests = (arms: DraftScore["arms"], delta: number | null): DraftScore => ({
+  evals: false,
+  arms,
+  delta,
+});
+
+const SCORE = tests(ROW.arms, 17);
 
 const STEP = { ran: 21, of: 54, grade: "g2" } as SkillGradeStep;
 
 const graded = (over: Partial<GradeRow>, more: Partial<SkillDraftGrade> = {}): SkillDraftGrade => ({
   ...NOTHING,
   latest: { ...ROW, ...over },
+  scores: [SCORE],
   asked: 54,
   ...more,
 });
@@ -80,11 +90,13 @@ describe("a draft's grade beside Accept", () => {
   });
 
   it.each([
-    ["better", 92, "+17 points"],
-    ["worse", 58, "-17 points"],
-    ["no different", 75, "No difference"],
-  ])("draws a draft that is %s against the current version", (_, draft, difference) => {
-    const go = drawn(graded({ arms: { with: draft, without: 33, previous: 75 } }));
+    ["better", 92, 17, "+17 points"],
+    ["worse", 58, -17, "-17 points"],
+    ["no different", 75, 0, "No difference"],
+  ])("draws a draft that is %s against the current version", (_, draft, delta, difference) => {
+    const go = drawn(
+      graded({}, { scores: [tests({ with: draft, without: 33, previous: 75 }, delta)] }),
+    );
     expect(screen.getByTestId("skill-draft-figures").textContent).toContain(
       `Draft ${draft}%Current 75%No skill 33%`,
     );
@@ -95,34 +107,55 @@ describe("a draft's grade beside Accept", () => {
   });
 
   it("weighs a new skill's draft against no skill", () => {
-    drawn(graded({ arms: { with: 92, without: 33, previous: null } }), true);
+    drawn(graded({}, { scores: [tests({ with: 92, without: 33, previous: null }, 59)] }), true);
     expect(screen.queryByText("Current")).toBeNull();
     screen.getByText("+59 points");
   });
 
   it("says a grade stopped early compares what ran", () => {
     drawn(
-      graded({
-        outcome: "stopped",
-        arms: { with: 80, without: 33, previous: 70 },
-        spent: { ...ROW.spent, chats: 18 },
-      }),
+      graded(
+        { outcome: "stopped", spent: { ...ROW.spent, chats: 18 } },
+        { scores: [tests({ with: 80, without: 33, previous: 70 }, 10)] },
+      ),
     );
     screen.getByText("Stopped after 18 of 54 chats, so this compares what ran.");
     screen.getByText("+10 points");
   });
 
   it("says a grade that ended with nothing to compare, and offers another", () => {
-    drawn(
-      graded({
-        outcome: "interrupted",
-        arms: { with: null, without: null, previous: null },
-        spent: { ...ROW.spent, chats: 0 },
-      }),
-    );
+    drawn(graded({ outcome: "interrupted", spent: { ...ROW.spent, chats: 0 } }, { scores: [] }));
     screen.getByText("Interrupted before anything could be compared.");
     screen.getByRole("button", { name: "Grade again…" });
     expect(screen.queryByText("Not run")).toBeNull();
+  });
+
+  it("invents no difference where what it is weighed against did not run", () => {
+    drawn(
+      graded(
+        { outcome: "stopped", spent: { ...ROW.spent, chats: 1 } },
+        { scores: [tests({ with: 100, without: null, previous: null }, null)] },
+      ),
+    );
+    expect(screen.queryByText(/points/)).toBeNull();
+    expect(screen.queryByText("No difference")).toBeNull();
+  });
+
+  it("draws a grade of outcome evals alone as what it found", () => {
+    drawn(
+      graded(
+        {},
+        { scores: [{ evals: true, arms: { with: 80, without: 40, previous: 60 }, delta: 20 }] },
+      ),
+    );
+    screen.getByText("Outcome evals");
+    screen.getByText("+20 points");
+    expect(screen.queryByText("Not run")).toBeNull();
+  });
+
+  it("says a finished grade that measured nothing, and no figures", () => {
+    drawn(graded({}, { scores: [] }));
+    screen.getByText("Finished with nothing to compare.");
   });
 
   it("marks a grade of what the draft held before, with no way to its scorecard", () => {

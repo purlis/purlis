@@ -1217,6 +1217,12 @@ pub(crate) fn begin(
         );
     }
     let grade = id.clone();
+    // A draft's chats are kept apart: its grades never push out the skill's own.
+    let keeps = if draft.is_some() {
+        grades::kept::of_draft(&skill)
+    } else {
+        grades::kept::Of::Skill(skill.clone())
+    };
     // Held as under way while it runs (#3353): a crash, a fault or a quit before it ends
     // leaves it to the project's next start to record as interrupted.
     let under_way = Graded {
@@ -1244,8 +1250,7 @@ pub(crate) fn begin(
         previous: copy
             .previous
             .as_ref()
-            .map(|previous| previous.commit.clone())
-            .filter(|commit| !commit.is_empty()),
+            .and_then(|previous| previous.commit.clone()),
         after_edit,
         draft: draft.map(|one| one.mark),
     };
@@ -1303,7 +1308,7 @@ pub(crate) fn begin(
                     unpriced_at: limits.unpriced_usd_per_million,
                     skill: skill.clone(),
                     label: format!("Grade {skill}"),
-                    keeps: Some(grades::kept::Of::Skill(skill.clone())),
+                    keeps: Some(keeps.clone()),
                     profile: &profile,
                     stop: &stop,
                     spent: Spent::default(),
@@ -1351,7 +1356,7 @@ pub(crate) fn begin(
                 );
                 grades::underway::ended(&root, &grade);
                 // The chats of the skill's older grades go: its newest keep theirs (SK-59).
-                grades::kept::sweep(&root, &skill);
+                grades::kept::sweep_of(&root, &keeps);
                 drop(marker.borrow_mut().take());
                 running().remove(&grade);
                 let said = match (&graded.report.not_started, recorded) {
@@ -1624,11 +1629,19 @@ pub struct GradeSpent {
 
 impl GradeArms {
     fn of(graded: &Graded) -> GradeArms {
+        GradeArms::by(graded, |score| score.pass_rate)
+    }
+
+    /// Each arm's rate as `rate` reads it, in points.
+    fn by(
+        graded: &Graded,
+        rate: impl Fn(&grading::ArmScore) -> Option<grading::Stat>,
+    ) -> GradeArms {
         let points = |arm: Arm| {
             graded
                 .report
                 .arm(arm)
-                .and_then(|score| score.pass_rate)
+                .and_then(&rate)
                 .map(|stat| (stat.mean * 100.0).round())
         };
         GradeArms {
@@ -1708,17 +1721,7 @@ impl SkillGrades {
         skill: &str,
     ) -> Self {
         // A copy that cannot be found keeps its grades: only its tests are not counted.
-        let (tests, evals, tests_refused) = match tests {
-            Ok(tests) => (
-                u32::try_from(tests.runs).unwrap_or(u32::MAX),
-                u32::try_from(tests.evals).unwrap_or(u32::MAX),
-                tests
-                    .refused
-                    .as_ref()
-                    .map(purlis_core::skills::grade::Refused::in_window),
-            ),
-            Err(why) => (0, 0, Some(why)),
-        };
+        let (tests, evals, tests_refused) = tests_said(tests);
         SkillGrades {
             grades: read.grades.iter().map(GradeRow::of).collect(),
             said: read.said(),
@@ -1727,6 +1730,22 @@ impl SkillGrades {
             tests_refused,
             running: step_of_running(plane, level, skill),
         }
+    }
+}
+
+/// **What a grade would run, as the window is told it**: its trigger tests and outcome evals,
+/// counted, and why the tests were not read, where they were not.
+fn tests_said(tests: Result<grades::TriggerTests, String>) -> (u32, u32, Option<String>) {
+    match tests {
+        Ok(tests) => (
+            u32::try_from(tests.runs).unwrap_or(u32::MAX),
+            u32::try_from(tests.evals).unwrap_or(u32::MAX),
+            tests
+                .refused
+                .as_ref()
+                .map(purlis_core::skills::grade::Refused::in_window),
+        ),
+        Err(why) => (0, 0, Some(why)),
     }
 }
 

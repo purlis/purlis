@@ -49,8 +49,15 @@ export const ARM_SAID: Record<ScoredRuns["arm"], string> = {
   "built-in-router": "With the built-in router",
 };
 
+/** An arm as a scorecard says it, of a grade of a draft (#2780) or of a skill. */
+export function armSaid(arm: ScoredRuns["arm"], draft: boolean): string {
+  if (draft && arm === "with") return "With the draft";
+  if (draft && arm === "previous") return "The current version";
+  return ARM_SAID[arm];
+}
+
 /** A number of points with its sign: `+25`, `-5`, `0`. */
-function points(delta: number): string {
+export function signed(delta: number): string {
   return `${delta > 0 ? "+" : ""}${delta}`;
 }
 
@@ -61,15 +68,15 @@ export function differenceSaid(card: GradeScorecard): string {
   if (card.delta === null) return ".";
   if (card.draft)
     return card.delta_without === null
-      ? `, the draft made a difference of ${points(card.delta)} points.`
-      : `, the draft made a difference of ${points(card.delta)} points against the current version, and ${points(card.delta_without)} against no skill.`;
+      ? `, the draft made a difference of ${signed(card.delta)} points.`
+      : `, the draft made a difference of ${signed(card.delta)} points against the current version, and ${signed(card.delta_without)} against no skill.`;
   if (card.against === null)
-    return `, the skill made a difference of ${points(card.delta)} points.`;
+    return `, the skill made a difference of ${signed(card.delta)} points.`;
   const without =
     card.delta_without === null
       ? ""
-      : `, and the skill ${points(card.delta_without)} against no skill`;
-  return `, this version made a difference of ${points(card.delta)} points against its previous version ${card.against}${without}.`;
+      : `, and the skill ${signed(card.delta_without)} against no skill`;
+  return `, this version made a difference of ${signed(card.delta)} points against its previous version ${card.against}${without}.`;
 }
 
 /** One arm of one test, in a sentence: what ran, what started the skill, and the asks. */
@@ -105,7 +112,7 @@ export function pointsSaid(points: number | null): string {
 /** The difference between two arms' rates, as a tile's line says it: `+18 points`. */
 export function against(one: number | null, other: number | null): string | undefined {
   if (one === null || other === null) return undefined;
-  return `${points(one - other)} points`;
+  return `${signed(one - other)} points`;
 }
 
 /** A chat a scorecard's row offers, with the arm and the trigger test it ran. */
@@ -136,10 +143,13 @@ function ArmCell({
   runs,
   query,
   onChat,
+  draft,
 }: {
   runs: ScoredRuns | undefined;
   query: string;
   onChat: (chat: string) => void;
+  /** Whether it graded a draft. */
+  draft: boolean;
 }): ReactNode {
   if (runs === undefined || runs.pass === null) return <Badge>Not run</Badge>;
   return (
@@ -151,7 +161,7 @@ function ArmCell({
           key={chat.id}
           size="sm"
           variant="ghost"
-          aria-label={`Open ${ARM_SAID[runs.arm].toLowerCase()}, chat ${chat.run}, of “${query}”`}
+          aria-label={`Open ${armSaid(runs.arm, draft).toLowerCase()}, chat ${chat.run}, of “${query}”`}
           isDisabled={!chat.kept}
           tooltip={
             chat.kept
@@ -228,7 +238,7 @@ export function GradeScorecardPage({
   const spent = it.spent.cost_usd === null ? "" : ` for ${dollarsSaid(it.spent.cost_usd)}`;
   const about = (
     <span data-testid="grade-scorecard-about">
-      {`${end.said} ${it.graded}${it.after_edit ? ", after an edit you saved" : ""}, version ${it.version}, on ${it.ran_on}${spent}. ${it.ended}${differenceSaid(it)}`}
+      {`${end.said} ${it.graded}${it.after_edit ? ", after an edit you saved" : ""}, ${it.draft ? "the draft" : `version ${it.version}`}, on ${it.ran_on}${spent}. ${it.ended}${differenceSaid(it)}`}
     </span>
   );
   return (
@@ -301,7 +311,12 @@ export function GradeScorecardPage({
       )}
       <section aria-labelledby="grade-scorecard-tests">
         <PanelSectionTitle id="grade-scorecard-tests">Each trigger test</PanelSectionTitle>
-        <TriggerTestsTable tests={it.tests} label={`Trigger tests of ${name}`} onChat={onChat} />
+        <TriggerTestsTable
+          tests={it.tests}
+          label={`Trigger tests of ${name}`}
+          onChat={onChat}
+          draft={it.draft}
+        />
       </section>
     </section>
   );
@@ -316,10 +331,13 @@ export function TriggerTestsTable({
   tests,
   label,
   onChat,
+  draft = false,
 }: {
   tests: readonly ScoredTest[];
   label: string;
   onChat: (chat: string) => void;
+  /** Whether it graded a draft (#2780): its arms are named so. */
+  draft?: boolean;
 }) {
   const arms = armsOf(tests);
   return (
@@ -328,7 +346,7 @@ export function TriggerTestsTable({
         <TableColumn isRowHeader>Trigger test</TableColumn>
         <TableColumn>Should</TableColumn>
         {arms.map((arm) => (
-          <TableColumn key={arm}>{ARM_SAID[arm]}</TableColumn>
+          <TableColumn key={arm}>{armSaid(arm, draft)}</TableColumn>
         ))}
       </TableHeader>
       <TableBody>
@@ -346,7 +364,7 @@ export function TriggerTestsTable({
                   textValue={runs === undefined ? "Not run" : runsSaid(runs, test.should_trigger)}
                 >
                   <span data-testid={`grade-scorecard-${arm}`}>
-                    <ArmCell runs={runs} query={test.query} onChat={onChat} />
+                    <ArmCell runs={runs} query={test.query} onChat={onChat} draft={draft} />
                   </span>
                 </TableCell>
               );

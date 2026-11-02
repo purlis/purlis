@@ -1078,16 +1078,8 @@ export const commands = {
 	skillDraftGrade: (plane: PlaneId, draft: string) => typedError<SkillDraftGrade, string>(__TAURI_INVOKE("skill_draft_grade", { plane, draft })),
 	/**  **What grading the draft `draft` would run**, before anything runs. */
 	skillDraftGradePlan: (plane: PlaneId, draft: string, profile: string | null, model: string | null, evals: string[], grader: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_draft_grade_plan", { plane, draft, profile, model, evals, grader })),
-	/**
-	 *  **Grades the draft `draft`**, on the plan the person pressed Start on: see
-	 *  `skill_grade_start`. The answer is the grade's id.
-	 */
-	skillDraftGradeStart: (plane: PlaneId, draft: string, profile: string | null, model: string | null, evals: string[], grader: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_draft_grade_start", { plane, draft, profile, model, evals, grader, consent })),
-	/**
-	 *  **Sets the token cap a grade in the project is held to**, as `skill_grade_set_cap` does: the
-	 *  answer is the plan of the draft `draft` again, with it.
-	 */
-	skillDraftGradeSetCap: (plane: PlaneId, draft: string, profile: string | null, model: string | null, evals: string[], grader: string | null, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_draft_grade_set_cap", { plane, draft, profile, model, evals, grader, tokens })),
+	skillDraftGradeStart: __WINDOW_ONLY_RESULT,
+	skillDraftGradeSetCap: __WINDOW_ONLY_RESULT,
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	/**  **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it. */
 	skillGradeScorecard: (plane: PlaneId, skill: string, grade: string) => typedError<GradeScorecard, string>(__TAURI_INVOKE("skill_grade_scorecard", { plane, skill, grade })),
@@ -4714,6 +4706,18 @@ export type Doing = {
 	 *  cargo"), until the next tool heard.
 	 */
 	over: boolean,
+};
+
+/**
+ *  **What a draft's grade measured of one kind of fixture**: each arm's rate in points, and the
+ *  draft's difference from what it is weighed against, which the core leaves out where that arm
+ *  did not run.
+ */
+export type DraftScore = {
+	/**  Its outcome evals, rather than its trigger tests. */
+	evals: boolean,
+	arms: GradeArms,
+	delta: number | null,
 };
 
 /**  One download, as its Notice shows it. */
@@ -11106,8 +11110,12 @@ export type SkillDraftGrade = {
 	tests: number,
 	evals: number,
 	tests_refused: string | null,
-	/**  Its newest grade, the chats that grade asked for, and whether the draft changed since. */
+	/**
+	 *  Its newest grade, what that measured, the chats its plan ran, and whether the draft
+	 *  changed since.
+	 */
 	latest: GradeRow | null,
+	scores: DraftScore[],
 	asked: number,
 	changed: boolean,
 	/**  The grade of it running now, at its latest step. */

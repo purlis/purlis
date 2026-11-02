@@ -21,9 +21,13 @@ and one it leaves is the folder's. A draft that changes only `evals/` gets no gr
 would be the same skill. Outcome evals stay off until ticked.
 
 **A draft's grade is this machine's alone.** Its row goes to
-`<data>/app-state/<clone key>/skill-grades/` whatever the copy, with `draft: {id, digest}`: the
-draft's mint, so the next draft of the skill starts with no grade though it has the same id, and a
-digest of what it wrote, so a draft changed since says so. The row stays out of the Grades tab, the
+`<data>/app-state/<clone key>/skill-grades/` whatever the copy, with `draft: {id, digest, chats}`:
+the draft's mint, so the next draft of the skill starts with no grade though it has the same id; a
+digest of what it wrote, so a draft changed since says so; and the chats its plan ran, which a
+stopped report does not hold. Only the draft's digest is compared: a change to the folder's other
+files or fixtures after the grade does not mark it out of date. Its chats are kept under
+`skill-grade-chats/<skill>.draft/`, a name no skill can take, so they never push out the skill's
+own. The row stays out of the Grades tab, the
 estimate and `purlis skill grade`; only its id, or the draft's own page, reads it. The draft is not
 the project's: a teammate has no copy of what was graded.
 

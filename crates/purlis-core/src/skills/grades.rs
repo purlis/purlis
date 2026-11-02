@@ -177,11 +177,6 @@ impl Graded {
             .filter(|_| self.report.arm(Arm::Previous).is_some())
     }
 
-    /// **The chats it asked for, ran or not**: what "stopped after 18 of 54" counts against.
-    pub fn chats_asked(&self) -> u64 {
-        Spends::asked(self)
-    }
-
     /// What its copy's folder held.
     pub fn content(&self) -> Option<Content> {
         Content::parse(&self.tree)
@@ -1342,7 +1337,7 @@ pub struct Planned {
 }
 
 /// **The version a grade compares with, as its plan says it** (SK-57): its commit, and its
-/// subject as one line with nothing invisible in it.
+/// subject as one line with nothing invisible in it; both empty for a draft's current version.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ComparedWith {
     pub commit: String,
@@ -1454,10 +1449,12 @@ pub struct SkillCopy {
 
 /// **A skill's previous version, as a grade compares with it** (SK-57, #3237): the commit, what
 /// its folder held there, its subject as one line, and its files as git's tree of that commit
-/// holds them ([`super::history::files_of_version`]), never as a folder a chat could write.
+/// holds them ([`super::history::files_of_version`]), never as a folder a chat could write. The
+/// one exception is a draft's grade, whose current version is read from the folder ([`draft`]):
+/// it has no commit, as what Accept would replace may be none.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Previous {
-    pub commit: String,
+    pub commit: Option<String>,
     pub tree: String,
     pub subject: String,
     pub snapshot: Snapshot,
@@ -1469,25 +1466,7 @@ pub struct Previous {
 /// history is read once too, for the commit its content is and the version before it. The input
 /// files `inputs` names (its outcome evals', SK-55) are read inside the same read.
 fn copy_of(root: &Path, level: &Level, name: &str, inputs: &[String]) -> Result<SkillCopy, String> {
-    let folder = find(root, level, name)?;
-    let content_now = || crate::skilluse::content_at(root, &folder).unwrap_or(Content::Uncommitted);
-    let before = content_now();
-    let snapshot = super::verbs::drafts::snapshot(root, level, name)?;
-    let base = rel(root, &folder);
-    let inputs: std::collections::BTreeMap<String, String> = inputs
-        .iter()
-        .filter_map(|path| {
-            let bytes = crate::proposed::read_pinned(root, Path::new(&format!("{base}/{path}")))
-                .ok()
-                .flatten()?;
-            Some((path.clone(), String::from_utf8(bytes).ok()?))
-        })
-        .collect();
-    let content = if content_now() == before {
-        before
-    } else {
-        Content::Uncommitted
-    };
+    let (snapshot, content, inputs) = folder_read(root, level, name, inputs)?;
     let history = super::history::history(root, level, name).ok();
     let tree = match &content {
         Content::Tree(tree) => Some(tree.as_str()),
@@ -1512,7 +1491,7 @@ fn copy_of(root: &Path, level: &Level, name: &str, inputs: &[String]) -> Result<
             match super::history::files_of_version(root, &version.folder, name, &version.commit) {
                 Ok(files) => (
                     Some(Previous {
-                        commit: version.commit.clone(),
+                        commit: Some(version.commit.clone()),
                         tree: version.tree.clone(),
                         subject: version.subject.clone(),
                         snapshot: files,
@@ -1531,6 +1510,43 @@ fn copy_of(root: &Path, level: &Level, name: &str, inputs: &[String]) -> Result<
         previous_refused,
         inputs,
     })
+}
+
+/// **What the copy of `name` at `level` holds, read once**, with no history: its files, what git
+/// says its folder holds by content, and the input files `inputs` names.
+fn folder_read(
+    root: &Path,
+    level: &Level,
+    name: &str,
+    inputs: &[String],
+) -> Result<
+    (
+        Snapshot,
+        Content,
+        std::collections::BTreeMap<String, String>,
+    ),
+    String,
+> {
+    let folder = find(root, level, name)?;
+    let content_now = || crate::skilluse::content_at(root, &folder).unwrap_or(Content::Uncommitted);
+    let before = content_now();
+    let snapshot = super::verbs::drafts::snapshot(root, level, name)?;
+    let base = rel(root, &folder);
+    let inputs: std::collections::BTreeMap<String, String> = inputs
+        .iter()
+        .filter_map(|path| {
+            let bytes = crate::proposed::read_pinned(root, Path::new(&format!("{base}/{path}")))
+                .ok()
+                .flatten()?;
+            Some((path.clone(), String::from_utf8(bytes).ok()?))
+        })
+        .collect();
+    let content = if content_now() == before {
+        before
+    } else {
+        Content::Uncommitted
+    };
+    Ok((snapshot, content, inputs))
 }
 
 /// **The plan of grading the copy of `name` at `level`** in the project at `root`, its chats on
@@ -1725,7 +1741,7 @@ fn planned_from(
         .as_ref()
         .and_then(|copy| copy.previous.as_ref())
         .map(|previous| ComparedWith {
-            commit: previous.commit.clone(),
+            commit: previous.commit.clone().unwrap_or_default(),
             subject: previous.subject.clone(),
         });
     let previous_refused = copy.as_ref().and_then(|copy| copy.previous_refused.clone());
@@ -1857,7 +1873,7 @@ pub fn consent_of(request: &GradeRequest, copy: &SkillCopy) -> String {
     files(&mut digest, &copy.snapshot);
     if let Some(previous) = &copy.previous {
         digest.update(b"\0previous\0");
-        digest.update(previous.commit.as_bytes());
+        digest.update(previous.commit.as_deref().unwrap_or_default().as_bytes());
         files(&mut digest, &previous.snapshot);
     }
     hex_of(digest)

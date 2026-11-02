@@ -6998,6 +6998,18 @@ export type Doing = {
 	over: boolean,
 };
 
+/**
+ *  **What a draft's grade measured of one kind of fixture**: each arm's rate in points, and the
+ *  draft's difference from what it is weighed against, which the core leaves out where that arm
+ *  did not run.
+ */
+export type DraftScore = {
+	/**  Its outcome evals, rather than its trigger tests. */
+	evals: boolean,
+	arms: GradeArms,
+	delta: number | null,
+};
+
 /**  One download, as its Notice shows it. */
 export type EngineDownloadShown = {
 	/**  The browser whose start it is for: what Cancel names. */
@@ -13388,8 +13400,12 @@ export type SkillDraftGrade = {
 	tests: number,
 	evals: number,
 	tests_refused: string | null,
-	/**  Its newest grade, the chats that grade asked for, and whether the draft changed since. */
+	/**
+	 *  Its newest grade, what that measured, the chats its plan ran, and whether the draft
+	 *  changed since.
+	 */
 	latest: GradeRow | null,
+	scores: DraftScore[],
 	asked: number,
 	changed: boolean,
 	/**  The grade of it running now, at its latest step. */
