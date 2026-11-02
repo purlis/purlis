@@ -1170,6 +1170,31 @@ fn a_clone_whose_config_holds_a_branch_with_no_name_is_named_with_how_to_remove_
 }
 
 #[test]
+fn a_clone_at_a_path_with_a_space_and_a_quote_is_named_in_a_quoted_command() {
+    let (_d, root) = plane("schema = 1\n");
+    let clone = root.join("workspaces/beta/it's a svc");
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q", "-b", "main", "."]);
+    let config = clone.join(".git/config");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str("[branch \"\"]\n\tcharterBase = main\n");
+    std::fs::write(&config, text).unwrap();
+
+    let r = one(&root, "clone git config");
+    assert_eq!(r.status, Status::Warn, "{r:?}");
+    let quoted = format!("'{}'", clone.display().to_string().replace('\'', "'\"'\"'"));
+    assert_eq!(
+        as_the_shell_reads_it("sh", &quoted),
+        clone.display().to_string()
+    );
+    assert!(
+        r.hint
+            .contains(&format!("git -C {quoted} config --remove-section branch.")),
+        "{r:?}"
+    );
+}
+
+#[test]
 fn a_clone_whose_config_git_cannot_read_is_named_with_gits_own_words() {
     let (_d, root) = plane("schema = 1\n");
     let clone = root.join("workspaces/beta/svc");
