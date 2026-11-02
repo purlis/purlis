@@ -260,6 +260,7 @@ import {
   closeChat,
   closeFocusedPane,
   closeTab,
+  otherTabsToClose,
   focusPane,
   noTabs,
   chatNameOf,
@@ -7002,6 +7003,10 @@ export const PlaneView = memo(function PlaneView({
       split,
       closePane,
       closeTab: close,
+      // Each as its own close (#4762): the chats asked about once, by the row, before this.
+      closeOtherTabs: (closing) => {
+        for (const tab of closing) close(tab);
+      },
       selectTab: bringToFront,
       renameChat: beginRename,
       linkWorkItem,
@@ -7943,6 +7948,8 @@ export const PlaneView = memo(function PlaneView({
             curations,
             wrappingUp: [...wrapping],
             restoring: [...restoringChats],
+            // Close other tabs skips the pinned ones (#4762).
+            otherTabs: (tab) => otherTabsToClose(tabs, tab, filedIn, isPinned),
             workItems,
             // A chat filed in a workspace; one at the project root, or outside the project, is
             // offered no work link (ADR 0088 §4).
@@ -8013,6 +8020,7 @@ export const PlaneView = memo(function PlaneView({
       liveNames,
       wrapping,
       restoringChats,
+      isPinned,
       workItems,
       filedIn,
       planeUpdates,
@@ -8166,7 +8174,9 @@ export const PlaneView = memo(function PlaneView({
             ? { ok: true, said: found.handed }
             : { ok: false, refused: found.refused };
         const drafts = found.drafts;
-        if (ending.length !== 1) {
+        // Close other tabs is never a smart close, however many chats it ends (#4762): a record
+        // is one chat's, asked for on its own tab.
+        if (ending.length !== 1 || offer.does.verb === "closeOtherTabs") {
           // A close of several chats at once asks nothing about what each started: those
           // keep running, and the dialog says so where any is.
           const theirs = await Promise.all(ending.map(below));
@@ -11069,7 +11079,10 @@ function alreadyShows(tabs: Tabs, session: number): boolean {
  */
 function endsAChat(does: Offer["does"]): boolean {
   if (does.verb === "endChat") return true;
-  return (does.verb === "closeTab" || does.verb === "closePane") && does.ends;
+  return (
+    (does.verb === "closeTab" || does.verb === "closePane" || does.verb === "closeOtherTabs") &&
+    does.ends
+  );
 }
 
 /**
@@ -11080,6 +11093,10 @@ function chatsEndedBy(does: Offer["does"], tabs: Tabs, askedBy: AskedBy): number
   // **A task is never one of them** (#1489): one beside its session goes on working when the
   // session's tab closes, unless the person answers that the session's tasks stop.
   if (does.verb === "endChat") return [does.session];
+  if (does.verb === "closeOtherTabs")
+    return does.closes
+      .flatMap((tab) => panesOf(tabs, tab).map((one) => one.session))
+      .filter((session) => askedBy(session) === undefined);
   if (does.verb === "closeTab")
     return panesOf(tabs, does.tab)
       .map((one) => one.session)

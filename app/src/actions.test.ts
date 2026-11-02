@@ -113,6 +113,7 @@ function doing(): Doing & { calls: string[] } {
     split: note("split"),
     closePane: note("closePane"),
     closeTab: note("closeTab"),
+    closeOtherTabs: note("closeOtherTabs"),
     selectTab: note("selectTab"),
     renameChat: note("renameChat"),
     linkWorkItem: note("linkWorkItem"),
@@ -2131,6 +2132,38 @@ describe("the one pin, a tab's (#4762)", () => {
   });
 });
 
+describe("Close other tabs (#4762)", () => {
+  // Three chats' tabs; the window says which of them Close other tabs would close, which is
+  // every other tab on the strip but the pinned ones (`tabs.otherTabsToClose`).
+  const three = [7, 8, 9].reduce(
+    (tabs, session) => openTab(tabs, session, `steward ${session}`),
+    noTabs(),
+  );
+
+  it("closes the tabs the window says, and asks first, since it ends their chats", () => {
+    // The tab in front is the last opened, tab 3; tab 2 is pinned, so it closes tab 1.
+    const row = by(catalogue(now({ tabs: three, otherTabs: () => [1] })), "tab.closeOthers:3");
+
+    expect(row?.title).toBe("Close other tabs");
+    expect(row?.does).toEqual({ verb: "closeOtherTabs", tab: 3, closes: [1], ends: true });
+  });
+
+  it("is one row, the tab in front's, however many tabs there are", () => {
+    const rows = catalogue(now({ tabs: three, otherTabs: () => [1, 2] })).filter((row) =>
+      row.id.startsWith("tab.closeOthers:"),
+    );
+
+    expect(rows.map((row) => row.id)).toEqual(["tab.closeOthers:3"]);
+  });
+
+  it("is not offered where there is no other tab it would close", () => {
+    const row = by(catalogue(now({ tabs: three, otherTabs: () => [] })), "tab.closeOthers:3");
+
+    expect(row?.available).toBe(false);
+    expect(row?.reason).toBe("Every other tab here is pinned, or there is none.");
+  });
+});
+
 describe("the catalogue as the tabs change", () => {
   it("grows a tab's rows per tab, and a chat's rows per chat, as tabs open", () => {
     let tabs: Tabs = noTabs();
@@ -2149,6 +2182,8 @@ describe("the catalogue as the tabs change", () => {
       "tab.pin:2",
       "tab.close:1",
       "tab.close:2",
+      // One Close other tabs, the tab in front's (#4762).
+      "tab.closeOthers:2",
     ]);
     // **A chat's rows are the chat's, by its number** (#4753): Rename… and Activity are
     // arrangements and reads, above the line; End… ends it, and is its own row.
@@ -2512,7 +2547,8 @@ describe("the palette at fifty chats", () => {
     // 2026-10-30: Your settings: Pools is offered with or without a pool, as the group is. 923
     // since #4536: the project's Runs on. 924 since #4485: Agent identity.
     // 974 since #4753: End…, each of the fifty chats' own row.
-    expect(offers).toHaveLength(974);
+    // 975 since #4762: Close other tabs, one row, the tab in front's.
+    expect(offers).toHaveLength(975);
   });
 
   /**

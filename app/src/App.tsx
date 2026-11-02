@@ -1737,6 +1737,7 @@ function App() {
       split: () => undefined,
       closePane: () => undefined,
       closeTab: () => undefined,
+      closeOtherTabs: () => undefined,
       selectTab: () => undefined,
       renameChat: () => undefined,
       linkWorkItem: () => undefined,

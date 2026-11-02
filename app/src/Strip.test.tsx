@@ -3,7 +3,7 @@
 
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, within } from "@testing-library/react";
+import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -549,6 +549,17 @@ describe("the strip's tabs (#4762)", () => {
     expect(await hoverTipOf(tab)).toBe("ide.1 · ide.2");
   });
 
+  it("always draws the tab in front, in the last place that fits", async () => {
+    // `chat()` puts chat 1 in front; here the core says 4 is.
+    core([{ ...chat(1), in_front: false }, chat(2), chat(3), { ...chat(4), in_front: true }]);
+    render(<App />);
+    await vi.waitFor(() => expect(tabNames()).toHaveLength(4));
+
+    room.roomFor(2);
+
+    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.4"]));
+  });
+
   it("draws its pin before its icon", async () => {
     core([chat(1), { ...chat(2), pinned: true }]);
     render(<App />);
@@ -589,6 +600,23 @@ describe("the strip's tabs (#4762)", () => {
         "ide.4",
       ]),
     );
+  });
+
+  it("is closed by Close other tabs from the palette, all but its pinned tabs", async () => {
+    const { ended } = core([chat(1), { ...chat(2), pinned: true }, chat(3)]);
+    render(<App />);
+    await waitFor(() => expect(tabNames()).toHaveLength(3));
+
+    await userEvent.keyboard("{F2}");
+    await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.keyboard("Close other tabs");
+    await userEvent.keyboard("{Enter}");
+    // It ends a chat, so it asks first, as End chat does.
+    const asking = await screen.findByRole("alertdialog");
+    await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.2"]));
+    expect(ended).toEqual([3]);
   });
 
   it("marks its tabs narrow under 140px each, and not while they are wider", async () => {

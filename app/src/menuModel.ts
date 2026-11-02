@@ -175,7 +175,8 @@ function pinnedNow(offer: Offer): boolean {
 /** Whether a close row ends a chat, as the catalogue says. */
 function endsAChat(offer: Offer): boolean {
   const does = offer.does;
-  if (does.verb === "closeTab" || does.verb === "closePane") return does.ends;
+  if (does.verb === "closeTab" || does.verb === "closePane" || does.verb === "closeOtherTabs")
+    return does.ends;
   // A row that cannot run carries no verb; its title still says which it is.
   return does.verb === "nothing" && offer.title.startsWith("End ");
 }
