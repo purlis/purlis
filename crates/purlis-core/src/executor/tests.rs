@@ -2625,3 +2625,98 @@ fn a_question_during_a_grade_fails_at_once_and_says_the_extension_is_grading() {
         "the grade over, it is asked again"
     );
 }
+
+/// **Version 1 of the extension API, as it was frozen** (ADR 0101, amended 2026-11-02).
+fn version_one() -> serde_json::Value {
+    serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/extension-api/v1.json"
+    ))
+    .expect("the contract is JSON")
+}
+
+/// The line `ask` is asked in, in `protocol`, read back.
+fn asked_line(protocol: u32, ask: &extension::studio::Ask<'_>) -> serde_json::Value {
+    let line = request_line(
+        "house-studio",
+        protocol,
+        Asked::Studio { ask, until: None },
+        None,
+        None,
+        None,
+        None,
+        Some(Vec::new()),
+    )
+    .expect("a line");
+    serde_json::from_slice(&line).expect("JSON")
+}
+
+#[test]
+fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
+    use extension::studio::{Ask, HandedFile, HandedPrompt, PromptSkill, RouteBudget, RouteSkill};
+    use purlis_skills::grade::{Arm, GradeRequest, TriggerTest};
+
+    let contract = version_one();
+    let files = [HandedFile {
+        path: "SKILL.md".to_owned(),
+        text: "---\n".to_owned(),
+        executable: false,
+    }];
+    let route = [RouteSkill {
+        name: "pdf".to_owned(),
+        description: "Makes PDFs.".to_owned(),
+        pinned: false,
+    }];
+    let prompt = [PromptSkill {
+        name: "pdf".to_owned(),
+        line: "Makes PDFs.".to_owned(),
+    }];
+    let request = GradeRequest {
+        skill: "pdf".to_owned(),
+        triggers: vec![TriggerTest {
+            query: "make me a pdf".to_owned(),
+            should_trigger: true,
+        }],
+        outcomes: Vec::new(),
+        arms: vec![Arm::With, Arm::Without],
+        runs: 1,
+    };
+    let panel = || Ask::Panel {
+        panel: "checks",
+        skill: "pdf",
+        files: &files,
+    };
+    let routed = || Ask::Route {
+        skills: &route,
+        budget: RouteBudget {
+            skills: 40,
+            chars: 8000,
+        },
+        besides: RouteBudget {
+            skills: 3,
+            chars: 300,
+        },
+    };
+    let pointing = || Ask::Prompt {
+        prompt: HandedPrompt::of("make me a pdf"),
+        skills: &prompt,
+    };
+
+    assert_eq!(asked_line(4, &panel()), contract["panel"]["question"]);
+    assert_eq!(asked_line(4, &routed()), contract["route"]["question"]);
+    assert_eq!(asked_line(4, &pointing()), contract["prompt"]["question"]);
+    assert_eq!(
+        asked_line(4, &Ask::Grade { request: &request }),
+        contract["grade"]["question"]
+    );
+
+    // An extension whose manifest names protocol 3 reads the same question, under its own number.
+    for (asked, kept) in [
+        (asked_line(3, &panel()), &contract["panel"]["question"]),
+        (asked_line(3, &routed()), &contract["route"]["question"]),
+        (asked_line(3, &pointing()), &contract["prompt"]["question"]),
+    ] {
+        let mut in_three = kept.clone();
+        in_three["charter"] = 3.into();
+        assert_eq!(asked, in_three);
+    }
+}

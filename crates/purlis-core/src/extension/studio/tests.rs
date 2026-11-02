@@ -1705,3 +1705,49 @@ fn a_routers_pointers_are_read_failing_closed() {
             .contains(&format!("more than {MOST_POINTED}"))
     );
 }
+
+/// **Version 1 of the extension API, as it was frozen** (ADR 0101, amended 2026-11-02).
+fn version_one() -> serde_json::Value {
+    serde_json::from_str(include_str!(
+        "../../../../../tests/fixtures/extension-api/v1.json"
+    ))
+    .expect("the contract is JSON")
+}
+
+#[test]
+fn the_manifest_of_version_one_reads_as_the_contract_records_it() {
+    let contract = version_one();
+    let read = read(&contract["manifest"].to_string(), true).expect("read");
+    assert_eq!(
+        read.capabilities,
+        [
+            Capability::Grader,
+            Capability::StudioPanel,
+            Capability::SkillRouter
+        ]
+    );
+    let studio = read.studio.expect("confined");
+    assert_eq!(studio.grader.as_deref(), Some("House grader"));
+    assert_eq!(studio.panels[0].id, "checks");
+    let router = studio.router.expect("a router");
+    assert_eq!(router.title, "House router");
+    assert!(router.reads_prompts);
+}
+
+#[test]
+fn every_answer_of_version_one_reads_as_the_contract_records_it() {
+    let contract = version_one();
+
+    let blocks = blocks_of("x", &doc(contract["panel"]["answer"].clone())).expect("a panel");
+    let crate::panel::Block::Table(table) = &blocks[0] else {
+        panic!("{blocks:?}");
+    };
+    assert_eq!(table.rows[0].cells, ["lint", "clean"]);
+
+    let hidden = routed_of("x", 1, &doc(contract["route"]["answer"].clone())).expect("a routing");
+    assert_eq!(hidden[0].0, "pdf");
+
+    let pointed =
+        pointed_of("x", &["pdf"], &doc(contract["prompt"]["answer"].clone())).expect("pointers");
+    assert_eq!(pointed, ["pdf"]);
+}

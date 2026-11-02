@@ -1613,7 +1613,8 @@ _Avoid_: sleep, hibernate, pause
 **Studio capability**:
 One of the six capabilities the Skill studio is built from: SkillSource, Grader, SkillLint,
 SkillTemplate, StudioPanel and SkillRouter. Each has a built-in first user. An extension that
-declares one is confined, and they are experimental until the studio's finish line (ADR 0101).
+declares one is confined. Grader, StudioPanel and SkillRouter are version 1 of the public extension
+API; the other three stay experimental until they are fully wired (ADR 0101).
 _Avoid_: studio extension point, skill capability
 
 **SkillSource**:

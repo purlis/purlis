@@ -439,3 +439,30 @@ fn a_grader_is_not_told_what_a_chat_said() {
     });
     assert_eq!(told.answer, None);
 }
+
+/// **A grade's lines of version 1 of the extension API, as it was frozen** (ADR 0101, amended
+/// 2026-11-02): what a Grader answers is read, and what purlis writes back is the line recorded.
+#[test]
+fn a_grade_of_version_one_goes_line_by_line_as_the_contract_records_it() {
+    let contract: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../../tests/fixtures/extension-api/v1.json"
+    ))
+    .expect("the contract is JSON");
+    let lines = &contract["grade"];
+    let request = request();
+    let mut host = Host::default();
+    let mut grading = Grading::new("house-studio", &request, &mut host, capped(100_000));
+    let back = grading
+        .heard(PROTOCOL, &line(lines["run_chat"].clone()))
+        .expect("a line back");
+    assert_eq!(written(&back), lines["chat_ran"]);
+    assert_eq!(
+        grading.heard(PROTOCOL, &line(lines["report"].clone())),
+        None,
+        "the question is over"
+    );
+    let report = grading.finished(Ok(()));
+    assert_eq!(report.failed, None);
+    assert_eq!(report.grader, "house-studio");
+    assert_eq!(report.triggers[0].query, "make me a pdf");
+}

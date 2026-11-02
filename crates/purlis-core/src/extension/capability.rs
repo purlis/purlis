@@ -64,14 +64,15 @@ pub enum Capability {
     /// `contributes.cli`.
     Cli,
     /// **The six studio capabilities** (ADR 0101), known only where the `skill-studio` flag is
-    /// on ([`crate::skills::STUDIO_FLAG`]) and experimental there. An extension that declares
-    /// any of them runs confined ([`super::studio`]). Each declares its shape under its own word.
+    /// on ([`crate::skills::STUDIO_FLAG`]). Three are version 1 of the public extension API and
+    /// three are still experimental ([`Self::EXPERIMENTAL`]). An extension that declares any of
+    /// them runs confined ([`super::studio`]). Each declares its shape under its own word.
     ///
     /// A skill source: purlis asks it what skills it has, and for one skill's files at a
     /// revision; the review, the copy and the pin stay purlis's (ADR 0100 §8).
     SkillSource,
     /// A grading framework: purlis asks it to grade a skill, and runs every chat it asks for
-    /// (ADR 0101 §5). Its contract is here; purlis asks the first one in SK-16 (#2779).
+    /// (ADR 0101 §5). Its contract is `docs/extension-api.md`.
     Grader,
     /// Findings on a skill's files, shown in the live lint beside purlis's own.
     SkillLint,
@@ -79,8 +80,8 @@ pub enum Capability {
     SkillTemplate,
     /// A panel on a skill's tab, answered in panel blocks (ADR 0101 §6).
     StudioPanel,
-    /// Which skills a chat sees, within a deadline (ADR 0102). Its contract is here; purlis asks
-    /// the first one in SK-15 (#2778).
+    /// Which skills a chat sees, within a deadline (ADR 0102). Its contract is
+    /// `docs/extension-api.md`.
     SkillRouter,
 }
 
@@ -95,8 +96,15 @@ impl Capability {
         Self::SkillRouter,
     ];
 
-    /// Whether it is one of the six studio capabilities, whose extension runs confined and
-    /// which are experimental until the Skill studio's finish line (ADR 0101 §2, §7).
+    /// **The studio capabilities not yet fully wired**, which stay out of version 1 of the public
+    /// extension API and may change shape (the operator's ruling of 2026-10-31 on #2786): an
+    /// extension's source neither installs nor shows in Browse (#3089, #3092), its lint is not
+    /// in the install review (#3090), and its template does not land as a draft (#3091).
+    pub const EXPERIMENTAL: [Capability; 3] =
+        [Self::SkillSource, Self::SkillLint, Self::SkillTemplate];
+
+    /// Whether it is one of the six studio capabilities, whose extension runs confined
+    /// (ADR 0101 §2).
     pub fn is_studio(self) -> bool {
         Self::STUDIO.contains(&self)
     }
@@ -259,11 +267,12 @@ impl Capability {
         }
     }
 
-    /// What the approval prompt says about it, in charter's words: a studio capability is said
-    /// to be experimental, as the Extensions list says it (ADR 0101 §7).
+    /// What the approval prompt says about it, in charter's words: a capability still out of
+    /// version 1 is said to be experimental, as the Extensions list says it (ADR 0101, amended
+    /// 2026-11-02).
     pub fn asks(self) -> String {
         let (word, what) = self.spelled();
-        if self.is_studio() {
+        if Self::EXPERIMENTAL.contains(&self) {
             format!("the capability “{word}”, experimental — {what}")
         } else {
             format!("the capability “{word}” — {what}")
