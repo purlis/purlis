@@ -78,6 +78,17 @@ on:
 # the draft run's, so `tools/land.mjs` waits for the ready's run to finish before it reads the
 # checks. A macOS failure still shows on its pull request, before the queue, for the reason above.
 # `app builds (macos-latest)` still runs on a draft: one job, against the scenarios' six.
+#
+# **The macOS scenarios run in the merge queue, not on a pull request (2026-11-02).** Drafts were
+# not enough: at 22:50 UTC 26 pull requests had a run going, 21 of them ready, holding 35 macOS
+# runners with 112 of their macOS jobs waiting, while the queue's head waited 50 minutes for its
+# own. A ready pull request asks about 7 macOS jobs; the queue builds 5 groups at once, about 35,
+# so with 50 runners two pull requests at a time can run them and the queue still wait. So, as
+# bors and its kin do, a pull request runs the scenarios on Linux and builds the app on macOS, and
+# the six macOS legs run once, on the merge group, where a failure drops the pull request from the
+# queue. `scenario tests (macos-latest)` passes on a pull request with its legs skipped. The cost
+# is the macOS-only failures above: found in the queue, each fails its group. Measured for a day
+# after this lands; walking it back is this `if:` and `scenario-checks`'s `want`.
 
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
@@ -1554,11 +1565,11 @@ jobs:
   # `scenario-linux`.
   #
   # Skipped whole, and no macOS runner held, when nothing the scenarios run has changed
-  # (`changes`), or on a draft pull request; `scenario-checks` says so.
+  # (`changes`), and on a pull request (above: the merge queue runs them); `scenario-checks` says so.
   scenario:
     name: scenario tests (${{ matrix.os }}, ${{ matrix.specs && format('part {0} of {1}', matrix.shard, matrix.shards) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' && !github.event.pull_request.draft }}
+    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' && github.event_name != 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1924,12 +1935,12 @@ jobs:
       - name: Every leg passed
         env:
           SCOPE: ${{ needs.changes.outputs.scenario }}
-          DRAFT: ${{ github.event.pull_request.draft || false }}
+          EVENT: ${{ github.event_name }}
           RESULT: ${{ needs.scenario.result }}
         run: |
-          if [ "$SCOPE" = false ] || [ "$DRAFT" = true ]; then want=skipped; else want=success; fi
-          echo "scope: ${SCOPE:-unknown}, draft: $DRAFT, result: $RESULT"
-          if [ "$DRAFT" = true ]; then echo "::notice::a draft runs no macOS scenarios; marking it ready runs them"; fi
+          if [ "$SCOPE" = false ] || [ "$EVENT" = pull_request ]; then want=skipped; else want=success; fi
+          echo "scope: ${SCOPE:-unknown}, event: $EVENT, result: $RESULT"
+          if [ "$EVENT" = pull_request ]; then echo "::notice::the macOS scenarios run in the merge queue; Linux's run here"; fi
           test "$RESULT" = "$want"
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
