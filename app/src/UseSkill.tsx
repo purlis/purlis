@@ -25,6 +25,7 @@ import { AT_THE_ROOT, useSkillStudioOn } from "./skillStudio";
 import { SKILLS_MISSING_PUT_AWAY, askChatSkills, type ChatSkillsAsk } from "./chatSkillsAsk";
 import { chatNeedsOf, type ChatSkillsSaid } from "./chatSkillNeeds";
 import type { SkillsChangedHere } from "./PlaneUpdated";
+import { usePromptRoutingMoved } from "./promptRouting";
 import {
   commands,
   type ChatSkill,
@@ -308,7 +309,7 @@ export const ChatSkillSetsHere = createContext<ChatSkillSets>({});
 export const skillsInTheSet = (budget: SkillBudget) => budget.skills + budget.manual;
 
 /** What one `chat_skills` answer leaves the window holding of a chat's set: its budget, how its
- *  router did at its start and what it started without. */
+ *  router did at its start and on its latest prompt, and what it started without. */
 type HeldSet = Omit<ChatSkillsSaid, "changed"> & { budget: SkillBudget };
 
 /**
@@ -321,7 +322,8 @@ type HeldSet = Omit<ChatSkillsSaid, "changed"> & { budget: SkillBudget };
  *   chat's set is made of (`skillSetsOfChats`), a skill or a level's settings, which is when the
  *   Skills view reads its header again too;
  * - a restarted chat's, which runs in a new session in the old one's place: a session not read
- *   yet. The old session's is let go.
+ *   yet. The old session's is let go;
+ * - one chat's, as its latest prompt changes whether it fell back (#4445), which the core tells.
  * Where two reads of one chat land out of order, the later read's answer is kept.
  *
  * Each is the one `chat_skills` answer the chat's budget always came from, which says too how its
@@ -356,6 +358,22 @@ export function useChatSkillSets(
       return without(was, new Set([session]));
     });
   }, []);
+  /** Reads chat `session`'s set: only the latest read of a chat is kept. */
+  const readOne = useCallback(
+    (session: number) => {
+      const read = ++reads.current;
+      asked.current.set(session, read);
+      void commands
+        .chatSkills(plane, session)
+        .then((said) => {
+          // Refused (the plane not held for a moment, a skill half-written): what was read
+          // before still stands, and the next change reads it again.
+          if (said.status === "ok" && asked.current.get(session) === read) set(session, said.data);
+        })
+        .catch(() => undefined);
+    },
+    [plane, set],
+  );
   const key = sessions.join(",");
   useEffect(() => {
     if (!on) {
@@ -375,18 +393,12 @@ export function useChatSkillSets(
     if (gone.size > 0) setHeld((was) => without(was, gone));
     for (const session of open) {
       if (!again && asked.current.has(session)) continue;
-      const read = ++reads.current;
-      asked.current.set(session, read);
-      void commands
-        .chatSkills(plane, session)
-        .then((said) => {
-          // Refused (the plane not held for a moment, a skill half-written): what was read
-          // before still stands, and the next change reads it again.
-          if (said.status === "ok" && asked.current.get(session) === read) set(session, said.data);
-        })
-        .catch(() => undefined);
+      readOne(session);
     }
-  }, [key, on, plane, set, moved]);
+  }, [key, on, readOne, moved]);
+  usePromptRoutingMoved(plane, on, (session) => {
+    if (asked.current.has(session)) readOne(session);
+  });
   // A "started without" notice put away is put away in the core too: the chip says it no more.
   useEffect(() => {
     const hear = (event: Event) => {
@@ -437,8 +449,9 @@ export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
  * **The Skills chip on a chat's pane** (#2775; spec #3679 S8, #3694, #3953), in its top line
  * beside the gauge: how many skills the chat's set holds, warning-coloured whenever the Skills
  * view's Needs you holds a card of the chat's own (`chatNeedsOf`, the view's own reckoning): its
- * set near or past the budget, its pins read by none, its router fallen back at its start, skills
- * it started without, or its skills changed since it started. Its tooltip names each. Pressed, it
+ * set near or past the budget, its pins read by none, its router fallen back at its start or on
+ * its latest prompt, skills it started without, or its skills changed since it started. Its
+ * tooltip names each. Pressed, it
  * shows this chat's skills in the sidebar Skills view, the one answer to what the chat gets and
  * why, where each need has its fix; it no longer opens Use skill…. Its set is the window's
  * ({@link ChatSkillSetsHere}). Nothing while the Skill studio is off, or for a chat purlis knows
@@ -455,9 +468,7 @@ export const SkillsChip = memo(function SkillsChip({
   const said = useContext(ChatSkillSetsHere)[session];
   if (!on || said === undefined) return null;
   // The scope only aims each need's fix, which the view offers and the chip does not.
-  // Not a prompt's routing (#4297): this set is not read as prompts go by, so it would stand stale.
-  const start = said.routing === null ? null : { ...said.routing, last_prompt: null };
-  const needs = chatNeedsOf({ ...said, routing: start }, AT_THE_ROOT);
+  const needs = chatNeedsOf(said, AT_THE_ROOT);
   const warning = needs.length === 0 ? undefined : needs.map((one) => one.title).join(" · ");
   const tip =
     warning === undefined ? `${SHOW_THIS_CHATS_SKILLS}.` : `${warning}. ${SHOW_THIS_CHATS_SKILLS}.`;

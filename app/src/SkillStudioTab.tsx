@@ -98,6 +98,7 @@ import { PINNABLE } from "./skillsListing";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
+import { usePromptRoutingMoved } from "./promptRouting";
 import { useSkillEditInPlace } from "./SkillEditInPlace";
 
 /** A change in progress: New skill… (#3684), Rename, Move or Delete, each a dialog (S4, #3685),
@@ -316,6 +317,8 @@ export function SkillStudioTab({
   const studio = read?.key === key ? read.studio : undefined;
   const refused = read?.key === key ? read.refused : undefined;
   const on = studio?.on === true;
+  // The Routing page reads a chat's latest prompt from the studio's answer (#4445).
+  usePromptRoutingMoved(plane, on, () => setAsked((n) => n + 1));
   // Read once the studio has said it is on: a scope picked later reads its skills, not these.
   const [opened, setOpened] = useState(false);
   if (on && !opened) setOpened(true);

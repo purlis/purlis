@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import { renderHook, waitFor } from "@testing-library/react";
 import {
   ChatSkillSetsHere,
@@ -320,6 +321,75 @@ describe("the Skills chip on a chat's pane", () => {
     return screen.findByTestId("pane-skills");
   }
 
+  /** A chat routed well at its start, its latest prompt's routing `prompt`. */
+  const routedChat = (prompt: { fell_back: boolean; said: string } | null): ChatSkills => ({
+    ...skills([], BUDGET),
+    routing: { router: "acme", ms: 4, fell_back: false, said: "Routed.", last_prompt: prompt },
+  });
+  const SLOW = { fell_back: true, said: "Its last prompt went on with no pointer." };
+  const QUICK = { fell_back: false, said: "Its last prompt took 4 ms." };
+
+  /** The window's sets of chats 4 and 5 and the chip of 4, each read asked of a core that answers
+   *  `prompt()`; the reads, in order. Studio off where `on` says so. */
+  function chipReadBy(prompt: () => ChatSkills, on = true) {
+    const reads: number[] = [];
+    mockIPC(
+      (cmd, args) => {
+        if (cmd === "skill_studio_on") return true;
+        if (cmd === "chat_skills") {
+          reads.push((args as { session: number }).session);
+          return prompt();
+        }
+        throw new Error(`unexpected ${cmd}`);
+      },
+      { shouldMockEvents: true },
+    );
+    function Window() {
+      const [sets] = useChatSkillSets("p", [4, 5], on);
+      return (
+        <ChatSkillSetsHere.Provider value={sets}>
+          <SkillsChip plane="p" session={4} />
+        </ChatSkillSetsHere.Provider>
+      );
+    }
+    render(<Window />);
+    return reads;
+  }
+
+  it("marks a chat's chip as a prompt falls back, with no skill moved, until a later one is answered (#4445)", async () => {
+    let now = routedChat(QUICK);
+    const reads = chipReadBy(() => now);
+    const chip = await screen.findByTestId("pane-skills");
+    expect(chip).not.toHaveAttribute("data-over");
+    await waitFor(() => expect(reads).toHaveLength(2));
+
+    now = routedChat(SLOW);
+    await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
+    await waitFor(() => expect(chip).toHaveAttribute("data-over"));
+    expect(chip).toHaveAccessibleName(/Its router fell back on a prompt\./);
+    expect(reads).toEqual([4, 5, 4]);
+
+    now = routedChat(QUICK);
+    await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
+    await waitFor(() => expect(chip).not.toHaveAttribute("data-over"));
+    expect(chip).not.toHaveAccessibleName(/fell back/);
+  });
+
+  it("reads no chat for a telling of another project or of a chat not open (#4445)", async () => {
+    const reads = chipReadBy(() => routedChat(QUICK));
+    await screen.findByTestId("pane-skills");
+    await waitFor(() => expect(reads).toHaveLength(2));
+    await act(() => emit("chat-prompt-routing", { plane: "q", session: 4 }));
+    await act(() => emit("chat-prompt-routing", { plane: "p", session: 9 }));
+    expect(reads).toHaveLength(2);
+  });
+
+  it("reads nothing for a telling while the Skill studio is off (#4445)", async () => {
+    const reads = chipReadBy(() => routedChat(SLOW), false);
+    await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
+    expect(reads).toEqual([]);
+  });
+
   it("shows the chat's skills at a glance and opens the Skills view on them, not Use skill… (S8)", async () => {
     studioOn();
     const open = vi.fn();
@@ -398,7 +468,7 @@ describe("the Skills chip on a chat's pane", () => {
     const quiet = await chipOf(held({ routing: { ...fellBack, fell_back: false } }));
     expect(quiet.hasAttribute("data-over")).toBe(false);
     cleanup();
-    // A prompt's routing is not read as prompts go by, so the chip does not say it (#4297).
+    // A prompt that fell back says so as a start's does (#4445).
     const prompted = await chipOf(
       held({
         routing: {
@@ -408,7 +478,9 @@ describe("the Skills chip on a chat's pane", () => {
         },
       }),
     );
-    expect(prompted.hasAttribute("data-over")).toBe(false);
+    expect(prompted.getAttribute("aria-label")).toBe(
+      `4 skills. Its router fell back on a prompt. ${SHOW_THIS_CHATS_SKILLS}.`,
+    );
     cleanup();
     // Several, each named, in the view's order.
     const many = await chipOf(
@@ -430,6 +502,7 @@ describe("the Skills chip on a chat's pane", () => {
       beside_a_built_in: [],
     };
     mockIPC((cmd, args) => {
+      if (cmd.startsWith("plugin:event")) return 0;
       const session = (args as { session: number }).session;
       asked.push(`${cmd}:${session}`);
       if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);

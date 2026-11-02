@@ -3031,6 +3031,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<hooks::ChatTouching>()
         // What `chat-doing` carries (#1493).
         .typ::<doing::ChatDoing>()
+        // What `chat-prompt-routing` carries (#4445).
+        .typ::<useskill::ChatPromptRouting>()
         // What `browser-ask-ended` carries (#2015).
         .typ::<browserneedsyou::AskEnded>()
         // What `chat-sandbox-blocked` carries (#1338).
@@ -4162,6 +4164,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             skillrun::EVENT,
+                            &told,
+                        );
+                    })
+                })
+                // A chat's latest prompt changed whether it fell back: its tab and the studio
+                // read it again (#4445). Not `plane-changed`: nothing moved on disk.
+                .telling_prompt_routing({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: useskill::ChatPromptRouting| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            useskill::PROMPT_ROUTING,
                             &told,
                         );
                     })

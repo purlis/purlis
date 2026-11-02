@@ -249,6 +249,9 @@ pub type Beginning = Box<dyn Fn(u32, RunOf<'_>, Began, &Attributes, RunSaid) + S
 /// Told a chat's number and its routing record as its run begins (SK-15b).
 pub type Routed = Box<dyn Fn(u32, &purlis_core::skills::router::Record) + Send + Sync>;
 
+/// Told a chat's number as its latest prompt changes whether it fell back (#4445).
+pub type PromptFallbackMoved = Box<dyn Fn(u32) + Send + Sync>;
+
 /// When a run's `run.started` is written (#2250).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunSaid {
@@ -735,6 +738,8 @@ pub struct Chats {
     /// Told each chat's routing record as its run begins, where its start asked a router
     /// extension (SK-15b): what the event log is told.
     routed: Mutex<Option<Routed>>,
+    /// Told each chat whose latest prompt changes whether it fell back (#4445): the window.
+    prompt_fallback_moved: Mutex<Option<PromptFallbackMoved>>,
     /// Told, by number, what became of a start whose run was held ([`RunSaid::Held`]).
     #[allow(clippy::type_complexity)]
     settled: Mutex<Option<Box<dyn Fn(u32, HeldStart) + Send + Sync>>>,
@@ -1278,6 +1283,7 @@ impl Chats {
             beginning: Mutex::new(None),
             router: Mutex::new(None),
             routed: Mutex::new(None),
+            prompt_fallback_moved: Mutex::new(None),
             settled: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
@@ -1397,6 +1403,12 @@ impl Chats {
     /// chat reattached, whose router its start asked again.
     pub fn when_a_chat_is_routed(&self, tell: Routed) {
         *lock(&self.routed) = Some(tell);
+    }
+
+    /// Calls `tell` with the number of a chat as its latest prompt changes whether it fell back
+    /// (#4445): what its tab and the studio then read again. Never under a lock of these chats.
+    pub fn when_a_prompt_s_fallback_moves(&self, tell: PromptFallbackMoved) {
+        *lock(&self.prompt_fallback_moved) = Some(tell);
     }
 
     /// Calls `tell` with the number of a chat whose run began [`RunSaid::Held`] once its project
@@ -5542,21 +5554,34 @@ impl Chats {
 
     /// Keeps `record` as chat `session`'s latest prompt's routing, or none where its router was
     /// not asked, where the chat is still the start `routed` came from: the router may take its
-    /// 100 ms while it is started again.
+    /// 100 ms while it is started again. Tells the window where that changes whether its latest
+    /// prompt fell back (#4445), and only then: a router that answers asks it to read nothing.
     fn keep_last_prompt(
         &self,
         session: u32,
         routed: &Arc<purlis_core::skills::router::Routed>,
         record: Option<&purlis_core::skills::router::Record>,
     ) {
-        if let Some(running) = lock(&self.open).get_mut(&session)
-            && running
-                .skills_read
-                .routed
-                .as_ref()
-                .is_some_and(|now| Arc::ptr_eq(now, routed))
-        {
+        type Record = purlis_core::skills::router::Record;
+        let fell_back = |one: Option<&Record>| one.is_some_and(|one| one.fell_back.is_some());
+        let moved = {
+            let mut open = lock(&self.open);
+            let Some(running) = open.get_mut(&session).filter(|running| {
+                running
+                    .skills_read
+                    .routed
+                    .as_ref()
+                    .is_some_and(|now| Arc::ptr_eq(now, routed))
+            }) else {
+                return;
+            };
+            let moved = fell_back(running.last_prompt.as_ref()) != fell_back(record);
             running.last_prompt = record.cloned();
+            moved
+        };
+        // Once it is kept, so what the window reads on hearing this is what moved.
+        if moved && let Some(tell) = lock(&self.prompt_fallback_moved).as_ref() {
+            tell(session);
         }
     }
 

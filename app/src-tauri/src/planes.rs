@@ -2125,6 +2125,7 @@ pub struct Planes {
     /// Told what a working chat is doing, each time its one line changes (#1493).
     doings: crate::doing::Teller,
     skill_runs: crate::skillrun::Teller,
+    prompt_routing: crate::useskill::PromptRoutingTeller,
     /// The app's executor, which asks each chat's router extension at its start (SK-15b): none
     /// for a registry a test makes, whose chats are then routed by the built-in router.
     routers: Option<Arc<purlis_core::executor::Executor>>,
@@ -2415,6 +2416,7 @@ impl Planes {
             touches: Arc::new(|_| {}),
             doings: Arc::new(|_| {}),
             skill_runs: Arc::new(|_| {}),
+            prompt_routing: Arc::new(|_| {}),
             routers: None,
             blocks: Arc::new(|_| {}),
             arranged: ArrangedBehind::new(|(config, windows)| write_arrangement(&config, windows)),
@@ -2619,6 +2621,16 @@ impl Planes {
     /// confined to the chat's folder, so the window can mark it in the tree (FM-6).
     pub fn telling_touches(mut self, touches: hooks::TouchTeller) -> Self {
         self.touches = touches;
+        self
+    }
+
+    /// Tells `prompt_routing` of a chat of a plane this registry holds, as its latest prompt
+    /// changes whether it fell back (#4445).
+    pub fn telling_prompt_routing(
+        mut self,
+        prompt_routing: crate::useskill::PromptRoutingTeller,
+    ) -> Self {
+        self.prompt_routing = prompt_routing;
         self
     }
 
@@ -4049,6 +4061,15 @@ impl Planes {
                 project: root.clone(),
             }));
         }
+        chats.when_a_prompt_s_fallback_moves(Box::new({
+            let (tell, plane) = (Arc::clone(&self.prompt_routing), id.clone());
+            move |session| {
+                tell(crate::useskill::ChatPromptRouting {
+                    plane: plane.clone(),
+                    session,
+                })
+            }
+        }));
         chats.stopped_by(Arc::clone(&self.kill_switch));
         chats.on_device(device);
         chats.keeping_pools_in(self.pools_in.clone());

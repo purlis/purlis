@@ -27,6 +27,7 @@ import {
   type StudioScope,
 } from "./skillStudio";
 import { SkillMenu, SkillsList } from "./SkillsList";
+import { usePromptRoutingMoved } from "./promptRouting";
 import { useRepoSkillsMoved } from "./repoSkillsMoved";
 import {
   branchFolderOf,
@@ -225,6 +226,8 @@ export function SkillsView({
   const [restarted, setRestarted] = useState(0);
   // Asked again when the checkout the chat works in moves its skills (#4377).
   const [skillsMoved, setSkillsMoved] = useState(0);
+  // Asked again when the chat in front's latest prompt changes whether it fell back (#4445).
+  const [promptRoutingMoved, setPromptRoutingMoved] = useState(0);
   // The clones the last read named, kept while another chat's is read: one watch, not a new set
   // each way, for a move to a chat in the same clone.
   const [repos, setRepos] = useState<readonly string[]>(NO_REPOS);
@@ -266,6 +269,7 @@ export function SkillsView({
     instructions,
     restarted,
     skillsMoved,
+    promptRoutingMoved,
   ]);
 
   // Its branch folder, else the clones its read named.
@@ -277,6 +281,9 @@ export function SkillsView({
         ? [branchFolder]
         : repos.map((repo) => ({ repo, piece: null }));
   useRepoSkillsMoved(plane, chatWorkspace, checkouts, () => setSkillsMoved((was) => was + 1));
+  usePromptRoutingMoved(plane, session !== undefined, (told) => {
+    if (told === session) setPromptRoutingMoved((was) => was + 1);
+  });
 
   // Its "started without" notice put away is put away in the core: its card goes as the Skills
   // chip's warning does (#3953), with no read again.

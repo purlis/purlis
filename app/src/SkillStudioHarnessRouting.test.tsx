@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { PLANE, STUDIO_HISTORY, forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
@@ -378,6 +379,42 @@ describe("the Routing page (#3692)", () => {
     expect(within(item).getByRole("heading", { name: /Chat 3/ })).toBeInTheDocument();
     expect(within(item).getByText("figma-handoff, gpu-profile")).toBeInTheDocument();
     expect(within(item).getByText("34 ms", { selector: "dd" })).toBeInTheDocument();
+  });
+
+  it("shows a prompt's fallback on an open Routing page as it is told (#4445)", async () => {
+    const [quick, ...others] = RELEVANCE.chats;
+    const said = "Its last prompt went on with no pointer.";
+    let prompt: { fell_back: boolean; said: string } | null = null;
+    mockIPC(
+      (cmd) => {
+        if (cmd === "skill_studio")
+          return studio([], {
+            router: {
+              ...RELEVANCE,
+              chats: [{ ...quick, routing: { ...quick.routing, last_prompt: prompt } }, ...others],
+            },
+          });
+        if (cmd === "skills_deleted" || cmd === "skill_drafts") return [];
+        if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };
+        throw new Error(`unexpected ${cmd}`);
+      },
+      { shouldMockEvents: true },
+    );
+    renderStudio(inWorkspace("ops"), "routing");
+    const row = await screen.findByTestId("routed-chat-3");
+    expect(row).not.toHaveTextContent("Last prompt fell back");
+
+    prompt = { fell_back: true, said };
+    await act(() => emit("chat-prompt-routing", { plane: PLANE, session: 3 }));
+    await waitFor(() =>
+      expect(screen.getByTestId("routed-chat-3")).toHaveTextContent("Last prompt fell back"),
+    );
+
+    prompt = { fell_back: false, said: "Its last prompt took 4 ms." };
+    await act(() => emit("chat-prompt-routing", { plane: PLANE, session: 3 }));
+    await waitFor(() =>
+      expect(screen.getByTestId("routed-chat-3")).not.toHaveTextContent("Last prompt fell back"),
+    );
   });
 
   it("shows a prompt the router was slow on as fallen back on that chat's row and beside it (#4297)", async () => {
