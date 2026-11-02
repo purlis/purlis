@@ -23,6 +23,7 @@ import {
   type PoolKind,
   type ReleaseImage,
 } from "./pools";
+import { ClusterSetupGuide } from "./settings/ClusterSetupGuide";
 import { ChooseProfiles } from "./settings/PoolChooseProfiles";
 import { RaiseLimit } from "./RaiseLimit";
 import { Dialog } from "./ui/dialog/Dialog";
@@ -582,6 +583,7 @@ function AddClusterPool() {
           {trouble}
         </p>
       )}
+      <ClusterSetupGuide />
       {limitOffer !== undefined && (
         <RaiseLimit
           offer={limitOffer}
