@@ -303,11 +303,20 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
 }
 
 /**
- * **Removes the held runner `runner`**, a draining one that stopped during its drain, and what its
- * chats left with it. Why not, in the core's words.
+ * **Removes the held runner `runner`**, and what its chats left with it, once the person discarded
+ * them. Why not, in the core's words.
  */
 export async function removeHeldRunner(runner: string): Promise<string | undefined> {
   const said = await caught(commands.dockerPoolRemoveHeldRunner(runner));
+  return said.status === "error" ? said.error : undefined;
+}
+
+/**
+ * **Brings back the held runner `runner`'s conversations to its pool's runner** (#4633), and then
+ * removes it, once none is left behind. Why not, or what is left, in the core's words.
+ */
+export async function bringBackHeldRunner(runner: string): Promise<string | undefined> {
+  const said = await caught(commands.dockerPoolBringBackHeldRunner(runner));
   return said.status === "error" ? said.error : undefined;
 }
 

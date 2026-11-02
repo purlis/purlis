@@ -3269,6 +3269,13 @@ export const commands = {
 	 *  keeps. What is left of it is said.
 	 */
 	dockerPoolRemoveHeldRunner: (runner: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_remove_held_runner", { runner })),
+	/**
+	 *  **Brings back the held runner `runner`'s conversations to its pool's runner, as the person
+	 *  pressed** (#4633, ruled 2026-11-02), and then removes it, once none is left behind
+	 *  ([`purlis_core::pools::bring_back`]). The window's alone, as removing one is. What stopped
+	 *  it, or what is left of it, is said.
+	 */
+	dockerPoolBringBackHeldRunner: (runner: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_bring_back_held_runner", { runner })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**
@@ -11297,8 +11304,8 @@ export type PoolVersion = {
 	 */
 	draining: number,
 	/**
-	 *  How many of its older runners are held: each stopped during its drain, and stays with its
-	 *  home until the person removes it.
+	 *  How many of its older runners are held: each stopped with what its chats left, and stays with
+	 *  its home until the person brings their conversations back or discards them.
 	 */
 	held: number,
 	/**
@@ -12729,8 +12736,8 @@ export type RunnerAsked = {
 	 */
 	ran_this_week: number | null,
 	/**
-	 *  It stopped during its drain, so it stays with its home until the person removes it
-	 *  ([`purlis_core::pools::DrainLook::Held`]).
+	 *  It stopped with what its chats left, so it stays with its home until the person brings their
+	 *  conversations back or discards them ([`purlis_core::pools::DrainLook::Held`], #4633).
 	 */
 	held: boolean,
 };

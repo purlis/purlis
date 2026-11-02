@@ -29,7 +29,11 @@ own, as long as it keeps the contract below.
   [Updating](updating.md#the-runner-image-a-release-names)). After an update, a Docker pool of
   this image gets a runner of the new version beside its old one: new chats start on it, and
   the old runner keeps its chats until they end, then is removed, or is held with its home if it
-  stops during that. A sign-in is held by one
+  stops during that. One that had stopped already, or whose container was removed outside
+  purlis, is held only where its home holds a chat's conversation, read by a short-lived
+  container of the new image with no network and the old home read-only; Devices then offers to
+  bring those conversations back to the new runner's home, at the same place there, or to
+  discard them. A sign-in is held by one
   runner at a time: while the old runner has chats, a new chat on the new runner asks to sign
   in there. Once the old runner's last chat has ended, and before it is removed with its home
   volume, its profiles' sign-ins are carried to the new runner's home volume, on the Docker

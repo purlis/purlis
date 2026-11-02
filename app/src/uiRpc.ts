@@ -1627,6 +1627,7 @@ export const commands = {
 	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
 	dockerPoolReplaceRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolRemoveHeldRunner: __WINDOW_ONLY_RESULT,
+	dockerPoolBringBackHeldRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
@@ -8941,8 +8942,8 @@ export type PoolVersion = {
 	 */
 	draining: number,
 	/**
-	 *  How many of its older runners are held: each stopped during its drain, and stays with its
-	 *  home until the person removes it.
+	 *  How many of its older runners are held: each stopped with what its chats left, and stays with
+	 *  its home until the person brings their conversations back or discards them.
 	 */
 	held: number,
 	/**
@@ -10373,8 +10374,8 @@ export type RunnerAsked = {
 	 */
 	ran_this_week: number | null,
 	/**
-	 *  It stopped during its drain, so it stays with its home until the person removes it
-	 *  ([`purlis_core::pools::DrainLook::Held`]).
+	 *  It stopped with what its chats left, so it stays with its home until the person brings their
+	 *  conversations back or discards them ([`purlis_core::pools::DrainLook::Held`], #4633).
 	 */
 	held: boolean,
 };
