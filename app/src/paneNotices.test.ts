@@ -1,0 +1,68 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { describe, expect, it } from "vitest";
+import {
+  arrived,
+  bandHeadSays,
+  bellCount,
+  bellSays,
+  dismissAllSays,
+  loadPaneNotices,
+  PANE_NOTICES,
+} from "./paneNotices";
+
+describe("a pane's notices, minimised or expanded (#4754)", () => {
+  it("is minimised where the layout file says nothing of it", () => {
+    expect(loadPaneNotices({})).toEqual({ value: "minimised", said: [] });
+    expect(loadPaneNotices(null)).toEqual({ value: "minimised", said: [] });
+  });
+
+  it("reads expanded back, and writes only expanded, which minimised leaves out", () => {
+    expect(loadPaneNotices({ notices: "expanded" })).toEqual({ value: "expanded", said: [] });
+    PANE_NOTICES.forget();
+    PANE_NOTICES.keep("expanded");
+    expect(PANE_NOTICES.written()).toBe("expanded");
+    PANE_NOTICES.keep("minimised");
+    expect(PANE_NOTICES.written()).toBeUndefined();
+    PANE_NOTICES.forget();
+  });
+
+  it("says what it put right when the file holds something else, and minimises", () => {
+    const loaded = loadPaneNotices({ notices: 3 });
+    expect(loaded.value).toBe("minimised");
+    expect(loaded.said).toEqual([
+      '"notices" 3 is not "minimised" or "expanded", so a pane\'s notices are minimised',
+    ]);
+  });
+});
+
+describe("what a pane's bell says", () => {
+  it("counts the notes and never the asks, and is empty with no notes", () => {
+    expect(bellCount({ notes: 5, trouble: 1, asks: 2 })).toBe("5");
+    expect(bellCount({ notes: 0, trouble: 0, asks: 2 })).toBe("");
+  });
+
+  it("says the notes, the trouble and the asks to a screen reader", () => {
+    expect(bellSays({ notes: 5, trouble: 1, asks: 2 })).toBe("5 notices, 1 in trouble, 2 asking");
+    expect(bellSays({ notes: 1, trouble: 0, asks: 0 })).toBe("1 notice");
+    expect(bellSays({ notes: 0, trouble: 0, asks: 1 })).toBe("No notices, 1 asking");
+  });
+
+  it("heads the expanded band with everything it holds and what waits on you", () => {
+    expect(bandHeadSays({ notes: 5, trouble: 1, asks: 2 })).toBe("7 notices, 2 waiting on you");
+    expect(bandHeadSays({ notes: 1, trouble: 0, asks: 0 })).toBe("1 notice");
+  });
+
+  it("counts what Dismiss all clears", () => {
+    expect(dismissAllSays(4)).toBe("Dismiss all 4");
+  });
+
+  it("says a notice arrived only when the band holds more than it did", () => {
+    const was = { notes: 2, trouble: 0, asks: 1 };
+    expect(arrived(was, { notes: 3, trouble: 0, asks: 1 })).toBe(true);
+    expect(arrived(was, { notes: 2, trouble: 0, asks: 2 })).toBe(true);
+    expect(arrived(was, { notes: 1, trouble: 0, asks: 1 })).toBe(false);
+    expect(arrived(was, { notes: 2, trouble: 1, asks: 1 })).toBe(false);
+  });
+});
