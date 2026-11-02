@@ -58,6 +58,13 @@ export function armSaid(arm: ScoredRuns["arm"], draft: boolean): string {
   return ARM_SAID[arm];
 }
 
+/** An arm as a scorecard's outcome eval table says it (#4923): a draft's in its tiles' words. */
+function evalArmSaid(arm: ScoredRuns["arm"], draft: boolean): string {
+  if (draft && arm === "with") return "The draft";
+  if (draft && arm === "previous") return "Current version";
+  return ARM_SAID[arm];
+}
+
 /** A number of points with its sign: `+25`, `-5`, `0`. */
 export function signed(delta: number): string {
   return `${delta > 0 ? "+" : ""}${delta}`;
@@ -366,7 +373,12 @@ export function GradeScorecardPage({
       {it.evals.length > 0 && (
         <section aria-labelledby="grade-scorecard-evals">
           <PanelSectionTitle id="grade-scorecard-evals">Each outcome eval</PanelSectionTitle>
-          <OutcomeEvalsTable evals={it.evals} label={`Outcome evals of ${name}`} onChat={onChat} />
+          <OutcomeEvalsTable
+            evals={it.evals}
+            label={`Outcome evals of ${name}`}
+            draft={it.draft}
+            onChat={onChat}
+          />
         </section>
       )}
     </section>
@@ -448,10 +460,12 @@ export function evalSaid(arm: ScoredEvalArm | undefined): string {
 function EvalCell({
   arm,
   id,
+  draft,
   onChat,
 }: {
   arm: ScoredEvalArm | undefined;
   id: string;
+  draft: boolean;
   onChat: (chat: string) => void;
 }): ReactNode {
   if (arm === undefined) return <Badge>Not judged</Badge>;
@@ -460,7 +474,7 @@ function EvalCell({
       key={`${what}-${chat.id}`}
       size="sm"
       variant="ghost"
-      aria-label={`Open ${ARM_SAID[arm.arm].toLowerCase()}, ${what.toLowerCase()} ${chat.run}, of outcome eval ${id}`}
+      aria-label={`Open ${evalArmSaid(arm.arm, draft).toLowerCase()}, ${what.toLowerCase()} ${chat.run}, of outcome eval ${id}`}
       isDisabled={!chat.kept}
       tooltip={
         chat.kept
@@ -506,10 +520,13 @@ function checksSaid(arm: ScoredEvalArm, at: number): string {
 export function OutcomeEvalsTable({
   evals,
   label,
+  draft,
   onChat,
 }: {
   evals: readonly ScoredEval[];
   label: string;
+  /** A grade of a draft (#2780): its arms are named as its tiles name them. */
+  draft: boolean;
   onChat: (chat: string) => void;
 }) {
   const arms = evalArmsOf(evals);
@@ -519,7 +536,7 @@ export function OutcomeEvalsTable({
         <TableHeader>
           <TableColumn isRowHeader>Outcome eval</TableColumn>
           {arms.map((arm) => (
-            <TableColumn key={arm}>{ARM_SAID[arm]}</TableColumn>
+            <TableColumn key={arm}>{evalArmSaid(arm, draft)}</TableColumn>
           ))}
         </TableHeader>
         <TableBody>
@@ -530,7 +547,7 @@ export function OutcomeEvalsTable({
                 const scored = one.arms.find((each) => each.arm === arm);
                 return (
                   <TableCell key={arm} textValue={evalSaid(scored)}>
-                    <EvalCell arm={scored} id={one.id} onChat={onChat} />
+                    <EvalCell arm={scored} id={one.id} draft={draft} onChat={onChat} />
                   </TableCell>
                 );
               })}
@@ -549,7 +566,7 @@ export function OutcomeEvalsTable({
                     key={`${one.id}-${arm.arm}-${run.run}`}
                     data-testid="grade-scorecard-eval-why"
                   >
-                    {`Eval ${one.id}, ${ARM_SAID[arm.arm].toLowerCase()}, run ${run.run}: ${run.failed}`}
+                    {`Eval ${one.id}, ${evalArmSaid(arm.arm, draft).toLowerCase()}, run ${run.run}: ${run.failed}`}
                   </p>,
                 ],
           ),
@@ -560,7 +577,9 @@ export function OutcomeEvalsTable({
           {one.expectations.map((text, at) => (
             <li key={at} data-testid="grade-scorecard-expectation">
               <code>{text}</code>
-              {one.arms.map((arm) => ` · ${ARM_SAID[arm.arm]}: ${checksSaid(arm, at)}`).join("")}
+              {one.arms
+                .map((arm) => ` · ${evalArmSaid(arm.arm, draft)}: ${checksSaid(arm, at)}`)
+                .join("")}
               {one.arms.flatMap((arm) =>
                 arm.results.flatMap((run) => {
                   const evidence = run.checks[at]?.evidence ?? "";
@@ -568,7 +587,7 @@ export function OutcomeEvalsTable({
                     ? []
                     : [
                         <p className="honest" key={`${arm.arm}-${run.run}`}>
-                          {`${ARM_SAID[arm.arm]}, run ${run.run}: ${evidence}`}
+                          {`${evalArmSaid(arm.arm, draft)}, run ${run.run}: ${evidence}`}
                         </p>,
                       ];
                 }),
