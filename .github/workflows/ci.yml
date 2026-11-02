@@ -1690,7 +1690,13 @@ jobs:
       # workspace's crates change with every pull request that runs this job).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
-        run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings
+        # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
+        # #4351): `dev-release`, release with thin LTO over sixteen codegen units, what the dev
+        # channel ships. Every other leg builds debug.
+        run: >-
+          npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e
+          --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
+          --timings ${{ matrix.outcome && '--profile dev-release' || '' }}
         working-directory: app
       # Cargo's own account of that build, unit by unit (`--timings`), kept a week: what a slow
       # build spent its time on, read without rerunning it (#3742).
@@ -1757,36 +1763,42 @@ jobs:
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: claude
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       - name: The Skill studio's outcome bars on claude's stand-in
         run: xvfb-run -a npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: claude
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       - name: The Skill studio's outcome bars on codex's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       - name: The Skill studio's outcome bars on codex's stand-in
         run: xvfb-run -a npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: xvfb-run -a npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.outcome }}
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
+          CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
       # The app started the way an operator starts it — from Finder, with the `PATH` Finder
       # gives — on purlis's own built-in profile. Its own run, because it is the app's
       # ENVIRONMENT that is under test and one run is one environment (charter-app#134).
@@ -1943,10 +1955,10 @@ jobs:
     steps: *scenario-steps
 
   # **The Skill studio's outcome bars** (SK-23, #4343): the scenario legs' steps, with every leg's
-  # own flag off and `outcome` on, so it builds as they do and runs the three runs alone. Not
-  # required, and no `scenario-checks` waits on it: its 300 ms is measured on a debug build on a
-  # shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a block on
-  # every merge. It becomes required with the flag's flip (#2786).
+  # own flag off and `outcome` on, so it runs the three runs alone, on a `dev-release` build
+  # (2026-11-03, #4351). Not required, and no `scenario-checks` waits on it: its 300 ms is
+  # measured on a shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not
+  # a block on every merge. It becomes required with the flag's flip (#2786).
   #
   # On main's push, and on a pull request that touches what the bars measure (`GATES`), by the
   # operator's choice of 2026-11-01: it takes a macOS and a Linux runner for 11 to 17 minutes. A
@@ -1958,10 +1970,13 @@ jobs:
     # which refuses to land while main's newest finished `ci` run failed. This line goes once #4351
     # and #4352 are fixed, and the job is made required before the flag's flip (#2786).
     continue-on-error: true
-    # Twice the slowest seen (9 to 18 minutes). A timed-out job still turns the run `cancelled`,
-    # which skips the release: this bounds that, and main's queue behind it, from the 6 hours a job
-    # gets by default.
-    timeout-minutes: 40
+    # A timed-out job still turns the run `cancelled`, which skips the release: this bounds that,
+    # and main's queue behind it, from the 6 hours a job gets by default. 75, not the 40 the debug
+    # build had (twice its slowest, 9 to 18 minutes), for the release build (the operator's ruling
+    # of 2026-11-03, #4351): cold, with no cache, it ran past 40 twice and was cut off before
+    # rust-cache saved anything, so the cache main writes was never warm. Warm, a release run took
+    # 31 minutes.
+    timeout-minutes: 75
     if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
     strategy:
       fail-fast: false
