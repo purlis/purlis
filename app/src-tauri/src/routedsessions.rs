@@ -270,6 +270,7 @@ impl RoutedSessions {
         self.shared.dealt.fetch_max(number, Ordering::Relaxed);
         lock(&self.shared.chats).insert(number, pool.to_owned());
         lock(&self.shared.stayed).remove(&number);
+        lock(&self.shared.unkept).remove(&number);
         if let Some(workspace) = workspace.or(self.every_start_in.as_deref()) {
             self.chats_kept.keep(number, pool, workspace);
             self.chats_kept.settled();
@@ -828,6 +829,7 @@ impl SessionHost for RoutedSessions {
         // answered: no restart asks for it. Its branches come back with the next fetch, not now,
         // since a chat that moves is closed before its work comes back into the same clones.
         self.chats_kept.leave(id);
+        lock(&self.shared.unkept).remove(&id);
         closed
     }
 
@@ -1201,11 +1203,11 @@ impl SessionHost for RoutedSessions {
     /// named when it was asked, and the workspace the window asked for.
     fn reattach(&self, number: u32, announce: &dyn Fn(u32)) -> Result<u32, String> {
         match self.host_of(number) {
-            Some(host) => host.reattach(number, announce).inspect(|_| {
-                let unkept = lock(&self.shared.unkept).remove(&number);
-                let pool = lock(&self.shared.chats).get(&number).cloned();
+            Some(host) => host.reattach(number, announce).inspect(|number| {
+                let unkept = lock(&self.shared.unkept).remove(number);
+                let pool = lock(&self.shared.chats).get(number).cloned();
                 if let (Some(workspace), Some(pool)) = (unkept, pool) {
-                    self.chats_kept.keep(number, &pool, &workspace);
+                    self.chats_kept.keep(*number, &pool, &workspace);
                 }
             }),
             None => self
@@ -1266,6 +1268,8 @@ impl SessionHost for RoutedSessions {
     /// only those kept there: what else that pool holds of this project is not this window's to
     /// end (#4590).
     fn close_what_was_not_reattached(&self) {
+        // A chat found with no record and not taken back by now never is (#4683).
+        lock(&self.shared.unkept).clear();
         self.settle_what_was_kept();
         let routed = self.routed_pools();
         for (pool, host) in self.named_pools() {

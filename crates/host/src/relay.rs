@@ -954,11 +954,26 @@ impl Upstream {
     /// **`programs_of`, for a window that speaks `window`.** A runner before 1.67 refuses it,
     /// which would say nothing of what runs there, so it is not asked (#4271). A window of 1.68
     /// or later is told that what runs there is not known (#4684), so it keeps what it knows of
-    /// the chats there; an older one is answered none, as it always was.
+    /// the chats there; an older one is answered none, as it always was. Only this host says
+    /// that: a runner's own refusal in those words is passed on as a refusal of any other kind.
     async fn programs_of(&self, project: String, window: Version) -> Result<Answer, Refusal> {
         let runner = self.client.version();
         if runner >= session::KNOWS_PROGRAMS_RELAYED {
-            return self.call(Command::ProgramsOf { project }).await;
+            // Those words are this host's alone: a runner that says them refuses, as any other
+            // runner that does not say its programs does, and is marked for it (D-2050-27).
+            return self
+                .call(Command::ProgramsOf { project })
+                .await
+                .map_err(|refusal| {
+                    if refusal.code == session::PROGRAMS_NOT_KNOWN {
+                        Refusal {
+                            code: session::NOT_ALLOWED.into(),
+                            why: format!("the runner did not say its programs: {}", refusal.why),
+                        }
+                    } else {
+                        refusal
+                    }
+                });
         }
         if window < session::KNOWS_PROGRAMS_NOT_KNOWN {
             return Ok(Answer::Programs(Vec::new()));

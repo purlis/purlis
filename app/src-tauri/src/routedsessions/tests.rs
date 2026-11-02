@@ -306,6 +306,34 @@ fn a_chat_with_no_record_its_pool_says_it_runs_is_kept_only_once_it_is_taken_bac
 }
 
 #[test]
+fn a_chat_found_with_no_record_and_not_taken_back_by_the_put_back_is_never_kept_after() {
+    let machine = AMachine::new();
+    machine.builds.leaves_running(41, None);
+    let back = machine.window();
+    assert!(back.left_running_in(41, Some("app")));
+    back.close_what_was_not_reattached();
+    machine.builds.leaves_running(41, None);
+    let _ = back.reattach(41, &|_| {});
+    back.chats_kept.settled();
+    assert!(machine.kept().is_empty(), "{:?}", machine.kept());
+}
+
+#[test]
+fn a_record_for_another_workspace_is_left_as_it_is_when_its_number_is_found_on_the_setting() {
+    let machine = AMachine::new();
+    machine.store.keep(41, "tests", "fleet");
+    machine.builds.leaves_running(41, None);
+    let back = machine.window();
+    assert!(back.left_running_in(41, Some("app")));
+    back.reattach(41, &|_| {}).unwrap();
+    back.chats_kept.settled();
+    assert_eq!(
+        machine.store.chats().get(&41).map(|chat| chat.pool.clone()),
+        Some("tests".to_owned())
+    );
+}
+
+#[test]
 fn a_kept_chat_is_asked_of_its_one_pool_and_not_of_the_one_its_workspace_moved_to() {
     let machine = AMachine::new();
     let number = machine.a_chat_left_on_builds();

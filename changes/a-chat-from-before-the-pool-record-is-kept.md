@@ -1,4 +1,4 @@
 ### Fixed
 
-- **A chat that ran on a pool before this machine kept where its chats run is kept once a restart
-  takes it back,** so it is found there again after Runs on changes (#4683).
+- **A chat started on a pool before this update stays yours when Runs on changes.** Once a window
+  restart takes it back, it's found on that pool again after the setting moves (#4683).

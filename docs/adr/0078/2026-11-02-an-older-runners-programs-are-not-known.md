@@ -7,12 +7,14 @@ amendment of 2026-11-01, *a restart takes back a draining runner's chats*, whose
 relay not ask such a runner.
 
 *Decided in implementation, to be confirmed* (D-4684-1 to D-4684-3). The person's ruling of
-2026-11-02 holds as it stands, and this is its third part: a record is kept while the answer is
-unknown.
+2026-11-02 holds as it stands. This follows that amendment's own rule that a record stays where
+the pool's answer isn't known: an answer the relay never asked for is not one.
 
 1. **Session protocol 1.68 says it.** A relay still does not ask a runner before 1.67. To a window
    of 1.68 or later it refuses `programs_of` with `programs_not_known`, naming the runner's
-   version; to an older window it answers no programs, as before. *(D-4684-1)*
+   version; to an older window it answers no programs, as before. Only the relay says it: a
+   runner's own refusal in those words reaches the window as `not_allowed`, a runner that does
+   not say its programs. *(D-4684-1)*
 2. **The window keeps what it knows.** That refusal leaves what the runner runs not known: a put
    back settles no record of a chat on it, and the next one, on a runner since updated, does. Such
    a runner takes back no chat in any case. *(D-4684-2)*

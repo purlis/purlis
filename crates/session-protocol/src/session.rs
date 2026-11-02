@@ -696,7 +696,9 @@ pub const NO_ENGINE_SANDBOX: &str = "no_engine_sandbox";
 
 /// What the programs of the host a relay links to are is not known (1.68, #4684): a runner
 /// before 1.67 is not asked `programs_of` over a link between hosts. Not that it runs none, so
-/// nothing is settled as gone on it. Its `why` names the runner's version.
+/// nothing is settled as gone on it. Its `why` names the runner's version. Only a relay says it, of
+/// a runner it did not ask: a runner's own refusal in these words reaches the window as
+/// [`NOT_ALLOWED`].
 pub const PROGRAMS_NOT_KNOWN: &str = "programs_not_known";
 
 /// Every refusal code this version says. A later minor may add one; a client treats one it

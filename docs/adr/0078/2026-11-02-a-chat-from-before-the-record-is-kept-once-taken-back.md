@@ -14,9 +14,13 @@ as it stands: the one pool asked is the chat's own recorded pool, and asking it 
    window asked for. That is the record its start would have written: the pool is the setting's,
    and the number and the workspace are the window's. A chat that pool says it runs but that
    nothing takes back is kept nowhere, and a record for another workspace is left as it is.
-2. **Point 8 gains this second case.** No line from a runner adds a record or points one
-   elsewhere: a runner's answer only says whether a chat the window asked for runs there, and the
-   record is written by the window's own reattach, never by the answer. A pool the setting does not
-   name is never asked for such a chat, so no new pool is asked and none is sent code.
+   *(D-4683-1)*
+2. **This widens point 8 of the amendment of 2026-11-02 (#4590).** That point had no line from a
+   runner add a record. Now the word of the pool the setting names, that a chat with no record
+   runs there, followed by the window's own reattach of it there, adds one. The runner chooses
+   none of what is kept: the pool is the setting's, the number and the workspace the window's, and
+   its word alone, with no reattach, keeps nothing. A pool the setting does not name is never asked
+   for such a chat, so no new pool is asked and none is sent code. *(D-4683-1)*
 3. **Rejected: letting these chats age out.** They would end on their own in time, but until they
    did, a setting moved under one left it running on a pool no restart asks, closed by nothing.
+   *(D-4683-1)*
