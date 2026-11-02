@@ -532,7 +532,7 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
             alone: None,
         };
     };
-    let alone = alone_chroma_of(all, ceiling, hue);
+    let alone = alone_chroma_of(all, shared, ceiling, hue);
     let holds = alone.is_some() || holds_as_written(all, hue, ceiling);
     Most {
         shared: holds.then_some(ceiling),
@@ -686,7 +686,7 @@ fn rules_where(theme: &ResolvedTheme, keep: impl Fn(&Apart) -> bool) -> Vec<Rule
 /// [`apart_chroma`] of the rules as drawn, every side given the one chroma: what the shared
 /// fixture holds.
 pub fn apart_chroma_of(rules: &[Rule<'_>], hue: f64) -> Option<f64> {
-    searched(rules, hue, f64::INFINITY, |_| true)
+    searched(rules, hue, f64::INFINITY, |_| true, |_| true)
 }
 
 /// **The most chroma the sides held alone are given at a hue** (#3388), with every other side
@@ -694,8 +694,16 @@ pub fn apart_chroma_of(rules: &[Rule<'_>], hue: f64) -> Option<f64> {
 /// rule holds there, else the largest multiple of [`CHROMA_STEP`] under it that holds them all,
 /// each side at the chroma it is drawn at; `None` when not even a grey does. A side held alone
 /// never has more colour than the sides beside it. `tint.ts`' `aloneChroma` is the same.
-pub fn alone_chroma_of(rules: &[Rule<'_>], shared: f64, hue: f64) -> Option<f64> {
-    searched(rules, hue, shared, |alone| alone)
+///
+/// A chroma is offered only where `kin`, the shared rules, hold too with their sides at it: the
+/// accent gives way as far as its kin could go, and past that it keeps the colour it was written
+/// in, which the floors vouch for, rather than a grey at a chroma the kin could not take (#3388).
+pub fn alone_chroma_of(rules: &[Rule<'_>], kin: &[Rule<'_>], shared: f64, hue: f64) -> Option<f64> {
+    let whole = |most: f64| {
+        kin.iter()
+            .all(|rule| rule.holds(hue, Some(most), Some(most)))
+    };
+    searched(rules, hue, shared, |alone| alone, whole)
 }
 
 /// Whether every rule holds with the sides held alone as written and every other side at
@@ -710,17 +718,20 @@ fn holds_as_written(rules: &[Rule<'_>], hue: f64, shared: f64) -> bool {
 /// The search both answers are: `ceiling` when every rule holds there, else the largest multiple
 /// of [`CHROMA_STEP`] under it and under the colour the moving sides have. A side `moves` is
 /// tried at each chroma (it is told whether the side is held alone); any other stays at `ceiling`.
+/// A chroma `offered` turns down is not answered.
 fn searched(
     rules: &[Rule<'_>],
     hue: f64,
     ceiling: f64,
     moves: impl Fn(bool) -> bool,
+    offered: impl Fn(f64) -> bool,
 ) -> Option<f64> {
     let far = |most: f64| {
         let chroma = |alone: bool| Some(if moves(alone) { most } else { ceiling });
-        rules
-            .iter()
-            .all(|rule| rule.holds(hue, chroma(rule.token_alone), chroma(rule.from_alone)))
+        offered(most)
+            && rules
+                .iter()
+                .all(|rule| rule.holds(hue, chroma(rule.token_alone), chroma(rule.from_alone)))
     };
     if far(ceiling) {
         return Some(ceiling);

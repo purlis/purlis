@@ -6,10 +6,13 @@
 //! chroma, so a rule between the two is drawn at two chromas; the search used to measure it at
 //! one. A workspace's own `#rrggbb` can land on any hue, and the floors read the rules only at
 //! the palette's, so nothing else stands behind a custom colour.
+//!
+//! The measure at one chroma stays as a limit: a chroma is offered only if the shared rules hold
+//! at it too, so no built-in draws a colour it did not before.
 
 use serde_json::{Value, json};
 
-use super::floors::{ALLOW_APART, ALLOW_FROM_PRIMARY, WAITING_APART, hold};
+use super::floors::{ALLOW_APART, ALLOW_FROM_PRIMARY, DANGER_APART, WAITING_APART, hold};
 use super::tint::{self, APART, Most, Rule};
 use super::vocabulary::TINTED;
 use super::{ResolvedTheme, built_ins, load, parts, purlis};
@@ -104,23 +107,31 @@ fn a_rule_between_the_two_chromas_holds_where_one_chroma_measured_it_wrong() {
 }
 
 #[test]
-fn a_side_held_alone_gets_the_colour_the_rules_leave_it() {
-    // One chroma found no amount at all here: the edge at the accent's chroma is too near it, and
-    // the edge is never drawn there. The accent was drawn as written for nothing.
-    let theme = themed(
-        &json!({
-            "accent.base": "#373f97",
-            "border.control": "#695c8b",
-            "state.waiting": "#7e2463",
-            "danger.base": "#00c000",
-        }),
-        &["accent.base", "border.control"],
-    );
-    let hue = 20.231_855_720_483_864;
-    assert_eq!(at_one_chroma(&theme, hue).alone, None);
-    let most = tint::most_at(&theme, hue);
-    assert_eq!(most.alone, Some(0.055));
-    assert_eq!(falls(&turned(&theme, hue, most)), Vec::<String>::new());
+fn purlis_light_keeps_its_accent_where_only_a_grey_its_kin_could_not_take_would_hold() {
+    // Between a yellow and a green workspace a chroma of 0.01 to 0.015 holds the accent's own
+    // rules, and the link would fall near danger at it. The accent as written breaks nothing, so
+    // it stays: a floor, not a search, is what may take a built-in's violet away.
+    let light = purlis()
+        .appearances
+        .iter()
+        .find(|one| one.id == "light")
+        .expect("Purlis's light appearance");
+    let accent = light.value("accent.base");
+    for (from, floor) in [
+        ("danger.base", DANGER_APART),
+        ("state.waiting", WAITING_APART),
+        ("border.control", ALLOW_APART),
+    ] {
+        assert!(apart(accent, light.value(from)).unwrap() >= floor, "{from}");
+    }
+    for degree in 98..118 {
+        let drawn = tint::tinted_at(light, f64::from(degree));
+        assert_eq!(drawn.value("accent.base"), accent, "{degree}");
+        assert_eq!(falls(&drawn), Vec::<String>::new(), "{degree}");
+        // The control: the link is what turns the grey down.
+        let chroma = tint::tint_hex_within(light.value("markdown.link"), f64::from(degree), 0.01);
+        assert!(apart(&chroma, light.value("danger.base")).unwrap() < DANGER_APART);
+    }
 }
 
 /// A seeded generator: the sweep draws the same cases on every run.
@@ -266,27 +277,8 @@ fn the_sweep_reads_what_it_says_it_holds() {
     );
 }
 
-/// The accent Purlis light writes.
-const LIGHT_ACCENT: &str = "#554691";
-
-/// The colour the accent takes at a hue where one chroma drew it as written: only there.
-fn light_s_accent_at(hue: f64) -> Option<&'static str> {
-    match hue {
-        h if (98.0..109.0).contains(&h) => Some("#52524c"),
-        h if (109.0..110.0).contains(&h) => Some("#525249"),
-        h if (110.0..115.0).contains(&h) => Some("#52524a"),
-        h if (115.0..118.0).contains(&h) => Some("#51524a"),
-        _ => None,
-    }
-}
-
 #[test]
-fn only_purlis_light_s_accent_moves_and_only_at_hues_no_palette_colour_has() {
-    // Measured at one chroma, a kin of the accent drawn at the shared chroma was tried at the
-    // accent's, fell near danger there, and left the accent no amount at these hues: it was drawn
-    // in its own violet between a yellow and a green workspace. Measured as drawn, it gives way
-    // near a grey, as Purlis Classic's does beside the same amber. Every other built-in, every
-    // palette colour and every other token draws what it drew.
+fn no_built_in_draws_a_colour_it_did_not_before() {
     let mut moved = Vec::new();
     let customs: Vec<f64> = custom_colours()
         .iter()
@@ -298,9 +290,6 @@ fn only_purlis_light_s_accent_moves_and_only_at_hues_no_palette_colour_has() {
             continue;
         }
         let named = theme.tint.hues.iter().map(|one| one.hue);
-        for hue in named.clone() {
-            assert_eq!(light_s_accent_at(hue), None, "{} {hue}", theme.id);
-        }
         let whole = (0..360).map(f64::from);
         for hue in whole.chain(named).chain(customs.iter().copied()) {
             let (now, was) = (tint::most_at(theme, hue), at_one_chroma(theme, hue));
@@ -310,34 +299,15 @@ fn only_purlis_light_s_accent_moves_and_only_at_hues_no_palette_colour_has() {
             let (now, was) = (turned(theme, hue, now), turned(theme, hue, was));
             for token in tabs {
                 if now.value(token) != was.value(token) {
-                    moved.push((
-                        theme.id.clone(),
-                        hue,
-                        *token,
-                        was.value(token).to_owned(),
-                        now.value(token).to_owned(),
+                    moved.push(format!(
+                        "{} {hue} {token}: {} to {}",
+                        theme.id,
+                        was.value(token),
+                        now.value(token)
                     ));
                 }
             }
         }
     }
-    let whole_degrees: Vec<f64> = (98..118).map(f64::from).collect();
-    for hue in &whole_degrees {
-        for token in ["accent.base", "focus.ring", "list.selected-edge"] {
-            assert!(
-                moved.iter().any(|one| one.1 == *hue && one.2 == token),
-                "{hue} {token}"
-            );
-        }
-    }
-    for (id, hue, token, was, now) in &moved {
-        let case = format!("{id} {hue} {token}: {was} to {now}");
-        assert_eq!(id, "light", "{case}");
-        assert_eq!(was, LIGHT_ACCENT, "{case}");
-        assert!(
-            ["accent.base", "focus.ring", "list.selected-edge"].contains(token),
-            "{case}"
-        );
-        assert_eq!(light_s_accent_at(*hue), Some(now.as_str()), "{case}");
-    }
+    assert_eq!(moved, Vec::<String>::new());
 }

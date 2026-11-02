@@ -90,7 +90,7 @@ const CHROMA_STEP = 0.005;
  * theme tints.
  */
 export function apartChroma(rules: readonly Rule[], hue: number): number | undefined {
-  return remembered("apart", rules, hue, Number.POSITIVE_INFINITY, () => true);
+  return remembered([], rules, hue, Number.POSITIVE_INFINITY, () => true);
 }
 
 /**
@@ -98,14 +98,17 @@ export function apartChroma(rules: readonly Rule[], hue: number): number | undef
  * `purlis_core::theme::alone_chroma_of`), with every other side drawn at `shared`, what
  * {@link apartChroma} answered for the shared rules: `shared` when every rule holds there, else
  * the largest multiple of {@link CHROMA_STEP} under it that holds them all, each side at the
- * chroma it is drawn at; `undefined` when not even a grey does.
+ * chroma it is drawn at; `undefined` when not even a grey does. A chroma is offered only where
+ * `kin`, the shared rules, hold too with their sides at it: past that the accent keeps the colour
+ * it was written in rather than a grey at a chroma its kin could not take.
  */
 export function aloneChroma(
   rules: readonly Rule[],
+  kin: readonly Rule[],
   shared: number,
   hue: number,
 ): number | undefined {
-  return remembered("alone", rules, hue, shared, (alone) => alone);
+  return remembered(kin, rules, hue, shared, (alone) => alone);
 }
 
 /**
@@ -122,14 +125,14 @@ export function mostOf(
   const most = apartChroma(shared, hue);
   if (all.length === shared.length) return { shared: most, alone: most };
   if (most === undefined) return { shared: undefined, alone: undefined };
-  const alone = aloneChroma(all, most, hue);
+  const alone = aloneChroma(all, shared, most, hue);
   const holds = alone !== undefined || holdsAsWritten(all, hue, most);
   return { shared: holds ? most : undefined, alone };
 }
 
 /** The search for `rules`, remembered: the same rules at the same hue give the same answer. */
 function remembered(
-  kind: "apart" | "alone",
+  kin: readonly Rule[],
   rules: readonly Rule[],
   hue: number,
   ceiling: number,
@@ -138,15 +141,17 @@ function remembered(
   // A strip of tabs, a list of personas and every theme the core answers again ask it over and
   // over, and where a rule is not held at full colour (Purlis's red, orange and pink, #3034) the
   // answer is a search.
-  const key = `${kind} ${ceiling} ${hue} ${rules
-    .map(
-      (one) =>
-        `${one.token}${one.tokenTinted}${one.tokenAlone === true} ` +
-        `${one.from}${one.fromTinted}${one.fromAlone === true} ${one.distance}`,
-    )
-    .join(" ")}`;
+  const written = (list: readonly Rule[]) =>
+    list
+      .map(
+        (one) =>
+          `${one.token}${one.tokenTinted}${one.tokenAlone === true} ` +
+          `${one.from}${one.fromTinted}${one.fromAlone === true} ${one.distance}`,
+      )
+      .join(" ");
+  const key = `${ceiling} ${hue} ${written(rules)} / ${written(kin)}`;
   if (answered.has(key)) return answered.get(key);
-  const answer = searchedChroma(rules, hue, ceiling, moves);
+  const answer = searchedChroma(rules, kin, hue, ceiling, moves);
   if (answered.size >= MOST_ANSWERED) answered.delete(answered.keys().next().value as string);
   answered.set(key, answer);
   return answer;
@@ -188,11 +193,13 @@ function holdsAsWritten(rules: readonly Rule[], hue: number, shared: number): bo
  *  `ceiling`. */
 function searchedChroma(
   rules: readonly Rule[],
+  kin: readonly Rule[],
   hue: number,
   ceiling: number,
   moves: Moves,
 ): number | undefined {
   const far = (most: number) => {
+    if (!kin.every((rule) => holdsAt(rule, hue, most, most))) return false;
     const chroma = (alone: boolean | undefined) => (moves(alone === true) ? most : ceiling);
     return rules.every((rule) =>
       holdsAt(rule, hue, chroma(rule.tokenAlone), chroma(rule.fromAlone)),

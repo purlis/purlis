@@ -3053,7 +3053,7 @@
    "shared_rules": 1,
    "hue": 20.231855720483864,
    "shared": null,
-   "alone": 0.055
+   "alone": "none"
   },
   {
    "rules": [
