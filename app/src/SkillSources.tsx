@@ -30,6 +30,7 @@ import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
 import { nameProblem } from "./SkillChangeDialogs";
 import { GrantPicker } from "./SkillLevelPickers";
+import { capitalised } from "./saving";
 import { TextField } from "./ui/field/Field";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
@@ -1237,7 +1238,7 @@ function ClashChoice({
       <SettingRow
         label="This name is taken"
         grouped
-        help={`${skill.clash?.held_by ?? ""}. A new name changes only its name line and folder: its text stays as the source wrote it.`}
+        help={`${capitalised(skill.clash?.held_by ?? "")}. A new name changes only its name line and folder: its text stays as the source wrote it.`}
         control={(ids) => (
           <Choice
             kind="radio"

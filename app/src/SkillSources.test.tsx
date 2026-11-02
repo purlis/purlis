@@ -711,7 +711,7 @@ describe("the install review", () => {
     await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
     const review = await screen.findByTestId("install-review");
     expect(await within(review).findByTestId("clash-deploy")).toHaveTextContent(
-      "the project skills have a deploy from mattpocock",
+      "The project skills have a deploy from mattpocock.",
     );
     expect(within(review).getByTestId("note-deploy")).toHaveTextContent(
       "The ops skills have a deploy too.",
