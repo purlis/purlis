@@ -368,6 +368,12 @@ pub trait SessionHost: Send + Sync {
         Vec::new()
     }
 
+    /// [`Self::fetch_back`] from a pool `workspace` no longer runs on (#4590): it is told nothing
+    /// of what this machine has but what came back from it.
+    fn fetch_back_left(&self, workspace: &str, pool: &str) -> Vec<String> {
+        self.fetch_back(workspace, pool)
+    }
+
     /// **Readies the runner of `pool` for a chat in `workspace` to move there** (#2048): the
     /// project held there, and each clone's branch sent ahead, while the chat keeps working
     /// here. Refused in a sentence where chats cannot move to it.

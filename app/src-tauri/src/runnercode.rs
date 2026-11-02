@@ -443,7 +443,7 @@ pub(crate) fn send_workspace(
 
 /// **Fetch the branches of every clone of `workspace` back from the runner**, into each clone's
 /// `refs/remotes/<pool>/*`. Each clone fetches on its own: one that fails is said, and the rest
-/// still fetch.
+/// still fetch. `left` is a pool the workspace no longer runs on (#4590).
 pub(crate) fn fetch_workspace(
     link: &HostLink,
     project: &str,
@@ -451,6 +451,7 @@ pub(crate) fn fetch_workspace(
     workspace: &str,
     pool: &str,
     beside: bool,
+    left: bool,
 ) -> Vec<String> {
     let mut failed = Vec::new();
     for rel in clones_of(root, workspace) {
@@ -460,7 +461,9 @@ pub(crate) fn fetch_workspace(
                     .map(|(heads, wrote)| (core_refs(heads), wrote))
             };
             let repo = root.join(&rel);
-            if beside {
+            if left {
+                codelink::fetch_back_left(&repo, pool, beside, scratch.path(), through)
+            } else if beside {
                 codelink::fetch_back_beside(&repo, pool, scratch.path(), through)
             } else {
                 codelink::fetch_back(&repo, pool, scratch.path(), through)

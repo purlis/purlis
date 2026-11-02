@@ -885,6 +885,34 @@ fn a_clone_is_sent_on_its_branch_with_its_work_and_its_runner_commits_come_back(
 }
 
 #[test]
+fn a_pool_a_workspace_left_is_told_only_what_came_back_from_it() {
+    let world = World::new();
+    let runner = world.runner_repo();
+    send(&world.desktop, &[], &[], &world.scratch(), sent_to(&runner)).unwrap();
+    let back = commit(&runner, "fix.txt", "done on the runner\n");
+    let scratch = world.scratch();
+    fetch_back(&world.desktop, "builds", &scratch, |have, into| {
+        give(&runner, &have, into)
+            .map(|(heads, bundled)| (heads, bundled == Bundled::Wrote))
+            .map_err(|why| why.to_string())
+    })
+    .unwrap();
+    let since = commit(&world.desktop, "since.txt", "made here since\n");
+
+    let told = std::cell::RefCell::new(Vec::new());
+    let scratch = world.scratch();
+    fetch_back_left(&world.desktop, "builds", false, &scratch, |have, into| {
+        told.borrow_mut().clone_from(&have);
+        give(&runner, &have, into)
+            .map(|(heads, bundled)| (heads, bundled == Bundled::Wrote))
+            .map_err(|why| why.to_string())
+    })
+    .unwrap();
+    assert!(told.borrow().contains(&back), "{told:?}");
+    assert!(!told.borrow().contains(&since), "{told:?}");
+}
+
+#[test]
 fn a_folder_that_is_not_a_repository_sends_and_fetches_nothing_and_one_on_no_branch_says_so() {
     let world = World::new();
     let plain = world.top.join("plain");

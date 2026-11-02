@@ -449,6 +449,39 @@ fn a_chat_whose_link_went_stays_kept_for_the_next_window_to_ask() {
 }
 
 #[test]
+fn a_program_a_runner_says_ended_by_a_hangup_is_an_end_like_any_other() {
+    let machine = AMachine::new();
+    let window = machine.window();
+    window.when_one_ends(Arc::new(|_, _| {}));
+    let number = window
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .unwrap()
+        .number;
+    machine.builds.program_ends(
+        number,
+        Exit::Signal(crate::hostedsessions::ENDED_WITH_THE_HOST.to_owned()),
+    );
+    window.chats_kept.settled();
+    assert!(machine.kept().is_empty());
+}
+
+#[test]
+fn a_put_back_keeps_a_record_where_a_pools_draining_runners_cant_be_told() {
+    let machine = AMachine::new();
+    machine.store.keep(7, "builds", "app");
+    machine.moves_app_to(None);
+    let window =
+        machine
+            .window()
+            .taking_back_from(Arc::new(|_: &str| -> Vec<Result<String, String>> {
+                vec![Err("docker did not answer".to_owned())]
+            }));
+    window.close_what_was_not_reattached();
+    window.chats_kept.settled();
+    assert_eq!(machine.kept(), vec![7]);
+}
+
+#[test]
 fn a_chat_whose_runner_went_leaves_its_record_and_fetches_nothing() {
     let machine = AMachine::new();
     let window = machine.window();
@@ -807,10 +840,13 @@ fn the_routing_says_every_method_of_a_chats_host() {
     };
     let every = methods(trait_source, "pub trait SessionHost");
     let said = methods(routed_source, "impl SessionHost for RoutedSessions");
-    // `fetch_back` is the routing's own, through its saver (`FetchingBack`).
+    // `fetch_back` and `fetch_back_left` are the routing's own, through its saver
+    // (`FetchingBack`).
     let unsaid: Vec<&String> = every
         .iter()
-        .filter(|one| !said.contains(one) && one.as_str() != "fetch_back")
+        .filter(|one| {
+            !said.contains(one) && !matches!(one.as_str(), "fetch_back" | "fetch_back_left")
+        })
         .collect();
     assert!(unsaid.is_empty(), "the routing does not say {unsaid:?}");
 }

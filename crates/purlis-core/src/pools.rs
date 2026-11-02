@@ -310,6 +310,12 @@ pub fn branches_fetched(
     pool: &str,
     workspace: &str,
 ) -> Result<(), String> {
+    let owed = branches_to_fetch(config_root, plane)
+        .get(pool)
+        .is_some_and(|workspaces| workspaces.contains(workspace));
+    if !owed {
+        return Ok(());
+    }
     crate::machine::update(config_root, |store| {
         store.branches_fetched(plane, pool, workspace);
     })

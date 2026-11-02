@@ -368,6 +368,15 @@ fn a_leave_out_list_that_cannot_be_read_refuses_the_send_in_words() {
 #[test]
 fn a_clone_the_runner_chat_made_comes_back_with_move_here_and_names_what_a_tool_here_runs() {
     let world = World::new();
+    world
+        .sessions
+        .moving_link_in_a_test()
+        .expect("a chat moving off a pool");
+    assert!(
+        !world.kept().join(purlis_core::plane::MANIFEST).exists(),
+        "a chat moving off a pool sends it nothing"
+    );
+    world.sessions.hold_with_the_code().expect("sent");
     let (link, project) = world.sessions.moving_link_in_a_test().unwrap();
     assert!(
         link.names_its_clones(),

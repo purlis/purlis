@@ -2929,7 +2929,8 @@ impl HostedSessions {
 
     /// [`Self::on_a_runner`], for a pool's runner (#2046): the runner holds the project where it
     /// keeps its projects, `<data>/projects/<project id>`, and the window sends it the project's
-    /// code as it holds it there and each workspace's clones before a chat starts in it.
+    /// code as a chat starts or moves there and each workspace's clones before a chat starts in
+    /// it.
     pub fn on_a_pools_runner(connection: Arc<Connection>, root: &Path) -> Self {
         HostedSessions {
             kept_on_the_runner: true,
@@ -3015,13 +3016,19 @@ impl HostedSessions {
     }
 
     /// The link a chat moves over (#2048): this project held on a pool's runner that keeps it,
-    /// of a purlis that moves chats.
+    /// of a purlis that moves chats. A chat that moves off it sends it nothing.
     fn moving_link(&self) -> Result<(Arc<HostLink>, String), String> {
         if !self.kept_on_the_runner {
             return Err(crate::host::MOVES_NO_CHAT.to_owned());
         }
         let (link, project) = self.link()?;
         link.moves_chats()?;
+        Ok((link, project))
+    }
+
+    /// [`Self::moving_link`] for a chat that moves there, with the project's code sent.
+    fn link_moving_in(&self) -> Result<(Arc<HostLink>, String), String> {
+        let (link, project) = self.moving_link()?;
         self.sends_the_code(&link, &project)?;
         Ok((link, project))
     }
@@ -3247,7 +3254,7 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
     };
     let waits = for_a_start && *kept_on_the_runner && waits_for_its_runner();
     // Decided once: a link that came back during the wait still needs what a hold does after it,
-    // its code sent above all.
+    // its programs read and its board taken above all.
     let waited = waits && !lock(held).as_ref().is_some_and(stays_held);
     if waited {
         waits_off_the_lock(holding, &link)?;
@@ -4485,20 +4492,11 @@ impl SessionHost for HostedSessions {
     /// While a runner of the pool drains, neither's fetch removes what only the other has
     /// (#4248).
     fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
-        if !self.kept_on_the_runner {
-            return Vec::new();
-        }
-        match self.link() {
-            Ok((link, project)) => {
-                let beside = self.connection.links_of(&self.root).len() > 1
-                    || lock(&self.stays_on).is_some()
-                    || self.connection.pool_drains();
-                crate::runnercode::fetch_workspace(
-                    &link, &project, &self.root, workspace, pool, beside,
-                )
-            }
-            Err(why) => vec![why],
-        }
+        self.fetches_back(workspace, pool, false)
+    }
+
+    fn fetch_back_left(&self, workspace: &str, pool: &str) -> Vec<String> {
+        self.fetches_back(workspace, pool, true)
     }
 
     /// Only of a link already open: a tab drawn never opens one to the runner.
@@ -4512,7 +4510,7 @@ impl SessionHost for HostedSessions {
     /// The project held on the pool's runner, and each clone of `workspace` sent ahead
     /// (#2048). Only where the runner keeps the project and moves chats.
     fn move_ahead(&self, _pool: &str, workspace: &str) -> Result<(), String> {
-        let (link, project) = self.moving_link()?;
+        let (link, project) = self.link_moving_in()?;
         crate::runnercode::send_ahead(&link, &project, &self.root, workspace, &self.sent)
     }
 
@@ -4520,7 +4518,7 @@ impl SessionHost for HostedSessions {
         let Some(workspace) = chats.first().map(|chat| chat.workspace.as_str()) else {
             return Ok(());
         };
-        let (link, project) = self.moving_link()?;
+        let (link, project) = self.link_moving_in()?;
         // Each conversation is found first: where one is not, nothing has moved.
         let mut found = Vec::new();
         for chat in chats {
@@ -4631,17 +4629,17 @@ impl SessionHost for HostedSessions {
         lock(&self.untaken).clone()
     }
 
-    /// Held in the host from before this window, which holds the project now to say.
+    /// [`Self::left_running`], `None` where the host never said.
     fn left_known(&self, number: u32) -> Option<bool> {
-        let left = self.left_running(number);
         // It answers once, in the hold: a link that holds nothing, or a host that never said, says
         // nothing of what it runs.
         let said = self.link().is_ok()
             && lock(&self.browsers_left).is_some()
             && !self.left_unread.load(Ordering::SeqCst);
-        said.then_some(left)
+        said.then(|| lock(&self.left).contains_key(&number))
     }
 
+    /// Held in the host from before this window, which holds the project now to say.
     fn left_running(&self, number: u32) -> bool {
         match self.link() {
             Ok(_) => lock(&self.left).contains_key(&number),
@@ -4762,6 +4760,24 @@ impl SessionHost for HostedSessions {
 }
 
 impl HostedSessions {
+    /// [`SessionHost::fetch_back`], `left` where the workspace no longer runs on the pool.
+    fn fetches_back(&self, workspace: &str, pool: &str, left: bool) -> Vec<String> {
+        if !self.kept_on_the_runner {
+            return Vec::new();
+        }
+        match self.link() {
+            Ok((link, project)) => {
+                let beside = self.connection.links_of(&self.root).len() > 1
+                    || lock(&self.stays_on).is_some()
+                    || self.connection.pool_drains();
+                crate::runnercode::fetch_workspace(
+                    &link, &project, &self.root, workspace, pool, beside, left,
+                )
+            }
+            Err(why) => vec![why],
+        }
+    }
+
     /// Each of `left`, which nothing reattached, ends.
     fn closes_left(&self, left: Vec<HeldProgram>) {
         let Ok(link) = self.own_link(Duration::ZERO) else {

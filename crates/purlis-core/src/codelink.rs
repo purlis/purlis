@@ -1176,7 +1176,7 @@ pub fn fetch_back(
     scratch: &Path,
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
-    fetch_back_as(repo, pool, false, scratch, through)
+    fetch_back_as(repo, pool, false, HEADS, scratch, through)
 }
 
 /// [`fetch_back`] from a draining runner: what it has comes back beside what the pool's runner
@@ -1187,20 +1187,34 @@ pub fn fetch_back_beside(
     scratch: &Path,
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
-    fetch_back_as(repo, pool, true, scratch, through)
+    fetch_back_as(repo, pool, true, HEADS, scratch, through)
 }
 
-fn fetch_back_as(
+/// [`fetch_back`] from a pool the clone's workspace no longer runs on (#4590): the pool is told
+/// only what came back from it, and nothing of what happened here since.
+pub fn fetch_back_left(
     repo: &Path,
     pool: &str,
     beside: bool,
     scratch: &Path,
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
+    let its_own = format!("refs/remotes/{pool}/");
+    fetch_back_as(repo, pool, beside, &its_own, scratch, through)
+}
+
+fn fetch_back_as(
+    repo: &Path,
+    pool: &str,
+    beside: bool,
+    held_here: &str,
+    scratch: &Path,
+    through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
+) -> Result<Vec<Ref>, Refused> {
     if !a_repository(repo) {
         return Ok(Vec::new());
     }
-    let mut have: Vec<String> = refs_under(repo, &[HEADS, &format!("refs/remotes/{pool}/")])?
+    let mut have: Vec<String> = refs_under(repo, &[held_here, &format!("refs/remotes/{pool}/")])?
         .into_iter()
         .map(|one| one.oid)
         .collect();
@@ -1271,8 +1285,7 @@ pub fn on_a_pool_left(repo: &Path, pool: &str) -> Vec<OnARunner> {
     if !pool_ok(pool) {
         return Vec::new();
     }
-    let remote = format!("remote.{pool}.url");
-    if run(repo, &["config", "--get", &remote]).is_ok_and(|ran| ran.ok()) {
+    if !a_repository(repo) || a_remote_of(repo, pool) {
         return Vec::new();
     }
     on_a_runner(repo, pool)

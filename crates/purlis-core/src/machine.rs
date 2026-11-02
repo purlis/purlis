@@ -1050,8 +1050,8 @@ pub struct Recent {
     /// [`Self::chats_run_on`] is.
     pub project_chats_run_on: Option<String>,
     /// The chats running on a pool, by their numbers (#4590): where each is, whatever the
-    /// settings say since. Written by the window alone. Only an entry here is asked for at a
-    /// restart, so a chat is taken out as it ends or closes, or as a start lands elsewhere.
+    /// settings say since, and the one pool a restart asks for it. Written by the window alone,
+    /// and a chat is taken out as it ends or closes, or as a start lands elsewhere.
     pub chats_on_pools: BTreeMap<u32, ChatOnPool>,
     /// The workspaces whose branches are still to come back from each pool, by pool (#4590):
     /// what a chat that left [`Self::chats_on_pools`] did there, until a fetch of it has no
@@ -1596,7 +1596,9 @@ impl Store {
             entry.owes_the_branches_of(before);
         }
         while entry.chats_on_pools.len() > MOST_CHATS_ON_POOLS {
-            entry.chats_on_pools.pop_first();
+            if let Some((_, oldest)) = entry.chats_on_pools.pop_first() {
+                entry.owes_the_branches_of(oldest);
+            }
         }
     }
 
@@ -2831,7 +2833,6 @@ fn branches_to_fetch_of(raw: Option<&serde_json::Value>) -> BTreeMap<String, BTr
             .filter_map(serde_json::Value::as_str)
             .filter(|workspace| usable_workspace(workspace).is_ok())
             .map(str::to_owned)
-            .take(MOST_CHATS_RUN_ON)
             .collect();
         if crate::runners::usable_pool_name(pool).is_ok() && !workspaces.is_empty() {
             kept.insert(pool.clone(), workspaces);
