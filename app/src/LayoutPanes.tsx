@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { QuizBand } from "./QuizBand";
 import {
   Fragment,
   useLayoutEffect,
@@ -203,6 +204,9 @@ export function PaneFrame({
           read and tabbed to (#1647); a terminal keeps Tab for its shell, so a control written
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
+        {/* **A task's question, as a quiz at the top of the pane** (#4565): above the Notices,
+            where the reviewed prototype drew it, so the terminal's input never moves for it. */}
+        <QuizBand plane={plane} session={session} />
         <PaneNotices
           band={pane === undefined ? undefined : paneBand(plane, pane)}
           notices={notices}
