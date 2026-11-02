@@ -68,6 +68,7 @@ let version: PoolVersion;
 let added: unknown[];
 let removed: unknown[];
 let madeAgain: string[];
+let madeAgainHomeHeld: boolean;
 let notHeld: { root: string; name: string; why: string; pools: string[] }[];
 let profilesAsked: unknown[];
 /** The runner image a new pool is offered, or why it could not be read. */
@@ -117,6 +118,7 @@ beforeEach(() => {
   added = [];
   removed = [];
   madeAgain = [];
+  madeAgainHomeHeld = false;
   notHeld = [];
   profilesAsked = [];
   releaseImage = { state: "local_build" };
@@ -167,7 +169,7 @@ beforeEach(() => {
       if (cmd === "docker_pool_make_again") {
         madeAgain.push(a.name as string);
         link = { state: "linked" };
-        return { sign_ins_kept: true };
+        return { sign_ins_kept: true, home_held: madeAgainHomeHeld };
       }
       if (cmd === "docker_pool_version") return version;
       if (cmd === "pool_named_by") return structuredClone(namedBy);
@@ -735,6 +737,29 @@ describe("You › This machine › Pools", () => {
     expect(group).toHaveTextContent(/made again, with its sign-ins/);
     // Its profiles are kept there again, as after Add a pool.
     await waitFor(() => expect(profilesAsked).toContain("builds"));
+  });
+
+  it("says where the old runner's conversations are once the runner is made again beside its kept home (#4859)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "removed", home_kept: true };
+    madeAgainHomeHeld = true;
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    const notice = await waitFor(() => {
+      const found = group.querySelector('[data-cause="pool-runner-removed:builds"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Make the runner again" }));
+
+    await waitFor(() =>
+      expect(group).toHaveTextContent(
+        /still holds its chats' conversations, so purlis kept it\. Bring them back to the new runner or discard them in Devices\./,
+      ),
+    );
   });
 
   it("says a runner removed with its home that its sign-ins went too (#4149)", async () => {

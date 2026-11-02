@@ -3107,6 +3107,8 @@ fn removed_outside_purlis(
     let mut volume: serde_json::Value = serde_json::from_str(&fake.file("volume")).unwrap();
     volume[0]["CreatedAt"] = home_made.unwrap_or("2026-01-01T00:00:00Z").into();
     fake.set("volume", &volume.to_string());
+    // Its home holds no conversation, unless a test says otherwise (#4859).
+    fake.set("conversations", "conversations 0 0 0\n");
     std::fs::write(fake.file_path("log"), "").unwrap();
     old
 }
@@ -3170,7 +3172,7 @@ fn a_runner_a_chat_ran_on_without_the_sandbox_is_made_again_with_nothing_carried
 
     assert!(!again.sign_ins_kept);
     let log = fake.file("log");
-    assert!(!log.contains("-copy "), "{log}");
+    assert!(!log.contains("target=/to"), "{log}");
 }
 
 /// Its home gone too, the runner is made again with nothing carried: its profiles are signed in
@@ -3187,6 +3189,80 @@ fn a_runner_whose_home_went_with_it_is_made_again_to_sign_in_again() {
     assert!(!again.sign_ins_kept);
     assert!(
         !fake.file("log").contains("target=/from"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// **A runner made again keeps the gone one held where its home holds a chat's conversation**
+/// (#4859, the rule of #4633): its home is read by a container of the runner made again, and it
+/// stays, draining and held, for the person to bring them back or discard them in Devices.
+#[test]
+fn a_runner_made_again_keeps_the_gone_ones_home_where_it_holds_a_conversation() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    fake.set("conversations", "conversations 3 3 0\n");
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    let gone = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(gone.draining && gone.held, "{gone:?}");
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().name(),
+        again.kept.name()
+    );
+    let log = fake.file("log");
+    assert!(!log.contains("volume rm"), "{log}");
+    // Read alone: the home mounted read-only, and no home mounted to write to.
+    let read = log
+        .split("run --rm")
+        .find(|run| run.contains(" seen /from - "))
+        .expect(&log);
+    assert!(
+        read.contains("source=purlis-runner-first-home,target=/from,readonly"),
+        "{read}"
+    );
+    assert!(!read.contains("target=/to"), "{read}");
+}
+
+/// **A gone runner's home that holds no conversation goes as it did**: removed once the runner
+/// is made again.
+#[test]
+fn a_runner_made_again_removes_the_gone_ones_home_where_it_holds_none() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    fake.set("conversations", "conversations 0 0 0\n");
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert_eq!(runners::read(config.path()).unwrap(), vec![again.kept]);
+    let log = fake.file("log");
+    assert!(
+        log.contains("volume rm --force purlis-runner-first-home"),
+        "{log}"
+    );
+}
+
+/// **A gone runner's home that could not be read is kept, held** (#4859): Make the runner again
+/// is pressed once, and no later look is sure to read it, so the person decides in Devices.
+#[test]
+fn a_runner_made_again_holds_the_gone_one_whose_home_could_not_be_read() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    fake.set("conversations", "");
+
+    make_again_here(config.path(), &fake, &ours).unwrap();
+
+    let gone = runners::named(config.path(), "first").unwrap().unwrap();
+    assert!(gone.draining && gone.held, "{gone:?}");
+    assert!(
+        !fake.file("log").contains("volume rm"),
         "{}",
         fake.file("log")
     );

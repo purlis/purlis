@@ -633,6 +633,9 @@ fn noted_where_made(
 pub struct MadeAgain {
     pub kept: Kept,
     pub sign_ins_kept: bool,
+    /// **The gone runner's home is kept, held** (#4859): it holds a chat's conversation, or could
+    /// not be read, so the person brings them back or discards them in Devices.
+    pub home_held: bool,
 }
 
 /// **Makes the pool `name`'s runner again, once it was removed outside purlis** (#4149): Docker
@@ -641,7 +644,9 @@ pub struct MadeAgain {
 /// own image, held to its limits and its time before it suspends, on a home of its own; the
 /// sign-ins of the gone runner's home are carried to it where that home is still there and is
 /// the one purlis made for it ([`Docker::copy_profiles`]); it is checked, paired with `desktop`
-/// and kept as the pool's runner. The gone runner is then removed, its home with it. The
+/// and kept as the pool's runner. The gone runner is then removed, its home with it, unless that
+/// home holds a chat's conversation or could not be read: then it stays, held, for the person to
+/// bring them back or discard them (#4859, the rule of #4633). The
 /// profiles the pool keeps are kept on it again as after the pool was added: the window asks for
 /// them.
 ///
@@ -730,7 +735,34 @@ fn make_again_as(
             });
         }
     };
-    // The gone runner goes now, its home with it: nothing of it is linked to again.
+    // The gone runner goes now, its home with it, nothing of it linked to again: unless that home
+    // holds a chat's conversation, when it stays held as a draining one is (#4859, the rule of
+    // #4633). A home that could not be read is held too: this press is the only look it gets.
+    let holds = holds_a_conversation(config_root, docker, &old, &made).unwrap_or_else(|why| {
+        tracing::warn!(
+            "purlis: runner {} of pool {name} was made again, and the home of the one removed \
+             outside purlis could not be read, so it is kept until it is discarded in Devices: \
+             {why}",
+            old.name()
+        );
+        true
+    });
+    if holds {
+        if let Err(why) =
+            runners::note_locked(config_root, old.name(), |kept| kept.held = true, &locked)
+        {
+            tracing::warn!(
+                "purlis: runner {} of pool {name} was made again, and the one removed outside \
+                 purlis, whose home is kept, was not noted as held: {why}",
+                old.name()
+            );
+        }
+        return Ok(MadeAgain {
+            kept,
+            sign_ins_kept,
+            home_held: true,
+        });
+    }
     match runners::remove_locked(config_root, docker, old.name(), None, &locked) {
         Ok(removed) => {
             if let Some(left) = removed.left() {
@@ -750,6 +782,7 @@ fn make_again_as(
     Ok(MadeAgain {
         kept,
         sign_ins_kept,
+        home_held: false,
     })
 }
 
@@ -1011,24 +1044,38 @@ pub fn held_for_its_conversations(
         return Ok(true);
     }
     let to = runners::runner_for(config_root, kept.pool())?;
+    if !holds_a_conversation(config_root, docker, &kept, &to.made)? {
+        return Ok(false);
+    }
+    runners::note_locked(config_root, name, |kept| kept.held = true, &locked)?;
+    Ok(true)
+}
+
+/// **Whether the home of `kept`, a runner whose drain began, holds a chat's conversation**
+/// (#4633), read by a container of `with`'s image, `with` the pool's runner now
+/// ([`Docker::conversations`]), so `kept` is not started. A home Docker lists no more, or one made
+/// of its name since its container went, is not its own and holds nothing of it. Refused where
+/// Docker did not answer or the home could not be read, which says nothing of it.
+fn holds_a_conversation(
+    config_root: &Path,
+    docker: &Docker,
+    kept: &Kept,
+    with: &crate::dockerpool::Made,
+) -> Result<bool, Refused> {
     // Docker not answering says nothing of it, and a mount of a home not there would make one.
     let gone = docker
         .gone(&kept.made)
         .map_err(|why| Refused::Other(why.0))?;
     if gone.is_some_and(|gone| !gone.home_kept)
         || (gone.is_some()
-            && !is_its_own_home(docker, &kept).map_err(|why| Refused::Other(why.0))?)
+            && !is_its_own_home(docker, kept).map_err(|why| Refused::Other(why.0))?)
     {
         return Ok(false);
     }
     let found = docker
-        .conversations(&kept.made, &to.made, &runners::desktop_label(config_root))
+        .conversations(&kept.made, with, &runners::desktop_label(config_root))
         .map_err(|why| Refused::Other(why.0))?;
-    if found.found == 0 {
-        return Ok(false);
-    }
-    runners::note_locked(config_root, name, |kept| kept.held = true, &locked)?;
-    Ok(true)
+    Ok(found.found > 0)
 }
 
 /// **What bringing back a held runner's conversations did** (#4633): how many files it found, how

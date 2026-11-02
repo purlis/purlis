@@ -563,11 +563,17 @@ export function anotherEngineSaid(name: string): string {
   return `Docker points at another engine than the one pool ${name}'s runner was made on. Point Docker back at that engine and its chats come back. If that engine is gone for good, remove the pool and add it again; anything still on that engine stays there.`;
 }
 
-/** What a row says once its runner was made again, by whether its sign-ins were carried. */
-export function madeAgainSaid(name: string, signInsKept: boolean): string {
-  return signInsKept
+/**
+ * What a row says once its runner was made again, by whether its sign-ins were carried and
+ * whether the old runner's home was kept for its chats' conversations (#4859).
+ */
+export function madeAgainSaid(name: string, signInsKept: boolean, homeHeld = false): string {
+  const made = signInsKept
     ? `Pool ${name}'s runner was made again, with its sign-ins.`
     : `Pool ${name}'s runner was made again: sign its profiles in again there.`;
+  return homeHeld
+    ? `${made} The old runner's home still holds its chats' conversations, so purlis kept it. Bring them back to the new runner or discard them in Devices.`
+    : made;
 }
 
 /**
@@ -585,7 +591,8 @@ export async function makeRunnerAgain(name: string, plane?: string): Promise<str
   const why = said.status === "error" ? said.error : undefined;
   set((was) => {
     const remade = { ...was.remade };
-    if (said.status === "ok") remade[name] = madeAgainSaid(name, said.data.sign_ins_kept);
+    if (said.status === "ok")
+      remade[name] = madeAgainSaid(name, said.data.sign_ins_kept, said.data.home_held);
     else Reflect.deleteProperty(remade, name);
     return { ...was, remaking: undefined, remade };
   });

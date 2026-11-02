@@ -584,6 +584,19 @@ fn in_the_journey(
         again.sign_ins_kept,
         "its home was there, so its sign-ins came (marked before the make: {marked})"
     );
+    // Its home holds the first chat's conversation, so it is kept, held (#4859), and brought
+    // back to the runner made again, which removes it.
+    assert!(again.home_held, "its home holds a conversation");
+    let gone = purlis_core::runners::draining(&machine.config)
+        .expect("read")
+        .into_iter()
+        .find(|kept| kept.held)
+        .expect("the gone runner is kept, held");
+    let brought =
+        purlis_core::pools::bring_back(&machine.config, &machine.docker, gone.name(), None)
+            .expect("the gone runner's conversations are brought back");
+    assert_eq!(brought.left, 0, "{brought:?}");
+    assert!(brought.removed.is_some_and(|removed| removed.forgotten));
     assert!(
         crate::dockerpools::removed_on(machine)
             .expect("asked")

@@ -9314,6 +9314,11 @@ export type MachineWorkspacePin = {
  */
 export type MadeAgain = {
 	sign_ins_kept: boolean,
+	/**
+	 *  **The gone runner's home is kept, held** (#4859): it holds what its chats left, so Devices
+	 *  offers to bring their conversations back or discard them.
+	 */
+	home_held: boolean,
 };
 
 /**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */

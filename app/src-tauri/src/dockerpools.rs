@@ -164,6 +164,9 @@ pub struct PoolRemoved {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct MadeAgain {
     pub sign_ins_kept: bool,
+    /// **The gone runner's home is kept, held** (#4859): it holds what its chats left, so Devices
+    /// offers to bring their conversations back or discard them.
+    pub home_held: bool,
 }
 
 /// **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
@@ -574,6 +577,7 @@ pub fn make_again_on(machine: &Machine, name: &str) -> Result<MadeAgain, String>
         .map_err(|why| refused_said(&why.to_string()))?;
     Ok(MadeAgain {
         sign_ins_kept: again.sign_ins_kept,
+        home_held: again.home_held,
     })
 }
 
