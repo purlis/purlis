@@ -4618,6 +4618,8 @@ export const commands = {
 };
 
 /* Constants */
+export const A_QUESTION_WAITS_SECS = 100 as const;
+
 export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
 
 export const ENGINE_DOWNLOAD = "engine-download" as const;

@@ -3099,6 +3099,12 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<skillgrade::after_edit::SkillGradeAfterEditStep>()
         .constant("SKILL_GRADE_AFTER_EDIT", skillgrade::after_edit::EVENT)
         .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
+        // How long a task's question waits on its asking chat (#4841): a question's trail says
+        // it from the rule, never from a number of its own.
+        .constant(
+            "A_QUESTION_WAITS_SECS",
+            purlis_core::dispatchtalk::A_QUESTION_WAITS_SECS,
+        )
         // The one rule for a character a reader does not see (SK-51, #3202): the window marks
         // what it draws itself from the core's own tables, never from a list of its own.
         .constant(unicoderule::UNICODE_RULE, unicoderule::rule())

@@ -8,7 +8,7 @@
  * **It holds no question words** (ADR 0075): what it is handed is a closed set of steps, and every
  * word it says is one of these, with the task's and its asking chat's names.
  */
-import type { QuestionStep } from "./bindings";
+import { A_QUESTION_WAITS_SECS, type QuestionStep } from "./bindings";
 import { saidAt } from "./dispatches";
 
 /** The trail's own words, as the prototype has them (`prototype-task-questions/copy.ts`). */
@@ -23,7 +23,7 @@ export const TRAIL = {
   handed: (chat: string) => `Handed to ${chat}`,
   passed: (chat: string) => `${chat} passed it on`,
   passedNote: (chat: string) => `${chat} passed it on, with a note`,
-  noReply: (chat: string) => `${chat} did not reply in 100 seconds`,
+  noReply: (chat: string) => `${chat} did not reply in ${A_QUESTION_WAITS_SECS} seconds`,
   gone: (chat: string) => `${chat} closed`,
   reached: "Reached you",
   chatAnswered: (chat: string) => `${chat} answered`,
