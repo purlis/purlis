@@ -59,7 +59,8 @@
 //!
 //! **Every burst is told by what it named** ([`crate::watchset::bursts_by_tree`], #1139): a
 //! file made and removed inside one is still a move. A burst holds [`MOST_PATHS`] of each
-//! branch's paths (#4740); past that, the branch's further paths are held by the entry at its
+//! branch's paths (#4740), and four times that of all branches'; past either, a branch's further
+//! paths are held by the entry at its
 //! top they lie in (`target`, `src`), which still goes through the branch's ignore check, so a
 //! build writing thousands of files into an ignored folder moves nothing, and moves no other
 //! branch. A burst that is everything — the platform lost track, a watcher error, more paths
@@ -118,10 +119,14 @@ pub(crate) const SKILLS_MOVED: &str = "repo-skills-moved";
 /// How long a burst is folded for, as the tree's watch folds it.
 const QUIET_FOR: Duration = Duration::from_millis(250);
 
-/// The most moved paths one burst holds of each branch (#4740). Past it, the branch's further
-/// paths are held by the entries at its top they lie in, and only that branch may have moved;
-/// kept well above what one check asks (`purlis_core::files::ASKED`), so a burst inside git's
-/// own folder or what it ignores is sorted rather than told.
+/// The most moved paths one burst holds of each branch (#4740), and of those in no branch.
+/// Past it, the branch's further paths are held by the entries at its top they lie in, and
+/// only that branch may have moved; kept well above what one check asks
+/// (`purlis_core::files::ASKED`), so a burst inside git's own folder or what it ignores is
+/// sorted rather than told. Of all branches together a burst holds four times it
+/// (`watchset::TREES_IN_ALL`), past which every branch's further paths are held the same way:
+/// a flood costs a fixed amount of memory, and [`heard`]'s sort a fixed amount of work, however
+/// many branches are listened to.
 const MOST_PATHS: usize = 4096;
 
 /// The most branches one window listens to at once.

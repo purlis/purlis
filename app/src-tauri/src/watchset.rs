@@ -164,8 +164,15 @@ impl Burst {
     }
 }
 
+/// How many trees' share of paths a burst holds in all (the review of #4740): past
+/// `most` × this many paths in trees, a tree's further paths are held by the entry at its top
+/// they lie in, as a full tree's are. So a burst holds a fixed number of paths however many
+/// trees are listened to, rather than `most` for each of them.
+const TREES_IN_ALL: usize = 4;
+
 /// How many paths one burst holds: at most `most` of each tree's, by the tree `tree` puts a
-/// path in, and at most `most` of those it puts in none.
+/// path in, `most` × [`TREES_IN_ALL`] of all trees', and at most `most` of those it puts in
+/// none.
 struct Holding<T> {
     most: usize,
     tree: T,
@@ -179,7 +186,7 @@ struct Holding<T> {
 enum Place {
     /// Among the burst's paths.
     Named,
-    /// Held by this entry at the top of its tree, which is full.
+    /// Held by this entry at the top of its tree, which is full, or all trees are.
     Crowded(PathBuf),
     /// Nowhere: the burst holds no more paths outside a tree.
     Full,
@@ -205,7 +212,7 @@ impl<T: FnMut(&Path) -> Option<PathBuf>> Holding<T> {
             };
         };
         let held = self.held.entry(tree.clone()).or_default();
-        if *held < self.most {
+        if *held < self.most && self.in_trees < self.most * TREES_IN_ALL {
             *held += 1;
             self.in_trees += 1;
             return Place::Named;
@@ -245,9 +252,9 @@ pub(crate) fn bursts(
 }
 
 /// [`bursts`] for a watch of several trees (#4740): `tree` names the tree a path lies in, or
-/// none, and the burst holds at most `most` paths of each tree. Past that, a tree's paths are
-/// held by the entry at its top they lie in ([`Burst::crowded`]), so one tree's flood leaves
-/// what the others named as it was. Past `most` paths in no tree, or `most` crowded entries,
+/// none, and the burst holds at most `most` paths of each tree and `most` × [`TREES_IN_ALL`]
+/// of all trees together. Past either, a tree's paths are held by the entry at its top they lie
+/// in ([`Burst::crowded`]), so one tree's flood leaves what the others named as it was. Past `most` paths in no tree, or `most` crowded entries,
 /// the burst is everything, as [`bursts`]' is. Its timing is [`bursts`]'.
 pub(crate) fn bursts_by_tree(
     events: Receiver<notify::Event>,
@@ -624,6 +631,32 @@ mod tests {
         );
         assert!(burst.paths.contains(Path::new("/b/src/lib.rs")));
         assert_eq!(burst.crowded, set(&["/a/target", "/a/src", "/a"]));
+    }
+
+    /// The review of #4817: each tree under its own cap, many trees at once, must not make a
+    /// burst hold a cap's worth of paths per tree.
+    #[test]
+    fn many_trees_each_under_their_cap_hold_no_more_paths_in_all_than_the_ceiling() {
+        let mut holding = Holding::new(8, |path: &Path| {
+            path.ancestors()
+                .find(|above| above.parent() == Some(Path::new("/")))
+                .map(Path::to_path_buf)
+        });
+        let mut burst = Burst::default();
+        for tree in 0..10 {
+            for n in 0..8 {
+                let path = format!("/t{tree}/src/{n}");
+                burst.add_holding(on(EventKind::Create(CreateKind::File), &path), &mut holding);
+            }
+        }
+
+        assert!(!burst.everything);
+        assert_eq!(burst.paths.len(), 8 * TREES_IN_ALL);
+        // Every tree past the ceiling is held by its top entry, as a full tree's paths are.
+        let past: HashSet<PathBuf> = (TREES_IN_ALL..10)
+            .map(|tree| PathBuf::from(format!("/t{tree}/src")))
+            .collect();
+        assert_eq!(burst.crowded, past);
     }
 
     #[test]
