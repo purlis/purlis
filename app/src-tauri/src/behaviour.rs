@@ -1763,6 +1763,7 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
 /// A chat named by the profile `work` and the persona `steward`, told `first_message`.
 fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
     crate::host::Named {
+        runner: None,
         tools_allowed: None,
         plane_skills: false,
         chat: None,
@@ -3816,6 +3817,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
             .open_named(
                 None,
                 &crate::host::Named {
+                    runner: None,
                     tools_allowed,
                     ..named("run them", false)
                 },

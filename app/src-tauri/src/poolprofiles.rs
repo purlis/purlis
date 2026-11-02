@@ -60,6 +60,18 @@ pub trait ProfilesOnPools: Send + Sync {
     /// runner, or why not, in words.
     fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String>;
 
+    /// [`Self::ready`], on `runner`, the chat's own fresh runner of pool `pool` (#3818): the same
+    /// profile the same way, checked as that runner, not the pool's own.
+    fn ready_on_its_own_runner(
+        &self,
+        root: &Path,
+        pool: &str,
+        _runner: &str,
+        profile: &str,
+    ) -> Result<(), String> {
+        self.ready(root, pool, profile)
+    }
+
     /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move,
     /// and a profile signed out there is the sign-in the move waits on (#3477).
     fn ready_to_move(
@@ -92,6 +104,21 @@ impl ProfilesOnPools for Linked {
         // A chat's start is what wakes a suspended runner (#2051), so its keep does too.
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
             keep_on_as(yours.clone(), &self.config, pool, kept, Waking::Yes)
+        })
+    }
+
+    fn ready_on_its_own_runner(
+        &self,
+        root: &Path,
+        pool: &str,
+        runner: &str,
+        profile: &str,
+    ) -> Result<(), String> {
+        let _readying = Readying::of(pool, profile);
+        let yours = yours(&self.config, runner);
+        chosen_by_a_chat(&yours, &self.config, root, pool, profile);
+        onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
+            keep_on_as(yours.clone(), &self.config, runner, kept, Waking::Yes)
         })
     }
 

@@ -1496,6 +1496,49 @@ impl Chats {
         }
     }
 
+    /// **The name of the runner of its own a chat starting in `workspace` runs on**, made now
+    /// (#3818): none but on a cluster pool, for a chat `kept_for` says keeps nothing. A profile
+    /// purlis can't say the sign-in of keeps its work, as a chat there always has.
+    #[cfg(unix)]
+    fn fresh_runner_for(
+        &self,
+        id: &str,
+        workspace: Option<&str>,
+        sign_in: Option<&purlis_core::profilesignin::AtStart>,
+    ) -> Result<Option<String>, String> {
+        use purlis_core::clusterpool::{ChatOnARunner, Keeping, kept_for};
+        use purlis_core::harness_declaration::SignInKind;
+        let (Some(config), Some(pool)) = (&self.pools_in, self.sessions.pool_for(workspace)) else {
+            return Ok(None);
+        };
+        if !matches!(
+            purlis_core::runners::cluster_runner_for(config, &pool),
+            Ok(Some(_))
+        ) {
+            return Ok(None);
+        }
+        let keeping = kept_for(&ChatOnARunner {
+            dispatched: crate::hostedsessions::is_a_short_task(),
+            sign_in: Some(sign_in.map_or(SignInKind::Subscription, |sign_in| sign_in.kind)),
+            keep_work: None,
+        });
+        if keeping == Keeping::Kept {
+            return Ok(None);
+        }
+        crate::clusterpools::fresh_runner(config, &pool, id).map(Some)
+    }
+
+    /// [`Self::fresh_runner_for`]: pools run on Unix alone.
+    #[cfg(not(unix))]
+    fn fresh_runner_for(
+        &self,
+        _id: &str,
+        _workspace: Option<&str>,
+        _sign_in: Option<&purlis_core::profilesignin::AtStart>,
+    ) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
     /// Readies each chat's profile on the pool it starts on through `on_pools` (#2049).
     #[cfg(test)]
     pub fn readying_profiles_on_pools(
@@ -3673,6 +3716,30 @@ impl Chats {
             && self
                 .sessions
                 .composes_its_harness_chats_in(workspace.as_deref());
+        // Who the chat is, and the run this start begins (ADR 0066). **The id is minted once**
+        // per clone and device (V43: a copy's was minted again before `put_back` got it),
+        // when no record holds one, on this device, and a chat put back or started again keeps
+        // the one it had, with its origin device. Every start begins a run of its own.
+        let identity = match &chat.identity.id {
+            // Reattached, it is the run it was (#2006).
+            Some(_) if reattaching && chat.identity.run.is_some() => chat.identity.clone(),
+            Some(_) => purlis_core::reopen::Identity {
+                run: Some(minted()),
+                ..chat.identity.clone()
+            },
+            None => purlis_core::reopen::Identity {
+                id: Some(minted()),
+                device: self.device.clone(),
+                run: Some(minted()),
+                resumed_from: chat.identity.resumed_from.clone(),
+            },
+        };
+        // **A short task on a cluster pool gets a runner of its own** (#3818), kept only while it
+        // lasts. Made before its profile is readied, since that is where the profile goes.
+        let own_runner = match identity.id.as_deref().filter(|_| on_the_runner) {
+            Some(id) => self.fresh_runner_for(id, workspace.as_deref(), sign_in)?,
+            None => None,
+        };
         // **Whose skills it has** (SK-15g, #3604): a runner's chat is armed by its runner, and
         // so is one this window reattaches from a runner, which its start armed there too. Its
         // skills are read here for neither, and its router is not asked again.
@@ -3703,7 +3770,12 @@ impl Chats {
             && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
             && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
         {
-            on_pools.ready(&self.project, &pool, profile)?;
+            match &own_runner {
+                Some(runner) => {
+                    on_pools.ready_on_its_own_runner(&self.project, &pool, runner, profile)?;
+                }
+                None => on_pools.ready(&self.project, &pool, profile)?,
+            }
         }
         // What its settings left out on their way there, said once on its tab (#3848, #3867).
         let left_out = chat
@@ -3780,24 +3852,6 @@ impl Chats {
                 )?,
                 None => purlis_core::profilesignin::Handed::default(),
             };
-        // Who the chat is, and the run this start begins (ADR 0066). **The id is minted once**
-        // per clone and device (V43: a copy's was minted again before `put_back` got it),
-        // when no record holds one, on this device, and a chat put back or started again keeps
-        // the one it had, with its origin device. Every start begins a run of its own.
-        let identity = match &chat.identity.id {
-            // Reattached, it is the run it was (#2006).
-            Some(_) if reattaching && chat.identity.run.is_some() => chat.identity.clone(),
-            Some(_) => purlis_core::reopen::Identity {
-                run: Some(minted()),
-                ..chat.identity.clone()
-            },
-            None => purlis_core::reopen::Identity {
-                id: Some(minted()),
-                device: self.device.clone(),
-                run: Some(minted()),
-                resumed_from: chat.identity.resumed_from.clone(),
-            },
-        };
         let cause = match why {
             Why::New => Began::Start,
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
@@ -4370,6 +4424,7 @@ impl Chats {
                 .open_named(
                     chat.number,
                     &crate::host::Named {
+                        runner: own_runner.clone(),
                         chat: identity.id.clone(),
                         run: identity.run.clone(),
                         profile: chat.profile.clone(),
@@ -4666,6 +4721,12 @@ impl Chats {
                     let mut grants = lock(&self.grants);
                     grants.remove(id);
                     self.took_back(id);
+                    drop(grants);
+                    // Its own runner goes with it (#3818), off this thread: a cluster may be slow.
+                    #[cfg(unix)]
+                    if let Some(config) = &self.pools_in {
+                        crate::clusterpools::fresh_runner_ended(config, id);
+                    }
                 }
             }
             let mut let_go = lock(&self.let_go);

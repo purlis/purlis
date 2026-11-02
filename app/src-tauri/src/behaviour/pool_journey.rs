@@ -286,6 +286,7 @@ fn signed_in_on(runner: &OnTheRunner) {
 
 fn a_chat(first_message: Option<&str>, resume: Option<String>) -> Named {
     Named {
+        runner: None,
         workspace: Some(WORKSPACE.to_owned()),
         first_message: first_message.map(str::to_owned),
         resume,

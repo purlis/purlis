@@ -1761,6 +1761,8 @@ struct Opening<'a> {
     worktree: Option<purlis_core::dispatchrecord::Worktree>,
     /// The level its harness starts at (#3787, [`purlis_core::reopen::Chat::task_level`]).
     task_level: purlis_core::dispatchmode::Level,
+    /// Whether it is a short task: a task, not a handoff, and not a long one (#3818).
+    short_task: bool,
 }
 
 /// The project's profiles as one read of them: what a profile is chosen from and the chat is
@@ -1833,8 +1835,14 @@ fn start_on(
         return Err(crate::stopping::STARTS_NOTHING.to_owned());
     }
     // No lock is held here: the deciding lock was let go before the start (#4415).
-    let session =
-        crate::hostedsessions::a_dispatchs_start(|| held.chats().start_ready(&chat, &ready, size))?;
+    let start = || {
+        crate::hostedsessions::a_dispatchs_start(|| held.chats().start_ready(&chat, &ready, size))
+    };
+    let session = if opening.short_task {
+        crate::hostedsessions::a_short_task(start)
+    } else {
+        start()
+    }?;
     // **The stop may have been pressed while this chat was starting** (#1448). The press reads
     // the lineage and records the stop in one hold, and this asks in the same hold: either the
     // press saw this chat and stops it with the rest, or this sees the stop and ends the chat
@@ -3191,6 +3199,7 @@ fn dispatch_noting(
                 Mode::Task => held.unattended().task_level(from),
                 Mode::Handoff => purlis_core::dispatchmode::Level::Asks,
             },
+            short_task: wanted.mode() == Mode::Task && !wanted.long_task(),
         },
         (&on.declared, &on.launch),
         size,

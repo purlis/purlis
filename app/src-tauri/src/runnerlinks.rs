@@ -445,7 +445,9 @@ pub fn every_runner(config_root: PathBuf) -> purlis_host::EveryRunner {
 /// Every cluster pool's runner kept under `config_root`, as the kill switch reaches it (#3292).
 fn cluster_runners_to_stop(config_root: &Path) -> Vec<(String, Result<purlis_host::Keep, String>)> {
     let pools = purlis_core::runners::cluster_pools(config_root).unwrap_or_default();
-    let kept = purlis_core::runners::cluster_runners(config_root).unwrap_or_default();
+    let mut kept = purlis_core::runners::cluster_runners(config_root).unwrap_or_default();
+    // Each chat's own runner too (#3818).
+    kept.extend(purlis_core::runners::fresh_runners(config_root).unwrap_or_default());
     let kubectl = crate::clusterpools::kubectl(config_root);
     kept.iter()
         .filter_map(|kept| {
@@ -454,7 +456,7 @@ fn cluster_runners_to_stop(config_root: &Path) -> Vec<(String, Result<purlis_hos
                 .clone()
                 .and_then(|kubectl| ToARunner::of_cluster(config_root, &kubectl, pool, kept))
                 .map(|to| Arc::new(move || to.keep()) as purlis_host::Keep);
-            Some((format!("{}/{}", pool.name(), kept.name), keep))
+            Some((format!("{}/{}", pool.name(), kept.runner_name()), keep))
         })
         .collect()
 }

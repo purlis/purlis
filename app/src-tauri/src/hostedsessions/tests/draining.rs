@@ -940,3 +940,14 @@ fn a_start_sends_the_code_though_its_link_came_back_during_the_wait() {
         "the code is sent again"
     );
 }
+
+/// **Only a short task's start is one** (#3818), and the word ends with it, on a thread the next
+/// start may share.
+#[test]
+fn a_short_tasks_start_says_so_only_while_it_runs() {
+    assert!(!is_a_short_task());
+    assert!(a_short_task(is_a_short_task));
+    assert!(!is_a_short_task());
+    let _ = std::panic::catch_unwind(|| a_short_task(|| panic!("a start that fails")));
+    assert!(!is_a_short_task());
+}
