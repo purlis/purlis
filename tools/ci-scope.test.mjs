@@ -1051,7 +1051,12 @@ test("the macOS scenarios run in the merge queue and on main, never on a pull re
   assert.ok(cond.endsWith("&& github.event_name != 'pull_request'"), cond);
   assert.ok(!/\|\|/.test(cond), `nothing in ${cond} lets a pull request back in`);
   // The required check passes on a pull request only because its legs were skipped there.
-  assert.match(job("scenario-checks", "scenario-linux"), /\[ "\$EVENT" = pull_request \]; then want=skipped/);
+  const checks = job("scenario-checks", "scenario-linux");
+  assert.match(checks, /\n          EVENT: \$\{\{ github\.event_name \}\}\n/);
+  assert.match(
+    checks,
+    /\n          if \[ "\$SCOPE" = false \] \|\| \[ "\$EVENT" = pull_request \]; then want=skipped; else want=success; fi\n/,
+  );
   // Linux runs the same specs on the pull request.
   assert.doesNotMatch(job("scenario-linux", "outcome-bars"), /event_name != 'pull_request'/);
 });

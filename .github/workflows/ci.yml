@@ -4,8 +4,8 @@
 name: ci
 
 on:
-  # `ready_for_review` too: a draft runs no macOS job (below), so marking it ready starts the run
-  # that does.
+  # `ready_for_review` too: a draft runs no macOS job but the app's (below), so marking it ready
+  # starts the run with the scoped macOS jobs and the outcome bars.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
@@ -62,8 +62,8 @@ on:
 # (`web-parts`). A job that only asks whether it is needed is not started on a pull request (`GATES`
 # in `tools/ci-scope.mjs`): those were 18 of a pull request's 38 jobs, for 3 of its 281 minutes.
 #
-# **macOS's scenarios stay on the pull request**, though they are the largest cost: 75 of those 281
-# minutes. In the 2.5 days to 2026-10-31, 24 pull request runs failed them with Linux's passing,
+# **macOS's scenarios stayed on the pull request until 2026-11-02** (below), the largest cost: 75
+# of those 281 minutes. In the 2.5 days to 2026-10-31, 24 pull request runs failed them with Linux's passing,
 # about 10 a day. In the queue each would fail a 275-minute run and every group behind it, where
 # about 8 groups a day failed in those days, 14 of those 19 on macOS's scenarios alone.
 #
@@ -76,7 +76,7 @@ on:
 # legs: one matrix) wait for the pull request to be marked ready (`ready_for_review` starts that
 # run), and `scenario tests (macos-latest)` passes on a draft with its legs skipped. That green is
 # the draft run's, so `tools/land.mjs` waits for the ready's run to finish before it reads the
-# checks. A macOS failure still shows on its pull request, before the queue, for the reason above.
+# checks.
 # `app builds (macos-latest)` still runs on a draft: one job, against the scenarios' six.
 #
 # **The macOS scenarios run in the merge queue, not on a pull request (2026-11-02).** Drafts were
@@ -84,9 +84,12 @@ on:
 # runners with 112 of their macOS jobs waiting, while the queue's head waited 50 minutes for its
 # own. A ready pull request asks about 7 macOS jobs; the queue builds 5 groups at once, about 35,
 # so with 50 runners two pull requests at a time can run them and the queue still wait. So, as
-# bors and its kin do, a pull request runs the scenarios on Linux and builds the app on macOS, and
-# the six macOS legs run once, on the merge group, where a failure drops the pull request from the
-# queue. `scenario tests (macos-latest)` passes on a pull request with its legs skipped. The cost
+# bors and its kin do, a pull request runs the scenarios on Linux, and the six macOS legs run once,
+# on the merge group, where a failure drops the pull request from the queue. On macOS a pull
+# request still builds the app, and runs the scoped jobs (`browser-engine-macos`,
+# `studio-confinement-macos`, the outcome bars' leg) when what they guard changes: rare, and the
+# change's own proof. The Seatbelt checks (`tools/seatbelt-case.sh`, ADR 0067) are the sandbox
+# leg's, so a Seatbelt regression now first shows as a dropped queue group. `scenario tests (macos-latest)` passes on a pull request with its legs skipped. The cost
 # is the macOS-only failures above: found in the queue, each fails its group. Measured for a day
 # after this lands; walking it back is this `if:` and `scenario-checks`'s `want`.
 
