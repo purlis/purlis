@@ -133,44 +133,6 @@ async function theSkillsViewUnfolded(): Promise<void> {
  *  afresh, and answers how long each took to draw its first row. */
 async function theOpenings(wereOpen: readonly string[], phase = "?"): Promise<number[]> {
   const samples: number[] = [];
-  // DEBUG-4351 temporary probe: each opening's core calls and main-thread stalls.
-  const wrapped = await browser.execute(() => {
-    const w = window as unknown as Record<string, any>;
-    if (w.__p4351) return "already";
-    const p = (w.__p4351 = { calls: [] as any[], gaps: [] as number[][], t0: 0, on: false });
-    let last = performance.now();
-    const tick = () => {
-      const now = performance.now();
-      if (p.on && now - last > 40) p.gaps.push([Math.round(last - p.t0), Math.round(now - p.t0)]);
-      last = now;
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-    try {
-      const real = w.__TAURI_INTERNALS__;
-      const shim = Object.create(real);
-      Object.defineProperty(shim, "invoke", {
-        value: (cmd: string, args: unknown, options: unknown) => {
-          const started = performance.now();
-          const answer = real.invoke(cmd, args, options);
-          if (p.on) {
-            const call = { c: cmd, s: Math.round(started - p.t0), e: -1 };
-            p.calls.push(call);
-            answer?.then?.(
-              () => (call.e = Math.round(performance.now() - p.t0)),
-              () => (call.e = -2),
-            );
-          }
-          return answer;
-        },
-      });
-      w.__TAURI_INTERNALS__ = shim;
-      return w.__TAURI_INTERNALS__ === shim ? "wrapped" : "not wrapped";
-    } catch (e) {
-      return String(e);
-    }
-  });
-  console.log(`[DEBUG-4351] ${phase} invoke ${wrapped}; tabs ${JSON.stringify(await tabNames())}`);
   for (let n = 0; n < OPENINGS; n++) {
     await closeTheViewTabsOpenedSince(wereOpen);
     const already = await $('[data-testid="skill-studio"]').isExisting();
@@ -189,15 +151,61 @@ async function theOpenings(wereOpen: readonly string[], phase = "?"): Promise<nu
         const holder = globalThis as { __openedInMs?: number };
         holder.__openedInMs = undefined;
         const started = performance.now();
-        const probe = (globalThis as unknown as { __p4351: any }).__p4351;
-        Object.assign(probe, { calls: [], gaps: [], t0: started, on: true });
+        // DEBUG-4351
+        const probe = globalThis as unknown as Record<string, any>;
+        const calls: string[] = [];
+        probe.__calls = calls;
+        const internals = probe.__TAURI_INTERNALS__;
+        if (internals.__was === undefined) {
+          internals.__was = internals.invoke;
+          internals.invoke = (cmd: string, ...rest: unknown[]) => {
+            const at = performance.now();
+            const answer = internals.__was(cmd, ...rest);
+            void Promise.resolve(answer).finally(() => {
+              probe.__calls?.push(
+                `${cmd} @${Math.round(at - probe.__t0)}+${Math.round(performance.now() - at)}`,
+              );
+            });
+            return answer;
+          };
+        }
+        probe.__t0 = started;
+        let last = started;
+        const beat = () => {
+          const now = performance.now();
+          if (now - last > 30) calls.push(`GAP ${Math.round(last - started)}..${Math.round(now - started)}`);
+          last = now;
+          if (performance.now() - started < 2500) requestAnimationFrame(beat);
+        };
+        requestAnimationFrame(beat);
+        let added = 0;
+        const seen = new MutationObserver((list) => {
+          let here = 0;
+          for (const one of list) for (const node of one.addedNodes) if (node instanceof Element) here += 1 + node.querySelectorAll("*").length;
+          added += here;
+          if (here > 50) calls.push(`ADDED ${here} @${Math.round(performance.now() - started)}`);
+        });
+        seen.observe(document.body, { childList: true, subtree: true });
+        calls.push(`DOM ${document.querySelectorAll("*").length}`);
+        setTimeout(() => {
+          seen.disconnect();
+          calls.push(`DOM ${document.querySelectorAll("*").length} added ${added}`);
+        }, 2400);
         row.click();
+        calls.push(`clicked +${Math.round(performance.now() - started)}`);
+        let tab = false;
         const look = () => {
+          if (!tab && document.querySelector('[data-testid="skill-studio"]') !== null) {
+            tab = true;
+            calls.push(`tab drawn +${Math.round(performance.now() - started)}`);
+          }
           if (document.querySelector(css) === null) requestAnimationFrame(look);
-          else
+          else {
+            calls.push(`row drawn +${Math.round(performance.now() - started)}`);
             requestAnimationFrame(() => {
               holder.__openedInMs = performance.now() - started;
             });
+          }
         };
         requestAnimationFrame(look);
         return true;
@@ -215,18 +223,11 @@ async function theOpenings(wereOpen: readonly string[], phase = "?"): Promise<nu
       { timeout: 30_000, interval: 100, timeoutMsg: "the studio's Library drew no row in 30 s" },
     );
     samples.push(took as number);
-    const seen = await browser.execute(() => {
-      const probe = (globalThis as unknown as { __p4351: any }).__p4351;
-      probe.on = false;
-      return { calls: probe.calls, gaps: probe.gaps };
-    });
-    const slow = seen.calls.filter((c: any) => c.e < 0 || c.e - c.s >= 20);
     console.log(
-      `[DEBUG-4351] ${phase} #${n} took ${Math.round(took as number)} gaps ${JSON.stringify(seen.gaps)} calls ${seen.calls.length} slow ${JSON.stringify(slow)}`,
+      `DEBUG-4351 ${phase} #${n} ${Math.round(took as number)} ms: ` +
+        (await browser.execute(() => (globalThis as any).__calls.join(" | "))),
     );
-    if (n === 10) console.log(`[DEBUG-4351] ${phase} #10 all ${JSON.stringify(seen.calls)}`);
   }
-  console.log(`[DEBUG-4351] ${phase} sorted ${JSON.stringify([...samples].sort((a, b) => a - b).map(Math.round))}`);
   return samples;
 }
 
@@ -462,21 +463,12 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     });
 
     it("opens the studio in under 300 ms", async () => {
-      const wereOpen = (await tabNames()).filter((one) => one !== "Skill studio");
       void openVerdict; // DEBUG-4351
-      await theOpenings(wereOpen, "A-chat-and-its-skills-view");
-      // DEBUG-4351: one thing away at a time.
-      await closeTheViewTabsOpenedSince(wereOpen.filter((one) => !/skill/i.test(one)));
-      await browser.keys(["Escape"]);
-      await theOpenings(
-        (await tabNames()).filter((one) => one !== "Skill studio"),
-        "B-chat-only",
-      );
+      const said = (phase: string, took: number[]) =>
+        console.log(`DEBUG-4351 ${phase} sorted ${JSON.stringify([...took].sort((x, y) => x - y).map(Math.round))}`);
+      said("chat", await theOpenings((await tabNames()).filter((one) => one !== "Skill studio"), "chat"));
       await endTheChatsStartedSince(wereRunning);
-      await theOpenings(
-        (await tabNames()).filter((one) => one !== "Skill studio"),
-        "C-no-chat",
-      );
+      said("nochat", await theOpenings((await tabNames()).filter((one) => one !== "Skill studio"), "nochat"));
     });
   });
 });

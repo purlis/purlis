@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { Profiler4351 } from "./profiler4351";
 import { saidOfLate, useLateAnswers } from "./answerWatch";
 import {
   useCallback,
@@ -2358,7 +2359,8 @@ function App() {
           row under the system's own bar. `TitleBar.tsx` argues the shape and the drag region.
           The projects are the rail at the window's left now (#2915); while the rail hides
           itself, the bar's first control shows it again (R91). */}
-      <TitleBar
+      <Profiler4351 id="TitleBar">
+<TitleBar
         leading={
           planes.length > 0 ? (
             <>
@@ -2418,12 +2420,14 @@ function App() {
             : undefined
         }
       />
+</Profiler4351>
       {/* **Below the title bar**: the project rail at the far left (#2915, R76), and the work
           beside it, which glides as the rail hides and shows (R84). Its left edge is where the
           pointer peeks a hidden rail (R86). */}
       <div className="window-below" ref={below}>
         {planes.length > 0 && (
-          <ProjectRail
+          <Profiler4351 id="Rail">
+<ProjectRail
             projects={drawn}
             inFront={inFront}
             rows={strip}
@@ -2438,6 +2442,7 @@ function App() {
             edge={below}
             nameOf={calledOn}
           />
+</Profiler4351>
         )}
         <div className="window-work">
           {/* **No result is in the page's flow while a project is in front** (#3648, #3653): one
@@ -2638,7 +2643,8 @@ function App() {
           their splits and their chat states and draw nothing at all. */}
           <div className="project-views" ref={setProjectSlot} />
           {planes.map((plane) => (
-            <PlaneView
+            <Profiler4351 id="PlaneView">
+<PlaneView
               key={plane}
               plane={plane}
               inFront={plane === inFront}
@@ -2675,6 +2681,7 @@ function App() {
               windowLines={plane === inFront ? windowLines : undefined}
               paletteOpen={paletteOpen}
             />
+</Profiler4351>
           ))}
 
           {/* Settings drawn where the opener is, with no project open (#1206). */}
@@ -2741,6 +2748,7 @@ function App() {
           What it lists is the project in front's own catalogue, which travels up with the
           rest of that project's report, and the window's own when there is none — whose
           refusals are #111's. */}
+<Profiler4351 id="Palette">
       <Palette
         offers={paletteOffers ?? openerOffers}
         projects={{ rows: switcherRows, asked: switcherAsk }}
@@ -2750,6 +2758,7 @@ function App() {
         onRun={saying?.run ?? run}
         onOpened={setPaletteOpen}
       />
+</Profiler4351>
 
       {/* What has contributed what to this window (ADR 0041 item 5). Mounted only
           while it is asked for: it reads every installed extension's files to re-take its
