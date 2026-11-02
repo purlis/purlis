@@ -168,7 +168,21 @@ pub fn answer(value: &str) -> String {
 /// with every byte outside printable ASCII as `\xHH`: bash (3.2 on), zsh and ksh read that
 /// back as the same bytes, whatever the locale.
 pub fn shell_path(path: &std::path::Path) -> String {
-    shell_word(&path.to_string_lossy())
+    // A path is bytes on unix, not text: one that is not UTF-8 is spelled from its own bytes,
+    // never through a U+FFFD that would name a different path.
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = path.as_os_str().as_bytes();
+        match std::str::from_utf8(bytes) {
+            Ok(text) => shell_word(text),
+            Err(_) => ansi_c_word(bytes),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        shell_word(&path.to_string_lossy())
+    }
 }
 
 /// `text` as one word of a suggested command, as [`shell_path`] spells a path: a branch name
@@ -177,11 +191,18 @@ pub fn shell_word(text: &str) -> String {
     if one_line(text, NO_CLIP) == text {
         return crate::shellseg::shell_quote(text);
     }
+    ansi_c_word(text.as_bytes())
+}
+
+/// `bytes` in `$'…'`, every byte outside printable ASCII as `\xHH` — and `!` too, which bash's
+/// history expansion would otherwise reach inside the quotes of an interactive shell.
+fn ansi_c_word(bytes: &[u8]) -> String {
     let mut word = String::from("$'");
-    for byte in text.bytes() {
+    for &byte in bytes {
         match byte {
             b'\\' => word.push_str("\\\\"),
             b'\'' => word.push_str("\\'"),
+            b'!' => word.push_str("\\x21"),
             b' '..=b'~' => word.push(char::from(byte)),
             _ => word.push_str(&format!("\\x{byte:02x}")),
         }

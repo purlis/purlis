@@ -1054,6 +1054,41 @@ fn a_path_in_a_command_is_one_word_the_shell_reads_back_whole() {
     );
 }
 
+/// The bytes `shell` reads `word` back as, for a path that is not UTF-8.
+#[cfg(unix)]
+fn the_bytes_the_shell_reads_back(shell: &str, word: &str) -> Vec<u8> {
+    let out =
+        crate::forklock::output(Command::new(shell).args(["-c", &format!("printf %s {word}")]))
+            .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    out.stdout
+}
+
+#[cfg(unix)]
+#[test]
+fn a_path_that_is_not_utf8_is_spelled_byte_for_byte_and_never_as_a_replacement_character() {
+    use std::os::unix::ffi::OsStrExt;
+    for bytes in [&b"/caf\xe9/plane"[..], &b"/it's \xff a\nplane"[..]] {
+        let path = Path::new(std::ffi::OsStr::from_bytes(bytes));
+        let word = crate::shown::shell_path(path);
+        assert!(!word.contains('\u{fffd}'), "{word}");
+        assert_eq!(
+            the_bytes_the_shell_reads_back("bash", &word),
+            bytes,
+            "{word}"
+        );
+    }
+}
+
+#[test]
+fn a_bang_in_an_ansi_c_word_is_escaped_so_history_expansion_cannot_reach_it() {
+    let path = "/two\nlines!!/and !$ more";
+    let word = crate::shown::shell_path(Path::new(path));
+    assert!(word.starts_with("$'"), "{word}");
+    assert!(!word.contains('!'), "{word}");
+    assert_eq!(as_the_shell_reads_it("bash", &word), path, "{word}");
+}
+
 #[test]
 fn a_path_in_a_command_is_never_shortened() {
     let long = "/deep".repeat(400);
