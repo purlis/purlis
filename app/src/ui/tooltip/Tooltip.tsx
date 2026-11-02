@@ -260,6 +260,27 @@ type Heard =
   | { kind: "reason"; id: string };
 
 /**
+ * **A hint that comes while the keyboard is on its target is shown** (#4659): the focus that would
+ * have opened it came before it, and no other will. One that goes is taken down, so it is not up
+ * again when the next one comes, wherever the keyboard is by then.
+ */
+function useHintThatComes(
+  has: boolean,
+  focusOpens: boolean,
+  target: RefObject<HTMLElement | null>,
+) {
+  const state = useContext(TooltipTriggerStateContext);
+  const { isFocusVisible } = useFocusVisible();
+  const had = useRef(has);
+  useEffect(() => {
+    if (has === had.current) return;
+    had.current = has;
+    if (!has) state?.close(true);
+    else if (focusOpens && isFocusVisible && target.current?.matches(":focus")) state?.open(true);
+  }, [has, focusOpens, isFocusVisible, target, state]);
+}
+
+/**
  * The element a hint is on, handed the trigger's focus, hover and description. Words that took
  * no keyboard become a Tab stop (`tabIndex` 0) while they have a hint; an element that says its
  * own place in the Tab order (a roving tab's -1) keeps it. A mark hidden from a screen reader
@@ -310,6 +331,7 @@ function Target({
   const ref = useObjectRef<HTMLElement>(merged);
   const { focusableProps } = useFocusable({ isDisabled: !has }, ref);
   const state = useContext(TooltipTriggerStateContext);
+  useHintThatComes(has, !theirs, ref);
   // A mark a screen reader does not hear, one inside a control, a label (its field takes the
   // keyboard) and a mark whose hint is its own name or description take no keyboard: what each
   // means is said by what holds it or by itself, and its hint is the pointer's.
