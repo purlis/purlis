@@ -343,6 +343,7 @@ pub struct Held {
 fn applying(
     model: Arc<Mutex<Model>>,
     root: PathBuf,
+    skills_now: Arc<crate::chats::SkillsNow>,
     tell: crate::planewatch::Changed,
 ) -> crate::planewatch::Changed {
     Arc::new(move |plane, what: crate::planewatch::What| {
@@ -350,12 +351,24 @@ fn applying(
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .apply(&root, what.as_deref());
+        // Each chat's kept skill stamp is read again where the change concerns the instructions
+        // a chat starts on, or is not known (#4738): before the window hears and asks.
+        if concerns_instructions(what.as_deref()) {
+            skills_now.forget();
+        }
         // The window is told first, and nothing is settled on this thread: where the change
         // may be the project's file, this machine's acceptances of its dispatch grants are
         // settled on a thread of their own, and the window is told again then (#1506).
         tell(plane.clone(), what.clone());
         crate::dispatchgrants::project_moved(&plane, &root, what.as_deref());
     })
+}
+
+/// Whether `changes` concern [`purlis_core::planechange::Answer::Instructions`]: a change not
+/// known concerns every answer.
+fn concerns_instructions(changes: Option<&[purlis_core::planechange::Change]>) -> bool {
+    purlis_core::planechange::answers(changes)
+        .is_none_or(|answers| answers.contains(&purlis_core::planechange::Answer::Instructions))
 }
 
 /// Starts the watch with `start`, then reads `model` again whole: it was read before the watch
@@ -452,6 +465,8 @@ impl Held {
             None | Some(crate::planewatch::Standing::Partial) => false,
             Some(crate::planewatch::Standing::WholeAgain) => {
                 model.apply(&self.root, None);
+                // A change in the gap was told to nobody: the chats' skill stamps too (#4738).
+                self.chats.skills_now().forget();
                 true
             }
             Some(crate::planewatch::Standing::Whole) => true,
@@ -794,9 +809,15 @@ impl Held {
 
     /// Every chat this plane has open whose start-time instructions — `CLAUDE.md`, the
     /// harness settings and sub-agents, a persona's charter — have changed since it started,
-    /// by session (charter#369). Read from disk each time it is asked: the window asks when the
-    /// plane changes, and a chat started after the change read the new ones and is not here.
+    /// by session (charter#369). The instructions are read from disk each time it is asked, and
+    /// each chat's skills only once the plane's instructions change ([`crate::chats::SkillsNow`],
+    /// #4738): the window asks when the plane changes, and a chat started after the change read
+    /// the new ones and is not here.
     pub fn plane_updated(&self) -> Vec<PlaneUpdated> {
+        // Each chat's skill stamp is kept only while the watch tells every change, the sidebar
+        // model's rule (#4738); otherwise it is read from disk on each ask.
+        let whole = self.watched_model().is_some();
+        self.chats.skills_now().watched(whole);
         let now = Stamp::of(&self.root);
         // The persona each chat started as, whose charter is the one it read.
         let personas: HashMap<u32, Option<String>> = self
@@ -4238,7 +4259,12 @@ impl Planes {
         // Read once here, and from then on only as far as each change the watch and auto-save
         // name (FD-10b).
         let model = Arc::new(Mutex::new(Model::read(&root)));
-        let changes = applying(Arc::clone(&model), root.clone(), Arc::clone(&self.changes));
+        let changes = applying(
+            Arc::clone(&model),
+            root.clone(),
+            chats.skills_now(),
+            Arc::clone(&self.changes),
+        );
         // Before a chat can end, so its end is one the worker hears. Where the chats run: in
         // the session host, the host saves the plane, and this window starts none of its own.
         let autosave = chats.sessions().keep_saving(&root, {

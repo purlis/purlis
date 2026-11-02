@@ -39,7 +39,7 @@ fn a_change_the_watch_tells_is_in_the_sidebars_model_before_the_window_hears_it(
     std::fs::create_dir_all(&store).expect("a todo store");
     let model = Arc::new(Mutex::new(Model::read(&root)));
     let heard = Arc::new(Mutex::new(Vec::new()));
-    let changed = applying(Arc::clone(&model), root.clone(), {
+    let changed = applying(Arc::clone(&model), root.clone(), Arc::default(), {
         let model = Arc::clone(&model);
         let heard = Arc::clone(&heard);
         Arc::new(move |_, _| {
@@ -61,6 +61,37 @@ fn a_change_the_watch_tells_is_in_the_sidebars_model_before_the_window_hears_it(
     );
 
     assert_eq!(*heard.lock().expect("heard"), [vec!["Beta one".to_owned()]]);
+}
+
+#[test]
+fn only_a_change_to_the_instructions_makes_the_chats_read_their_skills_again() {
+    // #4738: each open chat's skill stamp is kept, so a tab mount reads no skill folder. A todo
+    // moving leaves it kept; a skill or `CLAUDE.md` changing, or a batch the watch could not
+    // place, has every chat's stamp read again — before the window hears and asks.
+    let dir = tempfile::tempdir().expect("a plane");
+    let root = dir.path().to_path_buf();
+    let model = Arc::new(Mutex::new(Model::read(&root)));
+    let skills_now = Arc::new(crate::chats::SkillsNow::default());
+    let forgotten_when_told = Arc::new(Mutex::new(Vec::new()));
+    let changed = applying(Arc::clone(&model), root.clone(), Arc::clone(&skills_now), {
+        let skills_now = Arc::clone(&skills_now);
+        let heard = Arc::clone(&forgotten_when_told);
+        Arc::new(move |_, _| heard.lock().expect("heard").push(skills_now.forgotten()))
+    });
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let change =
+        |path: &str| purlis_core::planechange::classify(&root, &root.join(path)).expect("placed");
+
+    changed(
+        plane.clone(),
+        Some(vec![change("workspaces/beta/todos/b1.md")]),
+    );
+    changed(plane.clone(), Some(vec![change("CLAUDE.md")]));
+    changed(plane.clone(), Some(vec![change("skills/deploy/SKILL.md")]));
+    changed(plane, None);
+
+    assert_eq!(*forgotten_when_told.lock().expect("heard"), [0, 1, 2, 3]);
 }
 
 use super::*;

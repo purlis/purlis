@@ -8565,6 +8565,83 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     assert!(first.gone.is_empty());
 }
 
+/// #4738: **a tab mount with no instruction change reads no skill folders**. Once the plane is
+/// watched, each open chat's stamp is read once and kept: a skill edited on disk that the watch
+/// has not told of is not seen, because nothing read the folder again. The watch's word that the
+/// instructions changed refreshes every open chat's stamp.
+#[test]
+fn a_chat_skill_stamp_is_read_again_only_once_the_instructions_change() {
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").expect("a manifest");
+    let skill = |name: &str, body: &str| {
+        let folder = plane.path().join("skills").join(name);
+        std::fs::create_dir_all(&folder).expect("a skill folder");
+        std::fs::write(
+            folder.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n\n{body}\n"),
+        )
+        .expect("a skill");
+    };
+    skill("deploy", "one");
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    chats.skills_now().watched(true);
+    for session in [1, 2] {
+        let harness = Harness::ClaudeCode;
+        lock(&chats.open).insert(
+            session,
+            Running {
+                chat: a_resumable_chat_in(plane.path()),
+                how: Reopened::Fresh(Fresh::NoConversationRecorded),
+                harness: Some(harness),
+                declared: None,
+                workspace: None,
+                confinement: None,
+                confines: None,
+                started_with: StartedWith::default(),
+                composed_by_its_host: false,
+                ran: None,
+                grants_as: None,
+                skills: Some(purlis_core::skills::stamp_now(
+                    &purlis_core::skills::Running {
+                        plane: plane.path(),
+                        workspace: None,
+                        persona: None,
+                        harness,
+                        built_in: None,
+                        plane_skills: true,
+                        start: None,
+                    },
+                )),
+                plane_skills: true,
+                skills_read: Default::default(),
+                last_prompt: None,
+                runs_as: None,
+                clones_at_start: None,
+                prompt_key: None,
+            },
+        );
+    }
+    let sessions = |chats: &Chats| -> Vec<u32> {
+        chats
+            .skills_changed_while_on()
+            .into_iter()
+            .map(|(session, _)| session)
+            .collect()
+    };
+    assert!(sessions(&chats).is_empty(), "nothing has changed yet");
+
+    // Written behind the watch's back: a mount asks again, and reads no skill folder.
+    skill("deploy", "two");
+    assert!(
+        sessions(&chats).is_empty(),
+        "a skill folder was read again with no instruction change"
+    );
+
+    // The watch says the instructions changed: every open chat's stamp is read again.
+    chats.skills_now().forget();
+    assert_eq!(sessions(&chats), [1, 2]);
+}
+
 /// #2019: a chat serving on a port is not told its sandbox is older once its own door listens
 /// there: a compile then finds the port in use, which changes no grant.
 #[test]

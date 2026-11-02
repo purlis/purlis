@@ -2436,11 +2436,17 @@ async fn restart_chat_without_sandbox(
 /// again whenever the plane changes on disk.
 #[tauri::command]
 #[specta::specta]
-fn chats_plane_updated(
+// On a blocking thread (#4738): it reads the plane's instructions, and each chat's skill
+// folders where its stamp is not kept.
+async fn chats_plane_updated(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<Vec<planes::PlaneUpdated>, String> {
-    Ok(planes.held(&plane)?.plane_updated())
+    let held = planes.held(&plane)?;
+    off_the_window("reading which chats run on older instructions", move || {
+        Ok(held.plane_updated())
+    })
+    .await
 }
 
 /// Says which chat is in front, so the record brings that one back in front.

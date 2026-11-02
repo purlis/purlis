@@ -827,6 +827,9 @@ pub struct Chats {
     /// A chat it has not placed yet — one that has just started — comes after the ones it has
     /// ([`Self::in_order`]).
     order: Mutex<Vec<u32>>,
+    /// Each open chat's skill stamp as it would be now, kept until the plane's instructions
+    /// change (#4738, [`SkillsNow`]).
+    skills_now: Arc<SkillsNow>,
     record_it: Recorder,
     /// Held across building a record and handing it over, so two changes at once cannot
     /// write themselves out of order and leave the older one on disk.
@@ -1311,6 +1314,7 @@ impl Chats {
             views: Mutex::new(Vec::new()),
             focus: Mutex::new(None),
             order: Mutex::new(Vec::new()),
+            skills_now: Arc::default(),
             record_it,
             writing: Mutex::new(()),
             ending: AtomicBool::new(false),
@@ -3285,13 +3289,20 @@ impl Chats {
     /// session: the plane skills each would get now differ from those it started with, in a way
     /// its harness does not take in by itself ([`Harness::skills_reload`]). Its tab offers a
     /// restart on the same conversation, and its Skills view names what changed (#3694). Read
-    /// from disk each time it is asked.
+    /// from disk the first time it is asked, and again only once the plane's instructions change
+    /// ([`SkillsNow`], #4738).
     pub fn skills_changed(&self) -> Vec<(u32, purlis_core::skills::SkillsChanged)> {
         // Asked once, for every chat: where the project's skills reach no chat, none changed.
         if !purlis_core::skills::reach_chats_here(&self.project) {
             return Vec::new();
         }
         self.skills_changed_while_on()
+    }
+
+    /// What keeps each open chat's skill stamp as it would be now (#4738): told by the plane's
+    /// watch when a change concerns the instructions a chat starts on, and that it watches.
+    pub fn skills_now(&self) -> Arc<SkillsNow> {
+        Arc::clone(&self.skills_now)
     }
 
     /// [`Self::skills_changed`] while the `skill-studio` flag is on.
@@ -3318,20 +3329,34 @@ impl Chats {
                 ))
             })
             .collect();
-        let built_in = built_in_skills_here();
-        let mut changed: Vec<(u32, purlis_core::skills::SkillsChanged)> = started
+        let mut then: HashMap<u32, purlis_core::skills::Stamp> = HashMap::new();
+        let chats: Vec<(u32, skillsnow::ReadFrom)> = started
             .into_iter()
-            .filter_map(|(session, workspace, persona, harness, start, then)| {
-                let now = purlis_core::skills::stamp_of(&purlis_core::skills::Running {
+            .map(|(session, workspace, persona, harness, start, stamp)| {
+                then.insert(session, stamp);
+                (session, (workspace, persona, harness, start))
+            })
+            .collect();
+        // Looked for only where a stamp is read: a chat whose stamp is kept reads nothing.
+        let built_in = std::cell::OnceCell::new();
+        let now = self
+            .skills_now
+            .of(chats, |(workspace, persona, harness, start)| {
+                purlis_core::skills::stamp_of(&purlis_core::skills::Running {
                     plane: &self.project,
                     workspace: workspace.as_deref(),
                     persona: persona.as_deref(),
-                    harness,
-                    built_in: built_in.as_deref(),
+                    harness: *harness,
+                    built_in: built_in.get_or_init(built_in_skills_here).as_deref(),
                     plane_skills: true,
-                    start: Some(&start),
-                });
-                (now != then).then(|| (session, then.changed_to(&now)))
+                    start: Some(start),
+                })
+            });
+        let mut changed: Vec<(u32, purlis_core::skills::SkillsChanged)> = now
+            .into_iter()
+            .filter_map(|(session, now)| {
+                let then = then.get(&session)?;
+                (now != *then).then(|| (session, then.changed_to(&now)))
             })
             .collect();
         changed.sort_unstable_by_key(|(session, _)| *session);
@@ -7231,6 +7256,9 @@ pub(crate) fn task_of(
 fn built_in_skills_here() -> Option<std::path::PathBuf> {
     crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin))
 }
+
+mod skillsnow;
+pub use skillsnow::SkillsNow;
 
 #[cfg(test)]
 pub(crate) mod tests;
