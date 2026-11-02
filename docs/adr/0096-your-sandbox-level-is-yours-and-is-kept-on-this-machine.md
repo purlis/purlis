@@ -89,3 +89,10 @@ makes the floor every chat's default where a project has not turned the full san
 - A person who needs their tools to work unsandboxed in one project, or as one persona, says so
   once, on their machine, and their teammates' chats are unchanged.
 - The key is new and `experimental` in `docs/plane-format.md` until the start reads it.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0096/`](0096/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).
