@@ -30,6 +30,8 @@ import { DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/the
 import { KEPT_DRAWN } from "./projectShown";
 import { onAMac } from "./tabKeys";
 import { themeInForce } from "./theme/inForce.testkit";
+import { forgetExtensionsOn } from "./extensionsOn";
+import { aboutThisMachine, sayAboutThisMachine } from "./windowprefs";
 import { PURLIS_LIGHT } from "./theme/handed.testkit";
 import { findResult } from "./actionResult.testkit";
 
@@ -155,6 +157,8 @@ function core(
     asks?: Record<string, number[]>;
     /** What `close_plane` answers with, where a test holds its answer back (#1949). */
     closes?: () => Promise<null>;
+    /** What `extensions_on` answers, or throws (#4822). None said, nothing is on. */
+    extensionsOn?: () => string[];
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -193,7 +197,7 @@ function core(
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
-    if (cmd === "extensions_on") return [];
+    if (cmd === "extensions_on") return over.extensionsOn?.() ?? [];
     if (cmd === "theme_in_force") return themeInForce(args);
     if (cmd === "project_theme_drawn") return over.themes?.[plane ?? ""] ?? null;
     if (cmd === "asks_waiting" && over.asks !== undefined)
@@ -322,6 +326,11 @@ async function openByPath(path: string) {
   await person.click(screen.getByRole("button", { name: "Open project" }));
   return person;
 }
+
+/** An `extensions_on` ask for the project with no workspace: what the window's theme waits on
+ *  at a launch on the plane root, the panels asking for their workspace's apart. */
+const ofTheProjectAlone = (one: { cmd: string; args: Record<string, unknown> }) =>
+  one.cmd === "extensions_on" && one.args.workspace === null;
 
 describe("a window holding more than one project", () => {
   it("opens a second project as another tab, without letting go of the first", async () => {
@@ -563,6 +572,58 @@ describe("a window holding more than one project", () => {
     } finally {
       stop();
       drawIn(DEFAULT_THEME);
+    }
+  });
+
+  it("still draws the project's theme when what it has on cannot be read, and says why (#4822)", async () => {
+    forgetExtensionsOn();
+    const { asked } = core({
+      launch: ONE,
+      themes: { [ONE]: "purlis-light" },
+      extensionsOn: () => {
+        throw new Error("the record is unreadable");
+      },
+    });
+    const drawn: Theme[] = [];
+    const stop = onDrawn((theme) => drawn.push(theme));
+    try {
+      render(<App />);
+      await waitFor(() => expect(inForce()).toBe(PURLIS_LIGHT), { timeout: 3000 });
+      const unread = aboutThisMachine().filter((one) => one.subject === "extensions unread");
+      expect(unread.map((one) => one.detail)).toEqual([
+        expect.stringContaining("the record is unreadable"),
+      ]);
+      // Asked once more before it gave up on them, and then the theme with none of them on.
+      expect(asked.filter(ofTheProjectAlone)).toHaveLength(2);
+      expect(
+        asked
+          .filter((one) => one.cmd === "theme_in_force")
+          .map((one) => [one.args.on, (one.args.at as { plane?: string } | null)?.plane]),
+      ).toEqual([[[], ONE]]);
+      expect(drawn).toEqual([PURLIS_LIGHT]);
+    } finally {
+      stop();
+      drawIn(DEFAULT_THEME);
+      sayAboutThisMachine("extensions unread", undefined);
+      forgetExtensionsOn();
+    }
+  });
+
+  it("changes the window once at a launch whose extensions are read (#4822)", async () => {
+    forgetExtensionsOn();
+    const { asked } = core({ launch: ONE, themes: { [ONE]: "purlis-light" } });
+    const drawn: Theme[] = [];
+    const stop = onDrawn((theme) => drawn.push(theme));
+    try {
+      render(<App />);
+      await waitFor(() => expect(inForce()).toBe(PURLIS_LIGHT));
+      expect(asked.filter(ofTheProjectAlone)).toHaveLength(1);
+      expect(drawn).toEqual([PURLIS_LIGHT]);
+      expect(aboutThisMachine().some((one) => one.subject === "extensions unread")).toBe(false);
+    } finally {
+      stop();
+      drawIn(DEFAULT_THEME);
+      forgetExtensionsOn();
     }
   });
 

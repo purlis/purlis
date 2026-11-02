@@ -1064,9 +1064,15 @@ mod tests {
 
     /// The first frame a window is created `on` with, where the levels choose `acme/sharp`, an
     /// extension's theme, and the person's own theme is a heavy one nothing else in this process
-    /// measures, so the wait runs out and it stands in.
-    fn a_heavy_stand_in(places: &Places, on: Option<&CreatedOn>) -> serde_json::Value {
-        let written = MEASURED_IN_TINTS.replace("#ff000040", "#ff000042");
+    /// measures, so the wait runs out and it stands in. Each test hands its own `colour`: the
+    /// measures are kept process-wide, so two tests sharing one would race under plain
+    /// `cargo test` (#4822).
+    fn a_heavy_stand_in(
+        places: &Places,
+        on: Option<&CreatedOn>,
+        colour: &str,
+    ) -> serde_json::Value {
+        let written = MEASURED_IN_TINTS.replace("#ff000040", colour);
         std::fs::write(
             purlis_core::machine::dir(&places.config).join(windowprefs::THEME),
             &written,
@@ -1091,7 +1097,7 @@ mod tests {
         // answer fails (#4722): the ticket is there for it.
         let places = Places::new("[theme]\nuse = \"acme/sharp\"\n");
         let on = places.on(None);
-        let frame = a_heavy_stand_in(&places, Some(&on));
+        let frame = a_heavy_stand_in(&places, Some(&on), "#ff000042");
         assert_eq!(frame["theme"]["name"], "Heavy");
         assert_eq!(frame["theme"]["parts"], "");
         assert_eq!(frame["stands_in"], true);
@@ -1114,7 +1120,7 @@ mod tests {
             theme::Choice::new("acme/sharp", None),
         )
         .unwrap();
-        let frame = a_heavy_stand_in(&places, None);
+        let frame = a_heavy_stand_in(&places, None, "#ff000043");
         assert_eq!(frame["theme"]["name"], "Heavy");
         assert_eq!(frame["stands_in"], true);
         assert!(frame["parts_later"].is_u64(), "{frame}");
@@ -1123,7 +1129,7 @@ mod tests {
     #[test]
     fn a_frame_the_levels_draw_themselves_does_not_stand_in() {
         let places = Places::new("");
-        let frame = a_heavy_stand_in(&places, None);
+        let frame = a_heavy_stand_in(&places, None, "#ff000044");
         assert_eq!(frame["theme"]["name"], "Heavy");
         assert_eq!(frame["stands_in"], false);
         assert!(frame["parts_later"].is_u64(), "{frame}");

@@ -8,6 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import {
+  compareWithKept,
   drawThemeFor,
   Extensions,
   forgetExtensionThemes,
@@ -30,7 +31,7 @@ import { forgetProjectThemes } from "./projectTheme";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
 import { aboutThisMachine, sayAboutThisMachine } from "./windowprefs";
 import { PURLIS_LIGHT } from "./theme/handed.testkit";
-import { inForceSettled, partsLand } from "./theme/partsLater";
+import { inForceSettled, partsLand, STAND_IN_WAITS_FOR_AN_ANSWER } from "./theme/partsLater";
 
 /**
  * A colour for a theme an extension contributes, taken out of charter's own light theme
@@ -114,7 +115,7 @@ function resolved(name: string, over: Partial<Theme["values"]> = {}): Theme {
 
 function core({
   rows = [] as Row[],
-  inForce: answer = (() => KEEPS) as (asked: Record<string, unknown>) => InForce,
+  inForce: answer = (() => KEEPS) as (asked: Record<string, unknown>) => InForce | Promise<InForce>,
   unreadable = null as string | null,
   dropped = [] as string[],
   picks = null as string | null,
@@ -1042,6 +1043,83 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
       await drawThemeFor(new Set(["solarized"]), "acme/sharp", { plane: "p-1" as PlaneId });
 
       await vi.waitFor(() => expect(inForce().parts).toBe(STAND_IN_PARTS));
+    });
+
+    it("lands its own parts when the in-force answer never comes (#4822)", async () => {
+      vi.useFakeTimers();
+      try {
+        const frame = standIn();
+        drawIn(frame.theme);
+        core({ inForce: () => new Promise<InForce>(() => {}) });
+        void partsLand(frame);
+
+        void drawThemeFor(new Set(["solarized"]), "acme/sharp", { plane: "p-1" as PlaneId });
+        await vi.advanceTimersByTimeAsync(STAND_IN_WAITS_FOR_AN_ANSWER);
+
+        expect(inForce().parts).toBe(STAND_IN_PARTS);
+        expect(inForce().name).toBe("Mine");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("lands its own parts when Compare overtakes the launch's ask and keeps the window (#4822)", async () => {
+      const frame = standIn();
+      drawIn(frame.theme);
+      let answerTheLaunch: (answer: InForce) => void = () => {};
+      let asks = 0;
+      core({
+        inForce: () =>
+          asks++ === 0
+            ? new Promise<InForce>((answer) => {
+                answerTheLaunch = answer;
+              })
+            : KEEPS,
+      });
+      void partsLand(frame);
+
+      const launch = drawThemeFor(new Set(["solarized"]), "acme/sharp", {
+        plane: "p-1" as PlaneId,
+      });
+      await compareWithKept(true);
+      answerTheLaunch(KEEPS);
+      await launch;
+
+      await vi.waitFor(() => expect(inForce().parts).toBe(STAND_IN_PARTS), { timeout: 1000 });
+    });
+  });
+
+  describe("a project whose extensions could not be read (#4822)", () => {
+    afterEach(() => {
+      forgetExtensionThemes();
+    });
+
+    it("still asks what is in force, with none of its extensions on, and says why", async () => {
+      const asked = core({ inForce: () => ({ ...KEEPS, theme: resolved("Mine") }) });
+
+      await drawThemeFor(
+        new Set(),
+        "acme/sharp",
+        { plane: "p-1" as PlaneId },
+        "the record is unreadable",
+      );
+
+      const asks = asked.filter((call) => call.cmd === "theme_in_force");
+      expect(asks.map((call) => call.args.on)).toEqual([[]]);
+      expect(inForce().name).toBe("Mine");
+      const said = aboutThisMachine().filter((one) => one.subject === "extensions unread");
+      expect(said).toHaveLength(1);
+      expect(said[0].detail).toContain("the record is unreadable");
+      expect(said[0].severity).toBe("warn");
+    });
+
+    it("takes the Notice back once they are read", async () => {
+      core({ inForce: () => ({ ...KEEPS, theme: resolved("Mine") }) });
+      await drawThemeFor(new Set(), "acme/sharp", { plane: "p-1" as PlaneId }, "unreadable");
+
+      await drawThemeFor(new Set(["acme"]), "acme/sharp", { plane: "p-1" as PlaneId });
+
+      expect(aboutThisMachine().some((one) => one.subject === "extensions unread")).toBe(false);
     });
   });
 
