@@ -190,6 +190,9 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
             "DOM.describeNode" if p["objectId"] == "PASSWORD-1" => {
                 Some(Ok(json!({ "node": { "backendNodeId": 21 } })))
             }
+            "DOM.describeNode" if p["objectId"] == "NAME-1" => {
+                Some(Ok(json!({ "node": { "backendNodeId": 22 } })))
+            }
             "Input.dispatchKeyEvent" if p["key"] == "Enter" && p["type"] == "keyDown" => {
                 seen.store(true, Ordering::SeqCst);
                 Some(Ok(json!({})))

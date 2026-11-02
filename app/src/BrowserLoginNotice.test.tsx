@@ -71,7 +71,7 @@ describe("BrowserLoginNotice", () => {
         ]}
       />,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("also used on https://a.test");
+    expect(screen.getByTestId("login-site")).toHaveTextContent("also used on https://a.test");
     expect(screen.getByTestId("login-site")).toHaveTextContent("Not now.");
   });
 

@@ -2022,14 +2022,7 @@ body {
 }
 
 .login-site-domain {
-  font-size: var(--font-size-xl);
-  font-weight: 600;
   overflow-wrap: anywhere;
-}
-
-.login-site-page {
-  font-size: var(--font-size-base);
-  font-weight: 400;
 }
 
 .login-site-warning {
