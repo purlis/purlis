@@ -56,8 +56,6 @@ pub enum Move {
     ChildHeard { agent: String },
     /// [`Board::ignored`].
     Ignored,
-    /// [`Board::replied`].
-    Replied,
     /// [`Board::answered`].
     Answered,
     /// [`Board::answered_by`].
@@ -170,7 +168,6 @@ impl Board {
             Move::FailureCleared { id } => self.failure_cleared(number, &id),
             Move::ChildHeard { agent } => self.child_heard(number, &agent),
             Move::Ignored => self.ignored(number),
-            Move::Replied => self.replied(number),
             Move::Answered => self.answered(number),
             Move::AnsweredBy { asker } => self.answered_by(number, &asker),
             Move::ToolSaidBy { speaker, said } => self.tool_said_by(number, &speaker, &said),
