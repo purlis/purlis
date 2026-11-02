@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793616013374,
+  "lastUpdate": 1793618892220,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36204,6 +36204,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9812675,
             "unit": "ms",
             "extra": "median of 5 runs: 100.172, 101.846, 101.981, 102.033, 102.246 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b956c48847673b42e8e7d2132548431da40fe0ad",
+          "message": "TabChip test passes alone and in any order; audit of onPointerLeave (#4628) (#4655)\n\n* ci: temporary run of the TabChip test alone and shuffled (#4628)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CT5QWRCKP497R47DN5ZY07\nPurlis-Persona: steward\n\n* test: what the pointer leaving the window must let go of (#4628)\n\nRed first: a held Compare, an activity item's hover and press, a field's\nhover, a chat's card and a menu row's tooltip.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CT5QWRCKP497R47DN5ZY07\nPurlis-Persona: steward\n\n* TabChip test passes alone; what the pointer leaving the window lets go of (#4628)\n\nThe test asserted a focus React Aria lands on a frame, and fake clocks left\nframes on real time. Frames now run on the fake clock. The handlers that can\nstick move onto the shared hook.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CT5QWRCKP497R47DN5ZY07\nPurlis-Persona: steward\n\n* test: tell apart why the field hover test stays red (#4628)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CT5QWRCKP497R47DN5ZY07\nPurlis-Persona: steward\n\n* test: the field hover test holds the box the hook serves (#4628)\n\nThe controlled box's hover is React Aria's own; only a box that holds its own\nwords draws from the field's state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CT5QWRCKP497R47DN5ZY07\nPurlis-Persona: steward\n\n* ci: remove the temporary TabChip order workflow (#4628)\n\nIt ran the TabChip test alone, in order and on three shuffle seeds, plus the leave audit's tests in order and shuffled. All green on 0c9f63a2.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CT5QWRCKP497R47DN5ZY07\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T08:25:48Z",
+          "tree_id": "1fc6a11a902900662492eb56d5269bd254aecf83",
+          "url": "https://github.com/purlis/purlis/commit/b956c48847673b42e8e7d2132548431da40fe0ad"
+        },
+        "date": 1793618888340,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6479824999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.644, 0.644, 0.648, 0.658, 0.674 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.593808,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.408, 16.557, 16.594, 16.646, 16.668 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.334724,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.748, 101.839, 102.335, 102.876, 102.895 ms"
           }
         ]
       }
