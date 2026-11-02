@@ -696,6 +696,66 @@ pub async fn docker_pool_remove_held_runner(
     }
 }
 
+/// **Brings back the held runner `runner`'s conversations to its pool's runner, as the person
+/// pressed** (#4633, ruled 2026-11-02), and then removes it, once none is left behind
+/// ([`purlis_core::pools::bring_back`]). The window's alone, as removing one is. What stopped
+/// it, or what is left of it, is said.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_bring_back_held_runner(
+    app: tauri::AppHandle,
+    runner: String,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("bringing back a held runner's conversations", move || {
+            let machine = Machine::here(&config_root()?)?;
+            let kept = purlis_core::runners::named(&machine.config, &runner)
+                .map_err(|why| refused_said(&why.to_string()))?
+                .ok_or_else(|| format!("No runner {runner} is on this machine."))?;
+            let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)?;
+            let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
+            let brought = purlis_core::pools::bring_back(
+                &machine.config,
+                &machine.docker,
+                &runner,
+                Some(&unpair),
+            )
+            .map_err(|why| refused_said(&why.to_string()))?;
+            let Some(removed) = brought.removed else {
+                return Err(left_behind_said(&runner, brought.found, brought.left));
+            };
+            if removed.forgotten {
+                crate::poolfollow::forget_waiting_on(&machine.config, kept.pool(), &runner);
+                if let Some(host) =
+                    tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app)
+                {
+                    host.connection().links_to_gone_runners_end(&machine.config);
+                }
+            }
+            removed.left().map_or(Ok(()), Err)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, runner);
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+/// What the window says when `left` of the `found` conversations of the held runner `runner`
+/// stayed where they were, so it is kept (#4633).
+#[cfg(unix)]
+fn left_behind_said(runner: &str, found: u32, left: u32) -> String {
+    let brought = found.saturating_sub(left);
+    format!(
+        "{brought} of {found} conversations came back. The rest could not, so purlis keeps \
+         runner {runner} with them: opencode's conversations always stay where they are. \
+         Discard them to remove it."
+    )
+}
+
 /// **Which version the pool `name`'s runner runs, against this desktop's** (#2749).
 #[tauri::command]
 #[specta::specta]

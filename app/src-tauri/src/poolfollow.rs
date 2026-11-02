@@ -13,7 +13,9 @@
 //!   ([`purlis_core::pools::follow`]): new chats start on it, and the old one drains;
 //! - **each draining runner with no chat left is removed** ([`purlis_core::pools::drain`]),
 //!   unpaired first over a link of its own, and one that stopped during its drain is held for
-//!   the person ([`purlis_core::pools::DrainLook::Held`]);
+//!   the person ([`purlis_core::pools::DrainLook::Held`]), as is one that had stopped before it
+//!   or was removed outside purlis whose home holds a chat's conversation
+//!   ([`purlis_core::pools::held_for_its_conversations`], #4633);
 //! - **a pool of a team's own image is never moved**: its row says its runner is behind
 //!   (`crate::dockerpools::docker_pool_version`).
 //!
@@ -416,6 +418,13 @@ pub fn follow_and_drain(
                 kept.pool().to_owned(),
                 kept.name().to_owned(),
             ));
+            // What its chats left in its home is kept as after an update (#4633).
+            if let Some(line) =
+                kept_for_its_conversations(machine, &kept, "was removed outside purlis")
+            {
+                said.push(line);
+                continue;
+            }
             said.push(
                 match purlis_core::pools::drain_removed(
                     &machine.config,
@@ -474,6 +483,16 @@ pub fn follow_and_drain(
                 continue;
             }
             Ok(DrainLook::NoChat) => Ok(0),
+            Ok(DrainLook::StoppedBefore) => {
+                if let Some(line) =
+                    kept_for_its_conversations(machine, &kept, "had stopped before its drain")
+                {
+                    lock_waiting().remove(&at);
+                    said.push(line);
+                    continue;
+                }
+                Ok(0)
+            }
             Ok(DrainLook::Ask) | Err(_) => chats_on(&to),
         };
         match chats {
@@ -500,6 +519,29 @@ pub fn follow_and_drain(
         ));
     }
     said
+}
+
+/// **What a look says of a stopped draining runner it would remove, where it is kept instead**
+/// (#4633, ruled 2026-11-02): held, as its home holds a chat's conversation, or left as it is,
+/// as its home could not be read. `None` where its home holds none, and it goes. `how` says how
+/// it came to have no chat running.
+#[cfg(unix)]
+fn kept_for_its_conversations(
+    machine: &Machine,
+    kept: &purlis_core::runners::Kept,
+    how: &str,
+) -> Option<String> {
+    let name = kept.name();
+    match purlis_core::pools::held_for_its_conversations(&machine.config, &machine.docker, name) {
+        Ok(false) => None,
+        Ok(true) => Some(format!(
+            "draining runner {name} {how}, and its home holds its chats' conversations, so it \
+             stays until they are brought back or discarded in Devices"
+        )),
+        Err(why) => Some(format!(
+            "draining runner {name} {how}, and stays until its home is read: {why}"
+        )),
+    }
 }
 
 /// The line a look says of removing the draining runner `name`.

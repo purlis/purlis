@@ -58,7 +58,7 @@ import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { AddDockerPoolHost } from "../AddDockerPool";
 import { startAddingAPool } from "../pools";
 import { ReplaceRunner } from "../settings/PoolLimits";
-import { RemoveHeldRunner, RemovePool } from "../settings/pools";
+import { DiscardHeldRunner, RemovePool } from "../settings/pools";
 import { StartOverAsk } from "../AgentIdentityFlow";
 import { RemoveIdentity } from "../AgentIdentityTab";
 import { RemoveProfile } from "../settings/profiles";
@@ -994,10 +994,20 @@ const DIALOGS: Opened[] = [
     open: async () => render(<RemovePool name="builds" onRemove={nothing} onCancel={nothing} />),
   },
   {
-    name: "removing a held runner",
+    name: "discarding a held runner's conversations",
     file: "settings/pools.tsx",
     open: async () =>
-      render(<RemoveHeldRunner name="builds-old" onRemove={nothing} onCancel={nothing} />),
+      render(
+        <DiscardHeldRunner name="builds-old" ask="first" onGoOn={nothing} onCancel={nothing} />,
+      ),
+  },
+  {
+    name: "discarding a held runner's conversations, asked again",
+    file: "settings/pools.tsx",
+    open: async () =>
+      render(
+        <DiscardHeldRunner name="builds-old" ask="again" onGoOn={nothing} onCancel={nothing} />,
+      ),
   },
   {
     name: "starting an agent identity over",

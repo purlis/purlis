@@ -270,27 +270,43 @@ function NamedByLine({ named }: { named: NamedBy }) {
   );
 }
 
-/** **Remove runner {name}?**, asked before a held runner goes, with what its chats left. */
-export function RemoveHeldRunner({
+/**
+ * **Discard runner {name}'s conversations?**, asked twice before a held runner goes with what its
+ * chats left (#4633, ruled 2026-11-02): `first`, then `again`, each with Cancel as the way back.
+ */
+export function DiscardHeldRunner({
   name,
-  onRemove,
+  ask,
+  onGoOn,
   onCancel,
 }: {
   name: string;
-  onRemove: () => void;
+  ask: "first" | "again";
+  onGoOn: () => void;
   onCancel: () => void;
 }) {
-  return (
+  return ask === "first" ? (
     <AlertDialog
       onClose={onCancel}
-      title={`Remove runner ${name}?`}
+      title={`Discard runner ${name}'s conversations?`}
       description={
         <p className="came-back">
-          Its container and home are removed from your Docker, with everything chats left in them.
-          There is no undo.
+          Its container and home are removed from your Docker, with every conversation and
+          everything else its chats left in them.
         </p>
       }
-      main={{ children: "Remove runner", variant: "danger", onPress: onRemove }}
+      main={{ children: "Discard…", variant: "danger", onPress: onGoOn }}
+    />
+  ) : (
+    <AlertDialog
+      onClose={onCancel}
+      title="Discard them for good?"
+      description={
+        <p className="came-back">
+          {`Runner ${name}'s conversations cannot be brought back after this. There is no undo.`}
+        </p>
+      }
+      main={{ children: "Discard conversations", variant: "danger", onPress: onGoOn }}
     />
   );
 }
