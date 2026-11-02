@@ -1300,6 +1300,66 @@ pub fn claim_fresh(
     }
 }
 
+/// How old a fresh Claim of this desktop with no record must be before it is taken for one a
+/// crash left (#4569): far past any start's wait for its runner, so no start still making one is
+/// ever taken for gone.
+pub const ORPHAN_AFTER: u64 = 3600;
+
+/// **The fresh Claims of this desktop that no record holds, left by a crash between the claim and
+/// its record** (#4569), deleted, by name. A record is written only once its runner is paired and
+/// before any chat starts there, so such a claim never ran a task and holds no work. Only a
+/// Claim marked as this desktop's, not kept, named as this desktop names a chat's fresh claim of
+/// that pool, and made more than [`ORPHAN_AFTER`] ago by the cluster's word. A pool whose
+/// cluster can't be asked is passed over, and tried at the next sweep.
+pub fn sweep_orphan_fresh_claims(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    device: &str,
+    now: u64,
+) -> Result<Vec<String>, Refused> {
+    let label = crate::clusterpool::desktop_label(device);
+    let recorded: Vec<String> = runners::fresh_runners(config_root)?
+        .into_iter()
+        .map(|kept| kept.claimed.name)
+        .collect();
+    let mut deleted = Vec::new();
+    for pool in runners::cluster_pools(config_root)? {
+        let kubectl = pool.kubectl(kubectl);
+        let prefix = format!("{}-", claim_name(device, pool.name()));
+        let listed = match kubectl.claims_in(pool.namespace()) {
+            Ok(listed) => listed,
+            Err(why) => {
+                tracing::info!(
+                    "purlis: pool {}'s claims could not be listed: {why}",
+                    pool.name()
+                );
+                continue;
+            }
+        };
+        for claim in listed {
+            let ours = claim.seen.desktop.as_deref() == Some(label.as_str()) && !claim.seen.kept;
+            let named = claim
+                .name
+                .strip_prefix(&prefix)
+                .is_some_and(|hash| hash.len() == 8 && hash.bytes().all(|b| b.is_ascii_hexdigit()));
+            let old = claim
+                .made
+                .is_some_and(|made| made.saturating_add(ORPHAN_AFTER) < now);
+            if !ours || !named || !old || recorded.contains(&claim.name) {
+                continue;
+            }
+            match kubectl.delete_claim(pool.namespace(), &claim.name) {
+                Ok(()) => deleted.push(claim.name),
+                Err(why) => tracing::info!(
+                    "purlis: the claim {} no record holds was not deleted: {why}",
+                    claim.name
+                ),
+            }
+        }
+    }
+    Ok(deleted)
+}
+
 /// **The chat `chat` ended, so its fresh runner goes** (#3709): its claim is deleted, then its
 /// record. A claim that could not be deleted keeps its record, so it is tried again.
 pub fn release_fresh(
@@ -1318,20 +1378,21 @@ pub fn release_fresh(
 }
 
 /// **Whether the operator of the cluster pool `pool` keeps a fresh Claim's runner through idle**
-/// (#4569), which a task's commits rely on while its desktop is away. Refused where it can't be
-/// asked: the caller takes that as no.
+/// (#4569), which a task's commits rely on while its desktop is away: on its signed word, holding
+/// at `now`, read each time it counts (at a start and at a release), never kept. Refused, with
+/// why, where it can't be asked or does not say so now: the caller takes that as no.
 pub fn fresh_runners_stay(
     pool: &runners::ClusterPool,
     kubectl: &crate::clusterpool::Kubectl,
-) -> Result<bool, Refused> {
+    now: u64,
+) -> Result<(), Refused> {
     let seen = pool
         .kubectl(kubectl)
         .pool(pool.pool())
         .map_err(|why| Refused::Other(why.to_string()))?;
-    Ok(seen
-        .capabilities
-        .iter()
-        .any(|said| said == crate::clusterpool::FRESH_RUNNERS_STAY))
+    pool.pin()?
+        .says(&seen, crate::clusterpool::FRESH_RUNNERS_STAY, now)
+        .map_err(Refused::Other)
 }
 
 /// **Whether the chat `chat`'s fresh runner holds nothing to fetch any more** (#4569): its claim is

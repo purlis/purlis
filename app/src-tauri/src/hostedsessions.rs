@@ -707,6 +707,15 @@ impl Connection {
             .filter(|runner| !runner.starts_with("fresh-"))
     }
 
+    /// Whether this connection reaches a chat's fresh runner, `<pool>/fresh-…` (#4569).
+    fn names_a_fresh_runner(&self) -> bool {
+        self.to_a_pool.as_ref().is_some_and(|(_, named)| {
+            named
+                .split_once('/')
+                .is_some_and(|(_, runner)| runner.starts_with("fresh-"))
+        })
+    }
+
     /// **The runner this connection reaches is kept no more** (#4569): what the window holds of it
     /// goes, each link to it ended.
     fn fresh_runner_went(&self) {
@@ -3048,7 +3057,11 @@ impl HostedSessions {
         {
             return Ok(());
         }
-        crate::runnercode::send(link, project, &self.root, "", &self.sent)?;
+        // **Nor ever to a chat's fresh runner that holds it already** (#4569): what it holds may be
+        // the only copy of its task's work, which this machine's branches would move.
+        if !(self.connection.names_a_fresh_runner() && holds_its_own_code(link, project)?) {
+            crate::runnercode::send(link, project, &self.root, "", &self.sent)?;
+        }
         if let Some(on) = held.as_mut().filter(|on| on.on == link.id) {
             on.code_sent = true;
         }
@@ -3272,6 +3285,24 @@ fn reconnects_of(
 /// `for_a_start` is whether a chat is starting. Only then is a project on a link that is down held
 /// again. A person's or dispatch's start waits for a runner on its way back before it takes the
 /// hold's lock, so the window's commands, which take that lock, do not wait on the runner (#4415).
+/// **Whether the runner `link` reaches holds the project `project`'s own repository with a
+/// commit** (#4569), which no hold sends code over. A runner that can't say holds no fresh
+/// runner's task: one that cannot list what it holds can never be proved to hold nothing more. A
+/// list that is not whole is taken as holding it, so nothing is sent over what it missed.
+fn holds_its_own_code(link: &HostLink, project: &str) -> Result<bool, String> {
+    let Some((repos, unread)) = link.repos_held()? else {
+        return Err(
+            "This pool's runner image is too old to give a task a runner of its own, since it \
+             can't list what it holds. Update the pool's runner image to this purlis's version."
+                .to_owned(),
+        );
+    };
+    Ok(!unread.is_empty()
+        || repos
+            .iter()
+            .any(|repo| repo.project == project && repo.path.is_empty() && !repo.refs.is_empty()))
+}
+
 fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, String), String> {
     let Holding {
         connection,

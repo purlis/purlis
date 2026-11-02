@@ -368,8 +368,9 @@ pub struct PoolSeen {
     /// `spec.limits`: what the team defining the Pool set for its limits (#4287), as written:
     /// `poollimits::Chosen::under_team` checks it.
     pub team_limits: Option<serde_json::Value>,
-    /// `status.capabilities`: what this operator says it does (#4569).
-    pub capabilities: Vec<String>,
+    /// `status.capabilitiesVouch`, its statement and signature: the operator's word for what it
+    /// does (#4569), read only through [`PoolPin::says`].
+    pub capabilities_vouch: Option<(String, String)>,
 }
 
 /// **What a Pool's status says where its operator keeps a fresh Claim's runner through idle**
@@ -409,17 +410,81 @@ impl PoolSeen {
                 .zip(text("/nextSigningKeyVouch/signature")),
             mints_in_cluster: false,
             team_limits: None,
-            capabilities: status
-                .get("capabilities")
-                .and_then(serde_json::Value::as_array)
-                .map(|said| {
-                    said.iter()
-                        .filter_map(serde_json::Value::as_str)
-                        .map(str::to_owned)
-                        .collect()
-                })
-                .unwrap_or_default(),
+            capabilities_vouch: text("/capabilitiesVouch/statement")
+                .zip(text("/capabilitiesVouch/signature")),
         }
+    }
+}
+
+/// The first line of the operator's word for what it does, and its version (#4569).
+/// `operator/src/vouch.rs` writes the same.
+pub const CAPABILITIES_HEADER: &str = "purlis cluster operator capabilities v1";
+
+/// The longest the operator's word for what it does holds from now: it signs one for ten minutes,
+/// and purlis reads none that claims to hold five past that, whatever signed it.
+pub const CAPABILITIES_MOST_AHEAD: u64 = 15 * 60;
+
+/// **The operator's word for what it does** (#4569): in the cluster `cluster`, each of
+/// `capabilities`, until `until` (seconds since the epoch). Signed as its text, one `name: value`
+/// line each, in this order, after [`CAPABILITIES_HEADER`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperatorWord {
+    pub cluster: String,
+    pub capabilities: Vec<String>,
+    pub until: u64,
+}
+
+impl OperatorWord {
+    /// Its text, exactly as the operator signs it.
+    pub fn text(&self) -> String {
+        format!(
+            "{CAPABILITIES_HEADER}\ncluster: {}\ncapabilities: {}\nuntil: {}\n",
+            self.cluster,
+            self.capabilities.join(", "),
+            self.until
+        )
+    }
+
+    /// The word from its text: exactly [`OperatorWord::text`]'s lines. Anything else is refused.
+    pub fn from_text(text: &str) -> Result<OperatorWord, String> {
+        let bad =
+            || "the cluster operator's word for what it does is not one purlis reads".to_owned();
+        let body = text
+            .strip_prefix(CAPABILITIES_HEADER)
+            .and_then(|rest| rest.strip_prefix('\n'))
+            .and_then(|rest| rest.strip_suffix('\n'))
+            .ok_or_else(bad)?;
+        let lines: Vec<&str> = body.split('\n').collect();
+        let names = ["cluster", "capabilities", "until"];
+        if lines.len() != names.len() {
+            return Err(bad());
+        }
+        let mut values = Vec::with_capacity(names.len());
+        for (line, name) in lines.iter().zip(names) {
+            let value = line
+                .strip_prefix(name)
+                .and_then(|rest| rest.strip_prefix(": "))
+                .filter(|value| plain(value))
+                .ok_or_else(bad)?;
+            values.push(value);
+        }
+        let until = Some(values[2])
+            .filter(|digits| digits.len() <= 20 && digits.bytes().all(|b| b.is_ascii_digit()))
+            .and_then(|digits| digits.parse::<u64>().ok())
+            .ok_or_else(bad)?;
+        let word = OperatorWord {
+            cluster: Some(values[0])
+                .filter(|cluster| is_uid(cluster))
+                .ok_or_else(bad)?
+                .to_owned(),
+            capabilities: values[1].split(", ").map(str::to_owned).collect(),
+            until,
+        };
+        // Read back byte for byte, so nothing but this text was signed.
+        if word.text() != text {
+            return Err(bad());
+        }
+        Ok(word)
     }
 }
 
@@ -624,6 +689,50 @@ impl PoolPin {
             key: roll.to,
             cluster: self.cluster.clone(),
         }))
+    }
+
+    /// **Whether the operator of the Pool `seen` at `now` says it does `capability`** (#4569), on
+    /// its word alone: signed by the pinned key, made in the pinned cluster, holding now and for no
+    /// more than [`CAPABILITIES_MOST_AHEAD`]. Anything else is a no, with why: a word that ended
+    /// is one an operator rolled back to an older one no longer signs.
+    pub fn says(&self, seen: &PoolSeen, capability: &str, now: u64) -> Result<(), String> {
+        let Some((text, signature)) = seen.capabilities_vouch.as_ref() else {
+            return Err("its cluster operator gives no word for what it does".to_owned());
+        };
+        if self.key.signed(text, signature).is_err() {
+            return Err(
+                "its cluster operator's word for what it does is not signed by the key this \
+                 desktop pinned"
+                    .to_owned(),
+            );
+        }
+        let word = OperatorWord::from_text(text)?;
+        if word.cluster != self.cluster {
+            return Err(
+                "its cluster operator's word for what it does was made in another cluster"
+                    .to_owned(),
+            );
+        }
+        if word.until <= now {
+            return Err(
+                "its cluster operator's word for what it does no longer holds: the operator may \
+                 have been rolled back, or stopped"
+                    .to_owned(),
+            );
+        }
+        if word.until > now.saturating_add(CAPABILITIES_MOST_AHEAD) {
+            return Err(
+                "its cluster operator's word for what it does says it holds for longer than any \
+                 does; check this machine's clock"
+                    .to_owned(),
+            );
+        }
+        if !word.capabilities.iter().any(|said| said == capability) {
+            return Err(format!(
+                "its cluster operator does not say it does `{capability}`"
+            ));
+        }
+        Ok(())
     }
 
     /// **Moves this pin as [`PoolPin::followed`] says**, in memory: whether it moved. A refusal
@@ -1384,24 +1493,47 @@ impl Kubectl {
     /// it, the desktop it is marked as ([`DESKTOP_ANNOTATION`]) and whether it is kept (#3819);
     /// `None` where there is none.
     pub fn claim_seen(&self, namespace: &str, name: &str) -> Result<Option<ClaimSeen>, Refused> {
-        let Some(held) = self.claim_json(namespace, name)? else {
-            return Ok(None);
-        };
-        let text = |path: &str| {
-            held.pointer(path)
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        };
-        Ok(Some(ClaimSeen {
-            uid: text("/metadata/uid").unwrap_or_default(),
-            requester: text("/spec/requester"),
-            desktop: held
-                .pointer("/metadata/annotations")
-                .and_then(|marks| marks.get(DESKTOP_ANNOTATION))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-            kept: held.pointer("/spec/kept") == Some(&serde_json::Value::Bool(true)),
-        }))
+        Ok(self
+            .claim_json(namespace, name)?
+            .map(|held| ClaimSeen::of(&held)))
+    }
+
+    /// **Every Claim in `namespace`** (#4569): each one's name, what [`Self::claim_seen`] reads of
+    /// it, and when it was made, in seconds since the epoch, where the cluster says.
+    pub fn claims_in(&self, namespace: &str) -> Result<Vec<ClaimListed>, Refused> {
+        let held = self.json(
+            &[
+                "get",
+                "claims.runners.purlis.dev",
+                "--namespace",
+                namespace,
+                "--output",
+                "json",
+            ],
+            None,
+        )?;
+        Ok(held
+            .get("items")
+            .and_then(serde_json::Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| {
+                        let name = item.pointer("/metadata/name")?.as_str()?.to_owned();
+                        let made = item
+                            .pointer("/metadata/creationTimestamp")
+                            .and_then(serde_json::Value::as_str)
+                            .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+                            .and_then(|at| u64::try_from(at.timestamp()).ok());
+                        Some(ClaimListed {
+                            name,
+                            seen: ClaimSeen::of(item),
+                            made,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     /// **`status.mint` of the Claim `namespace`/`name`** (#4207), `(address, operatorKey)`, where
@@ -1605,6 +1737,36 @@ pub struct ClaimSeen {
     pub desktop: Option<String>,
     /// Whether it is a kept claim (`spec.kept`, #2057): its runner's home outlives its pod.
     pub kept: bool,
+}
+
+impl ClaimSeen {
+    /// What a Claim, as JSON, says of itself.
+    fn of(held: &serde_json::Value) -> ClaimSeen {
+        let text = |path: &str| {
+            held.pointer(path)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        ClaimSeen {
+            uid: text("/metadata/uid").unwrap_or_default(),
+            requester: text("/spec/requester"),
+            desktop: held
+                .pointer("/metadata/annotations")
+                .and_then(|marks| marks.get(DESKTOP_ANNOTATION))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            kept: held.pointer("/spec/kept") == Some(&serde_json::Value::Bool(true)),
+        }
+    }
+}
+
+/// One Claim of a namespace, as [`Kubectl::claims_in`] lists it (#4569).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimListed {
+    pub name: String,
+    pub seen: ClaimSeen,
+    /// When it was made, in seconds since the epoch, where the cluster says.
+    pub made: Option<u64>,
 }
 
 /// **Whether a kubeconfig's context can be named to kubectl** (#3292): plain text, at most 253

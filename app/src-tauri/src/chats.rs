@@ -935,6 +935,8 @@ pub struct Chats {
     fresh_told: Arc<Mutex<Option<crate::freshkept::Tell>>>,
     /// Whether the chats of the last launch have come back, or could not (#4569).
     put_back_settled: std::sync::atomic::AtomicBool,
+    /// Whether this window swept the claims a crash left with no record (#4569).
+    orphans_swept: std::sync::atomic::AtomicBool,
     /// What decides the sandbox of a chat on no profile in a test, in place of
     /// [`Self::sandbox_off_profile`]: that asks this machine and checks the real program, and a
     /// test's stand-in harness lives where a chat can write, so it could never start sandboxed.
@@ -1442,6 +1444,7 @@ impl Chats {
             fresh_kept: Arc::default(),
             fresh_told: Arc::default(),
             put_back_settled: std::sync::atomic::AtomicBool::new(false),
+            orphans_swept: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
             deciding: None,
         }
@@ -1696,7 +1699,12 @@ impl Chats {
             &runner,
             (going == Going::OnProof).then_some(workspace.as_str()),
             Box::new(move |missing| {
-                let end = crate::clusterpools::fresh_runner_ended(&config, &ending.id, &missing);
+                let end = crate::clusterpools::fresh_runner_ended(
+                    &config,
+                    &ending.id,
+                    &missing,
+                    going == Going::OnProof,
+                );
                 let went = matches!(end, crate::clusterpools::FreshEnd::Went);
                 {
                     let mut kept = lock(&kept);
@@ -1786,6 +1794,16 @@ impl Chats {
                 return;
             }
             *swept = Some(std::time::Instant::now());
+        }
+        // Once a launch, off the window: a claim a crash left before its record (#4569).
+        if !self.orphans_swept.swap(true, Ordering::SeqCst) {
+            let config = config.clone();
+            let spawned = std::thread::Builder::new()
+                .name("purlis-orphan-claims".into())
+                .spawn(move || crate::clusterpools::sweep_orphan_claims(&config));
+            if let Err(why) = spawned {
+                tracing::warn!("purlis: claims no record holds were not swept: {why}");
+            }
         }
         for kept in purlis_core::runners::fresh_runners(config).unwrap_or_default() {
             let ours = kept.of.as_ref().is_some_and(|of| of.plane == plane);

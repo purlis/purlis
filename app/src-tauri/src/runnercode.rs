@@ -525,6 +525,11 @@ pub(crate) fn fetch_whole(
     workspace: &str,
     runner: &str,
 ) -> Vec<String> {
+    // **What still runs there may yet commit** (#4569): a close is answered before its program
+    // ends, so nothing is fetched until every program of the project there has ended.
+    if let Err(why) = programs_ended(link, project, PROGRAMS_END_WITHIN) {
+        return vec![why];
+    }
     let there = match link.clones_of(project, workspace) {
         Ok(Some((there, _))) => there,
         Ok(None) => return vec![format!("runner {runner} is too old to say what it holds")],
@@ -612,6 +617,49 @@ pub(crate) fn not_home(link: &HostLink, project: &str, root: &Path, runner: &str
         })
         .collect();
     codelink::held::not_home(root, project, &held, &unread)
+}
+
+/// How long a fresh runner's end waits for the programs of its project there to end (#4569).
+pub(crate) const PROGRAMS_END_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// **Whether every program of `project` on the host `link` reaches has ended**, waiting at most
+/// `within` (#4569): one still running, a chat of another checkout of the project among them,
+/// may commit after a fetch, so its runner is not let go of meanwhile.
+pub(crate) fn programs_ended(
+    link: &HostLink,
+    project: &str,
+    within: std::time::Duration,
+) -> Result<(), String> {
+    use purlis_session_protocol::session::{Answer, Command};
+    let until = std::time::Instant::now() + within;
+    loop {
+        let running = match link.call(Command::ProgramsOf {
+            project: project.to_owned(),
+        }) {
+            Ok(Answer::Programs(programs)) => programs
+                .iter()
+                .filter(|program| program.exit.is_none())
+                .count(),
+            Ok(_) => return Err("the runner did not say what still runs there".to_owned()),
+            Err(why) => {
+                return Err(format!(
+                    "the runner did not say what still runs there: {why}"
+                ));
+            }
+        };
+        if running == 0 {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= until {
+            return Err(format!(
+                "{running} program{} of this project still run{} on the runner, and may yet \
+                 commit",
+                if running == 1 { "" } else { "s" },
+                if running == 1 { "s" } else { "" },
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
 }
 
 /// The clone `rel`, made on the runner, as a clone here.

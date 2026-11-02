@@ -545,6 +545,96 @@ fn a_statement_of_another_version_says_both_are_to_be_of_one_release() {
     );
 }
 
+/// Now, as a desktop reads the worked example's word for what its operator does: the roll
+/// tests' `now`, ten minutes before the word ends.
+const WORD_SIGNED_AT: u64 = 1_798_200_000;
+
+/// A Pool's status carrying the worked example's word for what its operator does (#4569).
+fn saying() -> PoolSeen {
+    PoolSeen {
+        capabilities_vouch: Some((
+            fixture("capabilities.txt"),
+            fixture("capabilities-signature.txt").trim().to_owned(),
+        )),
+        ..rolling()
+    }
+}
+
+/// **The operator's word is read as both ends write it** (#4569): the worked example's text,
+/// signed by the pinned key, holding now, says a fresh runner stays.
+#[test]
+fn the_operators_signed_word_says_a_fresh_runner_stays_while_it_holds() {
+    let word = OperatorWord::from_text(&fixture("capabilities.txt")).expect("read");
+    assert_eq!(word.capabilities, vec![FRESH_RUNNERS_STAY.to_owned()]);
+    assert_eq!(word.text(), fixture("capabilities.txt"));
+
+    assert_eq!(
+        the_pin().says(&saying(), FRESH_RUNNERS_STAY, WORD_SIGNED_AT),
+        Ok(())
+    );
+}
+
+/// **A stale word does not count** (#4569): one that ended is what an operator rolled back to an
+/// older one leaves behind, never signed again.
+#[test]
+fn the_operators_word_that_ended_does_not_count() {
+    let said = the_pin()
+        .says(&saying(), FRESH_RUNNERS_STAY, WORD_SIGNED_AT + 600)
+        .unwrap_err();
+    assert!(said.contains("no longer holds"), "{said}");
+}
+
+/// **A word not tied to the operator the desktop pinned does not count** (#4569): unsigned,
+/// signed by another key, made in another cluster, or not naming the word.
+#[test]
+fn the_operators_word_counts_only_from_the_pinned_operator() {
+    let none = PoolSeen {
+        capabilities_vouch: None,
+        ..saying()
+    };
+    assert!(
+        the_pin()
+            .says(&none, FRESH_RUNNERS_STAY, WORD_SIGNED_AT)
+            .is_err()
+    );
+
+    let another = Operator::new();
+    let text = fixture("capabilities.txt");
+    let forged = PoolSeen {
+        capabilities_vouch: Some((text.clone(), another.sign(&text))),
+        ..saying()
+    };
+    let said = the_pin()
+        .says(&forged, FRESH_RUNNERS_STAY, WORD_SIGNED_AT)
+        .unwrap_err();
+    assert!(said.contains("not signed by the key"), "{said}");
+
+    let elsewhere = PoolPin {
+        cluster: "99999999-9999-4999-8999-999999999999".into(),
+        ..the_pin()
+    };
+    assert!(
+        elsewhere
+            .says(&saying(), FRESH_RUNNERS_STAY, WORD_SIGNED_AT)
+            .is_err()
+    );
+
+    assert!(
+        the_pin()
+            .says(&saying(), "something-else", WORD_SIGNED_AT)
+            .is_err()
+    );
+}
+
+/// A word claiming to hold far past what any operator signs points at this machine's clock.
+#[test]
+fn the_operators_word_that_holds_too_long_is_refused() {
+    let said = the_pin()
+        .says(&saying(), FRESH_RUNNERS_STAY, WORD_SIGNED_AT - 3600)
+        .unwrap_err();
+    assert!(said.contains("clock"), "{said}");
+}
+
 fn next_operator_key() -> OperatorKey {
     OperatorKey::from_spelled(fixture("next-operator-key.txt").trim()).unwrap()
 }
@@ -556,7 +646,7 @@ const DURING_THE_ROLL: u64 = 1_798_761_600 - 3 * 24 * 3600;
 fn rolling() -> PoolSeen {
     PoolSeen {
         team_limits: None,
-        capabilities: Vec::new(),
+        capabilities_vouch: None,
         signing_key: Some(fixture("operator-key.txt").trim().to_owned()),
         cluster: Some(cluster()),
         next_signing_key: Some(fixture("next-operator-key.txt").trim().to_owned()),
@@ -629,7 +719,7 @@ fn a_pools_pin_is_its_operators_key_and_its_cluster() {
         })),
         PoolSeen {
             team_limits: None,
-            capabilities: Vec::new(),
+            capabilities_vouch: None,
             signing_key: Some("ed25519:00".into()),
             cluster: Some("c".into()),
             next_signing_key: Some("ed25519:11".into()),
@@ -865,6 +955,7 @@ impl FakeCluster {
              *'auth whoami'*) cat \"$d/whoami.json\";;\n\
              *'get pools.runners.purlis.dev'*) cat \"$d/pool.json\";;\n\
              *'create --filename'*) cat \"$d/created.json\";;\n\
+             *'get claims.runners.purlis.dev --namespace'*) cat \"$d/claims.json\";;\n\
              *'get claims.runners.purlis.dev'*) cat \"$d/claim.json\";;\n\
              *'get pods'*) cat \"$d/pod.json\";;\n\
              *'exec -i'*) cat \"$d/paired.txt\";;\n\

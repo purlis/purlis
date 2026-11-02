@@ -241,6 +241,30 @@ pub fn fresh_runner(
         .map_err(|why| why.to_string())
 }
 
+/// **The fresh Claims of this desktop that a crash left with no record go** (#4569), off the
+/// window: [`purlis_core::pools::sweep_orphan_fresh_claims`].
+pub fn sweep_orphan_claims(config: &Path) {
+    let swept = kubectl(config).and_then(|kubectl| {
+        let keyring = purlis_core::linkkey::this_builds_keyring(config);
+        let desktop = purlis_core::linkkey::desktop(config, &*keyring)
+            .map_err(|why| why.to_string())?
+            .pinned();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        purlis_core::pools::sweep_orphan_fresh_claims(config, &kubectl, &desktop.device, now)
+            .map_err(|why| why.to_string())
+    });
+    match swept {
+        Ok(deleted) if !deleted.is_empty() => tracing::info!(
+            "purlis: deleted fresh claims no record held, left by a crash: {}",
+            deleted.join(", ")
+        ),
+        Ok(_) => {}
+        Err(why) => tracing::info!("purlis: claims no record holds were not swept: {why}"),
+    }
+}
+
 /// How a chat's fresh runner's end came out (#4569).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FreshEnd {
@@ -256,7 +280,11 @@ pub enum FreshEnd {
 /// (#3818, #4569): none only on proof, or where nothing is asked for (a start that failed, or the
 /// person's Discard). Only then does the runner go. Otherwise its claim stays with its record,
 /// for Fetch again, the sweep or Discard, and the window says so.
-pub fn fresh_runner_ended(config: &Path, chat: &str, missing: &[String]) -> FreshEnd {
+///
+/// `proved` where `missing` is a proof's: then the operator's word is read again, since a proof
+/// is trusted only while that word holds. Where it no longer does, the runner may have been
+/// suspended and started again with an empty home, which would prove nothing.
+pub fn fresh_runner_ended(config: &Path, chat: &str, missing: &[String], proved: bool) -> FreshEnd {
     let kubectl = match kubectl(config) {
         Ok(kubectl) => kubectl,
         Err(why) => {
@@ -285,6 +313,25 @@ pub fn fresh_runner_ended(config: &Path, chat: &str, missing: &[String]) -> Fres
             gone,
         };
     }
+    if proved {
+        let pool = purlis_core::runners::fresh_runner_of(config, chat)
+            .ok()
+            .flatten()
+            .map(|(pool, _)| pool);
+        let word = pool.map_or_else(
+            || Err("its pool is not on this machine".to_owned()),
+            |pool| operators_word(config, &pool),
+        );
+        if let Err(why) = word {
+            return FreshEnd::Kept {
+                why: vec![format!(
+                    "Its work looks all here, but purlis trusts that only while its cluster \
+                     operator says it keeps such a runner through idle, and now {why}."
+                )],
+                gone: false,
+            };
+        }
+    }
     match purlis_core::pools::release_fresh(config, &kubectl, chat) {
         Ok(()) => FreshEnd::Went,
         Err(why) => {
@@ -300,30 +347,31 @@ pub fn fresh_runner_ended(config: &Path, chat: &str, missing: &[String]) -> Fres
 }
 
 /// **Why a short task on the cluster pool `pool` stays on the pool's own runner**, where it does
-/// (#4569): only an operator that keeps a fresh Claim's runner through idle holds a task's commits
-/// while its desktop is away. Not knowing is a no.
+/// (#4569): only an operator whose signed word, holding now, says it keeps a fresh Claim's runner
+/// through idle holds a task's commits while its desktop is away. Not knowing is a no.
 pub fn why_no_fresh_runner(config: &Path, pool: &ClusterPool) -> Option<String> {
-    no_fresh_runner_said(
-        pool.name(),
-        kubectl(config).and_then(|kubectl| {
-            purlis_core::pools::fresh_runners_stay(pool, &kubectl).map_err(|why| why.to_string())
-        }),
-    )
+    no_fresh_runner_said(pool.name(), operators_word(config, pool))
+}
+
+/// **Whether the operator of `pool` says now that a fresh runner stays** (#4569), read each time
+/// it counts: at a start, and again before a fresh runner is let go of on proof.
+pub fn operators_word(config: &Path, pool: &ClusterPool) -> Result<(), String> {
+    let kubectl = kubectl(config)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    purlis_core::pools::fresh_runners_stay(pool, &kubectl, now).map_err(|why| why.to_string())
 }
 
 /// [`why_no_fresh_runner`], of what its operator answered.
-fn no_fresh_runner_said(pool: &str, stays: Result<bool, String>) -> Option<String> {
-    match stays {
-        Ok(true) => None,
-        Ok(false) => Some(format!(
-            "This task runs on pool {pool}'s own runner: its cluster operator is too old to give a \
-             task a runner of its own. Update the operator to change that."
-        )),
-        Err(_) => Some(format!(
-            "This task runs on pool {pool}'s own runner: purlis could not ask its cluster whether \
-             a runner of its own would keep the task's work."
-        )),
-    }
+fn no_fresh_runner_said(pool: &str, stays: Result<(), String>) -> Option<String> {
+    stays.err().map(|why| {
+        format!(
+            "This task runs on pool {pool}'s own runner, since {why}, so a runner of its own \
+             might not keep the task's work. Update the operator, or check that it runs, to \
+             change that."
+        )
+    })
 }
 
 /// **A fresh runner of the pool `name` that still holds a chat's work**, its chat's id, where

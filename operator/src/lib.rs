@@ -73,5 +73,6 @@ pub use reconcile::{
 };
 pub use resources::{
     Claim, ClaimForge, ClaimMint, ClaimSpec, ClaimStatus, KeptVolume, LinkKey, NextSigningKeyVouch,
+    OperatorWord,
     Pool, PoolForge, PoolSpec, PoolStatus, SecretRef,
 };

@@ -2095,23 +2095,76 @@ mod cluster {
         assert!(fresh_runner_lost(config.path(), &cluster.kubectl(), "01CHAT").unwrap());
     }
 
-    /// **A task's fresh runner relies on its operator's word, and silence is a no** (#4569).
+    /// **A task's fresh runner relies on its operator's signed word, holding now, and silence is
+    /// a no** (#4569).
     #[test]
     fn only_an_operator_that_says_so_keeps_a_fresh_runner_through_idle() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
         let _ = added_and_a_second_runner(config.path(), &cluster);
         let pool = runners::cluster_pools(config.path()).unwrap().remove(0);
-        assert!(!fresh_runners_stay(&pool, &cluster.kubectl()).unwrap());
+        let now = runners::now();
+        assert!(fresh_runners_stay(&pool, &cluster.kubectl(), now).is_err());
 
+        let word = crate::clusterpool::OperatorWord {
+            cluster: crate::clusterpool::tests::CLUSTER.to_owned(),
+            capabilities: vec![crate::clusterpool::FRESH_RUNNERS_STAY.to_owned()],
+            until: now + 600,
+        }
+        .text();
         let mut said: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(cluster.path("pool.json")).unwrap())
                 .unwrap();
-        said["status"]["capabilities"] = serde_json::json!(["fresh-runners-stay"]);
+        said["status"]["capabilitiesVouch"] = serde_json::json!({
+            "statement": word,
+            "signature": cluster.operator.sign(&word),
+        });
         cluster.write("pool.json", &said.to_string());
-        assert!(fresh_runners_stay(&pool, &cluster.kubectl()).unwrap());
+        assert_eq!(fresh_runners_stay(&pool, &cluster.kubectl(), now), Ok(()));
+        // Read again later, once it ended: an operator rolled back signs it no more.
+        assert!(fresh_runners_stay(&pool, &cluster.kubectl(), now + 600).is_err());
 
         cluster.write("pool.json", "not an answer");
-        assert!(fresh_runners_stay(&pool, &cluster.kubectl()).is_err());
+        assert!(fresh_runners_stay(&pool, &cluster.kubectl(), now).is_err());
+    }
+
+    /// **A fresh Claim a crash left with no record goes once it is old, and nothing else does**
+    /// (#4569): a record is written before any chat starts there, so it never held work.
+    #[test]
+    fn a_fresh_claim_no_record_holds_is_deleted_once_old_and_only_then() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let ours = crate::clusterpool::desktop_label(OURS);
+        let named = |hash: &str| format!("{}-{hash}", claim_name(OURS, "team"));
+        let item = |name: &str, desktop: &str, kept: bool, made: &str| {
+            serde_json::json!({
+                "metadata": {
+                    "name": name,
+                    "uid": "0b2f1a54-4d7b-4a64-9c0e-000000000001",
+                    "creationTimestamp": made,
+                    "annotations": {crate::clusterpool::DESKTOP_ANNOTATION: desktop},
+                },
+                "spec": {"pool": "team", "requester": "ada@example.com", "kept": kept},
+            })
+        };
+        let old = "2026-01-01T00:00:00Z";
+        cluster.write(
+            "claims.json",
+            &serde_json::json!({"items": [
+                item(&named("0123abcd"), &ours, false, old),
+                item(&named("4567abcd"), &ours, false, "2026-12-31T23:30:00Z"),
+                item(&named("89abcdef"), "ffffffffffffffff", false, old),
+                item(&named("fedcba98"), &ours, true, old),
+                item(&claim_name(OURS, "team"), &ours, false, old),
+                item("someone-elses-0123abcd", &ours, false, old),
+            ]})
+            .to_string(),
+        );
+
+        let deleted =
+            sweep_orphan_fresh_claims(config.path(), &cluster.kubectl(), OURS, 1_798_761_600)
+                .unwrap();
+
+        assert_eq!(deleted, vec![named("0123abcd")]);
     }
 
     /// Where a fresh runner's work goes back to.

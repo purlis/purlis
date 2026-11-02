@@ -372,32 +372,60 @@ fn a_short_task_runs_on_a_runner_of_its_own_and_its_commits_are_home_before_its_
             .then_some(())
     });
 
-    // A start that fails after the runner was made leaves no Claim: its profile is over the limit
-    // it is held to on the way to that runner, which refuses before anything starts there.
-    std::fs::write(settings.path().join("one.md"), "x").expect("a file");
-    std::fs::write(settings.path().join("two.md"), "x").expect("a file");
-    purlis_core::runners::set_pool_limit(
-        &config_path,
-        "team",
-        purlis_core::poollimits::LimitId::ProfileFiles,
-        Some(1),
-    )
-    .expect("the limit is set");
-    let (refused_task, ready) = a_short_task(&root);
-    let refused =
-        crate::hostedsessions::a_short_task(|| chats.start_ready(&refused_task, &ready, SIZE))
-            .expect_err("a profile over its limit starts nothing");
-    assert!(refused.contains("limit"), "{refused}");
-    until("the failed start's Claim goes", || {
+    // **Only proof lets a runner go** (#4569): a commit on no branch, which no fetch brings, keeps
+    // the runner and its Claim, and the window says what is missing; Discard lets it go.
+    let (unproved, ready) = a_short_task(&root);
+    let session =
+        crate::hostedsessions::a_short_task(|| chats.start_ready(&unproved, &ready, SIZE))
+            .unwrap_or_else(|why| panic!("the third short task starts: {why}"));
+    let kept = purlis_core::runners::fresh_runners(&config_path)
+        .expect("the file reads")
+        .into_iter()
+        .next()
+        .expect("it has a runner of its own");
+    let namespace_there = kept_namespace(&kubectl, &config_path, &kept);
+    let there = on_the_runner(
+        &kubectl,
+        &kept,
+        &namespace_there,
+        &format!("find \"$HOME\" -type d -path '*/workspaces/{WORKSPACE}/{CLONE}' | head -n 1"),
+    );
+    on_the_runner(
+        &kubectl,
+        &kept,
+        &namespace_there,
+        &format!(
+            "cd '{}' && git checkout -q --detach && echo lost > nowhere.txt && git add . \
+             && git -c user.name=task -c user.email=task@example.com commit -q -m 'on no branch'",
+            there.trim()
+        ),
+    );
+    chats.close(session).expect("the task closes");
+    let chat_id = kept.chat.clone().expect("a fresh runner's chat");
+    let said = until("the window says the runner is kept", || {
+        chats
+            .fresh_runners_kept()
+            .into_iter()
+            .find(|one| one.chat == chat_id)
+    });
+    assert!(
+        said.why.iter().any(|why| why.contains("HEAD")),
+        "it says what is missing: {:?}",
+        said.why
+    );
+    assert!(!said.gone);
+    assert_eq!(
+        the_claims_of(&kubectl, &namespace).len(),
+        2,
+        "its Claim stays while its work is not home"
+    );
+    chats.discards_fresh_runner(&chat_id).expect("Discard");
+    until("the discarded runner's Claim goes", || {
         (the_claims_of(&kubectl, &namespace) == pool_own_claims).then_some(())
     });
-    purlis_core::runners::set_pool_limit(
-        &config_path,
-        "team",
-        purlis_core::poollimits::LimitId::ProfileFiles,
-        None,
-    )
-    .expect("the limit is taken off");
+    until("the window no longer names it", || {
+        chats.fresh_runners_kept().is_empty().then_some(())
+    });
 
     // **A window started again** (#4569): a task left running is found on its own runner, and one
     // whose chat this window does not hold has what it did brought home, and goes.

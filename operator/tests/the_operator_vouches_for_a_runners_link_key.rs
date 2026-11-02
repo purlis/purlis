@@ -24,7 +24,8 @@ use purlis_cluster_operator::vouch::{
     self, About, Held, MountedKeys, NotYet, PEM_BEGIN, PEM_END, SigningKey, SigningKeys, Vouching,
 };
 use purlis_cluster_operator::{
-    Claim, ClaimSpec, ClaimStatus, LinkKeyIs, NextSigningKeyVouch, Pool, PoolSpec, PoolStatus,
+    Claim, ClaimSpec, ClaimStatus, LinkKeyIs, NextSigningKeyVouch, OperatorWord, Pool, PoolSpec,
+    PoolStatus,
     pool_status_patch, status_patch,
 };
 
@@ -968,7 +969,10 @@ fn a_pools_status_names_the_operators_key_and_cluster_and_is_written_until_it_do
     assert_eq!(
         status,
         PoolStatus {
-            capabilities: vec![purlis_cluster_operator::lifecycle::FRESH_RUNNERS_STAY.to_owned()],
+            capabilities_vouch: Some(OperatorWord {
+                statement: fixture("capabilities.txt"),
+                signature: fixture("capabilities-signature.txt").trim().to_owned(),
+            }),
             signing_key: Some(fixture("operator-key.txt").trim().to_owned()),
             cluster: Some(CLUSTER.to_owned()),
             next_signing_key: None,
@@ -993,6 +997,48 @@ fn a_pools_status_names_the_operators_key_and_cluster_and_is_written_until_it_do
     };
     assert!(pool_status_patch(Some(&older), &status).is_some());
     assert_eq!(pool_status_patch(Some(&status), &status), None);
+}
+
+/// **The operator's word for what it does holds ten minutes, and is signed again with five left**
+/// (#4569): so an operator rolled back to one that does not sign it stops being taken at it soon.
+#[test]
+fn a_pools_status_carries_the_operators_word_for_what_it_does_signed_again_near_its_end() {
+    let first = vouch::pool_status(&keys(), CLUSTER, None, ROLL_NOW);
+    let word = first.capabilities_vouch.clone().expect("its word");
+    assert_eq!(word.statement, fixture("capabilities.txt"));
+    // Kept as it is while more than five minutes are left, so the status is not written again.
+    let later = vouch::pool_status(&keys(), CLUSTER, Some(&first), ROLL_NOW + 200);
+    assert_eq!(later.capabilities_vouch, Some(word.clone()));
+    assert_eq!(pool_status_patch(Some(&first), &later), None);
+    // With five minutes left, signed again for another ten.
+    let renewed = vouch::pool_status(&keys(), CLUSTER, Some(&first), ROLL_NOW + 301);
+    let again = renewed.capabilities_vouch.expect("its word again");
+    assert_ne!(again.statement, word.statement);
+    assert!(
+        again
+            .statement
+            .ends_with(&format!("until: {}\n", ROLL_NOW + 301 + 600))
+    );
+    // A word it did not sign is never kept.
+    let forged = PoolStatus {
+        capabilities_vouch: Some(OperatorWord {
+            statement: word.statement.clone(),
+            signature: "00".repeat(64),
+        }),
+        ..first.clone()
+    };
+    let mended = vouch::pool_status(&keys(), CLUSTER, Some(&forged), ROLL_NOW + 10);
+    assert_eq!(
+        mended.capabilities_vouch.expect("its own word").signature,
+        word_signature_at(ROLL_NOW + 10)
+    );
+}
+
+/// The worked example key's signature over its word made at `now`.
+fn word_signature_at(now: u64) -> String {
+    let statement = vouch::capabilities_statement(CLUSTER, vouch::CAPABILITIES, now + 600)
+        .expect("a statement");
+    signing().sign(&statement)
 }
 
 #[test]
