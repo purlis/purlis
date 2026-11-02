@@ -11,7 +11,7 @@
  * chip subscribes to its own chat and is redrawn only when that chat's run changes. In memory
  * only.
  */
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { listen } from "./here";
 import { commands, type ChatSkillRun, type OpenRun, type PlaneId } from "./bindings";
@@ -177,5 +177,7 @@ export function useSkillRuns(plane: PlaneId | undefined): RunsOf {
     };
   }, [plane, store]);
 
-  return { store, plane };
+  // One value while `plane` is the same, as `useDoings`: a new one would draw every chip that
+  // reads it again on each render of the project view (#4728).
+  return useMemo(() => ({ store, plane }), [store, plane]);
 }
