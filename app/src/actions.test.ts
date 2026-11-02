@@ -70,7 +70,8 @@ import { PUBLISHED_WITH_THE_PROJECT } from "./memoryMoves";
 import { sessionOffers } from "./actions";
 import { withSessionRows } from "./sessionOffers";
 import { ANSWER_SAYS, BRIEF_SAYS, answerId, answerRows, briefId, briefRows } from "./actions";
-import type { ListedChat } from "./chatsTree";
+import { listedChat, type ListedChat } from "./chatsTree";
+import type { QuestionStanding } from "./taskQuestions";
 import {
   SETTINGS_LINK,
   forgetGroups,
@@ -4048,7 +4049,11 @@ describe("the chats inside the tab in front (#1487)", () => {
 describe("Answer, for a task that asks its asking chat a question (#1551)", () => {
   /** 1 is a chat a person opened; it asked for 2, which asks it something, and 3, which asks
    *  nothing. */
-  const three = [listed(1), { ...listed(2, 1), asking: "chat 1" }, listed(3, 1, false)];
+  const three = [
+    listed(1),
+    { ...listed(2, 1), asking: "chat 1", question: "with-asker" as const },
+    listed(3, 1, false),
+  ];
 
   it("has a row only for a task paused on a question, named for it", () => {
     const rows = answerRows(three);
@@ -4062,7 +4067,7 @@ describe("Answer, for a task that asks its asking chat a question (#1551)", () =
     expect(
       ids(catalogue(now({ listed: three }))).filter((id) => id.startsWith("chat.answer:")),
     ).toEqual([answerId(2)]);
-    const answered = three.map((chat) => ({ ...chat, asking: null }));
+    const answered = three.map((chat) => ({ ...chat, asking: null, question: null }));
     expect(
       ids(catalogue(now({ listed: answered }))).filter((id) => id.startsWith("chat.answer:")),
     ).toEqual([]);
@@ -4076,6 +4081,60 @@ describe("Answer, for a task that asks its asking chat a question (#1551)", () =
     expect(ids(task.below)).not.toContain(answerId(2));
     expect(ids(menuRows({ on: "listed", session: 3 }, offers).above)).not.toContain(answerId(3));
     expect(menuOn({ on: "chat", tab: 7, session: 2 }).above).toContain(answerId(2));
+  });
+
+  /** Task 2 of chat 1, listed as the window lists it, with its question where the asks
+   *  registry says it stands. */
+  const taskWith = (question: QuestionStanding | undefined): ListedChat =>
+    listedChat(
+      {
+        session: 2,
+        name: "2",
+        cwd: null,
+        harness: "claude",
+        in_front: false,
+        resumed: null,
+        fresh: null,
+        guessed: null,
+        profile: null,
+        persona: null,
+        unreported: null,
+        card: null,
+        pinned: false,
+        label: null,
+        from: {
+          chat: 1,
+          name: "chat 1",
+          workspace: "alpha",
+          task: true,
+          tab: false,
+          reported: false,
+          unreported: false,
+        },
+      },
+      "alpha",
+      "chat 2",
+      true,
+      question,
+    );
+
+  it.each([
+    ["still with its asking chat", { level: "with-asker", asker: "chat 1", since: 1 } as const],
+    ["passed on, timed out or orphaned to the person", { level: "needs-you", since: 1 } as const],
+  ])("offers Answer in the row menu and the palette for a question %s (#4564)", (_, question) => {
+    const listedNow = [listed(1), taskWith(question)];
+    const offers = catalogue(now({ listed: listedNow }));
+
+    expect(ids(offers).filter((id) => id.startsWith("chat.answer:"))).toEqual([answerId(2)]);
+    expect(ids(menuRows({ on: "listed", session: 2 }, catalogued(offers)).above)).toContain(
+      answerId(2),
+    );
+  });
+
+  it("offers no Answer for a task with no open question (#4564)", () => {
+    const offers = catalogue(now({ listed: [listed(1), taskWith(undefined)] }));
+
+    expect(ids(offers).filter((id) => id.startsWith("chat.answer:"))).toEqual([]);
   });
 
   it("opens the form through the window's hands, and sends nothing itself", () => {
