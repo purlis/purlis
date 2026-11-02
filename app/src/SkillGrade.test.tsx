@@ -453,6 +453,7 @@ describe("Grade, cost first", () => {
               prompt: "Fill in the form",
               hides: false,
               files: ["evals/files/form.txt"],
+              not_text: [],
               expectations: 2,
               on: true,
               chats: 12,
@@ -483,6 +484,60 @@ describe("Grade, cost first", () => {
     expect(start(24)).toBeTruthy();
   });
 
+  it("names an eval's file it could not check, which is not text (#4230)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan")
+        return plan({
+          evals: [
+            {
+              id: "4",
+              prompt: "Read the form",
+              hides: false,
+              files: ["evals/files/form.txt", "evals/files/sample1.pdf"],
+              not_text: ["evals/files/sample1.pdf"],
+              expectations: 2,
+              on: false,
+              chats: 12,
+            },
+          ],
+          outcomes_left_out: [],
+        });
+      if (cmd === "start_options") return { profiles: [{ name: "work" }] };
+      return null;
+    });
+    renderPlan();
+    expect(await screen.findByTestId("skill-grade-eval")).toHaveTextContent(
+      "Read the form · 12 more chats · 2 expectations a judge checks · with evals/files/form.txt, evals/files/sample1.pdf · evals/files/sample1.pdf isn't text: purlis couldn't check it for characters no reader would see, and a judge may not be able to read it",
+    );
+  });
+
+  it("says two files that are not text in the plural (#4230)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan")
+        return plan({
+          evals: [
+            {
+              id: "4",
+              prompt: "Read the forms",
+              hides: false,
+              files: ["a.pdf", "b.pdf"],
+              not_text: ["a.pdf", "b.pdf"],
+              expectations: 2,
+              on: false,
+              chats: 12,
+            },
+          ],
+          outcomes_left_out: [],
+        });
+      if (cmd === "start_options") return { profiles: [{ name: "work" }] };
+      return null;
+    });
+    renderPlan();
+    expect(await screen.findByTestId("skill-grade-eval")).toHaveTextContent(
+      "a.pdf, b.pdf aren't text: purlis couldn't check them for characters no reader would see, and a judge may not be able to read them",
+    );
+  });
+
   it("starts a skill with ticked outcome evals alone", async () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
     const eval4 = {
@@ -490,6 +545,7 @@ describe("Grade, cost first", () => {
       prompt: "Fill in the form",
       hides: false,
       files: [],
+      not_text: [],
       expectations: 2,
       chats: 12,
     };
@@ -533,6 +589,7 @@ describe("Grade, cost first", () => {
               prompt: "Fill in the form",
               hides: false,
               files: [],
+              not_text: [],
               expectations: 2,
               chats: 12,
               on: evals.includes("4"),

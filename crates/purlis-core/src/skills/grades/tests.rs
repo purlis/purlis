@@ -1638,6 +1638,128 @@ fn outcome_evals_are_off_until_ticked_and_the_consent_covers_what_was() {
     );
 }
 
+/// #4230: a PDF is an eval's input like any other: its plan offers it, says it is not text, and
+/// the consent covers its bytes, so a byte changed under the plan is a plan changed.
+#[test]
+fn an_eval_whose_file_is_a_pdf_is_offered_and_its_bytes_are_what_is_consented_to() {
+    const PDF: &[u8] = b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n";
+    let plane = plane();
+    let root = plane.path();
+    let level = Level::project();
+    std::fs::create_dir_all(root.join("skills/deploy/evals/files")).unwrap();
+    std::fs::write(root.join("skills/deploy/evals/files/sample1.pdf"), PDF).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [
+            {"id": 1, "prompt": "ship v2", "files": ["evals/files/sample1.pdf"], "expectations": ["It ships"]}
+        ]}"#,
+    )
+    .unwrap();
+    let one = planned_with(root, &level, "deploy", None, &[1]).unwrap();
+    assert_eq!(
+        one.outcomes_left_out.len(),
+        0,
+        "{:?}",
+        one.outcomes_left_out
+    );
+    assert_eq!(one.request.as_ref().unwrap().outcomes.len(), 1);
+    assert_eq!(
+        one.copy.as_ref().unwrap().inputs_of(&one.offered[0]).1,
+        ["evals/files/sample1.pdf"]
+    );
+
+    let mut changed = PDF.to_vec();
+    changed[10] ^= 1;
+    std::fs::write(root.join("skills/deploy/evals/files/sample1.pdf"), &changed).unwrap();
+    let again = planned_with(root, &level, "deploy", None, &[1]).unwrap();
+    assert_ne!(one.consent, again.consent);
+    assert_ne!(
+        after_edit::outcomes_of(&one),
+        after_edit::outcomes_of(&again)
+    );
+}
+
+/// #4230: a file that is not text may hold the separators the digest writes between files, so
+/// two different sets of files must not read as one stream.
+#[test]
+fn the_consent_tells_apart_files_whose_bytes_run_into_each_other() {
+    let plane = plane();
+    let root = plane.path();
+    let level = Level::project();
+    let files = root.join("skills/deploy/evals/files");
+    std::fs::create_dir_all(&files).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [
+            {"id": 1, "prompt": "ship v2", "files": ["evals/files/a", "evals/files/b"], "expectations": ["It ships"]}
+        ]}"#,
+    )
+    .unwrap();
+    let with = |a: &[u8], b: &[u8]| {
+        std::fs::write(files.join("a"), a).unwrap();
+        std::fs::write(files.join("b"), b).unwrap();
+        planned_with(root, &level, "deploy", None, &[1]).unwrap()
+    };
+    let one = with(b"x\0evals/files/b\0y", b"z");
+    let other = with(b"x", b"y\0evals/files/b\0z");
+    assert_ne!(one.consent, other.consent);
+    assert_ne!(
+        after_edit::outcomes_of(&one),
+        after_edit::outcomes_of(&other)
+    );
+}
+
+/// #4230: one rule says what is text. A NUL makes a file not text, as the skill review reads it.
+#[test]
+fn a_file_with_a_nul_or_a_bad_byte_is_named_as_not_text() {
+    let plane = plane();
+    let root = plane.path();
+    let level = Level::project();
+    let files = root.join("skills/deploy/evals/files");
+    std::fs::create_dir_all(&files).unwrap();
+    std::fs::write(files.join("plain.txt"), "plain").unwrap();
+    std::fs::write(files.join("nul.txt"), b"plain\0").unwrap();
+    std::fs::write(files.join("bad.txt"), b"plain\xFF").unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [
+            {"id": 1, "prompt": "ship v2", "files": ["evals/files/plain.txt", "evals/files/nul.txt", "evals/files/bad.txt"], "expectations": ["It ships"]}
+        ]}"#,
+    )
+    .unwrap();
+    let plan = planned(root, &level, "deploy", None).unwrap();
+    let (texts, not_text) = plan.copy.as_ref().unwrap().inputs_of(&plan.offered[0]);
+    assert_eq!(texts, ["plain"]);
+    assert_eq!(not_text, ["evals/files/nul.txt", "evals/files/bad.txt"]);
+}
+
+/// A file past the bound is left out and named: no eval runs on part of a file.
+#[test]
+fn an_eval_whose_file_is_past_the_bound_is_left_out_and_named() {
+    let plane = plane();
+    let root = plane.path();
+    std::fs::create_dir_all(root.join("skills/deploy/evals/files")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/files/big.pdf"),
+        vec![0xFF_u8; crate::proposed::MOST_FILE_BYTES + 1],
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [
+            {"id": 1, "prompt": "ship v2", "files": ["evals/files/big.pdf"], "expectations": ["It ships"]}
+        ]}"#,
+    )
+    .unwrap();
+    let plan = planned_with(root, &Level::project(), "deploy", None, &[1]).unwrap();
+    assert_eq!(plan.offered.len(), 0);
+    assert!(
+        plan.outcomes_left_out[0].why.contains("at most 1 MiB"),
+        "{:?}",
+        plan.outcomes_left_out
+    );
+}
+
 /// A paid grade is always recorded: what a row cannot drop is counted as JSON writes it, for what
 /// was ticked alone.
 #[test]
