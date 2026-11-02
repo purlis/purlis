@@ -7964,6 +7964,18 @@ refuses a `<data>` under a project or inside any git work tree.
 | `<config>/telemetry.json` | Machine, device-bound | **decided, not yet written** (ADR 0083). Whether telemetry is collected, its retention and cap, each project's open content gates, and the export destinations: each one's name, OTLP/HTTP URL, signals and a pointer to its auth header in the keyring. No project file opens a gate or names a destination. Device-bound because of those pointers and consents. Denied to chats (ADR 0067 §5 class 2). Backed up by FR-10 | a `local-ui` caller only (the window, or `purlis` on that scope), through `purlisd` (OB-2, OB-9) |
 | keyring item for a telemetry export destination's auth header | Keyring | **decided, not yet written** (ADR 0083). The header value an export destination sends, such as a backend's API key. Denied to chats | OB-9 |
 
+### `<config>/runners.json`: a cluster pool's `teamLimits`
+
+- **Tier:** Machine, device-bound — a key of `runners.json`, read and written with it.
+
+Written since #4287 (spec #4275), on a cluster pool's row in `runners.json` (above), left out where the
+team set none: `{"teamLimits": {<limit's key>: {"default", "highest"}}}`, purlis's copy of the cluster
+Pool's `spec.limits` (`docs/cluster-operator.md`), kept as the pool is added and at each link, never
+chosen on this machine. A limit only a cluster pool has, or one that shapes a runner, is never a Pool's to
+set. A person's value above `highest` stays in the row and holds to it. A `default` lower than purlis's
+own holds for a person who set none; a higher one raises nothing and is only offered (the person's ruling
+of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses any key it does not know.
+
 ### `<data>/sign-ins-waiting/<digest>`
 - **Format:** a file on a runner of two lines, either of them empty: the loopback address the login
   was found listening on, then its process group. One with a single line says no group. Named by
