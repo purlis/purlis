@@ -394,10 +394,6 @@ impl HarnessAdapter for ClaudeCode {
         }
     }
 
-    /// The person's own settings that start every chat with its prompts off, or that purlis
-    /// cannot read; a command that turns them off ([`crate::dispatchunattended::bypass_in`]);
-    /// and a command that starts the chat in any mode but the two that ask (#3352), as the
-    /// command's `--permission-mode` outranks the one a grade's session settings pin.
     fn outcome_refused(&self, env: &crate::harness_plugin::Env<'_>) -> Option<String> {
         let dir = env.dir("CLAUDE_CONFIG_DIR", ".claude")?;
         let text = std::fs::read_to_string(dir.join("settings.json")).ok()?;
@@ -409,6 +405,10 @@ impl HarnessAdapter for ClaudeCode {
         })
     }
 
+    /// The person's own settings that start every chat with its prompts off, or that purlis
+    /// cannot read; a command that turns them off ([`crate::dispatchunattended::bypass_in`]);
+    /// and a command that starts the chat in any mode but the two that ask (#3352), as the
+    /// command's `--permission-mode` outranks the one a grade's session settings pin.
     fn grade_refused(
         &self,
         command: &[String],
@@ -1140,8 +1140,11 @@ fn settings_sign_in(text: &str) -> bool {
         .get("env")
         .and_then(serde_json::Value::as_object)
         .is_some_and(|env| {
-            env.keys()
-                .any(|name| name.starts_with("ANTHROPIC_") || name.starts_with("CLAUDE_CODE_USE_"))
+            env.keys().any(|name| {
+                name.starts_with("ANTHROPIC_")
+                    || name.starts_with("CLAUDE_CODE_USE_")
+                    || name == "CLAUDE_CODE_OAUTH_TOKEN"
+            })
         });
     helper || variable
 }

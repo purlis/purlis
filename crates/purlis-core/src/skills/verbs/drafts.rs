@@ -706,7 +706,7 @@ pub fn stage(
         usize::MAX,
     )
     .map_err(|why| super::not_written("the grade's record of its folder", why))?;
-    drop_granted_tools(root, laid)?;
+    hand_on_what_narrows(root, laid)?;
     for path in files {
         let text = inputs.get(path).ok_or_else(|| {
             format!(
@@ -720,20 +720,25 @@ pub fn stage(
     Ok(())
 }
 
-/// **Takes `allowed-tools` out of the copy of each skill laid out for the outcome eval's chat
-/// `laid`** (SK-55): a skill that grants a tool asks before it starts, which would end the run, and
-/// an outcome chat holds what its own limits say whatever a skill declares.
-fn drop_granted_tools(root: &Path, laid: &Try) -> Result<(), String> {
+/// **Writes each skill laid out for the outcome eval's chat `laid` as a harness is handed it**
+/// (SK-55): a skill that grants a tool asks before it starts, which would end the run. The one
+/// reader of a skill's frontmatter ([`purlis_skills::handed`]) writes it again from the keys that
+/// narrow a chat, so no spelling of one that widens it survives. A skill it refuses is refused here.
+fn hand_on_what_narrows(root: &Path, laid: &Try) -> Result<(), String> {
     let state = app_state(root)?;
+    let honours = crate::harness::Harness::ClaudeCode
+        .adapter()
+        .skill_frontmatter();
     let skills = format!("{TRIES_DIR}/{}/{}", laid.id, purlis_skills::PROJECT_DIR);
     for name in ids_named_in(&state.join(&skills)) {
         let rel = format!("{skills}/{name}/SKILL.md");
         let Some(text) = read_at(&state, &rel)? else {
             continue;
         };
-        let without = without_allowed_tools(&text);
-        if without != text {
-            write_at(&state, &rel, Some(&text), &without, usize::MAX)
+        let handed = purlis_skills::handed::rewritten(&text, &honours)
+            .map_err(|why| format!("{name} could not be handed to its chat: {why}"))?;
+        if handed != text {
+            write_at(&state, &rel, Some(&text), &handed, usize::MAX)
                 .map_err(|why| super::not_written(&format!("{name}'s copy"), why))?;
         }
     }
@@ -750,35 +755,6 @@ fn ids_named_in(folder: &Path) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-/// `text`, a `SKILL.md`, without the `allowed-tools` of its frontmatter: its line and the lines
-/// below it that continue it. All else is kept as it is written.
-fn without_allowed_tools(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let (mut fences, mut dropping) = (0, false);
-    for line in text.split_inclusive('\n') {
-        let bare = line.trim_end();
-        if bare == "---" && fences < 2 {
-            fences += 1;
-            dropping = false;
-        } else if fences == 1 {
-            let key = bare
-                .split(':')
-                .next()
-                .unwrap_or_default()
-                .trim_matches(['"', '\'']);
-            let continues = line.starts_with([' ', '\t']) || bare.starts_with("- ");
-            if !continues {
-                dropping = key.eq_ignore_ascii_case("allowed-tools");
-            }
-            if dropping {
-                continue;
-            }
-        }
-        out.push_str(line);
-    }
-    out
 }
 
 /// **What a grade's chat left in its throwaway piece `piece`** in the project at `root`, as it

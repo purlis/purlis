@@ -2467,11 +2467,21 @@ impl Hooks {
                 let hear_block = Arc::clone(&hear_block);
                 Box::new(move |block| hear_block(block))
             },
-            permission: crate::asking::permitting(
-                plane.clone(),
-                Arc::clone(&asks),
-                Arc::clone(&asks_told),
-            ),
+            permission: {
+                let held = crate::asking::permitting(
+                    plane.clone(),
+                    Arc::clone(&asks),
+                    Arc::clone(&asks_told),
+                );
+                let skill_runs = Arc::clone(&skill_runs);
+                Box::new(move |asked| {
+                    // A grade's chat ends here, and its grade says what it asked for (SK-55).
+                    if let Some(what) = asked.asks_for() {
+                        skill_runs.asks_for(asked.chat, what);
+                    }
+                    held(asked)
+                })
+            },
             // What a chat's tool hook says the chat is doing (#1493): kept in memory for the
             // one line under its name, and never recorded. A helper's tool is not the chat's
             // own work, so its line is left as it was.

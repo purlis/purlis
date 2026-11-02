@@ -1703,3 +1703,18 @@ fn a_skill_that_runs_a_command_as_it_loads_has_its_evals_left_out() {
     assert!(planned.offered.is_empty());
     assert!(planned.outcomes_left_out[0].why.contains("as it loads"));
 }
+
+/// SK-55: a failure reason can name what a chat chose, so it is masked as evidence is.
+#[test]
+fn a_failure_reason_is_masked_before_it_is_recorded() {
+    let secret = ["AK", "IA", &"Z7Q2".repeat(4)].concat();
+    let mut row = outcome_row();
+    row.report.outcomes[0].results[0].failed =
+        Some(format!("Its chat asked for the skill {secret}."));
+    let kept = masked(&row);
+    let why = kept.report.outcomes[0].results[0]
+        .failed
+        .as_deref()
+        .unwrap();
+    assert!(!why.contains(&["AK", "IA"].concat()), "{why}");
+}

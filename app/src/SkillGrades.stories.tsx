@@ -88,6 +88,7 @@ const row = (grade: string, over: Partial<GradeRow> = {}): GradeRow => ({
   ended: "Finished",
   outcome: "graded",
   arms: { with: 86, without: 68, previous: 80 },
+  outcome_arms: null,
   spent: { chats: 36, tokens: 300000, cost_usd: 1.92, limit_usd: 3 },
   after_edit: false,
   ...over,
@@ -101,6 +102,7 @@ const GRADES: GradeRow[] = [
     outcome: "at-limit",
     ended: "Stopped at its dollar limit",
     arms: { with: 80, without: 69, previous: null },
+    outcome_arms: null,
     spent: { chats: 22, tokens: 240000, cost_usd: 1.71, limit_usd: 1.71 },
   }),
   row("01A", {
@@ -110,6 +112,7 @@ const GRADES: GradeRow[] = [
     outcome: "interrupted",
     ended: "Interrupted: not scored",
     arms: { with: null, without: null, previous: null },
+    outcome_arms: null,
     spent: { chats: 2, tokens: null, cost_usd: 0.21, limit_usd: null },
   }),
 ];
@@ -144,6 +147,8 @@ const CARD: GradeScorecard = {
   outcome: "graded",
   arms: { with: 86, without: 68, previous: 80 },
   spent: { chats: 36, tokens: 300000, cost_usd: 1.92, limit_usd: 3 },
+  outcome_arms: null,
+  evals: [],
   tests: TESTS.map((test, at) => ({
     query: test.query,
     should_trigger: test.should_trigger,
@@ -153,6 +158,57 @@ const CARD: GradeScorecard = {
       arm("previous", test.should_trigger ? 2 : 0, at !== 2, at * 10 + 6),
     ],
   })),
+};
+
+/** A grade of outcome evals alone: one run failed by a judge's answer, one by what its chat asked. */
+const EVALS_CARD: GradeScorecard = {
+  ...CARD,
+  tests: [],
+  delta: null,
+  against: null,
+  delta_without: null,
+  arms: { with: null, without: null, previous: null },
+  outcome_arms: { with: 75, without: 0, previous: null },
+  evals: [
+    {
+      id: "4",
+      expectations: ["The form's name is filled in", "The date is written as ISO 8601"],
+      arms: [
+        {
+          arm: "with",
+          runs: 2,
+          points: 75,
+          results: [1, 2].map((run) => ({
+            run,
+            chat: { id: `01E${run}`, run, kept: true },
+            judge: { id: `01J${run}`, run, kept: true },
+            passed: run === 1 ? 2 : 1,
+            checks: [
+              { passed: true, evidence: "form.txt names Ada Lovelace" },
+              { passed: run === 1, evidence: run === 1 ? "2026-10-28" : "it says 28/10/26" },
+            ],
+            failed: null,
+          })),
+        },
+        {
+          arm: "without",
+          runs: 1,
+          points: 0,
+          results: [
+            {
+              run: 1,
+              chat: { id: "01E3", run: 1, kept: true },
+              judge: null,
+              passed: 0,
+              checks: [],
+              failed:
+                "Its chat asked for the tool Bash, which a grade's chat may not do on its own, so purlis ended it. That is a limit of grading, not a fault of the skill, and the run counts as failed.",
+            },
+          ],
+        },
+      ],
+    },
+  ],
 };
 
 const SCREEN =
@@ -386,6 +442,43 @@ export const ScorecardAtLimit: Story = {
     await expect(await canvas.findByTestId("grade-scorecard-about")).toHaveTextContent(
       "Stopped at its limit",
     );
+  },
+};
+
+/** **A scorecard of outcome evals**: each arm's rate, each run's chat and judge, why a run failed,
+ *  and what the judges found of each expectation (SK-55). Tab reaches a run's chat. */
+export const ScorecardOfOutcomeEvals: Story = {
+  args: { grading: { at: "scorecard", grade: "01C" }, card: EVALS_CARD },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("grade-scorecard-eval-why")).toHaveTextContent(
+      "Its chat asked for the tool Bash",
+    );
+    const evals = await canvas.findByRole("grid", { name: "Outcome evals of deploy" });
+    await expect(within(evals).getAllByRole("row")).toHaveLength(2);
+    await expect(
+      canvas.getByRole("group", { name: "Outcome evals of the grade of deploy" }),
+    ).toHaveTextContent("75%");
+  },
+};
+
+/** **The Grades tab of a grade of outcome evals**: its bars and its column (SK-55). */
+export const GradesOfOutcomeEvals: Story = {
+  args: {
+    grades: GRADES.map((row, at) =>
+      at === 0
+        ? {
+            ...row,
+            arms: { with: null, without: null, previous: null },
+            outcome_arms: { with: 75, without: 0, previous: null },
+          }
+        : row,
+    ),
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("group", { name: "Outcome evals of the latest grade of deploy" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByText(/nothing of deploy was compared/)).toBeNull();
   },
 };
 

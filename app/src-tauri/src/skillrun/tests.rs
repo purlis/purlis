@@ -229,6 +229,19 @@ fn a_grade_watching_a_chat_is_told_when_it_asks_the_person() {
     );
 }
 
+/// SK-55: a grade hears what a chat asks to use.
+#[test]
+fn a_grade_watching_a_chat_is_told_what_it_asks_to_use() {
+    let (runs, _told) = listening();
+    let watched = runs.watch(4);
+    runs.asks_for(4, "the tool Bash".to_owned());
+    runs.asks_for(5, "the tool Write".to_owned());
+    assert_eq!(
+        watched.try_iter().collect::<Vec<_>>(),
+        vec![Watched::AsksFor("the tool Bash".to_owned())]
+    );
+}
+
 /// SK-55: a grade hears a chat's program get as far as its session's start: what tells a chat that
 /// waits on something before any hook from one that runs.
 #[test]

@@ -1533,6 +1533,7 @@ fn settings_that_sign_in_are_told_from_those_that_do_not() {
         r#"{"awsAuthRefresh": "x"}"#,
         r#"{"env": {"ANTHROPIC_API_KEY": "x"}}"#,
         r#"{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}"#,
+        r#"{"env": {"CLAUDE_CODE_OAUTH_TOKEN": "x"}}"#,
     ] {
         assert!(settings_sign_in(signs), "{signs}");
     }

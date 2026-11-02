@@ -669,6 +669,13 @@ pub(crate) fn handed(text: &str, honours: &crate::Honours) -> Result<String, Ref
     handed_as(text, honours, None)
 }
 
+/// **`text`, a `SKILL.md`, with the frontmatter purlis writes for a harness that reads `honours`**
+/// (SK-55): for a copy of a skill laid out by hand, as [`handed`] gives one that reaches a chat by a
+/// set. Refused, as [`parse`] refuses it.
+pub fn rewritten(text: &str, honours: &crate::Honours) -> Result<String, Refusal> {
+    handed(text, honours)
+}
+
 /// [`handed`], its `name` written as `name` where one is given ([`Frontmatter::emit_named`]).
 pub(crate) fn handed_as(
     text: &str,
