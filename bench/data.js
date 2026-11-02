@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793607481249,
+  "lastUpdate": 1793609252397,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36036,6 +36036,48 @@ window.BENCHMARK_DATA = {
             "value": 102.140905,
             "unit": "ms",
             "extra": "median of 5 runs: 100.992, 101.324, 102.141, 102.244, 102.940 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6b8cee29771323aa7f3fceb81ed9814c0a5d2245",
+          "message": "ci: harden release workflows flagged by CodeQL/Scorecard (#4499)\n\nInstall the Claude Code build CI runs with npm ci from a committed\nlockfile (tests/fixtures/harness-versions/claude-code), so each tarball\nis checked against its sha512 integrity, and stop the step when the\nlockfile and claude.txt disagree (Scorecard PinnedDependencies).\n\nHold every job of release.yml and runner-image.yml, not only the ones\nwith a key, to caching nothing through the composite actions they call,\nso the toolchain action cannot start restoring a cache in the jobs that\nbuild the release's commit (CodeQL actions/cache-poisoning).\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6BW92B6JDMYKNEV62KBE82V\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T06:49:35Z",
+          "tree_id": "2d1f93e1a747c063d938a159eb1609965b0611d8",
+          "url": "https://github.com/purlis/purlis/commit/6b8cee29771323aa7f3fceb81ed9814c0a5d2245"
+        },
+        "date": 1793609247993,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6690609999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.641, 0.663, 0.669, 0.676, 0.680 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.575021,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.329, 16.418, 16.575, 16.626, 16.753 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.22152750000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.174, 101.598, 102.222, 102.269, 103.270 ms"
           }
         ]
       }
