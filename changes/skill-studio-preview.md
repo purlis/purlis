@@ -22,7 +22,7 @@
   whose files purlis reviews as it reviews a git source's. Such an extension runs in the same
   sandbox a chat runs in: it reads only its own folder and what purlis hands it, writes only its
   own folder, reaches only the hosts its approval names, and never a host that serves an AI model.
-  Its approval says so, and marks these additions as experimental. Where purlis cannot hold it in
+  Its approval says so, and marks its source, lint and template as experimental. Where purlis cannot hold it in
   a sandbox, as on Windows today, it loads none of that extension. A skill's tab draws its Runs
   panel the way it draws an extension's panel.
 - **A persona brings its skills into every workspace** (Skill studio preview). A persona's own

@@ -2626,16 +2626,17 @@ fn a_question_during_a_grade_fails_at_once_and_says_the_extension_is_grading() {
     );
 }
 
-/// **Version 1 of the extension API, as it was frozen** (ADR 0101, amended 2026-11-02).
-fn version_one() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../../../tests/fixtures/extension-api/v1.json"
-    ))
-    .expect("the contract is JSON")
-}
-
 /// The line `ask` is asked in, in `protocol`, read back.
 fn asked_line(protocol: u32, ask: &extension::studio::Ask<'_>) -> serde_json::Value {
+    asked_line_with(protocol, ask, None)
+}
+
+/// [`asked_line`], of an extension whose settings are `settings`.
+fn asked_line_with(
+    protocol: u32,
+    ask: &extension::studio::Ask<'_>,
+    settings: Option<serde_json::Value>,
+) -> serde_json::Value {
     let line = request_line(
         "house-studio",
         protocol,
@@ -2643,7 +2644,7 @@ fn asked_line(protocol: u32, ask: &extension::studio::Ask<'_>) -> serde_json::Va
         None,
         None,
         None,
-        None,
+        settings,
         Some(Vec::new()),
     )
     .expect("a line");
@@ -2655,7 +2656,8 @@ fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
     use extension::studio::{Ask, HandedFile, HandedPrompt, PromptSkill, RouteBudget, RouteSkill};
     use purlis_skills::grade::{Arm, GradeRequest, TriggerTest};
 
-    let contract = version_one();
+    let contract = extension::studio::version_one();
+    let protocol = u32::try_from(contract["protocol"].as_u64().expect("a number")).expect("small");
     let files = [HandedFile {
         path: "SKILL.md".to_owned(),
         text: "---\n".to_owned(),
@@ -2701,12 +2703,27 @@ fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
         skills: &prompt,
     };
 
-    assert_eq!(asked_line(4, &panel()), contract["panel"]["question"]);
-    assert_eq!(asked_line(4, &routed()), contract["route"]["question"]);
-    assert_eq!(asked_line(4, &pointing()), contract["prompt"]["question"]);
     assert_eq!(
-        asked_line(4, &Ask::Grade { request: &request }),
+        asked_line(protocol, &panel()),
+        contract["panel"]["question"]
+    );
+    assert_eq!(
+        asked_line(protocol, &routed()),
+        contract["route"]["question"]
+    );
+    assert_eq!(
+        asked_line(protocol, &pointing()),
+        contract["prompt"]["question"]
+    );
+    assert_eq!(
+        asked_line(protocol, &Ask::Grade { request: &request }),
         contract["grade"]["question"]
+    );
+    // An extension that declares settings is handed them with every question.
+    let with_settings = &contract["panel"]["question_with_settings"];
+    assert_eq!(
+        asked_line_with(protocol, &panel(), Some(with_settings["settings"].clone())),
+        *with_settings
     );
 
     // An extension whose manifest names protocol 3 reads the same question, under its own number.

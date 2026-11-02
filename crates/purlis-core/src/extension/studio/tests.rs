@@ -1706,14 +1706,6 @@ fn a_routers_pointers_are_read_failing_closed() {
     );
 }
 
-/// **Version 1 of the extension API, as it was frozen** (ADR 0101, amended 2026-11-02).
-fn version_one() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../../../../tests/fixtures/extension-api/v1.json"
-    ))
-    .expect("the contract is JSON")
-}
-
 #[test]
 fn the_manifest_of_version_one_reads_as_the_contract_records_it() {
     let contract = version_one();
@@ -1737,17 +1729,39 @@ fn the_manifest_of_version_one_reads_as_the_contract_records_it() {
 #[test]
 fn every_answer_of_version_one_reads_as_the_contract_records_it() {
     let contract = version_one();
+    let protocol = u32::try_from(contract["protocol"].as_u64().expect("a number")).expect("small");
+    // Each answer is read as a real one is: its line first, in the protocol it was asked in.
+    let answer = |of: &str, key: &str| {
+        let line = serde_json::to_vec(&contract[of]["answer"]).expect("a line");
+        crate::executor::reply_of("x", &line, protocol, &[key]).expect("an answer")
+    };
 
-    let blocks = blocks_of("x", &doc(contract["panel"]["answer"].clone())).expect("a panel");
+    let blocks = blocks_of("x", &answer("panel", "blocks")).expect("a panel");
     let crate::panel::Block::Table(table) = &blocks[0] else {
         panic!("{blocks:?}");
     };
     assert_eq!(table.rows[0].cells, ["lint", "clean"]);
 
-    let hidden = routed_of("x", 1, &doc(contract["route"]["answer"].clone())).expect("a routing");
+    let hidden = routed_of("x", 1, &answer("route", "hidden")).expect("a routing");
     assert_eq!(hidden[0].0, "pdf");
 
-    let pointed =
-        pointed_of("x", &["pdf"], &doc(contract["prompt"]["answer"].clone())).expect("pointers");
+    let pointed = pointed_of("x", &["pdf"], &answer("prompt", "pointed")).expect("pointers");
     assert_eq!(pointed, ["pdf"]);
+}
+
+#[test]
+fn the_limits_of_version_one_are_the_ones_the_contract_records() {
+    let contract = version_one();
+    let limits = &contract["limits"];
+    let of = |key: &str| usize::try_from(limits[key].as_u64().expect("a number")).expect("small");
+    assert_eq!(
+        crate::executor::DEADLINE.as_secs(),
+        limits["answer_seconds"]
+    );
+    assert_eq!(ROUTER_DEADLINE.as_millis() as u64, limits["router_ms"]);
+    assert_eq!(crate::executor::MOST_ANSWER_BYTES, of("line_bytes"));
+    assert_eq!(MOST_PROMPT_BYTES, of("prompt_bytes"));
+    assert_eq!(MOST_POINTED, of("pointed"));
+    assert_eq!(MOST_PANELS, of("panels"));
+    assert_eq!(MOST_HOSTS, of("hosts"));
 }

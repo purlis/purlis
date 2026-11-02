@@ -37,8 +37,6 @@ the protocol its manifest names.
   working as purlis moves on.
 - **Every answer is read against a closed shape.** A key purlis does not know refuses the answer,
   so an extension cannot add a field of its own.
-- **A new kind of panel block is not a new protocol.** A block is added for every panel, and an
-  extension that does not answer it sees no change.
 
 The messages below are recorded in
 [`tests/fixtures/extension-api/v1.json`](../tests/fixtures/extension-api/v1.json), and
@@ -83,8 +81,9 @@ Each question is one JSON line:
 { "charter": 4, "extension": "house-studio", "studio": "skill-router", "ask": { "ask": "…" }, "writes": [] }
 ```
 
-`charter` is the protocol, and every answer repeats it. `writes` is always empty for a confined
-extension. An answer is one line of JSON, or `{"charter": 4, "error": "<sentence>"}`. An answer
+`charter` is the protocol, and every answer must repeat it. `writes` is always empty for a
+confined extension. `settings` is there too, with the person's values, if the manifest declares
+settings. An answer is one line of JSON, or `{"charter": 4, "error": "<sentence>"}`. An answer
 has 5 seconds, unless this page says otherwise.
 
 ### A panel
@@ -113,22 +112,39 @@ or is late on a prompt, the prompt goes on with no pointer. The routing record s
 A grade is one question of many lines. Asked with `ask` `grade` and a `request`: the `skill`, its
 `triggers` (each `query` and `should_trigger`), the `arms` to compare (`with`, `without`,
 `previous`), and `runs`, how many times each test runs in each arm. `outcomes` is empty in version
-1, because a Grader scores trigger tests alone. A person who ticks outcome evals grades with
-purlis's own runner.
+1, because a Grader scores trigger tests alone. A plan with outcome evals ticked cannot start on a
+Grader: the person unticks them or picks purlis's own runner.
 
 Each line the Grader answers is one of two:
 
 - **A run-chat request**, `{"charter": 4, "run_chat": {"arm": "with", "prompt": "…"}}`, on one of
   the grade's arms and the query of one of its tests. purlis runs the chat and writes back
   `chat_ran`: `chat`, `started` (the skills that started), `tokens`, `cost_usd`, `ms`, and `end`,
-  one of `turn`, `timed-out`, `not-started` (with a fixed `why`), `cancelled`, `asked`, `over-cap`
-  or `over-limit`.
+  one of `turn`, `timed-out`, `not-started` (with a fixed sentence beside it, `why`), `cancelled`,
+  `asked`, `over-cap` or `over-limit`. `chat`, `tokens` and `cost_usd` are `null` where there is
+  none to say, as for a chat that did not run.
 - **Its grade report**, `{"charter": 4, "report": {"triggers": […], "arms": […], "delta": …}}`,
   which ends the question. What a grade spent, how it ended and who graded it are purlis's to say,
   so a report that carries them is refused.
 
+**A report has to hold together**, or the grade ends as the Grader's failure. A chat counts as run
+only if its `end` is `turn` or `timed-out`.
+
+- Each of `triggers` is a test of the grade in one of its arms: `query`, `should_trigger`, `arm`,
+  `runs` (its chats that ran), `triggered` (at most `runs`), `rate`, `pass`, `chats`, and `asked`
+  (optional, its chats that ended `asked`).
+- `rate` is `triggered` over `runs`, and `null` at no runs. `pass` is `null` exactly when `rate`
+  is.
+- `chats` lists every chat asked for, by its id or `null`, and names each chat of the grade at
+  most once. Its length, and `runs` plus `asked`, are each at most the request's `runs`.
+- Each of `arms` is one arm, once: `arm`, `pass_rate`, `tokens`, `seconds`, `chats`, `not_run`.
+  `chats` is purlis's own count of chats that ran, and the sum of its tests' `runs`. `chats` plus
+  `not_run` is the number of chats its tests list.
+- `pass_rate`, `tokens` and `seconds` are `null` or `mean`, `stddev`, `min` and `max`, with `min`
+  no more than `mean` and `mean` no more than `max`. A `pass_rate` is a share, from 0 to 1.
+
 Each answer has 5 seconds from the line before it, and a Grader has no deadline while purlis runs
-a chat. A line is at most 512 KiB. A chat past the plan, a run past `runs`, or a report that does
-not hold together ends the grade, and what ran is scored by purlis's own runner. When the grade
+a chat. A line is at most 512 KiB. A chat past the plan or a run past `runs` ends the grade too, and
+what ran is scored by purlis's own runner. When the grade
 has reached a limit, the next chat asked for is answered as not run so the Grader can report. A
 second one ends the grade.

@@ -33,7 +33,7 @@
 //! The words are known only where the `skill-studio` flag is on
 //! ([`super::capability::Capability::known`]). Three are version 1 of the public extension API,
 //! whose messages are `docs/extension-api.md` and `tests/fixtures/extension-api/v1.json`; the
-//! others are experimental ([`super::capability::Capability::EXPERIMENTAL`]).
+//! others are experimental ([`super::capability::Capability::VERSION_ONE`]).
 
 pub mod grading;
 
@@ -45,6 +45,15 @@ use serde::{Deserialize, Serialize};
 use super::capability::Capability;
 use crate::sandbox::Os;
 use crate::sandbox::hosts::Host;
+
+/// **Version 1 of the extension API, as it was frozen** (ADR 0101, amended 2026-11-02).
+#[cfg(test)]
+pub(crate) fn version_one() -> serde_json::Value {
+    serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/extension-api/v1.json"
+    ))
+    .expect("the contract is JSON")
+}
 
 /// The most hosts one manifest declares. Each is named in the approval prompt, one by one.
 pub const MOST_HOSTS: usize = 16;

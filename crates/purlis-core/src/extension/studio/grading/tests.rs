@@ -441,23 +441,22 @@ fn a_grader_is_not_told_what_a_chat_said() {
 }
 
 /// **A grade's lines of version 1 of the extension API, as it was frozen** (ADR 0101, amended
-/// 2026-11-02): what a Grader answers is read, and what purlis writes back is the line recorded.
+/// 2026-11-02): the recorded request, what a Grader answers to it, and what purlis writes back.
 #[test]
 fn a_grade_of_version_one_goes_line_by_line_as_the_contract_records_it() {
-    let contract: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../../../tests/fixtures/extension-api/v1.json"
-    ))
-    .expect("the contract is JSON");
+    let contract = crate::extension::studio::version_one();
+    let protocol = u32::try_from(contract["protocol"].as_u64().expect("a number")).expect("small");
     let lines = &contract["grade"];
-    let request = request();
+    let request: GradeRequest =
+        serde_json::from_value(lines["question"]["ask"]["request"].clone()).expect("a request");
     let mut host = Host::default();
     let mut grading = Grading::new("house-studio", &request, &mut host, capped(100_000));
     let back = grading
-        .heard(PROTOCOL, &line(lines["run_chat"].clone()))
+        .heard(protocol, &line(lines["run_chat"].clone()))
         .expect("a line back");
     assert_eq!(written(&back), lines["chat_ran"]);
     assert_eq!(
-        grading.heard(PROTOCOL, &line(lines["report"].clone())),
+        grading.heard(protocol, &line(lines["report"].clone())),
         None,
         "the question is over"
     );
@@ -465,4 +464,27 @@ fn a_grade_of_version_one_goes_line_by_line_as_the_contract_records_it() {
     assert_eq!(report.failed, None);
     assert_eq!(report.grader, "house-studio");
     assert_eq!(report.triggers[0].query, "make me a pdf");
+}
+
+#[test]
+fn every_way_a_chat_of_version_one_ends_is_spelled_as_the_contract_records_it() {
+    let lines = &crate::extension::studio::version_one()["grade"];
+    let ends = [
+        ChatEnd::Turn,
+        ChatEnd::TimedOut,
+        ChatEnd::NotStarted {
+            why: "no chat".into(),
+        },
+        ChatEnd::Cancelled,
+        ChatEnd::Asked,
+        ChatEnd::OverCap,
+        ChatEnd::OverLimit,
+    ]
+    .map(|end| serde_json::to_value(end).expect("an end"));
+    assert_eq!(serde_json::Value::from(ends.to_vec()), lines["ends"]);
+    // A chat not run has nothing to say of itself: the shape every result can take.
+    assert_eq!(
+        serde_json::to_value(not_run(GradeEnd::OverCap)).expect("a result"),
+        lines["chat_not_run"]["chat_ran"]
+    );
 }

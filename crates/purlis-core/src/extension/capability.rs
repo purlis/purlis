@@ -65,7 +65,7 @@ pub enum Capability {
     Cli,
     /// **The six studio capabilities** (ADR 0101), known only where the `skill-studio` flag is
     /// on ([`crate::skills::STUDIO_FLAG`]). Three are version 1 of the public extension API and
-    /// three are still experimental ([`Self::EXPERIMENTAL`]). An extension that declares any of
+    /// the rest are experimental ([`Self::VERSION_ONE`]). An extension that declares any of
     /// them runs confined ([`super::studio`]). Each declares its shape under its own word.
     ///
     /// A skill source: purlis asks it what skills it has, and for one skill's files at a
@@ -96,12 +96,13 @@ impl Capability {
         Self::SkillRouter,
     ];
 
-    /// **The studio capabilities not yet fully wired**, which stay out of version 1 of the public
-    /// extension API and may change shape (the operator's ruling of 2026-10-31 on #2786): an
-    /// extension's source neither installs nor shows in Browse (#3089, #3092), its lint is not
-    /// in the install review (#3090), and its template does not land as a draft (#3091).
-    pub const EXPERIMENTAL: [Capability; 3] =
-        [Self::SkillSource, Self::SkillLint, Self::SkillTemplate];
+    /// **The studio capabilities that are version 1 of the public extension API**, and change
+    /// only by a protocol version. Every other studio capability is experimental and may change
+    /// shape, so a new one is until it is named here (the operator's ruling of 2026-10-31 on
+    /// #2786). Out of it for now: `skill-source`, which neither installs nor shows in Browse
+    /// (#3089, #3092), `skill-lint`, not in the install review (#3090), and `skill-template`,
+    /// which does not land as a draft (#3091).
+    pub const VERSION_ONE: [Capability; 3] = [Self::Grader, Self::StudioPanel, Self::SkillRouter];
 
     /// Whether it is one of the six studio capabilities, whose extension runs confined
     /// (ADR 0101 §2).
@@ -272,7 +273,7 @@ impl Capability {
     /// 2026-11-02).
     pub fn asks(self) -> String {
         let (word, what) = self.spelled();
-        if Self::EXPERIMENTAL.contains(&self) {
+        if self.is_studio() && !Self::VERSION_ONE.contains(&self) {
             format!("the capability “{word}”, experimental — {what}")
         } else {
             format!("the capability “{word}” — {what}")
