@@ -67,9 +67,23 @@ footer[data-scope="status-bar"] {
   background-color: var(--border-subtle);
 }
 
-/* Each item's place, which says its id and is no box of its own. */
+/* Each item's place, which says its id and is the box a drag moves: as wide as the item, and
+   giving way only where the item does. */
 [data-scope="status-bar"][data-part="slot"] {
-  display: contents;
+  display: flex;
+  flex: none;
+  min-inline-size: 0;
+}
+
+[data-scope="status-bar"][data-part="slot"]:has([data-shrinks]) {
+  flex: 0 1 auto;
+}
+
+/* An item being dragged along its end passes over its neighbours. It keeps its own look, as a tab
+   does: where it will land is the gap the others open for it. */
+[data-scope="status-bar"][data-part="slot"][data-dragging] {
+  z-index: 1;
+  cursor: grabbing;
 }
 
 /* ---------------------------------------------------------------------------------------------
