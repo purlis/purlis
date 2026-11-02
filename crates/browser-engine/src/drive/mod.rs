@@ -584,6 +584,13 @@ pub enum Refusal {
          where this would go is not known: try again in a moment"
     )]
     FrameUnread,
+    /// A frame this would reach shows a document with no web origin of its own, so the judge
+    /// cannot be told where it would go.
+    #[error(
+        "nothing was sent to the page: a frame on it shows a document with no web origin of its \
+         own, so where this would go cannot be told"
+    )]
+    FrameOpaque,
     #[error("nothing on the page has the focus")]
     NothingFocused,
     #[error("the page cannot tell which field has the focus")]
