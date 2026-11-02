@@ -163,9 +163,6 @@ type Moving = {
 const sameAsked = (one: readonly number[] | null, other: readonly number[] | null) =>
   one === other || (one !== null && other !== null && sameList(one, other));
 
-/** The chats a chat that handed nothing off handed off to. */
-const NOT_HANDED_OFF: readonly number[] = [];
-
 /** No restart has anything to say. */
 const NO_RESTARTS: Readonly<Record<number, string>> = {};
 
@@ -660,11 +657,6 @@ export function ChatsSection({
   }
   /** Where each chat's work went by a handoff, the newest first (#1492). */
   const went = useMemo(() => handedOff(rows), [rows]);
-  /** The same by number, for each row's menu: held, so a row is drawn again only for its own. */
-  const wentTo = useMemo(
-    () => new Map([...went].map(([from, chats]) => [from, chats.map((chat) => chat.session)])),
-    [went],
-  );
   /**
    * **The chats that need the person and that the filter hides**, longest waiting first
    * (#1499): their own rows and every row above them are filtered out, so no hand is drawn
@@ -1133,7 +1125,6 @@ export function ChatsSection({
                       byYou={row.byYou === true}
                       handedToName={handed?.[0].name ?? null}
                       handedMore={handed === undefined ? 0 : handed.length - 1}
-                      handedAll={wentTo.get(row.session) ?? NOT_HANDED_OFF}
                       askerWaiting={row.askerWaiting === true}
                       tab={row.tab}
                       current={row.session === front}
@@ -1355,7 +1346,6 @@ const Row = memo(function Row({
   byYou,
   handedToName,
   handedMore,
-  handedAll,
   askerWaiting,
   tab,
   current,
@@ -1409,8 +1399,6 @@ const Row = memo(function Row({
   handedToName: string | null;
   /** How many other open chats it handed off to. */
   handedMore: number;
-  /** Every open chat it handed off to, the newest first: its menu has a row to go to each. */
-  handedAll: readonly number[];
   /** That chat waits to start after a launch, and has not closed (#1513). */
   askerWaiting: boolean;
   tab: boolean;
@@ -1556,7 +1544,7 @@ const Row = memo(function Row({
   });
   return (
     <li role="none" data-level={level}>
-      <Menued on={{ on: "chat", session, handed: handedAll }} offers={offers} onPress={onPress}>
+      <Menued on={{ on: "chat", session }} offers={offers} onPress={onPress}>
         <RovingFocusGroup.Item asChild tabStopId={rowId(session)}>
           <button
             type="button"
@@ -1650,7 +1638,7 @@ const Row = memo(function Row({
           kept for it, so nothing moves. **The pointer's and the eye's, as the at-limit line
           is**: what the row's `li` holds is the tree's, so it is out of the accessibility tree
           and the tab order, and the keyboard opens the same list with Shift+F10 on the row. */}
-      {!menuIsEmpty({ on: "chat", session, handed: handedAll }, offers) && (
+      {!menuIsEmpty({ on: "chat", session }, offers) && (
         <span className="chat-more" aria-hidden="true">
           <IconButton
             size="sm"

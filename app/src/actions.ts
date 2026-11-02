@@ -4213,8 +4213,8 @@ function chatRows(now: Now): Offer[] {
     // **Start fresh** (NO-3, charter#369): for a chat the project's instructions changed under
     // since it started, and greyed with its reason for any other chat with a conversation. It
     // ends the chat's program, so it is asked about first and drawn in the danger colour.
-    if (restartable) {
-      const files = now.planeUpdated?.[session] ?? [];
+    const files = now.planeUpdated?.[session] ?? [];
+    if (files.length > 0 || restartable) {
       const title = `Start chat ${name} fresh`;
       if (files.length === 0) offers.push(cannot(freshId(session), title, FRESH_UNCHANGED, name));
       // **A task** (#1489, #1609): a fresh start is a new conversation, and a task's brief is
@@ -4994,12 +4994,7 @@ export type MenuOn =
    * **One chat, by its number** (#4753): its one ordered list, which its pane head's ⋯, its
    * sidebar row's ⋯ and right-click, and the palette all show. A chat with no tab has it whole.
    */
-  | {
-      on: "chat";
-      session: number;
-      /** The chats its work was handed off to, the newest first (#1492). */
-      handed?: readonly number[];
-    }
+  | { on: "chat"; session: number }
   /** **One tab, by its number**: the tab's own rows and no chat's (#4753, spec #4750). A tab
    *  holds a layout, and a chat's rows are the chat's, so a split tab never acts on the wrong
    *  chat. */
@@ -5092,7 +5087,6 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           usingSkillId(at),
           workLinkId(at),
           workUnlinkId(at),
-          ...(what.handed ?? []).map((to) => handedOffId(at, to)),
           // Where a task is drawn (#1489): a tab of its own, beside its session, or back.
           ownTabId(at),
           besideId(at),
@@ -5335,6 +5329,12 @@ export function moveChatRows(session: number, offers: Catalogued): Offer[] {
   return scanned(chatMovePrefix(session), offers);
 }
 
+/** The ids of chat `session`'s Go to rows, the chats its work was handed to, newest first. */
+function handedTo(session: number, offers: Catalogued): string[] {
+  const prefix = `chat.handed:${session}:`;
+  return [...offers.keys()].filter((id) => id.startsWith(prefix));
+}
+
 /** The rows whose ids start `prefix`, in the catalogue's order. Only what can run: a row that
  *  cannot is absent from a menu, and said in the palette. */
 function scanned(prefix: string, offers: Catalogued): Offer[] {
@@ -5399,6 +5399,13 @@ export function menuRows(what: MenuOn, offers: Catalogued): { above: Offer[]; be
   const found = (ids: readonly string[]) =>
     ids.map((id) => offers.get(id)).filter((row) => row !== undefined);
   const { above, below } = menuOn(what);
+  // **A chat's Go to rows** (#1492): one per chat its work was handed off to, the newest first,
+  // as the catalogue lists them. Found in it, so every surface of the chat's list has them
+  // without knowing who it handed to: its pane's ⋯ as its sidebar row (#4753).
+  if (what.on === "chat") {
+    const at = above.indexOf(ownTabId(what.session));
+    above.splice(at, 0, ...handedTo(what.session, offers));
+  }
   // **A row that sends a task back ends nothing, so it is above the line** (#1489): a task's
   // own tab keeps the close's id for its minimise, and the close's id is listed below.
   const under = found(below);

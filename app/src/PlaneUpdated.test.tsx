@@ -7,11 +7,11 @@ import type { Offer } from "./actions";
 import { FreshMark } from "./PlaneUpdated";
 
 const FRESH: Offer = {
-  id: "tab.fresh:3",
+  id: "chat.fresh:3",
   title: "Start fresh",
   available: true,
   reason: "",
-  does: { verb: "startFresh", tab: 3 },
+  does: { verb: "startFresh", session: 3 },
 };
 
 /**

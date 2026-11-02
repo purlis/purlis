@@ -153,7 +153,7 @@ function everyMenu(): { said: string; on: MenuOn; offers: Catalogued }[] {
   return [
     { said: "a chat's tab behind", on: { on: "tab", tab: behind }, offers },
     { said: "the chat's tab in front", on: { on: "tab", tab: front }, offers },
-    { said: "a chat's list", on: { on: "chat", session: 7, handed: [12] }, offers },
+    { said: "a chat's list", on: { on: "chat", session: 7 }, offers },
     { said: "a task's list", on: { on: "chat", session: 11 }, offers },
     { said: "a workspace's tab", on: { on: "workspace", workspace: "alpha" }, offers },
     { said: "the focused workspace's tab", on: { on: "workspace", workspace: "beta" }, offers },
@@ -317,7 +317,7 @@ describe("every menu", () => {
       ["chat.back", "chat.beside", "chat.handed", "tab.close", "worktree.merge"].sort(),
     );
     const { offers } = world();
-    const rows = rowsOf(menuOf({ on: "chat", session: 7, handed: [12] }, offers));
+    const rows = rowsOf(menuOf({ on: "chat", session: 7 }, offers));
     // The chat its work was handed to is another chat, and the row goes to it.
     expect(rows.map((row) => row.said)).toContain("Go to qa 12");
     const branch = rowsOf(menuOf({ on: "worktree", repo: "svc", piece: "fix-it" }, offers));
@@ -453,8 +453,8 @@ describe("a chat's list (#4753)", () => {
         "Unlink work item",
         `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
       ],
-      // Chat 7 needs you, so it can be ignored until it asks again.
-      ["Open ▸ [Activity, Network]", "Ignore until it asks again"],
+      // Its work went to qa 12, and chat 7 needs you, so it can be ignored until it asks again.
+      ["Go to qa 12", "Open ▸ [Activity, Network]", "Ignore until it asks again"],
       ["Restart"],
       // The ways to stop it end something too: in the last group, above the row that ends it.
       ["Stop ▸ [Stop, Stop and everything below it, Stop all tasks]", "Start fresh", "End…"],
@@ -495,7 +495,7 @@ describe("a chat's list (#4753)", () => {
       rowsOf(menuOf({ on: "chat", session }, offers)).map((row) => row.said);
 
     // Less what is chat 7's own now: its work link, and the Ignore of a chat that needs you.
-    const mine = new Set(["Unlink work item", "Ignore until it asks again"]);
+    const mine = new Set(["Unlink work item", "Go to qa 12", "Ignore until it asks again"]);
     expect(rows(12)).toEqual(rows(7).filter((one) => !mine.has(one)));
   });
 
