@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793641926727,
+  "lastUpdate": 1793643197739,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36540,6 +36540,48 @@ window.BENCHMARK_DATA = {
             "value": 102.039838,
             "unit": "ms",
             "extra": "median of 5 runs: 101.372, 101.628, 102.040, 102.041, 102.113 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9181dbd558cb15cf82ebccc5f27c9e27b150e3c6",
+          "message": "Browser engine: a frame is judged by the origin of its document (#4747)\n\n* Browser engine: a frame is judged by the origin of its document\n\nWhat is typed, pressed or dropped into a frame is judged by the origin of the frame's document: the engine's word of it where given, a blob: frame by the origin that made it, about:blank and about:srcdoc by the origin around them. A frame with no web origin of its own is judged as opaque, and nothing is typed into it while a judge is set. The engine's own page for a failed load sends nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DSPEANW9G0EJ4QD7HF2FQW\nPurlis-Persona: steward\n\n* Browser engine: a srcdoc or blank frame takes the origin its document has\n\nA frame at about:srcdoc or about:blank is judged by the origin its document has, as the document's own context gives it: the page's origin where the frame takes it, none where the frame is sandboxed. Chrome gives such a frame's securityOrigin from its address alone, as \"://\", whatever its document's origin, so that word no longer decides it. Where no context has said it yet, the frame takes the origin around it, as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXB0MS0QP5RM53QJV1N3NR\nPurlis-Persona: steward\n\n* Browser engine test: the other site's page loads in its frame\n\nThe judge in the frame-origin test asks only about what the other site's frame sends, as the other judged tests do, so the other site's page loads and makes its blob frame. What is typed into that frame is still asked about.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXB0MS0QP5RM53QJV1N3NR\nPurlis-Persona: steward\n\n* Browser engine: a blank frame whose origin is not known is not typed into\n\nA blank or srcdoc frame with no word of its own context is judged by the\ndocument around it only in that document's session, and only while every\ncontext's word on that session was kept; otherwise it is not known. Past\nthe most origins kept, a new one is not kept and nothing kept is\nforgotten. A frame showing the engine's error page is judged by the\ndocument around it, and a frame standing on one the driver does not know\nmakes every-document checks not known.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6E3NX3HXTB4H24EEFZ45SR1\nPurlis-Persona: steward\n\n* Browser engine test: typing again into a blank frame takes call ids of its own\n\nA call whose id was answered before answers the same again, so the\nsecond try reused the first refusal and never judged the frame anew.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6E67TC7WAQRB8ZGG713HPDP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T14:54:14Z",
+          "tree_id": "15f58c20082a21d37541519cfbe81ecc0b45e722",
+          "url": "https://github.com/purlis/purlis/commit/9181dbd558cb15cf82ebccc5f27c9e27b150e3c6"
+        },
+        "date": 1793643193463,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6214275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.600, 0.621, 0.621, 0.624, 0.645 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.676867,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.546, 16.580, 16.677, 16.730, 16.742 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9725155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.554, 101.840, 101.973, 102.193, 103.525 ms"
           }
         ]
       }
