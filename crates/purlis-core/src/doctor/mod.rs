@@ -630,6 +630,39 @@ pub(crate) fn short_path(path: &Path) -> String {
     fsx::path_field(path)
 }
 
+/// `path` as ONE word of a command a hint suggests, which a reader pastes into a shell (#4830).
+///
+/// Never shortened: a clipped path in a command names a different path, or none. And never
+/// [`short_path`]'s `~/…`, which a shell expands only outside quotes. A path whose every
+/// character has a glyph is `shlex.quote`d ([`crate::shellseg::shell_quote`]), which a POSIX
+/// shell reads back unchanged and which leaves an ordinary path as it is. A path holding a
+/// character with no glyph — a newline, a tab, a direction override — cannot be single-quoted
+/// without that character landing in the row as itself (#449), so it is spelled in `$'…'`
+/// with every byte outside printable ASCII as `\xHH`: bash (3.2 on), zsh and ksh read that
+/// back as the same bytes, whatever the locale.
+pub(crate) fn shell_path(path: &Path) -> String {
+    shell_word(&path.to_string_lossy())
+}
+
+/// `text` as one word of a suggested command, as [`shell_path`] spells a path: a branch name
+/// git allows can hold a `$`, a `;` or a quote as well.
+pub(crate) fn shell_word(text: &str) -> String {
+    if crate::shown::one_line(text, crate::shown::NO_CLIP) == text {
+        return crate::shellseg::shell_quote(text);
+    }
+    let mut word = String::from("$'");
+    for byte in text.bytes() {
+        match byte {
+            b'\\' => word.push_str("\\\\"),
+            b'\'' => word.push_str("\\'"),
+            b' '..=b'~' => word.push(char::from(byte)),
+            _ => word.push_str(&format!("\\x{byte:02x}")),
+        }
+    }
+    word.push('\'');
+    word
+}
+
 /// Python's `_first_line`: the text stripped, then its first line.
 pub(crate) fn first_line(text: &str) -> String {
     crate::memstore::py_strip(text)
