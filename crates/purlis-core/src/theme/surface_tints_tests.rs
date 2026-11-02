@@ -270,7 +270,10 @@ fn a_shipped_theme_builds_no_tints_for_what_stands_on_its_surfaces() {
                 "{base} {}",
                 appearance.id
             );
-            for (surface, _, _, set) in surfaces_set(&rules) {
+            for (surface, _, default, set) in surfaces_set(&rules) {
+                // Nothing is drawn on a fill that is a ground of its own, so `broken_on` and the
+                // sets of states it reads cost a shipped theme nothing.
+                assert_eq!(drawn_on(surface, default, set).count(), 0, "{base}");
                 assert!(
                     !shows_a_tint(appearance, set),
                     "{base} {} {}",
@@ -320,7 +323,8 @@ fn the_coarse_reading_comes_within_its_margin_of_every_degree() {
 #[test]
 fn a_see_through_look_on_an_opaque_surface_is_read_in_the_tints() {
     // The fill is opaque and no tint turns it: what moves is the look, which the recipe turns. On
-    // white every default look clears its floors, so only these words come near.
+    // white every default look clears its floors, so only these words come near. The look is the
+    // ghost's, since the secondary is Keep blocked and an Allow off its fill falls first.
     // Each token is drawn elsewhere only under the primary words, so the wash brings no others near.
     let build = |token: &str, wash: &str, byte: u8| {
         let mut tokens = json!({ "chart.3": grey(byte), "chart.4": "#ffffff" });
@@ -329,8 +333,8 @@ fn a_see_through_look_on_an_opaque_surface_is_read_in_the_tints() {
             "popover",
             tokens,
             &secondary_near(json!({
-                "button.root.secondary.fill": token,
-                "button.root.secondary.text": "chart.3",
+                "button.root.ghost.fill": token,
+                "button.root.ghost.text": "chart.3",
             })),
         )
     };
@@ -347,7 +351,10 @@ fn a_see_through_look_on_an_opaque_surface_is_read_in_the_tints() {
             let byte = last_holding(0, 0xff, breaks);
             tried.push((token, wash.clone(), byte));
             let theme = build(token, &wash, byte?)?;
-            breaks_in_a_tint(&theme, "button", "popover").then_some((token, wash, byte?))
+            let black = build(token, &wash, 0)?;
+            (breaks_in_a_tint(&theme, "button", "popover")
+                && falls_in_the_tints(&black, "button", "popover").is_none())
+            .then_some((token, wash, byte?))
         });
     let Some((token, wash, byte)) = found else {
         panic!("no see-through look holds as written and breaks in a tint: {tried:?}");
@@ -412,7 +419,14 @@ fn a_look_only_a_set_of_states_draws_on_a_surface_is_read() {
     let Some(theme) = theme else {
         panic!("no look only a set of states draws falls on the popover, of {tried} that loaded");
     };
-    assert!(breaks_on(&theme, "button", "popover"));
+    // A reading, and not the consent floor a set's fill can also bring down: those come after.
+    let floor = falls_in_the_tints(&theme, "button", "popover");
+    assert!(
+        floor
+            .as_ref()
+            .is_some_and(|one| one.contains("words contrast")),
+        "{floor:?}"
+    );
 }
 
 #[test]
