@@ -863,20 +863,27 @@ fn a_repository_with_real_lfs_is_checked_out_as_its_pointer_and_reads_clean() {
         "the filter was not left to the pointer"
     );
 
-    let past = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
-    for tree in [&work, &piece] {
-        let path = tree.join("big.bin");
-        std::fs::write(&path, content).unwrap();
-        std::fs::File::options()
-            .write(true)
-            .open(&path)
-            .unwrap()
-            .set_modified(past)
-            .unwrap();
-        let status = git::run(tree, &["status", "--porcelain"], git::READ).expect("git starts");
-        assert!(status.ok(), "status: {status:?}");
-        assert_eq!(status.out, "", "an unchanged LFS file reads as changed");
-    }
+    // Same size as the index, a new time: only the clean filter can tell git it is unchanged.
+    let path = work.join("big.bin");
+    std::fs::write(&path, content).unwrap();
+    touched_in_the_past(&path);
+    let status = git::run(&work, &["status", "--porcelain"], git::READ).expect("git starts");
+    assert!(status.ok(), "status: {status:?}");
+    assert_eq!(status.out, "", "an unchanged LFS file reads as changed");
+
+    // A file over its pointer differs from the index in size, which git reads as changed with no
+    // filter asked, so the new folder's clean filter is shown by what an `add` stores: a filter
+    // held there would store the file whole.
+    std::fs::write(piece.join("big.bin"), content).unwrap();
+    let staged = git::run_untimed(&piece, &["add", "big.bin"]).expect("git starts");
+    assert!(staged.ok(), "add: {staged:?}");
+    let status = git::run(&piece, &["status", "--porcelain"], git::READ).expect("git starts");
+    assert_eq!(status.out, "", "the branch folder stored something else");
+    assert_eq!(
+        support::git(&piece, &["cat-file", "-p", ":big.bin"]).stdout,
+        stored.stdout,
+        "the branch folder's filter did not store the pointer"
+    );
 }
 
 /// A file's time moved back, so that git can tell it from the index only by reading it through

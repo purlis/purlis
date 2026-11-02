@@ -454,6 +454,7 @@ fn every_git_call_is_recorded_and_the_push_is_one_refspec_with_no_force() {
         [
             vec!["remote", "get-url", "origin"],
             vec!["remote", "get-url", "origin"],
+            vec!["check-ref-format", "refs/heads/change/api-2"],
             vec![
                 "rev-parse",
                 "--verify",
