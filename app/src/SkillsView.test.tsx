@@ -1085,6 +1085,32 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
     );
   });
 
+  it("shows a prompt's fallback on the chat in front as it is told, and only that chat's (#4445)", async () => {
+    const start = { router: "acme", ms: 4, fell_back: false, said: "Routed by acme in 4 ms." };
+    const routing: SkillRouting = { ...start };
+    const asked = core(() => studio([]), { chat: [], budget: BUDGET, routing });
+    view({
+      chat: { session: 4, name: "Chat 4", workspace: "ops", persona: null, harness: "claude" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-said")).toHaveTextContent("Routed by acme in 4 ms."),
+    );
+    const reads = () => asked.filter((one) => one.cmd === "chat_skills").length;
+    const before = reads();
+
+    await act(() => emit("chat-prompt-routing", { plane: "p", session: 9 }));
+    await act(() => emit("chat-prompt-routing", { plane: "q", session: 4 }));
+    expect(reads()).toBe(before);
+
+    routing.last_prompt = { fell_back: true, said: "Its last prompt went on with no pointer." };
+    await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
+    await waitFor(() =>
+      expect(needOf("Its router fell back on a prompt")).toHaveTextContent(
+        "Its last prompt went on with no pointer.",
+      ),
+    );
+  });
+
   it("puts the budget, the pins, a fallen-back router and what it started without in Needs you, each with its fix", async () => {
     core(() => studio([skill("deploy")]), {
       chat: [given("deploy")],

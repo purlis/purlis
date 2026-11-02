@@ -5894,6 +5894,15 @@ export type ChatOnAPoolNotKept = {
 };
 
 /**
+ *  What `chat-prompt-routing` carries: which chat to read again, and nothing of how it did, so
+ *  tellings that land out of order leave the window nothing to get wrong.
+ */
+export type ChatPromptRouting = {
+	plane: PlaneId,
+	session: number,
+};
+
+/**
  *  What a restart answered (#1342, #1428): the chat in its new run with what its start found
  *  to say, or, while it waits on a permission prompt, why it is not restarted yet.
  */

@@ -161,6 +161,21 @@ pub struct SkillRouting {
     pub last_prompt: Option<SkillPromptRouting>,
 }
 
+/// The event the window is sent as a chat's latest prompt changes whether it fell back (#4445).
+/// Not `plane-changed`: this routing is kept in memory, and that event says what moved on disk.
+pub const PROMPT_ROUTING: &str = "chat-prompt-routing";
+
+/// What `chat-prompt-routing` carries: which chat to read again, and nothing of how it did, so
+/// tellings that land out of order leave the window nothing to get wrong.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ChatPromptRouting {
+    pub plane: PlaneId,
+    pub session: u32,
+}
+
+/// Told each chat whose latest prompt changes whether it fell back.
+pub type PromptRoutingTeller = std::sync::Arc<dyn Fn(ChatPromptRouting) + Send + Sync + 'static>;
+
 /// **How a chat's router did on its latest prompt** (#4297, ADR 0102 §6): the core's routing
 /// record of it, as the chat's tab and the studio say it. No word of the prompt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
