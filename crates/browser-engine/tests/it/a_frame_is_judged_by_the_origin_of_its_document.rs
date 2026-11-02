@@ -24,9 +24,9 @@ use purlis_browser_engine::drive::{
     Answer, Browser, Call, Field, Gate, Judge, Outbound, Refusal, Why,
 };
 
-/// A judge that keeps every address it is told, and asks about other.test unless the page
-/// only reads: other.test's page loads in its frame and makes the blob frame, and what is typed
-/// there is asked about.
+/// A judge that keeps every address it is told, and asks about other.test only for what is
+/// sent there: other.test's pages load, in a frame or opened by the agent, and what is typed
+/// into a document of its origin is asked about.
 fn judge() -> (Judge, Arc<Mutex<Vec<String>>>) {
     let told = Arc::new(Mutex::new(Vec::new()));
     let keep = Arc::clone(&told);
@@ -34,7 +34,7 @@ fn judge() -> (Judge, Arc<Mutex<Vec<String>>>) {
         keep.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(out.address.clone());
-        if out.address.starts_with("http://other.test/") && out.why != Why::Reads {
+        if out.address.starts_with("http://other.test/") && out.why == Why::Sends {
             Gate::Ask {
                 site: "other.test:80".to_owned(),
             }
