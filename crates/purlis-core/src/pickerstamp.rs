@@ -14,24 +14,25 @@
 //! - this project's records of approved commands, in its state folder;
 //! - your grants and confirmed sandbox level for this clone, and for every project;
 //! - the installed harnesses: each profile's program as the check resolves it, and each folder
-//!   on `PATH`, where a harness newly installed lands.
+//!   the check searches ([`crate::programs::search_dirs`]), `PATH` and the fixed folders after
+//!   it, where a harness newly installed lands;
+//! - the project's `.git/index` and `.git/info/exclude`, which the check of whether its local
+//!   settings are ignored reads.
 //!
 //! And the project's own manifest, local settings and `.gitignore`, which the watch does follow:
 //! on a busy Mac it tells a change seconds late (#577), and a profile edited and the dialog
 //! opened straight after must not draw the profile as it was.
 //!
-//! A [`Stamp`] is each of those paths' modified time and length, or its absence. It costs one
-//! `stat` a path, no read and no process, and a kept answer is served only while its stamp
-//! still holds.
+//! A [`Stamp`] is each of those paths as a `profiles::FileStamp` (inode, length,
+//! change and modified times), or its absence. It costs one `stat` a path, no read and no
+//! process, and a kept answer is served only while its stamp still holds.
 
+use crate::profiles::{FileStamp, Profile};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
-use crate::profiles::Profile;
-
-/// How one path stood: its modified time and length, or `None` where nothing was there.
-type Seen = Option<(SystemTime, u64)>;
+/// How one path stood, or `None` where nothing was there.
+type Seen = Option<FileStamp>;
 
 /// The paths a picker answer was read from outside the plane watch, each as it stood.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +48,7 @@ impl Stamp {
             root,
             profiles,
             std::env::var_os("PATH").as_deref(),
+            crate::profiles::home().as_deref(),
         ))
     }
 
@@ -72,13 +74,18 @@ impl Stamp {
 /// How `path` stands now, through a link: a harness installed as a link to a versioned file is
 /// updated by the link moving.
 fn seen(path: &Path) -> Seen {
-    let meta = std::fs::metadata(path).ok()?;
-    Some((meta.modified().ok()?, meta.len()))
+    FileStamp::followed(path)
 }
 
 /// Every path a picker answer for `root` listing `profiles` was read from outside the plane
-/// watch, `path_var` the `PATH` it resolved programs on.
-fn read_from(root: &Path, profiles: &[Profile], path_var: Option<&OsStr>) -> Vec<PathBuf> {
+/// watch, `path_var` the `PATH` it resolved programs on and `home` the home folder whose own
+/// program folders it searched after it.
+fn read_from(
+    root: &Path,
+    profiles: &[Profile],
+    path_var: Option<&OsStr>,
+    home: Option<&Path>,
+) -> Vec<PathBuf> {
     // Every spelling of each: the old one is read where the new one is not there.
     let named = [crate::names::PLANE_MANIFEST, crate::names::LOCAL_SETTINGS];
     let mut paths: Vec<PathBuf> = named
@@ -86,6 +93,9 @@ fn read_from(root: &Path, profiles: &[Profile], path_var: Option<&OsStr>) -> Vec
         .flat_map(|name| name.spellings().map(|spelled| root.join(spelled)))
         .collect();
     paths.push(root.join(".gitignore"));
+    // What the check of whether the local settings are ignored reads besides `.gitignore`.
+    paths.push(root.join(".git").join("index"));
+    paths.push(root.join(".git").join("info").join("exclude"));
     paths.push(PathBuf::from(crate::sandbox::policy::MACHINE_FILE));
     paths.extend(
         crate::machine::config_root_unheld().map(|config| crate::profilestore::path(&config)),
@@ -93,7 +103,9 @@ fn read_from(root: &Path, profiles: &[Profile], path_var: Option<&OsStr>) -> Vec
     paths.extend(crate::profiletrust::records(root));
     paths.push(crate::sandbox::local::path(root));
     paths.push(crate::sandbox::local::everywhere_path());
-    paths.extend(path_var.into_iter().flat_map(std::env::split_paths));
+    // Every folder the program check searches, not only `PATH`: a Finder launch's `PATH` is the
+    // system's four, and a harness installed into `~/.local/bin` is found there all the same.
+    paths.extend(crate::programs::search_dirs_from(path_var, home));
     paths.extend(profiles.iter().filter_map(crate::start::program_checked));
     paths.retain(|path| !path.as_os_str().is_empty());
     paths
@@ -101,6 +113,8 @@ fn read_from(root: &Path, profiles: &[Profile], path_var: Option<&OsStr>) -> Vec
 
 #[cfg(test)]
 mod tests {
+    use std::time::SystemTime;
+
     use super::*;
 
     /// A file's time moved forward, as an edit a second later would move it on any file system.
@@ -150,7 +164,7 @@ mod tests {
         std::fs::create_dir(&bin).expect("a folder on PATH");
         let root = dir.path().join("plane");
         let path_var = std::env::join_paths([&bin]).expect("a PATH");
-        let stamp = Stamp::of_paths(read_from(&root, &[], Some(&path_var)));
+        let stamp = Stamp::of_paths(read_from(&root, &[], Some(&path_var), None));
         assert!(stamp.holds());
 
         std::fs::write(bin.join("claude"), "#!/bin/sh\n").expect("installed");
@@ -165,9 +179,62 @@ mod tests {
     }
 
     #[test]
+    fn a_harness_installed_in_a_folder_searched_off_path_breaks_the_stamp() {
+        // A Finder launch: PATH is the system's four folders, and a harness lands in the
+        // operator's own ~/.local/bin, which the program check searches all the same.
+        let dir = tempfile::tempdir().expect("a dir");
+        let home = dir.path().join("home");
+        let bin = home.join(".local/bin");
+        std::fs::create_dir_all(&bin).expect("~/.local/bin");
+        let root = dir.path().join("plane");
+        let finder = OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin");
+        let stamp = Stamp::of_paths(read_from(&root, &[], Some(finder), Some(&home)));
+        assert!(stamp.holds());
+
+        std::fs::write(bin.join("claude"), "#!/bin/sh\n").expect("installed");
+
+        assert!(!stamp.holds());
+    }
+
+    #[test]
+    fn a_file_rewritten_to_the_same_length_and_time_breaks_the_stamp() {
+        // A save that keeps the length, inside the file system's time step, or a tool that puts
+        // the time back: the change time still moves.
+        let dir = tempfile::tempdir().expect("a dir");
+        let file = dir.path().join("purlis.toml");
+        std::fs::write(&file, "level = 1").expect("a file");
+        let was = std::fs::metadata(&file)
+            .expect("its time")
+            .modified()
+            .expect("a time");
+        let stamp = Stamp::of_paths([file.clone()]);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        std::fs::write(&file, "level = 2").expect("rewritten");
+        std::fs::File::options()
+            .write(true)
+            .open(&file)
+            .expect("open")
+            .set_modified(was)
+            .expect("its time put back");
+
+        assert!(!stamp.holds());
+    }
+
+    #[test]
+    fn the_stamp_names_the_git_files_the_ignore_check_reads() {
+        let root = Path::new("/home/dev/plane");
+        let paths = read_from(root, &[], None, None);
+
+        for git in [".git/index", ".git/info/exclude"] {
+            assert!(paths.contains(&root.join(git)), "{git}");
+        }
+    }
+
+    #[test]
     fn the_stamp_names_the_policy_the_projects_approvals_and_its_settings() {
         let root = Path::new("/home/dev/plane");
-        let paths = read_from(root, &[], None);
+        let paths = read_from(root, &[], None, None);
 
         for name in [
             "purlis.toml",
