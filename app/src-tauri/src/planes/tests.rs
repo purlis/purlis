@@ -39,7 +39,7 @@ fn a_change_the_watch_tells_is_in_the_sidebars_model_before_the_window_hears_it(
     std::fs::create_dir_all(&store).expect("a todo store");
     let model = Arc::new(Mutex::new(Model::read(&root)));
     let heard = Arc::new(Mutex::new(Vec::new()));
-    let changed = applying(Arc::clone(&model), root.clone(), {
+    let changed = applying(Arc::clone(&model), Arc::default(), root.clone(), {
         let model = Arc::clone(&model);
         let heard = Arc::clone(&heard);
         Arc::new(move |_, _| {

@@ -173,6 +173,7 @@ mod slowstart;
 mod smartclose;
 mod specimen;
 mod staleclones;
+mod startkept;
 mod stopping;
 #[cfg(test)]
 mod storythemes;
@@ -1452,9 +1453,10 @@ struct RowDetails {
 /// What the picker draws: every profile this machine has, every one charter will not use,
 /// and the plane's personas.
 ///
-/// Read fresh every time it is opened, like the sidebar: `charter.local.toml` is a file the
-/// operator edits by hand and a chat can write, so a cache here would be a second answer to
-/// "what is on disk" that nothing invalidates.
+/// Read fresh on every ask: what a fix in the picker reads to draw what is true after it, and
+/// what every other caller reads. The dialog's own two answers ([`start_options_first`],
+/// [`start_details`]) are kept per project instead, and the plane watch is what drops them
+/// (#4737): `charter.local.toml` is a file the operator edits by hand and a chat can write.
 ///
 /// **Off the main thread**: a sandboxed project's picker asks each approved Claude Code
 /// profile's program its `--version` (ruling V87g), which can take seconds, and the window
@@ -1479,6 +1481,10 @@ async fn start_options(
 /// [`start_details`] answers them. The dialog opens on this, at once, and fills its rows in as
 /// the details arrive. A start pressed before then goes through every gate it does today: the
 /// window waits for the details, and the core's start asks them again.
+///
+/// **Kept per project** (#4737), with [`start_details`]: an open with nothing changed is
+/// served from what the last one read ([`planes::Held::kept_start_first`]), and a change to
+/// the profiles, the personas, the sandbox or the installed harnesses drops it first.
 #[tauri::command]
 #[specta::specta]
 async fn start_options_first(
@@ -1486,11 +1492,15 @@ async fn start_options_first(
     plane: PlaneId,
 ) -> Result<StartOptions, String> {
     let held = planes.held(&plane)?;
-    let root = held.root().to_path_buf();
+    let kept = std::sync::Arc::clone(&held);
     let mut options = tauri::async_runtime::spawn_blocking(move || {
-        purlis_core::profiles::git_asked_once(|| {
-            let (set, check) = purlis_core::profiles::for_launch(&root);
-            start_first_of(&root, &set, &check)
+        kept.kept_start_first(|| {
+            let root = kept.root();
+            purlis_core::profiles::git_asked_once(|| {
+                let (set, check) = purlis_core::profiles::for_launch(root);
+                let stamp = purlis_core::pickerstamp::Stamp::of(root, set.profiles());
+                Ok((start_first_of(root, &set, &check)?, stamp))
+            })
         })
     })
     .await
@@ -1501,27 +1511,34 @@ async fn start_options_first(
 
 /// **The picker's second answer** (#4736): each row's approval, sandbox and billing, by its
 /// name, the slow part of [`start_options`]: a sandbox compile per harness and a check of
-/// each approved profile's program.
+/// each approved profile's program. Kept as [`start_options_first`] is (#4737), so a second open with
+/// nothing changed compiles nothing and runs no program.
 #[tauri::command]
 #[specta::specta]
 async fn start_details(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<Vec<RowDetails>, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
+    let held = planes.held(&plane)?;
     tauri::async_runtime::spawn_blocking(move || {
-        purlis_core::profiles::git_asked_once(|| {
-            let (set, _check) = purlis_core::profiles::for_launch(&root);
-            start_details_of(
-                &root,
-                &set,
-                &purlis_core::sandbox::Machine::this(),
-                &purlis_core::sandbox::backend::installed,
-            )
+        held.kept_start_details(|| {
+            let root = held.root();
+            Ok(purlis_core::profiles::git_asked_once(|| {
+                let (set, _check) = purlis_core::profiles::for_launch(root);
+                // Stamped before the read, so a change made while it reads breaks the stamp.
+                let stamp = purlis_core::pickerstamp::Stamp::of(root, set.profiles());
+                let details = start_details_of(
+                    root,
+                    &set,
+                    &purlis_core::sandbox::Machine::this(),
+                    &purlis_core::sandbox::backend::installed,
+                );
+                (details, stamp)
+            }))
         })
     })
     .await
-    .map_err(|err| format!("purlis could not read the profiles: {err}"))
+    .map_err(|err| format!("purlis could not read the profiles: {err}"))?
 }
 
 /// Every harness the project has, its card at a glance (HP-19): the palette's *What <product>
