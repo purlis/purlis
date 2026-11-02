@@ -1090,10 +1090,17 @@ pub fn bring_back(
              to bring back"
         )));
     }
-    if gone.is_none() && matches!(&ran, Ok(ran) if ran.running) {
-        docker
-            .stop(&kept.made)
-            .map_err(|why| Refused::Other(why.0))?;
+    if gone.is_none() {
+        // Listed and not read, it may run: nothing is copied from under it.
+        let running = ran
+            .as_ref()
+            .map_err(|why| Refused::Other(why.0.clone()))?
+            .running;
+        if running {
+            docker
+                .stop(&kept.made)
+                .map_err(|why| Refused::Other(why.0))?;
+        }
     }
     if !kept.held {
         runners::note_locked(config_root, name, |kept| kept.held = true, &locked)?;

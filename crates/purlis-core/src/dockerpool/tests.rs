@@ -3679,7 +3679,7 @@ fn bringing_back_takes_what_a_harness_keeps_beside_a_transcript() {
 fn a_read_that_cannot_finish_says_nothing_of_the_home() {
     let (home, bin) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     put(home.path(), A_CLAUDE_CONVERSATION, "{}\n");
-    for program in ["cat", "cmp", "find", "ln", "mkdir", "rm", "sh"] {
+    for program in ["cat", "cmp", "find", "ln", "mkdir", "mktemp", "rm", "sh"] {
         let found = ["/bin", "/usr/bin"]
             .iter()
             .map(|dir| std::path::Path::new(dir).join(program))

@@ -151,7 +151,7 @@ pub const CARRIED_WITHIN: std::time::Duration = std::time::Duration::from_secs(1
 /// on a read that did not finish.
 pub const CONVERSATIONS: &str = r#"set -u
 umask 077
-for needed in cat cmp find ln mkdir realpath rm; do
+for needed in cat cmp find ln mkdir mktemp realpath rm; do
   command -v "$needed" >/dev/null 2>&1 || exit 1
 done
 one=$1 mode=$2 from=$3 to=$4
@@ -191,7 +191,8 @@ echo "conversations $found $left $seen"
 /// so no name can be read as an answer. Bringing one back puts it at the same place under the new
 /// home, where the harness resumes it by its id. The new runner serves chats as it runs, so its
 /// folders are walked to one at a time, never through a link, and held by their real path; a file
-/// goes only where nothing is (`set -C`), whole, by a link from a name no one knew before, and one
+/// goes only where nothing is, whole, by a link from a file `mktemp` made under a name no one knew
+/// before, and one
 /// already there counts as brought back only where it is the same. What it makes is the runner's
 /// user's alone.
 pub const CONVERSATION_FILES: &str = r#"set -u
@@ -218,9 +219,7 @@ bring() (
     [ ! -L "./$name" ] && [ -f "./$name" ] && cmp -s -- "$from/$rel" "./$name"
     exit
   fi
-  set -C
-  part=./.purlis-brought-$$
-  [ ! -e "$part" ] && [ ! -L "$part" ] || exit 1
+  part=$(mktemp ./.purlis-brought-XXXXXXXX) || exit 1
   cat -- "$from/$rel" > "$part" && ln "$part" "./$name"
   ok=$?
   rm -f "$part"
