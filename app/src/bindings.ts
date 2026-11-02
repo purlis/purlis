@@ -3533,6 +3533,13 @@ export const commands = {
 	 */
 	themeFont: (asset: string) => typedError<string, string>(__TAURI_INVOKE("theme_font", { asset })),
 	/**
+	 *  **The parts of a first frame drawn before they were measured** (#4410): the stylesheet of the
+	 *  theme a frame's `parts_later` names, waiting for the measure its creation left running. What
+	 *  the window asks as it starts, with no project known, so its parts land whatever the restore
+	 *  does. The window's alone: a link is handed no first frame.
+	 */
+	firstFrameParts: (ticket: number) => typedError<string, string>(__TAURI_INVOKE("first_frame_parts", { ticket })),
+	/**
 	 *  **The person's density, font override, motion, contrast and colours, read by the core's theme
 	 *  engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
 	 *  The colours and the contrast are drawn by the engine into each theme the window then asks

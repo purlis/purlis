@@ -538,6 +538,7 @@ macro_rules! app_commands {
                 extensions::theme_in_force,
                 extensions::theme_in_force_at,
                 extensions::theme_font,
+                extensions::first_frame_parts,
                 extensions::theme_person,
                 specimen::theme_specimen,
                 extensions::theme_levels_adopt,

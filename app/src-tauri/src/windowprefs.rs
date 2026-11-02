@@ -120,6 +120,9 @@ struct Frame {
     floors: Option<String>,
     /// Which of the person's colours it left out (#3023): what the first frame's Notice says.
     mine: Vec<String>,
+    /// What the window asks for its parts by ([`parts_later`]), when it was drawn before they
+    /// were measured; `null` when it has them.
+    parts_later: Option<u32>,
 }
 
 /// **Where a window is created** (#2602): the project in front as it opens, and the workspace
@@ -267,12 +270,14 @@ impl FirstFrame {
                 // The window is created in the first: for the contrast read, or the standard
                 // one where none was, and for a dark system, where nothing says which.
                 native.get_or_insert_with(|| resolved.native());
+                let (theme, later) = handing.of(resolved);
                 let frame = Frame {
                     light,
                     more,
-                    theme: handing.of(resolved).0,
+                    theme,
                     floors: one.held.map(|held| held.said()),
                     mine: said(one.mine),
+                    parts_later: later.then(|| parts_later(resolved)),
                 };
                 // A frame that more contrast draws the same as the standard one is handed once.
                 let same = frames.iter().any(|was| {
@@ -389,6 +394,38 @@ fn said(mine: Vec<Complaint>) -> Vec<String> {
 /// so a later window, or a link that never created one, draws what the first did.
 pub(crate) static THEIRS: TheirsKept = TheirsKept::new();
 
+/// **The themes a first frame was drawn without the parts of** (#4410): what a frame's `parts_later`
+/// names, by its place here. Each is one theme a creation ran past the wait of, so there are as
+/// many as themes that ever did in this process, and they stay: a window's retry finds its own.
+static PARTS_LATER: std::sync::Mutex<Vec<theme::ResolvedTheme>> = std::sync::Mutex::new(Vec::new());
+
+/// The ticket `theme`'s parts are asked for by, the same for each frame that draws it.
+fn parts_later(theme: &theme::ResolvedTheme) -> u32 {
+    let mut kept = PARTS_LATER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let at = kept.iter().position(|one| one == theme).unwrap_or_else(|| {
+        kept.push(theme.clone());
+        kept.len() - 1
+    });
+    u32::try_from(at).unwrap_or(u32::MAX)
+}
+
+/// **The parts of the first frame `ticket` names**, as long as a measure takes: the one its
+/// creation left running, shared and not made again. Refused for a ticket no creation handed.
+pub(crate) fn first_frame_parts(ticket: u32) -> Result<String, String> {
+    let theme = usize::try_from(ticket).ok().and_then(|at| {
+        PARTS_LATER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(at)
+            .cloned()
+    });
+    theme
+        .map(|theme| theme::parts::stylesheet(&theme))
+        .ok_or_else(|| format!("no first frame waits for its parts as {ticket}"))
+}
+
 /// **What a window created `on` is created with** (#2602, #2582): the levels resolved once, for
 /// the project and workspace it opens on, and the contrast the system asks for read natively
 /// (`syscontrast.rs`). The creation script hands the page that answer, which its first frame
@@ -454,6 +491,14 @@ fn created_by(
         .and_then(|document| document.get("appearance"));
     let (person, layer) = PersonInForce::read(appearance);
     let theirs = kept.get(config_root);
+    // First: it waits for each of its measures, and costs the same whenever it runs. So the
+    // default and Purlis Classic are kept before the deadline starts, and a frame of either has
+    // its parts however busy the machine is.
+    let Handed {
+        built_in,
+        built_in_mine,
+        default_theme,
+    } = Handed::under(&layer);
     let (first, native) = FirstFrame::of(
         config_root,
         on,
@@ -463,11 +508,6 @@ fn created_by(
         handing,
     );
     let follows_system = first.follows_system;
-    let Handed {
-        built_in,
-        built_in_mine,
-        default_theme,
-    } = Handed::under(&layer);
     let at = AtCreation {
         theme: TheirTheme::of(theirs, &layer, handing),
         built_in,
@@ -957,16 +997,69 @@ mod tests {
         assert_eq!(at["theme"]["theme"]["parts"], "");
         assert_eq!(at["first"]["frames"][0]["theme"]["name"], "Heavy");
         assert_eq!(at["first"]["frames"][0]["theme"]["parts"], "");
+        let ticket = at["first"]["frames"][0]["parts_later"]
+            .as_u64()
+            .expect("the frame says its parts are coming");
 
         // With the measure done, the same creation is handed the parts, and nothing to ask for.
         let at = defined(&at_creation_from(&TheirsKept::new(), root, None, standard).script);
         assert_eq!(at["theme"]["parts_later"], false);
+        assert_eq!(
+            at["first"]["frames"][0]["parts_later"],
+            serde_json::Value::Null
+        );
         let parts = at["first"]["frames"][0]["theme"]["parts"].as_str().unwrap();
         assert!(parts.contains("@layer parts"), "{parts}");
         // And kept, so a later window waits for nothing.
         let again = defined(&created_within(zero, &TheirsKept::new(), root, None, standard).script);
         assert_eq!(again["first"]["frames"][0]["theme"]["parts"], parts);
         assert_eq!(again["theme"]["parts_later"], false);
+        assert_eq!(
+            again["first"]["frames"][0]["parts_later"],
+            serde_json::Value::Null
+        );
+
+        // The window's ask is answered what the creation would have drawn.
+        let ticket = u32::try_from(ticket).unwrap();
+        assert_eq!(first_frame_parts(ticket).as_deref(), Ok(parts));
+    }
+
+    #[test]
+    fn the_window_asks_for_a_frame_s_parts_with_no_project_known_and_waits_for_the_measure() {
+        // #4410: nothing here names a plane, the restore's to bring back. The theme is one nothing
+        // else in this process measures, so the ask finds its creation's pass still running or
+        // makes it, and answers the sheet either way.
+        let written = MEASURED_IN_TINTS.replace("#ff000040", "#ff000041");
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(windowprefs::THEME), &written).unwrap();
+        let at = defined(
+            &created_within(
+                std::time::Duration::ZERO,
+                &TheirsKept::new(),
+                Some(home.path()),
+                None,
+                Some(Contrast::Standard),
+            )
+            .script,
+        );
+        let frame = &at["first"]["frames"][0];
+        assert_eq!(frame["theme"]["parts"], "");
+        let ticket = u32::try_from(frame["parts_later"].as_u64().unwrap()).unwrap();
+        let parts = first_frame_parts(ticket).expect("the frame's parts");
+        assert!(parts.contains("@layer parts"), "{parts}");
+    }
+
+    #[test]
+    fn two_frames_of_one_theme_are_asked_for_by_one_ticket() {
+        let theme = theme::load_text(MEASURED_IN_TINTS).theme.first().clone();
+        assert_eq!(parts_later(&theme), parts_later(&theme));
+    }
+
+    #[test]
+    fn a_ticket_no_creation_handed_is_refused() {
+        assert!(first_frame_parts(u32::MAX).is_err());
     }
 
     #[test]
@@ -998,6 +1091,24 @@ mod tests {
         assert_eq!(frame["name"], theme::default_theme().name.as_str());
         let parts = frame["parts"].as_str().expect("parts are written");
         assert!(parts.contains("@layer parts"), "drawn without: {parts:?}");
+        assert_eq!(
+            at["first"]["frames"][0]["parts_later"],
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn the_default_theme_has_its_parts_on_a_first_frame_that_waits_for_nothing() {
+        // #4410: the window asks for the parts of a frame that says they are coming, but the
+        // default never comes to that: what is handed is measured before the deadline starts.
+        let handing = Handing::new(std::time::Duration::ZERO);
+        let standard = Some(Contrast::Standard);
+        let at = defined(&created_by(&handing, &TheirsKept::new(), None, None, standard).script);
+        let frame = &at["first"]["frames"][0];
+        assert_eq!(frame["theme"]["name"], theme::default_theme().name.as_str());
+        let parts = frame["theme"]["parts"].as_str().expect("parts are written");
+        assert!(parts.contains("@layer parts"), "drawn without: {parts:?}");
+        assert_eq!(frame["parts_later"], serde_json::Value::Null);
     }
 
     #[test]

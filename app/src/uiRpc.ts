@@ -1619,6 +1619,7 @@ export const commands = {
 	workspace: string | null,
 } | null, person: string | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at, person })),
 	themeFont: __WINDOW_ONLY_RESULT,
+	firstFrameParts: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The person's density, font override, motion, contrast and colours, read by the core's theme
 	 *  engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
