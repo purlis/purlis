@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793585483034,
+  "lastUpdate": 1793588667942,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35616,6 +35616,48 @@ window.BENCHMARK_DATA = {
             "value": 101.40769399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.877, 101.179, 101.408, 101.793, 101.942 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7dbb114bd40d93e1e49bdb20ad7537a4e568f8bc",
+          "message": "Skills view: In this chat holds only the plugins the chat's harness loaded (#4522)\n\n* Red tests: a turned-off plugin's skills are listed, and Use on one types nothing (#4477)\n\nBoth fail on purpose and await the fix, which goes to a prototype first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6BW83A1W48DZ75K2WR4G0ZX\nPurlis-Persona: steward\n\n* Skills view: In this chat holds only the plugins the chat's harness loaded (#4477)\n\nThe rows came from Claude Code's installed_plugins.json alone, which says what is on the\nmachine. purlis now reads what the harness reads at a chat's start (merged enabledPlugins, setting\nsources and known marketplaces, measured on 2.1.316) and holds the answer. A plugin the chat lacks\nfolds to one line under Left out, with why. Use on a program's own skill now types it, and the\nheader's count follows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6BW83A1W48DZ75K2WR4G0ZX\nPurlis-Persona: steward\n\n* Skills: the CLI's plugin fixture turns its plugin on, and a turned-off plugin says so (#4477)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6BW83A1W48DZ75K2WR4G0ZX\nPurlis-Persona: steward\n\n* stories: the baselines of a plugin this chat lacks, from this pull request's run (#4477)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6BW83A1W48DZ75K2WR4G0ZX\nPurlis-Persona: steward\n\n* Skills: the brace the rebase took from a test (#4477)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6BW83A1W48DZ75K2WR4G0ZX\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T22:36:04Z",
+          "tree_id": "8e8e5d378adaa854bfa83e16c403e134a9f5ec03",
+          "url": "https://github.com/purlis/purlis/commit/7dbb114bd40d93e1e49bdb20ad7537a4e568f8bc"
+        },
+        "date": 1793588663497,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6610805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.649, 0.658, 0.661, 0.667, 0.687 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.525482,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.431, 16.468, 16.525, 16.528, 16.865 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.67132050000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.001, 101.480, 101.671, 102.111, 103.438 ms"
           }
         ]
       }
