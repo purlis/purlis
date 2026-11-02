@@ -62,8 +62,9 @@ const STEWARD: OpenChat = {
   from: null,
 };
 
-/** A task of the steward chat's, paused on a question to it (`asking`), or not. */
-function task(asking: boolean): OpenChat {
+/** A task of the steward chat's. Whether it is paused on a question is the asks registry's to
+ *  say (#4564), never its record's. */
+function task(): OpenChat {
   return {
     ...STEWARD,
     session: 9,
@@ -79,7 +80,6 @@ function task(asking: boolean): OpenChat {
       tab: false,
       reported: false,
       unreported: false,
-      asking,
     },
   };
 }
@@ -97,7 +97,9 @@ const MOVED_ON =
  *  `refuse` has `answer_task_question` refuse, as for a question the task has moved on from. */
 function core(asking = true, { question = true, refuse = false } = {}) {
   const asked: Asked[] = [];
-  const chats = [STEWARD, task(asking)];
+  const chats = [STEWARD, task()];
+  /** Whether the registry lists the task's question as with its asking chat. */
+  let open = asking;
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -117,9 +119,15 @@ function core(asking = true, { question = true, refuse = false } = {}) {
       if (cmd === "running_sessions") return [];
       if (cmd === "stopping_chats") return [];
       if (cmd === "finished_tasks") return [];
+      if (cmd === "asks_waiting")
+        return {
+          plane: PLANE,
+          asks: [],
+          with_asking_chat: open ? [{ session: 9, asker: "steward 4", since: 1 }] : [],
+        };
       if (cmd === "answer_task_question" && refuse) throw MOVED_ON;
       if (cmd === "task_question")
-        return question && chats[1].from?.asking === true && a.session === 9
+        return question && open && a.session === 9
           ? { task: "read the logs", asked: "steward 4", number: 3, question: QUESTION }
           : null;
       return null;
@@ -130,14 +138,11 @@ function core(asking = true, { question = true, refuse = false } = {}) {
     sent: () => asked.filter((one) => one.cmd === "answer_task_question").map(({ args }) => args),
     /** The task stops asking: the asking chat answered it first. */
     answeredElsewhere: async () => {
-      chats[1] = task(false);
-      await act(() =>
-        emit("plane-changed", {
-          plane: PLANE,
-          changes: [{ kind: "chats", workspace: null, persona: null, path: "" }],
-          answers: [{ answer: "sidebar" }],
-        }),
-      );
+      open = false;
+      await act(async () => {
+        await emit("asks-changed", { plane: PLANE });
+        await new Promise((done) => setTimeout(done, 80));
+      });
     },
   };
 }

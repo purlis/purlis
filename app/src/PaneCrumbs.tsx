@@ -102,7 +102,6 @@ export function PaneCrumbs({
             shell={shown.shell}
             report={shown.report}
             outcome={shown.outcome}
-            asking={shown.asking}
             harness={shown.harness}
           />
         )}

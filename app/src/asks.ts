@@ -19,8 +19,9 @@
  * **What an ask says is data**: its chain of names, its line, a host. The window draws each as
  * text; none of it is ever markup or a control.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { commands, type Asking, type GrantLevel, type Shown } from "./bindings";
+import type { QuestionsHeld } from "./taskQuestions";
 import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
@@ -73,10 +74,17 @@ export function onAsksMoved(reader: (plane: string) => void): () => void {
 /** Each project's asks, by its id: the last whole list the core derived for it. */
 export function useAsks(planes: readonly string[]): {
   held: Record<string, readonly Shown[]>;
+  /** **Each project's asks with its task questions still with their asking chat** (#4564):
+   *  what a task question's one state is derived from (`taskQuestions.standingOf`). */
+  questions: Record<string, QuestionsHeld>;
   /** Reads `plane`'s list again: after an answer, whatever it answered. */
   reread: (plane: string) => void;
 } {
-  const [held, setHeld] = useState<Record<string, readonly Shown[]>>({});
+  const [questions, setHeld] = useState<Record<string, QuestionsHeld>>({});
+  const held = useMemo(
+    () => Object.fromEntries(Object.entries(questions).map(([plane, one]) => [plane, one.asks])),
+    [questions],
+  );
   const [reader] = useState(() => listReader(setHeld));
   const key = planes.join("\n");
   useEffect(() => {
@@ -101,14 +109,12 @@ export function useAsks(planes: readonly string[]): {
       for (const stop of stops) void stop.then((off) => off?.()).catch(() => undefined);
     };
   }, [reader]);
-  return { held, reread: reader.read };
+  return { held, questions, reread: reader.read };
 }
 
 /** Reads each watched project's list, at once or once a burst has settled. */
 function listReader(
-  setHeld: (
-    change: (was: Record<string, readonly Shown[]>) => Record<string, readonly Shown[]>,
-  ) => void,
+  setHeld: (change: (was: Record<string, QuestionsHeld>) => Record<string, QuestionsHeld>) => void,
 ) {
   let watched = new Set<string>();
   let live = true;
@@ -120,9 +126,12 @@ function listReader(
     void commands.asksWaiting(plane).then(
       (answer) => {
         // A core that answers nothing for it (an older build, a test's mock) holds none.
-        const asks = answer.status === "ok" ? (answer.data as Asking | null)?.asks : undefined;
+        const listed = answer.status === "ok" ? (answer.data as Asking | null) : undefined;
+        const asks = listed?.asks;
         if (!(live && watched.has(plane) && asks)) return;
-        setHeld((was) => ({ ...was, [plane]: asks }));
+        // An older core lists no task question with its asking chat: none is.
+        const with_asking_chat = listed?.with_asking_chat ?? [];
+        setHeld((was) => ({ ...was, [plane]: { asks, with_asking_chat } }));
         lookAtHoldsEnd(plane, asks);
       },
       () => {},

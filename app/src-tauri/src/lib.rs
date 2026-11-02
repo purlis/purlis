@@ -860,10 +860,6 @@ pub struct HandedFromNote {
     /// report, and where no record says how.
     #[specta(optional)]
     pub outcome: Option<String>,
-    /// Whether, as a task, it has a question open with the chat that dispatched it, and is
-    /// paused until that chat answers (#1484): its row says whom it is asking.
-    #[specta(optional)]
-    pub asking: Option<bool>,
     /// Whether, as a task, the person asked for it themselves from that chat's tab (#1492,
     /// V100-70): its row and its breadcrumb say `asked by you`. The app's own record of how it
     /// was started, never a word a chat said.
@@ -891,7 +887,6 @@ impl HandedFromNote {
             // What the project's own records say of it, which a list of rows asks for
             // ([`with_task_standing`]): not the chat's record, so not read here.
             outcome: None,
-            asking: None,
             by_person: (from.mode == purlis_core::reopen::Mode::Task && from.by_person)
                 .then_some(true),
             asker_waiting: None,
@@ -943,8 +938,6 @@ fn with_task_standing(
     if let Some(from) = drawn.from.as_mut().filter(|from| from.task) {
         if from.reported || from.unreported {
             from.outcome = outcomes.of_task(session).map(str::to_owned);
-        } else {
-            from.asking = dispatched::asks_its_asker(held, session).then_some(true);
         }
     }
     drawn

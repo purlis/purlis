@@ -324,22 +324,17 @@ export function shownState({
 }
 
 /**
- * What `chat`'s record says of it as a task, or nothing for a chat that is not one.
- *
- * `nameOf` is what a chat is called now, by its number: the chat it is asking is named as that
- * chat's own row names it, so a rename is followed. Its name when the task was dispatched is
- * what is left to say once that chat has closed.
+ * What `chat`'s record says of it as a task, or nothing for a chat that is not one. Its open
+ * question is not its record's to say: the asks registry says where it stands (#4564), and the
+ * row reads it there (`QuestionsHere`).
  */
-export function taskFactsOf(
-  chat: Pick<OpenChat, "from">,
-  nameOf: (session: number) => string | undefined = () => undefined,
-): TaskFacts | null {
+export function taskFactsOf(chat: Pick<OpenChat, "from">): TaskFacts | null {
   const from = chat.from;
   if (!from?.task) return null;
   return {
     report: from.unreported ? "failed" : from.reported ? "sent" : "owed",
     outcome: from.outcome ?? null,
-    asking: from.asking ? (nameOf(from.chat) ?? from.name) : null,
+    asking: null,
   };
 }
 
@@ -349,25 +344,23 @@ export function harnessCalled(chat: Pick<OpenChat, "harness" | "card">): string 
 }
 
 /** What a row hands the one function about its chat beside the board's word: plain values, so
- *  a row held on them is drawn again only when one changes. */
+ *  a row held on them is drawn again only when one changes. Its question is the asks
+ *  registry's, filled in where the list is made (`listedChat`, #4564). */
 export type RowFacts = {
   report: TaskFacts["report"] | null;
   outcome: string | null;
+  /** The chat its question is with, by name, as the asks registry says (#4564). */
   asking: string | null;
   harness: string | null;
 };
 
-/** `chat` as a row hands it on: its record as a task, flat, and its harness's name. `nameOf`
- *  is `taskFactsOf`'s. */
-export function rowFactsOf(
-  chat: Pick<OpenChat, "from" | "harness" | "card">,
-  nameOf?: (session: number) => string | undefined,
-): RowFacts {
-  const task = taskFactsOf(chat, nameOf);
+/** `chat` as a row hands it on: its record as a task, flat, and its harness's name. */
+export function rowFactsOf(chat: Pick<OpenChat, "from" | "harness" | "card">): RowFacts {
+  const task = taskFactsOf(chat);
   return {
     report: task?.report ?? null,
     outcome: task?.outcome ?? null,
-    asking: task?.asking ?? null,
+    asking: null,
     harness: harnessCalled(chat),
   };
 }

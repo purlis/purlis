@@ -18,6 +18,7 @@
 import type { Placed } from "./tabs";
 import type { AtLimit, OpenChat } from "./bindings";
 import { isShell } from "./chatState";
+import type { QuestionStanding } from "./taskQuestions";
 import { rowFactsOf, type RowFacts } from "./shownState";
 
 /** What a task the person asked for themselves says on its row and in its breadcrumb (#1492,
@@ -135,8 +136,8 @@ export function listedChat(
   workspace: string,
   name: string,
   tab: boolean,
-  /** What a chat is called now, by its number (`taskFactsOf`). */
-  nameOf?: (session: number) => string | undefined,
+  /** Its question, where the asks registry says it stands (#4564): the chat it is with. */
+  question?: QuestionStanding,
 ): ListedChat {
   return {
     session: chat.session,
@@ -162,7 +163,8 @@ export function listedChat(
         ? `${chat.profile} (${chat.harness})`
         : chat.profile
       : chat.harness,
-    ...rowFactsOf(chat, nameOf),
+    ...rowFactsOf(chat),
+    asking: question?.level === "with-asker" ? question.asker : null,
   };
 }
 

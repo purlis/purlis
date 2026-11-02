@@ -131,13 +131,8 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
     if (cmd === "dispatch_grants_needed") return [];
     // The Brief panel's read (#1494): this core holds no dispatch records.
     if (cmd === "task_brief") throw "This project holds no record of that task.";
-    // The question a task asking its asker is paused on (#1551).
-    if (cmd === "task_question") {
-      const one = open.find((chat) => chat.session === a.session);
-      return one?.from?.asking === true
-        ? { task: one.label, asked: one.from.name, number: 2, question: "Which branch?" }
-        : null;
-    }
+    // No task here has a question open with its asker (#1551): the registry lists none.
+    if (cmd === "task_question") return null;
     if (cmd === "vault_refusals") return [];
     if (cmd === "owed_restarts") return [];
     if (cmd === "finished_tasks") return [...finished];

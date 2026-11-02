@@ -66,6 +66,7 @@ import { Button, IconButton } from "./ui/button/Button";
 import { Twist } from "./ui/disclosure/Disclosure";
 import { tabPart } from "./ui/tabs/Tabs";
 import { useWindowLeft } from "./ui/windowLeft";
+import { useQuestionStanding } from "./QuestionsHere";
 
 /** The chip's hand: in the needs-you colour, at the words' size, drawn on the icon itself
  *  (#3264), as each count's mark is, so the button's class says only where it stands. */
@@ -852,6 +853,8 @@ function TaskLine({
   onPlace?: (session: number, where: Place) => void;
 }) {
   const { row } = line;
+  // Its question, where the asks registry says it stands (#4564).
+  const question = useQuestionStanding(row?.session ?? -1);
   // **Its Brief** (#1494): an open task by its chat, an ended one by its dispatch record while
   // it has a finished row. A session's own chat was sent nothing.
   const brief: BriefAsk | undefined =
@@ -869,7 +872,7 @@ function TaskLine({
   const moves = onPlace !== undefined && row !== undefined && row.mode === "task" ? row : undefined;
   // **Its question, to answer** (#1551): an open task paused on a question to its asking chat.
   const answer: AnswerAsk | undefined =
-    onAnswer !== undefined && row !== undefined && row.mode === "task" && row.asking !== null
+    onAnswer !== undefined && row !== undefined && row.mode === "task" && question !== undefined
       ? { chat: row.session, name: line.name }
       : undefined;
   return (
@@ -955,7 +958,6 @@ function TaskLine({
             shell={row.shell}
             report={row.report}
             outcome={row.outcome}
-            asking={row.asking}
             harness={row.harness}
           />
         ) : (

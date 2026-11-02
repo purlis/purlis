@@ -2861,6 +2861,12 @@ export type AskSource =
 export type Asking = {
 	plane: PlaneId,
 	asks: Shown[],
+	/**
+	 *  **Each task question still with its asking chat** (#4564, ADR 0107): in progress, so
+	 *  its task's row alone says it, and nothing here is counted by the ✋ or listed in the
+	 *  Inbox, which read [`Asking::asks`].
+	 */
+	with_asking_chat: WithAskingChat[],
 };
 
 /**  What a chat's row says while it is at its task limit. */
@@ -6059,11 +6065,6 @@ export type HandedFromNote = {
 	 *  report, and where no record says how.
 	 */
 	outcome?: string | null,
-	/**
-	 *  Whether, as a task, it has a question open with the chat that dispatched it, and is
-	 *  paused until that chat answers (#1484): its row says whom it is asking.
-	 */
-	asking?: boolean | null,
 	/**
 	 *  Whether, as a task, the person asked for it themselves from that chat's tab (#1492,
 	 *  V100-70): its row and its breadcrumb say `asked by you`. The app's own record of how it
@@ -13689,6 +13690,16 @@ export type WindowTyped = {
 	flags: { [key in string]: boolean },
 	choices: { [key in string]: string },
 	numbers: { [key in string]: number | null },
+};
+
+/**  A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`. */
+export type WithAskingChat = {
+	/**  The task that asked. */
+	session: number,
+	/**  The chat it asks, by name as its own row names it. */
+	asker: string,
+	/**  When it was asked, in seconds since 1970. */
+	since: number,
 };
 
 /**  A person's opt-out, as the picker sends it. */

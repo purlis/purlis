@@ -358,6 +358,17 @@ pub struct ReachedYou {
     pub note: Option<String>,
 }
 
+/// **A task question still with its asking chat** ([`Talk::with_asking_chat`]): nothing waits
+/// on the person yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WithAskingChat {
+    pub task: u32,
+    /// The chat it was put to.
+    pub asker: u32,
+    /// When it was asked, in seconds since 1970.
+    pub since: u64,
+}
+
 /// A task's key and the chat it asks ([`Talk::known_as`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Known {
@@ -1195,6 +1206,26 @@ impl Talk {
             };
             self.trail.push((task, step));
         }
+    }
+
+    /// **Every question still with its asking chat, oldest first** (#4564): what a task's row
+    /// says it waits on, and never the ✋ or the Inbox, which [`Talk::reached`] alone feeds.
+    pub fn with_asking_chat(&self) -> Vec<WithAskingChat> {
+        let mut with: Vec<WithAskingChat> = self
+            .questions
+            .iter()
+            .filter(|(_, question)| question.waits_on_its_asking_chat())
+            .filter_map(|(task, question)| {
+                let asker = self.known.get(task)?.asker;
+                Some(WithAskingChat {
+                    task: *task,
+                    asker,
+                    since: question.asked_at,
+                })
+            })
+            .collect();
+        with.sort_by_key(|one| (one.since, one.task));
+        with
     }
 
     /// **Every question that has reached the person and waits on them, oldest first**: what

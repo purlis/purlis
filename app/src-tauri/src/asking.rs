@@ -70,6 +70,21 @@ pub const EVENT: &str = "asks-changed";
 pub struct Asking {
     pub plane: PlaneId,
     pub asks: Vec<Shown>,
+    /// **Each task question still with its asking chat** (#4564, ADR 0107): in progress, so
+    /// its task's row alone says it, and nothing here is counted by the ✋ or listed in the
+    /// Inbox, which read [`Asking::asks`].
+    pub with_asking_chat: Vec<WithAskingChat>,
+}
+
+/// A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct WithAskingChat {
+    /// The task that asked.
+    pub session: u32,
+    /// The chat it asks, by name as its own row names it.
+    pub asker: String,
+    /// When it was asked, in seconds since 1970.
+    pub since: u32,
 }
 
 /// One ask, as the registry lists it and its row draws it.
@@ -320,6 +335,8 @@ pub fn asking(plane: &PlaneId, hooks: &HookAsks) -> Asking {
             .into_iter()
             .filter_map(permission)
             .collect(),
+        // A hook holds no task question: `every_ask` lists those.
+        with_asking_chat: Vec::new(),
     }
 }
 
@@ -2265,8 +2282,18 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             task_question(reached, question.asked, chain)
         })
         .collect();
+    let with_asking_chat = crate::dispatched::with_asking_chat(held)
+        .into_iter()
+        .filter(|one| !chats.kept_from_the_window(one.task))
+        .map(|one| WithAskingChat {
+            session: one.task,
+            asker: (waiting.name_of)(one.asker).unwrap_or_default(),
+            since: u32::try_from(one.since).unwrap_or(u32::MAX),
+        })
+        .collect();
     Asking {
         plane: plane.clone(),
+        with_asking_chat,
         // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
         // first ask, with that end, and none of its asks is listed.
         asks: derive(&waiting)
