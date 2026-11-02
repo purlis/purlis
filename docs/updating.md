@@ -371,7 +371,8 @@ version, is not named by its digest, or is not purlis's own image.
 A while after each launch, and as often as it looks for updates, the app reads its channel's
 manifest for **its own** version and checks the image in it the same way. A Docker pool of
 purlis's own image then gets a runner of that image beside its old one. New chats start on the
-new runner, and the old one keeps its chats until they end, then is removed. A pool of a team's
+new runner, and the old one keeps its chats until they end, then is removed. If it stops during that, it is
+kept with its home until you remove it in Devices. A pool of a team's
 own image is never moved: its row in the window says its runner is behind. A manifest of another
 version, or one from before the image was named, moves nothing.
 

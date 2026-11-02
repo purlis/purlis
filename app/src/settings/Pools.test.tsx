@@ -103,6 +103,7 @@ beforeEach(() => {
     desktop: "0.4.2",
     follows: true,
     draining: 0,
+    held: 0,
     named: null,
     waiting: 0,
   };
@@ -750,6 +751,7 @@ describe("You › This machine › Pools", () => {
       desktop: "0.4.2-dev.17",
       follows: true,
       draining: 1,
+      held: 0,
       named: null,
       waiting: 2,
     };
@@ -769,6 +771,28 @@ describe("You › This machine › Pools", () => {
     ).toBeInTheDocument();
   });
 
+  it("says an older runner held after it stopped stays until you remove it", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      runner: "0.4.2-dev.17",
+      why: null,
+      desktop: "0.4.2-dev.17",
+      follows: true,
+      draining: 0,
+      held: 1,
+      named: null,
+      waiting: 0,
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(/1 older runner stopped during its drain\./),
+    ).toHaveTextContent(/until you remove it in Devices\./);
+    expect(within(group).queryByText(/then purlis removes it/)).toBeNull();
+  });
+
   it("tells you to build your own image again when its runner is behind", async () => {
     pools = [a_pool("builds")];
     version = {
@@ -777,6 +801,7 @@ describe("You › This machine › Pools", () => {
       desktop: "0.4.2",
       follows: false,
       draining: 0,
+      held: 0,
       named: null,
       waiting: 0,
     };
@@ -831,6 +856,7 @@ describe("You › This machine › Pools", () => {
       desktop: "0.4.2-dev.17",
       follows: true,
       draining: 0,
+      held: 0,
       named: false,
       waiting: 0,
     };
@@ -853,6 +879,7 @@ describe("You › This machine › Pools", () => {
       desktop: "0.4.2-dev.17",
       follows: true,
       draining: 0,
+      held: 0,
       named: null,
       waiting: 0,
     };

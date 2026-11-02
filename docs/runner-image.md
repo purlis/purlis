@@ -27,7 +27,8 @@ own, as long as it keeps the contract below.
   manifest names the image by digest as `runnerImage`, signed with the updater's key (see
   [Updating](updating.md#the-runner-image-a-release-names)). After an update, a Docker pool of
   this image gets a runner of the new version beside its old one: new chats start on it, and
-  the old runner keeps its chats until they end, then is removed. A sign-in is held by one
+  the old runner keeps its chats until they end, then is removed, or is held with its home if it
+  stops during that. A sign-in is held by one
   runner at a time: while the old runner has chats, a new chat on the new runner asks to sign
   in there. Once the old runner's last chat has ended, and before it is removed with its home
   volume, its profiles' sign-ins are carried to the new runner's home volume, on the Docker

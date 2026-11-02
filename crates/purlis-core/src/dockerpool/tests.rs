@@ -1026,7 +1026,7 @@ fn the_settings_a_sign_in_names_are_an_empty_config_of_purliss_own() {
 /// `exec` with `paired`, after keeping its standard input, and `container ls` with
 /// `containers`; `run` fails where `run-fails` is there. `container rm` and `volume rm` exit
 /// with what `rm-fails-container` or `rm-fails-volume` holds, else what `rm-fails` holds, 0
-/// when there is none.
+/// when there is none. `inspect-once`, where it is there, answers one `container inspect` first.
 pub(crate) struct FakeDocker {
     dir: tempfile::TempDir,
 }
@@ -1044,7 +1044,8 @@ impl FakeDocker {
              {{ echo 'cp: cannot open' >&2; exit 1; }}; true ;;\n  \
              'run '*) [ -f '{run_fails}' ] && \
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
-             'container inspect') cat '{inspect}' ;;\n  \
+             'container inspect') if [ -f '{inspect}-once' ]; then cat '{inspect}-once'; rm '{inspect}-once'; \
+             else cat '{inspect}'; fi ;;\n  \
              'volume inspect') cat '{volume}' ;;\n  \
              'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \
              'info '*) case \"$*\" in *.ID*) cat '{engine}' 2>/dev/null || true ;; \
