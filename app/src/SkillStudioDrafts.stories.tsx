@@ -92,6 +92,7 @@ const ROW: GradeRow = {
   ended: "Finished",
   outcome: "graded",
   arms: { with: 92, without: 33, previous: 75 },
+  outcome_arms: null,
   spent: { chats: 54, tokens: null, cost_usd: 1.2, limit_usd: 15 },
   after_edit: false,
 };

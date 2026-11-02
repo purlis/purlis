@@ -1545,6 +1545,14 @@ fn copy_of(root: &Path, level: &Level, name: &str, inputs: &[String]) -> Result<
     })
 }
 
+/// A copy's folder as [`folder_read`] reads it: its files, what git says it holds by content, and
+/// its input files' bytes.
+type FolderRead = (
+    Snapshot,
+    Content,
+    std::collections::BTreeMap<String, Vec<u8>>,
+);
+
 /// **What the copy of `name` at `level` holds, read once**, with no history: its files, what git
 /// says its folder holds by content, and the input files `inputs` names.
 fn folder_read(
@@ -1552,14 +1560,7 @@ fn folder_read(
     level: &Level,
     name: &str,
     inputs: &[String],
-) -> Result<
-    (
-        Snapshot,
-        Content,
-        std::collections::BTreeMap<String, Vec<u8>>,
-    ),
-    String,
-> {
+) -> Result<FolderRead, String> {
     let folder = find(root, level, name)?;
     let content_now = || crate::skilluse::content_at(root, &folder).unwrap_or(Content::Uncommitted);
     let before = content_now();
