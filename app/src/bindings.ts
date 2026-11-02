@@ -11213,7 +11213,6 @@ export type PoolSetupAction = {
 	url: string | null,
 };
 
-/**  What the tab draws. */
 /**
  *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
  *  contract; none where the pool was made.
@@ -11251,6 +11250,7 @@ export type PoolSetupSee = {
 	text: string,
 };
 
+/**  What the tab draws. */
 export type PoolSetupShown = {
 	/**  The pool this setup made. */
 	pool: string | null,
@@ -11265,7 +11265,6 @@ export type PoolSetupShown = {
 	others: string[],
 };
 
-/**  One step as it stands. */
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
 export type PoolSetupSizes = {
 	most_mib: number,
@@ -11273,6 +11272,7 @@ export type PoolSetupSizes = {
 	profiles: PoolSetupProfileSize[],
 };
 
+/**  One step as it stands. */
 export type PoolSetupStep = {
 	id: string,
 	name: string,
