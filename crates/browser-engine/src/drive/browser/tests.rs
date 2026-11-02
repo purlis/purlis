@@ -3165,10 +3165,12 @@ fn a_frame(engine: &Engine, image: &[u8], ack: i64) {
     );
 }
 
+/// The session the payment frame moves to.
+const MOVED: &str = "S-PAYMENT-FRAME";
+
 /// The payment frame moves to a process of its own: the engine attaches it at `attached`, and
 /// its session's frame tree answers `tree` only after `takes`.
 fn frame_moves(engine: &Engine, attached: &str, tree: &'static str, takes: Duration) {
-    const MOVED: &str = "S-PAYMENT-FRAME";
     engine.on(move |sent, _| {
         (sent.method == "Page.getFrameTree" && sent.session.as_deref() == Some(MOVED)).then(|| {
             Ok(json!({"frameTree":{"frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","name":"payment","url":tree}}}))
@@ -3177,6 +3179,11 @@ fn frame_moves(engine: &Engine, attached: &str, tree: &'static str, takes: Durat
     super::lock(&engine.model)
         .slow
         .insert("Page.getFrameTree".to_owned(), takes);
+    frame_attaches(engine, attached);
+}
+
+/// The payment frame attaches a session of its own at `attached`, and its tree is asked for.
+fn frame_attaches(engine: &Engine, attached: &str) {
     engine.emit(
         "Target.attachedToTarget",
         json!({"sessionId":MOVED,"targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":attached,"attached":true},"waitingForDebugger":false}),
