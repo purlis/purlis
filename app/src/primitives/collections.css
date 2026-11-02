@@ -64,6 +64,13 @@
   margin-inline-start: auto;
 }
 
+/* A trail whose words may give way (#4564): it shrinks with the label instead of pushing the
+   row wider. What in it must stay whole keeps `flex: none` itself. */
+.ui-row-trail[data-gives-way] {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}
+
 .ui-row-label {
   flex: 1 1 auto;
   min-inline-size: 0;
