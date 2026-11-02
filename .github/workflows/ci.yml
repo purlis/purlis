@@ -72,11 +72,12 @@ on:
 # jobs waited, 19 of them the merge queue's: nothing had merged for over an hour. Runners start
 # jobs first come, first served, so a pull request's run holds the queue back. 8 of the 22 pull
 # requests with a run going were drafts, which are pushed again and again while their author works
-# and cannot be merged. So the macOS scenarios, the scoped macOS jobs and the outcome bars wait for
-# the pull request to be marked ready (`ready_for_review` starts that run), and
-# `scenario tests (macos-latest)` passes on a draft with its legs skipped. A macOS failure still
-# shows on its pull request, before the queue, for the reason above. `app builds (macos-latest)`
-# still runs on a draft: one job, against the scenarios' six.
+# and cannot be merged. So the macOS scenarios, the scoped macOS jobs and the outcome bars (both
+# legs: one matrix) wait for the pull request to be marked ready (`ready_for_review` starts that
+# run), and `scenario tests (macos-latest)` passes on a draft with its legs skipped. That green is
+# the draft run's, so `tools/land.mjs` waits for the ready's run to finish before it reads the
+# checks. A macOS failure still shows on its pull request, before the queue, for the reason above.
+# `app builds (macos-latest)` still runs on a draft: one job, against the scenarios' six.
 
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.

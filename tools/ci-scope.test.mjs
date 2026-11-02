@@ -1001,10 +1001,25 @@ test("a draft pull request runs no macOS job but app builds, and marking it read
   // Every job that can hold a macOS runner on a pull request: `app` is the one exception, and the
   // nightly-only jobs never run on one.
   const onMac = names.filter((n) => /runs-on: (macos-|\$\{\{ matrix\.os \}\})/.test(body(n)) && /macos-/.test(body(n)));
-  const nightly = (n) => body(n).includes("if: github.event_name == 'schedule'") || /if: \$\{\{[^\n]*github\.event_name == 'schedule' \}\}/.test(body(n));
+  const nightly = (n) =>
+    /\n    if: (github\.event_name == 'schedule'|\$\{\{ github\.event_name == 'schedule' \}\})\n/.test(body(n));
   const gated = onMac.filter((n) => n !== "app" && !nightly(n));
   assert.ok(gated.includes("scenario") && gated.includes("outcome-bars"), gated.join(", "));
-  for (const n of gated) assert.match(body(n), /\n    if: \$\{\{.*!github\.event\.pull_request\.draft \}\}\n/, n);
+  // The draft clause must bind the whole condition: no `||` outside parentheses before it.
+  const topLevelOr = (expr) => {
+    let depth = 0;
+    for (let i = 0; i < expr.length; i++) {
+      if (expr[i] === "(") depth++;
+      else if (expr[i] === ")") depth--;
+      else if (depth === 0 && expr.startsWith("||", i)) return true;
+    }
+    return false;
+  };
+  for (const n of gated) {
+    const cond = body(n).match(/\n    if: \$\{\{ (.*) && !github\.event\.pull_request\.draft \}\}\n/);
+    assert.ok(cond, `${n} skips a draft`);
+    assert.ok(!topLevelOr(cond[1]), `${n}'s draft clause binds the whole condition`);
+  }
 
   assert.match(ci, /\n  pull_request:\n    types: \[opened, synchronize, reopened, ready_for_review\]\n/);
   // The required check passes on a draft only because its legs were skipped.
