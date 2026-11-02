@@ -282,6 +282,8 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "absent.clone": { said: SAID.clone, slot: "first" },
   // The workspace stops naming it and nothing is deleted: no danger.
   "absent.drop": { said: SAID.dropFromWorkspace, slot: "end" },
+  // Only this window's row goes: no danger.
+  "absent.forget": { said: SAID.dismiss, slot: "end" },
 
   // A persona, a vault, a todo, a session record, a memory.
   "persona.show": { said: SAID.open, slot: "first" },

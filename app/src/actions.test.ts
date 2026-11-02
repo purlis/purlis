@@ -247,6 +247,9 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`cloneMissing:${workspace}:${repos.join(",")}`);
       return { ok: true as const };
     }),
+    forgetFailedClone: vi.fn((workspace: string, repo: string) => {
+      calls.push(`forgetFailedClone:${workspace}:${repo}`);
+    }),
     askDropMembership: vi.fn((workspace: string, repo: string) => {
       calls.push(`askDropMembership:${workspace}:${repo}`);
     }),
@@ -278,6 +281,7 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`openSettings:${plane}`);
     }),
     openSaving: note("openSaving"),
+    openPoolSetup: note("openPoolSetup"),
     openWorkspaceSettings: note("openWorkspaceSettings"),
     switchLive: note("switchLive"),
     renameWorkspace: note("renameWorkspace"),
@@ -1398,6 +1402,28 @@ describe("the one list of actions", () => {
       expect(hands.calls).toEqual(["cloneMissing:alpha:charter", "cloneMissing:alpha:charter,web"]);
     });
 
+    it("offers Retry's Clone and Dismiss for a failed clone it does not name, and no Remove (#4395)", async () => {
+      const hands = doing();
+      const offers = catalogue(
+        now({ focused: "alpha", absent: ["web"], failedNotNamed: ["newcomer"] }),
+      );
+
+      expect(by(offers, "absent.clone:newcomer")?.does).toEqual({
+        verb: "cloneMissing",
+        workspace: "alpha",
+        repos: ["newcomer"],
+      });
+      expect(by(offers, "absent.drop:newcomer")).toBeUndefined();
+      expect(by(offers, "absent.forget:web")).toBeUndefined();
+      expect(by(offers, "absent.cloneAll")?.does).toEqual({
+        verb: "cloneMissing",
+        workspace: "alpha",
+        repos: ["web", "newcomer"],
+      });
+      await run(offers, "absent.forget:newcomer", hands);
+      expect(hands.calls).toEqual(["forgetFailedClone:alpha:newcomer"]);
+    });
+
     it("greys a repo already being cloned, and leaves it out of Clone all", () => {
       const offers = catalogue(
         now({ focused: "alpha", absent: ["charter", "web"], cloning: ["charter"] }),
@@ -1428,7 +1454,7 @@ describe("the one list of actions", () => {
     it("draws Clone on the row's menu, and taking it out of the workspace below the line", () => {
       expect(menuOn({ on: "absent", repo: "web" })).toEqual({
         above: ["absent.clone:web"],
-        below: ["absent.drop:web"],
+        below: ["absent.drop:web", "absent.forget:web"],
       });
     });
 
@@ -1870,6 +1896,8 @@ describe("carrying out a row", () => {
         "openSettings:/other",
         "openSaving:/plane",
         "openSaving:/other",
+        "openPoolSetup:/plane",
+        "openPoolSetup:/other",
         "openWorkspaceSettings:alpha",
         "openWorkspaceSettings:beta",
         "switchLive:alpha",
@@ -2454,8 +2482,9 @@ describe("the palette at fifty chats", () => {
     // since #2925: Your settings: Motion and contrast, and Your colours. 922 since #2921: Focus
     // mode and Keyboard shortcuts, one row each. 920 since #3467: no Plugins group at the Project
     // or the Workspace level. 921 since #2027: Open browsers. 922 since the person's ruling of
-    // 2026-10-30: Your settings: Pools is offered with or without a pool, as the group is.
-    expect(offers).toHaveLength(922);
+    // 2026-10-30: Your settings: Pools is offered with or without a pool, as the group is. 923
+    // since #4536: the project's Runs on.
+    expect(offers).toHaveLength(923);
   });
 
   /**

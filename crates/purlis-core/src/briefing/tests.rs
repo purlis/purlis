@@ -1561,10 +1561,13 @@ fn a_chat_the_app_started_is_told_the_one_route_for_work_that_reports_back() {
         Some(format!(
             "⬢ **If work has to go to another chat.** Use purlis's tools for it first: `dispatch` \
              starts a task; `dispatch_list`, `dispatch_read`, `dispatch_wait`, `dispatch_tell`, \
-             `dispatch_answer`, `dispatch_cancel` and `dispatch_close` look after one, and \
-             `dispatch_tell` with `all` tells every task still working at once; a task answers \
-             with `dispatch_note` (its `ack` acknowledges an instruction), `dispatch_ask` and \
-             `dispatch_report`. They need no shell; the `purlis dispatch` command does the same, \
+             `dispatch_answer`, `dispatch_pass_on`, `dispatch_cancel` and `dispatch_close` look \
+             after one, and `dispatch_tell` with `all` tells every task still working at once; \
+             a task answers with `dispatch_note` (its `ack` acknowledges an instruction), \
+             `dispatch_ask` and `dispatch_report`. A task's question comes to you first: answer \
+             it, or pass it on with `dispatch_pass_on`. Security, cost, anything public and \
+             anything that amends a ruling are always passed on, and your own answer is never \
+             the person's word. They need no shell; the `purlis dispatch` command does the same, \
              one call at a time. {} This \
              says where such work goes, not that work should go: what this chat can do itself, \
              it does.",
@@ -1654,6 +1657,33 @@ fn a_handoff_with_no_name_goes_by_where_the_work_went_within_a_names_length() {
             Ok(name.as_str())
         );
     }
+}
+
+#[test]
+fn a_chat_the_app_started_with_no_sandbox_in_a_sandboxed_project_is_told_so() {
+    // #4534: a dispatched chat can start at a person's level below its parent's.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(crate::names::manifest(root), "[sandbox]\nmode = \"on\"\n").unwrap();
+    let env = |socket: Option<&'static str>, mark: Option<&'static str>| {
+        move |name: &str| {
+            match name {
+                crate::hookwire::SOCKET_ENV => socket,
+                crate::hookwire::SANDBOXED_ENV => mark,
+                _ => None,
+            }
+            .map(str::to_owned)
+        }
+    };
+    assert_eq!(
+        unsandboxed_note(root, &env(Some("/s"), None)),
+        Some(UNSANDBOXED_NOTE)
+    );
+    assert_eq!(unsandboxed_note(root, &env(Some("/s"), Some("1"))), None);
+    // A harness started in a terminal, and a project with no sandbox on, are not told.
+    assert_eq!(unsandboxed_note(root, &env(None, None)), None);
+    std::fs::write(crate::names::manifest(root), "").unwrap();
+    assert_eq!(unsandboxed_note(root, &env(Some("/s"), None)), None);
 }
 
 #[test]

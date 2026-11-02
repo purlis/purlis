@@ -109,6 +109,7 @@ describe("the window's own lines", () => {
     const heading = await screen.findByRole("heading", { level: 1 });
     await vi.waitFor(() => expect(slowLine().closest(".window-notices-at")).not.toBeNull());
     expect(slowLine()).toBe(line);
+    expect(slowLine().closest(".welcome-pane")).not.toBeNull();
     expect(slowLine().compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );

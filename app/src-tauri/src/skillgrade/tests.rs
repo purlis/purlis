@@ -122,6 +122,40 @@ fn the_plan_offers_each_outcome_eval_and_counts_only_those_ticked() {
     assert_eq!(plan.outcomes_left_out[0].id, "9");
 }
 
+/// #4230: a file's name is shown as the prompt beside it is, and one that is not text is named,
+/// so a line warning of what no reader would see cannot be turned round by its own name.
+#[test]
+fn the_plan_marks_a_files_name_and_names_a_file_that_is_not_text() {
+    let mut planned = planned("ship it");
+    let turned = "evals/files/\u{202e}fdp.txt".to_owned();
+    planned.offered = vec![purlis_core::skills::grade::OutcomeEval {
+        id: 4,
+        prompt: "read it".into(),
+        expected_output: None,
+        files: vec![turned.clone()],
+        expectations: vec!["It is read".into()],
+    }];
+    planned.copy = Some(grades::SkillCopy {
+        snapshot: purlis_core::skills::verbs::drafts::Snapshot {
+            name: "deploy".into(),
+            files: std::collections::BTreeMap::new(),
+        },
+        content: purlis_core::skilluse::Content::Uncommitted,
+        commit: None,
+        previous: None,
+        previous_refused: None,
+        inputs: std::collections::BTreeMap::from([(turned, b"%PDF\xFF".to_vec())]),
+    });
+    let plan = SkillGradePlan::of(
+        &planned,
+        None,
+        on(Ok("full sandbox".into()), grades::price::of_model(None)),
+    );
+    let shown = ["evals/files/⟦U+202E⟧fdp.txt"];
+    assert_eq!(plan.evals[0].files, shown);
+    assert_eq!(plan.evals[0].not_text, shown);
+}
+
 #[test]
 fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     let plan = SkillGradePlan::of(
@@ -242,8 +276,6 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
             grade.to_owned(),
             Running {
                 plane: plane.clone(),
-                skill: "deploy".into(),
-                level: None,
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
                 step: RunningStep::Skill(SkillGradeStep {
@@ -671,6 +703,65 @@ fn a_press_on_a_plan_that_changed_is_refused() {
     }
 }
 
+/// #4338: a skill's page reads its grade's step alone, so what refuses its grades leaves it Stop.
+/// It reads no other plane's grade, and no router's.
+#[test]
+fn a_skills_grade_is_read_by_its_id_in_its_plane_and_a_routers_is_not() {
+    let plane: PlaneId = serde_json::from_value(serde_json::json!("plane-of-a-read-step")).unwrap();
+    let other: PlaneId = serde_json::from_value(serde_json::json!("another-plane")).unwrap();
+    let held = |step| Running {
+        plane: plane.clone(),
+        stop: Arc::new(AtomicBool::new(false)),
+        after_edit: None,
+        step,
+    };
+    let skill = SkillGradeStep {
+        plane: plane.clone(),
+        skill: "deploy".into(),
+        level: (&Level::project()).into(),
+        grade: "g-4338".into(),
+        ran: 2,
+        of: 12,
+        tokens: None,
+        cost_usd: None,
+        limit_usd: None,
+        cap: 1_000.0,
+        asked: 0,
+        ended: None,
+        said: None,
+    };
+    let router = crate::routergrade::RouterGradeStep {
+        plane: plane.clone(),
+        router: "relevance".to_owned(),
+        workspace: None,
+        persona: None,
+        grade: "g-4338-router".to_owned(),
+        ran: 0,
+        of: 1,
+        tokens: None,
+        cost_usd: None,
+        limit_usd: None,
+        cap: 1_000.0,
+        ended: None,
+        said: None,
+        recorded: false,
+    };
+    running().insert("g-4338".to_owned(), held(RunningStep::Skill(skill.clone())));
+    running().insert(
+        "g-4338-router".to_owned(),
+        held(RunningStep::Router(router)),
+    );
+    let read = (
+        step_of_grade(&plane, "g-4338"),
+        step_of_grade(&other, "g-4338"),
+        step_of_grade(&plane, "g-4338-router"),
+        step_of_grade(&plane, "g-4338-gone"),
+    );
+    running().remove("g-4338");
+    running().remove("g-4338-router");
+    assert_eq!(read, (Some(skill), None, None, None));
+}
+
 /// #3928: the Grades tab learns from its one read whether the skill has trigger tests, and the
 /// grade of that copy running now at its latest step, so it asks no plan; a grade of another
 /// skill, of the same name's copy at another level, or in another project, is not this one's.
@@ -709,10 +800,10 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
     assert_eq!(lost.tests, 0);
     assert!(lost.tests_refused.is_some());
 
-    let step = |plane: &PlaneId, skill: &str, grade: &str| SkillGradeStep {
+    let step = |plane: &PlaneId, skill: &str, level: &Level, grade: &str| SkillGradeStep {
         plane: plane.clone(),
         skill: skill.to_owned(),
-        level: (&shared).into(),
+        level: level.into(),
         grade: grade.to_owned(),
         ran: 3,
         of: 12,
@@ -734,21 +825,17 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
             grade.to_owned(),
             Running {
                 plane: at.clone(),
-                skill: skill.to_owned(),
-                level: Some(level.clone()),
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
-                step: RunningStep::Skill(step(at, skill, grade)),
+                step: RunningStep::Skill(step(at, skill, level, grade)),
             },
         );
     }
-    // A router's grade is no skill's, even one that names the skill and its level.
+    // A router's grade is no skill's.
     running().insert(
         "g-3928-router".to_owned(),
         Running {
             plane: plane.clone(),
-            skill: "ship-3928".to_owned(),
-            level: Some(shared.clone()),
             stop: Arc::new(AtomicBool::new(false)),
             after_edit: None,
             step: RunningStep::Router(crate::routergrade::RouterGradeStep {
@@ -789,7 +876,10 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
         shared_now, None,
         "the local copy's grade is not the shared copy's"
     );
-    assert_eq!(local_now, Some(step(&plane, "ship-3928", "g-3928-local")));
+    assert_eq!(
+        local_now,
+        Some(step(&plane, "ship-3928", &local, "g-3928-local"))
+    );
 }
 
 fn acme() -> GradeGrader {
@@ -963,6 +1053,46 @@ fn a_grader_is_refused_beside_ticked_outcome_evals() {
     assert!(grader_takes(&planned("ship it"), true).is_ok());
 }
 
+/// #4312: a terminal naming an eval on a profile it cannot run on is told why before it asks, and
+/// its plan and its start consent to nothing; naming none costs that profile nothing.
+#[test]
+fn a_terminal_naming_an_eval_on_a_profile_it_cannot_run_on_is_told_why_and_starts_nothing() {
+    let why = "it signs in another way".to_owned();
+    let on = || On {
+        evals_refused: Some(why.clone()),
+        ..on(Ok("full sandbox".into()), grades::price::of_model(None))
+    };
+    let plain = planned("ship it");
+    let told = plan_told(&plain, &on(), None);
+    assert_eq!(told.refused, None);
+    let consent = told.consent.expect("no eval named, nothing refused");
+    assert_eq!(
+        a_terminals_start_holds(&plain, &on(), &consent, "deploy"),
+        Ok(())
+    );
+
+    let mut named = plain.clone();
+    named
+        .request
+        .as_mut()
+        .unwrap()
+        .outcomes
+        .push(purlis_core::skills::grade::OutcomeEval {
+            id: 4,
+            prompt: "fill it".into(),
+            expected_output: None,
+            files: Vec::new(),
+            expectations: vec!["It is filled".into()],
+        });
+    let told = plan_told(&named, &on(), None);
+    assert_eq!(told.refused.as_ref(), Some(&why));
+    assert_eq!(told.consent, None);
+    assert_eq!(
+        a_terminals_start_holds(&named, &on(), &consent, "deploy"),
+        Err(why.clone())
+    );
+}
+
 /// SK-55: ticked outcome evals on a profile they cannot run on start nothing; left off, they cost
 /// that profile nothing.
 #[test]
@@ -984,4 +1114,77 @@ fn ticked_evals_are_refused_on_a_profile_they_cannot_run_on() {
         });
     assert_eq!(evals_can_run(&ticked, Some(&why)), Err(why));
     assert!(evals_can_run(&ticked, None).is_ok());
+}
+
+/// SK-55 (#3235): a grade's outcome evals reach its scorecard and its row: one row per eval, each
+/// arm's rate and runs, each run's chats and verdicts, and why a run failed.
+#[test]
+fn a_scorecard_shows_each_outcome_eval_in_each_arm_and_why_a_run_failed() {
+    use purlis_core::skills::grade::{Check, OutcomeRun, OutcomeScore, Stat};
+    let run = |chat: &str, passed: u32, failed: Option<&str>| OutcomeRun {
+        chat: Some(chat.to_owned()),
+        judge: Some(format!("{chat}J")),
+        passed: Some(passed),
+        checks: if failed.is_some() {
+            Vec::new()
+        } else {
+            vec![Check {
+                passed: true,
+                evidence: "it is filled".into(),
+            }]
+        },
+        failed: failed.map(str::to_owned),
+        asked: false,
+    };
+    let score = |arm: Arm, results: Vec<OutcomeRun>, mean: f64| OutcomeScore {
+        eval: 4,
+        arm,
+        expectations: vec!["It is\u{200b} filled".into()],
+        runs: u32::try_from(results.len()).unwrap(),
+        pass_rate: Some(Stat {
+            mean,
+            stddev: 0.0,
+            min: mean,
+            max: mean,
+        }),
+        results,
+    };
+    let outcomes = vec![
+        score(Arm::With, vec![run("01A", 1, None)], 1.0),
+        score(
+            Arm::Without,
+            vec![run("01B", 0, Some("The judge's answer is not whole."))],
+            0.0,
+        ),
+    ];
+    let evals = scored_evals(&outcomes, &|chat: &str| chat == "01A");
+    assert_eq!(evals.len(), 1, "one row, however many arms");
+    let eval = &evals[0];
+    assert_eq!(eval.id, "4");
+    assert_eq!(eval.expectations, ["It is⟦U+200B⟧ filled"]);
+    assert_eq!(eval.arms.len(), 2);
+    assert_eq!(eval.arms[0].points, Some(100.0));
+    let with = &eval.arms[0].results[0];
+    assert!(with.chat.as_ref().unwrap().kept);
+    assert!(!with.judge.as_ref().unwrap().kept);
+    assert_eq!(with.checks[0].evidence, "it is filled");
+    let without = &eval.arms[1].results[0];
+    assert_eq!(
+        without.failed.as_deref(),
+        Some("The judge's answer is not whole.")
+    );
+    assert!(without.checks.is_empty());
+    let marked = scored_evals(
+        &[score(
+            Arm::With,
+            vec![run("01A", 0, Some("It\u{200b} failed."))],
+            0.0,
+        )],
+        &|_: &str| false,
+    );
+    assert_eq!(
+        marked[0].arms[0].results[0].failed.as_deref(),
+        Some("It⟦U+200B⟧ failed."),
+        "a teammate's row can say anything"
+    );
 }

@@ -265,6 +265,18 @@ pub fn with_name(text: &str, new: &str) -> Option<String> {
     ))
 }
 
+/// **`text` with the `name:` line of its frontmatter left out**, or `None` where it has none: what
+/// a copy installed under a new name is compared by, so its name is never read as an edit.
+pub fn without_name(text: &str) -> Option<String> {
+    let fence = crate::fence::Fence::find(text)?;
+    let line = fence
+        .entries()
+        .into_iter()
+        .find(|entry| entry.key == "name")?
+        .line;
+    Some(format!("{}{}", &text[..line.start], &text[line.end..]))
+}
+
 /// Where each reference to a skill in the namespace `namespace` (`skills:<name>`) is in `text`,
 /// as byte offsets of its name: the namespace not preceded by a word character, the name a run of
 /// the characters a skill's name may hold. The one rule a reference is read by.

@@ -15,7 +15,14 @@ import {
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { useTabStop } from "./roving";
 import { RestartEndsLine } from "./RestartEnds";
-import { commands, type InboxUpdate, type Offered, type PlaneId, type Shown } from "./bindings";
+import {
+  commands,
+  type InboxUpdate,
+  type Offered,
+  type PlaneId,
+  type ReachedWhy,
+  type Shown,
+} from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
 import { counted as countedSaid } from "./dispatches";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
@@ -42,6 +49,7 @@ import {
   type InboxScope,
   type ScopeCounts,
 } from "./inboxScope";
+import { useOpenAnswer } from "./AnswerPanel";
 import { quietSaid } from "./NeedsYou";
 import { NoticeList } from "./Notice";
 import { PersonaMark } from "./PersonaMark";
@@ -72,6 +80,10 @@ import { Form, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { RESULTS } from "./ActionResultNotice";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+
+/** What the card of a chat waiting on a reply says where the app heard no message from it: its
+ *  harness gave none, or the app was started since (#4550). */
+export const NO_MESSAGE = "No message to show. Go to chat to see what it said.";
 
 /** What an empty Inbox says (I-12). */
 export const NOTHING_WAITS = "Nothing is waiting on you";
@@ -563,6 +575,14 @@ type Shape = {
   answers: boolean;
   /** It gets a reply box. */
   reply: boolean;
+  /** Its line is what its chat said, or that there is no message (#4550), so it is drawn whole
+   *  over the lines it has, and the status line above it names the card. */
+  message: boolean;
+  /** What its chat said, or that there is no message, where its line is the reason it waits
+   *  instead. */
+  said: string | undefined;
+  /** It is a task's question, which the Answer form takes. */
+  answerable: boolean;
   /** It gets a box for why it is kept blocked, which its chat is told with the answer
    *  (#1987). */
   reason: boolean;
@@ -580,10 +600,16 @@ function shapeOf(
 ): Shape {
   const waits = ask.source === "question" || ask.source === "terminal";
   const why = ask.source === "question" ? whyOf?.(ask.session) : undefined;
+  // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
+  // while it is itself waiting, it gets the box beside the reason (#1700).
+  const reply = ask.source === "question" && (why === undefined || asked?.(ask.session) === true);
+  const message = reply && why === undefined;
   // **A line cut is not the ask, so nothing that lets it run is offered on it** (#1146): the
   // core offers Allow only where the line says the action word for word
   // (`hooked::shown_in_full`), and a run of combining marks cut here would undo that.
-  const { text: line, capped } = capMarks(why ?? ask.says);
+  const { text: line, capped } = capMarks(
+    why ?? (message ? (ask.last_message ?? NO_MESSAGE) : ask.says),
+  );
   // An edit whose change is not shown is never allowed from here (#1146), whatever it offers.
   const unshown = ask.writes?.kind === "not-shown";
   const offers =
@@ -600,9 +626,10 @@ function shapeOf(
     lines: withheld ? linesOf(ask) : undefined,
     answers:
       ask.source !== "dispatch" && ask.options.length > 0 && ask.answer.via !== "in-its-pane",
-    // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
-    // while it is itself waiting, it gets the box beside the reason (#1700).
-    reply: ask.source === "question" && (why === undefined || asked?.(ask.session) === true),
+    reply,
+    message,
+    said: reply && !message ? capMarks(ask.last_message ?? NO_MESSAGE).text : undefined,
+    answerable: ask.source === "task-question",
     reason:
       (ask.answer.via === "sandbox-block" ||
         ask.answer.via === "browser" ||
@@ -687,6 +714,7 @@ function stopIds(key: string, shape: Shape, options: readonly Offered[] = []): s
     ...(shape.reason ? [`${key}:reason`] : []),
     ...options.map((option) => `${key}:${option.id}`),
     ...(shape.reply ? [`${key}:reply`, `${key}:send`] : []),
+    ...(shape.answerable ? [`${key}:answer`] : []),
     // A profile's Ask is about no chat (#2035): there is no chat to go to.
     ...(shape.go ? [`${key}:go`] : []),
     ...(shape.ignore ? [`${key}:ignore`] : []),
@@ -769,6 +797,14 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
   terminal: "In its terminal",
   question: "Waiting on your reply",
+  "task-question": "Asks you, through its asking chat",
+};
+
+/** Why a task's question reached the person, as its row says it. */
+const REACHED_SAID: Record<ReachedWhy, (from: string) => string> = {
+  "passed-on": (from) => `${from} passed this on`,
+  "no-reply": (from) => `${from} didn't reply`,
+  "asker-gone": (from) => `${from} has closed`,
 };
 
 function Ask({
@@ -808,6 +844,7 @@ function Ask({
   const [reason, setReason] = useState("");
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
+  const openAnswer = useOpenAnswer();
   /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
   const whole =
     ask.source === "dispatch" || (shape.answers && shape.offers.some((one) => one.allows));
@@ -934,8 +971,12 @@ function Ask({
         ref={drawn}
         className="inbox-ask"
         data-source={ask.source}
-        aria-labelledby={`${id}-says`}
-        aria-describedby={`${id}-whose`}
+        aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
+        aria-describedby={
+          shape.message
+            ? `${id}-says`
+            : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`
+        }
       >
         {/* **The card's top row** (R132): the chat's name in bold, the workspace quiet at its
             right. */}
@@ -950,8 +991,10 @@ function Ask({
         <p className="inbox-says">
           <KindMark kind={kindOfAsk(ask.source)} />
           {/* The ask's words are the source's, drawn as text and never as a control. What an
-              Allow here would let run is never cut (#1146): it is read whole first. */}
-          <Tooltip tip={shape.line}>
+              Allow here would let run is never cut (#1146): it is read whole first. So is what
+              a chat said: the person answers it here, and its question is often its last line
+              (#4550). */}
+          <Tooltip tip={shape.message ? undefined : shape.line}>
             {shape.lines !== undefined && shape.lines.drawn.length > 0 ? (
               // **A command over several lines is drawn on them** (#3502): each as the line has
               // it, the first few, and how many more. Never clamped: the cap is its own.
@@ -979,7 +1022,7 @@ function Ask({
             ) : (
               <span
                 id={`${id}-says`}
-                className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
+                className={`ask-says inbox-primary ui-text-body${shape.message ? " inbox-said" : ` ui-text-strong${whole ? "" : " inbox-clamped"}`}`}
               >
                 {markedLine(shape.line)}
               </span>
@@ -994,6 +1037,11 @@ function Ask({
             </span>
           </Tooltip>
         </p>
+        {shape.said !== undefined && (
+          <p id={`${id}-said`} className="inbox-said ui-text-body">
+            {shape.said}
+          </p>
+        )}
         {/* Why its Allow is missing: the lines it runs over, which its line put on one
             (#3502), and a character it holds that reads otherwise (SK-51). */}
         {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (
@@ -1022,14 +1070,34 @@ function Ask({
             {said}
           </p>
         )}
+        {ask.answer.via === "task-question" && (
+          <p className="inbox-secondary ui-text-secondary">
+            {REACHED_SAID[ask.answer.why](ask.answer.from)}
+            {ask.answer.note === null ? "" : `. Its note: ${ask.answer.note}`}
+          </p>
+        )}
         {/* Its ways on, side by side at its foot: one line, never one each. */}
         <ButtonRow size="sm" className="inbox-acts">
+          {shape.answerable && openAnswer !== undefined && (
+            <Stop id={`${key}:answer`}>
+              <Button
+                size="sm"
+                variant="primary"
+                aria-label={`Answer ${who}`}
+                onPress={() =>
+                  openAnswer({ chat: ask.session, name: ask.chain[ask.chain.length - 1] ?? who })
+                }
+              >
+                Answer
+              </Button>
+            </Stop>
+          )}
           {shape.go && (
             <Stop id={`${key}:go`}>
               <Button
                 size="sm"
                 // R132: the way on is the card's primary press; no answer is drawn this way.
-                variant={shape.answers ? "ghost" : "primary"}
+                variant={shape.answers || shape.answerable ? "ghost" : "primary"}
                 aria-label={`Go to chat ${who}`}
                 onPress={onGo}
                 className="inbox-go"

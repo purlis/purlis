@@ -602,9 +602,47 @@ fn a_task_that_reported_or_waits_on_something_is_not_asked() {
     // A line that was never typed is no ask: the next end asks again, and makes nothing.
     assert_eq!(ledger.turn_ended_owing(TASK, true, false), Owing::Ask);
     assert_eq!(ledger.turn_ended_owing(TASK, true, false), Owing::Ask);
-    // A chat that is no task of the ledger's keeps no message at all.
-    ledger.said_last(42, "Not a task.".to_owned());
-    assert_eq!(ledger.last_said(42), None);
+}
+
+/// A person's own chat, which no dispatch started (#4550).
+const OWN_CHAT: u32 = 42;
+
+#[test]
+fn every_chat_keeps_what_its_turn_ended_on_until_its_next_turn_begins() {
+    let mut ledger = Ledger::default();
+    ledger.said_last(OWN_CHAT, "Which branch should I use?".to_owned());
+    assert_eq!(
+        ledger.last_said(OWN_CHAT),
+        Some("Which branch should I use?")
+    );
+    // A later turn's message takes its place.
+    ledger.said_last(OWN_CHAT, "main or dev?".to_owned());
+    assert_eq!(ledger.last_said(OWN_CHAT), Some("main or dev?"));
+    // What the last turn ended saying is not this turn's.
+    ledger.turn_began(OWN_CHAT);
+    assert_eq!(ledger.last_said(OWN_CHAT), None);
+}
+
+#[test]
+fn a_chat_s_last_message_follows_it_to_a_new_number_and_goes_when_it_closes() {
+    let mut ledger = Ledger::default();
+    ledger.said_last(OWN_CHAT, "Which branch should I use?".to_owned());
+    ledger.followed(OWN_CHAT, OWN_CHAT + 1);
+    assert_eq!(ledger.last_said(OWN_CHAT), None);
+    assert_eq!(
+        ledger.last_said(OWN_CHAT + 1),
+        Some("Which branch should I use?")
+    );
+    ledger.forget(OWN_CHAT + 1, None);
+    assert_eq!(ledger.last_said(OWN_CHAT + 1), None);
+}
+
+#[test]
+fn a_chat_that_is_no_task_keeps_its_last_message_and_no_history_of_them() {
+    let mut ledger = Ledger::default();
+    ledger.said_last(OWN_CHAT, "Which branch should I use?".to_owned());
+    // Only a task's words are read back by the chat that asked for it.
+    assert_eq!(ledger.heard(OWN_CHAT + 1, OWN_CHAT), None);
 }
 
 #[test]

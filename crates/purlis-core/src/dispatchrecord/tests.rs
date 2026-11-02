@@ -3196,3 +3196,30 @@ fn a_running_task_is_orphaned_where_nothing_here_is_its_chat() {
     };
     assert!(orphans(&|_| false, &by_number).is_empty());
 }
+
+#[test]
+fn a_question_with_no_answer_after_it_is_what_counts_as_asked_and_unanswered() {
+    let talk = |kinds: &[&str]| -> Vec<Said> {
+        kinds
+            .iter()
+            .map(|kind| {
+                serde_json::from_value(serde_json::json!({
+                    "at": "2026-11-02T00:00:00Z",
+                    "kind": kind,
+                    "text": "",
+                }))
+                .expect("a message")
+            })
+            .collect()
+    };
+    assert!(!asked_and_unanswered(&talk(&[])));
+    assert!(!asked_and_unanswered(&talk(&["note"])));
+    assert!(asked_and_unanswered(&talk(&["question"])));
+    assert!(asked_and_unanswered(&talk(&["question", "note"])));
+    assert!(!asked_and_unanswered(&talk(&[
+        "question", "answer", "note"
+    ])));
+    assert!(asked_and_unanswered(&talk(&[
+        "question", "answer", "question"
+    ])));
+}

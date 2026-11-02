@@ -523,8 +523,10 @@ fn a_held_colour_keeps_its_hue_and_gives_only_as_little_colour_as_it_must() {
         let rule = |from: &str| Rule {
             token: light.value("accent.base"),
             token_tinted: true,
+            token_alone: false,
             from: light.value(from),
             from_tinted: false,
+            from_alone: false,
             distance: 0.1,
         };
         assert_eq!(
@@ -571,8 +573,10 @@ fn the_accent_is_held_apart_exactly_as_the_window_holds_it() {
                 token_tinted: rule["token_tinted"]
                     .as_bool()
                     .unwrap_or(case["accent_tinted"].as_bool().unwrap()),
+                token_alone: false,
                 from: rule["from"].as_str().unwrap(),
                 from_tinted: rule["tinted"].as_bool().unwrap(),
+                from_alone: false,
                 distance: rule["distance"].as_f64().unwrap(),
             })
             .collect();
@@ -592,6 +596,74 @@ fn the_accent_is_held_apart_exactly_as_the_window_holds_it() {
         });
         assert_eq!(drawn.as_deref(), case["tinted"].as_str(), "{case}");
     }
+}
+
+#[test]
+fn each_side_is_measured_as_the_window_measures_it() {
+    // The shared fixture's `most` (#3388): the first `shared_rules` rules are the shared ones;
+    // `null` is no limit and "none" a chroma no amount holds. One case of each way out: all held,
+    // the alone side under the shared answer, under no limit, and a rule that breaks as written.
+    let cases: Value = serde_json::from_str(TINT_CASES).unwrap();
+    let cases = cases["most"].as_array().unwrap();
+    assert!(cases.len() >= 6);
+    let answer = |value: &Value| match value {
+        Value::Null => Some(f64::INFINITY),
+        Value::String(none) if none == "none" => None,
+        other => other.as_f64(),
+    };
+    for case in cases {
+        let rules: Vec<Rule<'_>> = case["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|rule| Rule {
+                token: rule["token"].as_str().unwrap(),
+                token_tinted: rule["token_tinted"].as_bool().unwrap(),
+                token_alone: rule["token_alone"].as_bool().unwrap(),
+                from: rule["from"].as_str().unwrap(),
+                from_tinted: rule["from_tinted"].as_bool().unwrap(),
+                from_alone: rule["from_alone"].as_bool().unwrap(),
+                distance: rule["distance"].as_f64().unwrap(),
+            })
+            .collect();
+        let shared = usize::try_from(case["shared_rules"].as_u64().unwrap()).unwrap();
+        let most = tint::most_of(&rules, &rules[..shared], case["hue"].as_f64().unwrap());
+        assert_eq!(most.shared, answer(&case["shared"]), "{case}");
+        assert_eq!(most.alone, answer(&case["alone"]), "{case}");
+    }
+}
+
+#[test]
+fn every_tinted_token_is_drawn_as_the_window_draws_it() {
+    // The shared fixture's `drawn`: past `most_of`, what each token is given from those answers
+    // and the colour that makes, on Purlis's own appearances. `tint.ts` reads the same cases.
+    let cases: Value = serde_json::from_str(TINT_CASES).unwrap();
+    let cases = cases["drawn"].as_array().unwrap();
+    assert!(cases.len() >= 6);
+    let mut as_written = false;
+    for case in cases {
+        let id = case["appearance"].as_str().unwrap();
+        let colour = case["colour"].as_str().unwrap();
+        let theme = purlis()
+            .appearances
+            .iter()
+            .find(|one| one.id == id)
+            .expect("one of Purlis's appearances");
+        let tint = tinted(theme, colour);
+        let tokens = case["tokens"].as_object().unwrap();
+        assert_eq!(tokens.len(), theme.tint.tabs().len(), "{id} in {colour}");
+        for (token, want) in tokens {
+            assert_eq!(
+                tint.value(token),
+                want.as_str().unwrap(),
+                "{token} of {id} in {colour}"
+            );
+        }
+        as_written |= tint.value("accent.base") == theme.value("accent.base")
+            && tint.value("layer.chat") != theme.value("layer.chat");
+    }
+    // The path where the sides held alone are drawn as written and the strip still turns.
+    assert!(as_written);
 }
 
 #[test]

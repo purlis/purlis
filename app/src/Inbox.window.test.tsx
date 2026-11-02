@@ -14,6 +14,7 @@ import {
   NOT_CHECKED,
   NOTHING_WAITS,
   NOTICES,
+  NO_MESSAGE,
   UPDATES,
   hiddenSaid,
   landOnGroup,
@@ -21,6 +22,7 @@ import {
   type UpdateRow,
   type Updates,
 } from "./Inbox";
+import { AnswerOpener } from "./AnswerPanel";
 import { Notice } from "./Notice";
 import { IN_ANOTHER_WINDOW, OTHER_PROJECTS, type Elsewhere } from "./InboxElsewhere";
 import type { Needing, Quiet } from "./NeedsYou";
@@ -217,6 +219,53 @@ describe("the asks, grouped by chat", () => {
     const older: Shown = { ...permission(3, "a", ["steward 3"], "Run ls"), since: 1_000 };
     draw([question, newer, older]);
     expect(chats()).toEqual(["steward 3", "steward 5", "steward 7"]);
+  });
+
+  it("draws a task's question in its own words, with its asking chat's note marked apart (ADR 0107)", () => {
+    const question: Shown = {
+      session: 9,
+      ask: "task-question:9:4",
+      says: "Which host?",
+      options: [],
+      source: "task-question",
+      chain: ["steward 6", "check prod"],
+      answer: { via: "task-question", why: "passed-on", from: "steward 6", note: "Your call." },
+    };
+    core();
+    draw([question]);
+
+    expect(screen.getByText("Which host?")).toBeTruthy();
+    expect(screen.getByText("steward 6 passed this on. Its note: Your call.")).toBeTruthy();
+  });
+
+  it("opens the Answer form on a task's question, for the task that asked (ADR 0107)", async () => {
+    const question: Shown = {
+      session: 9,
+      ask: "task-question:9:4",
+      says: "Which host?",
+      options: [],
+      source: "task-question",
+      chain: ["steward 6", "check prod"],
+      answer: { via: "task-question", why: "no-reply", from: "steward 6", note: null },
+    };
+    core();
+    const opened = vi.fn();
+    render(
+      <AnswerOpener value={opened}>
+        <Inbox
+          plane={PLANE}
+          asks={[question]}
+          onGo={vi.fn()}
+          onLeave={vi.fn()}
+          onAnswered={vi.fn()}
+        />
+      </AnswerOpener>,
+    );
+    read();
+
+    await userEvent.click(screen.getByRole("button", { name: /^Answer / }));
+
+    expect(opened).toHaveBeenCalledWith({ chat: 9, name: "check prod" });
   });
 
   it("draws what an ask says as text: no word of it is ever a control", () => {
@@ -786,6 +835,77 @@ describe("answering in place", () => {
     expect(screen.getByText("deep failed")).toBeTruthy();
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.getByRole("button", { name: "Go to chat steward 6" })).toBeTruthy();
+  });
+
+  it("shows what a chat waiting on a reply said, whole, and its waiting line once", () => {
+    core();
+    const said = "I checked both branches.\nWhich should I use, main or dev?";
+    draw([{ ...QUESTION, last_message: said }]);
+
+    const card = screen.getByRole("listitem", { name: "Waiting on your reply", description: said });
+    const words = within(card).getByText(/I checked both branches/);
+    expect(words.textContent).toBe(said);
+    expect(words.className).not.toContain("inbox-clamped");
+    expect(within(card).getAllByText("Waiting on your reply")).toHaveLength(1);
+    expect(within(card).getByRole("textbox", { name: "Reply to steward 6" })).toBeTruthy();
+  });
+
+  it("says once that a chat waiting on a reply has no message to show", () => {
+    core();
+    draw([QUESTION]);
+    expect(screen.getAllByText(NO_MESSAGE)).toHaveLength(1);
+    expect(screen.getAllByText("Waiting on your reply")).toHaveLength(1);
+  });
+
+  it("keeps what a chat said under the reason it also waits for", () => {
+    core();
+    draw([{ ...QUESTION, last_message: "Which branch?" }], {
+      whyOf: (session) => (session === 6 ? "its report has nowhere to go" : undefined),
+      asked: (session) => session === 6,
+    });
+    expect(screen.getByText("its report has nowhere to go")).toBeTruthy();
+    expect(screen.getByText("Which branch?")).toBeTruthy();
+    // Heard on the card: a screen reader on it goes on to the box from there.
+    expect(
+      screen.getByRole("listitem", {
+        name: "its report has nowhere to go",
+        description: "Waiting on your reply Which branch?",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("reaches a reply box from its card with one Tab and ↓, past the message", async () => {
+    core();
+    draw([{ ...QUESTION, last_message: "Which branch?" }]);
+    await userEvent.tab();
+    expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Reply to steward 6" }),
+    );
+    await userEvent.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
+    await userEvent.tab({ shift: true });
+    expect(document.querySelector("li.inbox-ask")?.contains(document.activeElement)).toBe(false);
+  });
+
+  it("says once under the reason it also waits for that it has no message to show", () => {
+    core();
+    draw([QUESTION], {
+      whyOf: (session) => (session === 6 ? "its report has nowhere to go" : undefined),
+      asked: (session) => session === 6,
+    });
+    expect(screen.getByText("its report has nowhere to go")).toBeTruthy();
+    expect(screen.getAllByText(NO_MESSAGE)).toHaveLength(1);
+  });
+
+  it("shows no message on a chat that asked nothing, whose card is its reason", () => {
+    core();
+    draw([{ ...QUESTION, last_message: "All done." }], {
+      whyOf: (session) => (session === 6 ? "deep failed" : undefined),
+    });
+    expect(screen.queryByText("All done.")).toBeNull();
+    expect(screen.queryByText(NO_MESSAGE)).toBeNull();
   });
 
   it("sends nothing for an empty reply", () => {

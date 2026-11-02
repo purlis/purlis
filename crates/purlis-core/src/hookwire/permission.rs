@@ -47,6 +47,32 @@ pub struct PermissionAsked {
 }
 
 impl PermissionAsked {
+    /// **What it asks to use, as a person reads it** (SK-55): `the skill deploy`, or `the tool
+    /// Write`. `None` where its payload names neither in plain words: this reaches a record.
+    pub fn asks_for(&self) -> Option<String> {
+        let plain = |word: &&str| {
+            !word.is_empty()
+                && word.len() <= 64
+                && word
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.:".contains(&b))
+        };
+        let tool = self
+            .payload
+            .get("tool_name")
+            .and_then(serde_json::Value::as_str)
+            .filter(plain)?;
+        let skill = (tool == "Skill")
+            .then(|| self.payload.pointer("/tool_input/skill"))
+            .flatten()
+            .and_then(serde_json::Value::as_str)
+            .filter(plain);
+        Some(match skill {
+            Some(skill) => format!("the skill {skill}"),
+            None => format!("the tool {tool}"),
+        })
+    }
+
     /// How long the hook had run when it wrote this line: none said is none run.
     pub fn ran_for(&self) -> Duration {
         Duration::from_millis(self.ran_for_ms.unwrap_or_default())

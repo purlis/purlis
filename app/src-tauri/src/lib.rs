@@ -21,6 +21,7 @@ macro_rules! tauri_context {
 
 mod about;
 mod activity;
+mod agentidentity;
 mod alerts;
 mod asking;
 mod asknotify;
@@ -133,6 +134,7 @@ mod planes;
 mod planewatch;
 mod poolfollow;
 mod poolprofiles;
+mod poolsetuptab;
 mod poolsignin_confirm;
 mod pooltools;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -3031,6 +3033,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<hooks::ChatTouching>()
         // What `chat-doing` carries (#1493).
         .typ::<doing::ChatDoing>()
+        // What `chat-prompt-routing` carries (#4445).
+        .typ::<useskill::ChatPromptRouting>()
         // What `browser-ask-ended` carries (#2015).
         .typ::<browserneedsyou::AskEnded>()
         // What `chat-sandbox-blocked` carries (#1338).
@@ -4166,6 +4170,19 @@ pub fn run() {
                         );
                     })
                 })
+                // A chat's latest prompt changed whether it fell back: its tab and the studio
+                // read it again (#4445). Not `plane-changed`: nothing moved on disk.
+                .telling_prompt_routing({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: useskill::ChatPromptRouting| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            useskill::PROMPT_ROUTING,
+                            &told,
+                        );
+                    })
+                })
                 // A sandbox block a chat's hook found: the window shows it as a Notice on the
                 // chat's tab, with Report for one of purlis's own (#1338).
                 .telling_blocks({
@@ -4350,6 +4367,8 @@ pub fn run() {
                 // Each line of a dispatch as the app records it: an open Activity tab adds
                 // it without reading the records again (#1495). To the window holding the
                 // project only: a line carries what a chat said.
+                // A task's question closed or off its route, in the Inbox (#4556, #4557).
+                .telling_question_updates(std::sync::Arc::new(dispatched::keep_update))
                 // A task gone quiet, on its tab (#1981).
                 .telling_task_quiet({
                     let window = app.handle().clone();

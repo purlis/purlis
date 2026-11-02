@@ -349,11 +349,7 @@ fn every_part_that_takes_a_fill_and_words_is_drawn_where_its_stylesheet_says() {
             "{named}'s own fill"
         );
         // What it stands on otherwise is read, never painted.
-        let under = family
-            .under
-            .iter()
-            .find(|(part, _)| *part == one.part)
-            .map(|(_, token)| (*token).to_owned());
+        let under = family.stands_on(at).map(|grounds| grounds.join(" "));
         assert_eq!(
             under,
             painted(one.around).or(one.on.map(str::to_owned)),

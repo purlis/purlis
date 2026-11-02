@@ -41,7 +41,11 @@ export type RowKind = "decision" | "reply" | "terminal" | "elsewhere" | "update"
 
 /** The kind of an ask, by its source: a decision is anything answered by allowing or not. */
 export const kindOfAsk = (source: Shown["source"]): RowKind =>
-  source === "question" ? "reply" : source === "terminal" ? "terminal" : "decision";
+  source === "question" || source === "task-question"
+    ? "reply"
+    : source === "terminal"
+      ? "terminal"
+      : "decision";
 
 /** The updates that say something went wrong, marked as trouble. */
 const TROUBLE: ReadonlySet<UpdateKind> = new Set<UpdateKind>([
@@ -50,6 +54,7 @@ const TROUBLE: ReadonlySet<UpdateKind> = new Set<UpdateKind>([
   "smart-close",
   "report-undelivered",
   "commit-refused",
+  "question-failed",
 ]);
 
 /** The kind of an update: trouble where it says something came to nothing. */

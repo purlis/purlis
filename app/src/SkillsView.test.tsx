@@ -129,6 +129,7 @@ const REVIEW = skill("review", { level: "persona", folder: "personas/reviewer/sk
 /** A skill of a chat's set, as Use skill… reads it. */
 const given = (name: string, level: ChatSkill["level"] = "project"): ChatSkill => ({
   name,
+  source_label: null,
   level,
   label: level,
   description: `What ${name} does.`,
@@ -1156,6 +1157,32 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("skills-view-said")).toHaveTextContent(
         "3 skills of 30 · 1,234 of 6,000 characters · Codex's own, not counted: 4 skills, 900 characters",
+      ),
+    );
+  });
+
+  it("shows a prompt's fallback on the chat in front as it is told, and only that chat's (#4445)", async () => {
+    const start = { router: "acme", ms: 4, fell_back: false, said: "Routed by acme in 4 ms." };
+    const routing: SkillRouting = { ...start };
+    const asked = core(() => studio([]), { chat: [], budget: BUDGET, routing });
+    view({
+      chat: { session: 4, name: "Chat 4", workspace: "ops", persona: null, harness: "claude" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-said")).toHaveTextContent("Routed by acme in 4 ms."),
+    );
+    const reads = () => asked.filter((one) => one.cmd === "chat_skills").length;
+    const before = reads();
+
+    await act(() => emit("chat-prompt-routing", { plane: "p", session: 9 }));
+    await act(() => emit("chat-prompt-routing", { plane: "q", session: 4 }));
+    expect(reads()).toBe(before);
+
+    routing.last_prompt = { fell_back: true, said: "Its last prompt went on with no pointer." };
+    await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
+    await waitFor(() =>
+      expect(needOf("Its router fell back on a prompt")).toHaveTextContent(
+        "Its last prompt went on with no pointer.",
       ),
     );
   });

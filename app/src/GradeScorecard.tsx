@@ -19,6 +19,8 @@ import {
   type GradeScorecard,
   type ScoredArm,
   type ScoredChat,
+  type ScoredEval,
+  type ScoredEvalArm,
   type ScoredRuns,
   type ScoredTest,
   type SkillLevel,
@@ -104,8 +106,8 @@ export function against(one: number | null, other: number | null): string | unde
   return `${points(one - other)} points`;
 }
 
-/** A chat a scorecard's row offers, with the arm and the trigger test it ran. */
-export type KeptChat = { chat: ScoredChat; arm: ScoredArm; query: string };
+/** A chat a scorecard's row offers, with the arm and what it ran: `about` says so in words. */
+export type KeptChat = { chat: ScoredChat; arm: ScoredArm; about: string };
 
 /** Each chat of `tests` this machine kept, in the order their rows show them: a skill's
  *  scorecard's, or every skill's of a router's (#3617). */
@@ -114,7 +116,24 @@ export function keptChats(tests: readonly ScoredTest[]): KeptChat[] {
     test.arms.flatMap((runs) =>
       runs.chats
         .filter((chat) => chat.kept)
-        .map((chat) => ({ chat, arm: runs.arm, query: test.query })),
+        .map((chat) => ({ chat, arm: runs.arm, about: `trigger test “${test.query}”` })),
+    ),
+  );
+}
+
+/** Each chat of `evals` this machine kept, its judge's after it, in the order their rows show
+ *  them (SK-55). */
+export function keptEvalChats(evals: readonly ScoredEval[]): KeptChat[] {
+  return evals.flatMap((one) =>
+    one.arms.flatMap((arm) =>
+      arm.results.flatMap((run) =>
+        [
+          { chat: run.chat, about: `outcome eval ${one.id}` },
+          { chat: run.judge, about: `the judge of outcome eval ${one.id}` },
+        ].flatMap(({ chat, about }) =>
+          chat !== null && chat.kept ? [{ chat, arm: arm.arm, about }] : [],
+        ),
+      ),
     ),
   );
 }
@@ -260,11 +279,14 @@ export function GradeScorecardPage({
       {it.asked > 0 && (
         <p className="honest" data-testid="grade-scorecard-asked">
           {counted(it.asked, "chat", "chats")} asked you something. A grade's chat waits on nobody,
-          so purlis ended each at its ask and counts none of them: open its chat below to read what
-          it asked.
+          so purlis ended each at its ask
+          {it.evals.length > 0
+            ? ": a trigger test's is not counted, and an outcome eval's fails that run. Open"
+            : " and counts none of them: open"}{" "}
+          its chat below to read what it asked.
         </p>
       )}
-      {it.outcome !== "interrupted" && (
+      {it.outcome !== "interrupted" && (it.tests.length > 0 || it.evals.length === 0) && (
         <Totals aria-label={`Totals of the grade of ${name}`}>
           <Tile label="With it" value={pointsSaid(it.arms.with)} line="of tests passed" />
           <Tile
@@ -291,10 +313,39 @@ export function GradeScorecardPage({
           />
         </Totals>
       )}
-      <section aria-labelledby="grade-scorecard-tests">
-        <PanelSectionTitle id="grade-scorecard-tests">Each trigger test</PanelSectionTitle>
-        <TriggerTestsTable tests={it.tests} label={`Trigger tests of ${name}`} onChat={onChat} />
-      </section>
+      {it.outcome_arms !== null && it.outcome !== "interrupted" && (
+        <Totals aria-label={`Outcome evals of the grade of ${name}`}>
+          <Tile
+            label="With it"
+            value={pointsSaid(it.outcome_arms.with)}
+            line="of expectations passed"
+          />
+          <Tile
+            label="Without it"
+            value={pointsSaid(it.outcome_arms.without)}
+            line={against(it.outcome_arms.with, it.outcome_arms.without)}
+          />
+          {it.outcome_arms.previous !== null && (
+            <Tile
+              label="Previous version"
+              value={pointsSaid(it.outcome_arms.previous)}
+              line={against(it.outcome_arms.with, it.outcome_arms.previous)}
+            />
+          )}
+        </Totals>
+      )}
+      {(it.tests.length > 0 || it.evals.length === 0) && (
+        <section aria-labelledby="grade-scorecard-tests">
+          <PanelSectionTitle id="grade-scorecard-tests">Each trigger test</PanelSectionTitle>
+          <TriggerTestsTable tests={it.tests} label={`Trigger tests of ${name}`} onChat={onChat} />
+        </section>
+      )}
+      {it.evals.length > 0 && (
+        <section aria-labelledby="grade-scorecard-evals">
+          <PanelSectionTitle id="grade-scorecard-evals">Each outcome eval</PanelSectionTitle>
+          <OutcomeEvalsTable evals={it.evals} label={`Outcome evals of ${name}`} onChat={onChat} />
+        </section>
+      )}
     </section>
   );
 }
@@ -350,6 +401,160 @@ export function TriggerTestsTable({
   );
 }
 
+/** The arms a scorecard's outcome evals have a column for, in the order they ran them. */
+function evalArmsOf(evals: readonly ScoredEval[]): ScoredArm[] {
+  const arms: ScoredArm[] = [];
+  for (const one of evals)
+    for (const arm of one.arms) if (!arms.includes(arm.arm)) arms.push(arm.arm);
+  return arms;
+}
+
+/** One outcome eval in one arm, in a sentence: what its judges found, and why any run failed. */
+export function evalSaid(arm: ScoredEvalArm | undefined): string {
+  if (arm === undefined || arm.points === null) return "Not judged";
+  const failed = arm.results.flatMap((run) => (run.failed === null ? [] : [run.failed]));
+  return [`${arm.points}% over ${counted(arm.runs, "run", "runs")}`, ...failed].join(". ");
+}
+
+/** One outcome eval in one arm, in its cell: its rate, and each run's chat and judge, one press
+ *  away where this machine kept them. Why a run failed is said under the table, in a line wide
+ *  enough to read. */
+function EvalCell({
+  arm,
+  id,
+  onChat,
+}: {
+  arm: ScoredEvalArm | undefined;
+  id: string;
+  onChat: (chat: string) => void;
+}): ReactNode {
+  if (arm === undefined) return <Badge>Not judged</Badge>;
+  const button = (chat: ScoredChat, what: string) => (
+    <Button
+      key={`${what}-${chat.id}`}
+      size="sm"
+      variant="ghost"
+      aria-label={`Open ${ARM_SAID[arm.arm].toLowerCase()}, ${what.toLowerCase()} ${chat.run}, of outcome eval ${id}`}
+      isDisabled={!chat.kept}
+      tooltip={
+        chat.kept
+          ? "Opens the chat as it showed when the grade ended it, read-only"
+          : "Not kept on this machine: purlis keeps a grade's chats where the grade ran, for the skill's newest grades"
+      }
+      onPress={() => onChat(chat.id)}
+    >
+      {`${what} ${chat.run}`}
+    </Button>
+  );
+  return (
+    <span className="skill-grading-arm">
+      {arm.points === null ? (
+        <Badge>Not judged</Badge>
+      ) : (
+        `${arm.points}% over ${counted(arm.runs, "run", "runs")} `
+      )}
+      {arm.results.flatMap((run) => [
+        ...(run.chat === null ? [] : [button(run.chat, "Chat")]),
+        ...(run.judge === null ? [] : [button(run.judge, "Judge")]),
+      ])}
+    </span>
+  );
+}
+
+/** What the runs of one expectation came to in one arm, in words. */
+function checksSaid(arm: ScoredEvalArm, at: number): string {
+  // A run with a score counts, its failure among them: that is what its arm's rate counts.
+  const judged = arm.results.filter((run) => run.passed !== null);
+  if (judged.length === 0) return "not judged";
+  // A row too long for the record keeps each run's count and drops its verdicts.
+  if (judged.some((run) => run.checks.length === 0 && run.failed === null))
+    return "its verdicts were not kept";
+  const passed = judged.filter((run) => run.checks[at]?.passed === true).length;
+  return `${passed} of ${judged.length} passed`;
+}
+
+/**
+ * **A scorecard's outcome evals** (SK-55, #3235): one row per eval, each arm's rate, its chats and
+ * its judges, why any run failed, and under it each expectation with what each arm's judges found.
+ */
+export function OutcomeEvalsTable({
+  evals,
+  label,
+  onChat,
+}: {
+  evals: readonly ScoredEval[];
+  label: string;
+  onChat: (chat: string) => void;
+}) {
+  const arms = evalArmsOf(evals);
+  return (
+    <>
+      <Table aria-label={label} data-testid="grade-scorecard-evals">
+        <TableHeader>
+          <TableColumn isRowHeader>Outcome eval</TableColumn>
+          {arms.map((arm) => (
+            <TableColumn key={arm}>{ARM_SAID[arm]}</TableColumn>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {evals.map((one) => (
+            <TableRow key={one.id} id={one.id} textValue={`Outcome eval ${one.id}`}>
+              <TableCell>{`Eval ${one.id}`}</TableCell>
+              {arms.map((arm) => {
+                const scored = one.arms.find((each) => each.arm === arm);
+                return (
+                  <TableCell key={arm} textValue={evalSaid(scored)}>
+                    <EvalCell arm={scored} id={one.id} onChat={onChat} />
+                  </TableCell>
+                );
+              })}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {evals.flatMap((one) =>
+        one.arms.flatMap((arm) =>
+          arm.results.flatMap((run) =>
+            run.failed === null
+              ? []
+              : [
+                  <p
+                    className="honest"
+                    key={`${one.id}-${arm.arm}-${run.run}`}
+                    data-testid="grade-scorecard-eval-why"
+                  >
+                    {`Eval ${one.id}, ${ARM_SAID[arm.arm].toLowerCase()}, run ${run.run}: ${run.failed}`}
+                  </p>,
+                ],
+          ),
+        ),
+      )}
+      {evals.map((one) => (
+        <ul aria-label={`Expectations of outcome eval ${one.id}`} key={one.id}>
+          {one.expectations.map((text, at) => (
+            <li key={at} data-testid="grade-scorecard-expectation">
+              <code>{text}</code>
+              {one.arms.map((arm) => ` · ${ARM_SAID[arm.arm]}: ${checksSaid(arm, at)}`).join("")}
+              {one.arms.flatMap((arm) =>
+                arm.results.flatMap((run) => {
+                  const evidence = run.checks[at]?.evidence ?? "";
+                  return evidence === ""
+                    ? []
+                    : [
+                        <p className="honest" key={`${arm.arm}-${run.run}`}>
+                          {`${ARM_SAID[arm.arm]}, run ${run.run}: ${evidence}`}
+                        </p>,
+                      ];
+                }),
+              )}
+            </li>
+          ))}
+        </ul>
+      ))}
+    </>
+  );
+}
+
 /**
  * **One of a grade's chats, read-only** (SK-59, S6): what its terminal showed as the grade ended
  * it, its scrollback with it, read as text by a screen reader and taking no input. The chat
@@ -386,7 +591,7 @@ export function GradeChatPage({
   return (
     <KeptChatShown
       screen={screen}
-      kept={read === undefined ? [] : keptChats(read.tests)}
+      kept={read === undefined ? [] : [...keptChats(read.tests), ...keptEvalChats(read.evals)]}
       graded={read?.graded}
       chat={chat}
       whose={`${name}'s grade`}
@@ -445,7 +650,7 @@ export function KeptChatShown({
         description={
           here === undefined
             ? `What this chat of ${whose} showed when the grade ended it.`
-            : `${ARM_SAID[here.arm]} · trigger test “${here.query}”. What it showed when the grade ended it.`
+            : `${ARM_SAID[here.arm]} · ${here.about}. What it showed when the grade ended it.`
         }
       />
       {screen.refused !== undefined ? (

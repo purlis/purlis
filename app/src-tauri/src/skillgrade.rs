@@ -101,6 +101,8 @@ pub struct GradeEval {
     pub prompt: String,
     pub hides: bool,
     pub files: Vec<String>,
+    /// Those of its files that are not text, which nothing can check for what `hides` says (#4230).
+    pub not_text: Vec<String>,
     pub expectations: u32,
     /// Whether the person ticked it (off until they do), and the chats ticking it adds.
     pub on: bool,
@@ -555,23 +557,20 @@ impl SkillGradePlan {
                 .iter()
                 .map(|eval| {
                     let prompt = grading::outcomes::outcome_prompt(eval);
+                    let not_text = planned
+                        .copy
+                        .as_ref()
+                        .map(|copy| copy.inputs_of(eval).1)
+                        .unwrap_or_default();
+                    let as_shown = |path: &String| {
+                        purlis_unicode::marked(path, purlis_unicode::Breaks::Marked)
+                    };
                     GradeEval {
                         id: eval.id.to_string(),
-                        hides: purlis_unicode::hides(&prompt, purlis_unicode::Breaks::Kept)
-                            || eval
-                                .expectations
-                                .iter()
-                                .chain(&eval.expected_output)
-                                .chain(
-                                    eval.files
-                                        .iter()
-                                        .filter_map(|path| planned.copy.as_ref()?.inputs.get(path)),
-                                )
-                                .any(|text| {
-                                    purlis_unicode::hides(text, purlis_unicode::Breaks::Kept)
-                                }),
+                        hides: planned.eval_hides(eval),
                         prompt: purlis_unicode::marked(&prompt, purlis_unicode::Breaks::Marked),
-                        files: eval.files.clone(),
+                        files: eval.files.iter().map(as_shown).collect(),
+                        not_text: not_text.iter().map(as_shown).collect(),
                         expectations: u32::try_from(eval.expectations.len()).unwrap_or(u32::MAX),
                         on: planned.request.as_ref().is_some_and(|request| {
                             request.outcomes.iter().any(|one| one.id == eval.id)
@@ -693,18 +692,12 @@ pub struct SkillGradeStep {
 /// One grade running, and its way to be stopped.
 pub(crate) struct Running {
     pub(crate) plane: PlaneId,
-    /// The skill it grades, by its name; empty for a router's grade (SK-15e), which no skill's
-    /// name is.
-    pub(crate) skill: String,
-    /// The copy it grades, by its level: same-named copies at two levels are two skills
-    /// (#3353). `None` for a router's grade.
-    pub(crate) level: Option<Level>,
     pub(crate) stop: Arc<AtomicBool>,
     /// The copy a saved edit of which started it (SK-58), by its opt-in's key (level and
     /// name): the next save of that copy stops it. `None` for a grade pressed by hand.
     pub(crate) after_edit: Option<String>,
     /// Its latest step told to the window: what a page that opens while it runs starts from
-    /// (#3928, #4222).
+    /// (#3928, #4222), and, of a skill's, which copy it grades (#4338).
     pub(crate) step: RunningStep,
 }
 
@@ -712,6 +705,16 @@ pub(crate) struct Running {
 pub(crate) enum RunningStep {
     Skill(SkillGradeStep),
     Router(crate::routergrade::RouterGradeStep),
+}
+
+impl Running {
+    /// Its latest step, where it is a skill's grade: no router's grade names a skill.
+    fn skill_step(&self) -> Option<&SkillGradeStep> {
+        match &self.step {
+            RunningStep::Skill(step) => Some(step),
+            RunningStep::Router(_) => None,
+        }
+    }
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -769,7 +772,9 @@ pub(crate) fn record_interrupted(root: &std::path::Path) -> Vec<String> {
 fn running_of(plane: &PlaneId, skill: &str) -> Option<String> {
     running()
         .iter()
-        .find(|(_, one)| one.plane == *plane && one.skill == skill)
+        .find(|(_, one)| {
+            one.plane == *plane && one.skill_step().is_some_and(|step| step.skill == skill)
+        })
         .map(|(id, _)| id.clone())
 }
 
@@ -939,23 +944,43 @@ impl From<&SkillGradeStep> for session::GradeStepTold {
 /// The plan a terminal is told, as a press would start it: the words of [`SkillGradePlan::of`].
 fn plan_told(planned: &Planned, on: &On, running: Option<String>) -> session::GradePlanTold {
     let terms = terms_of(planned, on);
+    let evals = evals_can_run(planned, on.evals_refused.as_ref());
     session::GradePlanTold {
         profile: on.profile.clone(),
         model: terms.model.map(str::to_owned),
         sandbox: on.checked.as_ref().ok().cloned(),
-        refused: on.checked.as_ref().err().cloned(),
+        refused: on
+            .checked
+            .as_ref()
+            .err()
+            .cloned()
+            .or_else(|| evals.as_ref().err().cloned()),
         chats: planned.plan.map(|plan| plan.chats).unwrap_or_default(),
         token_cap: terms.token_cap,
         limit_micro_usd: micro_usd(terms.limit_usd),
         running,
         graded: planned.consent.clone(),
-        consent: consent_shown(planned, on),
+        consent: consent_shown(planned, on).filter(|_| evals.is_ok()),
     }
+}
+
+/// **Whether a terminal's start of `planned` holds**: the checks a press takes, the Grader's
+/// aside. A terminal's grade is purlis's own runner, as its plan names no Grader and `GradeOf`
+/// has no word for one, so a Grader cannot stand beside the evals it named.
+fn a_terminals_start_holds(
+    planned: &Planned,
+    on: &On,
+    consent: &str,
+    skill: &str,
+) -> Result<(), String> {
+    evals_can_run(planned, on.evals_refused.as_ref())?;
+    plan_holds(planned, on, None, consent, skill, "nothing was started")
 }
 
 /// **The window's answer to a grade a person asked for at a terminal** (SK-61, #3241): `project`'s
 /// plan, or its start through the one check a press of Grade takes ([`plan_holds`]), on the plan's
-/// cap and limit. `follower` hears each step. Named outcome evals are refused until #3235 runs them.
+/// cap and limit. `follower` hears each step. The outcome evals it named are the ones ticked, and
+/// one that would not run refuses the plan and the start (#4312).
 pub(crate) fn asked_at_a_terminal(
     project: &str,
     path: &str,
@@ -988,33 +1013,26 @@ fn answering_a_terminal(
     let of = match &ask {
         session::GradeAsk::Plan { of } | session::GradeAsk::Start { of, .. } => of.clone(),
     };
-    if !of.evals.is_empty() {
-        return Err(
-            "Outcome evals do not run from a terminal yet (#3235), so nothing was started.".into(),
-        );
-    }
     let level: SkillLevel = level_named(of.level);
     let level: Level = (&level).into();
     let on = chats_on(held.root(), of.profile.clone(), of.model.clone());
     match ask {
         session::GradeAsk::Plan { .. } => {
-            let planned = grades::planned(held.root(), &level, &of.skill, on.profile.as_deref())?;
+            let planned = grades::planned_named(
+                held.root(),
+                &level,
+                &of.skill,
+                on.profile.as_deref(),
+                &of.evals,
+            )?;
             let running = running_of(&plane, &of.skill);
             Ok(session::GradeAnswer::Plan(Box::new(plan_told(
                 &planned, &on, running,
             ))))
         }
         session::GradeAsk::Start { consent, .. } => {
-            let planned = grades::planned(held.root(), &level, &of.skill, None)?;
-            // A terminal's grade is purlis's own runner: its plan names no Grader.
-            plan_holds(
-                &planned,
-                &on,
-                None,
-                &consent,
-                &of.skill,
-                "nothing was started",
-            )?;
+            let planned = grades::planned_named(held.root(), &level, &of.skill, None, &of.evals)?;
+            a_terminals_start_holds(&planned, &on, &consent, &of.skill)?;
             let grade = begin(
                 app.clone(),
                 held,
@@ -1146,7 +1164,7 @@ pub(crate) fn begin(
         unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
     };
     // **One step of it**, as the window is told it and as a page that opens while it runs reads
-    // it (`skill_grades`).
+    // it (`skill_grade_running`).
     let step_of = {
         let (plane, skill, grade) = (plane.clone(), skill.clone(), id.clone());
         let copy_level = SkillLevel::from(&level);
@@ -1182,8 +1200,6 @@ pub(crate) fn begin(
             id.clone(),
             Running {
                 plane: plane.clone(),
-                skill: skill.clone(),
-                level: Some(level.clone()),
                 stop: Arc::clone(&stop),
                 after_edit: after_edit
                     .then(|| grades::after_edit::key(&level, &skill))
@@ -1510,6 +1526,101 @@ pub struct ScoredTest {
     pub arms: Vec<ScoredRuns>,
 }
 
+/// **One expectation in one run of an outcome eval, as its judge found it** (SK-55).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ScoredCheck {
+    pub passed: bool,
+    /// What the judge found, as the record keeps it: empty where a long row dropped it.
+    pub evidence: String,
+}
+
+/// **One run of an outcome eval in one arm** (SK-55): its chat and its judge's, each one click away
+/// where this machine kept it; how many expectations passed, where it was judged; each one's
+/// verdict; and why the eval failed there, where it failed without a verdict.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ScoredEvalRun {
+    pub run: u32,
+    pub chat: Option<ScoredChat>,
+    pub judge: Option<ScoredChat>,
+    pub passed: Option<u32>,
+    pub checks: Vec<ScoredCheck>,
+    pub failed: Option<String>,
+}
+
+/// **One outcome eval in one arm of a grade** (SK-55): its judged runs, its pass rate in points,
+/// and each run asked for.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct ScoredEvalArm {
+    pub arm: ScoredArm,
+    pub runs: u32,
+    pub points: Option<f64>,
+    pub results: Vec<ScoredEvalRun>,
+}
+
+/// **One outcome eval of a grade** (SK-55): its id and its expectations, each character no reader
+/// would see marked, in each arm.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct ScoredEval {
+    pub id: String,
+    pub expectations: Vec<String>,
+    pub arms: Vec<ScoredEvalArm>,
+}
+
+/// **A grade's outcome evals as its scorecard shows them** (SK-55), one row per eval however many
+/// arms it ran in, each chat `kept` says whether this machine kept.
+fn scored_evals(
+    outcomes: &[grading::OutcomeScore],
+    kept: &impl Fn(&str) -> bool,
+) -> Vec<ScoredEval> {
+    // A teammate's row can say anything: each character no reader would see is marked.
+    let marked = |text: &str| purlis_unicode::marked(text, purlis_unicode::Breaks::Marked);
+    let chat_of = |id: &Option<String>, run: u32| {
+        id.as_ref().map(|id| ScoredChat {
+            id: id.clone(),
+            run,
+            kept: kept(id),
+        })
+    };
+    let mut evals: Vec<ScoredEval> = Vec::new();
+    for score in outcomes {
+        let arm = ScoredEvalArm {
+            arm: score.arm.into(),
+            runs: score.runs,
+            points: score.pass_rate.map(|stat| (stat.mean * 100.0).round()),
+            results: score
+                .results
+                .iter()
+                .zip(1u32..)
+                .map(|(one, run)| ScoredEvalRun {
+                    run,
+                    chat: chat_of(&one.chat, run),
+                    judge: chat_of(&one.judge, run),
+                    passed: one.passed,
+                    checks: one
+                        .checks
+                        .iter()
+                        .map(|check| ScoredCheck {
+                            passed: check.passed,
+                            evidence: marked(&check.evidence),
+                        })
+                        .collect(),
+                    failed: one.failed.as_deref().map(marked),
+                })
+                .collect(),
+        };
+        let id = score.eval.to_string();
+        match evals.iter_mut().find(|eval| eval.id == id) {
+            Some(eval) => eval.arms.push(arm),
+            None => evals.push(ScoredEval {
+                id,
+                expectations: score.expectations.iter().map(|text| marked(text)).collect(),
+                arms: vec![arm],
+            }),
+        }
+    }
+    evals
+}
+
 /// **A grade's scorecard** (SK-59, #3239; spec #2762 decision 43): the grade as its row in the
 /// Grades panel says it, then each trigger test in each arm, with each of its chats one click
 /// away where this machine kept it.
@@ -1543,6 +1654,10 @@ pub struct GradeScorecard {
     pub outcome: GradeOutcome,
     pub arms: GradeArms,
     pub spent: GradeSpent,
+    /// **Its outcome evals** (SK-55, #3235), each in each arm, and each arm's pass rate in points:
+    /// none, and null, in a grade that scored none.
+    pub evals: Vec<ScoredEval>,
+    pub outcome_arms: Option<GradeArms>,
 }
 
 /// **How a grade ended, as its list marks it** (S6): graded whole, stopped by the person, stopped
@@ -1594,6 +1709,23 @@ pub struct GradeSpent {
 }
 
 impl GradeArms {
+    /// Each arm's outcome pass rate, in a grade that scored an outcome eval (SK-55).
+    fn of_outcomes(graded: &Graded) -> Option<GradeArms> {
+        let points = |arm: Arm| {
+            graded
+                .report
+                .arm(arm)
+                .and_then(|score| score.outcome_pass_rate)
+                .map(|stat| (stat.mean * 100.0).round())
+        };
+        let arms = GradeArms {
+            with: points(Arm::With),
+            without: points(Arm::Without),
+            previous: points(Arm::Previous),
+        };
+        (arms.with.is_some() || arms.without.is_some() || arms.previous.is_some()).then_some(arms)
+    }
+
     fn of(graded: &Graded) -> GradeArms {
         let points = |arm: Arm| {
             graded
@@ -1633,6 +1765,8 @@ pub struct GradeRow {
     pub ended: String,
     pub outcome: GradeOutcome,
     pub arms: GradeArms,
+    /// Each arm's outcome pass rate, where it ran an outcome eval (SK-55).
+    pub outcome_arms: Option<GradeArms>,
     pub spent: GradeSpent,
     pub after_edit: bool,
 }
@@ -1648,6 +1782,7 @@ impl GradeRow {
             ended: grades::ended_said(graded.report.ended).to_owned(),
             outcome: graded.report.ended.into(),
             arms: GradeArms::of(graded),
+            outcome_arms: GradeArms::of_outcomes(graded),
             spent: GradeSpent::of(graded),
             after_edit: graded.after_edit,
         }
@@ -1704,20 +1839,40 @@ impl SkillGrades {
 /// The latest step of the grade of the copy of `skill` at `level` running in `plane` now, where
 /// one is.
 fn step_of_running(plane: &PlaneId, level: &Level, skill: &str) -> Option<SkillGradeStep> {
+    let level = SkillLevel::from(level);
     running()
         .values()
-        .filter(|one| {
-            one.plane == *plane && one.skill == skill && one.level.as_ref() == Some(level)
-        })
-        .find_map(|one| match &one.step {
-            RunningStep::Skill(step) => Some(step.clone()),
-            RunningStep::Router(_) => None,
-        })
+        .filter(|one| one.plane == *plane)
+        .filter_map(Running::skill_step)
+        .find(|step| step.skill == skill && step.level == level)
+        .cloned()
+}
+
+/// **The latest step of the skill's grade `grade` in `plane`**, where it runs (#4338): what its
+/// page reads, its grade's step and nothing else, so no other read can leave it without Stop.
+fn step_of_grade(plane: &PlaneId, grade: &str) -> Option<SkillGradeStep> {
+    running()
+        .get(grade)
+        .filter(|one| one.plane == *plane)
+        .and_then(Running::skill_step)
+        .cloned()
+}
+
+/// **Where the skill's grade `grade` is now** (#4338): its latest step while it runs, else `None`
+/// (its scorecard then says how it ended). Read only, from this app's own memory of its grades,
+/// as Stop is.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_grade_running(
+    plane: PlaneId,
+    grade: String,
+) -> Result<Option<SkillGradeStep>, String> {
+    Ok(step_of_grade(&plane, &grade))
 }
 
 /// **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
 /// skill's Grades tab draws its bars and its list from, with whether it has trigger tests and the
-/// grade of it running now (#3928), and what a running grade's page starts from.
+/// grade of it running now (#3928).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_grades(
@@ -1784,6 +1939,7 @@ impl GradeScorecard {
     /// `graded`'s scorecard, each chat `kept` says whether this machine kept.
     fn of(graded: &Graded, kept: impl Fn(&str) -> bool) -> GradeScorecard {
         use purlis_core::skills::studio;
+        let evals = scored_evals(&graded.report.outcomes, &kept);
         let tests = scored_tests(&graded.report.triggers, kept);
         GradeScorecard {
             grade: graded.grade.clone(),
@@ -1825,6 +1981,8 @@ impl GradeScorecard {
             outcome: graded.report.ended.into(),
             arms: GradeArms::of(graded),
             spent: GradeSpent::of(graded),
+            evals,
+            outcome_arms: GradeArms::of_outcomes(graded),
         }
     }
 }
@@ -1935,7 +2093,7 @@ pub(crate) struct InChats<'a> {
     pub(crate) reported: Vec<String>,
     /// **The input files the grade's outcome evals stage** (SK-55), as the grade read them once
     /// (`grades::SkillCopy::inputs`): none in a router's grade.
-    pub(crate) inputs: &'a std::collections::BTreeMap<String, String>,
+    pub(crate) inputs: &'a std::collections::BTreeMap<String, Vec<u8>>,
     /// **What the last outcome eval's chat left**, kept for its judge alone (SK-55): its id, its
     /// files as it ended and its final answer. Taken by the judge of that chat, and by no other.
     pub(crate) left: Option<Left>,
@@ -1945,7 +2103,7 @@ pub(crate) struct InChats<'a> {
 /// (`drafts::outcome_of`), and what its turn ended saying, where its harness said.
 pub(crate) struct Left {
     chat: String,
-    files: Vec<(String, String)>,
+    files: Vec<(String, Option<Vec<u8>>)>,
     answer: Option<String>,
 }
 
@@ -1980,7 +2138,7 @@ impl Chats for InChats<'_> {
             }
             (None, None) => {}
         }
-        if ran.end == ChatEnd::Asked {
+        if matches!(ran.end, ChatEnd::Asked | ChatEnd::AskedFor { .. }) {
             self.asked += 1;
         }
         if matches!(
@@ -1988,6 +2146,7 @@ impl Chats for InChats<'_> {
             ChatEnd::Turn
                 | ChatEnd::TimedOut
                 | ChatEnd::Asked
+                | ChatEnd::AskedFor { .. }
                 | ChatEnd::ClosedEarly { .. }
                 | ChatEnd::ReadPast
         ) {
@@ -2219,6 +2378,10 @@ impl InChats<'_> {
                     Ok(Watched::TurnEnded) => break ChatEnd::Turn,
                     // A grade's chat waits on nobody: ended at its first ask, with that end.
                     Ok(Watched::Asked) => break ChatEnd::Asked,
+                    Ok(Watched::AsksFor(what)) if whole_turn => {
+                        break ChatEnd::AskedFor { what };
+                    }
+                    Ok(Watched::AsksFor(_)) => {}
                     // A whole turn that closed before it ended left nothing to judge or be read:
                     // no run, never a score, so a crash is no verdict on the skill (SK-55).
                     Ok(Watched::Closed) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
@@ -2267,6 +2430,23 @@ impl InChats<'_> {
                 }
             },
         };
+        // What it asked for, where the ask's notice came ahead of its hook.
+        if whole_turn
+            && end == ChatEnd::Asked
+            && let Some((_, heard)) = &told
+        {
+            let until = Instant::now() + ANSWER_COMES_WITHIN;
+            while let Some(left) = until.checked_duration_since(Instant::now()) {
+                match heard.recv_timeout(left) {
+                    Ok(Watched::AsksFor(what)) => {
+                        end = ChatEnd::AskedFor { what };
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+        }
         // What the turn ended saying, where it is heard just after the turn's end.
         if whole_turn
             && answer.is_none()

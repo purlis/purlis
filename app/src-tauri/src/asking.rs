@@ -110,6 +110,11 @@ pub struct Shown {
     /// one: their count, and each as [`Shown::says`] shows it. Absent for an action on one line.
     #[specta(optional)]
     pub lines: Option<LinesShown>,
+    /// **What its chat's turn ended on** (#4550): on a chat waiting on the person's reply, its
+    /// last message, masked and bounded as a report's text is, over the lines it has. Data,
+    /// never markup. Absent where the app heard none, and on every other ask.
+    #[specta(optional)]
+    pub last_message: Option<String>,
 }
 
 /// The lines an action runs over, as a row draws them under its line (#3502). An action whose
@@ -156,6 +161,8 @@ pub enum AskSource {
     Terminal,
     /// A chat whose turn ended with the next move the person's.
     Question,
+    /// **A task's question that has reached the person** (ADR 0107): in the task's own words.
+    TaskQuestion,
     /// A profile a chat could not start on, because its harness says it is not signed in on
     /// this device (#2035): answered by running the harness's own sign-in in a shell tab.
     SignIn,
@@ -248,8 +255,39 @@ pub enum AnswerPath {
     /// `answer_pool_tool`, allowing for Allow this run and not for Keep off, for run `run` of
     /// the chat that asked (#2047).
     PoolTool { run: u32 },
+    /// `answer_task_question`, through the form that reads the question from the core: the
+    /// task's own words, with `why` it reached the person. `note` is the asking chat's own
+    /// line, `from` being that chat, and is never the task's words.
+    TaskQuestion {
+        why: ReachedWhy,
+        from: String,
+        note: Option<String>,
+    },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
+}
+
+/// Why a task's question reached the person ([`AnswerPath::TaskQuestion`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReachedWhy {
+    /// Its asking chat passed it on.
+    PassedOn,
+    /// Its asking chat had its turn and did nothing with it in time.
+    NoReply,
+    /// Its asking chat closed or crashed.
+    AskerGone,
+}
+
+impl From<purlis_core::dispatchtalk::Reached> for ReachedWhy {
+    fn from(why: purlis_core::dispatchtalk::Reached) -> Self {
+        use purlis_core::dispatchtalk::Reached;
+        match why {
+            Reached::PassedOn => Self::PassedOn,
+            Reached::NoReply => Self::NoReply,
+            Reached::AskerGone => Self::AskerGone,
+        }
+    }
 }
 
 /// One answer an ask offers.
@@ -327,6 +365,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         held_until: None,
         writes,
         lines,
+        last_message: None,
     })
 }
 
@@ -522,6 +561,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -563,6 +603,7 @@ pub fn sandbox_host(
             held_until: None,
             writes: None,
             lines: None,
+            last_message: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -596,6 +637,7 @@ pub fn sandbox_host(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     })
 }
 
@@ -633,6 +675,10 @@ pub fn sandbox_write(
         return None;
     }
     let folder = What::Write(std::path::PathBuf::from(&block.target));
+    // A held folder is answered on its own Notice, which has room for what allowing it means.
+    if purlis_core::sandbox::names_what_may_be_lifted(std::path::Path::new(&block.target)) {
+        return None;
+    }
     let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
         .into_iter()
         .filter(|level| locks.refuses_grant(&folder, (*level).into()).is_none())
@@ -659,6 +705,7 @@ pub fn sandbox_write(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     })
 }
 
@@ -722,6 +769,7 @@ pub fn sandbox_runner(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     })
 }
 
@@ -796,6 +844,7 @@ pub fn sandbox_port(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     })
 }
 
@@ -867,6 +916,7 @@ pub fn sandbox_local(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     })
 }
 
@@ -887,12 +937,14 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
 /// **The question adapter**: chat `session` is in the needs-you queue with no prompt open,
-/// its turn over and the next move the person's. Answered by replying in the chat.
-pub fn question(session: u32) -> Shown {
+/// its turn over and the next move the person's. Answered by replying in the chat. `says` is
+/// its kind; what its chat said is `last_message`, where the app heard any (#4550).
+pub fn question(session: u32, last_message: Option<String>) -> Shown {
     Shown {
         session,
         ask: format!("question:{session}"),
@@ -905,6 +957,36 @@ pub fn question(session: u32) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message,
+    }
+}
+
+/// **The task question adapter** (ADR 0107): a question that has reached the person, one item
+/// for the ✋ and the Inbox, in the task's own words, masked as any ask's line is. Its
+/// `chain` says which tasks it came through.
+pub fn task_question(
+    reached: purlis_core::dispatchtalk::ReachedYou,
+    from: String,
+    chain: Vec<String>,
+) -> Shown {
+    use purlis_core::dispatchrecord::masked;
+    Shown {
+        session: reached.task,
+        ask: format!("task-question:{}:{}", reached.task, reached.number),
+        says: purlis_core::shown::one_line(&masked(&reached.text), purlis_core::shown::NO_CLIP),
+        options: Vec::new(),
+        source: AskSource::TaskQuestion,
+        chain,
+        answer: AnswerPath::TaskQuestion {
+            why: reached.why.into(),
+            from,
+            note: reached.note,
+        },
+        since: u32::try_from(reached.at).ok(),
+        held_until: None,
+        writes: None,
+        lines: None,
+        last_message: None,
     }
 }
 
@@ -960,6 +1042,7 @@ pub fn workspace_removal(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1072,6 +1155,7 @@ pub fn browser_posture(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1136,6 +1220,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1201,6 +1286,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1262,6 +1348,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1304,6 +1391,7 @@ pub fn browser_sites(
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1473,6 +1561,7 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         held_until: None,
         writes,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1498,6 +1587,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1551,6 +1641,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1605,6 +1696,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1659,6 +1751,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1714,6 +1807,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1742,6 +1836,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         held_until: None,
         writes: None,
         lines: None,
+        last_message: None,
     }
 }
 
@@ -1836,6 +1931,8 @@ pub struct Waiting<'a> {
     /// Whether a chat is in the queue only for what is an update ([`only_updates`]): each is
     /// an update in the Inbox (#1693, #1694), and nothing of it waits on the person.
     pub only_updates: &'a dyn Fn(u32) -> bool,
+    /// What a chat's turn last ended on, as kept (#4550): what a question shows.
+    pub last_message: &'a dyn Fn(u32) -> Option<String>,
     /// Until when a chat's proxy holds a connection to a host, where it holds one now, asking
     /// the person (#1709), given when the ask began.
     pub held: &'a HoldEnds<'a>,
@@ -1913,7 +2010,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .filter(|session| !said.contains(session) && !(waiting.only_updates)(**session))
             .map(|&session| match (waiting.at_its_prompt)(session) {
                 Some(prompt) => terminal(session, prompt),
-                None => question(session),
+                None => question(session, (waiting.last_message)(session)),
             }),
     );
     asks.extend(waiting.blocks.iter().filter_map(|(session, block)| {
@@ -2105,6 +2202,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         since.insert(pool_tool_key(one.session, one.run), one.since);
     }
     let declared = purlis_core::sandbox::services::declared(root);
+    let tasks = held.tasks();
     let waiting = Waiting {
         browsers,
         needs_you,
@@ -2146,6 +2244,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 at_its_prompt: hooks.waits_on_its_prompt(session),
             })
         },
+        last_message: &|session| tasks.ledger().last_said(session).map(str::to_owned),
         held: &|session, target, began| {
             chats.asking(session, Some(target)).then(|| {
                 let ends = hold_ends(began.map(u64::from), now_secs);
@@ -2159,12 +2258,20 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         },
         runner_of: &|session| chats.runner_of(session),
     };
+    let task_questions: Vec<Shown> = crate::dispatched::reached_the_person(held)
+        .into_iter()
+        .map(|(reached, question)| {
+            let chain = chain(reached.task, waiting.name_of, waiting.asker_of);
+            task_question(reached, question.asked, chain)
+        })
+        .collect();
     Asking {
         plane: plane.clone(),
         // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
         // first ask, with that end, and none of its asks is listed.
         asks: derive(&waiting)
             .into_iter()
+            .chain(task_questions)
             .filter(|ask| !chats.kept_from_the_window(ask.session))
             // The old `[harness_plugins]` keys: Needs you holds their Ask while the Skill studio
             // is on (#3689), so it is in the Inbox only while the studio is off.

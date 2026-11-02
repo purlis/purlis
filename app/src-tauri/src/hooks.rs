@@ -1114,6 +1114,7 @@ pub(crate) fn blocked_on(
 ) -> ChatBlocked {
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
     let offered = kept_in_place(harness, plane.root(), block, target)
+        .or_else(|| lifted_here(harness, plane.root(), block, target))
         .unwrap_or_else(|| offered_to(plane.root(), block, target, has_check));
     let (first, named, why) = for_its_harness(harness, offered);
     // Chosen by the person where nothing was named (#1884): said in place of "nothing to
@@ -1556,10 +1557,15 @@ fn held(
         }
         BlockOffer::Write => {
             let mut why = locks.write_grants_refused();
+            // A held folder is this chat's alone ([`lifted_here`]).
+            let held = target.as_deref().is_some_and(|path| {
+                purlis_core::sandbox::names_what_may_be_lifted(Path::new(path))
+            });
             // At the scopes policy leaves open alone (#1927): one it removed was drawn here
             // and then refused at the press.
             let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
                 .into_iter()
+                .filter(|level| !held || *level == GrantLevel::Chat)
                 .filter(|level| {
                     let refused = locks.scope_removed((*level).into());
                     if refused.is_some() && why.is_none() {
@@ -1652,6 +1658,38 @@ fn kept_in_place(
             Some(grant::GIT_FOLDER_KEPT.to_owned()),
         )
     })
+}
+
+/// **A refused write of a held folder a person may lift** ([`purlis_core::sandbox::grant::lift`]):
+/// Allow, naming the folder whole, for this chat alone, where purlis can write that into the
+/// chat's sandbox: a Seatbelt profile, which can name one path. `None` for any other block, for
+/// a wrap on Linux, and for Claude Code's own sandbox, whose globs can't.
+fn lifted_here(
+    harness: Option<purlis_core::harness::Harness>,
+    root: &Path,
+    block: &purlis_core::sandboxblock::Block,
+    target: Option<&str>,
+) -> Option<(BlockOffer, Option<String>, Option<String>)> {
+    use purlis_core::sandbox::{Machine, grant};
+    use purlis_core::sandboxblock::{Kind, Operation};
+    let harness = harness?;
+    let machine = Machine::this();
+    if block.ours
+        || block.kind != Kind::ProtectedFile
+        || !matches!(block.operation, Operation::Write | Operation::File)
+        || machine.purlis_wraps(harness)
+        || harness == purlis_core::harness::Harness::ClaudeCode
+    {
+        return None;
+    }
+    let ground = grant::Ground::of(root, root, &machine);
+    let folder = grant::liftable(Path::new(target?), &ground.place())?;
+    let folder = grant::lift(&folder.display().to_string(), &ground).ok()?;
+    Some((
+        BlockOffer::Write,
+        Some(folder.display().to_string()),
+        Some(grant::LIFT_SAID.to_owned()),
+    ))
 }
 
 /// [`offered`] to a chat whose sandbox was compiled with the system's certificate check
@@ -2150,8 +2188,8 @@ pub type Touches = Arc<dyn Fn(purlis_core::hookwire::Touching) + Send + Sync + '
 /// which measures a task's quiet stretch from it ([`Hooks::when_doing`]).
 pub type Doings = Arc<dyn Fn(u32, purlis_core::doing::Said) + Send + Sync + 'static>;
 
-/// What hears what a chat's turn put out (#1981): the project's own handler, which keeps it
-/// for a task alone ([`Hooks::when_output`]).
+/// What hears what a chat's turn put out (#1981): the project's own handler, which keeps the
+/// message it ended on, for every chat (#4550) ([`Hooks::when_output`]).
 pub type Outputs = Arc<dyn Fn(purlis_core::hookwire::TurnOutput) + Send + Sync + 'static>;
 
 /// The event the window is sent when a chat's file tool touches a file (FM-6).
@@ -2467,11 +2505,21 @@ impl Hooks {
                 let hear_block = Arc::clone(&hear_block);
                 Box::new(move |block| hear_block(block))
             },
-            permission: crate::asking::permitting(
-                plane.clone(),
-                Arc::clone(&asks),
-                Arc::clone(&asks_told),
-            ),
+            permission: {
+                let held = crate::asking::permitting(
+                    plane.clone(),
+                    Arc::clone(&asks),
+                    Arc::clone(&asks_told),
+                );
+                let skill_runs = Arc::clone(&skill_runs);
+                Box::new(move |asked| {
+                    // A grade's chat ends here, and its grade says what it asked for (SK-55).
+                    if let Some(what) = asked.asks_for() {
+                        skill_runs.asks_for(asked.chat, what);
+                    }
+                    held(asked)
+                })
+            },
             // What a chat's tool hook says the chat is doing (#1493): kept in memory for the
             // one line under its name, and never recorded. A helper's tool is not the chat's
             // own work, so its line is left as it was.
@@ -2920,6 +2968,29 @@ impl Hooks {
                 plane: root.to_path_buf(),
                 number,
                 said,
+            })
+            .map_err(|why| why.to_string())
+    }
+
+    /// **Writes a step of a question of task `number`'s** (#4557): metadata alone. Refused where
+    /// this machine has no event log open, or the log refused it.
+    pub fn record_question(
+        &self,
+        root: &Path,
+        number: u32,
+        step: purlis_core::eventlog::questions::Step,
+    ) -> Result<(), String> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| "purlis's event log is not open on this machine".to_owned())?;
+        events
+            .record(Entry::Question {
+                plane: root.to_path_buf(),
+                number,
+                step,
             })
             .map_err(|why| why.to_string())
     }

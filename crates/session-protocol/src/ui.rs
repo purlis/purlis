@@ -206,6 +206,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // theme folders, which the window loads its faces from. Held to the window, failing closed:
     // a link draws with the platform's fonts.
     "theme_font",
+    // The parts of a window's own first frame (#4410), by the ticket its creation script handed
+    // it. A link is handed no first frame, so it has nothing to ask for.
+    "first_frame_parts",
     // The theme in force for the window that asks, which also points that window's theme watch
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
@@ -250,6 +253,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forge_device_sign_in_start",
     "forge_device_sign_in_wait",
     "forge_device_sign_in_cancel",
+    // Agent identity (#4485): GitHub's App flow, the tool lines and the key, each the person's.
+    "agent_identities",
+    "agent_identity_create",
+    "agent_identity_create_cancel",
+    "agent_identity_reopen",
+    "agent_identity_stand",
+    "agent_identity_lines",
+    "agent_identity_finish",
+    "agent_identity_remove",
     // The browser sign-in to gitlab.com (#730, ADR 0077 §3): it opens the person's browser and
     // a loopback listener on this machine, and ends with a token in the keychain. No link
     // starts one or stops one.
@@ -744,6 +756,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.
     "docker_pools",
+    "pool_setup",
+    "pool_setup_choose_docker",
+    "pool_setup_name",
+    "pool_setup_pool",
+    "pool_setup_open_docker",
     "add_docker_pool",
     "remove_docker_pool",
     "docker_pool_link",
@@ -804,6 +821,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // workspace's code, so only the person's own choice in their window sets it.
     "chats_run_on",
     "set_chats_run_on",
+    "follow_project_chats_run_on",
+    "project_chats_run_on",
+    "set_project_chats_run_on",
     // What a workspace's sends to a runner leave out (#2046): the person's list, in their window.
     "send_leaves_out",
     "set_send_leaves_out",
@@ -1195,11 +1215,12 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "router_grade_plan",
     "router_grade_running",
     "router_grade_scorecard",
-    // A grade's kept chat and its scorecard (SK-59, #3239), and a skill's grading after each
-    // edit (SK-58, #3238): read only.
+    // A grade's kept chat and its scorecard (SK-59, #3239), a skill's grading after each edit
+    // (SK-58, #3238), and how far the one running is (#4338): read only.
     "skill_grade_after_edit",
     "skill_grade_chat",
     "skill_grade_plan",
+    "skill_grade_running",
     "skill_grade_scorecard",
     // A skill's grades, for its Grades tab (S6, #3688): read only.
     "skill_grades",

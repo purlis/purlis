@@ -532,6 +532,12 @@ timeout, quota or config.
 _Avoid_: node pool (that is the cluster's), fleet, cluster (for the pool), warm pool (that is one
 setting of it), runner provider (that is the code)
 
+**Agent identity**:
+What a chat acts as on a forge: a GitHub App's short-lived token, or a GitLab project or group
+token. It is never a person's forge account, whose sign-in reaches no chat (ADR 0077). One view tab,
+with one row per forge host, is where it is inspected and removed. Window text says Agent identity.
+_Avoid_: login, sign-in, bot account
+
 **Pool setup**:
 The one guided view tab that takes anyone from nothing to a working chat on a **Pool**: a list of
 steps on the left, each with its state (done, current, needs attention, skipped, waiting on
@@ -1631,7 +1637,8 @@ _Avoid_: sleep, hibernate, pause
 **Studio capability**:
 One of the six capabilities the Skill studio is built from: SkillSource, Grader, SkillLint,
 SkillTemplate, StudioPanel and SkillRouter. Each has a built-in first user. An extension that
-declares one is confined, and they are experimental until the studio's finish line (ADR 0101).
+declares one is confined. Grader, StudioPanel and SkillRouter are version 1 of the public extension
+API; the other three stay experimental until they are fully wired (ADR 0101).
 _Avoid_: studio extension point, skill capability
 
 **SkillSource**:
@@ -1916,12 +1923,12 @@ A fixture of a skill's that tests whether a harness picks the skill when it shou
 alone when it should not. A **grade** runs each one as real chats.
 
 **Outcome eval**:
-A fixture of a skill's that tests how well the skill does its job on a task. A **grade** counts
-them now, and grades them later (#3235).
+A fixture of a skill's that tests how well the skill does its job on a task. A **grade** runs one
+only where the person ticks it on the plan or names it at a terminal, and a judge chat grades it.
 
 **Grade** (of a skill):
-One run of a grading framework on a copy of a skill: its trigger tests (and, later, its outcome
-evals) run as real chats in each **arm**, scored and recorded in the **eval record** against the
+One run of a grading framework on a copy of a skill: its trigger tests, and any outcome evals
+ticked or named, run as real chats in each **arm**, scored and recorded in the **eval record** against the
 version the copy held. A grade shows what it runs and spends before it starts, and starts only on
 the person's press, or their yes at a terminal (ADR 0105).
 _Avoid_: test run, benchmark, eval (alone)

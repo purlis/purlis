@@ -191,8 +191,10 @@ answer's words, a danger menu row's and a field's error. `parts/state_words_test
 parts manifest and fails on one with no pair, in every look the window draws: at rest, under the
 pointer, pressed as a toggle and open (#3255). A look the window never draws is left out, by the
 manifest's `DRAWN_ONLY` (a danger button is never a toggle, a danger row never opens a submenu),
-and a part drawn on fewer grounds than its family is read on those, by `PART_GROUNDS` (a field's
-error only under a field that can refuse). An app guard holds each list to the components.
+and a part drawn on fewer grounds than its family is read on those, by the family's `under` (a
+field's error only under a field that can refuse). An app guard holds each list to the
+components. The theme check reads the same lists (#3384): a look the window never draws brings no
+finding and repaints no surface.
 
 **The pairs are read from the stylesheets too** (DS-6, #629). A rule in `App.css` or
 `styles.css` that sets one token as its text and another as its background draws one on the

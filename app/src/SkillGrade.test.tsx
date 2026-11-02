@@ -121,16 +121,6 @@ const step = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-/** deploy's grades as the core answers them, with the grade `running` at its latest step. */
-const grades = (running: ReturnType<typeof step> | null) => ({
-  grades: [],
-  said: null,
-  tests: 2,
-  evals: 0,
-  tests_refused: null,
-  running,
-});
-
 describe("Grade, cost first", () => {
   it("shows what a grade runs and who pays before anything runs, then starts it on the press", async () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
@@ -453,6 +443,7 @@ describe("Grade, cost first", () => {
               prompt: "Fill in the form",
               hides: false,
               files: ["evals/files/form.txt"],
+              not_text: [],
               expectations: 2,
               on: true,
               chats: 12,
@@ -483,6 +474,60 @@ describe("Grade, cost first", () => {
     expect(start(24)).toBeTruthy();
   });
 
+  it("names an eval's file it could not check, which is not text (#4230)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan")
+        return plan({
+          evals: [
+            {
+              id: "4",
+              prompt: "Read the form",
+              hides: false,
+              files: ["evals/files/form.txt", "evals/files/sample1.pdf"],
+              not_text: ["evals/files/sample1.pdf"],
+              expectations: 2,
+              on: false,
+              chats: 12,
+            },
+          ],
+          outcomes_left_out: [],
+        });
+      if (cmd === "start_options") return { profiles: [{ name: "work" }] };
+      return null;
+    });
+    renderPlan();
+    expect(await screen.findByTestId("skill-grade-eval")).toHaveTextContent(
+      "Read the form · 12 more chats · 2 expectations a judge checks · with evals/files/form.txt, evals/files/sample1.pdf · evals/files/sample1.pdf isn't text: purlis couldn't check it for characters no reader would see, and a judge may not be able to read it",
+    );
+  });
+
+  it("says two files that are not text in the plural (#4230)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan")
+        return plan({
+          evals: [
+            {
+              id: "4",
+              prompt: "Read the forms",
+              hides: false,
+              files: ["a.pdf", "b.pdf"],
+              not_text: ["a.pdf", "b.pdf"],
+              expectations: 2,
+              on: false,
+              chats: 12,
+            },
+          ],
+          outcomes_left_out: [],
+        });
+      if (cmd === "start_options") return { profiles: [{ name: "work" }] };
+      return null;
+    });
+    renderPlan();
+    expect(await screen.findByTestId("skill-grade-eval")).toHaveTextContent(
+      "a.pdf, b.pdf aren't text: purlis couldn't check them for characters no reader would see, and a judge may not be able to read them",
+    );
+  });
+
   it("starts a skill with ticked outcome evals alone", async () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
     const eval4 = {
@@ -490,6 +535,7 @@ describe("Grade, cost first", () => {
       prompt: "Fill in the form",
       hides: false,
       files: [],
+      not_text: [],
       expectations: 2,
       chats: 12,
     };
@@ -533,6 +579,7 @@ describe("Grade, cost first", () => {
               prompt: "Fill in the form",
               hides: false,
               files: [],
+              not_text: [],
               expectations: 2,
               chats: 12,
               on: evals.includes("4"),
@@ -838,7 +885,7 @@ describe("a grade running (S6)", () => {
     mockIPC(
       (cmd, args) => {
         asked.push({ cmd, args });
-        if (cmd === "skill_grades") return grades(step());
+        if (cmd === "skill_grade_running") return step();
         if (cmd === "skill_grade_stop") throw "That grade is not running here.";
         return null;
       },
@@ -889,7 +936,7 @@ describe("a grade running (S6)", () => {
   it("stays to say an end with words, with a way to its scorecard", async () => {
     mockIPC(
       (cmd) => {
-        if (cmd === "skill_grades") return grades(step());
+        if (cmd === "skill_grade_running") return step();
         return null;
       },
       { shouldMockEvents: true },
@@ -920,7 +967,7 @@ describe("a grade running (S6)", () => {
   });
 
   it("starts from the step the app last told, where it opens while the grade runs", async () => {
-    mockIPC((cmd) => (cmd === "skill_grades" ? grades(step({ ran: 7, cost_usd: 1.5 })) : null), {
+    mockIPC((cmd) => (cmd === "skill_grade_running" ? step({ ran: 7, cost_usd: 1.5 }) : null), {
       shouldMockEvents: true,
     });
     render(
@@ -942,10 +989,10 @@ describe("a grade running (S6)", () => {
     let reads = 0;
     mockIPC(
       (cmd) => {
-        if (cmd !== "skill_grades") return null;
+        if (cmd !== "skill_grade_running") return null;
         reads += 1;
-        if (reads === 1) throw "The Skill studio is not turned on on this machine.";
-        return grades(step({ ran: 2 }));
+        if (reads === 1) throw "The app did not answer.";
+        return step({ ran: 2 });
       },
       { shouldMockEvents: true },
     );
@@ -959,14 +1006,205 @@ describe("a grade running (S6)", () => {
         onBack={() => undefined}
       />,
     );
-    await screen.findByText("The Skill studio is not turned on on this machine.");
+    await screen.findByText("The app did not answer.");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     const totals = await screen.findByRole("group", { name: "How far the grade of deploy is" });
     expect(totals).toHaveTextContent("Chats2 of 12");
   });
 
+  it("offers a way back at the foot once it has ended, with nothing left running (#4338)", async () => {
+    mockIPC(
+      (cmd) =>
+        cmd === "skill_grade_running"
+          ? step({ ended: "whole", said: "It was not recorded." })
+          : null,
+      { shouldMockEvents: true },
+    );
+    const onBack = vi.fn();
+    render(
+      <GradeRunningPage
+        plane="p"
+        name="deploy"
+        level={LEVEL}
+        grade="01GRADE"
+        onEnded={() => undefined}
+        onBack={onBack}
+      />,
+    );
+    await screen.findByRole("button", { name: "Open its scorecard" });
+    expect(screen.queryByRole("button", { name: "Leave it running" })).toBeNull();
+    const [, foot] = screen.getAllByRole("button", { name: "Back to its grades" });
+    fireEvent.click(foot as HTMLElement);
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("says it could not listen, keeps Stop, and reads again on Try again (#4338)", async () => {
+    const asked: string[] = [];
+    let listens = 0;
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      if (cmd === "plugin:event|listen") {
+        listens += 1;
+        if (listens === 1) throw "The window lost its events.";
+        return 1;
+      }
+      if (cmd === "skill_grade_running") return step({ ran: asked.length });
+      return null;
+    });
+    render(
+      <GradeRunningPage
+        plane="p"
+        name="deploy"
+        level={LEVEL}
+        grade="01GRADE"
+        onEnded={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    const said = await screen.findByTestId("skill-grade-not-listening");
+    expect(said).toHaveTextContent("This page can't follow the grade: The window lost its events.");
+    expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByTestId("skill-grade-not-listening")).toBeNull());
+    expect(listens).toBe(2);
+  });
+
+  it("finds a grade gone on Try again where it could not listen (#4338)", async () => {
+    let reads = 0;
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") throw "The window lost its events.";
+      if (cmd !== "skill_grade_running") return null;
+      reads += 1;
+      return reads === 1 ? step({ ran: 1 }) : null;
+    });
+    render(
+      <GradeRunningPage
+        plane="p"
+        name="deploy"
+        level={LEVEL}
+        grade="01GRADE"
+        onEnded={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    await screen.findByTestId("skill-grade-not-listening");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByTestId("skill-grade-gone")).toBeInTheDocument();
+  });
+
+  const running = (onEnded: () => void = () => undefined) =>
+    render(
+      <GradeRunningPage
+        plane="p"
+        name="deploy"
+        level={LEVEL}
+        grade="01GRADE"
+        onEnded={onEnded}
+        onBack={() => undefined}
+      />,
+    );
+  const deafOnce = (reads: Array<unknown>) => {
+    let listens = 0;
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") {
+        listens += 1;
+        if (listens === 1) throw "The window lost its events.";
+        return 1;
+      }
+      if (cmd !== "skill_grade_running") return null;
+      const now = reads.shift();
+      if (now instanceof Error) throw now.message;
+      return now;
+    });
+  };
+
+  it("finds a grade gone on Try again, whether or not it can listen now (#4338)", async () => {
+    deafOnce([step({ ran: 1 }), null]);
+    running();
+    await screen.findByTestId("skill-grade-not-listening");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByTestId("skill-grade-gone")).toBeInTheDocument();
+  });
+
+  it("draws the step Try again reads, newer than the one it held (#4338)", async () => {
+    deafOnce([step({ ran: 1 }), step({ ran: 7 })]);
+    running();
+    await screen.findByTestId("skill-grade-not-listening");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    const totals = screen.getByRole("group", { name: "How far the grade of deploy is" });
+    await waitFor(() => expect(totals).toHaveTextContent("Chats7 of 12"));
+  });
+
+  it("says so where Try again cannot read the grade it holds (#4338)", async () => {
+    deafOnce([step({ ran: 1 }), new Error("The app did not answer.")]);
+    running();
+    await screen.findByTestId("skill-grade-not-listening");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("skill-grade-not-listening")).toHaveTextContent(
+        "This page can't follow the grade: The app did not answer.",
+      ),
+    );
+  });
+
+  it("drops the words about listening once it listens again (#4338)", async () => {
+    deafOnce([new Error("The app did not answer."), step({ ran: 2 })]);
+    running();
+    await screen.findByTestId("skill-grading-not-read");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByRole("group", { name: "How far the grade of deploy is" });
+    expect(screen.queryByTestId("skill-grade-not-listening")).toBeNull();
+  });
+
+  it("says nothing of following a grade that has ended (#4338)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") throw "The window lost its events.";
+      if (cmd === "skill_grade_running") return step({ ended: "whole", said: "It stopped." });
+      return null;
+    });
+    running();
+    await screen.findByRole("button", { name: "Open its scorecard" });
+    expect(screen.queryByTestId("skill-grade-not-listening")).toBeNull();
+  });
+
+  it("takes no grade of another copy of the skill for its own (#4338)", async () => {
+    mockIPC(
+      (cmd) =>
+        cmd === "skill_grade_running"
+          ? step({ level: { at: "workspace", name: "ops", local: false } })
+          : null,
+      { shouldMockEvents: true },
+    );
+    running();
+    expect(await screen.findByTestId("skill-grade-gone")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("reads only its own step, so a refused read of its grades leaves Stop (#4338)", async () => {
+    mockIPC(
+      (cmd) => {
+        if (cmd === "skill_grades") throw "The eval record could not be read.";
+        if (cmd === "skill_grade_running") return step({ ran: 3 });
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(
+      <GradeRunningPage
+        plane="p"
+        name="deploy"
+        level={LEVEL}
+        grade="01GRADE"
+        onEnded={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeEnabled();
+  });
+
   it("says a grade that ended while the page was away, and opens its scorecard", async () => {
-    mockIPC((cmd) => (cmd === "skill_grades" ? grades(null) : null));
+    mockIPC(() => null);
     const onEnded = vi.fn();
     render(
       <GradeRunningPage
