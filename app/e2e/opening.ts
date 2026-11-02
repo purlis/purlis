@@ -21,6 +21,10 @@ export async function pickAndStart(): Promise<void> {
   let pressing = "";
   await browser.waitUntil(
     async () => {
+      // Not while the rows' details are read (#4736): until they arrive the button says Start
+      // chat even for a profile that asks for its approval, and a press then shows the approval
+      // instead of going, so it is chosen once the picker knows which it is.
+      if (await browser.execute(thePickerIsChecking, PICKER)) return false;
       for (const words of ["Approve and start", "Start chat"])
         if (await browser.execute(aDialogOffers, "dialog", PICKER, words, false)) {
           pressing = words;
@@ -38,6 +42,18 @@ export async function pickAndStart(): Promise<void> {
 
 /** The picker's title (`StartChat`). */
 const PICKER = "Start a chat";
+
+/**
+ * Whether a dialog saying `text` is still reading its rows' details (#4736): it marks them
+ * `aria-busy` until they arrive. **Run in the page**, as {@link aDialogOffers} is.
+ */
+export function thePickerIsChecking(text: string): boolean {
+  return [...document.querySelectorAll('[role="dialog"]')].some(
+    (dialog) =>
+      (dialog.textContent ?? "").includes(text) &&
+      dialog.querySelector('[aria-busy="true"]') !== null,
+  );
+}
 
 /**
  * Whether the page shows a `role` dialog whose text holds `text` and which offers a button
