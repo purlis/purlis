@@ -3166,6 +3166,15 @@ fn with_plane_lint(
     }
     drop(files);
     for ((at, one), theirs) in linted.into_iter().zip(theirs) {
+        // A skill purlis refuses to hand is in no chat, whatever the set read of it (#4352).
+        rows[at].left_out = one
+            .findings
+            .iter()
+            .find(|found| {
+                found.severity == purlis_skills::Severity::Blocks
+                    && matches!(found.lint, purlis_skills::Lint::Refused(_))
+            })
+            .and_then(Finding::shown);
         rows[at].lint = one
             .findings
             .iter()

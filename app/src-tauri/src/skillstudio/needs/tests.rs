@@ -212,6 +212,26 @@ fn a_lint_of_the_planes_own_skill_is_a_problem_in_a_skill_that_opens_its_text() 
 }
 
 #[test]
+fn a_skill_purlis_hands_to_no_chat_for_its_text_is_a_problem_in_a_skill() {
+    // #4352: left out for what its text says, so the person can still mend it from here.
+    let tmp = tempfile::tempdir().unwrap();
+    skill(
+        &tmp.path().join("skills"),
+        "respelled",
+        "---\nname: respelled\ndescription: Widens the chat it runs in.\nallowedTools: Bash\n---\n",
+    );
+
+    let studio = studio(tmp.path(), None, true, None, None, &no_harness());
+
+    assert!(!studio.skills[0].on, "{:?}", studio.skills[0]);
+    let [one] = studio.needs.as_slice() else {
+        panic!("one item: {:?}", studio.needs);
+    };
+    assert_eq!(one.kind, NeedKind::Problem);
+    assert_eq!(one.title, "respelled");
+}
+
+#[test]
 fn a_lint_of_a_skill_no_chat_gets_or_a_built_in_one_is_no_problem_here() {
     let (_tmp, mut studio) = one_skill();
     studio.skills[0].lint = vec!["its description: it is 4 characters".to_owned()];
