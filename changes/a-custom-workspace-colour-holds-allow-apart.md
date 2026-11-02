@@ -8,3 +8,6 @@
   (hues 90 to 117) and Purlis's high-contrast dark (hues 92.75 to 148), the window tinted the
   accent and the edges drawn in it, which put them too near the amber. It now draws them as
   written, as the theme engine always measured them (#3388).
+- **Persona marks and rail project buttons follow the same rule.** A yellow mark on Purlis light,
+  and yellow and green marks on its high-contrast dark, keep their tinted ground, but their glyph
+  is now drawn in the theme's accent, so it stays apart from the waiting amber (#3388).
