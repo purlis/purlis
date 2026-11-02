@@ -240,7 +240,7 @@ import {
   type ViewId,
 } from "./regions";
 import { drawnOnlyPresent, previewsDrawn, type ViewPlace } from "./sideViews";
-import { SkillsView, sameFrontChat, type FrontChat, type SkillsViewProps } from "./SkillsView";
+import { SkillsView, type FrontChat, type SkillsViewProps } from "./SkillsView";
 import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
@@ -4582,9 +4582,6 @@ export const PlaneView = memo(function PlaneView({
   /** **The chat a skill's page uses a skill in** (#3682): the chat last in front, kept while the
    *  studio is looked at beside or instead of it, until its tab closes. Never a shell's. */
   const [lastChat, setLastChat] = useState<number>();
-  /** The chat last in front as the Skills view was told it (#4351): what it keeps showing while
-   *  a tab that is not a chat is in front. */
-  const [skillsKept, setSkillsKept] = useState<FrontChat>();
   const chatNow =
     frontSession !== undefined && !shells.has(frontSession) ? frontSession : undefined;
   // Kept as it is drawn (React's state adjusted while rendering, not in an effect).
@@ -4632,12 +4629,11 @@ export const PlaneView = memo(function PlaneView({
   );
   // Where that chat is working. The sidebar's chats carry it, and so does the record the
   // core put back at this launch; a chat the operator just opened is in the first.
-  const frontCwd =
-    frontSession === undefined
-      ? null
-      : ([...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []), ...(sidebar?.unfiled ?? [])]
-          .concat(reopened)
-          .find((chat) => chat.session === frontSession)?.cwd ?? null);
+  const cwdOf = (session: number): string | null =>
+    [...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []), ...(sidebar?.unfiled ?? [])]
+      .concat(reopened)
+      .find((chat) => chat.session === session)?.cwd ?? null;
+  const frontCwd = frontSession === undefined ? null : cwdOf(frontSession);
 
   // Which piece the chat in front sits in. `worktree_of_chat` is path arithmetic plus one
   // git listing, asked only when the directory in front changes — never per keystroke, and
@@ -9459,37 +9455,31 @@ export const PlaneView = memo(function PlaneView({
     </>
   );
 
-  /** **The chat in front, whose skills the Skills view shows** (#3266, #3693): the one shown in
-   *  the pane with the keyboard, never a shell's, which runs no tool with skills. */
-  const frontWorkspace = frontSession === undefined ? undefined : filedIn(frontSession);
-  const chatInFront: FrontChat | undefined =
-    frontSession === undefined || shells.has(frontSession)
+  /** **The chat whose skills the Skills view shows** (#3266, #3693): the one shown in the pane
+   *  with the keyboard, never a shell's, which runs no tool with skills. **While a tab that is not
+   *  a chat is in front** (#4351; ADR 0102, amended 2026-11-02), such as the Skill studio's, the
+   *  chat last in front (`chatKept`, until its tab closes): its set is not read again for a new
+   *  chat, and its cards are not drawn again. It is described as it is now, wherever it moved. */
+  const skillsSession = chatNow ?? (frontTab !== undefined ? chatKept : undefined);
+  const skillsWorkspace = skillsSession === undefined ? undefined : filedIn(skillsSession);
+  // The checkout it works in, as the core last answered for its directory: asked while it was in
+  // front, and kept (`located`) while another tab is.
+  const skillsCwd = skillsSession === undefined ? null : cwdOf(skillsSession);
+  const skillsPiece = skillsCwd !== null && located?.cwd === skillsCwd ? located.piece : undefined;
+  const skillsChat: FrontChat | undefined =
+    skillsSession === undefined
       ? undefined
       : {
-          session: frontSession,
-          name: nameOf(frontSession),
-          workspace: frontWorkspace === OUTSIDE ? undefined : frontWorkspace,
-          persona: personaOf(frontSession),
-          harness: harnessOf(frontSession),
+          session: skillsSession,
+          name: nameOf(skillsSession),
+          workspace: skillsWorkspace === OUTSIDE ? undefined : skillsWorkspace,
+          persona: personaOf(skillsSession),
+          harness: harnessOf(skillsSession),
           // Only where it is filed: the view names a checkout by the chat's workspace.
-          ...(worktree === undefined || worktree.workspace !== frontWorkspace
+          ...(skillsPiece === undefined || skillsPiece.workspace !== skillsWorkspace
             ? {}
-            : { branchFolder: { repo: worktree.repo, piece: worktree.piece } }),
+            : { branchFolder: { repo: skillsPiece.repo, piece: skillsPiece.piece } }),
         };
-  /** **While a tab that is not a chat is in front** (#4351; ADR 0102, amended 2026-11-02), such
-   *  as the Skill studio's: the chat last in front, as it was described there, until its tab
-   *  closes. Its set is not read again, and its cards are not drawn again. Its state is
-   *  {@link skillsKept}, held above the window's early return. */
-  // Kept as it is drawn (React's state adjusted while rendering, not in an effect).
-  if (chatInFront !== undefined && !sameFrontChat(chatInFront, skillsKept))
-    setSkillsKept(chatInFront);
-  const skillsChat: FrontChat | undefined =
-    chatInFront ??
-    (frontTab !== undefined &&
-    skillsKept !== undefined &&
-    tabHolding(tabs, skillsKept.session) !== undefined
-      ? skillsKept
-      : undefined);
 
   const view = (
     <ChatToUseHere.Provider value={chatToUse}>

@@ -8,6 +8,7 @@
  * menu and its fix, its header, and its empty state. The sandbox draws no window: these check
  * what each surface says and does, in the DOM a reader reads.
  */
+import { createElement, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { skillsMissingPutAway } from "./chatSkillsAsk";
@@ -45,9 +46,9 @@ vi.mock("./SkillsList", async (real: () => Promise<typeof import("./SkillsList")
   const actual = await real();
   return {
     ...actual,
-    SkillsList: (props: Parameters<typeof actual.SkillsList>[0]) => {
+    SkillsList: (props: ComponentProps<typeof actual.SkillsList>) => {
       listDrawn.times += 1;
-      return actual.SkillsList(props);
+      return createElement(actual.SkillsList, props);
     },
   };
 });

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { StrictMode } from "react";
+import { StrictMode, createElement, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -30,6 +30,19 @@ vi.mock("./SessionPane", () => ({
     <div data-testid="pane">session {session}</div>
   ),
 }));
+
+/** How many times the Skills view's list of cards has been drawn: the real list, counted. */
+const listDrawn = vi.hoisted(() => ({ times: 0 }));
+vi.mock("./SkillsList", async (real: () => Promise<typeof import("./SkillsList")>) => {
+  const actual = await real();
+  return {
+    ...actual,
+    SkillsList: (props: ComponentProps<typeof actual.SkillsList>) => {
+      listDrawn.times += 1;
+      return createElement(actual.SkillsList, props);
+    },
+  };
+});
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -86,15 +99,20 @@ const SKILLS: ChatSkills = {
   missing: null,
 };
 
-/** The core: one chat in alpha, the Skill studio on. Who each read of the studio was for. */
+/** The core: one chat in alpha, the Skill studio on. Who each read of the studio was for, and
+ *  how many times a chat's set was read. */
 function core() {
   const studioFor: (string | null)[] = [];
+  const chatSets = { read: 0 };
   mockIPC(
     (cmd, args) => {
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
       if (cmd === "skill_studio_on") return true;
-      if (cmd === "chat_skills") return SKILLS;
+      if (cmd === "chat_skills") {
+        chatSets.read += 1;
+        return SKILLS;
+      }
       if (cmd === "skill_studio") {
         studioFor.push((args as { persona: string | null }).persona);
         return studio([skill("deploy")]);
@@ -117,7 +135,7 @@ function core() {
     },
     { shouldMockEvents: true },
   );
-  return studioFor;
+  return { studioFor, chatSets };
 }
 
 const settle = () =>
@@ -127,7 +145,7 @@ const settle = () =>
 
 describe("the Skills view while a tab that is not a chat is in front (#4351)", () => {
   it("keeps the set of the chat last in front, and reads nothing again", async () => {
-    const studioFor = core();
+    const { studioFor, chatSets } = core();
     render(<App />);
     await waitFor(() =>
       expect(within(stripNamed("Tabs")).queryAllByRole("tab").length).toBeGreaterThan(0),
@@ -138,7 +156,10 @@ describe("the Skills view while a tab that is not a chat is in front (#4351)", (
     await waitFor(() =>
       expect(within(view).getByTestId("skills-view-whose")).toHaveTextContent("steward 3"),
     );
+    await settle();
     const readBefore = studioFor.length;
+    const setsBefore = chatSets.read;
+    const drawnBefore = listDrawn.times;
 
     fireEvent.click(await within(view).findByRole("button", { name: OPEN_SKILL_STUDIO }));
     await waitFor(() =>
@@ -149,7 +170,10 @@ describe("the Skills view while a tab that is not a chat is in front (#4351)", (
     await settle();
 
     expect(within(view).getByTestId("skills-view-whose")).toHaveTextContent("steward 3");
-    // The studio reads for itself, as no persona; the view reads its chat's set no more.
+    // The studio reads for itself, as no persona; the view reads nothing again, and draws its
+    // cards no more.
     expect(studioFor.slice(readBefore)).not.toContain("steward");
+    expect(chatSets.read).toBe(setsBefore);
+    expect(listDrawn.times).toBe(drawnBefore);
   });
 });

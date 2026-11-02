@@ -209,7 +209,7 @@ function sameView(was: SkillsViewProps, now: SkillsViewProps): boolean {
 }
 
 /** Whether two descriptions of a chat describe it the same, field by field. */
-export function sameFrontChat(was: FrontChat | undefined, now: FrontChat | undefined): boolean {
+function sameFrontChat(was: FrontChat | undefined, now: FrontChat | undefined): boolean {
   return sameFields(was, now, (field, x, y) =>
     field === "branchFolder"
       ? sameFields(x as object | undefined, y as object | undefined)
