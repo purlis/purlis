@@ -468,7 +468,7 @@ export const ConsentAndNotes: Story = {
 
 /** The pane's bell, by its name. */
 const bellOf = (canvas: ReturnType<typeof within>) =>
-  canvas.getByRole("button", { name: /^Notices:/ });
+  canvas.getByRole("button", { name: /^Pane notices:/ });
 
 /**
  * **Minimised, the window's default** (#4754): the notes fold into the bell's count, in the
@@ -486,7 +486,7 @@ export const Minimised: Story = {
     await heldInThePane(canvasElement);
     expect(rowsOf(canvasElement).warnings[0]).toContainElement(vault);
     const bell = bellOf(canvas);
-    expect(bell).toHaveAccessibleName("Notices: 3 notices, 1 in trouble, 1 asking");
+    expect(bell).toHaveAccessibleName("Pane notices: 3 notices, 1 in trouble, 1 asking");
     expect(bell).toHaveTextContent(/^3$/);
     expect(bell).toHaveAttribute("aria-expanded", "false");
     // Before split and close, in the header's row.
@@ -508,7 +508,7 @@ export const Expanded: Story = {
     await canvas.findByRole("status", { name: "Vault" });
     await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(4));
     await heldInThePane(canvasElement);
-    const band = within(canvas.getByRole("region", { name: "Notices for this pane" }));
+    const band = within(canvas.getByRole("region", { name: "Pane notices" }));
     expect(band.getByText("4 notices, 1 waiting on you")).toBeVisible();
     expect(bellOf(canvas)).toHaveTextContent(/^3$/);
     expect(bellOf(canvas)).toHaveAttribute("aria-expanded", "true");
@@ -531,7 +531,7 @@ export const DismissAll: Story = {
     await userEvent.click(all);
     await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(1));
     expect(canvas.getByRole("status", { name: "Vault" })).toBeVisible();
-    expect(bellOf(canvas)).toHaveAccessibleName("Notices: No notices, 1 asking");
+    expect(bellOf(canvas)).toHaveAccessibleName("Pane notices: No notices, 1 asking");
     await untilFocused(
       () => canvas.getByRole("button", { name: "Minimise" }),
       "the keyboard stays on the band's head",

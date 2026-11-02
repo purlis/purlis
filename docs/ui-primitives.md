@@ -302,8 +302,9 @@ that tab's panel, so the view starts on the fill its chosen tab joins, with no b
 done to what the view is about (or Settings' levels) and keeps the actions' room at its end. In
 the band each Notice is a washed card
 (`wash.warning`, `danger.wash` for trouble, no edge), its words above its ways out, a consent's
-Allow set apart from Keep blocked and the only answer with an edge. The band is a `region`, "Notices
-for this pane"; a card never shrinks in it, so past its room the cards scroll inside it whole. Esc
+Allow set apart from Keep blocked and the only answer with an edge. The band is a `region`, "Pane
+notices", as its bell is "Pane notices: …" (apart from the status line's Notices and a chip's
+"Notices for …"); a card never shrinks in it, so past its room the cards scroll inside it whole. Esc
 on a warning with a Dismiss puts it away, and the keyboard goes on to the next warning or to the
 terminal, never onto an Allow: a consent is landed on by its line. A consent has no Dismiss and
 Esc leaves it. The press-settle guard (#1695) reads where each line is drawn against the band

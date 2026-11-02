@@ -1017,7 +1017,7 @@ export function PaneBell() {
         variant="quiet"
         className="pane-bell"
         icon={<Bell aria-hidden="true" />}
-        aria-label={`Notices: ${bellSays(holds)}`}
+        aria-label={`Pane notices: ${bellSays(holds)}`}
         aria-expanded={expanded}
         tooltip={expanded ? "Minimise notices" : "Show all notices"}
         data-trouble={holds.trouble > 0 ? "" : undefined}

@@ -186,7 +186,7 @@ describe("the band's keyboard", () => {
 
   it("names the band as the pane's notices while it has any", async () => {
     render(<Warnings causes={["first"]} />);
-    expect(await screen.findByRole("region", { name: "Notices for this pane" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "Pane notices" })).toBeTruthy();
   });
 
   it("shows every warning, with no cap and no +N more (#4754)", async () => {

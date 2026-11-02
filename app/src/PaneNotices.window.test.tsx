@@ -158,7 +158,7 @@ async function aPane(now: Core) {
 
 /** The pane's frame, its header and its bell. */
 const frame = () => screen.getByTestId("pane").closest(".pane-frame") as HTMLElement;
-const bell = () => within(frame()).getByRole("button", { name: /^Notices:/ });
+const bell = () => within(frame()).getByRole("button", { name: /^Pane notices:/ });
 /** The Notices a person can see in the pane, top to bottom, by their names. */
 const seen = () =>
   within(frame())
@@ -172,7 +172,7 @@ describe("a pane's notices, minimised (the default)", () => {
     await act(() => emit("chat-mcp-failed", FAILED));
 
     await waitFor(() =>
-      expect(bell()).toHaveAccessibleName("Notices: 1 notice, 1 in trouble, 1 asking"),
+      expect(bell()).toHaveAccessibleName("Pane notices: 1 notice, 1 in trouble, 1 asking"),
     );
     expect(bell()).toHaveTextContent(/^1$/);
     expect(bell()).toHaveAttribute("aria-expanded", "false");
@@ -206,10 +206,10 @@ describe("a pane's notices, minimised (the default)", () => {
 
   it("keeps the bell's slot with no count when there is nothing, and draws no band", async () => {
     await aPane({ asks: [], failed: [] });
-    await waitFor(() => expect(bell()).toHaveAccessibleName("Notices: No notices"));
+    await waitFor(() => expect(bell()).toHaveAccessibleName("Pane notices: No notices"));
     expect(bell()).toHaveTextContent(/^$/);
     expect(bell()).not.toHaveAttribute("data-trouble");
-    expect(within(frame()).queryByRole("region", { name: "Notices for this pane" })).toBeNull();
+    expect(within(frame()).queryByRole("region", { name: "Pane notices" })).toBeNull();
   });
 
   it("never opens the band or takes the focus when a note arrives, and says the count politely", async () => {
@@ -221,7 +221,7 @@ describe("a pane's notices, minimised (the default)", () => {
     await act(() => emit("chat-sandbox-blocked", BLOCKED));
 
     await waitFor(() =>
-      expect(bell()).toHaveAccessibleName("Notices: 1 notice, 1 in trouble, 1 asking"),
+      expect(bell()).toHaveAccessibleName("Pane notices: 1 notice, 1 in trouble, 1 asking"),
     );
     expect(seen()).toEqual(["Remove workspace"]);
     expect(bell()).toHaveAttribute("aria-expanded", "false");
@@ -242,7 +242,7 @@ describe("a pane's notices, expanded", () => {
     await waitFor(() => expect(seen()).toEqual(["Remove workspace", "MCP server"]));
     expect(bell()).toHaveAttribute("aria-expanded", "true");
     expect(bell()).toHaveTextContent(/^1$/);
-    const band = within(frame()).getByRole("region", { name: "Notices for this pane" });
+    const band = within(frame()).getByRole("region", { name: "Pane notices" });
     expect(within(band).getByText("2 notices, 1 waiting on you")).toBeTruthy();
     await waitFor(() =>
       expect(layouts.map((text) => JSON.parse(text) as { notices?: string }).pop()?.notices).toBe(
@@ -261,7 +261,7 @@ describe("a pane's notices, expanded", () => {
     await userEvent.click(await within(frame()).findByRole("button", { name: "Dismiss all 2" }));
 
     await waitFor(() => expect(seen()).toEqual(["Remove workspace"]));
-    expect(bell()).toHaveAccessibleName("Notices: No notices, 1 asking");
+    expect(bell()).toHaveAccessibleName("Pane notices: No notices, 1 asking");
     expect(within(frame()).queryByRole("button", { name: /Dismiss all/ })).toBeNull();
   });
 
@@ -290,12 +290,12 @@ describe("a full band", () => {
     expect(within(frame()).queryByText(/wait in the Inbox|waits in the Inbox/)).toBeNull();
     expect(within(frame()).queryByRole("button", { name: /more/ })).toBeNull();
     await waitFor(() =>
-      expect(bell()).toHaveAccessibleName("Notices: 2 notices, 2 in trouble, 4 asking"),
+      expect(bell()).toHaveAccessibleName("Pane notices: 2 notices, 2 in trouble, 4 asking"),
     );
 
     await userEvent.click(bell());
     await waitFor(() => expect(seen()).toHaveLength(6));
-    const band = within(frame()).getByRole("region", { name: "Notices for this pane" });
+    const band = within(frame()).getByRole("region", { name: "Pane notices" });
     expect(within(band).getByText("6 notices, 4 waiting on you")).toBeTruthy();
     expect(within(band).getByRole("button", { name: "Dismiss all 2" })).toBeTruthy();
   });

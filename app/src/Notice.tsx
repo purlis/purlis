@@ -825,7 +825,7 @@ export function NoticePaneRow({
       empty={empty}
       // The pane's notices, named as one place (#3142), while it shows any.
       role={empty ? undefined : "region"}
-      aria-label={empty ? undefined : "Notices for this pane"}
+      aria-label={empty ? undefined : "Pane notices"}
       ref={rowAt}
     >
       {headed && (

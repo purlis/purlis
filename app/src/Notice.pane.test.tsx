@@ -262,7 +262,7 @@ describe("a pane's row of Notices", () => {
         </Band>,
       );
       await waitFor(() => expect(seen()).toEqual(["dispatch", "first", "second"]));
-      const band = screen.getByRole("region", { name: "Notices for this pane" });
+      const band = screen.getByRole("region", { name: "Pane notices" });
       expect(within(band).getByText("3 notices, 1 waiting on you")).toBeTruthy();
       // The same count minimised and expanded.
       expect(holds()).toEqual({ notes: 2, trouble: 1, asks: 1 });
