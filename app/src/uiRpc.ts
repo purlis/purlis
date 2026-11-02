@@ -1543,6 +1543,7 @@ export const commands = {
 	poolSetup: __WINDOW_ONLY_RESULT,
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
+	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -8480,9 +8481,9 @@ export type PoolSetupAction = {
 
 /**  What the tab draws. */
 export type PoolSetupShown = {
-	/**  The pool being set up, once it is made. */
+	/**  The pool this setup made. */
 	pool: string | null,
-	/**  The name given on the Pool step, for the box to hold. */
+	/**  The name typed on the Pool step, for the box to hold. */
 	name: string | null,
 	/**  The step the person has reached. */
 	at: string | null,

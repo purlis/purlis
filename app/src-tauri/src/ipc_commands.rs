@@ -485,6 +485,7 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup,
                 poolsetuptab::pool_setup_choose_docker,
                 poolsetuptab::pool_setup_name,
+                poolsetuptab::pool_setup_pool,
                 poolsetuptab::pool_setup_open_docker,
                 dockerpools::add_docker_pool,
                 dockerpools::remove_docker_pool,

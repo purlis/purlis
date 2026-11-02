@@ -273,7 +273,9 @@ export const ARunnerBeingMade: Story = {
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {
-        findings: ["Pool dev-box has no runner yet. If it is being made, this clears by itself."],
+        findings: [
+          "Pool dev-box has no runner yet. If it is being made, this clears by itself. If not, remove the pool in Settings › Pools and add it again.",
+        ],
         next: {
           id: "check-again",
           label: "Check again",

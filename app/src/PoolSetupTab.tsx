@@ -46,6 +46,9 @@ type Adding = {
   making: boolean;
   refused?: string;
   set: (to: { making: boolean; refused?: string }) => void;
+  /** The name typed, undefined until something is typed. */
+  typed: string | undefined;
+  type: (to: string) => void;
 };
 
 const STATES: readonly string[] = STEP_STATES;
@@ -220,7 +223,8 @@ function PoolStep({
   changed: () => void;
   onNext: () => void;
 }) {
-  const [name, setName] = useState(shown.name ?? "");
+  const name = adding.typed ?? shown.name ?? "";
+  const keeping = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [image, setImage] = useState("");
   const [offered, setOffered] = useState<ReleaseImage>();
   useEffect(() => {
@@ -233,16 +237,16 @@ function PoolStep({
       live = false;
     };
   }, [shown.pool]);
-  // Kept as it is typed, so a tab closed mid-word comes back with it. A name no pool could have
-  // yet is left unkept, and Create says why.
-  useEffect(() => {
-    if (shown.pool !== null || name === (shown.name ?? "")) return;
-    const later = setTimeout(() => {
-      const kept = name.trim();
+  // Kept as it is typed, so a tab closed mid-word comes back with it: the wait outlives this step.
+  // A name no pool could have yet is left unkept, and Create says why.
+  const typing = (to: string) => {
+    adding.type(to);
+    clearTimeout(keeping.current);
+    keeping.current = setTimeout(() => {
+      const kept = to.trim();
       void commands.poolSetupName(kept === "" ? null : kept);
     }, KEEP_NAME_MS);
-    return () => clearTimeout(later);
-  }, [name, shown.name, shown.pool]);
+  };
 
   if (shown.pool !== null) {
     const action = step.next;
@@ -309,8 +313,6 @@ function PoolStep({
       changed();
       return;
     }
-    const keptName = await commands.poolSetupName(kept);
-    if (keptName.status === "error") return adding.set({ making: false, refused: keptName.error });
     const answer = await commands.addDockerPool({
       name: kept,
       image: using,
@@ -322,10 +324,14 @@ function PoolStep({
       frames: null,
       width: null,
     });
-    adding.set({
-      making: false,
-      refused: answer.status === "error" ? answer.error : undefined,
-    });
+    if (answer.status === "error") {
+      adding.set({ making: false, refused: answer.error });
+      return;
+    }
+    const going = await commands.poolSetupPool(kept);
+    adding.set(
+      going.status === "error" ? { making: false, refused: going.error } : { making: false },
+    );
     // The rest of the window lists the new pool too.
     await rereadPools();
     changed();
@@ -346,7 +352,7 @@ function PoolStep({
           <TextField
             label="Name"
             value={name}
-            onChange={setName}
+            onChange={typing}
             help="Small letters, digits and dashes."
           />
           {!reading && named === undefined && (
@@ -406,12 +412,23 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
   const [showing, setShowing] = useState<string>();
   const [trouble, setTrouble] = useState<string>();
   const [made, setMade] = useState<{ making: boolean; refused?: string }>({ making: false });
+  const [typed, setTyped] = useState<string>();
   const reads = useRef(0);
+  /** The read on its way, so a slow Docker is waited for and never asked twice at once. */
+  const reading = useRef(0);
 
   const reread = useCallback(() => {
     const mine = ++reads.current;
+    reading.current = mine;
     void commands.poolSetup(plane).then((answer) => {
+      if (reading.current === mine) reading.current = 0;
       if (mine !== reads.current) return;
+      // A refusal of a pool that stands now is over.
+      if (answer.status === "ok" && answer.data.pool !== null) {
+        const step = answer.data.steps.find((one) => one.id === "pool");
+        if (step?.state !== "attention")
+          setMade((was) => (was.refused ? { making: was.making } : was));
+      }
       // What went wrong starting Docker is over once Docker needs nothing.
       if (answer.status === "ok" && answer.data.steps[0]?.state !== "attention")
         setTrouble(undefined);
@@ -438,7 +455,9 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
     shown?.steps.find((step) => step.id === at)?.state === "attention";
   useEffect(() => {
     if (!waiting) return;
-    const every = setInterval(reread, RECHECK_MS);
+    const every = setInterval(() => {
+      if (reading.current === 0) reread();
+    }, RECHECK_MS);
     return () => clearInterval(every);
   }, [waiting, reread]);
 
@@ -523,7 +542,7 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
               step={step}
               shown={setup}
               plane={plane}
-              adding={{ ...made, set: setMade }}
+              adding={{ ...made, set: setMade, typed, type: setTyped }}
               onNext={() => after("pool")}
               changed={() => {
                 setShowing(undefined);

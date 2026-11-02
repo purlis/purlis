@@ -32,9 +32,9 @@ pub struct PoolSetupStep {
 /// What the tab draws.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSetupShown {
-    /// The pool being set up, once it is made.
+    /// The pool this setup made.
     pub pool: Option<String>,
-    /// The name given on the Pool step, for the box to hold.
+    /// The name typed on the Pool step, for the box to hold.
     pub name: Option<String>,
     /// The step the person has reached.
     pub at: Option<String>,
@@ -85,7 +85,7 @@ fn config_root() -> Result<std::path::PathBuf, String> {
         .ok_or_else(|| "There is no config home on this machine to keep a pool in.".to_owned())
 }
 
-/// **Each step's state, read now**: the pool the person named once it is made, else a new one's.
+/// **Each step's state, read now**: the pool this setup made, else a new one's.
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_setup(
@@ -139,7 +139,7 @@ pub async fn pool_setup_choose_docker() -> Result<(), String> {
     }
 }
 
-/// **Keeps the name given on the Pool step**, or none, so coming back finds it.
+/// **Keeps the name typed on the Pool step**, or none, so coming back finds it.
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_setup_name(name: Option<String>) -> Result<(), String> {
@@ -147,6 +147,25 @@ pub async fn pool_setup_name(name: Option<String>) -> Result<(), String> {
     {
         crate::off_the_window("keeping your choice", move || {
             purlis_core::poolsetup::choose_name(&config_root()?, name.as_deref())
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = name;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps that this setup goes on with pool `name`**, once it has made it.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_pool(name: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your choice", move || {
+            purlis_core::poolsetup::choose_pool(&config_root()?, &name)
                 .map_err(|why| why.to_string())
         })
         .await

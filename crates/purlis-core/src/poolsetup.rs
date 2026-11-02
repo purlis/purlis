@@ -272,8 +272,10 @@ pub struct Facts {
 pub struct Choices {
     /// The kind chosen on Where, before there is a pool.
     pub kind: Option<Kind>,
-    /// The name given on the Pool step: the pool being set up, once it is made.
+    /// The name typed on the Pool step, for the box to hold.
     pub name: Option<String>,
+    /// The pool this setup made, which it goes on with. A name typed never picks a pool.
+    pub pool: Option<String>,
     /// The steps skipped on each pool.
     pub skipped: BTreeMap<String, Vec<StepId>>,
 }
@@ -419,7 +421,10 @@ fn pool_reading(facts: &Facts) -> Reading {
     match &pool.runner {
         // Adding a pool records it first, so this is usually a runner being made.
         Runner::None => Reading::attention(
-            format!("Pool {name} has no runner yet. If it is being made, this clears by itself."),
+            format!(
+                "Pool {name} has no runner yet. If it is being made, this clears by itself. If \
+                 not, remove the pool in Settings › Pools and add it again."
+            ),
             action(
                 ActionId::CheckAgain,
                 "Check again",
@@ -867,6 +872,7 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
     Ok(Choices {
         kind: held.kind,
         name: held.name,
+        pool: held.pool,
         skipped: held.skipped,
     })
 }
@@ -880,6 +886,8 @@ struct Held {
     kind: Option<Kind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pool: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     skipped: BTreeMap<String, Vec<StepId>>,
 }
@@ -889,6 +897,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         version: 1,
         kind: choices.kind,
         name: choices.name,
+        pool: choices.pool,
         skipped: choices.skipped,
     };
     let text = serde_json::to_string_pretty(&held)
@@ -923,18 +932,32 @@ pub fn choose_name(config: &Path, name: Option<&str>) -> Result<(), Refused> {
     write_choices(config, choices)
 }
 
-/// **Where the person stopped**: the setup of the pool they named where it has been made, by
-/// anyone, else a new pool's, with the name they gave.
+/// **Keeps that this setup goes on with pool `name`**, once it has made it. Refused for a pool
+/// this machine doesn't keep.
+pub fn choose_pool(config: &Path, name: &str) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    if !runners::pools(config)?.iter().any(|one| one.name() == name) {
+        return Err(Refused::Other(format!(
+            "there is no pool named {name} on this machine"
+        )));
+    }
+    let mut choices = read_choices(config)?;
+    choices.pool = Some(name.to_owned());
+    choices.name = None;
+    write_choices(config, choices)
+}
+
+/// **Where the person stopped**: the setup of the pool it made where that is still kept, else a
+/// new pool's, with the name typed.
 pub fn resumed(here: &Here<'_>) -> Result<(Setup, Option<String>), Refused> {
-    let name = read_choices(here.config)?.name;
-    let made = match &name {
-        Some(name) => runners::pools(here.config)?
-            .iter()
-            .any(|pool| pool.name() == name),
-        None => false,
-    };
-    let setup = read(here, name.as_deref().filter(|_| made))?;
-    Ok((setup, name))
+    let choices = read_choices(here.config)?;
+    let kept = runners::pools(here.config)?;
+    let pool = choices
+        .pool
+        .as_deref()
+        .filter(|name| kept.iter().any(|pool| pool.name() == *name));
+    let setup = read(here, pool)?;
+    Ok((setup, choices.name))
 }
 
 /// **This machine's `docker`**, where it has one, found as a pool's is.
@@ -979,9 +1002,9 @@ pub fn unskip(config: &Path, pool: &str, step: StepId) -> Result<(), Refused> {
 /// same name starts clean. Nothing is written where nothing was chosen for it.
 pub(crate) fn forget_pool_locked(config: &Path, pool: &str) -> Result<(), Refused> {
     let mut choices = read_choices(config)?;
-    let named = choices.name.as_deref() == Some(pool);
+    let named = choices.pool.as_deref() == Some(pool);
     if named {
-        choices.name = None;
+        choices.pool = None;
     }
     if choices.skipped.remove(pool).is_some() || named {
         write_choices(config, choices)?;

@@ -3084,12 +3084,14 @@ export const commands = {
 	useThisMachinesChrome: () => typedError<null, string>(__TAURI_INVOKE("use_this_machines_chrome")),
 	/**  **The Docker pools on this machine**, and a new pool's default limits. */
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
-	/**  **Each step's state, read now**: the pool the person named once it is made, else a new one's. */
+	/**  **Each step's state, read now**: the pool this setup made, else a new one's. */
 	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
 	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
 	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
-	/**  **Keeps the name given on the Pool step**, or none, so coming back finds it. */
+	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
 	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
+	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
+	poolSetupPool: (name: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_pool", { name })),
 	/**
 	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 	 *  elsewhere, with what to do instead.
@@ -10769,9 +10771,9 @@ export type PoolSetupAction = {
 
 /**  What the tab draws. */
 export type PoolSetupShown = {
-	/**  The pool being set up, once it is made. */
+	/**  The pool this setup made. */
 	pool: string | null,
-	/**  The name given on the Pool step, for the box to hold. */
+	/**  The name typed on the Pool step, for the box to hold. */
 	name: string | null,
 	/**  The step the person has reached. */
 	at: string | null,

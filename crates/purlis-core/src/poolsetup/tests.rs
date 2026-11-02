@@ -508,13 +508,39 @@ fn coming_back_finds_the_name_given_before_the_pool_is_made() {
 }
 
 #[test]
-fn forgetting_the_pool_being_set_up_forgets_its_name() {
+fn a_name_typed_never_picks_a_pool_and_the_pool_made_is_gone_on_with() {
+    use crate::runners::Set;
     let config = tempfile::tempdir().unwrap();
+    let here = Here {
+        config: config.path(),
+        plane: None,
+        docker: None,
+        engine: Err("none".into()),
+    };
+    runners::record_pool(
+        config.path(),
+        &crate::runners::tests::pool("dev-box", Set::default()),
+    )
+    .unwrap();
+
     choose_name(config.path(), Some("dev-box")).unwrap();
+    assert_eq!(resumed(&here).unwrap().0.pool, None, "typed, not chosen");
+
+    choose_pool(config.path(), "dev-box").unwrap();
+    let (setup, name) = resumed(&here).unwrap();
+    assert_eq!(setup.pool.as_deref(), Some("dev-box"));
+    assert_eq!(name, None);
+
     let locked = runners::lock(config.path());
     runners::forget_pool_locked(config.path(), "dev-box", &locked).unwrap();
     drop(locked);
-    assert_eq!(read_choices(config.path()).unwrap().name, None);
+    assert_eq!(read_choices(config.path()).unwrap().pool, None);
+}
+
+#[test]
+fn a_pool_this_machine_has_not_cant_be_gone_on_with() {
+    let config = tempfile::tempdir().unwrap();
+    assert!(choose_pool(config.path(), "nowhere").is_err());
 }
 
 #[test]

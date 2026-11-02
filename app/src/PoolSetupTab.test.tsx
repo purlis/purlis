@@ -235,6 +235,40 @@ describe("PoolSetupTab", () => {
     expect(calls.some((call) => call.cmd === "docker_pools")).toBe(true);
   });
 
+  it("goes on with the pool it made, and only then", async () => {
+    let now = CHOSEN;
+    const calls = core(() => now, {
+      add_docker_pool: () => {
+        now = MADE;
+        return null;
+      },
+    });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.type(await screen.findByRole("textbox", { name: /Name/ }), "dev-box");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create the pool" })).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+    expect(calls.some((call) => call.cmd === "pool_setup_pool")).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
+    await screen.findByRole("heading", { name: "Sign-ins" });
+    expect(calls.find((call) => call.cmd === "pool_setup_pool")?.args).toMatchObject({
+      name: "dev-box",
+    });
+  });
+
+  it("keeps the name typed when the person goes back a step and returns", async () => {
+    core(() => CHOSEN);
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.type(await screen.findByRole("textbox", { name: /Name/ }), "dev");
+    await userEvent.click(screen.getByRole("button", { name: /^Where chats run/ }));
+    await screen.findByRole("heading", { name: "Where should your chats run?" });
+    await userEvent.click(screen.getByRole("button", { name: /^Pool/ }));
+    expect(await screen.findByRole("textbox", { name: /Name/ })).toHaveProperty("value", "dev");
+  });
+
   it("resumes with the name given", async () => {
     core(() => ({ ...CHOSEN, name: "kept-name" }));
     render(<PoolSetupTab plane="p" />);
