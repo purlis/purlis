@@ -45,6 +45,8 @@ mod chats;
 mod clipath;
 mod createproject;
 mod curation;
+mod layout;
+mod questiontrail;
 // The Devices view (#2052).
 mod clusterpools;
 mod devices;
@@ -98,6 +100,7 @@ mod useskill;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg(all(test, unix))]
 mod behaviour;
+mod freshkept;
 #[cfg(unix)]
 mod hostedconfinement;
 #[cfg(unix)]
@@ -2444,21 +2447,6 @@ fn chats_plane_updated(
     Ok(planes.held(&plane)?.plane_updated())
 }
 
-/// Says which chat is in front, so the record brings that one back in front.
-#[tauri::command]
-#[specta::specta]
-fn chat_in_front(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    session: Option<u32>,
-) -> Result<(), String> {
-    let held = planes.held(&plane)?;
-    held.chats().bring_to_front(session);
-    // A reported task that was held because the person had it in front is looked at again.
-    dispatched::front_moved(&held);
-    Ok(())
-}
-
 /// What the operator has pinned in one project (ADR 0039, stored per ADR 0040).
 ///
 /// The project's own pin and its pinned workspaces come from the machine store; a pinned
@@ -2653,32 +2641,6 @@ fn close_chat_tab(
     held.chats().close_tab(session)?;
     // Its row says it has no tab from here on.
     held.rows_changed();
-    Ok(())
-}
-
-/// **Where chat `session`'s pane is and what it shows**: chat `shown` in place of its own, or
-/// its own again with none (#1486); and the chat whose tab the pane is in, `beside`, or none
-/// for a chat that is its tab's own or has no pane (#1489). The record keeps both on that
-/// chat's entry, so a reloaded window and the next launch put each pane back.
-///
-/// **The one way the window says what is on screen** beside which chat is in front
-/// (`chat_in_front`): `Chats::looked_at` reads these, so a reported task is not ended under
-/// the person in any pane of the tab in front, and none of them is notified about. A window
-/// command only: no chat can call it.
-#[tauri::command]
-#[specta::specta]
-fn tab_shows(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    session: u32,
-    shown: Option<u32>,
-    beside: Option<u32>,
-) -> Result<(), String> {
-    let held = planes.held(&plane)?;
-    held.chats().tab_shows(session, shown, beside)?;
-    // A reported task that was held because the person was reading it in this tab is looked
-    // at again, as it is when another chat is brought in front (#1485).
-    dispatched::front_moved(&held);
     Ok(())
 }
 
@@ -3057,6 +3019,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<smartclose::SmartClosing>()
         // What `chats-reconnecting` carries (#2496).
         .typ::<reconnecting::ChatsReconnecting>()
+        // What `fresh-runners-kept` carries (#4569).
+        .typ::<freshkept::FreshRunnersKept>()
         // What `projects_not_held` answers, read again on `projects-not-held` (#2846).
         .typ::<notheld::ProjectNotHeld>()
         // What `chat-stop` carries (#1448).
@@ -3098,6 +3062,12 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<skillgrade::after_edit::SkillGradeAfterEditStep>()
         .constant("SKILL_GRADE_AFTER_EDIT", skillgrade::after_edit::EVENT)
         .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
+        // How long a task's question waits on its asking chat (#4841): a question's trail says
+        // it from the rule, never from a number of its own.
+        .constant(
+            "A_QUESTION_WAITS_SECS",
+            purlis_core::dispatchtalk::A_QUESTION_WAITS_SECS,
+        )
         // The one rule for a character a reader does not see (SK-51, #3202): the window marks
         // what it draws itself from the core's own tables, never from a list of its own.
         .constant(unicoderule::UNICODE_RULE, unicoderule::rule())
@@ -4341,6 +4311,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             reconnecting::EVENT,
+                            &told,
+                        );
+                    })
+                })
+                // A task's fresh runner kept since its work is not all here: the window's Notice
+                // offers Fetch again and Discard (#4569).
+                .telling_fresh_kept({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: freshkept::FreshRunnersKept| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            freshkept::EVENT,
                             &told,
                         );
                     })

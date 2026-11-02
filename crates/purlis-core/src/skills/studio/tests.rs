@@ -228,6 +228,7 @@ fn a_grade() -> super::super::grades::Graded {
         model: None,
         previous: None,
         after_edit: false,
+        draft: None,
     }
 }
 

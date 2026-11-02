@@ -1022,6 +1022,66 @@ fn a_clone_behind_its_upstream_is_named_in_whichever_workspace_it_is() {
     assert!(r.hint.starts_with("→ purlis sync --all"), "{r:?}");
 }
 
+/// #4775: `[branch ""]` is read by `git config` and refused by every git that reads a
+/// remote, so the clone looked like one with no upstream and the row stayed green.
+#[test]
+fn a_clone_whose_config_holds_a_branch_with_no_name_is_named_with_how_to_remove_it() {
+    let (_d, root) = plane("schema = 1\n");
+    let origin = root.join("origin-repo");
+    std::fs::create_dir_all(&origin).unwrap();
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    git(&origin, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    std::fs::create_dir_all(root.join("workspaces/beta")).unwrap();
+    git(
+        &root.join("workspaces/beta"),
+        &["clone", "-q", origin.to_str().unwrap(), "svc"],
+    );
+    let rows = doctor(&root).run();
+    assert!(
+        !rows.iter().any(|r| r.name == "clone git config"),
+        "{rows:?}"
+    );
+
+    let clone = root.join("workspaces/beta/svc");
+    let config = clone.join(".git/config");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str("[branch \"\"]\n\tcharterBase = main\n");
+    std::fs::write(&config, text).unwrap();
+
+    let r = one(&root, "clone git config");
+    assert_eq!(r.status, Status::Warn, "{r:?}");
+    assert!(r.detail.contains("beta/svc"), "{r:?}");
+    assert!(r.detail.contains(r#"[branch ""]"#), "{r:?}");
+    assert!(
+        r.hint.contains(&format!(
+            "git -C {} config --remove-section branch.",
+            clone.display()
+        )),
+        "{r:?}"
+    );
+}
+
+#[test]
+fn a_clone_whose_config_git_cannot_read_is_named_with_gits_own_words() {
+    let (_d, root) = plane("schema = 1\n");
+    let clone = root.join("workspaces/beta/svc");
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q", "-b", "main", "."]);
+    let config = clone.join(".git/config");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str("[broken\n");
+    std::fs::write(&config, text).unwrap();
+
+    let r = one(&root, "clone git config");
+    assert_eq!(r.status, Status::Warn, "{r:?}");
+    assert!(
+        r.detail
+            .starts_with("git cannot read the config of beta/svc (fatal: bad config line"),
+        "{r:?}"
+    );
+    assert!(r.hint.contains("fix or remove the line git names"), "{r:?}");
+}
+
 #[cfg(unix)]
 #[test]
 fn a_workspace_charter_cannot_list_is_named_and_never_read_as_empty() {

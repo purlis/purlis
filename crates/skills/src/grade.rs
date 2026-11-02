@@ -29,7 +29,8 @@ pub mod routers;
 pub use fixtures::{
     EVALS_DIR, FixtureFile, Fixtures, MOST_EXPECTATION_BYTES, MOST_EXPECTATIONS,
     MOST_OUTCOME_EVALS, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OutcomeEval, Read, Refused,
-    TriggerTest, Wrong, fixtures_of, outcomes_path, triggers_path, triggers_template,
+    TriggerTest, Wrong, fixtures_of, fixtures_over, outcomes_path, triggers_path,
+    triggers_template,
 };
 pub use outcomes::{Check, OutcomeRun, OutcomeScore};
 

@@ -2389,6 +2389,11 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
     if name == purlis_core::harness::hooked::WORD {
         return permission::permissionrequest(&payload());
     }
+    // Codex's own question prompt (#4558): routed to a task's asking chat, or left to its pane.
+    // Not a tool hook either: it fails open, since a refusal would lose the question.
+    if name == purlis_core::harness::hooked::QUESTION_WORD {
+        return permission::taskquestion(&payload());
+    }
     let guarded = name == GUARDED_TOOL_HOOK;
     let handler = hooks::handler(name);
     if guarded || handler.is_some() {

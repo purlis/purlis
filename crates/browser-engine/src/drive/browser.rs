@@ -305,6 +305,60 @@ fn at_web_address(address: &str) -> bool {
     WebAddress::parse(address).is_ok()
 }
 
+/// **Where frame `frame` of `page` is judged**: at its document's origin, or for one that
+/// takes the origin around it, or shows the engine's own page, the nearest ancestor's that has
+/// one of its own, up to the page's. A document that takes the origin around it shares the
+/// process, and so the session, of the document around it; one held by another session, or
+/// whose own context's word may not have been kept, is [`Unjudged::Unread`] until that word
+/// is read.
+fn judged_at(page: &Page, frame: &str, origins: &DocumentOrigins) -> Result<Judged, Unjudged> {
+    let Some(mut at) = page.frames.get(frame) else {
+        return Ok(Judged::Lost);
+    };
+    let mut id = frame;
+    for _ in 0..=page.frames.len() {
+        if at.unknown() {
+            return Err(Unjudged::Unread);
+        }
+        match at.origin(origins.origin(&at.session, id)) {
+            Origin::Web(address) => return Ok(Judged::At(address)),
+            Origin::Opaque => return Err(Unjudged::Opaque),
+            Origin::Engine => {}
+            Origin::Inherited => {
+                let around = match at.parent.as_deref() {
+                    Some(parent) if parent != page.target => {
+                        page.frames.get(parent).map(|up| up.session.as_str())
+                    }
+                    _ => page.session.as_deref(),
+                };
+                if around != Some(at.session.as_str()) || !origins.all_kept(&at.session) {
+                    return Err(Unjudged::Unread);
+                }
+            }
+        }
+        match at.parent.as_deref() {
+            Some(parent) if parent == page.target => break,
+            Some(parent) => match page.frames.get(parent) {
+                Some(up) => {
+                    at = up;
+                    id = parent;
+                }
+                None => return Ok(Judged::Lost),
+            },
+            None => break,
+        }
+    }
+    Ok(Judged::At(page.url.clone()))
+}
+
+/// Where a frame is judged ([`judged_at`]).
+enum Judged {
+    /// At this address.
+    At(String),
+    /// Not known: a frame on the way to the page is not one the driver knows.
+    Lost,
+}
+
 struct Frame {
     session: String,
     parent: Option<String>,
@@ -320,6 +374,11 @@ struct Frame {
     /// It attached a session of its own and that session's frame tree has not been read: its
     /// address is only what the engine said of the target (#4472).
     unread: bool,
+    /// The engine's word of the origin of the address `url` (its `securityOrigin`); empty
+    /// where it has said none. Chrome reads it off the address alone, so for an address that
+    /// takes the origin around it (`about:srcdoc`, `about:blank`) it says nothing of the
+    /// document: there the document's own context says it ([`DocumentOrigins`]).
+    security_origin: String,
 }
 
 impl Frame {
@@ -328,6 +387,148 @@ impl Frame {
     fn unknown(&self) -> bool {
         self.unread && !at_web_address(&self.url)
     }
+
+    /// **The origin this frame's document has**, by the web's rules for its address. A web
+    /// address is its own; the engine's own page for a load that failed has none of its own.
+    /// `about:blank` and `about:srcdoc` (or no address yet) take the origin of the document
+    /// around them, unless the document is sandboxed: `document`, the origin the engine gave
+    /// the document's own context where it gave one, says which, and short of it the frame is
+    /// [`Origin::Inherited`]. Otherwise the engine's word of the address's origin, where it
+    /// gave one. Short of that, a `blob:` address carries the origin of the document that made
+    /// it. Any other address (`data:` among them) has no web origin: it is opaque.
+    fn origin(&self, document: Option<&str>) -> Origin {
+        if at_web_address(&self.url) {
+            return Origin::Web(self.url.clone());
+        }
+        if scheme_rest(&self.url, "chrome-error").is_some() {
+            return Origin::Engine;
+        }
+        let bare = self.url.split(['?', '#']).next().unwrap_or_default();
+        if bare.is_empty()
+            || bare.eq_ignore_ascii_case("about:blank")
+            || bare.eq_ignore_ascii_case("about:srcdoc")
+        {
+            return match document {
+                None => Origin::Inherited,
+                Some(origin) => web_origin(origin),
+            };
+        }
+        match self.security_origin.as_str() {
+            "" => {}
+            // An origin is no address: the root of its site is one on it.
+            origin => return web_origin(origin),
+        }
+        if let Some(made_by) = scheme_rest(&self.url, "blob") {
+            return if at_web_address(made_by) {
+                Origin::Web(made_by.to_owned())
+            } else {
+                Origin::Opaque
+            };
+        }
+        Origin::Opaque
+    }
+}
+
+/// The origin the engine wrote as `origin`: a web one, as the root of its site (an origin is
+/// no address, and the root is one on it); anything else (`null`, Chrome's `://`) is opaque.
+fn web_origin(origin: &str) -> Origin {
+    if at_web_address(origin) {
+        Origin::Web(format!("{origin}/"))
+    } else {
+        Origin::Opaque
+    }
+}
+
+/// **The origin of the document each frame shows**, as the engine gave it to the document's
+/// own context (`Runtime.executionContextCreated`, the default one of each frame), by the
+/// session that holds the frame and the frame's id; with that context's id, so the word of a
+/// context that ended takes only its own entry away.
+#[derive(Default)]
+struct DocumentOrigins {
+    kept: HashMap<(String, String), (i64, String)>,
+    /// The sessions on which a context's word came while [`FRAME_ORIGINS_KEPT`] were kept, and
+    /// was not kept: there a frame with no entry may have a context all the same.
+    unkept: HashSet<String>,
+}
+
+/// The most documents' origins kept. Past it a new one is not kept, and its session is
+/// [`DocumentOrigins::all_kept`] no longer until its contexts are cleared.
+const FRAME_ORIGINS_KEPT: usize = 1024;
+
+impl DocumentOrigins {
+    /// The engine made `context` on `session`: kept when it is a frame's own.
+    fn told(&mut self, session: &str, context: &Value) {
+        let aux = &context["auxData"];
+        let (Some(id), Some(frame), Some(origin)) = (
+            context["id"].as_i64(),
+            aux["frameId"].as_str(),
+            context["origin"].as_str(),
+        ) else {
+            return;
+        };
+        if aux["isDefault"] != true {
+            return;
+        }
+        let key = (session.to_owned(), frame.to_owned());
+        if self.kept.len() >= FRAME_ORIGINS_KEPT && !self.kept.contains_key(&key) {
+            self.unkept.insert(session.to_owned());
+            return;
+        }
+        self.kept.insert(key, (id, origin.to_owned()));
+    }
+
+    /// The engine ended context `id` on `session`.
+    fn ended(&mut self, session: &str, id: i64) {
+        self.kept
+            .retain(|(on, _), (context, _)| on != session || *context != id);
+    }
+
+    /// Every context on `session` is gone: they were cleared, or the session ended.
+    fn cleared(&mut self, session: &str) {
+        self.kept.retain(|(on, _), _| on != session);
+        self.unkept.remove(session);
+    }
+
+    /// The origin of the document `frame` shows on `session`, where the engine gave it.
+    fn origin(&self, session: &str, frame: &str) -> Option<&str> {
+        self.kept
+            .get(&(session.to_owned(), frame.to_owned()))
+            .map(|(_, origin)| origin.as_str())
+    }
+
+    /// Whether every context's word on `session` was kept, so a frame there with no entry has
+    /// no context.
+    fn all_kept(&self, session: &str) -> bool {
+        !self.unkept.contains(session)
+    }
+}
+
+/// The origin a frame's document has ([`Frame::origin`]).
+#[derive(Debug, PartialEq, Eq)]
+enum Origin {
+    /// A web origin, as an address on it (the root of its site, where the engine named it).
+    Web(String),
+    /// The origin of the document around it, where no context of its own says otherwise.
+    Inherited,
+    /// The engine's own page for a load that failed: judged as the document around it.
+    Engine,
+    /// No web origin.
+    Opaque,
+}
+
+/// What follows `scheme:` in `address`, the scheme matched in any case.
+fn scheme_rest<'a>(address: &'a str, scheme: &str) -> Option<&'a str> {
+    let (named, rest) = address.split_once(':')?;
+    named.eq_ignore_ascii_case(scheme).then_some(rest)
+}
+
+/// Why where a frame's document would send cannot be told.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Unjudged {
+    /// A frame on the way has not said what it shows (#4472).
+    Unread,
+    /// The frame's document has no web origin.
+    Opaque,
 }
 
 /// How the driver came to see a frame.
@@ -521,6 +722,8 @@ struct State {
     downloads: downloads::Downloads,
     /// What the driver leaves to an Inspect (#2028).
     inspecting: Inspecting,
+    /// The origin of the document each frame shows, as its own context has it.
+    document_origins: DocumentOrigins,
 }
 
 /// **What the driver leaves to an Inspect** (#2028): the engine's word of these is the front
@@ -593,54 +796,47 @@ impl State {
     }
 
     /// **The addresses what is in document `frame` of `target`'s page goes to** (#2018): the
-    /// frame's own address where it is a web address; for a frame at none (`about:blank`, a
-    /// `srcdoc`), its nearest ancestor's that is, since that document holds it; and for a
-    /// frame the driver does not know, every document the page shows. `None` where a frame on
-    /// the way is [`Frame::unknown`]: an ancestor's address says nothing of it (#4472).
-    fn documents_of(&self, target: &str, frame: &str) -> Option<Vec<String>> {
+    /// address of its document's origin ([`Frame::origin`]); for a document that takes the
+    /// origin around it, or the engine's own page, its nearest ancestor's ([`judged_at`]); and
+    /// for a frame the driver does not know,
+    /// every document the page shows. [`Unjudged::Unread`] where a frame on the way is
+    /// [`Frame::unknown`]: an ancestor's address says nothing of it (#4472).
+    /// [`Unjudged::Opaque`] where the document has no web origin.
+    fn documents_of(&self, target: &str, frame: &str) -> Result<Vec<String>, Unjudged> {
         let Some(page) = self.page(target) else {
-            return Some(Vec::new());
+            return Ok(Vec::new());
         };
         if frame == target {
-            return Some(vec![page.url.clone()]);
+            return Ok(vec![page.url.clone()]);
         }
-        let Some(mut at) = page.frames.get(frame) else {
-            return self.every_document(target);
-        };
-        for _ in 0..=page.frames.len() {
-            if at_web_address(&at.url) {
-                return Some(vec![at.url.clone()]);
-            }
-            if at.unread {
-                return None;
-            }
-            match at.parent.as_deref() {
-                Some(parent) if parent == target => break,
-                Some(parent) => match page.frames.get(parent) {
-                    Some(up) => at = up,
-                    None => return self.every_document(target),
-                },
-                None => break,
-            }
+        match judged_at(page, frame, &self.document_origins)? {
+            Judged::At(address) => Ok(vec![address]),
+            Judged::Lost => self.every_document(target),
         }
-        Some(vec![page.url.clone()])
     }
 
-    /// Every document `target`'s page shows, its own first; `None` where one of its frames is
-    /// [`Frame::unknown`] (#4472).
-    fn every_document(&self, target: &str) -> Option<Vec<String>> {
+    /// Every document `target`'s page shows, by the address of its origin, its own first; an
+    /// error where one of them is unread or opaque, as [`State::documents_of`] says, or stands
+    /// in a frame the driver does not know.
+    fn every_document(&self, target: &str) -> Result<Vec<String>, Unjudged> {
         let Some(page) = self.page(target) else {
-            return Some(Vec::new());
+            return Ok(Vec::new());
         };
         if page.frames.values().any(Frame::unknown) {
-            return None;
+            return Err(Unjudged::Unread);
         }
-        let mut every: Vec<String> = page.frames.values().map(|f| f.url.clone()).collect();
+        let mut every = Vec::new();
+        for frame in page.frames.keys() {
+            match judged_at(page, frame, &self.document_origins)? {
+                Judged::At(address) => every.push(address),
+                Judged::Lost => return Err(Unjudged::Unread),
+            }
+        }
         every.sort();
         every.dedup();
         every.retain(|one| *one != page.url);
         every.insert(0, page.url.clone());
-        Some(every)
+        Ok(every)
     }
 
     /// Keeps `site` to be said in the next answer, once.
@@ -864,6 +1060,7 @@ impl State {
             told: 0,
             // Back while a session holds it: only that session can say what it shows (#4472).
             unread: owned_elsewhere,
+            security_origin: String::new(),
         });
         if parent.is_some() {
             entry.parent = parent;
@@ -884,6 +1081,7 @@ impl State {
                     || (entry.unread && at_web_address(&entry.url) && !at_web_address(&read));
                 if !keeps {
                     entry.url = read;
+                    entry.security_origin = text("securityOrigin");
                 }
                 entry.unread = false;
             }
@@ -891,6 +1089,7 @@ impl State {
                 entry.session = session.to_owned();
                 entry.name = text("name");
                 entry.url = text("url");
+                entry.security_origin = text("securityOrigin");
                 entry.told = generation;
                 entry.unread = false;
                 page.shows = generation;
@@ -927,9 +1126,11 @@ impl State {
                 loaded: shown,
                 told,
                 unread: true,
+                security_origin: String::new(),
             });
         entry.session = session.to_owned();
         entry.url = url.to_owned();
+        entry.security_origin.clear();
         entry.told = told;
         entry.unread = true;
     }
@@ -948,6 +1149,7 @@ impl State {
             && entry.url != url
         {
             entry.url = url.to_owned();
+            entry.security_origin.clear();
             entry.told = told;
         }
     }
@@ -1502,13 +1704,18 @@ impl Browser {
         self.known_documents(state.documents_of(&page, &key.frame))
     }
 
-    /// `documents`, as [`State::documents_of`] answers them: where they are not known and a
-    /// judge is to say where they may go, nothing can be judged, so nothing goes (#4472).
-    fn known_documents(&self, documents: Option<Vec<String>>) -> Result<Vec<String>, Refusal> {
+    /// `documents`, as [`State::documents_of`] answers them: where they are not known, or have
+    /// no web origin, and a judge is to say where they may go, nothing can be judged, so nothing
+    /// goes (#4472).
+    fn known_documents(
+        &self,
+        documents: Result<Vec<String>, Unjudged>,
+    ) -> Result<Vec<String>, Refusal> {
         match documents {
-            Some(documents) => Ok(documents),
-            None if self.inner.judge.is_none() => Ok(Vec::new()),
-            None => Err(Refusal::FrameUnread),
+            Ok(documents) => Ok(documents),
+            Err(_) if self.inner.judge.is_none() => Ok(Vec::new()),
+            Err(Unjudged::Unread) => Err(Refusal::FrameUnread),
+            Err(Unjudged::Opaque) => Err(Refusal::FrameOpaque),
         }
     }
 
@@ -3120,7 +3327,7 @@ impl Browser {
                         session,
                         start,
                         end,
-                        drops_into.as_deref(),
+                        drops_into.as_deref().map_err(|why| *why),
                         &mut taken,
                     )
                 });
@@ -3173,7 +3380,7 @@ impl Browser {
         session: &str,
         start: (f64, f64),
         end: (f64, f64),
-        drops_into: Option<&[String]>,
+        drops_into: Result<&[String], Unjudged>,
         taken: &mut bool,
     ) -> Result<Option<String>, Refusal> {
         self.mouse(session, "mouseMoved", start.0, start.1, 0, 0)?;
@@ -3194,7 +3401,7 @@ impl Browser {
         session: &str,
         start: (f64, f64),
         end: (f64, f64),
-        drops_into: Option<&[String]>,
+        drops_into: Result<&[String], Unjudged>,
         target: &str,
         carried: &mut Option<Value>,
     ) -> Result<Option<String>, Refusal> {
@@ -4002,6 +4209,7 @@ impl Inner {
     /// `session` is gone, and what it had open went with it.
     fn session_ended(&self, state: &mut State, session: &str, now: Instant) {
         self.worlds.cleared(session);
+        state.document_origins.cleared(session);
         if let Some(target) = state.page_of_session(session)
             && let Some(page) = state.page_mut(&target)
         {
@@ -4284,16 +4492,21 @@ impl Inner {
                 "Runtime.executionContextCreated" => {
                     if let Some(session) = &event.session_id {
                         self.worlds.told(session, &params["context"]);
+                        state.document_origins.told(session, &params["context"]);
                     }
                 }
                 "Runtime.executionContextDestroyed" => {
                     if let Some(session) = &event.session_id {
                         self.worlds.ended(session, params);
+                        if let Some(id) = params["executionContextId"].as_i64() {
+                            state.document_origins.ended(session, id);
+                        }
                     }
                 }
                 "Runtime.executionContextsCleared" => {
                     if let Some(session) = &event.session_id {
                         self.worlds.cleared(session);
+                        state.document_origins.cleared(session);
                     }
                 }
                 // A form submitted (#2018): its request, when it comes, sends what was typed.

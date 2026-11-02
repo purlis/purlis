@@ -2,15 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { browser, expect, $$ } from "@wdio/globals";
-import { pressMenuPath, ROW, SUB } from "../menus.js";
+import { openChatList, pressMenuPath, ROW, SUB } from "../menus.js";
 import { READY } from "../harness.js";
-import {
-  SELECTED_TAB,
-  bringChatForward,
-  endChatsStartedHere,
-  startAChat,
-  type Started,
-} from "../started.js";
+import { bringChatForward, endChatsStartedHere, startAChat, type Started } from "../started.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
@@ -178,25 +172,11 @@ async function untilShows(text: string): Promise<void> {
   );
 }
 
-/** Opens the Activity of chat `session`, from its own tab's menu once it is in front. */
+/** Opens the Activity of chat `session`, from its list (its pane's ⋯) once it is in front. */
 async function openActivityOf(session: number): Promise<void> {
   await bringChatForward(session);
-  const sent = await browser.execute((selected: string) => {
-    const tab = document.querySelector<HTMLElement>(selected);
-    if (!tab) return false;
-    const box = tab.getBoundingClientRect();
-    tab.dispatchEvent(
-      new MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        clientX: Math.round(box.left + box.width / 2),
-        clientY: Math.round(box.top + box.height / 2),
-      }),
-    );
-    return true;
-  }, SELECTED_TAB);
-  expect(sent).toBe(true);
-  // Activity is one of the tab's views: a row of the menu's *Open* submenu.
+  await openChatList();
+  // Activity is one of the chat's views: a row of its list's *Open* submenu (#4753).
   await pressMenuPath(SUB.open, ROW.activity);
   // The core's own read has answered, whatever it said, before the timeline is handed over.
   await browser.waitUntil(

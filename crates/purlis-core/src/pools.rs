@@ -187,6 +187,28 @@ pub fn remove(
     Ok(removed)
 }
 
+/// **What names pool `name` on this machine** (#4678), plane by plane in the order this machine
+/// keeps them: the projects and workspaces [`remove`] sets back to this machine, which its
+/// question names before anything is removed. A plane where nothing names it isn't listed.
+/// Refused, with why, where this machine's store can't be read at all: nothing there is known,
+/// so it is never said that nothing names the pool.
+pub fn named_by(
+    config_root: &Path,
+    name: &str,
+) -> Result<Vec<(std::path::PathBuf, crate::machine::NamingPool)>, String> {
+    let loaded = crate::machine::read(config_root);
+    if let Some(why) = loaded.unreadable {
+        return Err(why);
+    }
+    Ok(loaded
+        .store
+        .recents
+        .iter()
+        .map(|recent| (recent.plane.clone(), recent.naming_pool(name)))
+        .filter(|(_, naming)| !naming.is_empty())
+        .collect())
+}
+
 /// Where the person removes a pool, as Settings names it.
 pub const SETTING: &str = "Settings › This machine › Pools";
 
@@ -389,6 +411,23 @@ pub fn workspaces_on_pools(
         }
     }
     on
+}
+
+/// **Each chat's fresh runner of the project `plane`, by its id, with the workspace it came from**
+/// (#4569), by the name a link reaches it by: where a fetch finds what it has, whichever pool that
+/// workspace runs on now. Another project's are its own window's.
+pub fn fresh_runners_of_plane(
+    config_root: &Path,
+    plane: &str,
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    runners::fresh_runners(config_root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|kept| {
+            let of = kept.of.as_ref().filter(|of| of.plane == plane)?;
+            Some((kept.link_name(), vec![of.workspace.clone()]))
+        })
+        .collect()
 }
 
 /// **Moves the pool `name` to `image`, the runner image of the desktop's version** (#2749): a
@@ -1192,12 +1231,14 @@ pub fn fresh_claim_name(device: &str, pool: &str, chat: &str) -> String {
 
 /// **A runner of the cluster pool `name` for the chat `chat` alone** (#3709), kept only while that
 /// chat runs: a fresh claim is made, waited on for at most `within` until the operator vouches for
-/// it under the pool's pin, paired with no question and kept. What fails deletes the claim, and says so. A chat that has one is given it again.
+/// it under the pool's pin, paired with no question and kept, with `of`, where its work goes back
+/// to (#4569). What fails deletes the claim, and says so. A chat that has one is given it again.
 pub fn claim_fresh(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     name: &str,
     chat: &str,
+    of: runners::FreshOf,
     desktop: &Pinned,
     within: std::time::Duration,
 ) -> Result<runners::ClusterKept, Refused> {
@@ -1243,6 +1284,7 @@ pub fn claim_fresh(
         pinned: paired.pinned,
         paired: runners::now(),
         chat: Some(chat.to_owned()),
+        of: Some(Box::new(of)),
     };
     let locked = runners::lock(config_root);
     match runners::keep_cluster_runner_locked(config_root, &kept, desktop, &locked) {
@@ -1256,6 +1298,78 @@ pub fn claim_fresh(
             )),
         }),
     }
+}
+
+/// How old a fresh Claim of this desktop with no record must be before it is taken for one a
+/// crash left (#4569): far past any start's wait for its runner, so no start still making one is
+/// ever taken for gone.
+pub const ORPHAN_AFTER: u64 = 3600;
+
+/// How far a cluster's clock may be from this desktop's for [`sweep_orphan_fresh_claims`] to
+/// tell a claim made since a pool was added from one made before: a claim made less than this
+/// after is left.
+pub const SKEW: u64 = 600;
+
+/// **The fresh Claims of this desktop that no record holds, left by a crash between the claim and
+/// its record** (#4569), deleted, by name. A record is written only once its runner is paired and
+/// before any chat starts there, so such a claim never ran a task and holds no work. Only a
+/// Claim marked as this desktop's, not kept, named as this desktop names a chat's fresh claim of
+/// that pool, made more than [`ORPHAN_AFTER`] ago by the cluster's word, and made since that pool
+/// was added here: a claim an earlier pool of that name left as it was removed is never one. A pool whose
+/// cluster can't be asked is passed over, and tried at the next sweep.
+pub fn sweep_orphan_fresh_claims(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    device: &str,
+    now: u64,
+) -> Result<Vec<String>, Refused> {
+    let label = crate::clusterpool::desktop_label(device);
+    let recorded: Vec<String> = runners::fresh_runners(config_root)?
+        .into_iter()
+        .map(|kept| kept.claimed.name)
+        .collect();
+    let mut deleted = Vec::new();
+    for pool in runners::cluster_pools(config_root)? {
+        // Only a claim made since this pool was added: one an earlier pool of the name left when
+        // it was removed may still hold a task's work, and its removal said so.
+        let Some((_, own)) = runners::cluster_runner_for(config_root, pool.name())? else {
+            continue;
+        };
+        let added = own.paired;
+        let kubectl = pool.kubectl(kubectl);
+        let prefix = format!("{}-", claim_name(device, pool.name()));
+        let listed = match kubectl.claims_in(pool.namespace()) {
+            Ok(listed) => listed,
+            Err(why) => {
+                tracing::info!(
+                    "purlis: pool {}'s claims could not be listed: {why}",
+                    pool.name()
+                );
+                continue;
+            }
+        };
+        for claim in listed {
+            let ours = claim.seen.desktop.as_deref() == Some(label.as_str()) && !claim.seen.kept;
+            let named = claim
+                .name
+                .strip_prefix(&prefix)
+                .is_some_and(|hash| hash.len() == 8 && hash.bytes().all(|b| b.is_ascii_hexdigit()));
+            let old = claim.made.is_some_and(|made| {
+                made.saturating_add(ORPHAN_AFTER) < now && made > added.saturating_add(SKEW)
+            });
+            if !ours || !named || !old || recorded.contains(&claim.name) {
+                continue;
+            }
+            match kubectl.delete_claim(pool.namespace(), &claim.name) {
+                Ok(()) => deleted.push(claim.name),
+                Err(why) => tracing::info!(
+                    "purlis: the claim {} no record holds was not deleted: {why}",
+                    claim.name
+                ),
+            }
+        }
+    }
+    Ok(deleted)
 }
 
 /// **The chat `chat` ended, so its fresh runner goes** (#3709): its claim is deleted, then its
@@ -1273,6 +1387,51 @@ pub fn release_fresh(
         .map_err(|why| Refused::Other(why.to_string()))?;
     let locked = runners::lock(config_root);
     runners::forget_fresh_runner_locked(config_root, chat, &locked)
+}
+
+/// **Whether the operator of the cluster pool `pool` keeps a fresh Claim's runner through idle**
+/// (#4569), which a task's commits rely on while its desktop is away: on its signed word, holding
+/// at `now`, read each time it counts (at a start and at a release), never kept. Refused, with
+/// why, where it can't be asked or does not say so now: the caller takes that as no.
+pub fn fresh_runners_stay(
+    pool: &runners::ClusterPool,
+    kubectl: &crate::clusterpool::Kubectl,
+    now: u64,
+) -> Result<(), Refused> {
+    let seen = pool
+        .kubectl(kubectl)
+        .pool(pool.pool())
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    pool.pin()?
+        .says(&seen, crate::clusterpool::FRESH_RUNNERS_STAY, now)
+        .map_err(Refused::Other)
+}
+
+/// **Whether the chat `chat`'s fresh runner holds nothing to fetch any more** (#4569): its claim is
+/// gone or is another's, or the operator vouches for another pod or another key. Its home is the
+/// pod's own, so what was there went with it. A cluster that does not answer is refused, and a
+/// runner not vouched for now, or whose statement can't be read, is no such word: its work may
+/// still be there.
+pub fn fresh_runner_lost(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    chat: &str,
+) -> Result<bool, Refused> {
+    let Some((pool, kept)) = runners::fresh_runner_of(config_root, chat)? else {
+        return Ok(true);
+    };
+    let kubectl = pool.kubectl(kubectl);
+    let (namespace, claim) = (&kept.claimed.namespace, &kept.claimed.name);
+    let seen = kubectl
+        .claim_seen(namespace, claim)
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    if seen.is_none_or(|seen| seen.uid != kept.claimed.uid) {
+        return Ok(true);
+    }
+    let vouched = crate::clusterpool::vouched_for(&kubectl, &pool.pin()?, &kept.claimed);
+    Ok(vouched.is_ok_and(|vouched| {
+        vouched.is_some_and(|vouched| vouched.pod != kept.pod || vouched.key != kept.pinned.key)
+    }))
 }
 
 /// **The lock an add of the cluster pool `name` holds from start to end** (#3292): a removal of
@@ -1493,6 +1652,7 @@ pub fn add_cluster(
     });
     let kept = paired.and_then(|paired| {
         let kept = runners::ClusterKept {
+            of: None,
             name: pool.name().to_owned(),
             claimed: paired.claimed,
             pod: paired.vouched.pod,
@@ -1896,7 +2056,7 @@ pub fn cluster_runner_still_yours(
     if kept != *judged || !cluster.owned() {
         return Err(changed());
     }
-    if crate::runnertaint::pool_ran_unsandboxed(config_root, name) {
+    if crate::runnertaint::pool_ran_unsandboxed(config_root, cluster.name()) {
         return Err(crate::runnertaint::sent_nothing_on(name));
     }
     Ok((cluster, kept))
@@ -2101,12 +2261,21 @@ pub fn remove_cluster(
         .filter(|fresh| fresh.name == name)
     {
         let (namespace, claim) = (&fresh.claimed.namespace, &fresh.claimed.name);
-        let deleted = kubectl
-            .is_some_and(|kubectl| pool.kubectl(kubectl).delete_claim(namespace, claim).is_ok());
+        // Only one its cluster says is gone: no removal deletes what may hold a task's commits.
+        let lost = fresh.chat.as_deref().is_some_and(|chat| {
+            kubectl.is_some_and(|kubectl| {
+                matches!(fresh_runner_lost(config_root, kubectl, chat), Ok(true))
+            })
+        });
+        let deleted = lost
+            && kubectl.is_some_and(|kubectl| {
+                pool.kubectl(kubectl).delete_claim(namespace, claim).is_ok()
+            });
         if !deleted {
             let said = format!(
-                "The claim {claim} may still hold a runner in the cluster: delete it with \
-                 kubectl delete claims.runners.purlis.dev {claim} --namespace {namespace}."
+                "The claim {claim} may still hold a runner and a task's work in the cluster: \
+                 delete it with kubectl delete claims.runners.purlis.dev {claim} --namespace \
+                 {namespace} once that work no longer matters."
             );
             left = Some(left.map_or(said.clone(), |left| format!("{left} {said}")));
         }

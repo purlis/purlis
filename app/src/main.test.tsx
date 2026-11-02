@@ -37,6 +37,7 @@ vi.mock("./windowprefs", async (importOriginal) => {
     floors: null,
     mine: [],
     parts_later: 3,
+    stands_in: false,
   };
   return { ...actual, firstFrameOnce: () => heavy };
 });

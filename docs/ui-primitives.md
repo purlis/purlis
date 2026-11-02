@@ -665,7 +665,7 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
 | View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none |
 | View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
-| Review page     | `ReviewPage` (`ui/review-page/ReviewPage.tsx`), a review too long for a dialog: its body over a fixed action bar                                                                                       | `root`, `body`, `bar`, `summary`, `answers`                                                                           | none                               |
+| Review page     | `ReviewPage` (`ui/review-page/ReviewPage.tsx`), a review too long for a dialog: its body over a fixed action bar                                                                                       | `root`, `body`, `bar`, `summary`, `actions`, `answers`                                                                | none                               |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
 
@@ -749,7 +749,9 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   whose rows list every item the bar draws, stay up for the next move and say each move to a
   reader. A cell of the bar is no Tab stop, so the rows start from the menu and not from an item.
   The order is kept under `status.order`; an item absent today keeps its place in it, and one it
-  never named stays after the item it follows by priority. A press runs the item's command:
+  never named stays after the item it follows by priority. Once the bar draws its items otherwise
+  than their priorities do, the menu's last row is Reset order (#4776), which forgets the order and
+  closes the menu. A press runs the item's command:
   purlis's own items are `StatusItem`s whose press
   is the command, and an item given as data names a command the bar runs through `onCommand`.
   An item that comes and goes sits on its end's inner side, so its arrival moves no neighbour;
@@ -951,11 +953,11 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
   whose hint is its own name take none, because the control or the name says what it means. A
   hint that only repeats an element's words (a name cut short) is the pointer's: no focus opens
   it. While it is shown, a hint is its target's description.
-- **A hint that comes keeps its target** (#4659). A target stands in its tooltip's trigger with or
-  without a hint, a menu's `MenuItem` included, so a hint that comes or goes draws nothing afresh
+- **A hint that comes keeps its target** (#4659, #4671). A target stands in its tooltip's trigger
+  with or without a hint, a menu's `MenuItem` and the button family's `Tipped` included, so a hint that comes or goes draws nothing afresh
   and the focus stays. One that comes while the keyboard is on the target opens at once, because
-  no later focus would open it: a menu's row that turns unavailable says why where the keyboard
-  is. The pointer's way stays coming onto the target: one already resting on it sees the hint when
+  no later focus would open it: a menu's row or a button that turns unavailable says why where
+  the keyboard is. The pointer's way stays coming onto the target: one already resting on it sees the hint when
   it next comes back.
 - **An icon button's tooltip and its name agree by construction**: the tooltip shows the
   `aria-label`, its hint a second line under it, and is not heard a second time. A raw icon-only

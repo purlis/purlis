@@ -149,6 +149,8 @@ function usedFor(a: Record<string, unknown>) {
  */
 function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask[] = []) {
   const asked: Asked[] = [];
+  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it. */
+  let laidOut: unknown = null;
   const listeners = new Map<string, number>();
   /** Every listener of an event: `plane-changed` has one per answer the window reads. */
   const everyListener = new Map<string, number[]>();
@@ -190,12 +192,12 @@ function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask
       if (one?.from) one.from = { ...one.from, tab: true };
       return null;
     }
-    if (cmd === "tab_shows") {
-      // The record keeps what a session's tab shows on that session's own entry (#1486).
-      const one = open.find((chat) => chat.session === a.session);
-      if (one) one.shows = (a.shown as number | null) ?? null;
+    if (cmd === "window_layout") {
+      // The core keeps every tab as the window last said it (#4751), and a reload asks for it.
+      laidOut = a.layout;
       return null;
     }
+    if (cmd === "reopened_layout") return laidOut;
     if (cmd === "stopping_chats") return [];
     // Stop all tasks (#1498): the tasks at work below the session, deepest first.
     if (cmd === "all_tasks_ending") return { name: `steward ${String(a.session)}`, tasks: [3, 2] };
@@ -632,13 +634,11 @@ describe("a task chat", () => {
     await waitFor(() => expect(shape(tree)).toHaveLength(7));
     await userEvent.click(row(tree, "devops 4"));
     await waitFor(() => expect(screen.getByTestId("pane").textContent).toBe("session 4"));
-    // What the tab shows is the record's, on the session's own entry: the core was told.
+    // What the tab shows is in the layout the core was told (#4751): chat 4, in its pane.
     await waitFor(() =>
-      expect(asked.filter((one) => one.cmd === "tab_shows").at(-1)?.args).toEqual({
+      expect(asked.filter((one) => one.cmd === "window_layout").at(-1)?.args).toMatchObject({
         plane: PLANE,
-        session: 1,
-        shown: 4,
-        beside: null,
+        layout: { tabs: [{ tree: { kind: "chat", chat: 4 } }] },
       }),
     );
     first.unmount();
@@ -977,6 +977,64 @@ describe("what needs you (#1448)", () => {
   });
 });
 
+describe("one list per chat, on the row, the pane and the palette (#4753)", () => {
+  /** The rows of the menu a press opened, its submenus' first rows too, then shut. */
+  async function listed(open: () => Promise<void> | void): Promise<(string | null)[]> {
+    await open();
+    await screen.findByRole("menu");
+    const names = menuNames();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    return names;
+  }
+
+  it("draws the same list on a row's right-click, its ⋯, its Shift+F10 and its pane's ⋯", async () => {
+    core(threeDeep());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+
+    const own = row(tree, "steward 1");
+    const byRightClick = await listed(() => {
+      fireEvent.contextMenu(own);
+    });
+    // Not a short list: the chat's rows, and the ways to end it.
+    expect(byRightClick).toEqual(expect.arrayContaining(["Rename…", "Open", "Stop", "End…"]));
+
+    const more = own.closest("li")?.querySelector<HTMLElement>(".chat-more button");
+    if (more == null) throw new Error("steward 1's row has no ⋯");
+    // The pointer's and the eye's: out of the tab order, and the row says it once.
+    expect(more.closest("[aria-hidden]")).not.toBeNull();
+    expect(more.getAttribute("tabindex")).toBe("-1");
+    expect(await listed(() => userEvent.click(more))).toEqual(byRightClick);
+
+    const byKeys = await listed(() => {
+      own.focus();
+      fireEvent.keyDown(own, { key: "F10", shiftKey: true });
+    });
+    expect(byKeys).toEqual(byRightClick);
+
+    const pane = screen.getByRole("button", { name: "More for steward 1" });
+    expect(await listed(() => userEvent.click(pane))).toEqual(byRightClick);
+  });
+
+  it("gives a task with no tab the whole list on its row", async () => {
+    core(threeDeep());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+
+    const task = await listed(() => {
+      fireEvent.contextMenu(row(tree, "devops 3"));
+    });
+    // Its name, its reads, its run and its two ends; no End…, which is not a task's.
+    expect(task).toEqual(
+      expect.arrayContaining(["Rename…", "Open", "Restart", "Stop and get its report"]),
+    );
+    expect(task).not.toContain("End…");
+  });
+});
+
 describe("stopping a chat (#1448)", () => {
   const stops = (asked: Asked[]) =>
     asked.filter((one) => one.cmd === "stop_chat").map((one) => one.args);
@@ -1047,14 +1105,21 @@ describe("stopping a chat (#1448)", () => {
     );
   });
 
-  it("offers both stops on the chat's tab menu too", async () => {
+  it("offers both stops on the chat's pane's ⋯ too, and none on its tab (#4753)", async () => {
     const { asked } = core(threeDeep());
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
 
-    // The session's own tab: a task's tab is named for its session too (#1489).
+    // A tab holds a layout: its menu has no chat's rows.
     fireEvent.contextMenu(within(strip()).getByRole("tab", { name: /^steward 1/ }));
+    await screen.findByRole("menu");
+    expect(menuNames()).not.toContain("Stop");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    // The chat's own pane, in front: its ⋯ is the chat's list.
+    await userEvent.click(screen.getByRole("button", { name: "More for steward 1" }));
     await screen.findByRole("menu");
     const ways = await openSubmenus("Stop");
     expect(

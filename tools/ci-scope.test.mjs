@@ -842,14 +842,32 @@ test("the search finds a Rust path named whole, in pieces, or from a URL", () =>
   ]);
 });
 
-// A file that names a Rust path but is no test of `npm test`, and what holds it.
+// A file that names a Rust path but is no test of `npm test`, and what holds it. A test that
+// imports one is a reader through it.
 const READERS_HELD_ELSEWHERE = {
   "app/.storybook/handed.plugin.ts": "the stories: READ_BY_WEB runs everything",
   "app/e2e/recordedForge.ts": "imported by recordedForge.test.ts, a reader, and a scenario spec",
+  "app/src/ui/field/fieldCalls.testkit.ts":
+    "imported by fieldHelp.guard.test.ts and refusingFields.guard.test.ts, readers",
 };
 
+// The tests that import one of `held`'s files by a relative path: they read its Rust as their own.
+function importersOf(files, readFile, held) {
+  const tests = files.filter((f) => /^app\/(src|e2e)\/.*\.test\.(ts|tsx)$/.test(f));
+  return tests.filter((file) =>
+    [...readFile(file).matchAll(/from\s+"(\.{1,2}\/[^"]+)"/g)].some((m) => {
+      const target = posix.normalize(posix.join(posix.dirname(file), m[1]));
+      return held.some((h) => h === target || h.replace(/\.(ts|tsx)$/, "") === target);
+    }),
+  );
+}
+
 test("every vitest file that names a Rust path is a reader, and every reader names one", () => {
-  const readers = new Set(rustNamedByWindow(git("ls-files"), read).values());
+  const files = git("ls-files");
+  const readers = new Set(rustNamedByWindow(files, read).values());
+  for (const file of importersOf(files, read, Object.keys(READERS_HELD_ELSEWHERE))) {
+    readers.add(file);
+  }
   for (const file of readers) {
     assert.ok(
       file in READERS_HELD_ELSEWHERE || RUST_READERS.includes(file.slice("app/".length)),
@@ -987,6 +1005,43 @@ test("the outcome bars run on a pull request that touches what they measure, and
     ci.slice(ci.indexOf("\n  changes:\n"), ci.indexOf("\n  rust:\n")),
     /\boutcome-bars: \$\{\{ steps\.scope\.outputs\.outcome-bars \}\}/,
   );
+});
+
+test("a draft pull request runs no macOS job but app builds, and marking it ready starts the run that does", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const jobs = ci.slice(ci.indexOf("\njobs:\n"));
+  const names = [...jobs.matchAll(/^  ([a-z][a-z0-9-]*):\n/gm)].map((m) => m[1]);
+  const body = (name) => {
+    const at = jobs.indexOf(`\n  ${name}:\n`);
+    const next = names[names.indexOf(name) + 1];
+    return jobs.slice(at, next ? jobs.indexOf(`\n  ${next}:\n`, at + 1) : undefined);
+  };
+  // Every job that can hold a macOS runner on a pull request: `app` is the one exception, and the
+  // nightly-only jobs never run on one.
+  const onMac = names.filter((n) => /runs-on: (macos-|\$\{\{ matrix\.os \}\})/.test(body(n)) && /macos-/.test(body(n)));
+  const nightly = (n) =>
+    /\n    if: (github\.event_name == 'schedule'|\$\{\{ github\.event_name == 'schedule' \}\})\n/.test(body(n));
+  const gated = onMac.filter((n) => n !== "app" && !nightly(n));
+  assert.ok(gated.includes("scenario") && gated.includes("outcome-bars"), gated.join(", "));
+  // The draft clause must bind the whole condition: no `||` outside parentheses before it.
+  const topLevelOr = (expr) => {
+    let depth = 0;
+    for (let i = 0; i < expr.length; i++) {
+      if (expr[i] === "(") depth++;
+      else if (expr[i] === ")") depth--;
+      else if (depth === 0 && expr.startsWith("||", i)) return true;
+    }
+    return false;
+  };
+  for (const n of gated) {
+    const cond = body(n).match(/\n    if: \$\{\{ (.*) && !github\.event\.pull_request\.draft \}\}\n/);
+    assert.ok(cond, `${n} skips a draft`);
+    assert.ok(!topLevelOr(cond[1]), `${n}'s draft clause binds the whole condition`);
+  }
+
+  assert.match(ci, /\n  pull_request:\n    types: \[opened, synchronize, reopened, ready_for_review\]\n/);
+  // The required check passes on a draft only because its legs were skipped.
+  assert.match(body("scenario-checks"), /\[ "\$DRAFT" = true \]; then want=skipped/);
 });
 
 // A gate says what the job's own step decides: the step stays, for the merge group and the push,

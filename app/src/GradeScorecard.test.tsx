@@ -35,6 +35,7 @@ vi.stubGlobal("matchMedia", (query: string) => ({
 }));
 
 const CARD: GradeScorecard = {
+  draft: false,
   grade: "01GRADE",
   skill: "deploy",
   level: { at: "project", local: false },
@@ -189,6 +190,12 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
       ", this version made a difference of +25 points against its previous version fedcba987654, and the skill +75 against no skill.",
     );
     expect(differenceSaid({ ...CARD, delta: null })).toBe(".");
+    expect(differenceSaid({ ...CARD, draft: true, delta: 17, delta_without: 59 })).toBe(
+      ", the draft made a difference of +17 points against the current version, and +59 against no skill.",
+    );
+    expect(differenceSaid({ ...CARD, draft: true, delta: 59 })).toBe(
+      ", the draft made a difference of +59 points.",
+    );
   });
 
   it("shows the previous version's arm, and says a grade a saved edit started (SK-57, SK-58)", async () => {
@@ -280,8 +287,9 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
     expect(expectation).toHaveTextContent("With the skill: 1 of 1 passed");
     expect(expectation).toHaveTextContent("Without it: 0 of 1 passed");
     expect(expectation).toHaveTextContent("With the skill, run 1: form.txt names Ada");
+    // The eval's table draws its rows once its collection is built, which may be a render later.
     fireEvent.click(
-      screen.getByRole("button", { name: "Open with the skill, chat 1, of outcome eval 4" }),
+      await screen.findByRole("button", { name: "Open with the skill, chat 1, of outcome eval 4" }),
     );
     expect(told.onChat).toHaveBeenCalledWith("01E");
     const judge = screen.getByRole("button", {

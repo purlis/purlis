@@ -256,6 +256,84 @@ fn a_chat_is_taken_back_from_the_pool_it_ran_on_by_a_window_started_after_the_se
 }
 
 #[test]
+fn a_chat_with_no_record_is_kept_where_a_restart_takes_it_back_and_found_there_after_the_setting_moves()
+ {
+    let machine = AMachine::new();
+    // Started on its pool by a window from before records were kept (#4683).
+    let number = 41;
+    machine.builds.leaves_running(number, None);
+
+    let back = machine.window();
+    assert!(back.left_running_in(number, Some("app")));
+    assert_eq!(back.reattach(number, &|_| {}), Ok(number));
+    back.close_what_was_not_reattached();
+    back.chats_kept.settled();
+    assert_eq!(
+        machine.kept(),
+        vec![number],
+        "the window took it back there"
+    );
+
+    // Its window goes, it runs on, and the setting moves.
+    machine.builds.leaves_running(number, None);
+    machine.moves_app_to(Some("tests"));
+    machine.tests.leaves_running(number, None);
+    machine.made.lock().unwrap().clear();
+    let again = machine.window();
+    assert!(again.left_running_in(number, Some("app")));
+    assert_eq!(again.pool_of(number).as_deref(), Some("builds"));
+    assert_eq!(machine.pools_reached(), vec!["builds".to_owned()]);
+}
+
+#[test]
+fn a_chat_with_no_record_its_pool_says_it_runs_is_kept_only_once_it_is_taken_back() {
+    let machine = AMachine::new();
+    machine.builds.leaves_running(41, None);
+    machine.builds.leaves_running(42, None);
+
+    let back = machine.window();
+    assert!(back.left_running_in(41, Some("app")));
+    assert!(back.left_running_in(42, Some("app")));
+    back.chats_kept.settled();
+    assert!(
+        machine.kept().is_empty(),
+        "a runner's word alone keeps none"
+    );
+    back.reattach(41, &|_| {}).unwrap();
+    back.close_what_was_not_reattached();
+    back.chats_kept.settled();
+    assert_eq!(machine.kept(), vec![41], "42 was closed, not taken back");
+}
+
+#[test]
+fn a_chat_found_with_no_record_and_not_taken_back_by_the_put_back_is_never_kept_after() {
+    let machine = AMachine::new();
+    machine.builds.leaves_running(41, None);
+    let back = machine.window();
+    assert!(back.left_running_in(41, Some("app")));
+    back.close_what_was_not_reattached();
+    machine.builds.leaves_running(41, None);
+    let _ = back.reattach(41, &|_| {});
+    back.chats_kept.settled();
+    assert!(machine.kept().is_empty(), "{:?}", machine.kept());
+}
+
+#[test]
+fn a_record_for_another_workspace_is_left_as_it_is_when_its_number_is_found_on_the_setting() {
+    let machine = AMachine::new();
+    machine.store.keep(41, "tests", "fleet");
+    machine.builds.leaves_running(41, None);
+    let back = machine.window();
+    assert!(back.left_running_in(41, Some("app")));
+    back.reattach(41, &|_| {}).unwrap();
+    back.chats_kept.settled();
+    assert_eq!(
+        machine.store.chats().get(&41).map(|chat| chat.pool.clone()),
+        Some("tests".to_owned())
+    );
+}
+
+#[test]
 fn a_kept_chat_is_asked_of_its_one_pool_and_not_of_the_one_its_workspace_moved_to() {
     let machine = AMachine::new();
     let number = machine.a_chat_left_on_builds();
@@ -663,6 +741,138 @@ fn a_runner_chat_left_running_before_this_window_is_taken_back_from_its_pool() {
     assert!(world.here.reattached().is_empty());
 }
 
+const FRESH: &str = "builds/fresh-0123456789abcdef";
+
+/// A world with a chat's fresh runner, reached by [`FRESH`], beside pool `builds`.
+fn a_world_with_a_fresh_runner() -> (World, Pretend) {
+    let mut world = a_world();
+    let fresh = Pretend::default();
+    fresh.on_a_runner();
+    let to_a_pool: ToAPool = {
+        let (builds, fresh) = (world.builds.clone(), fresh.clone());
+        Arc::new(move |pool| match pool {
+            "builds" => Ok(Box::new(builds.clone()) as Box<dyn SessionHost>),
+            FRESH => Ok(Box::new(fresh.clone()) as Box<dyn SessionHost>),
+            other => Err(format!("pool {other} is not kept")),
+        })
+    };
+    world.sessions = RoutedSessions::new(
+        Path::new("/planes/a"),
+        Box::new(world.here.clone()),
+        runs_on(),
+        on_pools(),
+        to_a_pool,
+    );
+    (world, fresh)
+}
+
+/// A chat left running on its fresh runner is its pool's for what asks, and every command after
+/// reaches that runner (#4569).
+#[test]
+fn a_chat_left_running_on_its_own_runner_is_taken_back_from_there() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    fresh.leaves_running(7, None);
+    assert!(
+        !world.sessions.left_running_in(7, Some("app")),
+        "the pool's own runner does not have it"
+    );
+    assert!(world.sessions.left_running_on(7, FRESH));
+    assert_eq!(world.sessions.reattach(7, &|_| {}).unwrap(), 7);
+    assert_eq!(fresh.reattached(), vec![7]);
+    assert_eq!(world.sessions.pool_of(7).as_deref(), Some("builds"));
+    assert!(!world.sessions.left_running_on(8, FRESH));
+}
+
+/// Waits for what a fresh runner's end is told, by the thread it runs on.
+fn told_of_its_end(sessions: &RoutedSessions, goes: bool) -> Vec<String> {
+    let (tell, told) = std::sync::mpsc::channel();
+    sessions.take_back_fresh(
+        FRESH,
+        Some("app"),
+        Box::new(move |failed| {
+            tell.send(failed).expect("the test waits");
+            goes
+        }),
+    );
+    let failed = told
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the end is told");
+    // The host is let go of on that thread, after it is told.
+    std::thread::sleep(Duration::from_millis(200));
+    failed
+}
+
+/// **A fresh runner's work is fetched first, and what ends it hears whether it came** (#4569), and
+/// the way to a runner that went goes with it.
+#[test]
+fn a_fresh_runners_work_comes_back_before_it_goes_and_its_host_with_it() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    assert_eq!(told_of_its_end(&world.sessions, true), Vec::<String>::new());
+    assert_eq!(
+        fresh.fetched(),
+        vec![("app".to_owned(), FRESH.to_owned())],
+        "from that runner, by its name"
+    );
+    assert_eq!(fresh.let_go(), 1, "its link goes with it");
+    assert!(!lock(&world.sessions.shared.pools).contains_key(FRESH));
+}
+
+/// A runner nothing ran on is asked nothing on its way out (#4569): a refused start's runner goes
+/// though the link that would fetch from it is what failed.
+#[test]
+fn a_runner_nothing_ran_on_goes_with_nothing_fetched() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    fresh.fetch_fails("the link went");
+    let (tell, told) = std::sync::mpsc::channel();
+    world.sessions.take_back_fresh(
+        FRESH,
+        None,
+        Box::new(move |failed| {
+            tell.send(failed).expect("the test waits");
+            true
+        }),
+    );
+    let failed: Vec<String> = told
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the end is told");
+    assert_eq!(failed, Vec::<String>::new());
+    assert!(fresh.fetched().is_empty());
+}
+
+/// A runner whose work did not come keeps its host, and is said to have failed: what ends it holds
+/// on to the claim.
+#[test]
+fn a_fresh_runner_whose_work_did_not_come_is_told_so_and_stays() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    fresh.fetch_fails("the link went");
+    assert_eq!(
+        told_of_its_end(&world.sessions, false),
+        vec!["the link went".to_owned()]
+    );
+    assert_eq!(fresh.let_go(), 0);
+    assert!(lock(&world.sessions.shared.pools).contains_key(FRESH));
+}
+
+/// A chat with a runner of its own stays on it whichever pool, if any, its workspace runs on now.
+#[test]
+fn a_chat_with_a_runner_of_its_own_starts_there_though_its_workspace_moved() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    let named = Named {
+        runner: Some(FRESH.to_owned()),
+        ..named_in("runs-here-now")
+    };
+    let composed = world
+        .sessions
+        .open_named(
+            None,
+            &named,
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("it starts");
+    assert!(fresh.running().contains(&composed.number));
+}
+
 #[test]
 fn a_pool_is_never_asked_for_a_chat_of_a_workspace_that_does_not_run_on_it() {
     let world = a_world();
@@ -841,12 +1051,16 @@ fn the_routing_says_every_method_of_a_chats_host() {
     let every = methods(trait_source, "pub trait SessionHost");
     let said = methods(routed_source, "impl SessionHost for RoutedSessions");
     // `fetch_back` and `fetch_back_left` are the routing's own, through its saver
-    // (`FetchingBack`).
+    // (`FetchingBack`), and the two a fresh runner's end asks are its own host's.
+    let its_own = [
+        "fetch_back",
+        "fetch_back_left",
+        "fetch_back_whole",
+        "let_go_of_runner",
+    ];
     let unsaid: Vec<&String> = every
         .iter()
-        .filter(|one| {
-            !said.contains(one) && !matches!(one.as_str(), "fetch_back" | "fetch_back_left")
-        })
+        .filter(|one| !said.contains(one) && !its_own.contains(&one.as_str()))
         .collect();
     assert!(unsaid.is_empty(), "the routing does not say {unsaid:?}");
 }

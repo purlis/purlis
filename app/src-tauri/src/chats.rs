@@ -10,7 +10,7 @@
 //! It is a layer of its own so that the record is written from what the app itself did, and
 //! not from anything a harness said. Nothing here reads a session's output.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -19,7 +19,7 @@ use purlis_core::engine::Size;
 use purlis_core::eventlog::{Attributes, Began, RunOf};
 use purlis_core::harness::{Harness, SessionId};
 use purlis_core::hoststart::Armed;
-use purlis_core::reopen::{Chat, Focus, Record, Reopened, View};
+use purlis_core::reopen::{Chat, Focus, Layout, Record, Reopened, View};
 
 use crate::host::{Opening, SessionHost};
 #[cfg(test)]
@@ -817,6 +817,15 @@ pub struct Chats {
     /// The branch the window's sidebar is focused on — its cockpit (FM-5) — as it last said,
     /// or at a launch as the record had it. Held here for [`Self::views`]' reason.
     focus: Mutex<Option<Focus>>,
+    /// **Every tab as a tree of panes, as the window last reported it** (#4751), or at a
+    /// launch as the record had it: what is on screen is derived from it
+    /// ([`Self::looked_at`]). `None` until a record or the window holds one, which is a record
+    /// written before tabs were recorded: that is read the old way, by each chat's `beside`
+    /// and `shows` and the chat in [`Self::front`], until the window reports.
+    ///
+    /// **The window's to say, for the reason [`Self::views`] is**, and held to two rules here
+    /// ([`Self::lay_out`]): no chat in two panes, and no chat that is not open.
+    layout: Mutex<Option<Layout>>,
     /// The order the window's strip draws the chats in, by session, as it last said — or, at
     /// a launch, the order the record listed them in (ADR 0039, as amended by SI-6).
     ///
@@ -921,6 +930,22 @@ pub struct Chats {
     /// (#1472): no chat starts in a folder that is going, and none goes while one starts there.
     /// **In memory only.**
     going: crate::goingaway::Going,
+    /// The chats a start is giving a runner of their own to now, by id (#4569).
+    fresh_starting: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// The chats whose fresh runner's work is on its way back now, by id (#4569).
+    fresh_ending: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// When the fresh runners were last swept ([`Self::sweeps_fresh_runners`]).
+    fresh_swept: Mutex<Option<std::time::Instant>>,
+    /// **The fresh runners kept since their work is not all here**, by their chat's id (#4569):
+    /// what the window's Notice offers Fetch again and Discard for. **In memory only**: each
+    /// sweep finds them again from their records.
+    fresh_kept: Arc<Mutex<BTreeMap<String, crate::freshkept::FreshKept>>>,
+    /// Told the kept runners each time they change.
+    fresh_told: Arc<Mutex<Option<crate::freshkept::Tell>>>,
+    /// Whether the chats of the last launch have come back, or could not (#4569).
+    put_back_settled: std::sync::atomic::AtomicBool,
+    /// Whether this window swept the claims a crash left with no record (#4569).
+    orphans_swept: std::sync::atomic::AtomicBool,
     /// What decides the sandbox of a chat on no profile in a test, in place of
     /// [`Self::sandbox_off_profile`]: that asks this machine and checks the real program, and a
     /// test's stand-in harness lives where a chat can write, so it could never start sandboxed.
@@ -1246,6 +1271,92 @@ impl LetGo {
     }
 }
 
+/// How a fresh runner goes (#4569).
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Going {
+    /// Only once this project is proved to hold all of its work.
+    OnProof,
+    /// A start made it and failed: nothing ran there.
+    NothingRan,
+    /// The person discarded what it holds.
+    Discarded,
+}
+
+/// Tells `told` the kept fresh runners in `kept` as they are now.
+#[cfg(unix)]
+fn tell_fresh_kept(
+    kept: &Mutex<BTreeMap<String, crate::freshkept::FreshKept>>,
+    told: &Mutex<Option<crate::freshkept::Tell>>,
+) {
+    let now: Vec<crate::freshkept::FreshKept> = lock(kept).values().cloned().collect();
+    if let Some(tell) = lock(told).clone() {
+        tell(now);
+    }
+}
+
+/// The least time between two sweeps of a project's fresh runners (#4569).
+#[cfg(unix)]
+const FRESH_SWEPT_AT_MOST_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The runner of its own a chat starts on, and whether this start made it (#4569).
+struct OwnRunner {
+    name: String,
+    made: bool,
+}
+
+/// Where a start on a pool runs, as far as a runner of its own goes (#4569).
+#[derive(Default)]
+struct OwnRunnerOrNot {
+    own: Option<OwnRunner>,
+    /// Why a chat that would have one stays on the pool's own runner, for its tab.
+    stays_because: Option<String>,
+}
+
+/// Lets go of a fresh runner's end however it finishes, a panic and a thread never started among
+/// them, or that runner could never be tried again (#4569).
+struct FreshEnding {
+    ending: Arc<Mutex<std::collections::HashSet<String>>>,
+    id: String,
+}
+
+impl Drop for FreshEnding {
+    fn drop(&mut self) {
+        lock(&self.ending).remove(&self.id);
+    }
+}
+
+/// **A start that gives a chat a runner of its own, while it lasts** (#4569): no sweep takes the
+/// chat for gone meanwhile, and **a start that fails lets go of the runner it made**, whichever
+/// of its many steps failed, since a retry of a dispatch is a chat of another id. A runner a
+/// start did not make keeps what its chat did there, for that chat's close.
+struct StartOnItsOwnRunner<'a> {
+    chats: &'a Chats,
+    id: String,
+    made: bool,
+}
+
+impl<'a> StartOnItsOwnRunner<'a> {
+    fn of(chats: &'a Chats, id: &str) -> Self {
+        lock(&chats.fresh_starting).insert(id.to_owned());
+        Self {
+            chats,
+            id: id.to_owned(),
+            made: false,
+        }
+    }
+}
+
+impl Drop for StartOnItsOwnRunner<'_> {
+    fn drop(&mut self) {
+        lock(&self.chats.fresh_starting).remove(&self.id);
+        #[cfg(unix)]
+        if self.made {
+            self.chats.fresh_runner_ends(&self.id, false);
+        }
+    }
+}
+
 impl Chats {
     /// Chats whose record is written by `record_it` every time what is open changes, in no
     /// project: what the tests use when the project is not what they are about.
@@ -1310,6 +1421,7 @@ impl Chats {
             recorded_order: Mutex::new(Vec::new()),
             views: Mutex::new(Vec::new()),
             focus: Mutex::new(None),
+            layout: Mutex::new(None),
             order: Mutex::new(Vec::new()),
             record_it,
             writing: Mutex::new(()),
@@ -1336,6 +1448,13 @@ impl Chats {
             told: Mutex::new(HashMap::new()),
             models: Mutex::new(HashMap::new()),
             going: crate::goingaway::Going::default(),
+            fresh_starting: Arc::default(),
+            fresh_ending: Arc::default(),
+            fresh_swept: Mutex::new(None),
+            fresh_kept: Arc::default(),
+            fresh_told: Arc::default(),
+            put_back_settled: std::sync::atomic::AtomicBool::new(false),
+            orphans_swept: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
             deciding: None,
         }
@@ -1507,6 +1626,291 @@ impl Chats {
             Err(words) => words,
             Ok(_) => purlis_core::profilestore::onrunner::signed_out_on_the_runner(&pool, profile),
         }
+    }
+
+    /// The fresh runner the chat `id` keeps, by the name a link reaches it by, with the workspace
+    /// its work goes back to (#4569).
+    #[cfg(unix)]
+    fn own_runner_of(&self, id: &str) -> Option<(String, String)> {
+        let config = self.pools_in.as_ref()?;
+        let (_, kept) = purlis_core::runners::fresh_runner_of(config, id).ok()??;
+        let workspace = kept.of.as_ref()?.workspace.clone();
+        Some((kept.link_name(), workspace))
+    }
+
+    /// [`Self::own_runner_of`]: pools run on Unix alone.
+    #[cfg(not(unix))]
+    fn own_runner_of(&self, _id: &str) -> Option<(String, String)> {
+        None
+    }
+
+    /// **Whether chat `session` runs on a runner of its own** (#4569): what a move asks.
+    pub(crate) fn on_its_own_runner(&self, session: u32) -> bool {
+        let id = lock(&self.open)
+            .get(&session)
+            .and_then(|running| running.chat.identity.id.clone());
+        id.is_some_and(|id| self.own_runner_of(&id).is_some())
+    }
+
+    /// **Whether any chat of this window has the id `id`, or may yet** (#4569): open, on its way
+    /// back, waiting to be started by the person, or starting now. A fresh runner goes only once
+    /// none does.
+    fn holds_a_chat(&self, id: &str) -> bool {
+        let is_it = |chat: &Chat| chat.identity.id.as_deref() == Some(id);
+        lock(&self.open).values().any(|one| is_it(&one.chat))
+            || lock(&self.coming).iter().any(|one| is_it(&one.chat))
+            || lock(&self.would_not_start)
+                .iter()
+                .any(|one| is_it(&one.chat))
+            || lock(&self.fresh_starting).contains(id)
+    }
+
+    /// **The chat `id` is over, so what its fresh runner holds comes back, and then it goes**
+    /// (#3818, #4569), **only on proof** that this project holds every commit and change it holds.
+    /// A runner whose work is not all here stays, with its record, and the window's Notice says
+    /// what is missing and offers Fetch again and Discard ([`Self::fresh_runners_kept`]); one on
+    /// its way already is left to that. `ran` is false for a start that made a runner and failed:
+    /// it holds nothing, and asking it could fail as that start did. Said to be ending before a
+    /// start's word is read, as a start says its word before it reads this one, so one of the two
+    /// always sees the other.
+    #[cfg(unix)]
+    fn fresh_runner_ends(&self, id: &str, ran: bool) {
+        self.fresh_runner_goes(
+            id,
+            if ran {
+                Going::OnProof
+            } else {
+                Going::NothingRan
+            },
+        );
+    }
+
+    /// [`Self::fresh_runner_ends`], or let go of with no proof where `going` says so.
+    #[cfg(unix)]
+    fn fresh_runner_goes(&self, id: &str, going: Going) {
+        let (Some(config), Some((runner, workspace))) = (&self.pools_in, self.own_runner_of(id))
+        else {
+            return;
+        };
+        if !lock(&self.fresh_ending).insert(id.to_owned()) {
+            return;
+        }
+        let ending = FreshEnding {
+            ending: Arc::clone(&self.fresh_ending),
+            id: id.to_owned(),
+        };
+        if self.holds_a_chat(id) {
+            return;
+        }
+        let config = config.clone();
+        let (kept, told) = (Arc::clone(&self.fresh_kept), Arc::clone(&self.fresh_told));
+        let (runner_named, workspace_named) = (runner.clone(), workspace.clone());
+        self.sessions.take_back_fresh(
+            &runner,
+            (going == Going::OnProof).then_some(workspace.as_str()),
+            Box::new(move |missing| {
+                let end = crate::clusterpools::fresh_runner_ended(
+                    &config,
+                    &ending.id,
+                    &missing,
+                    going == Going::OnProof,
+                );
+                let went = matches!(end, crate::clusterpools::FreshEnd::Went);
+                {
+                    let mut kept = lock(&kept);
+                    match end {
+                        crate::clusterpools::FreshEnd::Went => {
+                            kept.remove(&ending.id);
+                        }
+                        crate::clusterpools::FreshEnd::Kept { why, gone } => {
+                            kept.insert(
+                                ending.id.clone(),
+                                crate::freshkept::FreshKept {
+                                    chat: ending.id.clone(),
+                                    runner: runner_named,
+                                    workspace: workspace_named,
+                                    why,
+                                    gone,
+                                },
+                            );
+                        }
+                    }
+                }
+                tell_fresh_kept(&kept, &told);
+                went
+            }),
+        );
+    }
+
+    /// **The fresh runners of this project kept since their work is not all here** (#4569).
+    pub(crate) fn fresh_runners_kept(&self) -> Vec<crate::freshkept::FreshKept> {
+        lock(&self.fresh_kept).values().cloned().collect()
+    }
+
+    /// Tells `tell` the kept fresh runners each time they change (#4569).
+    pub(crate) fn tells_fresh_kept(&self, tell: crate::freshkept::Tell) {
+        *lock(&self.fresh_told) = Some(tell);
+    }
+
+    /// **Fetch again** (#4569): the kept runner of chat `id` is asked again for its work, and goes
+    /// once all of it is here. Refused for a runner that is not kept.
+    pub(crate) fn fetches_fresh_runner_again(&self, id: &str) -> Result<(), String> {
+        if !lock(&self.fresh_kept).contains_key(id) {
+            return Err("That runner is no longer kept, so there is nothing to fetch.".to_owned());
+        }
+        #[cfg(unix)]
+        self.fresh_runner_goes(id, Going::OnProof);
+        Ok(())
+    }
+
+    /// **Discard** (#4569): the person lets the kept runner of chat `id` go with what it holds
+    /// that is not here. Refused for a runner that is not kept, or whose chat is open again.
+    pub(crate) fn discards_fresh_runner(&self, id: &str) -> Result<(), String> {
+        if !lock(&self.fresh_kept).contains_key(id) {
+            return Err(
+                "That runner is no longer kept, so there is nothing to discard.".to_owned(),
+            );
+        }
+        if self.holds_a_chat(id) {
+            return Err(
+                "That task is open again, so its runner stays. Close the task first.".to_owned(),
+            );
+        }
+        tracing::info!("purlis: the person discards chat {id}'s fresh runner and what it holds");
+        #[cfg(unix)]
+        self.fresh_runner_goes(id, Going::Discarded);
+        Ok(())
+    }
+
+    /// **Every fresh runner of this project whose chat is gone goes** (#4569): a release that
+    /// failed, a task closed in a window that went, and a chat forgotten since. It waits for the
+    /// put back to settle, since a chat still to come back has its runner, and then runs at most
+    /// once a minute, as the window comes into focus. Other projects' are their windows' own:
+    /// their chats are not known here.
+    #[cfg(unix)]
+    pub(crate) fn sweeps_fresh_runners(&self) {
+        let Some(config) = &self.pools_in else {
+            return;
+        };
+        let Ok(plane) = purlis_core::scaffold::planefile::id_to_hold_by(&self.project) else {
+            return;
+        };
+        if !self.put_back_settled.load(Ordering::SeqCst) || self.ending.load(Ordering::SeqCst) {
+            return;
+        }
+        {
+            let mut swept = lock(&self.fresh_swept);
+            if swept.is_some_and(|at| at.elapsed() < FRESH_SWEPT_AT_MOST_EVERY) {
+                return;
+            }
+            *swept = Some(std::time::Instant::now());
+        }
+        // Once a launch, off the window: a claim a crash left before its record (#4569).
+        if !self.orphans_swept.swap(true, Ordering::SeqCst) {
+            let config = config.clone();
+            let spawned = std::thread::Builder::new()
+                .name("purlis-orphan-claims".into())
+                .spawn(move || crate::clusterpools::sweep_orphan_claims(&config));
+            if let Err(why) = spawned {
+                tracing::warn!("purlis: claims no record holds were not swept: {why}");
+            }
+        }
+        for kept in purlis_core::runners::fresh_runners(config).unwrap_or_default() {
+            // Another checkout of the project holds the same id: only this one's runners, or a
+            // row from before rows named their checkout (the person's ruling of 2026-11-02).
+            let ours = kept
+                .of
+                .as_ref()
+                .is_some_and(|of| of.is_of(&plane, &self.project));
+            if let (true, Some(id)) = (ours, &kept.chat)
+                && !self.holds_a_chat(id)
+            {
+                self.fresh_runner_ends(id, true);
+            }
+        }
+    }
+
+    /// [`Self::sweeps_fresh_runners`]: pools run on Unix alone.
+    #[cfg(not(unix))]
+    pub(crate) fn sweeps_fresh_runners(&self) {}
+
+    /// **The runner of its own a chat starting in `workspace` runs on**, made now (#3818): none but
+    /// on a pool the person marked as their own, whose operator keeps such a runner until its work
+    /// is back, for a chat `kept_for` says keeps nothing. A profile purlis can't say the sign-in of
+    /// keeps its work, as a chat there always has, and so does one with credentials to hand,
+    /// which go to no pool's runner and are refused there in their own words.
+    #[cfg(unix)]
+    fn fresh_runner_for(
+        &self,
+        id: &str,
+        workspace: Option<&str>,
+        sign_in: Option<&purlis_core::profilesignin::AtStart>,
+    ) -> Result<OwnRunnerOrNot, String> {
+        use purlis_core::clusterpool::{ChatOnARunner, Keeping, kept_for};
+        use purlis_core::harness_declaration::SignInKind;
+        // Its runner is on its way out: what started there now would go with it.
+        if lock(&self.fresh_ending).contains(id) {
+            return Err(
+                "This task's runner is closing, so nothing was started. Start it again \
+                        in a moment."
+                    .to_owned(),
+            );
+        }
+        // A chat that has one stays on it, whatever starts it again: its conversation is there.
+        if let Some((name, _)) = self.own_runner_of(id) {
+            return Ok(OwnRunnerOrNot {
+                own: Some(OwnRunner { name, made: false }),
+                stays_because: None,
+            });
+        }
+        let (Some(config), Some(workspace), Some(pool)) =
+            (&self.pools_in, workspace, self.sessions.pool_for(workspace))
+        else {
+            return Ok(OwnRunnerOrNot::default());
+        };
+        let Ok(Some((held, _))) = purlis_core::runners::cluster_runner_for(config, &pool) else {
+            return Ok(OwnRunnerOrNot::default());
+        };
+        let keeping = kept_for(&ChatOnARunner {
+            dispatched: crate::hostedsessions::is_a_short_task(),
+            sign_in: Some(sign_in.map_or(SignInKind::Subscription, |sign_in| sign_in.kind)),
+            keep_work: None,
+        });
+        let to_hand = sign_in.is_some_and(|sign_in| !sign_in.credentials.is_empty());
+        if keeping == Keeping::Kept || to_hand || !held.owned() {
+            return Ok(OwnRunnerOrNot::default());
+        }
+        let why = crate::clusterpools::no_fresh_runner_for_the_project(&self.project, held.name())
+            .or_else(|| crate::clusterpools::why_no_fresh_runner(config, &held));
+        if let Some(why) = why {
+            return Ok(OwnRunnerOrNot {
+                own: None,
+                stays_because: Some(why),
+            });
+        }
+        let of = purlis_core::runners::FreshOf {
+            plane: purlis_core::scaffold::planefile::id_to_hold_by(&self.project)
+                .map_err(|why| format!("this project's id could not be read: {why}"))?,
+            workspace: workspace.to_owned(),
+            // Only this checkout's window lets it go (the person's ruling of 2026-11-02).
+            root: Some(self.project.to_string_lossy().into_owned()),
+        };
+        let name = crate::clusterpools::fresh_runner(config, &pool, id, of)?;
+        Ok(OwnRunnerOrNot {
+            own: Some(OwnRunner { name, made: true }),
+            stays_because: None,
+        })
+    }
+
+    /// [`Self::fresh_runner_for`]: pools run on Unix alone.
+    #[cfg(not(unix))]
+    fn fresh_runner_for(
+        &self,
+        _id: &str,
+        _workspace: Option<&str>,
+        _sign_in: Option<&purlis_core::profilesignin::AtStart>,
+    ) -> Result<OwnRunnerOrNot, String> {
+        Ok(OwnRunnerOrNot::default())
     }
 
     /// Readies each chat's profile on the pool it starts on through `on_pools` (#2049).
@@ -1947,6 +2351,16 @@ impl Chats {
         let Some(number) = chat.number else {
             return false;
         };
+        // Its own fresh runner first: it runs nowhere else (#4569).
+        if let Some((runner, _)) = chat
+            .identity
+            .id
+            .as_deref()
+            .and_then(|id| self.own_runner_of(id))
+            && self.sessions.left_running_on(number, &runner)
+        {
+            return true;
+        }
         let workspace = workspace_at_start(Some(&self.project), chat.cwd.as_deref());
         self.sessions.left_running_in(number, workspace.as_deref())
     }
@@ -3683,9 +4097,63 @@ impl Chats {
         let on_the_runner = !reattaching
             && !operator_shell
             && harness.is_some()
-            && self
+            && (self
                 .sessions
-                .composes_its_harness_chats_in(workspace.as_deref());
+                .composes_its_harness_chats_in(workspace.as_deref())
+                // Its own runner, wherever its workspace runs since (#4569).
+                || chat
+                    .identity
+                    .id
+                    .as_deref()
+                    .is_some_and(|id| self.own_runner_of(id).is_some()));
+        // Who the chat is, and the run this start begins (ADR 0066). **The id is minted once**
+        // per clone and device (V43: a copy's was minted again before `put_back` got it),
+        // when no record holds one, on this device, and a chat put back or started again keeps
+        // the one it had, with its origin device. Every start begins a run of its own.
+        let identity = match &chat.identity.id {
+            // Reattached, it is the run it was (#2006).
+            Some(_) if reattaching && chat.identity.run.is_some() => chat.identity.clone(),
+            Some(_) => purlis_core::reopen::Identity {
+                run: Some(minted()),
+                ..chat.identity.clone()
+            },
+            None => purlis_core::reopen::Identity {
+                id: Some(minted()),
+                device: self.device.clone(),
+                run: Some(minted()),
+                resumed_from: chat.identity.resumed_from.clone(),
+            },
+        };
+        // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
+        // composes its own line, and would start it with none of them.
+        if on_the_runner && chat.graded {
+            return Err(
+                "A grade's chat runs on this machine alone, and this project's chats are started \
+                 by a runner, so nothing was started."
+                    .to_owned(),
+            );
+        }
+        // **A short task on a cluster pool gets a runner of its own** (#3818), kept only while it
+        // lasts. Made before its profile is readied, since that is where the profile goes, and
+        // said to be starting first, so no sweep takes it for one whose chat is gone (#4569).
+        let mut own_start = identity
+            .id
+            .as_deref()
+            .filter(|_| on_the_runner)
+            .map(|id| StartOnItsOwnRunner::of(self, id));
+        let mut stays_on_the_pools = None;
+        let own_runner = match (&mut own_start, identity.id.as_deref()) {
+            (Some(start), Some(id)) => {
+                let chosen = self.fresh_runner_for(id, workspace.as_deref(), sign_in)?;
+                stays_on_the_pools = chosen.stays_because;
+                start.made = chosen.own.as_ref().is_some_and(|own| own.made);
+                chosen.own.map(|own| own.name)
+            }
+            _ => None,
+        };
+        // A restart there sends none of this machine's branches over what the chat did (#4569).
+        let its_code_is_there =
+            own_runner.is_some() && own_start.as_ref().is_some_and(|start| !start.made);
         // **Whose skills it has** (SK-15g, #3604): a runner's chat is armed by its runner, and
         // so is one this window reattaches from a runner, which its start armed there too. Its
         // skills are read here for neither, and its router is not asked again.
@@ -3696,15 +4164,6 @@ impl Chats {
                     .number
                     .is_some_and(|number| self.sessions.composes_the_harness_chat(number))
         });
-        // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
-        // composes its own line, and would start it with none of them.
-        if on_the_runner && chat.graded {
-            return Err(
-                "A grade's chat runs on this machine alone, and this project's chats are started \
-                 by a runner, so nothing was started."
-                    .to_owned(),
-            );
-        }
         // **Its profile is kept, and signed in, on the pool's runner before it starts there**
         // (#2049): signed in, it starts with nobody asked, a moved chat's too; signed out, it
         // starts nothing and waits as one Ask to sign it in on that pool. Settings over the pool's
@@ -3714,9 +4173,19 @@ impl Chats {
         }
         if on_the_runner
             && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
-            && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
+            // A chat's own runner's pool, wherever its workspace runs since (#4569).
+            && let Some(pool) = own_runner
+                .as_deref()
+                .and_then(|runner| runner.split_once('/'))
+                .map(|(pool, _)| pool.to_owned())
+                .or_else(|| self.sessions.pool_for(workspace.as_deref()))
         {
-            on_pools.ready(&self.project, &pool, profile)?;
+            match &own_runner {
+                Some(runner) => {
+                    on_pools.ready_on_its_own_runner(&self.project, &pool, runner, profile)?;
+                }
+                None => on_pools.ready(&self.project, &pool, profile)?,
+            }
         }
         // What its settings left out on their way there, said once on its tab (#3848, #3867).
         let left_out = chat
@@ -3724,6 +4193,10 @@ impl Chats {
             .as_deref()
             .filter(|_| on_the_runner)
             .and_then(purlis_core::profilestore::onrunner::left_out_said);
+        let left_out = match (left_out, stays_on_the_pools) {
+            (Some(left_out), Some(stays)) => Some(format!("{stays} {left_out}")),
+            (left_out, stays) => left_out.or(stays),
+        };
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
         // Never a port given for a grant to serve on alone: a runner opens no door (#2019).
@@ -3793,24 +4266,6 @@ impl Chats {
                 )?,
                 None => purlis_core::profilesignin::Handed::default(),
             };
-        // Who the chat is, and the run this start begins (ADR 0066). **The id is minted once**
-        // per clone and device (V43: a copy's was minted again before `put_back` got it),
-        // when no record holds one, on this device, and a chat put back or started again keeps
-        // the one it had, with its origin device. Every start begins a run of its own.
-        let identity = match &chat.identity.id {
-            // Reattached, it is the run it was (#2006).
-            Some(_) if reattaching && chat.identity.run.is_some() => chat.identity.clone(),
-            Some(_) => purlis_core::reopen::Identity {
-                run: Some(minted()),
-                ..chat.identity.clone()
-            },
-            None => purlis_core::reopen::Identity {
-                id: Some(minted()),
-                device: self.device.clone(),
-                run: Some(minted()),
-                resumed_from: chat.identity.resumed_from.clone(),
-            },
-        };
         let cause = match why {
             Why::New => Began::Start,
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
@@ -4385,6 +4840,7 @@ impl Chats {
         self.puts_its_repos_on_its_claim(
             workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
             chat.cwd.as_deref(),
+            own_runner.as_deref(),
             // A start its runner is sure to refuse adds nothing to the Claim.
             clones_at_start
                 .as_deref()
@@ -4397,6 +4853,8 @@ impl Chats {
                 .open_named(
                     chat.number,
                     &crate::host::Named {
+                        runner: own_runner.clone(),
+                        its_code_is_there,
                         chat: identity.id.clone(),
                         run: identity.run.clone(),
                         profile: chat.profile.clone(),
@@ -4562,6 +5020,10 @@ impl Chats {
         lock(&self.told).remove(&session);
         lock(&self.starting_as).remove(&session);
         lock(&self.ended).remove(&session);
+        // Its record holds it from here: its close answers for its runner.
+        if let Some(start) = &mut own_start {
+            start.made = false;
+        }
         lock(&self.open).insert(
             session,
             Running {
@@ -4677,6 +5139,7 @@ impl Chats {
         self.blocks.ended(session);
         // The GitHub App tokens minted for it are revoked, in the background (#3808).
         purlis_core::forge::apptoken::chat_ended(&self.project, session);
+        let mut last_of = None;
         if let Some(gone) = gone {
             // A chat's grants end with it (D-1348-1): kept only while a session of that chat is
             // open, which a restart for a grant is, since it starts before the old one ends.
@@ -4693,6 +5156,8 @@ impl Chats {
                     let mut grants = lock(&self.grants);
                     grants.remove(id);
                     self.took_back(id);
+                    drop(grants);
+                    last_of = Some(id.to_owned());
                 }
             }
             let mut let_go = lock(&self.let_go);
@@ -4711,32 +5176,52 @@ impl Chats {
         drop(front);
         let closed = self.sessions.close(session);
         self.write_it_down();
+        // Its own runner goes with it, what it holds back here first (#3818, #4569). Not as the
+        // project is let go of: the record it just wrote brings the chat back to that runner.
+        #[cfg(unix)]
+        // Nor where its close failed: what still runs there may commit, and the sweep comes back.
+        if let Some(id) = last_of.filter(|_| closed.is_ok() && !self.ending.load(Ordering::SeqCst))
+        {
+            self.fresh_runner_ends(&id, true);
+        }
         // The folder of links to the plane's skills it used, once its program has ended, where
         // no other running chat uses it (SK-24).
         purlis_core::skills::tidy_here_later(purlis_core::skills::TIDY_AFTER_A_CLOSE);
         closed
     }
 
-    /// Which chat is in front, or none.
+    /// Which chat is in front, or none: the first chat in the project window's front tab on
+    /// the strip it draws ([`Layout::lead`]), once a layout is held, and the one the window
+    /// last brought to front ([`Self::bring_to_front`]) before that.
     pub fn front(&self) -> Option<u32> {
+        if let Some(layout) = lock(&self.layout).as_ref() {
+            return layout.lead();
+        }
         *lock(&self.front)
     }
 
-    /// **The chats the person is looking at**: every chat on screen in the tab in front, in
-    /// the order of their numbers, and none when no chat's tab is in front.
+    /// **The chats the person is looking at**, in the order of their numbers.
     ///
-    /// A tab is its session's, so "in front" names the tab's own chat whatever its panes
-    /// draw; a tab that opened on a view stands for the first chat beside it, and the window
-    /// says every other chat there is beside that one (#1525). On screen with it is every chat that has a pane in that tab ([`Self::tab_shows`]
-    /// says which, #1489), and each pane draws its own chat or the chat it was switched to
-    /// (#1486). So this is: the chat in front, or the task its pane shows in place of it; and
-    /// for every chat beside it, the same. A task in a tab of its own is in front itself.
+    /// **Once a layout is held** ([`Self::lay_out`], or the record's at a launch, #4751): every
+    /// chat in a pane of the front tab of the drawn strip in the project window, and of the
+    /// front tab of each tab window ([`Layout::on_screen`]). Empty panes and views count as
+    /// nothing. The record's layout stands until the window reports one.
+    ///
+    /// **Before that, the old way**, for a record written before tabs were recorded: the chat in
+    /// front, or the task its pane shows in place of it (#1486); and every chat beside it, the
+    /// same (#1489). A tab that opened on a view stands for the first chat beside it (#1525).
     ///
     /// The one answer for both things that turn on it: a reported task is not ended under the
     /// person reading it (#1485), and no notification is sent about a chat already on screen.
-    /// A chat hidden behind a task its pane shows is not looked at. Whether the window has the
-    /// keyboard is not asked here.
+    /// Whether the window has the keyboard is not asked here: a notification asks that too
+    /// (`asknotify::Looking`), so a stale layout with the window in the background holds none
+    /// back.
     pub fn looked_at(&self) -> Vec<u32> {
+        // **Derived from the tree once there is one** (#4751): every chat in a pane of the front
+        // tab of each window on screen ([`Layout::on_screen`]). Before that, the old way.
+        if let Some(layout) = lock(&self.layout).as_ref() {
+            return layout.on_screen();
+        }
         let Some(front) = self.front() else {
             return Vec::new();
         };
@@ -4834,40 +5319,53 @@ impl Chats {
         Ok(())
     }
 
-    /// **Where chat `session`'s pane is and what it shows** (#1486, #1489): chat `shown` in
-    /// place of its own, or its own again with `None`; and the chat whose tab the pane is in,
-    /// `beside`, or `None` for a chat that is its tab's own or has no pane. The record keeps
-    /// both, so a reloaded window and the next launch put each pane back. Written only when
-    /// one changes, for [`Self::pin`]'s reason.
+    /// **Every tab the window has, as a tree of panes** (#4751): held, and written into the
+    /// record so a relaunch puts each split, its sizes, its views and each strip's front tab
+    /// back. From here on what is on screen is derived from it ([`Self::looked_at`]), and the
+    /// old per-chat `beside` and `shows` are no longer written.
     ///
-    /// **What is kept is the window's word, and it says only where the person is looking**
-    /// ([`Self::looked_at`]): the core starts and allows nothing by these numbers. A reported
-    /// task's end, already due, is held while they say the person is reading it, and no
-    /// notification is sent about a chat they say is on screen. The window shows a chat only
-    /// where the chat named is open and below this one. A chat is never said to show itself,
-    /// or to be beside itself.
-    pub fn tab_shows(
-        &self,
-        session: u32,
-        shown: Option<u32>,
-        beside: Option<u32>,
-    ) -> Result<(), String> {
-        let shown = shown.filter(|other| *other != session);
-        let beside = beside.filter(|other| *other != session);
-        let mut open = lock(&self.open);
-        let Some(one) = open.get_mut(&session) else {
+    /// **Refused whole, saying why**, where it names a chat in two panes, across every tab and
+    /// window (a chat is shown once), or a chat that is not open here: one still being put
+    /// back at a launch is open. A refusal changes nothing. Written only when it changes, for
+    /// [`Self::pin`]'s reason.
+    ///
+    /// **What is kept is the window's word, and it says only where the person is looking**: the
+    /// core starts and allows nothing by these numbers. A reported task's end, already due, is
+    /// held while it says the person is reading it, and no notification is sent about a chat
+    /// it says is on screen.
+    pub fn lay_out(&self, layout: Layout) -> Result<(), String> {
+        if let Some(twice) = layout.named_twice() {
             return Err(format!(
-                "purlis has no chat {session} open to show another in."
+                "purlis did not keep that layout: it shows chat {twice} in two panes, and a chat \
+                 is shown in one pane at a time."
             ));
-        };
-        if one.chat.shows == shown && one.chat.beside == beside {
-            return Ok(());
         }
-        one.chat.shows = shown;
-        one.chat.beside = beside;
-        drop(open);
-        self.write_it_down();
+        {
+            // One lock at a time: the ones still to start, then the open ones.
+            let coming: Vec<u32> = lock(&self.coming).iter().map(|one| one.number).collect();
+            let open = lock(&self.open);
+            let is_open = |number: u32| {
+                open.get(&number).is_some_and(|one| !one.chat.graded) || coming.contains(&number)
+            };
+            if let Some(gone) = layout.chats().into_iter().find(|number| !is_open(*number)) {
+                return Err(format!(
+                    "purlis did not keep that layout: it shows chat {gone}, which is not open in \
+                     this project."
+                ));
+            }
+        }
+        let held = Some(layout.held());
+        let changed = std::mem::replace(&mut *lock(&self.layout), held.clone()) != held;
+        if changed {
+            self.write_it_down();
+        }
         Ok(())
+    }
+
+    /// The tabs the window last reported, or at a launch the record's; `None` for a record
+    /// written before tabs were recorded, which the window puts back the old way.
+    pub fn layout(&self) -> Option<Layout> {
+        lock(&self.layout).clone()
     }
 
     /// Gives a chat the name `raw`, or takes the one it was given off when `raw` is blank —
@@ -5258,6 +5756,10 @@ impl Chats {
                 moved = true;
             }
         }
+        // And every pane that showed it shows it still, under its new number (#4751).
+        if let Some(layout) = lock(&self.layout).as_mut() {
+            moved |= layout.renumber(session, started);
+        }
         for starting in lock(&self.reserved).values_mut() {
             if let Some(from) = starting.from.as_mut()
                 && from.chat == session
@@ -5433,6 +5935,9 @@ impl Chats {
         }
         if let Some(focus) = lock(&self.focus).as_mut() {
             changed |= moved.focus(focus);
+        }
+        if let Some(layout) = lock(&self.layout).as_mut() {
+            changed |= moved.layout(layout);
         }
         if changed {
             self.write_it_down();
@@ -5751,7 +6256,9 @@ impl Chats {
         let Some((number, persona, harness, workspace)) = ran_as else {
             return;
         };
-        if self.sessions.pool_of(number).as_deref() != Some(pool) {
+        // Its pool, also where it was heard from a chat's own runner (#3818).
+        let of = pool.split_once("/fresh-").map_or(pool, |(pool, _)| pool);
+        if self.sessions.pool_of(number).as_deref() != Some(of) {
             return;
         }
         // Under this machine's own device, as a run of its own is: the runner keeps its own file
@@ -5783,13 +6290,19 @@ impl Chats {
         &self,
         workspace: Option<&str>,
         folder: Option<&std::path::Path>,
+        own_runner: Option<&str>,
         clones: Option<&[purlis_core::forge::apptoken::Started]>,
     ) {
         let (Some(config), Some(clones)) = (&self.pools_in, clones) else {
             return;
         };
-        let Ok(Some(pool)) = purlis_core::pools::runs_on(config, &self.project, workspace) else {
-            return;
+        // The Claim of the runner it runs on: a chat's fresh runner has one of its own (#4569).
+        let pool = match own_runner {
+            Some(runner) => runner.to_owned(),
+            None => match purlis_core::pools::runs_on(config, &self.project, workspace) {
+                Ok(Some(pool)) => pool,
+                _ => return,
+            },
         };
         let (config, root, folder, clones) = (
             config.clone(),
@@ -5971,8 +6484,26 @@ impl Chats {
             .map(|&session| (session, self.sessions.process_id(session)))
             .collect();
         let models = lock(&self.models).clone();
+        let layout = lock(&self.layout).clone();
+        // Taken before `open`, which `front` does not hold.
+        let front = self.front();
         let open = lock(&self.open);
-        let front = *lock(&self.front);
+        // **Once a layout is held, the old per-chat fields are not written** (#4751): the tree
+        // says what each pane shows, and a record with one is never read the old way. Until
+        // then each chat's are carried as they were read, so a record written before the window
+        // reports loses nothing.
+        let laid_out = layout.is_some();
+        let retired = |chat: Chat| {
+            if laid_out {
+                Chat {
+                    shows: None,
+                    beside: None,
+                    ..chat
+                }
+            } else {
+                chat
+            }
+        };
         // **One chat, once** (NO-3): a chat being retried is waiting and open at once until its
         // start returns, and one being started fresh is open twice, under its old session and
         // its new. The record holds each id once — as the newest session open under it.
@@ -6004,6 +6535,7 @@ impl Chats {
                 // and a start that is not a reattach reads neither.
                 ..chat.clone()
             })
+            .map(retired)
             .collect();
         // The ids written so far, as chats that could not be started. A chat of a launch is
         // listed there before it leaves the ones still to start (`start_what_is_coming`), and
@@ -6032,7 +6564,7 @@ impl Chats {
                 {
                     return None;
                 }
-                return Some(Chat {
+                return Some(retired(Chat {
                     active: front == Some(session),
                     pid: None,
                     model: None,
@@ -6042,13 +6574,13 @@ impl Chats {
                     plane_skills: None,
                     routing: None,
                     ..one.chat.clone()
-                });
+                }));
             };
             let chat = &running.chat;
             if superseded(chat, Some(session)) {
                 return None;
             }
-            Some(Chat {
+            Some(retired(Chat {
                 active: front == Some(session),
                 // The number it is actually running under, which is the key its workspace
                 // pointer and session lock are written at. Taken from the session and not
@@ -6061,12 +6593,15 @@ impl Chats {
                 // back carried from an earlier run.
                 model: models.get(&session).cloned(),
                 ..chat.clone()
-            })
+            }))
         }));
         Record {
             chats,
+            // Kept beside the tree (#4751): what each view tab was, where it was, whether it was in
+            // front and where its divider was. The switch (#4758) retires it.
             views: lock(&self.views).clone(),
             focus: lock(&self.focus).clone(),
+            layout,
             // What the next launch must not deal again — charter-app#90. It is the high
             // water mark and not the count of what is open, so the numbers of chats that
             // were closed are spent too, and no new chat lands on a pointer one of them
@@ -6130,6 +6665,10 @@ impl Chats {
         // (`reopened_views`) — and written back out with everything else at the next change.
         *lock(&self.views) = record.views.clone();
         *lock(&self.focus) = record.focus.clone();
+        // The stored layout stands until the window reports one (#4751): what is on screen is
+        // read from it meanwhile, so a task the person left in front is not ended under them
+        // before the window is drawn.
+        *lock(&self.layout) = record.layout.clone();
         // Every chat here starts a program. A record with thousands in it — a runaway, or a
         // file nobody meant — would start them all. The cap is far above the fifty the
         // product is for, so it never meets an operator; it is only ever a backstop. What it
@@ -6225,6 +6764,8 @@ impl Chats {
     /// chat put back reattached is closed (#2006): once a put back has settled.
     pub(crate) fn close_what_was_not_reattached(&self) {
         self.sessions.close_what_was_not_reattached();
+        self.put_back_settled.store(true, Ordering::SeqCst);
+        self.sweeps_fresh_runners();
     }
 
     /// **The browsers the session host still runs, or ran, in this project from before this
@@ -6787,6 +7328,7 @@ impl Chats {
         lock(&self.coming).clear();
         lock(&self.views).clear();
         *lock(&self.focus) = None;
+        *lock(&self.layout) = None;
         *lock(&self.front) = None;
     }
 }

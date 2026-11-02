@@ -1069,6 +1069,22 @@ pub struct ChatOnPool {
 /// The most chats on pools a project keeps: the lowest numbers, the oldest, go first.
 pub const MOST_CHATS_ON_POOLS: usize = 256;
 
+/// **What names a pool in one plane** (#4678): whether the project does, and the workspaces that
+/// do, by name, in order. Removing the pool sets each back to this machine
+/// ([`Recent::forget_pool`]), and the removal's question names them first.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NamingPool {
+    pub project: bool,
+    pub workspaces: Vec<String>,
+}
+
+impl NamingPool {
+    /// Whether nothing in the plane names the pool.
+    pub fn is_empty(&self) -> bool {
+        !self.project && self.workspaces.is_empty()
+    }
+}
+
 impl Recent {
     fn owes_the_branches_of(&mut self, chat: ChatOnPool) {
         self.branches_to_fetch
@@ -1077,23 +1093,35 @@ impl Recent {
             .insert(chat.workspace);
     }
 
+    /// What in this plane names pool `name` (#4678): what [`Self::forget_pool`] changes, read
+    /// without changing it.
+    pub fn naming_pool(&self, name: &str) -> NamingPool {
+        NamingPool {
+            project: self.project_chats_run_on.as_deref() == Some(name),
+            workspaces: self
+                .chats_run_on
+                .iter()
+                .filter(|(_, pool)| pool.as_str() == name)
+                .map(|(workspace, _)| workspace.clone())
+                .collect(),
+        }
+    }
+
     /// Takes the removed pool `name` out of every level that names it. A workspace that named it
     /// goes back to this machine, and never on to a pool the project names: nobody chose that
     /// pool for it (#4536).
     pub fn forget_pool(&mut self, name: &str) {
-        let named: Vec<String> = self
-            .chats_run_on
-            .iter()
-            .filter(|(_, pool)| pool.as_str() == name)
-            .map(|(workspace, _)| workspace.clone())
-            .collect();
-        for workspace in named {
+        let NamingPool {
+            project,
+            workspaces,
+        } = self.naming_pool(name);
+        for workspace in workspaces {
             self.chats_run_on.remove(&workspace);
             self.chats_run_here.insert(workspace);
         }
         self.chats_on_pools.retain(|_, chat| chat.pool != name);
         self.branches_to_fetch.remove(name);
-        if self.project_chats_run_on.as_deref() == Some(name) {
+        if project {
             self.project_chats_run_on = None;
         }
     }

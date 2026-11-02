@@ -87,6 +87,7 @@ fn app_on(root: &Path) -> (tauri::App<MockRuntime>, PlaneId) {
             crate::stopping::stopping_chats,
             crate::sandboxing::owed_restarts,
             crate::views::reopened_views,
+            crate::layout::reopened_layout,
             crate::views::reopened_focus,
             crate::chats_plane_updated,
             crate::open_planes,
@@ -156,6 +157,7 @@ fn the_reads(plane: &PlaneId) -> Vec<(&'static str, Value)> {
         ("stopping_chats", p.clone()),
         ("owed_restarts", p.clone()),
         ("reopened_views", p.clone()),
+        ("reopened_layout", p.clone()),
         ("reopened_focus", p.clone()),
         ("chats_plane_updated", p),
         ("open_planes", json!({})),
@@ -431,6 +433,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "put_away_lost_chat",
             // Which chats are reconnecting to their runner (#2496): in memory.
             "chats_reconnecting",
+            // A task's fresh runners kept (#4569): in memory.
+            "fresh_runners_kept",
             // Whether the session host is failing, and Try again (#2007): in memory, and a
             // wake of the supervisor's thread.
             "session_host_failing",
@@ -439,6 +443,7 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "task_quiet",
             "put_away_task_quiet",
             "reopened_views",
+            "reopened_layout",
             "reopened_focus",
             "open_planes",
             "agents_stopped",
@@ -508,11 +513,10 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
         // it lands in are written behind the window (`planes::WrittenBehind`).
         "TAB_ORDER",
         &[
-            "chat_in_front",
+            "window_layout",
             "pin_chat",
             "open_chat_tab",
             "close_chat_tab",
-            "tab_shows",
             "chat_order",
             "rename_chat",
             "window_views",

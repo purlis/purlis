@@ -298,10 +298,36 @@ fn a_workspace_set_to_run_on_a_pool_runs_there_once_the_pool_is_kept_and_nowhere
         runs_on(config.path(), plane, Some("ide")),
         Ok(Some("first".to_owned()))
     );
+    // What its removal asks about names the workspace, in its project, and nothing else.
+    crate::machine::update(config.path(), |store| {
+        store.remember(std::path::Path::new("/planes/b"), 2);
+    })
+    .unwrap();
+    assert_eq!(
+        named_by(config.path(), "first").unwrap(),
+        [(
+            plane.to_path_buf(),
+            crate::machine::NamingPool {
+                project: false,
+                workspaces: vec!["ide".to_owned()],
+            }
+        )]
+    );
     // Removing the pool runs the workspace's chats here again.
     remove(config.path(), &fake.docker(), "first", None).unwrap();
     assert_eq!(runs_on(config.path(), plane, Some("ide")), Ok(None));
     assert!(workspaces_on_pools(config.path(), plane).is_empty());
+    assert!(named_by(config.path(), "first").unwrap().is_empty());
+}
+
+#[test]
+fn a_machine_store_that_cannot_be_read_never_says_nothing_names_a_pool() {
+    let config = tempfile::tempdir().unwrap();
+    let elsewhere = config.path().join("elsewhere.json");
+    std::fs::write(&elsewhere, br#"{"version":1,"at":0,"recents":[]}"#).unwrap();
+    std::fs::create_dir_all(crate::machine::dir(config.path())).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, crate::machine::file(config.path())).unwrap();
+    assert!(named_by(config.path(), "first").is_err());
 }
 
 /// The runner image of the desktop's new version, purlis's own.
@@ -1434,6 +1460,7 @@ mod cluster {
             &cluster.kubectl(),
             "team",
             "01CHAT",
+            of_a_project(),
             &desktop(),
             Duration::ZERO,
         )
@@ -1474,6 +1501,7 @@ mod cluster {
             &cluster.kubectl(),
             "team",
             "01CHAT",
+            of_a_project(),
             &desktop(),
             Duration::ZERO,
         )
@@ -1508,6 +1536,7 @@ mod cluster {
             &cluster.kubectl(),
             "team",
             chat,
+            of_a_project(),
             &desktop(),
             Duration::ZERO,
         )
@@ -1539,6 +1568,7 @@ mod cluster {
             &cluster.kubectl(),
             "team",
             "01CHAT",
+            of_a_project(),
             &desktop(),
             Duration::ZERO,
         )
@@ -1558,10 +1588,18 @@ mod cluster {
             &cluster.kubectl(),
             "team",
             "01CHAT",
+            of_a_project(),
             &desktop(),
             Duration::ZERO,
         )
         .unwrap();
+
+        // Made again by someone: its cluster says what it held is gone.
+        let mut another: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(cluster.path("claim.json")).unwrap())
+                .unwrap();
+        another["metadata"]["uid"] = serde_json::json!("0b2f1a54-4d7b-4a64-9c0e-000000000000");
+        cluster.write("claim.json", &another.to_string());
 
         remove_cluster(
             config.path(),
@@ -1572,8 +1610,48 @@ mod cluster {
         )
         .unwrap();
 
-        assert!(cluster.calls().contains(&claim));
+        assert!(
+            cluster
+                .calls()
+                .contains(&format!("delete claims.runners.purlis.dev {claim}"))
+        );
         assert_eq!(runners::fresh_runners(config.path()).unwrap(), []);
+    }
+
+    /// **No removal deletes a Claim that may hold a task's commits** (#4569): the person is told
+    /// what is left and how to delete it.
+    #[test]
+    fn removing_a_pool_leaves_a_fresh_runner_still_at_work_and_says_so() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            of_a_project(),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        let left = remove_cluster(
+            config.path(),
+            Some(&cluster.kubectl()),
+            "team",
+            Some(OURS),
+            None,
+        )
+        .unwrap();
+
+        assert!(
+            !cluster
+                .calls()
+                .contains(&format!("delete claims.runners.purlis.dev {claim}"))
+        );
+        assert!(left.expect("it says so").contains(&claim));
     }
 
     #[test]
@@ -1984,6 +2062,129 @@ mod cluster {
             Duration::ZERO,
         )
         .unwrap();
+    }
+
+    /// **Only the cluster's word that a fresh runner is gone lets its work be given up** (#4569).
+    #[test]
+    fn a_fresh_runner_is_lost_only_where_its_claim_is_gone() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            of_a_project(),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        assert!(
+            !fresh_runner_lost(config.path(), &cluster.kubectl(), "01CHAT").unwrap(),
+            "its claim is there, and the operator vouches for its pod"
+        );
+        // Made again by someone: not the claim that held its work.
+        let mut another: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(cluster.path("claim.json")).unwrap())
+                .unwrap();
+        another["metadata"]["uid"] = serde_json::json!("0b2f1a54-4d7b-4a64-9c0e-000000000000");
+        cluster.write("claim.json", &another.to_string());
+        assert!(fresh_runner_lost(config.path(), &cluster.kubectl(), "01CHAT").unwrap());
+    }
+
+    /// **A task's fresh runner relies on its operator's signed word, holding now, and silence is
+    /// a no** (#4569).
+    #[test]
+    fn only_an_operator_that_says_so_keeps_a_fresh_runner_through_idle() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let _ = added_and_a_second_runner(config.path(), &cluster);
+        let pool = runners::cluster_pools(config.path()).unwrap().remove(0);
+        let now = runners::now();
+        assert!(fresh_runners_stay(&pool, &cluster.kubectl(), now).is_err());
+
+        let word = crate::clusterpool::OperatorWord {
+            cluster: crate::clusterpool::tests::CLUSTER.to_owned(),
+            capabilities: vec![crate::clusterpool::FRESH_RUNNERS_STAY.to_owned()],
+            until: now + 600,
+        }
+        .text();
+        let mut said: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(cluster.path("pool.json")).unwrap())
+                .unwrap();
+        said["status"]["capabilitiesVouch"] = serde_json::json!({
+            "statement": word,
+            "signature": cluster.operator.sign(&word),
+        });
+        cluster.write("pool.json", &said.to_string());
+        assert_eq!(fresh_runners_stay(&pool, &cluster.kubectl(), now), Ok(()));
+        // Read again later, once it ended: an operator rolled back signs it no more.
+        assert!(fresh_runners_stay(&pool, &cluster.kubectl(), now + 600).is_err());
+
+        cluster.write("pool.json", "not an answer");
+        assert!(fresh_runners_stay(&pool, &cluster.kubectl(), now).is_err());
+    }
+
+    /// **A fresh Claim a crash left with no record goes once it is old, and nothing else does**
+    /// (#4569): a record is written before any chat starts there, so it never held work. One an
+    /// earlier pool of the name left as it was removed, with its cluster out of reach, stays.
+    #[test]
+    fn a_fresh_claim_no_record_holds_is_deleted_once_old_and_only_then() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let added_at = judged(config.path()).paired;
+        let at = |seconds: u64| {
+            chrono::DateTime::from_timestamp(i64::try_from(seconds).unwrap(), 0)
+                .unwrap()
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        };
+        let now = added_at + 4 * 3600;
+        let ours = crate::clusterpool::desktop_label(OURS);
+        let named = |hash: &str| format!("{}-{hash}", claim_name(OURS, "team"));
+        let item = |name: &str, desktop: &str, kept: bool, made: &str| {
+            serde_json::json!({
+                "metadata": {
+                    "name": name,
+                    "uid": "0b2f1a54-4d7b-4a64-9c0e-000000000001",
+                    "creationTimestamp": made,
+                    "annotations": {crate::clusterpool::DESKTOP_ANNOTATION: desktop},
+                },
+                "spec": {"pool": "team", "requester": "ada@example.com", "kept": kept},
+            })
+        };
+        let old = at(added_at + 3600);
+        cluster.write(
+            "claims.json",
+            &serde_json::json!({"items": [
+                item(&named("0123abcd"), &ours, false, &old),
+                // Made within the hour: a start may still be making it.
+                item(&named("4567abcd"), &ours, false, &at(now - 60)),
+                // Another desktop's, a kept one, the pool's own, another pool's.
+                item(&named("89abcdef"), "ffffffffffffffff", false, &old),
+                item(&named("fedcba98"), &ours, true, &old),
+                item(&claim_name(OURS, "team"), &ours, false, &old),
+                item("someone-elses-0123abcd", &ours, false, &old),
+                // Left by an earlier pool of this name as it was removed: it may hold work.
+                item(&named("aaaabbbb"), &ours, false, &at(added_at - 3600)),
+            ]})
+            .to_string(),
+        );
+
+        let deleted =
+            sweep_orphan_fresh_claims(config.path(), &cluster.kubectl(), OURS, now).unwrap();
+
+        assert_eq!(deleted, vec![named("0123abcd")]);
+    }
+
+    /// Where a fresh runner's work goes back to.
+    fn of_a_project() -> runners::FreshOf {
+        runners::FreshOf {
+            plane: "01PROJECT".to_owned(),
+            workspace: "app".to_owned(),
+            root: None,
+        }
     }
 
     fn deleted(cluster: &FakeCluster) -> bool {

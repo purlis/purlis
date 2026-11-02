@@ -1154,7 +1154,10 @@ fn every_level_s_theme_is_drawn_with_its_own_tint_recipe() {
         let shown = drawn(&levels, &places.folders(Some("alpha")), None);
         let theme = shown.theme.expect("a theme is drawn");
         assert_eq!(theme.name, "Edges");
-        assert_eq!(theme.tint.tabs(), ["border.control", "accent.base"]);
+        assert_eq!(
+            theme.tint.tabs(),
+            ["border.control", "accent.base", "accent.text"]
+        );
         for one in &theme.tint.hues {
             let tint = tinted(&theme, one.name);
             let apart = [tint.value("accent.base"), tint.value("border.control")]

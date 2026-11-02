@@ -68,12 +68,12 @@ export function deletes(event: KeyboardEvent<HTMLElement>): boolean {
  * **F2 on a focused chat tab opens its name for editing** (charter-app#254): the platform's
  * rename key for a focused item, called from the same `onKeyDown` as {@link closeOnDelete}.
  *
- * It presses the row the tab's menu and the palette list (`tab.rename:<id>`), so it does what
- * they do. The palette, which claims `F2` from the whole window, stands back on a tab marked
+ * It presses the Rename… row of the tab's chat (`chat.rename:<session>`), so it does what
+ * its list and the palette do. The palette, which claims `F2` from the whole window, stands back on a tab marked
  * `RENAMES_ON_F2` (`Palette.theTabRenamesOnIt`); this is the other half of that. Never with a
  * modifier, and only on the tab itself, for `closeOnDelete`'s reasons.
  *
- * @param offer The tab's `tab.rename:<id>` row. A view's tab has none, and F2 there is the
+ * @param offer The `chat.rename:<session>` row of the tab's own chat. A view's tab has none, and F2 there is the
  *   palette's as everywhere else.
  */
 export function renameOnF2(
