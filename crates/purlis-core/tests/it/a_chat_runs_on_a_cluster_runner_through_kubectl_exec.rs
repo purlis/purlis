@@ -281,7 +281,10 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
         "apiVersion": "runners.purlis.dev/v1alpha1",
         "kind": "Pool",
         "metadata": { "name": pool },
-        "spec": { "image": image },
+        "spec": {
+            "image": image,
+            "limits": { "signInWait": { "default": 10, "highest": 40 } },
+        },
     });
     kubectl
         .run(
@@ -290,6 +293,20 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
             64 * 1024,
         )
         .expect("the pool");
+
+    // What the team set reaches a desktop, and holds it to the highest allowed (#4287).
+    {
+        use purlis_core::poollimits::{Chosen, LimitId::SignInWait};
+        let seen = kubectl.pool(&pool).expect("the pool, read");
+        let chosen = Chosen::default().under_team(seen.team_limits.as_ref());
+        assert_eq!(chosen.in_force(SignInWait), 10);
+        let why = SignInWait
+            .limit()
+            .check(41, chosen.team_highest(SignInWait))
+            .unwrap_err();
+        assert!(why.contains("team that defines this pool"), "{why}");
+        assert_eq!(chosen.waited(SignInWait, 30, None).suggested, Some(40));
+    }
 
     // Adding the pool pins the operator's key and the cluster its status names (#3305).
     let operator = eventually("the pool names the operator's key", || {
@@ -1082,7 +1099,11 @@ fn the_command_signs_in_on_a_cluster_pool_only_marked_and_vouched_and_a_runner_f
         "apiVersion": "runners.purlis.dev/v1alpha1",
         "kind": "Pool",
         "metadata": { "name": pool },
-        "spec": { "image": image, "keptVolume": { "size": "1Gi" } },
+        "spec": {
+            "image": image,
+            "keptVolume": { "size": "1Gi" },
+            "limits": { "signInWait": { "highest": 40 } },
+        },
     });
     kubectl
         .run(
@@ -1125,6 +1146,15 @@ fn the_command_signs_in_on_a_cluster_pool_only_marked_and_vouched_and_a_runner_f
         PATIENCE * 2,
     )
     .expect("the pool is added");
+    // What the team set on its Pool is kept with the pool, and enforced as a person sets it (#4287).
+    {
+        use purlis_core::poollimits::LimitId::SignInWait;
+        let name = team.name();
+        let chosen = purlis_core::runners::chosen_limits_of(&config, name).unwrap();
+        assert_eq!(chosen.team_highest(SignInWait), Some(40));
+        assert!(purlis_core::runners::set_pool_limit(&config, name, SignInWait, Some(41)).is_err());
+        purlis_core::runners::set_pool_limit(&config, name, SignInWait, Some(40)).unwrap();
+    }
     let paired = Paired {
         claimed: added.claimed.clone(),
         vouched: vouched(&kubectl, &operator, &added.claimed),

@@ -647,6 +647,7 @@ fn following(
         cluster: told.cluster.clone(),
     };
     let seen = PoolSeen {
+        team_limits: None,
         signing_key: Some(shown.to_owned()),
         cluster: Some(told.cluster.clone()),
         next_signing_key: Some(next),

@@ -954,6 +954,7 @@ describe("A cluster pool (#3292)", () => {
             plain: "Longest wait for a runner",
             unit: "minutes",
             in_force: 5,
+            team_suggests: false,
             needed: 5,
             suggested: 10,
           },
