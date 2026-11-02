@@ -156,8 +156,14 @@ pub(crate) fn declared_in(text: &str) -> Declared {
         .map(str::to_owned);
     let when_to_use = value(WHEN_TO_USE)
         .map(unquoted)
-        .filter(|when| !when.is_empty())
-        .map(str::to_owned);
+        .map(|when| {
+            if when.starts_with(['>', '|']) {
+                block_text(text, WHEN_TO_USE)
+            } else {
+                when.to_owned()
+            }
+        })
+        .filter(|when| !when.is_empty());
     Declared {
         manual,
         arguments,
@@ -222,6 +228,23 @@ fn block_list(text: &str, key: &str) -> Vec<String> {
         .filter(|name| !name.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+/// The indented lines under `key`, a YAML block scalar, joined by spaces.
+fn block_text(text: &str, key: &str) -> String {
+    let lines = crate::read::frontmatter_lines(text);
+    let Some(at) = lines
+        .iter()
+        .position(|line| line.split_once(':').is_some_and(|(k, _)| k.trim() == key))
+    else {
+        return String::new();
+    };
+    lines[at + 1..]
+        .iter()
+        .take_while(|line| line.starts_with([' ', '\t']))
+        .map(|line| line.trim())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]

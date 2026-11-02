@@ -1405,6 +1405,7 @@ fn a_router_is_asked_the_skills_it_may_hide_the_budget_and_nothing_of_the_chat()
         name: "deploy".to_owned(),
         description: "Deploys.".to_owned(),
         pinned: false,
+        chars: 8,
     }];
     let ask = Ask::Route {
         skills: &skills,
@@ -1422,7 +1423,7 @@ fn a_router_is_asked_the_skills_it_may_hide_the_budget_and_nothing_of_the_chat()
         ask.line(),
         serde_json::json!({
             "ask": "route",
-            "skills": [{ "name": "deploy", "description": "Deploys.", "pinned": false }],
+            "skills": [{ "name": "deploy", "description": "Deploys.", "pinned": false, "chars": 8 }],
             "budget": { "skills": 10, "chars": 2000 },
             "besides": { "skills": 1, "chars": 40 },
         })

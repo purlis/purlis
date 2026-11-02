@@ -21,7 +21,7 @@ The 2026-10-21 record's "about 8,000 characters on a 200k-token window" holds fo
 
 The router gets the budget before the harness runs, and the window depends on model, provider, account and a credit latch. A budget by window would need a value that isn't there when it is needed. So the limit stops depending on the window.
 
-**The Claude Code adapter hands an absolute limit per chat**: `SLASH_COMMAND_TOOL_CHAR_BUDGET` in the `env` of the `--settings` it already passes. Measured, it ignores the window and beats `skillListingBudgetFraction`. The limit is the budget's characters plus Claude Code's own 6,848, and a tenth over both, so about 24,000 at the default.
+**The Claude Code adapter hands an absolute limit per chat**: `SLASH_COMMAND_TOOL_CHAR_BUDGET` in the `env` of the `--settings` it already passes. Measured, it ignores the window and beats `skillListingBudgetFraction`. The limit is the budget's characters plus Claude Code's own 6,848, and a tenth over both, so about 24,000 at the default. Where pins and skills no router hides spend more than the budget, the limit is worked out from what the routed list spends instead, so they keep their descriptions.
 
 ## Each adapter says its own numbers
 
@@ -42,6 +42,8 @@ Codex and opencode stay where they are until Codex is measured again. The Skill 
 - **A raised Claude Code budget raises the limit it is handed.**
 - **Past Codex's limit, Settings says so and what Codex would drop.** Nothing is refused for being large. Only what no reader takes is refused: a value that isn't a whole number of at least 1.
 - **Claude Code never warns**, because its limit follows the budget. opencode has none.
+- **A router extension is told each skill's cost.** `route` hands each skill a `chars`, what it costs of the budget on that harness, since on Claude Code that is its whole line. A router adds those up.
+- **A running chat keeps what it was handed.** Use skill… works a chat's set out now, as the 2026-10-21 record says, so a budget changed after a chat started shows there at once, and its restart offer is the answer. The limit it was handed is the one from its start.
 
 ## What this costs, and what isn't measured
 

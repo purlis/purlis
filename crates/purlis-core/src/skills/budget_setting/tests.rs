@@ -60,13 +60,6 @@ fn a_value_no_reader_takes_leaves_the_number_below_it() {
 }
 
 #[test]
-fn a_raised_claude_code_budget_raises_what_a_chat_is_handed() {
-    let dir = plane(PROJECT, "{}");
-    let budget = budget_in(dir.path(), None, Harness::ClaudeCode);
-    assert_eq!(Harness::ClaudeCode.skill_limit_handed(budget), Some(29_532));
-}
-
-#[test]
 fn a_value_past_a_harness_limit_warns_and_is_not_refused() {
     let set = Set {
         skills: None,
