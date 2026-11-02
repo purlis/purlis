@@ -185,12 +185,10 @@ function LibraryRows({
   return (cut ? rows.slice(0, FIRST_ROWS) : rows).map(row);
 }
 
-/** The row's line under its name: what it does, or why it is left out where it says nothing. */
+/** The row's line under its name: why it is left out where it is, else what it does. */
 function lineOf(skill: StudioSkill): string {
-  if (skill.description !== "") return skill.description;
-  return skill.left_out === null
-    ? "It says nothing of what it does."
-    : `Left out: ${skill.left_out}`;
+  if (skill.left_out !== null) return `Left out: ${skill.left_out}`;
+  return skill.description === "" ? "It says nothing of what it does." : skill.description;
 }
 
 /** **The Library's built-in skills, folded** (S12): their run's key, whose quiet line is

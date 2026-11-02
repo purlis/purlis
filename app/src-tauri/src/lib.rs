@@ -1679,7 +1679,7 @@ async fn start_chat(
     boxes: Boxes,
     columns: u16,
     rows: u16,
-) -> Result<Started, String> {
+) -> Result<Started, poolprofiles::LimitRefused> {
     let label = match label {
         Some(raw) => purlis_core::reopen::label(&raw)?,
         None => None,
@@ -1696,31 +1696,33 @@ async fn start_chat(
                 reason: asked.reason,
             });
         // git is asked once about the local file for the whole start (#2179).
-        let (mut started, said) = hostedsessions::cancelled_by(cancel, || {
-            purlis_core::profiles::git_asked_once(|| {
-                worktrees::on_a_branch(
-                    held.root(),
-                    config.as_deref(),
-                    cwd.as_deref().map(std::path::Path::new),
-                    named.as_deref(),
-                    boxes.new_branch,
-                    |cwd| {
-                        start_chat_in(
-                            &held,
-                            profile,
-                            persona,
-                            cwd,
-                            name,
-                            label,
-                            Picked {
-                                show_footer,
-                                without_sandbox,
-                            },
-                            columns,
-                            rows,
-                        )
-                    },
-                )
+        let (mut started, said) = poolprofiles::offering_limits(|| {
+            hostedsessions::cancelled_by(cancel, || {
+                purlis_core::profiles::git_asked_once(|| {
+                    worktrees::on_a_branch(
+                        held.root(),
+                        config.as_deref(),
+                        cwd.as_deref().map(std::path::Path::new),
+                        named.as_deref(),
+                        boxes.new_branch,
+                        |cwd| {
+                            start_chat_in(
+                                &held,
+                                profile,
+                                persona,
+                                cwd,
+                                name,
+                                label,
+                                Picked {
+                                    show_footer,
+                                    without_sandbox,
+                                },
+                                columns,
+                                rows,
+                            )
+                        },
+                    )
+                })
             })
         })?;
         started.notices.splice(0..0, said);
@@ -3147,11 +3149,13 @@ fn ui_rpc_client() -> String {
     let names = if client.contains("Channel<") {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
          __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
-         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED, Channel"
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED, \
+         windowOnlyLimitRefused as __WINDOW_ONLY_LIMIT_REFUSED, Channel"
     } else {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
          __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
-         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED"
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED, \
+         windowOnlyLimitRefused as __WINDOW_ONLY_LIMIT_REFUSED"
     };
     client.replacen(
         TAURI_INVOKE,
@@ -3240,6 +3244,8 @@ fn without_channel_commands(bindings: &str) -> String {
                 "__WINDOW_ONLY_REFUSED"
             } else if command.contains(", StartRefused>(__TAURI_INVOKE(") {
                 "__WINDOW_ONLY_START_REFUSED"
+            } else if command.contains(", LimitRefused>(__TAURI_INVOKE(") {
+                "__WINDOW_ONLY_LIMIT_REFUSED"
             } else {
                 panic!(
                     "`{name}` is the window's alone and its error is a shape the link's client has no refusal for"

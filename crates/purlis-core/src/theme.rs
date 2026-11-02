@@ -134,7 +134,7 @@ pub use import::{
 };
 pub use least::{Least, MARKS_MORE, WORDS_MORE};
 pub use levels::{Choice, Folders, FoundFolder, Level, LevelInputs, Levels, resolve_levels};
-pub use native::{Native, first_frame};
+pub use native::{Native, first_frame, first_frame_standing_in};
 pub use options::{
     Kind, MOST_COMBINATIONS, OFF, ON, OptionDrawn, OptionValue, ThemeOption, Values,
 };

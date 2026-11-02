@@ -205,6 +205,28 @@ describe("the Skill studio", () => {
     expect(await screen.findByTestId("skill-crowd-59")).toBeTruthy();
   });
 
+  it("says why under the name of a skill left out, not what it says it does (#4352)", async () => {
+    answering(
+      studio([
+        skill("respelled", {
+          on: false,
+          description: "Widens.",
+          left_out: "purlis hands it to no chat: its frontmatter could not be read",
+        }),
+      ]),
+    );
+
+    renderStudio();
+
+    const row = await screen.findByTestId("skill-respelled");
+    expect(
+      within(row).getByText(
+        "Left out: purlis hands it to no chat: its frontmatter could not be read",
+      ),
+    ).toBeInTheDocument();
+    expect(within(row).queryByText("Widens.")).toBeNull();
+  });
+
   it("keeps the Library's tools to search and chips, with New skill… the one way in (#4041)", async () => {
     answering(studio([skill("deploy")]));
 

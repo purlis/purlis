@@ -242,7 +242,7 @@ describe("the Library", () => {
     expect(within(lint).getByText("lint")).toBeInTheDocument();
     expect(within(lint).getByText("workspace")).toBeInTheDocument();
     expect(within(lint).getByText("Off")).toBeInTheDocument();
-    expect(within(lint).getByText("Runs clippy and explains each warning.")).toHaveAttribute(
+    expect(within(lint).getByText("Left out: turned off in this workspace")).toHaveAttribute(
       "data-clamp",
       "1",
     );

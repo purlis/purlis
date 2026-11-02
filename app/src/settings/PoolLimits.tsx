@@ -21,7 +21,7 @@ const ABOUT =
  * and nothing stops them. Its sign-ins follow only once the old runner has drained.
  */
 const REPLACE_SAID =
-  "purlis makes a new runner held to this pool's limits, and new chats start there. Chats running now carry on on the old runner until they end: this interrupts none of them. Once the last one ends, purlis removes the old runner with what chats left in it, and its sign-ins follow to the new one. Until then a profile signs in again on the new runner, and both runners use this machine.";
+  "purlis makes a new runner held to this pool's limits, and new chats start there. Chats running now carry on on the old runner until they end: this interrupts none of them. If the old runner stops first, its chats end with it, and purlis keeps it and what they left until you remove it in Devices. Once the last one ends, purlis removes the old runner with what chats left in it, and its sign-ins follow to the new one. Until then a profile signs in again on the new runner, and both runners use this machine.";
 
 /** A value as the box holds it: CPUs are held in thousandths, and written as a person writes them. */
 const typedOf = (row: PoolLimitRow, value: number): string =>

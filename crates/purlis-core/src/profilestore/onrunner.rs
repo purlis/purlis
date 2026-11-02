@@ -257,43 +257,28 @@ pub fn highest_on_an_older_runner() -> Chosen {
         )
 }
 
-/// **A profile's settings over its pool's limits** (spec #4275): the typed refusal, which the
-/// Start a chat dialog draws its offer from.
+/// **Why a profile's settings were not sent** (spec #4275): its sentence, and the limits of its
+/// pool they are over, as Start a chat and a pool's page draw their offer from, typed from here to
+/// the refusal the window is sent. No limit, for any other reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OverLimit {
-    pub profile: String,
-    /// The pool, once the refusal has left [`ready_on`].
-    pub pool: Option<String>,
-    pub hits: Vec<LimitHit>,
-    /// The refusal as it was said. A window asks only of the refusal it was shown.
+pub struct NotSent {
     pub said: String,
+    pub hits: Vec<LimitHit>,
 }
 
-static OVER_LIMITS: Mutex<BTreeMap<String, OverLimit>> = Mutex::new(BTreeMap::new());
-
-/// **The limits that refused the start or move refused in the words `refused`** (spec #4275), as
-/// the window asks after a refusal: asked of the core, never read from the words. `None` for any
-/// other refusal.
-#[must_use]
-pub fn over_limit(profile: &str, refused: &str) -> Option<OverLimit> {
-    OVER_LIMITS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .get(profile)
-        .filter(|over| over.pool.is_some() && refused.contains(&over.said))
-        .cloned()
+impl From<String> for NotSent {
+    fn from(said: String) -> Self {
+        Self {
+            said,
+            hits: Vec::new(),
+        }
+    }
 }
 
-/// **The limits that refused a move to pool `pool` in the words `refused`** (#4313): a move's
-/// window line doesn't name a profile, and a move holds several, so it is found by its pool.
-#[must_use]
-pub fn over_limit_on(pool: &str, refused: &str) -> Option<OverLimit> {
-    OVER_LIMITS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .values()
-        .find(|over| over.pool.as_deref() == Some(pool) && refused.contains(&over.said))
-        .cloned()
+impl From<&str> for NotSent {
+    fn from(said: &str) -> Self {
+        said.to_owned().into()
+    }
 }
 
 /// What a profile's settings left out on their way to a runner, as they were last read (#3848).
@@ -396,35 +381,25 @@ fn limits_hit(kept: &Kept, bytes: u64, files: u64) -> Vec<LimitHit> {
     .collect()
 }
 
-/// The refusal of `kept` for `hits`, kept for the window to ask of ([`over_limit`]).
-fn refused_over_limit(kept: &Kept, hits: Vec<LimitHit>) -> String {
-    let said = hits
-        .iter()
-        .map(LimitHit::said)
-        .collect::<Vec<_>>()
-        .join("; ");
-    OVER_LIMITS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(
-            kept.name.clone(),
-            OverLimit {
-                profile: kept.name.clone(),
-                pool: None,
-                hits,
-                said: said.clone(),
-            },
-        );
-    said
+/// The refusal of a profile for `hits`.
+fn refused_over_limit(hits: Vec<LimitHit>) -> NotSent {
+    NotSent {
+        said: hits
+            .iter()
+            .map(LimitHit::said)
+            .collect::<Vec<_>>()
+            .join("; "),
+        hits,
+    }
 }
 
 /// **`kept`, as a runner of 1.56 or later is sent it** (`stage_profile_settings`, #4081): what
 /// [`to_send`] reads and removes, in batches, whatever their number, within its pool's limits
 /// ([`Kept::limits`]). **Over a limit, nothing is sent and the start is refused** with what is
-/// needed and a value to raise it to ([`OverLimit`], spec #4275); the batches themselves are never
+/// needed and a value to raise it to ([`NotSent`], spec #4275); the batches themselves are never
 /// the person's to see. A harness's own settings file over [`MOST_SETTINGS_BYTES`], or one that
 /// does not parse, is refused in words, and nothing is sent.
-pub fn in_batches(kept: &Kept) -> Result<ToKeep, String> {
+pub fn in_batches(kept: &Kept) -> Result<ToKeep, NotSent> {
     in_batches_beside(kept, &[])
 }
 
@@ -433,7 +408,7 @@ pub fn in_batches(kept: &Kept) -> Result<ToKeep, String> {
 /// runner said, so it decides nothing but what is sent: what the runner keeps must come to that
 /// digest, and any file the desktop has that is sent is sent as [`in_batches`] sends it. All of
 /// them go where `held` has nothing in common with them, or is not a list a runner could hold.
-pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKeep, String> {
+pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKeep, NotSent> {
     let mut profile = wire::ProfileToKeep::from(kept.clone());
     let Some(folder) = &kept.settings_in else {
         return Ok(ToKeep {
@@ -454,13 +429,13 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
     let wholes = super::made::settings_measured(&kept.harness, folder)?;
     for (path, (bytes, _)) in &wholes {
         if let Some(why) = too_large(path, usize::try_from(*bytes).unwrap_or(usize::MAX)) {
-            return Err(why);
+            return Err(why.into());
         }
     }
     let measured = |what: fn(&(u64, usize)) -> u64| wholes.values().map(what).sum::<u64>();
     let hits = limits_hit(kept, measured(|w| w.0), measured(|w| w.1 as u64));
     if !hits.is_empty() {
-        return Err(refused_over_limit(kept, hits));
+        return Err(refused_over_limit(hits));
     }
     let in_force = |id| {
         let chosen = kept.limits.in_force(id);
@@ -478,7 +453,7 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
         let bytes = read.files.iter().map(|one| one.1.len() as u64).sum::<u64>()
             + read.left_behind.iter().map(|one| one.1).sum::<u64>();
         let files = (read.files.len() + read.left_behind.len()) as u64;
-        return Err(refused_over_limit(kept, limits_hit(kept, bytes, files)));
+        return Err(refused_over_limit(limits_hit(kept, bytes, files)));
     }
     // Only what the state file says: a file of that name in the folder is no server of its.
     read.files
@@ -495,7 +470,7 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
     let mut left_out = LeftOut::default();
     for (path, bytes) in read.files {
         if let Some(why) = too_large(&path, bytes.len()) {
-            return Err(why);
+            return Err(why.into());
         }
         let file = super::sent::sent_without_credentials(&kept.harness, &path, &bytes)?;
         left_out.add(&path, &file);
@@ -1215,32 +1190,11 @@ fn ready_on_for(
         .held_to(
             crate::runners::chosen_limits_of(config_root, pool).map_err(|why| why.to_string())?,
         );
-    // A refusal is only ever this attempt's: an earlier one offers nothing to any later words.
-    // Another profile's stays, as a move's line on it may still ask for its offer.
-    OVER_LIMITS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .remove(name);
     match keep(&kept).map_err(|why| {
-        let said =
-            format!("pool {pool}'s runner did not keep the profile '{shown}': {why}. {nothing}.");
-        said_of_pool(name, pool, &why, &said);
-        said
+        format!("pool {pool}'s runner did not keep the profile '{shown}': {why}. {nothing}.")
     })? {
         Some(Standing::SignedOut) => Ok(Some(record)),
         Some(Standing::SignedIn | Standing::CannotTell | Standing::Fetching) | None => Ok(None),
-    }
-}
-
-/// A refusal `why` of the profile `name` left [`ready_on_for`] as `said`: where a limit said it,
-/// that is the refusal the window asks of, on `pool`.
-fn said_of_pool(name: &str, pool: &str, why: &str, said: &str) {
-    let mut all = OVER_LIMITS.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(over) = all.get_mut(name)
-        && over.said == why
-    {
-        over.pool = Some(pool.to_owned());
-        over.said = said.to_owned();
     }
 }
 

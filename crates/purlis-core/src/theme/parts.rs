@@ -936,6 +936,9 @@ mod hot_count_tints_tests;
 #[path = "see_through_tints_tests.rs"]
 mod see_through_tints_tests;
 #[cfg(test)]
+#[path = "shipped_parts_tests.rs"]
+mod shipped_parts_tests;
+#[cfg(test)]
 #[path = "surface_grounds_tests.rs"]
 mod surface_grounds_tests;
 #[cfg(test)]
@@ -3105,13 +3108,22 @@ fn every_tinted(theme: &ResolvedTheme) -> Vec<ResolvedTheme> {
     if theme.tint.tabs().is_empty() {
         return Vec::new();
     }
-    theme
-        .tint
-        .hues
-        .iter()
-        .map(|one| tint::tinted(theme, one.name))
-        .chain((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))))
-        .collect()
+    counted(
+        theme
+            .tint
+            .hues
+            .iter()
+            .map(|one| tint::tinted(theme, one.name))
+            .chain((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))))
+            .collect(),
+    )
+}
+
+/// The tinted looks `built`, counted on this thread under test (`measured_afresh`).
+fn counted(built: Vec<ResolvedTheme>) -> Vec<ResolvedTheme> {
+    #[cfg(test)]
+    TINTED.with(|it| it.set(it.get() + built.len()));
+    built
 }
 
 /// The looks a family is first read in: at rest and in each state it names but disabled, which is
@@ -3142,17 +3154,19 @@ fn coarsely_tinted(theme: &ResolvedTheme) -> Vec<ResolvedTheme> {
     if theme.tint.tabs().is_empty() {
         return Vec::new();
     }
-    theme
-        .tint
-        .hues
-        .iter()
-        .map(|one| tint::tinted(theme, one.name))
-        .chain(
-            (0..360)
-                .step_by(COARSE_DEGREES)
-                .map(|degree| tint::tinted_at(theme, f64::from(degree))),
-        )
-        .collect()
+    counted(
+        theme
+            .tint
+            .hues
+            .iter()
+            .map(|one| tint::tinted(theme, one.name))
+            .chain(
+                (0..360)
+                    .step_by(COARSE_DEGREES)
+                    .map(|degree| tint::tinted_at(theme, f64::from(degree))),
+            )
+            .collect(),
+    )
 }
 
 /// **Whether a look of `family` the theme changed draws a see-through colour** (#4257). A tint
@@ -4835,6 +4849,24 @@ pub(super) fn drawn_in() -> usize {
 #[cfg(test)]
 pub(super) fn passes() -> usize {
     PASSES.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many tinted looks of a theme were built on this thread: every tint a consent floor or a
+    /// surface is held in, and the coarse tints a see-through colour is read in (#4257).
+    static TINTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// **`theme`'s parts measured afresh on this thread, kept measure or not** (#4410): the looks the
+/// consent floors were held in ([`drawn_in`]) and how many tinted looks the measure built. A theme
+/// whose parts reach no tint answers `(1, 0)`: one look as written, nothing tinted.
+#[cfg(test)]
+pub(super) fn measured_afresh(theme: &ResolvedTheme) -> (usize, usize) {
+    DRAWN_IN.with(|it| it.set(1));
+    TINTED.with(|it| it.set(0));
+    let _ = held(theme);
+    (drawn_in(), TINTED.with(std::cell::Cell::get))
 }
 
 // --- The stylesheet --------------------------------------------------------------------------

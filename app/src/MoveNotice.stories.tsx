@@ -23,6 +23,7 @@ const WAITING: ChatMove = {
   to: "builds",
   stage: "signing-in",
   why: null,
+  limit: null,
   with: [],
   sign_in: { profile: "work", kind: "claude", harness: "Claude Code", plans: [] },
 };
@@ -35,24 +36,24 @@ function Pane() {
   );
 }
 
+const OFFER = {
+  pool: "builds",
+  hits: [
+    {
+      key: "profileSize",
+      plain: "Most a profile may send: size",
+      unit: "MiB",
+      in_force: 128,
+      needed: 150,
+      suggested: 192,
+    },
+  ],
+};
+
 const meta = {
   component: Pane,
   beforeEach: () => {
     mockIPC((cmd, args) => {
-      if (cmd === "pool_limit_offer_for_move")
-        return {
-          pool: "builds",
-          hits: [
-            {
-              key: "profileSize",
-              plain: "Most a profile may send: size",
-              unit: "MiB",
-              in_force: 128,
-              needed: 150,
-              suggested: 192,
-            },
-          ],
-        };
       if (cmd === "pool_limit_check") return Number((args as { typed: string }).typed);
       if (cmd === "pool_sign_in_start") return 1;
       // The login on the runner has not said its page yet.
@@ -133,6 +134,7 @@ export const RefusedByALimit: Story = {
       stage: "failed",
       sign_in: null,
       why: "it needs 150 MiB, over this pool's limit of 128 MiB (Most a profile may send: size): raise it to 192 MiB",
+      limit: OFFER,
     });
   },
   play: async ({ canvas, userEvent }) => {

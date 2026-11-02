@@ -162,6 +162,26 @@ fn a_feature_branch_in_push_mode_is_committed_on_and_pushed_to_that_branch_only(
 }
 
 #[test]
+fn a_save_pushes_its_commit_by_id() {
+    // #4515: over a ref gone bad, `HEAD` can read as a push of nothing, which deletes the branch.
+    let f = Fixture::new("[repos.widget]\nmode = \"push\"\n");
+    run(&f.clone, &["checkout", "-q", "-b", "feature/x"]);
+    std::fs::write(f.clone.join("src.rs"), "fn main() {}\n").unwrap();
+
+    let (code, said) = f.save();
+
+    assert_eq!(code, 0, "{said}");
+    let refspec = format!("{}^{{commit}}:refs/heads/feature/x", f.head());
+    let asked = crate::worktree::git::tally::asked(&f.clone);
+    assert!(
+        asked
+            .iter()
+            .any(|argv| argv.first().is_some_and(|verb| verb == "push") && argv.contains(&refspec)),
+        "{asked:?}"
+    );
+}
+
+#[test]
 fn a_repo_nobody_configured_is_left_exactly_as_it_is() {
     // The default is `off` (ADR 0051, amended 2026-09-25): no commit, no push, no PR, whoever
     // presses what.

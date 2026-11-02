@@ -617,35 +617,82 @@ impl LimitHit {
     }
 }
 
-/// **A limit hit on a pool, kept for the window to ask of** ([`hits_said_in`]): its words, and
-/// the hit they came from. One a limit, on a pool: the map stays as small as they are.
-static HITS: std::sync::Mutex<std::collections::BTreeMap<(String, usize), (LimitHit, String)>> =
-    std::sync::Mutex::new(std::collections::BTreeMap::new());
+/// **The limits one attempt was refused on** (spec #4275's typed refusal): what the window offers
+/// to raise beside that refusal, as data, never read from its words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    pub pool: String,
+    pub hits: Vec<LimitHit>,
+}
 
-/// **`hit`, on pool `pool`**, in words the window can ask of ([`hits_said_in`]). Only purlis's own
+impl Refused {
+    /// `hits`, added to what this attempt was refused on so far: a limit counts once, as it was
+    /// last hit, and a hit on another pool is what the attempt was refused on from then on.
+    fn with(self, pool: &str, hits: &[LimitHit]) -> Self {
+        let mut all = if self.pool == pool {
+            self.hits
+        } else {
+            Vec::new()
+        };
+        for hit in hits {
+            all.retain(|one| one.limit != hit.limit);
+            all.push(*hit);
+        }
+        Self {
+            pool: pool.to_owned(),
+            hits: all,
+        }
+    }
+}
+
+std::thread_local! {
+    /// What the attempt running on this thread was refused on: outside [`attempt`], nothing is
+    /// kept, so an earlier refusal can offer nothing to a later one.
+    static ATTEMPT: std::cell::RefCell<Option<Option<Refused>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **`work`, with the limits it was refused on** ([`hit_on`], [`hits_on`]): each surface's one
+/// attempt, on the thread it runs on, so what it offers is this attempt's alone and asks nothing
+/// of any words. The `Some` is for its refusal alone: an `Ok` offers nothing.
+pub fn attempt<T>(work: impl FnOnce() -> T) -> (T, Option<Refused>) {
+    /// Puts back the attempt this one is inside, however it ends.
+    struct Ends(Option<Option<Refused>>);
+    impl Drop for Ends {
+        fn drop(&mut self) {
+            ATTEMPT.set(self.0.take());
+        }
+    }
+    let ends = Ends(ATTEMPT.replace(Some(None)));
+    let done = work();
+    let refused = ATTEMPT.with_borrow_mut(|now| now.as_mut().and_then(Option::take));
+    drop(ends);
+    (done, refused)
+}
+
+/// **`hit`, on pool `pool`**, in words, and kept for the [`attempt`] it refused. Only purlis's own
 /// measure of a limit comes here, never a number a runner said: a runner cannot choose what the
 /// person is offered.
 #[must_use]
 pub fn hit_on(pool: &str, hit: LimitHit) -> String {
-    let said = hit.said();
-    HITS.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .insert((pool.to_owned(), hit.limit as usize), (hit, said.clone()));
-    said
+    hits_on(pool, &[hit]);
+    hit.said()
 }
 
-/// **The limits of pool `pool` that the refusal in the words `refused` said**: asked of what was
-/// kept, never read from the words. Only the pool acted on is asked of, so words a
-/// runner echoes reach no other pool's value, and only what purlis itself measured there. Empty
-/// for any other refusal.
-#[must_use]
-pub fn hits_said_in(pool: &str, refused: &str) -> Vec<LimitHit> {
-    HITS.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .iter()
-        .filter(|((of, _), (_, words))| of == pool && refused.contains(words.as_str()))
-        .map(|(_, (hit, _))| *hit)
-        .collect()
+/// [`hit_on`], for limits already said.
+pub fn hits_on(pool: &str, hits: &[LimitHit]) {
+    if hits.is_empty() {
+        return;
+    }
+    ATTEMPT.with_borrow_mut(|now| {
+        if let Some(kept) = now {
+            let so_far = kept.take().unwrap_or(Refused {
+                pool: pool.to_owned(),
+                hits: Vec::new(),
+            });
+            *kept = Some(so_far.with(pool, hits));
+        }
+    });
 }
 
 /// **The values the person chose for a pool's limits**, each unset where purlis's default holds.
@@ -952,20 +999,65 @@ mod tests {
         assert!(!top.contains("raise it"), "{top}");
     }
 
+    /// An offer is what the attempt refused was hit on (spec #4275).
     #[test]
-    fn the_refused_words_find_the_hit_they_said_and_no_other_words_do() {
+    fn an_attempt_has_the_limits_it_hit_and_no_other_attempts() {
         let hit = LimitId::CodeSize.limit().hit(1024, 1500, None);
-        let said = hit_on("hits-of-a-test", hit);
-        let refused = format!("the code did not reach the runner: {said}");
-        assert_eq!(hits_said_in("hits-of-a-test", "other words"), Vec::new());
-        // The same words from another pool's runner reach nothing of this pool's.
-        assert_eq!(hits_said_in("another-pool", &refused), Vec::new());
-        assert_eq!(hits_said_in("hits-of-a-test", &refused), vec![hit]);
+        let said = hit_on("before-any-attempt", hit);
+
+        let (words, refused) = attempt(|| format!("the code did not reach the runner: {said}"));
+        assert!(words.contains(&said));
+        assert_eq!(refused, None, "the same words, from no hit of this attempt");
+
+        let (_, refused) = attempt(|| hit_on("builds", hit));
         assert_eq!(
-            hits_said_in("hits-of-a-test", &refused),
-            vec![hit],
-            "a window drawn again is offered it again"
+            refused,
+            Some(Refused {
+                pool: "builds".to_owned(),
+                hits: vec![hit],
+            })
         );
+        assert_eq!(attempt(|| ()).1, None, "and the next attempt starts empty");
+    }
+
+    #[test]
+    fn a_limit_counts_once_in_an_attempt_and_the_pool_last_refused_on_is_its_pool() {
+        let code = |needed| LimitId::CodeSize.limit().hit(1024, needed, None);
+        let wait = LimitId::AnswerWait.limit().waited(20, None);
+        let (_, refused) = attempt(|| {
+            let _ = hit_on("left", wait);
+            let _ = hit_on("builds", code(1500));
+            let _ = hit_on("builds", wait);
+            let _ = hit_on("builds", code(1600));
+        });
+        let refused = refused.expect("it hit limits");
+        assert_eq!(refused.pool, "builds");
+        assert_eq!(refused.hits, vec![wait, code(1600)]);
+    }
+
+    #[test]
+    fn an_attempt_inside_another_keeps_its_hits_to_itself() {
+        let hit = LimitId::CodeSize.limit().hit(1024, 1500, None);
+        let wait = LimitId::AnswerWait.limit().waited(20, None);
+        let (inner, outer) = attempt(|| {
+            let _ = hit_on("outer", wait);
+            let inner = attempt(|| hit_on("inner", hit)).1;
+            let _ = hit_on("outer", wait);
+            inner
+        });
+        assert_eq!(inner.expect("its own").pool, "inner");
+        assert_eq!(outer.expect("its own").hits, vec![wait]);
+    }
+
+    #[test]
+    fn a_hit_on_another_thread_reaches_no_attempt_here() {
+        let hit = LimitId::CodeSize.limit().hit(1024, 1500, None);
+        let (_, refused) = attempt(|| {
+            std::thread::spawn(move || hit_on("elsewhere", hit))
+                .join()
+                .unwrap()
+        });
+        assert_eq!(refused, None);
     }
 
     /// #4281: a fixed limit says why and what to do instead, and has no way to be changed.

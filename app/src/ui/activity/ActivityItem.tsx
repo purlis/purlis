@@ -27,6 +27,7 @@ import {
   type ReactNode,
 } from "react";
 import { Tooltip } from "../tooltip/Tooltip";
+import { useWindowLeft } from "../windowLeft";
 
 /** The family's variants, in the order the manifest names them. */
 export const ACTIVITY_VARIANTS = ["tab", "bar"] as const;
@@ -78,6 +79,12 @@ export function ActivityItem({
   const [keyboard, setKeyboard] = useState(false);
   // A touch has no pointer to hover with, as React Aria has it: only a mouse or a pen hovers.
   const hovers = (e: PointerEvent) => e.pointerType !== "touch";
+  // Gone from the window, which an engine may not say on the item (#4628).
+  useWindowLeft((why) => {
+    if (why !== "pointer") return;
+    setHovered(false);
+    setPressed(false);
+  }, hovered || pressed);
   const item = (
     <button
       type="button"

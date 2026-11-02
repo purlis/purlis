@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { AnchoredTooltip, onTooltipEscape, TOOLTIP_CLOSE_DELAY } from "../tooltip/Tooltip";
+import { useWindowLeft } from "../windowLeft";
 
 /**
  * **A menu row's tooltip** (`docs/ui-primitives.md`, "Menus", rule 2): what the row does that its
@@ -96,6 +97,10 @@ export function useRested(has: boolean): {
     }),
     [],
   );
+  // Gone from the window, which an engine may not say on the tooltip (#4628).
+  useWindowLeft((why) => {
+    if (why === "pointer" && held.current) hold.onPointerLeave();
+  }, has);
   useEffect(
     () => () => {
       window.clearTimeout(soon.current);

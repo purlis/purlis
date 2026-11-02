@@ -67,6 +67,7 @@ const answered = (
     browsers: 0,
   },
   ran_this_week: ranThisWeek,
+  held: false,
 });
 
 const LIMITS = { cpus: "1.5", memory_mib: 2048, processes: 512, tmp_mib: 512 };
