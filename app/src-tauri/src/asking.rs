@@ -1047,6 +1047,7 @@ pub fn task_question(
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
