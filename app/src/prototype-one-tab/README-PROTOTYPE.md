@@ -56,4 +56,4 @@ measurement is its own ticket.
 
 ## Verdict
 
-Waiting on the person's review.
+Accepted by the person on 2026-11-02, all four as recommended: A (Name tabs), the one empty pane as drawn, the faint on-screen bar, and the real pick measured in #4692. The resolution is on #4582.
