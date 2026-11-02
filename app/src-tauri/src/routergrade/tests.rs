@@ -233,8 +233,6 @@ fn a_skill_s_grade_running_is_no_router_s_step() {
         "skill-step".to_owned(),
         Running {
             plane: plane.clone(),
-            skill: "deploy".into(),
-            level: None,
             stop: Arc::new(AtomicBool::new(false)),
             after_edit: None,
             step: RunningStep::Skill(crate::skillgrade::SkillGradeStep {
@@ -283,8 +281,6 @@ fn a_router_grade_s_page_finds_its_latest_step_while_it_runs_and_none_after() {
         "router-step".to_owned(),
         Running {
             plane: plane.clone(),
-            skill: String::new(),
-            level: None,
             stop: Arc::new(AtomicBool::new(false)),
             after_edit: None,
             step: RunningStep::Router(step.clone()),

@@ -1194,11 +1194,12 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "router_grade_plan",
     "router_grade_running",
     "router_grade_scorecard",
-    // A grade's kept chat and its scorecard (SK-59, #3239), and a skill's grading after each
-    // edit (SK-58, #3238): read only.
+    // A grade's kept chat and its scorecard (SK-59, #3239), a skill's grading after each edit
+    // (SK-58, #3238), and how far the one running is (#4338): read only.
     "skill_grade_after_edit",
     "skill_grade_chat",
     "skill_grade_plan",
+    "skill_grade_running",
     "skill_grade_scorecard",
     // A skill's grades, for its Grades tab (S6, #3688): read only.
     "skill_grades",

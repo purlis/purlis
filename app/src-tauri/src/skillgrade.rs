@@ -693,18 +693,12 @@ pub struct SkillGradeStep {
 /// One grade running, and its way to be stopped.
 pub(crate) struct Running {
     pub(crate) plane: PlaneId,
-    /// The skill it grades, by its name; empty for a router's grade (SK-15e), which no skill's
-    /// name is.
-    pub(crate) skill: String,
-    /// The copy it grades, by its level: same-named copies at two levels are two skills
-    /// (#3353). `None` for a router's grade.
-    pub(crate) level: Option<Level>,
     pub(crate) stop: Arc<AtomicBool>,
     /// The copy a saved edit of which started it (SK-58), by its opt-in's key (level and
     /// name): the next save of that copy stops it. `None` for a grade pressed by hand.
     pub(crate) after_edit: Option<String>,
     /// Its latest step told to the window: what a page that opens while it runs starts from
-    /// (#3928, #4222).
+    /// (#3928, #4222), and, of a skill's, which copy it grades (#4338).
     pub(crate) step: RunningStep,
 }
 
@@ -712,6 +706,16 @@ pub(crate) struct Running {
 pub(crate) enum RunningStep {
     Skill(SkillGradeStep),
     Router(crate::routergrade::RouterGradeStep),
+}
+
+impl Running {
+    /// Its latest step, where it is a skill's grade: no router's grade names a skill.
+    fn skill_step(&self) -> Option<&SkillGradeStep> {
+        match &self.step {
+            RunningStep::Skill(step) => Some(step),
+            RunningStep::Router(_) => None,
+        }
+    }
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -769,7 +773,9 @@ pub(crate) fn record_interrupted(root: &std::path::Path) -> Vec<String> {
 fn running_of(plane: &PlaneId, skill: &str) -> Option<String> {
     running()
         .iter()
-        .find(|(_, one)| one.plane == *plane && one.skill == skill)
+        .find(|(_, one)| {
+            one.plane == *plane && one.skill_step().is_some_and(|step| step.skill == skill)
+        })
         .map(|(id, _)| id.clone())
 }
 
@@ -1146,7 +1152,7 @@ pub(crate) fn begin(
         unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
     };
     // **One step of it**, as the window is told it and as a page that opens while it runs reads
-    // it (`skill_grades`).
+    // it (`skill_grade_running`).
     let step_of = {
         let (plane, skill, grade) = (plane.clone(), skill.clone(), id.clone());
         let copy_level = SkillLevel::from(&level);
@@ -1182,8 +1188,6 @@ pub(crate) fn begin(
             id.clone(),
             Running {
                 plane: plane.clone(),
-                skill: skill.clone(),
-                level: Some(level.clone()),
                 stop: Arc::clone(&stop),
                 after_edit: after_edit
                     .then(|| grades::after_edit::key(&level, &skill))
@@ -1704,20 +1708,40 @@ impl SkillGrades {
 /// The latest step of the grade of the copy of `skill` at `level` running in `plane` now, where
 /// one is.
 fn step_of_running(plane: &PlaneId, level: &Level, skill: &str) -> Option<SkillGradeStep> {
+    let level = SkillLevel::from(level);
     running()
         .values()
-        .filter(|one| {
-            one.plane == *plane && one.skill == skill && one.level.as_ref() == Some(level)
-        })
-        .find_map(|one| match &one.step {
-            RunningStep::Skill(step) => Some(step.clone()),
-            RunningStep::Router(_) => None,
-        })
+        .filter(|one| one.plane == *plane)
+        .filter_map(Running::skill_step)
+        .find(|step| step.skill == skill && step.level == level)
+        .cloned()
+}
+
+/// **The latest step of the skill's grade `grade` in `plane`**, where it runs (#4338): what its
+/// page reads, its grade's step and nothing else, so no other read can leave it without Stop.
+fn step_of_grade(plane: &PlaneId, grade: &str) -> Option<SkillGradeStep> {
+    running()
+        .get(grade)
+        .filter(|one| one.plane == *plane)
+        .and_then(Running::skill_step)
+        .cloned()
+}
+
+/// **Where the skill's grade `grade` is now** (#4338): its latest step while it runs, else `None`
+/// (its scorecard then says how it ended). Read only, from this app's own memory of its grades,
+/// as Stop is.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_grade_running(
+    plane: PlaneId,
+    grade: String,
+) -> Result<Option<SkillGradeStep>, String> {
+    Ok(step_of_grade(&plane, &grade))
 }
 
 /// **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
 /// skill's Grades tab draws its bars and its list from, with whether it has trigger tests and the
-/// grade of it running now (#3928), and what a running grade's page starts from.
+/// grade of it running now (#3928).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_grades(
