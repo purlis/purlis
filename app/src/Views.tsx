@@ -71,6 +71,7 @@ import {
 } from "./bindings";
 import { MemoryTab } from "./MemoryTab";
 import { MemoryArchiveTab } from "./MemoryArchiveTab";
+import { PoolSetupTab } from "./PoolSetupTab";
 import { catalogueMenu } from "./Menus";
 import {
   ARCHIVE_VIEW,
@@ -119,6 +120,7 @@ import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import { SKILL_STUDIO_VIEW, isSkillStudio } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
 import {
+  POOL_SETUP_VIEW,
   SAVING_VIEW,
   LICENCES_VIEW,
   SHORTCUTS_VIEW,
@@ -633,6 +635,9 @@ export function ViewPane({
             cwd={view.key}
             workspace={workspace ?? ""}
           />
+        ) : viewKey(view) === viewKey(POOL_SETUP_VIEW) ? (
+          /* Pool setup (spec #4469), keyed by the plane, whose personas it reads. */
+          <PoolSetupTab key={plane} plane={plane} />
         ) : isSaving(view) ? (
           /* The plane's save standing and its save button (charter-app#294). Keyed by the
              plane, so a pane that comes to show another project's starts from its own read. */
