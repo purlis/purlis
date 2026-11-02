@@ -5,8 +5,9 @@
 finds it on the pool its workspace runs its chats on, by that amendment's point 1, but kept it
 nowhere, so a restart after the setting moved never asked for it again.
 
-*Decided in implementation, to be confirmed* (D-4683-1). The person's ruling of 2026-11-02 holds
-as it stands: the one pool asked is the chat's own recorded pool, and asking it sends no code.
+**Ruled by the person, 2026-11-02 (D-4683-1):** *a record is added only through the window's own
+reattach, never on the runner's word alone.* Their ruling of the same day on #4590 holds as it
+stands: the one pool asked is the chat's own recorded pool, and asking it sends no code.
 
 1. **A chat with no record is kept where the window takes it back.** At a restart, a chat with no
    record at all that the pool its workspace runs its chats on says it runs, its runner now or one
