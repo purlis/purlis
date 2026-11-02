@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793588667942,
+  "lastUpdate": 1793591084716,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35658,6 +35658,48 @@ window.BENCHMARK_DATA = {
             "value": 101.67132050000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.001, 101.480, 101.671, 102.111, 103.438 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "aadda5dbed001175283cb70b7488379c64da52bd",
+          "message": "Runners: a plain guide to setting a pool up on a cluster (#4539)\n\n* Runners: a plain guide to setting a pool up on a cluster, run on kind and linked from the window (#4537)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: the guide checks images, holds teammates to a namespace, and says what it needs (#4537)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: the guide's link is the theme's link (#4537)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: the pools pictures with the guide's line (#4537)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: the guide finds the image's real commit and stops on a failed check (#4537)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T00:54:52Z",
+          "tree_id": "aa73f2f33c187fc61b539e3b7d39ba6eb95cced1",
+          "url": "https://github.com/purlis/purlis/commit/aadda5dbed001175283cb70b7488379c64da52bd"
+        },
+        "date": 1793591080726,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.689659,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.680, 0.686, 0.690, 0.696, 0.707 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4722235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.465, 16.466, 16.472, 16.527, 16.631 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.13246749999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.334, 101.638, 102.132, 102.353, 102.431 ms"
           }
         ]
       }
