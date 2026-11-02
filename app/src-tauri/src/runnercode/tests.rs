@@ -56,7 +56,6 @@ struct World {
     root: PathBuf,
     projects: PathBuf,
     sessions: HostedSessions,
-    connection: Arc<crate::hostedsessions::Connection>,
     /// The fresh runner's host, where the world has one, for a window that comes to it anew.
     fresh: Option<Hosting>,
     _runtime: tokio::runtime::Runtime,
@@ -109,13 +108,12 @@ impl World {
             }))
         });
         let (connection, _link) = crate::hostedsessions::tests::in_memory(relay, &runtime);
-        let sessions = HostedSessions::on_a_pools_runner(Arc::clone(&connection), &root);
+        let sessions = HostedSessions::on_a_pools_runner(connection, &root);
         World {
             _dir: dir,
             root,
             projects,
             sessions,
-            connection,
             fresh: None,
             _runtime: runtime,
         }
@@ -138,8 +136,7 @@ impl World {
         )
         .to_a_pool(FRESH);
         World {
-            sessions: HostedSessions::on_a_pools_runner(Arc::clone(&connection), &world.root),
-            connection,
+            sessions: HostedSessions::on_a_pools_runner(connection, &world.root),
             fresh: Some(runner),
             ..world
         }
