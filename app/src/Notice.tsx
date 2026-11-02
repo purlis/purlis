@@ -20,7 +20,6 @@ import {
   bandHeadSays,
   dismissAllSays,
   HOLDS_NOTHING,
-  PANE_NOTICES,
   sameHolds,
   type BandHolds,
 } from "./paneNotices";
@@ -644,6 +643,16 @@ function heldIn(boxes: readonly HTMLElement[]): BandHolds & { clears: number } {
   };
 }
 
+/** **The bell a pane's band folds into** (#4754, `NoticePaneRow`). */
+export type PaneBandBell = {
+  /** Whether every pane's notices are minimised now. */
+  minimised: boolean;
+  /** Minimises every pane's notices: the head row's Minimise. */
+  minimise: () => void;
+  /** Told what the band holds whenever that changes. */
+  onHolds: (holds: BandHolds) => void;
+};
+
 /**
  * **A pane's band: its Notices, under the pane's header and above its terminal** (#1647, #3142,
  * #4754, spec #4750 stories 33 to 39).
@@ -653,7 +662,7 @@ function heldIn(boxes: readonly HTMLElement[]): BandHolds & { clears: number } {
  * moves the header.
  *
  * **Minimised or expanded, one choice for every pane** (`paneNotices.ts`), where the band has a
- * bell to fold into (`onHolds`, the pane header's bell, `PaneBell`):
+ * bell to fold into (`bell`, the pane header's bell, `PaneBell`):
  *
  * - **minimised** (the default), the notes fold into the bell's count, and only the asks stand,
  *   as full cards (`waits`: a consent or a blocking question keeps its words);
@@ -675,22 +684,24 @@ function heldIn(boxes: readonly HTMLElement[]): BandHolds & { clears: number } {
 export function NoticePaneRow({
   children,
   band,
-  onHolds,
+  bell,
 }: {
   children: ReactNode;
   /** The pane this band is (`paneBand`): what stood in it is remembered when it is drawn anew. */
   band?: string;
-  /** The bell the band folds into, told what the band holds whenever that changes. Without it
-   *  the band never folds. */
-  onHolds?: (holds: BandHolds) => void;
+  /** The bell the band folds into: whether every pane's notices are minimised now, how to
+   *  minimise them (the head row's Minimise), and what to tell it the band holds whenever that
+   *  changes. Without one the band never folds. The pane hands it what the window keeps
+   *  (`paneNoticesPref.ts`), so the notice family reads no state of the window's. */
+  bell?: PaneBandBell;
 }) {
   const stackAt = useRef<HTMLDivElement>(null);
   const minimiseAt = useRef<HTMLButtonElement>(null);
   // **A granting Notice's ways out wait for it to settle once it moved** (#1695, train 54's
   // review): a Notice above it answered or gone can move another's way out under the pointer.
   const { at: rowAt, allows, said } = useNoticeSettle<HTMLDivElement>("stands", band, rowDrawn);
-  const shown = PANE_NOTICES.use();
-  const folds = onHolds !== undefined && shown === "minimised";
+  const onHolds = bell?.onHolds;
+  const folds = bell?.minimised === true;
   const [held, setHeld] = useState({ ...HOLDS_NOTHING, clears: 0, drawn: 0 });
 
   // Read off the stack: what it holds, and which notes the band folds.
@@ -818,7 +829,7 @@ export function NoticePaneRow({
     }, 0);
   };
 
-  const headed = onHolds !== undefined && !folds && notes + asks > 0;
+  const headed = bell !== undefined && !folds && notes + asks > 0;
   const empty = held.drawn === 0;
   return (
     <NoticeRow
@@ -839,7 +850,7 @@ export function NoticePaneRow({
             size="sm"
             variant="ghost"
             ref={minimiseAt}
-            onPress={() => PANE_NOTICES.set("minimised")}
+            onPress={() => bell?.minimise()}
             data-way="minimise"
           >
             Minimise

@@ -1,8 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { layoutPref } from "./layoutPref";
-
 /**
  * **A pane's notices, minimised or expanded** (#4754, spec #4750 stories 33 to 39, the accepted
  * prototype `prototype/pane-notices`, variant A).
@@ -15,35 +13,12 @@ import { layoutPref } from "./layoutPref";
  * - **Expanded, the band shows every notice**, with Dismiss all on its head row, which skips the
  *   asks and counts what it clears.
  * - **The bell's count is the pane's notes**, never its asks, the same number in both states.
+ *
+ * What is said, here, with no import: the notice family's band (`Notice.tsx`) draws it, and the
+ * theme specimen draws that without the window's state. The choice itself is kept in
+ * `paneNoticesPref.ts`.
  */
 export type PaneNoticesShown = "minimised" | "expanded";
-
-/** The choice as a layout document holds it, and what had to be put right. */
-export function loadPaneNotices(raw: unknown): { value: PaneNoticesShown; said: string[] } {
-  const held =
-    raw !== null && typeof raw === "object" && !Array.isArray(raw)
-      ? (raw as { notices?: unknown }).notices
-      : undefined;
-  if (held === undefined || held === "minimised") return { value: "minimised", said: [] };
-  if (held === "expanded") return { value: "expanded", said: [] };
-  return {
-    value: "minimised",
-    said: [
-      `"notices" ${JSON.stringify(held)} is not "minimised" or "expanded", so a pane's notices are minimised`,
-    ],
-  };
-}
-
-/** The store (`layoutPref.ts`), under `notices`. */
-export const PANE_NOTICES = layoutPref<PaneNoticesShown, "notices">({
-  key: "notices",
-  fallback: "minimised",
-  load: loadPaneNotices,
-  same: (one, other) => one === other,
-  written: (shown) => (shown === "expanded" ? "expanded" : undefined),
-  remedy: (where) =>
-    `fix ${where}, or minimise or expand a pane's notices from its bell, which rewrites it`,
-});
 
 /** **What a pane's band holds**, as its bell says it: its notes, how many of them are trouble,
  *  and its asks, which are never counted. */

@@ -233,6 +233,17 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       timeout: 30_000,
       timeoutMsg: `the running chat was never offered a restart for its new skill`,
     });
+    // A note, folded into the pane's bell while notices are minimised, the window's default
+    // (#4754): a person presses the bell to see it, a press counted like any other.
+    const bell = await $(
+      `.pane-frame:has([data-cause="skills-changed:${chat.session}"]) [data-way="bell"]`,
+    );
+    const folded = (await bell.getAttribute("aria-expanded")) === "false";
+    if (folded) {
+      await bell.click();
+      effort.presses += 1;
+      await notice.waitForDisplayed({ timeout: 10_000 });
+    }
     await notice.$("button=Restart").click();
     effort.presses += 1;
     await notice.waitForExist({ timeout: 40_000, reverse: true }).catch(async () => {
@@ -253,6 +264,13 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
         `the restart never landed. Statuses: ${JSON.stringify(statuses)}. Around the pane: ${said.slice(0, 500)}`,
       );
     });
+
+    // The panes' notices minimised again, as the window's default, for the specs after this one:
+    // the person's own tidying, not part of wanting a skill, so no press is counted.
+    if (folded) {
+      const now = await $('.pane-frame [data-way="bell"][aria-expanded="true"]');
+      if (await now.isExisting()) await now.click();
+    }
 
     // The Notice goes as the restart begins. The chat is back once the pane in front is a chat the
     // core runs, and has stayed so: a pick before that types into the program being replaced.

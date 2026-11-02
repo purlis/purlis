@@ -474,7 +474,8 @@ describe("a refused vault, on a pane whose chat has already asked that persona",
       [...(frame?.firstElementChild?.children ?? [])].map(
         (one) => one.getAttribute("data-scope") ?? one.className,
       ),
-    ).toEqual(["notice-row", "pane-head"]);
+      // The header first and the band under it (#4754), so a Notice arriving never moves it.
+    ).toEqual(["pane-head", "notice-row"]);
   });
 
   it("reads the request top to bottom: the sentence, the answers in order, then the brief", async () => {

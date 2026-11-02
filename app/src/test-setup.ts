@@ -16,7 +16,7 @@ import { forgetProjectThemes } from "./projectTheme";
 import { forgetSwitches } from "./switchClock";
 import { forgetUnappliedRepos } from "./unappliedRepos";
 import { forgetPaneBands } from "./noticeSettle";
-import { PANE_NOTICES } from "./paneNotices";
+import { PANE_NOTICES } from "./paneNoticesPref";
 
 // What each project has on is kept per plane for the window's life (`extensionsOn.ts`); every
 // test's window is a new one, and most of them share a plane path.

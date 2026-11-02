@@ -18,6 +18,7 @@ import type { FinishedTask, Moved, OpenChat, Shown } from "./bindings";
 import type { State } from "./chatState";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
+import { PANE_NOTICES } from "./paneNoticesPref";
 import { stripNamed } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
@@ -310,6 +311,9 @@ async function drawn(open: Listed[], finished: FinishedTask[] = []) {
 beforeEach(() => {
   globalThis.localStorage.clear();
   forgetThisLaunch();
+  // A task's prompt is a note on its session's pane, folded into the bell while the band is
+  // minimised (#4754): these tests read it on the band, expanded, as a test's machine has it.
+  PANE_NOTICES.keep("expanded");
   forgetKeyboard();
 });
 afterEach(() => {

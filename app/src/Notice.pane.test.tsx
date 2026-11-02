@@ -8,7 +8,8 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { useContext, useLayoutEffect, useState, type ReactNode } from "react";
 import { Notice, NoticePaneRow } from "./Notice";
-import { PANE_NOTICES, type BandHolds } from "./paneNotices";
+import type { BandHolds } from "./paneNotices";
+import { PANE_NOTICES } from "./paneNoticesPref";
 import {
   NOTICE_MOVED_JUST_NOW,
   NoticeWayGuard,
@@ -220,10 +221,15 @@ describe("a pane's row of Notices", () => {
     /** The band as a chat's pane draws it, and what it last told its bell. */
     function Band({ children }: { children: ReactNode }) {
       const [holds, setHolds] = useState<BandHolds>();
+      const minimised = PANE_NOTICES.use() === "minimised";
       return (
         <>
           <div data-testid="holds">{holds === undefined ? "" : JSON.stringify(holds)}</div>
-          <NoticePaneRow onHolds={setHolds}>{children}</NoticePaneRow>
+          <NoticePaneRow
+            bell={{ minimised, minimise: () => PANE_NOTICES.set("minimised"), onHolds: setHolds }}
+          >
+            {children}
+          </NoticePaneRow>
         </>
       );
     }

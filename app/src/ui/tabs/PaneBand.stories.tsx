@@ -21,12 +21,8 @@ import { Sparkles, X } from "lucide-react";
 import { Notice, NoticePaneRow } from "../../Notice";
 import { NOTICE_MOVED_JUST_NOW, SETTLE_MS, paneBand } from "../../noticeSettle";
 import { PaneActions, PaneBellOf, PaneHead } from "../../LayoutPanes";
-import {
-  HOLDS_NOTHING,
-  PANE_NOTICES,
-  type BandHolds,
-  type PaneNoticesShown,
-} from "../../paneNotices";
+import { HOLDS_NOTHING, type BandHolds, type PaneNoticesShown } from "../../paneNotices";
+import { PANE_NOTICES } from "../../paneNoticesPref";
 import type { Offer } from "../../actions";
 import { ChatMark } from "../../NeedsYou";
 import { useTabIds, StripTablist } from "../../StripTablist";
@@ -210,6 +206,7 @@ function Pane({
   band?: string;
 }) {
   const [holds, setHolds] = useState<BandHolds>(HOLDS_NOTHING);
+  const minimised = PANE_NOTICES.use() === "minimised";
   return (
     <div
       className="pane-frame pane-headed"
@@ -247,7 +244,10 @@ function Pane({
             </span>
           </div>
         </PaneHead>
-        <NoticePaneRow band={band} onHolds={setHolds}>
+        <NoticePaneRow
+          band={band}
+          bell={{ minimised, minimise: () => PANE_NOTICES.set("minimised"), onHolds: setHolds }}
+        >
           <Warnings shown={warnings} />
         </NoticePaneRow>
       </div>

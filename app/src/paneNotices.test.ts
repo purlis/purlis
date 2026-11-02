@@ -2,15 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import {
-  arrived,
-  bandHeadSays,
-  bellCount,
-  bellSays,
-  dismissAllSays,
-  loadPaneNotices,
-  PANE_NOTICES,
-} from "./paneNotices";
+import { arrived, bandHeadSays, bellCount, bellSays, dismissAllSays } from "./paneNotices";
+import { loadPaneNotices, PANE_NOTICES } from "./paneNoticesPref";
 
 describe("a pane's notices, minimised or expanded (#4754)", () => {
   it("is minimised where the layout file says nothing of it", () => {

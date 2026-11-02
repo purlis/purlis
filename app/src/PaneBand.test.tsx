@@ -303,6 +303,12 @@ describe("the pane's rules", () => {
     ).toMatch(/color:\s*var\(--danger-text\)/);
   });
 
+  it("keeps a card shorter than its pane less the header above it (#4754)", () => {
+    expect(css).toMatch(
+      /max-block-size:\s*calc\(100cqb - var\(--size-chrome\) - var\(--space-8\)\)/,
+    );
+  });
+
   it("keeps the header one row that never gives way", () => {
     expect(rule("\\.pane-head")).toMatch(/flex:\s*none/);
   });

@@ -18,7 +18,7 @@ import { CHATS_LIST, type ChatsListPrefs } from "./chatsListPrefs";
 import { YOUR_EDITOR } from "./yourEditor";
 import { RAIL_MODE } from "./railMode";
 import { SKILLS_VIEW } from "./skillsViewPrefs";
-import { PANE_NOTICES } from "./paneNotices";
+import { PANE_NOTICES } from "./paneNoticesPref";
 import { APPEARANCE, type Appearance } from "./appearance";
 import { NOTIFICATIONS, type NotificationPrefs } from "./notificationPrefs";
 import { STATUS_BAR, type StatusBarPrefs } from "./statusBarPrefs";

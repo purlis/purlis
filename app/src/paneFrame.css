@@ -137,8 +137,10 @@
   > :is(.notice-pane-box, [data-scope="notice"][data-part="root"]) {
   flex: none;
   min-block-size: auto;
-  /* Never taller than its pane: what a way out opened gives way first, inside the card. */
-  max-block-size: calc(100cqb - var(--space-8));
+  /* Never taller than its pane: what a way out opened gives way first, inside the card. The
+     header above the band (#4754) and the band's runway are taken off: a chrome row and its
+     steps. */
+  max-block-size: calc(100cqb - var(--size-chrome) - var(--space-8));
 }
 
 .pane-top

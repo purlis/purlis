@@ -70,14 +70,8 @@ import {
 } from "./ChatNotices";
 import { Button, IconButton } from "./ui/button/Button";
 import { Bell } from "lucide-react";
-import {
-  arrived,
-  bellCount,
-  bellSays,
-  HOLDS_NOTHING,
-  PANE_NOTICES,
-  type BandHolds,
-} from "./paneNotices";
+import { arrived, bellCount, bellSays, HOLDS_NOTHING, type BandHolds } from "./paneNotices";
+import { PANE_NOTICES } from "./paneNoticesPref";
 
 /**
  * **The panes of the tab in front** (#1035, split out of `PlaneView.tsx`): the split layout
@@ -361,8 +355,17 @@ export function PaneNotices({
   others: readonly HiddenChat[];
   onShowChat: (session: number) => void;
 }) {
+  // The window's choice, kept (`paneNoticesPref.ts`), handed to the band with the bell's ear.
+  const minimised = PANE_NOTICES.use() === "minimised";
+  const bell = useMemo(
+    () =>
+      onHolds === undefined
+        ? undefined
+        : { minimised, minimise: () => PANE_NOTICES.set("minimised"), onHolds },
+    [minimised, onHolds],
+  );
   return (
-    <NoticePaneRow band={band} onHolds={onHolds}>
+    <NoticePaneRow band={band} bell={bell}>
       {notices}
       {asked}
       {others.map((other) => (
