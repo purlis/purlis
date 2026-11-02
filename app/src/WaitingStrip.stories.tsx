@@ -241,5 +241,9 @@ export const OverARealTerminal: StoryObj<typeof OverATerminal> = {
     await untilFocused(() => typing, "the keyboard stays in the terminal");
     await userEvent.keyboard("st");
     await waitFor(() => expect(host.dataset.typed).toBe("st"));
+    // The terminal's scrollbar shows as it scrolls, then hides on a timer and fades: let it
+    // settle, so its picture is the same on every run (#4771's second run caught it mid-fade).
+    await new Promise((settled) => setTimeout(settled, 1500));
+    await Promise.all(host.getAnimations({ subtree: true }).map((fading) => fading.finished));
   },
 };
