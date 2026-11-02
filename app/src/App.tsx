@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { P4351 } from "./debug4351";
 import { saidOfLate, useLateAnswers } from "./answerWatch";
 import {
   useCallback,
@@ -2683,6 +2684,7 @@ function App() {
           their splits and their chat states and draw nothing at all. */}
           <div className="project-views" ref={setProjectSlot} />
           {planes.map((plane) => (
+            <P4351 id="plane">
             <PlaneView
               key={plane}
               plane={plane}
@@ -2721,6 +2723,7 @@ function App() {
               windowLines={plane === inFront ? windowLines : undefined}
               paletteOpen={paletteOpen}
             />
+            </P4351>
           ))}
 
           {/* Settings drawn where the opener is, with no project open (#1206). */}
