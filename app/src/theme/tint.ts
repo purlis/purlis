@@ -76,8 +76,8 @@ export type Rule = {
   distance: number;
 };
 
-/** Which sides a search moves: told whether a side is held alone. */
-type Moves = (alone: boolean) => boolean;
+/** Which sides a search moves: `"all"`, or `"alone"`, only the sides held alone. */
+type Moves = "all" | "alone";
 
 /** The step the chroma a tint gives is lowered by to hold its accent apart. */
 const CHROMA_STEP = 0.005;
@@ -90,7 +90,7 @@ const CHROMA_STEP = 0.005;
  * theme tints.
  */
 export function apartChroma(rules: readonly Rule[], hue: number): number | undefined {
-  return remembered([], rules, hue, Number.POSITIVE_INFINITY, () => true);
+  return remembered([], rules, hue, Number.POSITIVE_INFINITY, "all");
 }
 
 /**
@@ -108,7 +108,7 @@ export function aloneChroma(
   shared: number,
   hue: number,
 ): number | undefined {
-  return remembered(kin, rules, hue, shared, (alone) => alone);
+  return remembered(kin, rules, hue, shared, "alone");
 }
 
 /**
@@ -149,7 +149,7 @@ function remembered(
           `${one.from}${one.fromTinted}${one.fromAlone === true} ${one.distance}`,
       )
       .join(" ");
-  const key = `${ceiling} ${hue} ${written(rules)} / ${written(kin)}`;
+  const key = `${moves} ${ceiling} ${hue} ${written(rules)} / ${written(kin)}`;
   if (answered.has(key)) return answered.get(key);
   const answer = searchedChroma(rules, kin, hue, ceiling, moves);
   if (answered.size >= MOST_ANSWERED) answered.delete(answered.keys().next().value as string);
@@ -198,9 +198,10 @@ function searchedChroma(
   ceiling: number,
   moves: Moves,
 ): number | undefined {
+  const moving = (alone: boolean | undefined) => moves === "all" || alone === true;
   const far = (most: number) => {
     if (!kin.every((rule) => holdsAt(rule, hue, most, most))) return false;
-    const chroma = (alone: boolean | undefined) => (moves(alone === true) ? most : ceiling);
+    const chroma = (alone: boolean | undefined) => (moving(alone) ? most : ceiling);
     return rules.every((rule) =>
       holdsAt(rule, hue, chroma(rule.tokenAlone), chroma(rule.fromAlone)),
     );
@@ -213,7 +214,7 @@ function searchedChroma(
       [rule.token, rule.tokenTinted, rule.tokenAlone],
       [rule.from, rule.fromTinted, rule.fromAlone],
     ] as const) {
-      if (!tinted || !moves(alone === true) || !value.startsWith("#")) continue;
+      if (!tinted || !moving(alone) || !value.startsWith("#")) continue;
       const [, a, b] = oklab(parse(value).rgb);
       const own = Math.hypot(a, b);
       had = Math.max(had, own < GREY ? NEUTRAL_CHROMA : own);
@@ -228,15 +229,17 @@ function searchedChroma(
 
 /**
  * **The most chroma a tint gives `token`** when {@link apartChroma} answers `most`
- * (`purlis_core::theme::chroma_for`, #3034): `most` for a side of one of the `rules` the theme
- * hands (`undefined`, untinted, where no amount holds them), and no limit for every other token,
- * which no rule measures, so a workspace's strip keeps its colour's full hue.
+ * and {@link aloneChroma} `alone` (`purlis_core::theme::chroma_of`, #3034): `alone` for a side of
+ * a rule held alone, `most` for a side of any other of the `rules` the theme hands, and no limit
+ * for every other token, which no rule measures, so a workspace's strip keeps its colour's full
+ * hue. `undefined` is untinted, where no amount holds them: `alone` is not optional, because
+ * `undefined` there says the sides held alone are drawn as written, whatever `most` says.
  */
 export function chromaFor(
   token: string,
   most: number | undefined,
   rules: readonly Apart[],
-  alone: number | undefined = most,
+  alone: number | undefined,
 ): number | undefined {
   const side = (rule: Apart) => rule.token === token || rule.from === token;
   // A side of a rule held alone gives way to every rule together (#3130): `alone`.

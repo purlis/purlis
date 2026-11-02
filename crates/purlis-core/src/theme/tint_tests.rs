@@ -624,6 +624,39 @@ fn each_side_is_measured_as_the_window_measures_it() {
 }
 
 #[test]
+fn every_tinted_token_is_drawn_as_the_window_draws_it() {
+    // The shared fixture's `drawn`: past `most_of`, what each token is given from those answers
+    // and the colour that makes, on Purlis's own appearances. `tint.ts` reads the same cases.
+    let cases: Value = serde_json::from_str(TINT_CASES).unwrap();
+    let cases = cases["drawn"].as_array().unwrap();
+    assert!(cases.len() >= 6);
+    let mut as_written = false;
+    for case in cases {
+        let id = case["appearance"].as_str().unwrap();
+        let colour = case["colour"].as_str().unwrap();
+        let theme = purlis()
+            .appearances
+            .iter()
+            .find(|one| one.id == id)
+            .expect("one of Purlis's appearances");
+        let tint = tinted(theme, colour);
+        let tokens = case["tokens"].as_object().unwrap();
+        assert_eq!(tokens.len(), theme.tint.tabs().len(), "{id} in {colour}");
+        for (token, want) in tokens {
+            assert_eq!(
+                tint.value(token),
+                want.as_str().unwrap(),
+                "{token} of {id} in {colour}"
+            );
+        }
+        as_written |= tint.value("accent.base") == theme.value("accent.base")
+            && tint.value("layer.chat") != theme.value("layer.chat");
+    }
+    // The path where the sides held alone are drawn as written and the strip still turns.
+    assert!(as_written);
+}
+
+#[test]
 fn a_theme_whose_accent_meets_danger_under_one_tint_is_drawn_with_them_apart_there() {
     // Danger drawn as the accent turned to red: apart as written, the same under a red tint.
     let accent = built_in_for(Appearance::Dark)
