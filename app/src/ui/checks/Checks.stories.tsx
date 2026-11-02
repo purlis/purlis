@@ -22,7 +22,7 @@ export const EveryVerdict: Story = {
           The image runs as root, and a runner needs another user.
         </CheckLine>
         <CheckLine verdict="running" title="The profile is signed in" />
-        <CheckLine verdict="todo" title="Not checked yet" />
+        <CheckLine verdict="todo" title="A chat starts on dev-box" />
         <CheckLine verdict="warn" title="Its harness can't say whether it's signed in" />
         <CheckLine verdict="skip" title="gh wasn't checked">
           Agent identity was skipped.

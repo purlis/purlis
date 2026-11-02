@@ -63,7 +63,7 @@ pub(super) const CHECKS: Family = Family {
         verdict("ok", "Passed."),
         verdict("missing", "Failed."),
         verdict("running", "Being checked now."),
-        verdict("todo", "Not checked yet."),
+        verdict("todo", "To be checked when the check runs."),
         verdict("warn", "Passed, with something to look at."),
         verdict("skip", "Not checked, and why is said."),
     ],
