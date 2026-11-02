@@ -69,6 +69,7 @@ pub fn until_answered_or_input_ends(
                 driven,
                 kept_in: kept_in.to_path_buf(),
                 waiting: None,
+                group: None,
                 over: false,
             })),
             out: Box::new(out),
@@ -88,6 +89,8 @@ struct Reading {
     driven: Driven,
     kept_in: PathBuf,
     waiting: Option<Waiting>,
+    /// The login's process group, once it has started.
+    group: Option<u32>,
     /// The login ended: nothing it printed is recorded any more.
     over: bool,
 }
@@ -126,6 +129,12 @@ fn run_until_input_ends(
     let (not_recorded, refused) = mpsc::channel();
     let mut readers = Vec::new();
     let mut record_ends = watched.map(|watched| {
+        // Its process id is its group's, as it was started above.
+        watched
+            .reading
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .group = Some(child.id());
         if let Some(from) = child.stdout.take() {
             readers.push(passing_on(
                 Stream::Out,
@@ -297,9 +306,11 @@ impl Reading {
                 && !self.over
             {
                 let at = super::callback::listening_on(port);
-                self.waiting = Some(Waiting::record_at(&self.kept_in, &state, at).map_err(
-                    |why| format!("purlis could not note this sign-in on this runner: {why}"),
-                )?);
+                self.waiting = Some(
+                    Waiting::record_of_group(&self.kept_in, &state, at, self.group).map_err(
+                        |why| format!("purlis could not note this sign-in on this runner: {why}"),
+                    )?,
+                );
             }
         }
         Ok(())

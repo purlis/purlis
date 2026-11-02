@@ -2932,3 +2932,122 @@ fn a_runner_made_again_is_named_for_its_pool() {
     let user = crate::dockerpool::User::new(10001, 10001).unwrap();
     assert!(Runner::new(&named, image, user, "/home/purlis").is_ok());
 }
+
+/// **A kept runner reads back as it was made** (#4286): every link checks its container against
+/// these, so a pool of its own limits must not read as the defaults.
+#[test]
+fn a_runner_of_a_pool_with_its_own_limits_reads_back_with_them() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let mut inspect = inspected();
+    inspect[0]["HostConfig"]["NanoCpus"] = 1_500_000_000_u64.into();
+    fake.set("inspect", &inspect.to_string());
+    let set = Set {
+        millicpus: Some(1500),
+        ..Set::default()
+    };
+    add(config.path(), &fake.docker(), &pool("first", set), &ours).unwrap();
+    let kept = runners::runner_for(config.path(), "first").unwrap();
+    assert_eq!(kept.made.runner.limits().millicpus(), 1500);
+    assert!(
+        runners::changes_waiting(config.path(), "first")
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// **A changed limit waits, and nothing moves until the runner is replaced** (#4286): the running
+/// runner stays checked as it was made, Replace leaves it draining with its chats, and new chats
+/// start on the new one.
+#[test]
+fn replacing_a_runner_holds_the_new_one_to_the_change_and_drains_the_old() {
+    use crate::poollimits::LimitId;
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = a_pool_added(config.path(), &fake, &ours);
+    let next = "first-0a1b2c3d";
+
+    // Nothing waits: Replace makes nothing.
+    assert!(
+        replace_as(config.path(), &fake.docker(), "first", next, &ours)
+            .unwrap()
+            .is_none()
+    );
+
+    runners::set_pool_limit(config.path(), "first", LimitId::Cpus, Some(1500)).unwrap();
+    assert_eq!(
+        runners::changes_waiting(config.path(), "first").unwrap(),
+        vec![LimitId::Cpus]
+    );
+    // The change alone leaves the running runner as it was made, so its links still pass.
+    let running = runners::runner_for(config.path(), "first").unwrap();
+    assert_eq!(running.made, old.made);
+    assert_eq!(running.made.runner.limits().millicpus(), 2000);
+    assert!(runners::draining(config.path()).unwrap().is_empty());
+
+    let answers = successor_answers();
+    makes(&fake, next, IMAGE_OF_FIRST, &answers);
+    let mut inspect: serde_json::Value = serde_json::from_str(&fake.file("inspect")).unwrap();
+    inspect[0]["HostConfig"]["NanoCpus"] = 1_500_000_000_u64.into();
+    fake.set("inspect", &inspect.to_string());
+    let kept = replace_as(config.path(), &fake.docker(), "first", next, &ours)
+        .unwrap()
+        .expect("a runner made beside the old one");
+
+    assert_eq!(kept.name(), next);
+    assert_eq!(kept.of.as_deref(), Some("first"));
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().name(),
+        next
+    );
+    let draining = runners::draining(config.path()).unwrap();
+    assert_eq!(draining.len(), 1);
+    assert_eq!(draining[0].made.runner.name(), old.made.runner.name());
+    // The old one still reads as it was made, so a link to its running chats still passes.
+    assert_eq!(draining[0].made.runner.limits().millicpus(), 2000);
+    assert!(
+        runners::changes_waiting(config.path(), "first")
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        fake.file("log").contains("--cpus 1.500"),
+        "{}",
+        fake.file("log")
+    );
+}
+
+/// **A limit's checks hold across limits** (#4286): `/tmp` no larger than the memory it counts on.
+#[test]
+fn a_shape_change_is_refused_as_a_new_pool_would_be_and_a_reset_is_a_change_back() {
+    use crate::poollimits::LimitId;
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let refused =
+        runners::set_pool_limit(config.path(), "first", LimitId::Tmp, Some(8192)).unwrap_err();
+    assert!(
+        refused.to_string().contains("no larger than its memory"),
+        "{refused}"
+    );
+    assert!(
+        runners::changes_waiting(config.path(), "first")
+            .unwrap()
+            .is_empty()
+    );
+    // A reset is a change back: nothing waits.
+    runners::set_pool_limit(config.path(), "first", LimitId::Memory, Some(8192)).unwrap();
+    assert_eq!(
+        runners::changes_waiting(config.path(), "first").unwrap(),
+        vec![LimitId::Memory]
+    );
+    runners::set_pool_limit(config.path(), "first", LimitId::Memory, None).unwrap();
+    assert!(
+        runners::changes_waiting(config.path(), "first")
+            .unwrap()
+            .is_empty()
+    );
+}

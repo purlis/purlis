@@ -546,9 +546,11 @@ pub fn rename(request: &Request, say: Sink) -> u8 {
         // writer that read `workspace.json` before the move finishes its write first, so it
         // never lands in a folder that has just gone. The lock is on the directory's inode,
         // which the move keeps, so it is let go here and the rewrite below takes it again.
-        let moving = crate::rewrite::Lock::on(&from);
-        let moved = std::fs::rename(&from, &to);
-        drop(moving);
+        let moved = crate::rewrite::Lock::bounded(&from).and_then(|moving| {
+            let moved = std::fs::rename(&from, &to);
+            drop(moving);
+            moved
+        });
         if let Err(why) = moved {
             let _ = std::fs::remove_file(journal_path(root));
             say(Say::Fail(

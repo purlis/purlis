@@ -332,6 +332,18 @@ impl Run {
         self.said.push(Say::Err(s.into()));
     }
 
+    /// `root` locked for one rewrite, or `None` with why, and the run failed.
+    fn locked(&mut self, root: &Path) -> Option<crate::rewrite::Lock> {
+        match crate::rewrite::Lock::bounded(root) {
+            Ok(held) => Some(held),
+            Err(why) => {
+                self.err(why.to_string());
+                self.failed = true;
+                None
+            }
+        }
+    }
+
     /// `rel` under `root`, or `None` with the escape recorded — once per path.
     fn gate(&mut self, root: &Path, rel: &str) -> Option<PathBuf> {
         match gate(root, rel) {
@@ -514,10 +526,11 @@ pub fn init(place: &Place, args: &InitArgs) -> Outcome {
 
     baseline_dirs(&mut run, root);
 
-    if let Some(path) = run.gate(root, ".gitignore") {
+    if let Some(path) = run.gate(root, ".gitignore")
+        && let Some(_held) = run.locked(root)
+    {
         // One writer of the plane's `.gitignore` at a time: `charter workspace live` edits it
         // too, and each of them rewrites the whole file from what it read.
-        let _held = crate::rewrite::Lock::on(root);
         match ensure_gitignore(&path) {
             Ok(true) => run.created.push(".gitignore".to_owned()),
             Ok(false) => run.present.push(".gitignore".to_owned()),
@@ -641,8 +654,9 @@ pub fn ignore_local_profiles(root: &Path) -> Outcome {
         return refusal;
     }
     let mut run = Run::default();
-    if let Some(path) = run.gate(root, ".gitignore") {
-        let _held = crate::rewrite::Lock::on(root);
+    if let Some(path) = run.gate(root, ".gitignore")
+        && let Some(_held) = run.locked(root)
+    {
         let lines = local_profiles_ignores();
         let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
         match append_gitignore(
@@ -692,8 +706,9 @@ pub fn reinit(place: &Place) -> Outcome {
 
     baseline_dirs(&mut run, root);
 
-    if let Some(path) = run.gate(root, ".gitignore") {
-        let _held = crate::rewrite::Lock::on(root);
+    if let Some(path) = run.gate(root, ".gitignore")
+        && let Some(_held) = run.locked(root)
+    {
         // The state folder's purlis name too (RN-2a): `/.charter/` came with the baseline,
         // and a leftover `.purlis/` holds a vault registry as much as `.charter/` does.
         let states = state_ignores();
@@ -1011,8 +1026,9 @@ fn fold(entries: &[String]) -> Vec<String> {
 /// (`.charter/` anywhere in the body) and its whole-line tests for the rest.
 /// The plane's `.gitattributes` merge rules, written through the same gate as `.gitignore`.
 fn merge_rules(run: &mut Run, root: &Path) {
-    if let Some(path) = run.gate(root, ".gitattributes") {
-        let _held = crate::rewrite::Lock::on(root);
+    if let Some(path) = run.gate(root, ".gitattributes")
+        && let Some(_held) = run.locked(root)
+    {
         match ensure_gitattributes(&path) {
             Ok(true) => run.created.push(".gitattributes (merge rules)".to_owned()),
             Ok(false) => run.present.push(".gitattributes (merge rules)".to_owned()),

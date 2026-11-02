@@ -216,7 +216,7 @@ impl Store {
         change: impl FnOnce(&mut Vec<Update>) -> bool,
     ) -> io::Result<Vec<Update>> {
         crate::rewrite::create_dir_all(&self.dir)?;
-        let _held = crate::rewrite::Lock::on(&self.dir);
+        let _held = crate::rewrite::Lock::bounded(&self.dir)?;
         let file = self.file(root);
         let was = self.everything(root);
         let before = was.len();

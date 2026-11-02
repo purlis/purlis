@@ -623,6 +623,31 @@ pub fn make_again_on(machine: &Machine, name: &str) -> Result<MadeAgain, String>
     })
 }
 
+/// **Replaces pool `name`'s runner, as the person pressed** (#4286, Q13): one of the pool's limits
+/// as they stand is made beside it, new chats start there, and the old one's chats carry on on it
+/// until they end. Nothing happens where no change waits. The window's alone: a chat only proposes
+/// a limit, through the edit ask (Q6), and never replaces a runner.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_replace_runner(name: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("replacing a pool's runner", move || {
+            let machine = Machine::here(&config_root()?)?;
+            let desktop = machine.desktop()?.pinned();
+            purlis_core::pools::replace(&machine.config, &machine.docker, &name, &desktop)
+                .map(drop)
+                .map_err(|why| refused_said(&why.to_string()))
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = name;
+        Err(NOT_HERE.to_owned())
+    }
+}
+
 /// **Which version the pool `name`'s runner runs, against this desktop's** (#2749).
 #[tauri::command]
 #[specta::specta]

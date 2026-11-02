@@ -218,6 +218,7 @@ fn the_environment_is_the_harnesss_own_namespace_and_never_charters_or_a_credent
         ("GEMINI_TOKEN_*", "named like a credential"),
         ("*", "capitals, digits and '_'"),
         ("gemini_*", "capitals, digits and '_'"),
+        ("CLAUDE_CODE_SANDBOXED", "a harness's internal variable"),
     ] {
         let why = refused(
             "gemini",

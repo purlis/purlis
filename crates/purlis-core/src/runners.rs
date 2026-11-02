@@ -52,6 +52,9 @@ pub enum Refused {
     /// A runner already kept answered with another device id or key: it is refused, and what
     /// was kept stays. The window says the runner's key changed and offers to remove it.
     KeyChanged { name: String },
+    /// A wait that is one of the pool's limits ended the attempt (spec #4275, #4398): only this
+    /// refusal offers to raise it.
+    WaitRanOut(String),
     /// Anything else, in words a person reads.
     Other(String),
 }
@@ -64,7 +67,7 @@ impl std::fmt::Display for Refused {
                 "runner {name} answered with another key than the one kept for it, so purlis \
                  refused it and keeps the key it pinned; remove the runner if it was made again"
             ),
-            Refused::Other(why) => f.write_str(why),
+            Refused::WaitRanOut(why) | Refused::Other(why) => f.write_str(why),
         }
     }
 }
@@ -274,6 +277,33 @@ impl Pool {
         crate::runnerlink::hex_of(&sha2::Sha256::digest(row.as_bytes()))
     }
 
+    /// This pool, holding `set` from now on: the checks of a new one, and all else as it was.
+    fn with_set(&self, set: Set) -> Result<Pool, Refused> {
+        Ok(Pool {
+            price: self.price.clone(),
+            profiles: self.profiles.clone(),
+            refused_limits: self.refused_limits.clone(),
+            ..Pool::new(&self.name, self.image.clone(), set)?
+        })
+    }
+
+    /// What the person set of the limits shaping its runner (Q13), as the list of limits holds
+    /// them, over `chosen`.
+    fn with_shape_in(&self, chosen: crate::poollimits::Chosen) -> crate::poollimits::Chosen {
+        use crate::poollimits::LimitId;
+        chosen
+            .with(LimitId::Cpus, self.set.millicpus.map(u64::from))
+            .with(LimitId::Memory, self.set.memory_mib)
+            .with(LimitId::Processes, self.set.processes.map(u64::from))
+            .with(LimitId::Tmp, self.set.tmp_mib)
+            .with(
+                LimitId::SuspendAfter,
+                self.set
+                    .suspend_after
+                    .map(|after| after.as_secs().div_ceil(60)),
+            )
+    }
+
     /// This pool, its runner image `image` from now on (#2749).
     fn moved_to(&self, image: Image) -> Pool {
         Pool {
@@ -427,8 +457,9 @@ fn load(config_root: &Path) -> Result<Held, Refused> {
         rows("runners")?.iter().partition(|row| kind(row, "pool"));
     let (clusters, pools): (Vec<&serde_json::Value>, Vec<&serde_json::Value>) =
         rows("pools")?.iter().partition(|row| kind(row, "kind"));
-    let runners = runners
-        .into_iter()
+    let runner_rows = runners;
+    let mut runners = runner_rows
+        .iter()
         .map(|row| from_row(row).ok_or_else(unreadable))
         .collect::<Result<Vec<_>, _>>()?;
     let cluster_runners = cluster_runners
@@ -452,6 +483,7 @@ fn load(config_root: &Path) -> Result<Held, Refused> {
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    as_made(&mut runners, &runner_rows, &pools).ok_or_else(unreadable)?;
     let mut names: Vec<&str> = pools
         .iter()
         .map(Pool::name)
@@ -745,7 +777,7 @@ fn limits_in(held: &Held, name: &str) -> Option<PoolLimitsHeld> {
     let cluster = held.clusters.iter().find(|pool| pool.name() == name);
     docker
         .map(|pool| PoolLimitsHeld {
-            chosen: pool.set.chosen,
+            chosen: pool.with_shape_in(pool.set.chosen),
             refused: pool.refused_limits.clone(),
             docker: true,
         })
@@ -782,6 +814,17 @@ fn limit_may_be(
         id.limit().check(value, None).map_err(Refused::Other)?;
     }
     let limits = limits_in(held, name).ok_or_else(|| no_such_pool(name))?;
+    // A runner's own shape is this machine's to make: never a cluster pool's, and checked with
+    // the pool's other values, as a new pool's are.
+    if id.limit().shapes_runner() {
+        let Some(pool) = held.pools.iter().find(|pool| pool.name() == name) else {
+            return Err(Refused::Other(format!(
+                "{} of a cluster pool's runner is its team's to set, in its cluster",
+                id.limit().plain
+            )));
+        };
+        pool.with_set(set_shaping(pool.set, id, value)?)?;
+    }
     // A reset takes a value the file should never have held off the row (#4381).
     if value.is_some()
         && limits.docker
@@ -860,13 +903,154 @@ fn set_limit_in(
 ) -> Result<(), Refused> {
     // A value set or reset replaces whatever the file held that it couldn't use (#4381).
     if let Some(pool) = held.pools.iter_mut().find(|pool| pool.name == name) {
-        pool.set.chosen = pool.set.chosen.with(id, value);
+        if id.limit().shapes_runner() {
+            *pool = pool.with_set(set_shaping(pool.set, id, value)?)?;
+        } else {
+            pool.set.chosen = pool.set.chosen.with(id, value);
+        }
         pool.refused_limits.retain(|one| one.limit != id);
     } else if let Some(pool) = held.clusters.iter_mut().find(|pool| pool.name == name) {
+        if id.limit().shapes_runner() {
+            return Err(Refused::Other(format!(
+                "{} of a cluster pool's runner is its team's to set, in its cluster",
+                id.limit().plain
+            )));
+        }
         *pool.chosen = pool.chosen.with(id, value);
         pool.refused_limits.retain(|one| one.limit != id);
     }
     write(config_root, held)
+}
+
+/// `set`, with the limit `id` shaping a runner at `value`, a value [`crate::poollimits::Limit::check`]
+/// took, or unset.
+fn set_shaping(
+    mut set: Set,
+    id: crate::poollimits::LimitId,
+    value: Option<u64>,
+) -> Result<Set, Refused> {
+    use crate::poollimits::LimitId;
+    let small = |value: u64| {
+        u32::try_from(value).map_err(|_| Refused::Other("that value is too large".to_owned()))
+    };
+    match id {
+        LimitId::Cpus => set.millicpus = value.map(small).transpose()?,
+        LimitId::Memory => set.memory_mib = value,
+        LimitId::Processes => set.processes = value.map(small).transpose()?,
+        LimitId::Tmp => set.tmp_mib = value,
+        LimitId::SuspendAfter => {
+            set.suspend_after =
+                value.map(|minutes| std::time::Duration::from_secs(minutes.saturating_mul(60)));
+        }
+        _ => {
+            return Err(Refused::Other(format!(
+                "{} does not shape a runner",
+                id.limit().plain
+            )));
+        }
+    }
+    Ok(set)
+}
+
+/// **The limits of pool `name` changed since its runner was made** (#4286, Q13): what waits for
+/// it to be replaced. None for a cluster pool, or a pool with no runner to replace.
+pub fn changes_waiting(
+    config_root: &Path,
+    name: &str,
+) -> Result<Vec<crate::poollimits::LimitId>, Refused> {
+    use crate::poollimits::LimitId;
+    let held = load(config_root)?;
+    let Some(pool) = held.pools.iter().find(|pool| pool.name() == name) else {
+        return Ok(Vec::new());
+    };
+    let Some(kept) = held.runners.iter().find(|kept| {
+        kept.pool() == name && !kept.draining && kept.made.runner.image() == pool.image()
+    }) else {
+        return Ok(Vec::new());
+    };
+    let (want, made) = (pool.limits(), kept.made.runner.limits());
+    Ok([
+        (LimitId::Cpus, want.millicpus() != made.millicpus()),
+        (LimitId::Memory, want.memory_mib() != made.memory_mib()),
+        (LimitId::Processes, want.pids() != made.pids()),
+        (LimitId::Tmp, want.tmp_mib() != made.tmp_mib()),
+        (
+            LimitId::SuspendAfter,
+            pool.suspend_after() != kept.made.runner.suspends_after(),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(id, differs)| differs.then_some(id))
+    .collect())
+}
+
+/// What pool `pool` holds a runner of it to: its own limits, or the defaults where it is not kept.
+fn shape_of(pools: &[Pool], pool: &str) -> (Limits, std::time::Duration) {
+    pools.iter().find(|one| one.name() == pool).map_or(
+        (Limits::default(), crate::dockerpool::SUSPEND_AFTER),
+        |one| (one.limits(), one.suspend_after()),
+    )
+}
+
+/// `kept`'s row, saying what it was made with only where that is not what its pool says now
+/// (#4286): a change waiting for its runner to be replaced.
+fn to_row_beside(kept: &Kept, pools: &[Pool]) -> serde_json::Value {
+    let mut row = to_row(kept);
+    let runner = &kept.made.runner;
+    let (limits, after) = (runner.limits(), runner.suspends_after());
+    if (limits, after) != shape_of(pools, kept.pool()) {
+        row["made_with"] = serde_json::json!({
+            "millicpus": limits.millicpus(),
+            "memory": limits.memory_mib(),
+            "processes": limits.pids(),
+            "tmp": limits.tmp_mib(),
+            "suspendAfterSecs": after.as_secs(),
+        });
+    }
+    row
+}
+
+/// What a row's `made_with` says, where it is as [`to_row_beside`] writes it.
+fn made_with(row: &serde_json::Value) -> Option<(Limits, std::time::Duration)> {
+    let fields = row.as_object()?;
+    const KEYS: [&str; 5] = [
+        "millicpus",
+        "memory",
+        "processes",
+        "tmp",
+        "suspendAfterSecs",
+    ];
+    if fields.len() != KEYS.len() || !KEYS.iter().all(|key| fields.contains_key(*key)) {
+        return None;
+    }
+    let number = |key: &str| fields.get(key).and_then(serde_json::Value::as_u64);
+    let limits = Limits::new(
+        u32::try_from(number("millicpus")?).ok()?,
+        number("memory")?,
+        u32::try_from(number("processes")?).ok()?,
+        number("tmp")?,
+    )
+    .ok()?;
+    let after = std::time::Duration::from_secs(number("suspendAfterSecs")?);
+    Some((limits, crate::dockerpool::suspend_after(after).ok()?))
+}
+
+/// **What each runner in `rows` was made with** (#4286): what its row says, or what its pool says
+/// now where it says nothing. A kept runner is checked as it was made against these.
+fn as_made(runners: &mut [Kept], rows: &[&serde_json::Value], pools: &[Pool]) -> Option<()> {
+    for (kept, row) in runners.iter_mut().zip(rows) {
+        let (limits, after) = match row.get("made_with") {
+            Some(said) => made_with(said)?,
+            None => shape_of(pools, kept.pool()),
+        };
+        kept.made.runner = kept
+            .made
+            .runner
+            .clone()
+            .limited(limits)
+            .suspending_after(after);
+    }
+    Some(())
 }
 
 /// Forget the pool recorded as `name`; nothing where none is. Its runner is [`remove`]d first.
@@ -1330,7 +1514,7 @@ fn write(config_root: &Path, held: &Held) -> Result<(), Refused> {
     let rows: Vec<serde_json::Value> = held
         .runners
         .iter()
-        .map(to_row)
+        .map(|kept| to_row_beside(kept, &held.pools))
         .chain(held.cluster_runners.iter().map(cluster_runner_to_row))
         .collect();
     let mut text = serde_json::json!({ "version": 1, "runners": rows });
@@ -1420,6 +1604,7 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         "signed_out",
         "engine",
         "home_created",
+        "made_with",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
@@ -2391,6 +2576,13 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
     if fields
         .keys()
         .any(|key| !known.contains(&key.as_str()) && crate::poollimits::of_key(key).is_none())
+    {
+        return None;
+    }
+    // A runner's own shape is its team's: no cluster pool's row holds it.
+    if crate::poollimits::all()
+        .iter()
+        .any(|limit| limit.shapes_runner() && fields.contains_key(limit.key))
     {
         return None;
     }

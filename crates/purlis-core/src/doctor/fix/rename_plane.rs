@@ -85,7 +85,10 @@ pub fn apply_in(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Fixed {
                 .to_owned(),
         );
     };
-    let _held = crate::rewrite::Lock::on(root);
+    let _held = match crate::rewrite::Lock::bounded(root) {
+        Ok(held) => held,
+        Err(why) => return Fixed::Refused(why.to_string()),
+    };
     if let Err(why) = ready(root) {
         return Fixed::Refused(why);
     }
