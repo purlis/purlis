@@ -269,11 +269,44 @@ fn skill_grade_names_an_eval_file_that_is_not_text_and_says_nothing_of_one_that_
     };
     assert!(
         line("1").contains(
-            "evals/files/sample1.pdf isn't text: purlis couldn't check it for characters no \
+            "with evals/files/sample1.pdf; evals/files/sample1.pdf isn't text: purlis couldn't check it for characters no \
              reader would see, and a judge may not be able to read it"
         ),
         "{text}"
     );
     assert!(!line("2").contains("isn't text"), "{text}");
     assert!(!text.contains("aren't text"), "{text}");
+}
+
+/// #4922: two files of one eval that are not text are named together, as the window names them.
+#[test]
+fn skill_grade_names_every_eval_file_that_is_not_text() {
+    let p = Project::new();
+    let root = p.at.join("plane");
+    std::fs::create_dir_all(root.join("skills/deploy/evals/files")).unwrap();
+    for name in ["a.pdf", "b.pdf"] {
+        std::fs::write(root.join("skills/deploy/evals/files").join(name), b"%PDF\0").unwrap();
+    }
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [
+            {"id": 1, "prompt": "ship v2", "files": ["evals/files/a.pdf", "evals/files/b.pdf"], "expectations": ["It ships"]}
+        ]}"#,
+    )
+    .unwrap();
+    let out = p.run(&["skill", "grade", "deploy"]);
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        text.contains(
+            "with evals/files/a.pdf, evals/files/b.pdf; evals/files/a.pdf, evals/files/b.pdf \
+             aren't text: purlis couldn't check them for characters no reader would see, and a \
+             judge may not be able to read them)"
+        ),
+        "{text}"
+    );
 }

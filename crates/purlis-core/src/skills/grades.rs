@@ -1837,6 +1837,16 @@ impl Planned {
                 .chain(texts)
                 .any(hides)
     }
+
+    /// The files `eval` stages that are not text (#4230), which purlis could not check for
+    /// characters no reader would see: what the Skill studio's plan and `purlis skill grade`'s
+    /// both name (#4922).
+    pub fn eval_not_text(&self, eval: &grade::OutcomeEval) -> Vec<String> {
+        self.copy
+            .as_ref()
+            .map(|copy| copy.inputs_of(eval).1)
+            .unwrap_or_default()
+    }
 }
 
 /// **[`planned_with`], for the outcome evals a terminal `named`** (#4312). A press ticks only what

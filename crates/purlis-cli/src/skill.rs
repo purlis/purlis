@@ -1738,20 +1738,15 @@ fn grade_plan_said(
             ""
         };
         // #4922: a file purlis could not check, in the words of the Skill studio's plan.
-        let not_text = planned
-            .copy
-            .as_ref()
-            .map(|copy| copy.inputs_of(eval).1)
-            .unwrap_or_default();
-        let not_text = match not_text.as_slice() {
+        let not_text = match planned.eval_not_text(eval).as_slice() {
             [] => String::new(),
             [one] => format!(
-                ", {} isn't text: purlis couldn't check it for characters no reader would see, \
+                "; {} isn't text: purlis couldn't check it for characters no reader would see, \
                  and a judge may not be able to read it",
                 purlis_core::skills::review::escaped_line(one)
             ),
             many => format!(
-                ", {} aren't text: purlis couldn't check them for characters no reader would \
+                "; {} aren't text: purlis couldn't check them for characters no reader would \
                  see, and a judge may not be able to read them",
                 purlis_core::skills::review::escaped_line(&many.join(", "))
             ),
