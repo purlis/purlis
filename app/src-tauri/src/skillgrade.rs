@@ -101,6 +101,8 @@ pub struct GradeEval {
     pub prompt: String,
     pub hides: bool,
     pub files: Vec<String>,
+    /// Those of its files that are not text, which nothing can check for what `hides` says (#4230).
+    pub not_text: Vec<String>,
     pub expectations: u32,
     /// Whether the person ticked it (off until they do), and the chats ticking it adds.
     pub on: bool,
@@ -555,11 +557,20 @@ impl SkillGradePlan {
                 .iter()
                 .map(|eval| {
                     let prompt = grading::outcomes::outcome_prompt(eval);
+                    let not_text = planned
+                        .copy
+                        .as_ref()
+                        .map(|copy| copy.inputs_of(eval).1)
+                        .unwrap_or_default();
+                    let as_shown = |path: &String| {
+                        purlis_unicode::marked(path, purlis_unicode::Breaks::Marked)
+                    };
                     GradeEval {
                         id: eval.id.to_string(),
                         hides: planned.eval_hides(eval),
                         prompt: purlis_unicode::marked(&prompt, purlis_unicode::Breaks::Marked),
-                        files: eval.files.clone(),
+                        files: eval.files.iter().map(as_shown).collect(),
+                        not_text: not_text.iter().map(as_shown).collect(),
                         expectations: u32::try_from(eval.expectations.len()).unwrap_or(u32::MAX),
                         on: planned.request.as_ref().is_some_and(|request| {
                             request.outcomes.iter().any(|one| one.id == eval.id)
@@ -2082,7 +2093,7 @@ pub(crate) struct InChats<'a> {
     pub(crate) reported: Vec<String>,
     /// **The input files the grade's outcome evals stage** (SK-55), as the grade read them once
     /// (`grades::SkillCopy::inputs`): none in a router's grade.
-    pub(crate) inputs: &'a std::collections::BTreeMap<String, String>,
+    pub(crate) inputs: &'a std::collections::BTreeMap<String, Vec<u8>>,
     /// **What the last outcome eval's chat left**, kept for its judge alone (SK-55): its id, its
     /// files as it ended and its final answer. Taken by the judge of that chat, and by no other.
     pub(crate) left: Option<Left>,
@@ -2092,7 +2103,7 @@ pub(crate) struct InChats<'a> {
 /// (`drafts::outcome_of`), and what its turn ended saying, where its harness said.
 pub(crate) struct Left {
     chat: String,
-    files: Vec<(String, String)>,
+    files: Vec<(String, Option<Vec<u8>>)>,
     answer: Option<String>,
 }
 
