@@ -665,7 +665,7 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
 | View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none |
 | View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
-| Review page     | `ReviewPage` (`ui/review-page/ReviewPage.tsx`), a review too long for a dialog: its body over a fixed action bar                                                                                       | `root`, `body`, `bar`, `summary`, `answers`                                                                           | none                               |
+| Review page     | `ReviewPage` (`ui/review-page/ReviewPage.tsx`), a review too long for a dialog: its body over a fixed action bar                                                                                       | `root`, `body`, `bar`, `summary`, `actions`, `answers`                                                                | none                               |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
 

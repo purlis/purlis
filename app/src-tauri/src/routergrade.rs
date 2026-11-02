@@ -492,6 +492,7 @@ pub(crate) async fn router_grade_start(
                     plane: plane.clone(),
                     stop: Arc::clone(&stop),
                     after_edit: None,
+                    draft: None,
                     // Held from the start: a page opened before its first chat ends finds it.
                     step: RunningStep::Router(step_of(Spent::default(), None, None, false)),
                 },
