@@ -15,7 +15,7 @@ the palette.
   "each chat tab's menu". Its key, `⌘⇧S`, opens it on the focused pane's chat, which is what "in a
   split tab, on the pane that has the keyboard" said.
 - **The Skills chip leaves the pane head** and becomes the list's **Skills** row, which opens the
-  Skills view on the chat. The pane head keeps one state button and ⋯.
+  Skills view on the chat, as the chip did. The pane head keeps one state button and ⋯.
 - **Where the budget and the router's timings are shown.** This record's "shown on the chat tab"
   and "the chat tab and the studio show the router's timings", and the 2026-11-01 amendment's
   "the chat's tab", read **the chat's Skills view**, opened from its Skills row or `⌘⇧X`, and the

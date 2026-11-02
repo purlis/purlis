@@ -25,7 +25,7 @@ The tab is a binary tree: a split holds a direction, the first child's share and
 and a pane holds a chat, a view or nothing. View tabs are no longer kept "beside the chats" in the
 reopen record: each tab's tree, views included, is an entry of its `tabs` list.
 
-**Closing a browser view's pane ends that browser as today.** "Closing never ends" is ruled for
+**Closing the last pane that shows a browser view ends that browser, as today.** "Closing never ends" is ruled for
 chats and shells, not for views.
 
 ## Where a view goes

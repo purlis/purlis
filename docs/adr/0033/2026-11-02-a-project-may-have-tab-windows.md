@@ -18,8 +18,9 @@ project's chats can be on screen in more than one window:
   tab, and every chat keeps running. Its last tab leaving closes it, as a split window that holds
   nothing goes today.
 - **A press goes where the chat is.** If the chat is on screen in any of the project's windows,
-  that window comes forward and focuses the chat's pane. Otherwise the chat goes to the most
-  recently used pane across the project's windows, and a view is never replaced. The palette in a
+  that window comes forward and focuses the chat's pane. Otherwise it takes the focused pane, and
+  when that pane holds a view, which is never replaced, the most recently used pane across the
+  project's windows that shows a chat or nothing. The palette in a
   tab window acts on that window's focused pane.
 - **Tabs and panes move between windows** by a tab's **Move to new window**, a tear-off drag off
   the window's edge, and **Move to window ▸ <window>** on a tab or a pane, which lands it as a new

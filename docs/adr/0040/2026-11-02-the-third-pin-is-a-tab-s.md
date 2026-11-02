@@ -9,8 +9,8 @@ behaviour, which ships with that milestone's build.
 
 **A project, a workspace and a tab can each be pinned.** The chat pin retires. The tab pin is a
 flag on the tab's own entry, `tabs[].pinned`, in the plane's `.charter/app/reopen.json`. It stays
-per plane and out of git, so this record's ruling holds: a pin is an arrangement, and it is
-machine state.
+per plane, in the app's own record and out of git, so this record's ruling holds: a pin is an
+arrangement, never a fact of the plane.
 
 **The reason changes, and the conclusion does not.** This record put the chat pin in the reopen
 record because a pin on a chat had to disappear when the chat did. A tab's pin does the opposite:

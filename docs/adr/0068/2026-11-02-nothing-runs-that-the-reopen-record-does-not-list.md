@@ -20,4 +20,4 @@ task or a handoff takes no pane. The host's rules stand; the words that tied the
 - **The 2026-10-26 (#2025) amendment's chat browser** comes back on its row, and on its chat's
   pane when that chat is shown, where it said "its chat's tab".
 - **"A shell tab is not a harness and has no resume"** reads "a shell". A shell has a row and
-  follows a chat's rules ([ADR 0062's amendment of this date](../0062/2026-11-02-a-shell-is-a-chat-s-kind-of-terminal-not-a-tab.md)).
+  follows a chat's rules ([ADR 0062's amendment of this date](../0062/2026-11-02-a-shell-follows-a-chat-s-rules-and-is-not-a-tab.md)).

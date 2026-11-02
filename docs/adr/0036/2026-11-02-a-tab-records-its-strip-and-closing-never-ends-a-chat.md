@@ -32,8 +32,9 @@ to derive it from. View tabs already record theirs (`reopen::View::workspace`).
 - **Focusing a workspace brings its front tab forward.** The record stores each strip's front
   tab, which replaces the window's in-memory "last in front". Each workspace, and the plane
   root's strip, always keeps at least one tab, so a focused pane always exists. On the first
-  launch after the upgrade, a workspace that kept no tab gets one showing its first chat in the
-  old strip order, pinned first; an empty pane only for a workspace with no chats.
+  launch after the upgrade, the tab that was in front at quit comes back as it was, even a plain
+  one-chat tab, and a workspace that kept no tab gets one showing its first chat in the old strip
+  order, pinned first; an empty pane only for a workspace with no chats.
 - **Nothing is ended and nothing is torn down.** Unchanged, and now true of closing as well (below).
 - **A press on a chat from anywhere brings its workspace with it.** The chat replaces what that
   workspace's focused pane shows, or is jumped to if it is already on screen; the pane the person
@@ -50,8 +51,7 @@ The rule that "the words say that a close ends the chat", and the row `End chat 
 its note, are withdrawn, because closing no longer ends anything. **Close pane** clears the pane,
 **Close tab** closes the layout, and the chats keep running in the sidebar. Ending a chat is
 **End…**, an action of the chat, in its pane head's ⋯, its sidebar row and the palette. The danger
-cue on close (#3295) goes. What `close_session` does, end the program and take the chat off the
-board, is what End… does now.
+cue on close (#3295) goes.
 
 ## The 2026-10-12 amendment
 
