@@ -693,6 +693,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_trigger_tests_start",
     "skill_trigger_tests_chat",
     "skill_outcome_evals_chat",
+    "skill_checks_chat",
     "skill_improve_chat",
     // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
     // profile, each started on a trigger test's query, and records the grade in the project.

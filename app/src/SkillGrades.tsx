@@ -5,11 +5,15 @@
  * **A skill's Grades tab, and its grading pages** (#3688, the amendment's S6; extends decision
  * 43). Grading lives in the Skill studio's one tab, under the skill:
  *
- * - **The Grades tab** shows the latest grade as bars (with it, without it, its previous
- *   version), every grade with how it ended (Graded, Stopped, Stopped at its limit,
+ * - **The Grades tab** shows the skill's **checks** (ruling of 2026-11-02, `prototype/plain-checks`
+ *   layout A): one heading, the latest grade in one sentence, and a card for each kind, **Does it
+ *   get picked?** (its trigger tests) and **Does it do the job?** (its outcome evals), each with
+ *   its technical name as a small label and its latest bars (with it, without it, its previous
+ *   version). Under them every grade with how it ended (Graded, Stopped, Stopped at its limit,
  *   Interrupted), and the grade-after-each-edit row, which says what each edit may spend before
- *   it is turned on. A skill with no trigger tests says what they are instead, and offers to
- *   write them, from a template, or to ask a chat to (#3925).
+ *   it is turned on. A skill with no checks says what the two kinds are instead, and offers one
+ *   chat to write both, back as the skill's one draft, which waits here to be accepted whole, or
+ *   to write them yourself from a template (#3925).
  * - **Grade** opens the plan, a running grade shows its progress, and a grade's row opens its
  *   scorecard, from which each kept chat opens read-only: pages in the studio's history
  *   ({@link GradingAt}), with their own crumbs, never tabs of their own.
@@ -22,6 +26,7 @@ import {
   SKILL_GRADE_AFTER_EDIT,
   type GradeRow,
   type SkillGradeAfterEditStep,
+  type SkillDraft,
   type SkillGradeStep,
   type SkillLevel,
 } from "./bindings";
@@ -39,6 +44,8 @@ import { sameLevel } from "./skillChanges";
 import { askSkillChat } from "./skillDraftAsks";
 import type { GradingAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
+import { Card, CardTitle } from "./ui/card/Card";
+import { counted } from "./dispatches";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Meter, MeterGroup } from "./ui/meter/Meter";
@@ -93,71 +100,221 @@ function spentSaid(row: GradeRow): string {
   return row.spent.cost_usd === null ? "Not said" : dollarsSaid(row.spent.cost_usd);
 }
 
-/** **The latest grade, as bars** (S6): with it, without it, and its previous version. */
-function Latest({ name, row }: { name: string; row: GradeRow }) {
-  const spent = row.spent.cost_usd === null ? "" : ` · ${dollarsSaid(row.spent.cost_usd)}`;
+/** A skill's outcome evals file, in its folder: skill-creator's, which a grade runs too. */
+export const OUTCOME_EVALS_FILE = "evals/evals.json";
+
+/** The two kinds of a skill's checks (ruling of 2026-11-02). */
+type CheckKind = "picked" | "job";
+
+/**
+ * **What each kind of check is called** (ruling of 2026-11-02): its plain question first, and its
+ * technical name and file as a small label under it, for the person who reads the files.
+ */
+export const CHECK_KINDS: Record<
+  CheckKind,
+  { question: string; technical: string; what: (name: string) => string }
+> = {
+  picked: {
+    question: "Does it get picked?",
+    technical: `trigger tests · ${TRIGGER_TESTS_FILE}`,
+    what: (name) => `Things a person might type, each with whether ${name} should start for it.`,
+  },
+  job: {
+    question: "Does it do the job?",
+    technical: `outcome evals · ${OUTCOME_EVALS_FILE}`,
+    what: () => "Tasks, each with what a good result has. Another chat checks each result.",
+  },
+};
+
+/** How many checks of `kind` there are, as a card says it. */
+function checksSaid(kind: CheckKind, count: number): string {
+  return kind === "picked" ? counted(count, "prompt", "prompts") : counted(count, "task", "tasks");
+}
+
+/**
+ * **The latest grade in one sentence** (the ruling's B, above the kinds): what each kind it
+ * compared scored with the skill and without it. `undefined` where it compared neither.
+ */
+export function answerSaid(name: string, row: GradeRow): string | undefined {
+  const picked =
+    row.arms.with !== null && row.arms.without !== null
+      ? { with: row.arms.with, without: row.arms.without }
+      : null;
+  const job =
+    row.outcome_arms !== null && row.outcome_arms.with !== null && row.outcome_arms.without !== null
+      ? { with: row.outcome_arms.with, without: row.outcome_arms.without }
+      : null;
+  if (picked !== null && job !== null)
+    return `With ${name}, chats picked it right ${picked.with}% of the time and met ${job.with}% of what the job asks; without it, ${picked.without}% and ${job.without}%.`;
+  if (picked !== null)
+    return `With ${name}, chats picked it right ${picked.with}% of the time; without it, ${picked.without}%.`;
+  if (job !== null)
+    return `With ${name}, chats met ${job.with}% of what the job asks; without it, ${job.without}%.`;
+  return undefined;
+}
+
+/** One kind's bars of a grade: with it, without it, and its previous version where it ran. */
+function KindBars({
+  kind,
+  name,
+  arms,
+}: {
+  kind: CheckKind;
+  name: string;
+  arms: { with: number | null; without: number | null; previous: number | null };
+}) {
   return (
-    <section aria-labelledby="skill-grades-latest" data-testid="skill-grades-latest">
-      <PanelSectionTitle id="skill-grades-latest">
-        {`Latest · ${row.graded} · ${row.ran_on}${spent}`}
-      </PanelSectionTitle>
-      {row.outcome_arms !== null && (
-        <MeterGroup aria-label={`Outcome evals of the latest grade of ${name}`}>
-          <Meter
-            label="Outcome evals with it"
-            value={row.outcome_arms.with ?? 0}
-            valueLabel={pointsSaid(row.outcome_arms.with)}
-          />
-          <Meter
-            label="Outcome evals without it"
-            variant="baseline"
-            value={row.outcome_arms.without ?? 0}
-            valueLabel={pointsSaid(row.outcome_arms.without)}
-          />
-          {row.outcome_arms.previous !== null && (
-            <Meter
-              label="Outcome evals, previous version"
-              variant="previous"
-              value={row.outcome_arms.previous}
-              valueLabel={pointsSaid(row.outcome_arms.previous)}
-            />
-          )}
-        </MeterGroup>
+    <MeterGroup aria-label={`${CHECK_KINDS[kind].question} The latest grade of ${name}`}>
+      <Meter label="With it" value={arms.with ?? 0} valueLabel={pointsSaid(arms.with)} />
+      <Meter
+        label="Without it"
+        variant="baseline"
+        value={arms.without ?? 0}
+        valueLabel={pointsSaid(arms.without)}
+      />
+      {arms.previous !== null && (
+        <Meter
+          label="Previous version"
+          variant="previous"
+          value={arms.previous}
+          valueLabel={pointsSaid(arms.previous)}
+        />
       )}
-      {row.arms.with === null && row.arms.without === null ? (
-        row.outcome_arms === null && (
-          <p className="honest">{`${OUTCOME_SAID[row.outcome].said}: nothing of ${name} was compared.`}</p>
-        )
-      ) : (
-        <MeterGroup aria-label={`The latest grade of ${name}`}>
-          <Meter
-            label="With it"
-            value={row.arms.with ?? 0}
-            valueLabel={pointsSaid(row.arms.with)}
-          />
-          <Meter
-            label="Without it"
-            variant="baseline"
-            value={row.arms.without ?? 0}
-            valueLabel={pointsSaid(row.arms.without)}
-          />
-          {row.arms.previous !== null && (
-            <Meter
-              label="Previous version"
-              variant="previous"
-              value={row.arms.previous}
-              valueLabel={pointsSaid(row.arms.previous)}
-            />
-          )}
-        </MeterGroup>
-      )}
-    </section>
+    </MeterGroup>
+  );
+}
+
+/** What a draft's checks file holds, as the draft's card lists it: each check's first line. */
+function draftChecks(kind: CheckKind, text: string): string[] | undefined {
+  try {
+    const read: unknown = JSON.parse(text);
+    const list = kind === "picked" ? read : (read as { evals?: unknown } | null)?.evals;
+    if (!Array.isArray(list)) return undefined;
+    return list.map((one: unknown) => {
+      const said = (one as Record<string, unknown> | null)?.[
+        kind === "picked" ? "query" : "prompt"
+      ];
+      return typeof said === "string" ? said : "";
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/** **A draft that writes only a skill's checks**: every file of it under `evals/`. */
+export function isChecksDraft(draft: SkillDraft): boolean {
+  return draft.files.length > 0 && draft.files.every((one) => one.path.startsWith("evals/"));
+}
+
+/**
+ * **The checks a chat wrote, waiting** (ruling of 2026-11-02): both kinds in the skill's one
+ * draft, each kind's checks listed under its question, accepted or discarded whole.
+ */
+function ChecksDraft({
+  plane,
+  name,
+  draft,
+  onSaid,
+  onDone,
+}: {
+  plane: string;
+  name: string;
+  draft: SkillDraft;
+  onSaid: (said: string) => void;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const kinds = (["picked", "job"] as const).flatMap((kind) => {
+    const file = draft.files.find(
+      (one) => one.path === (kind === "picked" ? TRIGGER_TESTS_FILE : OUTCOME_EVALS_FILE),
+    );
+    if (file === undefined) return [];
+    return [{ kind, checks: draftChecks(kind, file.after) }];
+  });
+  const answer = (act: () => Promise<{ status: "ok" } | { status: "error"; error: string }>) => {
+    setBusy(true);
+    void act()
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+      .then((answered) => {
+        setBusy(false);
+        if (answered.status === "error") onSaid(answered.error);
+        else onDone();
+      });
+  };
+  const by = draft.chat === null ? "A chat" : `Chat ${draft.chat}`;
+  return (
+    <Card
+      as="section"
+      variant="ask"
+      aria-labelledby="skill-checks-draft"
+      data-testid="skill-checks-draft"
+    >
+      <CardTitle as="h3" id="skill-checks-draft">
+        {`${by} wrote checks for ${name}`}
+      </CardTitle>
+      {draft.stale && <Badge variant="waiting">Out of date</Badge>}
+      <div className="skill-checks-kinds">
+        {kinds.map(({ kind, checks }) => (
+          <div key={kind} className="skill-checks-drafted">
+            <p className="skill-checks-drafted-head">
+              {checks === undefined
+                ? CHECK_KINDS[kind].question
+                : `${CHECK_KINDS[kind].question} · ${checksSaid(kind, checks.length)}`}
+            </p>
+            {checks !== undefined && (
+              <ul className="skill-checks-list">
+                {checks.map((one, at) => (
+                  <li key={at}>{one}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="honest">
+        {draft.stale
+          ? "A file it writes changed since, so it can't be accepted. Ask the chat to redo them."
+          : "Nothing is kept until you accept it. Accept takes both kinds together."}
+      </p>
+      <ButtonRow>
+        {!draft.stale && (
+          <Button
+            variant="primary"
+            isDisabled={busy}
+            onPress={() => answer(() => commands.skillDraftAccept(plane, draft.id))}
+          >
+            Accept checks
+          </Button>
+        )}
+        <Button
+          isDisabled={busy}
+          onPress={() =>
+            askSkillChat({
+              plane,
+              kind: "redo",
+              id: draft.id,
+              name: draft.name,
+              chat: draft.chat_open ? draft.chat : null,
+            })
+          }
+        >
+          {draft.chat_open ? "Ask the chat to redo them" : "Ask a chat to redo them"}
+        </Button>
+        <Button
+          variant="ghost"
+          isDisabled={busy}
+          onPress={() => answer(() => commands.skillDraftReject(plane, draft.id))}
+        >
+          Discard
+        </Button>
+      </ButtonRow>
+    </Card>
   );
 }
 
 /**
- * **A skill's Grades tab** (S6): see the module. `changed` is bumped when the project's skills
- * change, and a grade that ends reads it again.
+ * **A skill's Grades tab** (S6; plain checks, ruling of 2026-11-02): see the module. `changed`
+ * is bumped when the project's skills change, and a grade that ends reads it again.
  */
 export function GradesTab({
   plane,
@@ -167,6 +324,8 @@ export function GradesTab({
   onGrading,
   onGraded,
   testsFile,
+  evalsFile,
+  draft,
 }: {
   plane: string;
   name: string;
@@ -175,8 +334,12 @@ export function GradesTab({
   onGrading: GradingGo;
   /** Told when a grade of this skill ends, so the page reads what it shows again. */
   onGraded?: () => void;
-  /** Write trigger tests, where the page offers it; none says nothing more. */
+  /** Its trigger tests' file, opened to write in, where the page offers it. */
   testsFile?: TestsFile;
+  /** Its outcome evals' file, opened to edit, where the page offers it. */
+  evalsFile?: TestsFile;
+  /** A chat's draft of this skill that waits for review: shown here where it writes only checks. */
+  draft?: SkillDraft;
 }) {
   const [again, setAgain] = useState(0);
   const graded = useRef(onGraded);
@@ -230,20 +393,21 @@ export function GradesTab({
 
   // Each answer is taken only in its own shape: a core that answers another leaves it unread.
   const rows = Array.isArray(grades.data?.grades) ? grades.data.grades : [];
-  // The column is a grade's that ran outcome evals: a list with none draws as it always did.
-  const anyEvals = rows.some((row) => row.outcome_arms !== null);
   const tests = typeof grades.data?.tests === "number" ? grades.data.tests : undefined;
   // A skill with outcome evals alone is graded too (SK-55).
   const evals = typeof grades.data?.evals === "number" ? grades.data.evals : 0;
-  const noTests = tests === 0 && evals === 0 && grades.data?.tests_refused == null;
+  const testsRefused = grades.data?.tests_refused ?? null;
+  const noChecks = tests === 0 && evals === 0 && testsRefused === null;
   const running = grades.data?.running?.grade ?? null;
-  // Why trigger tests can't be written here, where they can't.
-  const held =
-    testsFile === undefined
+  const waiting = draft !== undefined && isChecksDraft(draft) ? draft : undefined;
+  // Why a file can't be written or opened here, where it can't.
+  const heldOf = (file: TestsFile | undefined) =>
+    file === undefined
       ? "This skill's files can't be opened here."
-      : "reason" in testsFile
-        ? testsFile.reason
+      : "reason" in file
+        ? file.reason
         : undefined;
+  const held = heldOf(testsFile);
   useEffect(() => {
     runningNow.current = running;
   }, [running]);
@@ -251,6 +415,108 @@ export function GradesTab({
     typeof afterEdit.data === "object" && afterEdit.data !== null && "profile" in afterEdit.data
       ? afterEdit.data
       : null;
+  const latest = rows[0];
+  const answer = latest === undefined ? undefined : answerSaid(name, latest);
+
+  // Write them yourself: the core's template for the trigger tests, written as a change to the
+  // skill; its file then opens to write in. A refusal is said here, and opens nothing.
+  const byHand = () => {
+    if (testsFile === undefined || !("open" in testsFile)) return;
+    const open = testsFile.open;
+    setWriting(true);
+    void commands
+      .skillTriggerTestsStart(plane, level, name)
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+      .then((answered) => {
+        setWriting(false);
+        if (answered.status === "error") {
+          setSaid(answered.error);
+          return;
+        }
+        setAgain((n) => n + 1);
+        open();
+      });
+  };
+
+  /** One kind's card: its question, its technical name, its bars and its way to add or edit. */
+  const kindCard = (kind: CheckKind) => {
+    const count = kind === "picked" ? (tests ?? 0) : evals;
+    const any = count > 0 || (kind === "picked" && testsRefused !== null);
+    const arms =
+      latest === undefined
+        ? null
+        : kind === "picked"
+          ? latest.arms.with === null && latest.arms.without === null
+            ? null
+            : latest.arms
+          : latest.outcome_arms;
+    const file = kind === "picked" ? testsFile : evalsFile;
+    const titleId = `skill-checks-${kind}`;
+    return (
+      <Card as="section" aria-labelledby={titleId} data-testid={titleId}>
+        <div className="skill-checks-head">
+          <CardTitle as="h3" id={titleId}>
+            {CHECK_KINDS[kind].question}
+          </CardTitle>
+          <span className="skill-checks-technical">{CHECK_KINDS[kind].technical}</span>
+        </div>
+        {!any ? (
+          <>
+            <p className="honest">{`None yet. ${CHECK_KINDS[kind].what(name)}`}</p>
+            <ButtonRow>
+              <Button
+                size="sm"
+                isDisabled={held !== undefined}
+                tooltip={held}
+                onPress={() =>
+                  askSkillChat({
+                    plane,
+                    kind: kind === "picked" ? "triggers" : "evals",
+                    level,
+                    name,
+                  })
+                }
+              >
+                Ask a chat to write these
+              </Button>
+            </ButtonRow>
+          </>
+        ) : (
+          <>
+            <p className="honest">{CHECK_KINDS[kind].what(name)}</p>
+            {kind === "picked" && testsRefused !== null ? (
+              <p className="honest" role="note">
+                {testsRefused}
+              </p>
+            ) : arms !== null ? (
+              <KindBars kind={kind} name={name} arms={arms} />
+            ) : (
+              <p className="honest">
+                {latest === undefined ? "Not graded yet." : "Not in the latest grade."}
+              </p>
+            )}
+            <ButtonRow>
+              {kind !== "picked" || testsRefused === null ? (
+                <span className="skill-checks-count">{checksSaid(kind, count)}</span>
+              ) : null}
+              <Button
+                size="sm"
+                variant="link"
+                isDisabled={heldOf(file) !== undefined}
+                tooltip={heldOf(file)}
+                onPress={() => {
+                  if (file !== undefined && "open" in file) file.open();
+                }}
+              >
+                Edit these checks
+              </Button>
+            </ButtonRow>
+          </>
+        )}
+      </Card>
+    );
+  };
+
   return (
     <div className="skill-grades" data-testid="skill-grades">
       {said !== undefined && (
@@ -275,51 +541,13 @@ export function GradesTab({
           <span data-testid="skill-grades-running">{`A grade of ${name} is running.`}</span>
         </Notice>
       )}
-      {noTests && (
-        <EmptyState
-          variant="panel"
-          headline={`${name} has no trigger tests yet`}
-          body={`A grade has nothing to run until it has some. Trigger tests are prompts, each with whether ${name} should start for it, kept with the skill in ${TRIGGER_TESTS_FILE}; a grade runs each in chats with ${name} and without it, and counts the ones each chat got right.`}
-          testid="skill-grades-no-tests"
-          action={
-            <ButtonRow>
-              <Button
-                variant="primary"
-                isDisabled={held !== undefined || writing}
-                tooltip={held}
-                onPress={() => {
-                  if (testsFile === undefined || !("open" in testsFile)) return;
-                  const open = testsFile.open;
-                  setWriting(true);
-                  // The template is the core's, written as a change to the skill; its file then
-                  // opens to write in. A refusal is said here, and opens nothing.
-                  void commands
-                    .skillTriggerTestsStart(plane, level, name)
-                    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
-                    .then((answer) => {
-                      setWriting(false);
-                      if (answer.status === "error") {
-                        setSaid(answer.error);
-                        return;
-                      }
-                      setAgain((n) => n + 1);
-                      open();
-                    });
-                }}
-              >
-                Write trigger tests
-              </Button>
-              {/* A chat on the project's default profile, the core's prompt typed and not sent:
-                  as Ask a chat to draft a skill opens one, and its write comes back as a draft. */}
-              <Button
-                isDisabled={held !== undefined}
-                tooltip={held}
-                onPress={() => askSkillChat({ plane, kind: "triggers", level, name })}
-              >
-                Ask a chat to write them
-              </Button>
-            </ButtonRow>
-          }
+      {waiting !== undefined && (
+        <ChecksDraft
+          plane={plane}
+          name={name}
+          draft={waiting}
+          onSaid={setSaid}
+          onDone={() => setAgain((n) => n + 1)}
         />
       )}
       {grades.refused !== undefined ? (
@@ -331,100 +559,153 @@ export function GradesTab({
         />
       ) : grades.data === undefined ? (
         <ReadingRows what={`the grades of ${name}`} testid="skill-grading-reading" />
-      ) : rows.length === 0 ? (
-        !noTests && (
+      ) : noChecks ? (
+        waiting === undefined && (
           <EmptyState
             variant="panel"
-            headline={`No grades of ${name} yet`}
-            body="Grade runs its trigger tests and outcome evals in chats with it and without it, once you have seen what it may spend."
-            testid="skill-grades-empty"
+            headline={`${name} has no checks yet`}
+            body={
+              <>
+                {`Checks tell you whether ${name} helps. A grade runs each one in chats with ${name} and without it, and shows the difference.`}
+                <ul className="skill-checks-kinds-said">
+                  {(["picked", "job"] as const).map((kind) => (
+                    <li key={kind}>
+                      <strong>{CHECK_KINDS[kind].question}</strong> {CHECK_KINDS[kind].what(name)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            }
+            testid="skill-checks-none"
             action={
-              <Button onPress={() => onGrading({ at: "plan" }, "go")}>{`Grade ${name}…`}</Button>
+              <ButtonRow>
+                {/* One chat on the project's default profile, the core's prompt typed and not
+                    sent, writes both kinds; its write comes back as the skill's one draft. */}
+                <Button
+                  variant="primary"
+                  isDisabled={held !== undefined}
+                  tooltip={held}
+                  onPress={() => askSkillChat({ plane, kind: "checks", level, name })}
+                >
+                  Ask a chat to write checks
+                </Button>
+                <Button
+                  variant="link"
+                  isDisabled={held !== undefined || writing}
+                  tooltip={held}
+                  onPress={byHand}
+                >
+                  Write them yourself
+                </Button>
+              </ButtonRow>
             }
           />
         )
       ) : (
         <>
-          <Latest name={name} row={rows[0]} />
-          {grades.data.said !== null && (
-            <p className="honest" role="note" data-testid="skill-grades-record">
-              {grades.data.said}
-            </p>
+          <section
+            className="skill-checks"
+            aria-labelledby="skill-checks-title"
+            data-testid="skill-checks"
+          >
+            <div className="skill-checks-title">
+              <PanelSectionTitle id="skill-checks-title">Checks</PanelSectionTitle>
+              <ButtonRow>
+                {latest !== undefined && (
+                  <span className="honest" data-testid="skill-checks-latest">
+                    {`Latest grade · ${latest.graded} · ${latest.ran_on}${latest.spent.cost_usd === null ? "" : ` · ${dollarsSaid(latest.spent.cost_usd)}`}`}
+                  </span>
+                )}
+                <Button
+                  size="sm"
+                  variant={latest === undefined ? "primary" : "secondary"}
+                  onPress={() => onGrading({ at: "plan" }, "go")}
+                >
+                  {`Grade ${name}…`}
+                </Button>
+              </ButtonRow>
+            </div>
+            {latest === undefined ? (
+              <p className="honest">
+                {`A grade runs every check in chats with ${name} and without it. You see what it may spend before it starts.`}
+              </p>
+            ) : answer !== undefined ? (
+              <p className="skill-checks-answer" data-testid="skill-checks-answer">
+                {answer}
+              </p>
+            ) : (
+              <p className="honest">{`${OUTCOME_SAID[latest.outcome].said}: nothing of ${name} was compared.`}</p>
+            )}
+            <div className="skill-checks-kinds">
+              {kindCard("picked")}
+              {kindCard("job")}
+            </div>
+          </section>
+          {rows.length > 0 && (
+            <section aria-labelledby="skill-grades-title" className="skill-checks">
+              <PanelSectionTitle id="skill-grades-title">Grades</PanelSectionTitle>
+              {grades.data.said !== null && (
+                <p className="honest" role="note" data-testid="skill-grades-record">
+                  {grades.data.said}
+                </p>
+              )}
+              <Table aria-label={`Grades of ${name}`} data-testid="skill-grades-list">
+                <TableHeader>
+                  <TableColumn isRowHeader>Graded</TableColumn>
+                  <TableColumn>Version</TableColumn>
+                  <TableColumn>Ran on</TableColumn>
+                  <TableColumn align="end">Picked, with it</TableColumn>
+                  <TableColumn align="end">Without it</TableColumn>
+                  <TableColumn align="end">Previous</TableColumn>
+                  <TableColumn align="end">Does the job, with it</TableColumn>
+                  <TableColumn align="end">Without it</TableColumn>
+                  <TableColumn align="end">Spent</TableColumn>
+                  <TableColumn>Ended</TableColumn>
+                  <TableColumn hideName>Scorecard</TableColumn>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={row.grade} id={row.grade} textValue={row.graded}>
+                      <TableCell>
+                        {row.after_edit ? `${row.graded} · after an edit` : row.graded}
+                      </TableCell>
+                      <TableCell>{row.version}</TableCell>
+                      <TableCell>{row.ran_on}</TableCell>
+                      <TableCell align="end">{pointsSaid(row.arms.with)}</TableCell>
+                      <TableCell align="end">{pointsSaid(row.arms.without)}</TableCell>
+                      <TableCell align="end">
+                        {row.arms.previous === null ? "—" : pointsSaid(row.arms.previous)}
+                      </TableCell>
+                      <TableCell align="end">
+                        {row.outcome_arms === null ? "—" : pointsSaid(row.outcome_arms.with)}
+                      </TableCell>
+                      <TableCell align="end">
+                        {row.outcome_arms === null ? "—" : pointsSaid(row.outcome_arms.without)}
+                      </TableCell>
+                      <TableCell align="end">{spentSaid(row)}</TableCell>
+                      <TableCell textValue={row.ended}>
+                        <Badge variant={OUTCOME_SAID[row.outcome].badge}>
+                          {row.outcome === "graded" ? OUTCOME_SAID.graded.said : row.ended}
+                        </Badge>
+                      </TableCell>
+                      <TableCell textValue="Scorecard">
+                        {/* Its name starts with the words it shows, so a voice user's words find it. */}
+                        <Button
+                          size="sm"
+                          aria-label={`${openSaid(row)} of the grade of ${row.graded}`}
+                          onPress={() => onGrading({ at: "scorecard", grade: row.grade }, "go")}
+                        >
+                          {openSaid(row)}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </section>
           )}
-          <Table aria-label={`Grades of ${name}`} data-testid="skill-grades-list">
-            <TableHeader>
-              <TableColumn isRowHeader>Graded</TableColumn>
-              <TableColumn>Version</TableColumn>
-              <TableColumn>Ran on</TableColumn>
-              <TableColumn align="end">With it</TableColumn>
-              <TableColumn align="end">Without it</TableColumn>
-              <TableColumn align="end">Previous</TableColumn>
-              {anyEvals && <TableColumn align="end">Outcome evals</TableColumn>}
-              <TableColumn align="end">Spent</TableColumn>
-              <TableColumn>Ended</TableColumn>
-              <TableColumn hideName>Scorecard</TableColumn>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.grade} id={row.grade} textValue={row.graded}>
-                  <TableCell>
-                    {row.after_edit ? `${row.graded} · after an edit` : row.graded}
-                  </TableCell>
-                  <TableCell>{row.version}</TableCell>
-                  <TableCell>{row.ran_on}</TableCell>
-                  <TableCell align="end">{pointsSaid(row.arms.with)}</TableCell>
-                  <TableCell align="end">{pointsSaid(row.arms.without)}</TableCell>
-                  <TableCell align="end">
-                    {row.arms.previous === null ? "—" : pointsSaid(row.arms.previous)}
-                  </TableCell>
-                  {anyEvals && (
-                    <TableCell align="end">
-                      {row.outcome_arms === null ? "—" : pointsSaid(row.outcome_arms.with)}
-                    </TableCell>
-                  )}
-                  <TableCell align="end">{spentSaid(row)}</TableCell>
-                  <TableCell textValue={row.ended}>
-                    <Badge variant={OUTCOME_SAID[row.outcome].badge}>
-                      {row.outcome === "graded" ? OUTCOME_SAID.graded.said : row.ended}
-                    </Badge>
-                  </TableCell>
-                  <TableCell textValue="Scorecard">
-                    {/* Its name starts with the words it shows, so a voice user's words find it. */}
-                    <Button
-                      size="sm"
-                      aria-label={`${openSaid(row)} of the grade of ${row.graded}`}
-                      onPress={() => onGrading({ at: "scorecard", grade: row.grade }, "go")}
-                    >
-                      {openSaid(row)}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
         </>
       )}
-      <section
-        aria-labelledby="skill-grades-outcome-evals"
-        data-testid="skill-grades-outcome-evals"
-      >
-        <PanelSectionTitle id="skill-grades-outcome-evals">Outcome evals</PanelSectionTitle>
-        <ButtonRow>
-          <p>
-            Tasks with statements a judge checks, kept with the skill. What a chat writes comes back
-            as a draft for you to accept.
-          </p>
-          {/* A chat on the project's default profile, the core's prompt typed and not sent. */}
-          <Button
-            size="sm"
-            isDisabled={held !== undefined}
-            tooltip={held}
-            onPress={() => askSkillChat({ plane, kind: "evals", level, name })}
-          >
-            Ask a chat to write outcome evals
-          </Button>
-        </ButtonRow>
-      </section>
       <section aria-labelledby="skill-grades-after-edit" data-testid="skill-grades-after-edit">
         <PanelSectionTitle id="skill-grades-after-edit">Grade after each edit</PanelSectionTitle>
         <ButtonRow>
@@ -438,8 +719,8 @@ export function GradesTab({
           {on === null ? (
             <Button
               size="sm"
-              isDisabled={noTests}
-              tooltip={noTests ? `${name} has no trigger tests to grade yet.` : undefined}
+              isDisabled={noChecks}
+              tooltip={noChecks ? `${name} has no checks to grade yet.` : undefined}
               onPress={() => onGrading({ at: "plan", afterEdit: true }, "go")}
             >
               Turn on…
@@ -456,9 +737,9 @@ export function GradesTab({
                 size="sm"
                 variant="ghost"
                 onPress={() =>
-                  void commands.skillGradeAfterEditOff(plane, level, name).then((answer) => {
-                    if (answer.status === "ok") setAgain((n) => n + 1);
-                    else setSaid(answer.error);
+                  void commands.skillGradeAfterEditOff(plane, level, name).then((answered) => {
+                    if (answered.status === "ok") setAgain((n) => n + 1);
+                    else setSaid(answered.error);
                   })
                 }
               >

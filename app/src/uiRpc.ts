@@ -1085,6 +1085,7 @@ export const commands = {
 	skillDraftChat: __WINDOW_ONLY_START_REFUSED,
 	skillTriggerTestsChat: __WINDOW_ONLY_START_REFUSED,
 	skillOutcomeEvalsChat: __WINDOW_ONLY_START_REFUSED,
+	skillChecksChat: __WINDOW_ONLY_START_REFUSED,
 	skillImproveChat: __WINDOW_ONLY_START_REFUSED,
 	skillDraftTry: __WINDOW_ONLY_START_REFUSED,
 	skillDraftRedo: __WINDOW_ONLY_START_REFUSED,

@@ -2160,6 +2160,13 @@ export const commands = {
 	 */
 	skillOutcomeEvalsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_outcome_evals_chat", { plane, level, name, columns, rows })),
 	/**
+	 *  **"Ask a chat to write checks"** (ruling of 2026-11-02): a chat where `level`'s skills are
+	 *  reached from, with the core's prompt for both kinds of checks of the skill `name`, its trigger
+	 *  tests and its outcome evals, typed and never sent ([`drafts::asking_for_checks`]). Both files
+	 *  come back in the skill's one draft, accepted whole.
+	 */
+	skillChecksChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_checks_chat", { plane, level, name, columns, rows })),
+	/**
 	 *  **"Improve from runs"** (#2780; decision 59): a chat where `level`'s skills are reached from,
 	 *  with the core's prompt to read the recent runs and grades of the skill `name` and draft an edit
 	 *  typed and never sent ([`drafts::improving_from_runs`]). It never edits the skill: its write
