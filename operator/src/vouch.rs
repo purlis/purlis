@@ -416,11 +416,15 @@ pub fn pool_status(
         })
         .cloned()
         .or_else(|| {
-            capabilities_statement(cluster, CAPABILITIES, now.saturating_add(VALID_FOR.as_secs()))
-                .map(|statement| OperatorWord {
-                    signature: keys.current.sign(&statement),
-                    statement,
-                })
+            capabilities_statement(
+                cluster,
+                CAPABILITIES,
+                now.saturating_add(VALID_FOR.as_secs()),
+            )
+            .map(|statement| OperatorWord {
+                signature: keys.current.sign(&statement),
+                statement,
+            })
         });
     let mut status = PoolStatus {
         signing_key: Some(current.clone()),

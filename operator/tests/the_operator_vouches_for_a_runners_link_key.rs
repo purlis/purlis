@@ -25,8 +25,7 @@ use purlis_cluster_operator::vouch::{
 };
 use purlis_cluster_operator::{
     Claim, ClaimSpec, ClaimStatus, LinkKeyIs, NextSigningKeyVouch, OperatorWord, Pool, PoolSpec,
-    PoolStatus,
-    pool_status_patch, status_patch,
+    PoolStatus, pool_status_patch, status_patch,
 };
 
 const IMAGE: &str = "ghcr.io/purlis/purlis-runner@sha256:2222222222222222222222222222222222222222222222222222222222222222";
