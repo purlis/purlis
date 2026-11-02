@@ -114,8 +114,14 @@ export const READ_BY_CODE = [
 
 // Docs that Rust's tests read and no window file does, so a change to one needs what a change to
 // Rust needs: `docs/plane-format.md` was in 35 of the last 199 merged pull requests, most of them
-// otherwise Rust alone (#3596). `ci-scope.test.mjs` fails when a window file comes to read one.
-export const DOCS_READ_BY_RUST = ["docs/plane-format.md", "docs/schema/"];
+// otherwise Rust alone (#3596). ADR 0083's amendment on a task question's counts is the table
+// `eventlog::questions`'s test holds a question's steps to (#4634). `ci-scope.test.mjs` fails
+// when a window file comes to read one.
+export const DOCS_READ_BY_RUST = [
+  "docs/plane-format.md",
+  "docs/schema/",
+  "docs/adr/0083/2026-11-02-a-task-question-is-counted-from-its-steps-and-never-read.md",
+];
 
 // The files of the window's sources that Rust reads by name, so a change to one is a change to a
 // Rust build or test: the generated bindings and RPC table (held to what the Rust makes of them),
