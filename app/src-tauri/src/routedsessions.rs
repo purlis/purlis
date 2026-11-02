@@ -120,6 +120,9 @@ struct Shared {
     current: Mutex<BTreeMap<String, u64>>,
     /// The pool each chat that runs on one runs on, by its number.
     chats: Mutex<HashMap<u32, String>>,
+    /// The workspace of each chat a restart found on the pool its workspace runs on with no record
+    /// of where it runs (#4683): one started before records were kept, kept once it is taken back.
+    unkept: Mutex<HashMap<u32, String>>,
     switch: Mutex<Option<Arc<crate::killswitch::KillSwitch>>>,
     ends: Mutex<Option<Ends>>,
     reconnecting: Mutex<Option<Reconnecting>>,
@@ -267,6 +270,7 @@ impl RoutedSessions {
         self.shared.dealt.fetch_max(number, Ordering::Relaxed);
         lock(&self.shared.chats).insert(number, pool.to_owned());
         lock(&self.shared.stayed).remove(&number);
+        lock(&self.shared.unkept).remove(&number);
         if let Some(workspace) = workspace.or(self.every_start_in.as_deref()) {
             self.chats_kept.keep(number, pool, workspace);
             self.chats_kept.settled();
@@ -398,6 +402,7 @@ impl RoutedSessions {
     fn landed_here(&self, number: u32) {
         lock(&self.shared.chats).remove(&number);
         lock(&self.shared.stayed).remove(&number);
+        lock(&self.shared.unkept).remove(&number);
         self.chats_kept.leave(number);
     }
 
@@ -824,6 +829,7 @@ impl SessionHost for RoutedSessions {
         // answered: no restart asks for it. Its branches come back with the next fetch, not now,
         // since a chat that moves is closed before its work comes back into the same clones.
         self.chats_kept.leave(id);
+        lock(&self.shared.unkept).remove(&id);
         closed
     }
 
@@ -1153,7 +1159,8 @@ impl SessionHost for RoutedSessions {
     /// on, else the one `workspace` runs its chats on, its runner now and then each that drains
     /// (#4271, #4590). A chat one of them says it runs is kept as that pool's, on that runner's
     /// own link. No other pool is asked, so no runner takes a chat that does not run on it, and
-    /// asking sends a pool no code.
+    /// asking sends a pool no code. One found with no record at all is kept as it is taken back
+    /// ([`Self::reattach`], #4683).
     fn left_running_in(&self, number: u32, workspace: Option<&str>) -> bool {
         if self.here.left_running(number) {
             self.chats_kept.leave(number);
@@ -1163,14 +1170,19 @@ impl SessionHost for RoutedSessions {
             .chats_kept
             .of(number)
             .filter(|chat| Some(chat.workspace.as_str()) == workspace);
-        let pool = match kept {
-            Some(chat) => chat.pool,
-            None => match self.route(workspace) {
-                Ok(Some(pool)) => pool,
-                _ => return false,
-            },
+        if let Some(chat) = kept {
+            return self.found_on(number, chat.pool);
+        }
+        let Ok(Some(pool)) = self.route(workspace) else {
+            return false;
         };
-        self.found_on(number, pool)
+        let found = self.found_on(number, pool);
+        if let Some(workspace) = workspace.filter(|_| found)
+            && self.chats_kept.of(number).is_none()
+        {
+            lock(&self.shared.unkept).insert(number, workspace.to_owned());
+        }
+        found
     }
 
     /// Of the host chat `number` runs on: what settles a record asks its pool ([`Self::left_on`]).
@@ -1186,9 +1198,18 @@ impl SessionHost for RoutedSessions {
         self.here.close_left(numbers);
     }
 
+    /// A chat a restart found with no record of where it runs is kept as its pool's once it is
+    /// taken back there (#4683), as its start would have kept it: the pool its workspace's setting
+    /// named when it was asked, and the workspace the window asked for.
     fn reattach(&self, number: u32, announce: &dyn Fn(u32)) -> Result<u32, String> {
         match self.host_of(number) {
-            Some(host) => host.reattach(number, announce),
+            Some(host) => host.reattach(number, announce).inspect(|number| {
+                let unkept = lock(&self.shared.unkept).remove(number);
+                let pool = lock(&self.shared.chats).get(number).cloned();
+                if let (Some(workspace), Some(pool)) = (unkept, pool) {
+                    self.chats_kept.keep(*number, &pool, &workspace);
+                }
+            }),
             None => self
                 .here
                 .reattach(number, announce)
@@ -1247,6 +1268,8 @@ impl SessionHost for RoutedSessions {
     /// only those kept there: what else that pool holds of this project is not this window's to
     /// end (#4590).
     fn close_what_was_not_reattached(&self) {
+        // A chat found with no record and not taken back by now never is (#4683).
+        lock(&self.shared.unkept).clear();
         self.settle_what_was_kept();
         let routed = self.routed_pools();
         for (pool, host) in self.named_pools() {
