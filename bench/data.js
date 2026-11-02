@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793591084716,
+  "lastUpdate": 1793593319446,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35700,6 +35700,48 @@ window.BENCHMARK_DATA = {
             "value": 102.13246749999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.334, 101.638, 102.132, 102.353, 102.431 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a93cf005c6e1d3379591cacb87fbeeec2d7596bb",
+          "message": "Built-in skills are purlis-<name> on every harness; the purlis- prefix is reserved (#4552)\n\n* ADR 0099 amended: built-in skills are purlis-<name> on every harness (#4524)\n\nThe operator's ruling of 2026-11-01. It replaces the opencode-only rule of the\n2026-10-26 amendment and reserves the purlis- prefix.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C3MAS2HFMV8CHAZDGN5GG1\nPurlis-Persona: steward\n\n* Built-in skills have one name on every harness; the purlis- prefix is reserved (#4524)\n\nThe 12 bundled skills and the index skill become purlis-<name>. The per-route\nnaming goes: Route::built_in_name, names_built_ins_its_own, handed_text_as,\nthe harness argument of whose and smart_close_typed, and the index skill's\noff-by-name handling. opencode takes the bundle's skills/ directly.\n\nOld names read as the new one: purlis:handoff in a persona's list, a skill's\ntext, skill_load, a run's record or a typed smart close. A bare name is an\nordinary skill's. A plane skill named purlis-* is left out with a reason, and\nnew, rename, install and share refuse the prefix.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C3MAS2HFMV8CHAZDGN5GG1\nPurlis-Persona: steward\n\n* Skill studio: refuse a purlis- name as it is typed, and say the new names (#4524)\n\nThe dialogs check the prefix, not the list of built-in skills, so the prop goes.\nA copy of purlis-handoff starts as my-handoff. Bindings are regenerated.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C3MAS2HFMV8CHAZDGN5GG1\nPurlis-Persona: steward\n\n* Docs and changelog: built-in skills are purlis-<name> (#4524)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C3MAS2HFMV8CHAZDGN5GG1\nPurlis-Persona: steward\n\n* Keep the index skill's name safe and read a run's name one way (#4524)\n\nFrom review: the index skill's name is never turned off and a copy of it is a\nclash; a run reads through one reader; the doctor still names a copy kept under\nan old name; a refusal names the skill at fault; the Notice and plane format say\nwhat is true now; and what means 'reserved' is named so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C3MAS2HFMV8CHAZDGN5GG1\nPurlis-Persona: steward\n\n* Stories: built-in skills by their names, and a refused purlis- name (#4524)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C3MAS2HFMV8CHAZDGN5GG1\nPurlis-Persona: steward\n\n* Scenario specs and the UI skill's guard follow the new names (#4524)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C3MAS2HFMV8CHAZDGN5GG1\nPurlis-Persona: steward\n\n* Stories: baselines the stories run drew for the new names (#4524)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C3MAS2HFMV8CHAZDGN5GG1\nPurlis-Persona: steward\n\n* A session record's line names the command that closes a tab now (#4524)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C3MAS2HFMV8CHAZDGN5GG1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T01:26:35Z",
+          "tree_id": "016f95d1b922bb377ac4dafb6f85592b2b023427",
+          "url": "https://github.com/purlis/purlis/commit/a93cf005c6e1d3379591cacb87fbeeec2d7596bb"
+        },
+        "date": 1793593315064,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5372705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.521, 0.523, 0.537, 0.539, 0.561 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.179116,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.100, 16.116, 16.179, 16.185, 16.466 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5106745,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.504, 101.326, 101.511, 103.004, 103.575 ms"
           }
         ]
       }
