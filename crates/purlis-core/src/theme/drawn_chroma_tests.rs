@@ -266,8 +266,27 @@ fn the_sweep_reads_what_it_says_it_holds() {
     );
 }
 
+/// The accent Purlis light writes.
+const LIGHT_ACCENT: &str = "#554691";
+
+/// The colour the accent takes at a hue where one chroma drew it as written: only there.
+fn light_s_accent_at(hue: f64) -> Option<&'static str> {
+    match hue {
+        h if (98.0..109.0).contains(&h) => Some("#52524c"),
+        h if (109.0..110.0).contains(&h) => Some("#525249"),
+        h if (110.0..115.0).contains(&h) => Some("#52524a"),
+        h if (115.0..118.0).contains(&h) => Some("#51524a"),
+        _ => None,
+    }
+}
+
 #[test]
-fn no_built_in_draws_a_colour_it_did_not_before() {
+fn only_purlis_light_s_accent_moves_and_only_at_hues_no_palette_colour_has() {
+    // Measured at one chroma, a kin of the accent drawn at the shared chroma was tried at the
+    // accent's, fell near danger there, and left the accent no amount at these hues: it was drawn
+    // in its own violet between a yellow and a green workspace. Measured as drawn, it gives way
+    // near a grey, as Purlis Classic's does beside the same amber. Every other built-in, every
+    // palette colour and every other token draws what it drew.
     let mut moved = Vec::new();
     let customs: Vec<f64> = custom_colours()
         .iter()
@@ -279,6 +298,9 @@ fn no_built_in_draws_a_colour_it_did_not_before() {
             continue;
         }
         let named = theme.tint.hues.iter().map(|one| one.hue);
+        for hue in named.clone() {
+            assert_eq!(light_s_accent_at(hue), None, "{} {hue}", theme.id);
+        }
         let whole = (0..360).map(f64::from);
         for hue in whole.chain(named).chain(customs.iter().copied()) {
             let (now, was) = (tint::most_at(theme, hue), at_one_chroma(theme, hue));
@@ -288,15 +310,34 @@ fn no_built_in_draws_a_colour_it_did_not_before() {
             let (now, was) = (turned(theme, hue, now), turned(theme, hue, was));
             for token in tabs {
                 if now.value(token) != was.value(token) {
-                    moved.push(format!(
-                        "{} {hue} {token}: {} to {}",
-                        theme.id,
-                        was.value(token),
-                        now.value(token)
+                    moved.push((
+                        theme.id.clone(),
+                        hue,
+                        *token,
+                        was.value(token).to_owned(),
+                        now.value(token).to_owned(),
                     ));
                 }
             }
         }
     }
-    assert_eq!(moved, Vec::<String>::new());
+    let whole_degrees: Vec<f64> = (98..118).map(f64::from).collect();
+    for hue in &whole_degrees {
+        for token in ["accent.base", "focus.ring", "list.selected-edge"] {
+            assert!(
+                moved.iter().any(|one| one.1 == *hue && one.2 == token),
+                "{hue} {token}"
+            );
+        }
+    }
+    for (id, hue, token, was, now) in &moved {
+        let case = format!("{id} {hue} {token}: {was} to {now}");
+        assert_eq!(id, "light", "{case}");
+        assert_eq!(was, LIGHT_ACCENT, "{case}");
+        assert!(
+            ["accent.base", "focus.ring", "list.selected-edge"].contains(token),
+            "{case}"
+        );
+        assert_eq!(light_s_accent_at(*hue), Some(now.as_str()), "{case}");
+    }
 }
