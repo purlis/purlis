@@ -714,9 +714,9 @@ pub fn without_lines(text: &str, app: &str) -> Result<String, String> {
                 .is_some_and(|gh| is_ours(gh, app));
             if ours {
                 tools.remove("gh");
-            }
-            if tools.is_empty() {
-                grants.remove("tools");
+                if tools.is_empty() {
+                    grants.remove("tools");
+                }
             }
         }
     }
@@ -773,7 +773,11 @@ pub fn write_and_allow(
         let was = before.iter().find(|(one, _)| one.persona == *persona);
         let clear = was.is_none_or(|(one, _)| one.allowed() || !one.asks());
         match after.iter().find(|(one, _)| one.persona == *persona) {
-            Some((now, _)) if clear && !now.default && now.asks() => allow(now)?,
+            Some((now, _))
+                if clear && !now.default && now.tools.iter().any(|tool| tool.name == "gh") =>
+            {
+                allow(now)?;
+            }
             _ => left.push(persona.clone()),
         }
     }
@@ -1031,13 +1035,14 @@ pub fn remove(ctx: &Ctx, root: &Path, app: &str) -> Result<(), String> {
     }
     without_lines(&read_manifest(root)?, app)?;
     let key = key_of(app);
+    // Neither failing here stops the rest: a line of ours still comes out, and its tokens end.
     let vault = own_vault(ctx);
-    let kept = match &vault {
-        Ok(Some(vault)) => cmd::keys(ctx, vault)
-            .map_err(|e| e.message.to_string())?
-            .contains(&key),
-        _ => false,
+    let listed = match &vault {
+        Ok(Some(vault)) => cmd::keys(ctx, vault).map_err(|e| e.message.to_string()),
+        Ok(None) => Ok(Vec::new()),
+        Err(why) => Err(why.clone()),
     };
+    let kept = listed.as_ref().is_ok_and(|keys| keys.contains(&key));
     if !kept && !held(root)?.iter().any(|one| one.app == app && one.ours()) {
         return Err(
             "purlis didn't write this line, so it removes nothing here. Take it out of \
@@ -1045,12 +1050,12 @@ pub fn remove(ctx: &Ctx, root: &Path, app: &str) -> Result<(), String> {
                 .to_owned(),
         );
     }
-    let key_gone = match vault {
-        Ok(Some(vault)) if kept => {
+    let key_gone = match (vault, listed) {
+        (Ok(Some(vault)), Ok(_)) if kept => {
             cmd::delete_reserved(ctx, &vault, &key).map_err(|e| e.message.to_string())
         }
-        Ok(_) => Ok(()),
-        Err(why) => Err(why),
+        (_, Err(why)) => Err(why),
+        _ => Ok(()),
     };
     apptoken::app_removed(root, app, Duration::from_secs(5));
     let lines_gone = rewrite_manifest(root, |text| without_lines(text, app));
