@@ -12,6 +12,8 @@
 ## Old names keep working
 
 - `purlis:handoff` and `charter:handoff`, in a persona's `skills:` list, a skill's or a curation action's text or a name given to `skill_load`, read as `purlis:purlis-handoff`. Nobody's plane has to change. `Reference::parse` is the one reading.
+- **`purlis-building-purlis-ui` is `purlis-building-ui`**, by a later ruling of the operator, folder and `name:` together. `purlis:building-purlis-ui`, `purlis:purlis-building-purlis-ui` and their `charter:` spellings read as `purlis:purlis-building-ui`. So does a bare `purlis-building-purlis-ui`, which the prefix keeps purlis's; a bare `building-purlis-ui` is an ordinary name, as a bare `handoff` is.
+- **A person typing a command needs the new name.** Claude Code knows a skill only by the name it has now, so `/purlis:handoff` or `/purlis:building-purlis-ui` typed there gets its unknown-command answer, and the operator's ruling is that this is accepted and said in the changelog.
 - **A bare `handoff` is an ordinary skill name.** It means the plane's or the harness's skill of that name and never falls back to the built-in one, so a name has one meaning however many skills exist. A bare `/smart-close` is no longer purlis's smart close. purlis still hears `/purlis:smart-close` as one, though a harness that knows only the new command may not run it.
 
 ## The prefix is reserved
