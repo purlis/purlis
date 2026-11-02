@@ -104,14 +104,16 @@ function core(asking = true, { question = true, refuse = false } = {}) {
       asked.push({ cmd, args: a });
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return chats;
+      // A copy, as the core's answer reaches the window over IPC: the window keeps an answer
+      // equal to the one it holds (#4729), so one sharing this fake's chats would change with them.
       if (cmd === "plane_sidebar")
-        return {
+        return structuredClone({
           root: PLANE,
           personas: ["devops", "steward"],
           persona: "steward",
           unfiled: [],
           workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats }],
-        };
+        });
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];
