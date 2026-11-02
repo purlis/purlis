@@ -14,8 +14,10 @@
  * at most {@link AT_MOST_PER_CHAT} paths per chat (its oldest goes first), and at most
  * {@link AT_MOST} in all. The core already caps each chat's rate.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { listen } from "./here";
+import { useProjectShown } from "./projectShown";
 import type { ChatTouching, OpenChat, PlaneId } from "./bindings";
 
 /** How long a touched file stays marked after its chat last touched it. */
@@ -57,15 +59,72 @@ export function nextFade(touches: Touches): number | undefined {
   return Math.min(...touches.map((one) => one.at)) + FADE_MS;
 }
 
-/** The files `plane`'s chats are touching, fading as they go quiet. */
-export function useTouching(plane: PlaneId | undefined): Touches {
-  // Held with the project it is about, so a window moved to another project draws none of the
-  // last one's in the very render it moves.
-  const [held, setHeld] = useState<{ plane?: PlaneId; touches: Touches }>({ touches: [] });
-  const touches = held.plane === plane ? held.touches : NONE;
+/** What a {@link TouchStore} holds: the touches, with the project they are of. */
+type Held = { readonly plane?: PlaneId; readonly touches: Touches };
 
+/**
+ * **The files a project's chats are touching, held outside React** (#4730), as `chatDoing.ts`
+ * holds what they are doing: a touch tells the rows that read it, and each draws again only when
+ * what it shows changed ({@link useTouchedBy}), so an agent touching files as fast as it can
+ * redraws its file's row and the folders above it, not the tree.
+ */
+export type TouchStore = {
+  subscribe: (listener: () => void) => () => void;
+  /** What is held now. Read through {@link touchesOf}, which answers for one project. */
+  held: () => Held;
+};
+
+type OwnStore = TouchStore & {
+  /** Holds `touches` of `plane`, and sets the timer for the next of them to fade. */
+  hold: (plane: PlaneId | undefined, touches: Touches) => void;
+};
+
+function touchStore(): OwnStore {
+  let held: Held = { touches: NONE };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const listeners = new Set<() => void>();
+  const store: OwnStore = {
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+    held: () => held,
+    hold: (plane, touches) => {
+      if (plane === held.plane && touches === held.touches) return;
+      held = { plane, touches };
+      // One timer, for the next touch to fade; set again whenever the list changes.
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      const due = nextFade(touches);
+      if (due !== undefined)
+        timer = setTimeout(
+          () => store.hold(plane, faded(store.held().touches, Date.now())),
+          Math.max(0, due - Date.now()),
+        );
+      for (const listener of [...listeners]) listener();
+    },
+  };
+  return store;
+}
+
+/** What `held` says of `plane`: nothing at all of any other project. */
+export function touchesOf(held: Held, plane: PlaneId | undefined): Touches {
+  return held.plane === plane ? held.touches : NONE;
+}
+
+/**
+ * Keeps the files `plane`'s chats are touching, fading as they go quiet. It answers the store
+ * and not the touches, so the component holding it is not drawn again by one.
+ *
+ * **Only while the project is in front** (`useProjectShown`): a project nobody can see draws no
+ * mark, so it does no work for its agents' touches and listens for none. A mark lasts a few
+ * seconds, so one that came while it was away would mostly have faded by its return anyway.
+ */
+export function useTouches(plane: PlaneId | undefined): TouchStore {
+  const [store] = useState(touchStore);
+  const shown = useProjectShown();
   useEffect(() => {
-    if (plane === undefined) return;
+    if (plane === undefined || !shown) return;
     let gone = false;
     let stop: (() => void) | undefined;
     void (async () => {
@@ -73,11 +132,9 @@ export function useTouching(plane: PlaneId | undefined): Touches {
         const unlisten = await listen<ChatTouching>("chat-touching", (event) => {
           if (gone || event.payload.plane !== plane) return;
           const { session, path } = event.payload;
-          setHeld((was) => {
-            const now = Date.now();
-            const from = was.plane === plane ? was.touches : NONE;
-            return { plane, touches: touched(faded(from, now), session, path, now) };
-          });
+          const now = Date.now();
+          const from = touchesOf(store.held(), plane);
+          store.hold(plane, touched(faded(from, now), session, path, now));
         });
         if (gone) unlisten();
         else stop = unlisten;
@@ -88,22 +145,97 @@ export function useTouching(plane: PlaneId | undefined): Touches {
     return () => {
       gone = true;
       stop?.();
+      // What it held goes with it, and its timer: the project left the front or the window
+      // moved to another, and either way nothing marks them now.
+      store.hold(plane, NONE);
     };
-  }, [plane]);
-
-  // One timer, for the next touch to fade; it is set again whenever the list changes.
-  const due = nextFade(touches);
-  useEffect(() => {
-    if (due === undefined) return;
-    const timer = setTimeout(
-      () => setHeld((was) => ({ ...was, touches: faded(was.touches, Date.now()) })),
-      Math.max(0, due - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [due]);
-
-  return touches;
+  }, [store, plane, shown]);
+  return store;
 }
+
+/** The files `plane`'s chats are touching, as a value: whatever reads it is drawn again on each
+ *  touch. For a part that needs the list itself; a row reads {@link useTouchedBy}. */
+export function useTouching(plane: PlaneId | undefined): Touches {
+  return useHeldTouches(useTouches(plane), plane);
+}
+
+/** What `store` holds of `plane`, as a value: whatever reads it is drawn again on each touch. */
+export function useHeldTouches(store: TouchStore, plane: PlaneId | undefined): Touches {
+  const touches = () => touchesOf(store.held(), plane);
+  return useSyncExternalStore(store.subscribe, touches, touches);
+}
+
+/**
+ * What a tree's rows read their marks out of: the store, and what its touches mark in each
+ * branch by {@link branchKey}-style key, worked out once per touch and branch however many rows
+ * ask (`marksOf`).
+ */
+export type TouchingOf = {
+  readonly store: TouchStore;
+  /** What `touches` mark in the branch `key` names, or nothing. Called with the same touches
+   *  by every row; the answer is remembered for as long as they are the ones held. */
+  readonly marksOf: (touches: Touches, key: string) => Touching | undefined;
+  readonly plane: PlaneId | undefined;
+};
+
+/** A {@link TouchingOf} whose `marks` answers per branch, remembered per list of touches. */
+export function touchingOf(
+  store: TouchStore,
+  plane: PlaneId | undefined,
+  marks: (touches: Touches, key: string) => Touching | undefined,
+): TouchingOf {
+  let of: Touches | undefined;
+  let known = new Map<string, Touching | undefined>();
+  return {
+    store,
+    plane,
+    marksOf: (touches, key) => {
+      if (touches !== of) {
+        of = touches;
+        known = new Map();
+      }
+      if (!known.has(key)) known.set(key, marks(touches, key));
+      return known.get(key);
+    },
+  };
+}
+
+/**
+ * Which chats are touching `path` of the branch `key` names, and a redraw only when that
+ * changes: a touch elsewhere, and a touch again of a file already marked by the same chats,
+ * redraw nothing here.
+ */
+export function useTouchedBy(
+  touching: TouchingOf | undefined,
+  key: string,
+  path: string,
+): readonly string[] | undefined {
+  const store = touching?.store ?? QUIET;
+  const held = () => store.held();
+  return useSyncExternalStoreWithSelector(
+    store.subscribe,
+    held,
+    held,
+    (now) =>
+      touching === undefined
+        ? undefined
+        : touching.marksOf(touchesOf(now, touching.plane), key)?.get(path),
+    sameNames,
+  );
+}
+
+function sameNames(one: readonly string[] | undefined, other: readonly string[] | undefined) {
+  return (
+    one === other ||
+    (one !== undefined &&
+      other !== undefined &&
+      one.length === other.length &&
+      one.every((name, at) => name === other[at]))
+  );
+}
+
+/** A store that never holds a touch, for a tree drawn without any. */
+const QUIET: TouchStore = { subscribe: () => () => {}, held: () => ({ touches: NONE }) };
 
 /** No files touched. */
 const NONE: Touches = [];
