@@ -276,3 +276,56 @@ fn a_redirected_question_is_refused_in_the_harness_s_own_words_and_its_turn_goes
         })
     );
 }
+
+/// Codex's `request_user_input` as its `PreToolUse` carries it (#4558, read from Codex's source
+/// at `rust-v0.163.0`): the tool's own name, and its arguments as `tool_input`.
+fn codex_asked(questions: Value) -> Value {
+    serde_json::json!({
+        "session_id": "abc",
+        "hook_event_name": "PreToolUse",
+        "tool_name": CODEX_QUESTION_TOOL,
+        "tool_input": { "questions": questions },
+    })
+}
+
+#[test]
+fn codex_s_own_question_reads_as_one_message_with_what_it_offers() {
+    let mut first = one("Which host?", &["blue", "green"]);
+    first["id"] = "host".into();
+    let payload = codex_asked(serde_json::json!([first, one("And when?", &["now"])]));
+
+    assert_eq!(
+        codex_asked_text(&payload).as_deref(),
+        Some(
+            "Which host?\n- blue: why it fits\n- green: why it fits\n\n\
+             And when?\n- now: why it fits"
+        )
+    );
+}
+
+#[test]
+fn codex_s_reader_takes_no_other_tool_and_no_question_with_nothing_in_it() {
+    assert_eq!(codex_asked_text(&codex_asked(serde_json::json!([]))), None);
+    let bash = serde_json::json!({ "tool_name": "Bash", "tool_input": { "command": "ls" } });
+    assert_eq!(codex_asked_text(&bash), None);
+    // Claude Code's tool by its name is not Codex's.
+    assert_eq!(
+        codex_asked_text(&asked(serde_json::json!([one("Which host?", &["blue"])]))),
+        None
+    );
+}
+
+#[test]
+fn a_redirected_codex_question_is_denied_in_its_pre_tool_use_words_with_where_it_went() {
+    let said: Value = serde_json::from_str(&codex_question_refused("It went to your asking chat."))
+        .expect("json");
+
+    assert_eq!(
+        said,
+        serde_json::json!({ "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "It went to your asking chat.",
+        } })
+    );
+}
