@@ -89,6 +89,10 @@ pub struct Wrote {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Locked {
     pub name: String,
+    /// Its name at the source, where it was installed under a new one (ADR 0100, amended
+    /// 2026-11-01): what an update finds it by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_name: Option<String>,
     pub level: AtLevel,
     /// The repository and branch it was copied from.
     pub source: Remote,
@@ -108,6 +112,11 @@ impl Locked {
     /// Whether it is the skill `name` at `level`.
     pub fn is(&self, level: &Level, name: &str) -> bool {
         self.name == name && self.level.0 == *level
+    }
+
+    /// Its name at its source.
+    pub fn at_source(&self) -> &str {
+        self.source_name.as_deref().unwrap_or(&self.name)
     }
 }
 
@@ -164,7 +173,12 @@ pub fn read(plane: &Path, kept: Kept) -> Result<Read, String> {
         let plain_files = one.files.iter().all(|file| {
             purlis_skills::tree::folder_parts(&file.path).is_some_and(|parts| !parts.is_empty())
         });
+        let bad_source_name = one
+            .source_name
+            .as_deref()
+            .is_some_and(|name| purlis_skills::change::name_problem(name).is_some());
         if purlis_skills::change::name_problem(&one.name).is_some()
+            || bad_source_name
             || !plain_files
             || purlis_skills::tree::folder_parts(&one.folder).is_none()
             || one.level.0.local != (kept == Kept::Local)
