@@ -9,6 +9,7 @@ import App from "../App";
 import type {
   ClusterPoolRow,
   PoolLink,
+  PoolNamedBy,
   PoolProfileRow,
   PoolRow,
   PoolVersion,
@@ -78,6 +79,8 @@ let profileChanges: unknown[];
 let profileAnswers: PoolProfileRow[][] | undefined;
 /** Whether `pool_profiles` says the runner is on a fresh claim (#3819). */
 let freshClaim: boolean;
+/** What `pool_named_by` says names a pool (#4678). */
+let namedBy: PoolNamedBy[];
 
 const a_profile = (name: string, standing: string): PoolProfileRow => ({
   name,
@@ -121,6 +124,7 @@ beforeEach(() => {
   profileChanges = [];
   freshClaim = false;
   profileAnswers = undefined;
+  namedBy = [];
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -166,6 +170,7 @@ beforeEach(() => {
         return { sign_ins_kept: true };
       }
       if (cmd === "docker_pool_version") return version;
+      if (cmd === "pool_named_by") return structuredClone(namedBy);
       if (cmd === "projects_not_held") return structuredClone(notHeld);
       if (cmd === "pool_profiles") {
         profilesAsked.push(a.pool);
@@ -283,6 +288,36 @@ describe("You › This machine › Pools", () => {
     expect(removed).toEqual([]);
     await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
     await waitFor(() => expect(removed).toEqual(["builds"]));
+  });
+
+  it("names the project and the workspace that name the pool before anything is removed", async () => {
+    pools = [a_pool("builds")];
+    namedBy = [{ path: "/home/op/shop", name: "shop", project: true, workspaces: ["api"] }];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await userEvent.click(await within(group).findByRole("button", { name: "Remove pool builds" }));
+    const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    const list = await within(asked).findByRole("list", { name: "These go back to this machine:" });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["Project shop, and the workspaces that follow it", "Workspace api in shop"]);
+    expect(removed).toEqual([]);
+  });
+
+  it("says nothing of workspaces or projects where none name the pool", async () => {
+    pools = [a_pool("builds")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await userEvent.click(await within(group).findByRole("button", { name: "Remove pool builds" }));
+    const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await waitFor(() => expect(within(asked).queryByText(/go back to this machine/)).toBeNull());
+    expect(within(asked).getByText(/There is no undo\./)).toBeInTheDocument();
   });
 
   it("adds the first pool from the palette, with the limits typed and the defaults for the rest", async () => {

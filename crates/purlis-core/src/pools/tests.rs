@@ -298,10 +298,26 @@ fn a_workspace_set_to_run_on_a_pool_runs_there_once_the_pool_is_kept_and_nowhere
         runs_on(config.path(), plane, Some("ide")),
         Ok(Some("first".to_owned()))
     );
+    // What its removal asks about names the workspace, in its project, and nothing else.
+    crate::machine::update(config.path(), |store| {
+        store.remember(std::path::Path::new("/planes/b"), 2);
+    })
+    .unwrap();
+    assert_eq!(
+        named_by(config.path(), "first"),
+        [(
+            plane.to_path_buf(),
+            crate::machine::NamingPool {
+                project: false,
+                workspaces: vec!["ide".to_owned()],
+            }
+        )]
+    );
     // Removing the pool runs the workspace's chats here again.
     remove(config.path(), &fake.docker(), "first", None).unwrap();
     assert_eq!(runs_on(config.path(), plane, Some("ide")), Ok(None));
     assert!(workspaces_on_pools(config.path(), plane).is_empty());
+    assert!(named_by(config.path(), "first").is_empty());
 }
 
 /// The runner image of the desktop's new version, purlis's own.

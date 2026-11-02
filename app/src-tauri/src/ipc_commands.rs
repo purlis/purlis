@@ -539,6 +539,7 @@ macro_rules! app_commands {
                 dockerpools::follow_project_chats_run_on,
                 dockerpools::project_chats_run_on,
                 dockerpools::set_project_chats_run_on,
+                dockerpools::pool_named_by,
                 dockerpools::send_leaves_out,
                 dockerpools::set_send_leaves_out,
                 updates::check_for_update,

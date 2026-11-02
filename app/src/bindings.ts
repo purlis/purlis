@@ -3442,6 +3442,8 @@ export const commands = {
 	projectChatsRunOn: (plane: PlaneId) => typedError<ProjectChatsRunOn, string>(__TAURI_INVOKE("project_chats_run_on", { plane })),
 	/**  **Sets where a project's workspaces run their chats by default** (#4536). */
 	setProjectChatsRunOn: (plane: PlaneId, pool: string | null) => typedError<ProjectChatsRunOn, string>(__TAURI_INVOKE("set_project_chats_run_on", { plane, pool })),
+	/**  **What names a pool** (#4678): the projects and workspaces its removal sets back to this machine. */
+	poolNamedBy: (name: string) => typedError<PoolNamedBy[], string>(__TAURI_INVOKE("pool_named_by", { name })),
 	/**
 	 *  **What a workspace's sends to a pool's runner leave out** besides what a save to the forge
 	 *  refuses (#2046, the operator's ruling of 2026-10-25): `settings.runners.leave_out` in its
@@ -10911,6 +10913,21 @@ export type PoolLink =
  *  there still, so it is not said to be removed and Make the runner again is not offered.
  */
 { state: "on_another_engine" };
+
+/**
+ *  **A project, and its workspaces, that name a pool** (#4678): what removing the pool sets back
+ *  to this machine, which its question names first.
+ */
+export type PoolNamedBy = {
+	/**  The path this machine keeps the project under. */
+	path: string,
+	/**  What to call it: the directory's own name. */
+	name: string,
+	/**  Whether the project itself names the pool. */
+	project: boolean,
+	/**  The workspaces of it that name the pool, by name. */
+	workspaces: string[],
+};
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
