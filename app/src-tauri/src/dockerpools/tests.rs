@@ -161,6 +161,8 @@ fn a_workspace_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
         chats_run_on_at(config.path(), plane, "app").unwrap(),
         ChatsRunOn {
             pool: None,
+            here: false,
+            project: None,
             pools: Vec::new(),
         }
     );
@@ -172,10 +174,22 @@ fn a_workspace_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
         None
     );
     // This machine is always one to choose.
+    let chosen = set_chats_run_on_at(config.path(), plane, "app", None).unwrap();
+    assert_eq!((chosen.pool, chosen.here), (None, true));
+    // Following the project again is a setting of its own (#4536).
+    let followed = follow_project_chats_run_on_at(config.path(), plane, "app").unwrap();
+    assert_eq!((followed.pool, followed.here), (None, false));
+}
+
+#[test]
+fn a_project_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    purlis_core::machine::update(config.path(), |store| store.remember(plane, 1)).unwrap();
+    let refused = set_project_chats_run_on_at(config.path(), plane, Some("builds")).unwrap_err();
+    assert!(refused.contains("builds"), "{refused}");
     assert_eq!(
-        set_chats_run_on_at(config.path(), plane, "app", None)
-            .unwrap()
-            .pool,
+        project_chats_run_on_at(config.path(), plane).unwrap().pool,
         None
     );
 }

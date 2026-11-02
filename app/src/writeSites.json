@@ -193,6 +193,22 @@
       "by": ["setChatsRunOn"]
     },
     {
+      "at": "dockerpools.rs follow_project_chats_run_on_at",
+      "writes": "this machine's store: the pins",
+      "by": ["followProjectChatsRunOn"]
+    },
+    {
+      "at": "dockerpools.rs set_project_chats_run_on_at",
+      "writes": "this machine's store: the pins",
+      "by": ["setProjectChatsRunOn"]
+    },
+    {
+      "at": "dockerpools.rs put_workspace_place_back",
+      "writes": "this machine's store: the pins",
+      "by": [],
+      "why": "A move of a workspace's chats that didn't happen puts its setting back, from the move's own thread: no window command reaches it within two calls."
+    },
+    {
       "at": "planes.rs forget",
       "writes": "this machine's store: the pins",
       "by": ["forgetProject"]

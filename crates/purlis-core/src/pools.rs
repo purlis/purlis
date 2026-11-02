@@ -174,7 +174,7 @@ pub fn remove(
         // Every workspace that ran its chats on it runs them on this machine again.
         crate::machine::update(config_root, |store| {
             for recent in &mut store.recents {
-                recent.chats_run_on.retain(|_, pool| pool != name);
+                recent.forget_pool(name);
             }
         })
         .map_err(|why| {
@@ -191,28 +191,67 @@ pub fn remove(
 pub const SETTING: &str = "Settings › This machine › Pools";
 
 /// **Which pool `workspace` of the plane at `plane` runs its chats on, on this machine**
-/// (#2679, #2046): `None` for this machine, the pool where this machine's store names one it
-/// keeps with its runner, and refused, in words, where it names one this machine does not keep:
-/// such a chat starts nowhere, and is never started here in its place.
+/// (#2679, #2046): `None` for this machine, the pool where the order of [`chat_place`] names one
+/// this machine keeps with its runner, and refused, in words, where it names one it does not
+/// keep: such a chat starts nowhere, and is never started here in its place.
 pub fn runs_on(
     config_root: &Path,
     plane: &Path,
     workspace: Option<&str>,
 ) -> Result<Option<String>, String> {
+    Ok(chat_place(config_root, plane, workspace, None)?.pool)
+}
+
+/// **Where a chat runs and why, with the pool it names checked** (#4536, ruled 2026-11-01): the
+/// order is [`crate::machine::Store::chat_place`]'s. A chat at the project's root runs on this
+/// machine, since code moves to a runner by a workspace's clones, and a start that chose a pool
+/// for one is refused and never run here in its place.
+pub fn chat_place(
+    config_root: &Path,
+    plane: &Path,
+    workspace: Option<&str>,
+    start: Option<&crate::machine::StartChoice>,
+) -> Result<crate::machine::ChatPlace, String> {
+    use crate::machine::{ChatPlace, PlaceLevel, StartChoice};
     let Some(workspace) = workspace else {
-        return Ok(None);
+        return match start {
+            Some(StartChoice::Pool(pool)) => Err(format!(
+                "A chat at the project's root runs on this machine, so it can't start on pool \
+                 {pool}. Start it in a workspace."
+            )),
+            Some(StartChoice::ThisMachine) => Ok(ChatPlace {
+                pool: None,
+                level: PlaceLevel::Start,
+            }),
+            None => Ok(ChatPlace {
+                pool: None,
+                level: PlaceLevel::Default,
+            }),
+        };
     };
-    let loaded = crate::machine::read(config_root);
-    let Some(pool) = loaded.store.chats_run_on(plane, workspace) else {
-        return Ok(None);
+    let place = crate::machine::read(config_root)
+        .store
+        .chat_place(plane, workspace, start);
+    let Some(pool) = &place.pool else {
+        return Ok(place);
     };
     if let Err(missing) = runners::runner_of(config_root, pool) {
-        return Err(format!(
-            "Workspace {workspace} runs its chats on pool {pool}: {missing}. Choose where its \
-             chats run in its settings, or add the pool again in {SETTING}."
-        ));
+        return Err(match place.level {
+            PlaceLevel::Project => format!(
+                "This project runs its chats on pool {pool}: {missing}. Choose where its chats \
+                 run in its settings, or add the pool again in {SETTING}."
+            ),
+            PlaceLevel::Start => format!(
+                "This chat was to start on pool {pool}: {missing}. Choose another place, or add \
+                 the pool again in {SETTING}."
+            ),
+            PlaceLevel::Workspace | PlaceLevel::Default => format!(
+                "Workspace {workspace} runs its chats on pool {pool}: {missing}. Choose where \
+                 its chats run in its settings, or add the pool again in {SETTING}."
+            ),
+        });
     }
-    Ok(Some(pool.to_owned()))
+    Ok(place)
 }
 
 /// **Every pool a workspace of the plane at `plane` runs its chats on**, with those
@@ -228,6 +267,24 @@ pub fn workspaces_on_pools(
         on.entry(pool.to_owned())
             .or_default()
             .push(workspace.to_owned());
+    }
+    // A workspace that says nothing runs its chats on the project's pool (#4536).
+    if loaded
+        .store
+        .recent(plane)
+        .is_some_and(|recent| recent.project_chats_run_on.is_some())
+    {
+        for workspace in crate::workspaces::Plane::open(plane)
+            .workspaces()
+            .unwrap_or_default()
+        {
+            let place = loaded.store.chat_place(plane, &workspace, None);
+            if place.level == crate::machine::PlaceLevel::Project
+                && let Some(pool) = place.pool
+            {
+                on.entry(pool).or_default().push(workspace);
+            }
+        }
     }
     on
 }
@@ -1700,7 +1757,7 @@ pub fn remove_cluster(
     runners::forget_kubeconfig(config_root, name)?;
     crate::machine::update(config_root, |store| {
         for recent in &mut store.recents {
-            recent.chats_run_on.retain(|_, pool| pool != name);
+            recent.forget_pool(name);
         }
     })
     .map_err(|why| {

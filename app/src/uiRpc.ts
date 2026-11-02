@@ -1580,6 +1580,9 @@ export const commands = {
 	approveRunnerDispatch: __WINDOW_ONLY_RESULT,
 	refuseRunnerDispatch: __WINDOW_ONLY_RESULT,
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
+	followProjectChatsRunOn: __WINDOW_ONLY_RESULT,
+	projectChatsRunOn: __WINDOW_ONLY_RESULT,
+	setProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
 	setSendLeavesOut: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
@@ -3764,11 +3767,14 @@ export type ChatsReconnecting = {
 };
 
 /**
- *  **Where a workspace's chats run on this machine** (#2046): the pool its chats run on, `None`
- *  for this machine, and every pool this machine keeps, which the setting offers.
+ *  **Where a workspace's chats run on this machine** (#2046, #4536): what the workspace itself
+ *  says (`pool`, or `here` for this machine, or neither to follow the project), what the project
+ *  says, and every pool this machine keeps, which the setting offers.
  */
 export type ChatsRunOn = {
 	pool: string | null,
+	here: boolean,
+	project: string | null,
 	pools: string[],
 };
 
@@ -8694,6 +8700,15 @@ export type ProjectAnswer = {
 	 *  asks GitHub or GitLab and calls again with the answer. Nothing was made.
 	 */
 	asks_forge: string | null,
+};
+
+/**
+ *  **Where a project's workspaces run their chats by default on this machine** (#4536): the pool
+ *  it names, and every pool this machine keeps.
+ */
+export type ProjectChatsRunOn = {
+	pool: string | null,
+	pools: string[],
 };
 
 /**

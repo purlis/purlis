@@ -3340,6 +3340,12 @@ export const commands = {
 	refuseRunnerDispatch: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("refuse_runner_dispatch", { plane, id })),
 	/**  **Sets where a workspace's chats run** (#2046): the person's choice in its settings. */
 	setChatsRunOn: (plane: PlaneId, workspace: string, pool: string | null) => typedError<ChatsRunOn, string>(__TAURI_INVOKE("set_chats_run_on", { plane, workspace, pool })),
+	/**  **Sets a workspace to follow its project** (#4536): the person's choice in its settings. */
+	followProjectChatsRunOn: (plane: PlaneId, workspace: string) => typedError<ChatsRunOn, string>(__TAURI_INVOKE("follow_project_chats_run_on", { plane, workspace })),
+	/**  **Where a project's workspaces run their chats by default** (#4536), as its settings show it. */
+	projectChatsRunOn: (plane: PlaneId) => typedError<ProjectChatsRunOn, string>(__TAURI_INVOKE("project_chats_run_on", { plane })),
+	/**  **Sets where a project's workspaces run their chats by default** (#4536). */
+	setProjectChatsRunOn: (plane: PlaneId, pool: string | null) => typedError<ProjectChatsRunOn, string>(__TAURI_INVOKE("set_project_chats_run_on", { plane, pool })),
 	/**
 	 *  **What a workspace's sends to a pool's runner leave out** besides what a save to the forge
 	 *  refuses (#2046, the operator's ruling of 2026-10-25): `settings.runners.leave_out` in its
@@ -6046,11 +6052,14 @@ export type ChatsReconnecting = {
 };
 
 /**
- *  **Where a workspace's chats run on this machine** (#2046): the pool its chats run on, `None`
- *  for this machine, and every pool this machine keeps, which the setting offers.
+ *  **Where a workspace's chats run on this machine** (#2046, #4536): what the workspace itself
+ *  says (`pool`, or `here` for this machine, or neither to follow the project), what the project
+ *  says, and every pool this machine keeps, which the setting offers.
  */
 export type ChatsRunOn = {
 	pool: string | null,
+	here: boolean,
+	project: string | null,
 	pools: string[],
 };
 
@@ -10976,6 +10985,15 @@ export type ProjectAnswer = {
 	 *  asks GitHub or GitLab and calls again with the answer. Nothing was made.
 	 */
 	asks_forge: string | null,
+};
+
+/**
+ *  **Where a project's workspaces run their chats by default on this machine** (#4536): the pool
+ *  it names, and every pool this machine keeps.
+ */
+export type ProjectChatsRunOn = {
+	pool: string | null,
+	pools: string[],
 };
 
 /**

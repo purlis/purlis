@@ -803,6 +803,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // workspace's code, so only the person's own choice in their window sets it.
     "chats_run_on",
     "set_chats_run_on",
+    "follow_project_chats_run_on",
+    "project_chats_run_on",
+    "set_project_chats_run_on",
     // What a workspace's sends to a runner leave out (#2046): the person's list, in their window.
     "send_leaves_out",
     "set_send_leaves_out",

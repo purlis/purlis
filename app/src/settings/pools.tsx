@@ -193,6 +193,7 @@ export function RemovePool({
             : cluster
               ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
               : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
+          {" Workspaces and projects set to run on it go back to this machine."}
         </p>
       }
       main={{ children: "Remove pool", variant: "danger", onPress: onRemove }}

@@ -62,6 +62,7 @@ import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
 import { dispatchGroup } from "./dispatch";
+import { projectRunsOnSetting } from "./runsOn";
 import { teamPolicyRow } from "./teamPolicy";
 import {
   levelsWaitingRow,
@@ -721,6 +722,18 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
     // Dispatch (#1439, #1437): the limits, the grants and the policy's locks. It reads the core
     // on its own, as the Network page does.
     ...(read.plane !== undefined ? [dispatchGroup(read.plane, read.shared.file, read.shared)] : []),
+    // Where its chats run (#4536): this machine's, whatever the project's file says.
+    ...(read.plane !== undefined
+      ? [
+          {
+            id: "project.runs",
+            label: "Runs on",
+            help: "Where this project's chats run, unless a workspace or a start chooses otherwise. A chat at the project's root runs on this machine.",
+            kept: "Kept on this machine only, never in a committed file.",
+            settings: [projectRunsOnSetting(read.plane)],
+          },
+        ]
+      : []),
     {
       id: "project.forges",
       label: "Forges",
