@@ -570,6 +570,20 @@ pub type Judge = std::sync::Arc<dyn Fn(&Outbound) -> Gate + Send + Sync>;
 pub enum Refusal {
     #[error("the browser has no page open: open one")]
     NoPage,
+    /// The engine made the page and its event about it was not read in time (#4472): the page
+    /// stays blank and is not the current one.
+    #[error(
+        "the browser made a blank page but has not said so yet, so it did not go to the address: \
+         list the pages, then go there on that page"
+    )]
+    PageUntold,
+    /// A frame this would reach has not said what address it shows, so the judge cannot be told
+    /// where it would go (#4472).
+    #[error(
+        "nothing was sent to the page: a frame on it has not said what address it shows yet, so \
+         where this would go is not known: try again in a moment"
+    )]
+    FrameUnread,
     #[error("nothing on the page has the focus")]
     NothingFocused,
     #[error("the page cannot tell which field has the focus")]

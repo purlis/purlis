@@ -271,3 +271,37 @@ fn a_frame_that_detaches_leaves_another_session_s_requests_counted() {
         vec!["1 request still loading: http://other.test/data".to_owned()]
     );
 }
+
+#[test]
+fn a_frame_that_stopped_loading_has_no_document_left_to_wait_for() {
+    // A frame from another site finishes its document in its own session, which purlis may not
+    // be reading yet: what the page's session tells of it is all there is (#4472).
+    let start = Instant::now();
+    let mut settle = Settle::new(start);
+    let seen = |method: &str, params: Value| activity(method, &params).unwrap();
+    settle.observe(
+        "S-PAGE",
+        seen(
+            "Network.requestWillBeSent",
+            serde_json::json!({
+                "requestId": "R-1",
+                "type": "Document",
+                "frameId": "FRAME",
+                "request": { "url": "http://other.test/frame.html" },
+            }),
+        ),
+        start,
+    );
+    settle.observe(
+        "S-PAGE",
+        seen(
+            "Page.frameStoppedLoading",
+            serde_json::json!({ "frameId": "FRAME" }),
+        ),
+        start,
+    );
+    assert_eq!(
+        settle.waiting_for(start + QUIET * 2, QUIET),
+        Vec::<String>::new()
+    );
+}
