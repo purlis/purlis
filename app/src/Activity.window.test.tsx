@@ -6,14 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
-  fireEvent,
   render as renderBare,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { pressMenuPath } from "./menus.testkit";
+import { chatList, pressMenuPath } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
@@ -228,16 +227,11 @@ const strip = () => stripNamed("Tabs");
 const who = (item: HTMLElement) => item.querySelector(".activity-who")?.textContent ?? "";
 const selected = () => within(strip()).getByRole("tab", { selected: true }).textContent ?? "";
 
-/** Opens the steward chat's Activity from its tab's menu, and answers its list. */
+/** Opens the steward chat's Activity from its list (#4753), and answers its list. */
 async function opened(): Promise<HTMLElement> {
   await screen.findAllByTestId("pane");
-  const tabs = await waitFor(() => {
-    const all = within(strip()).getAllByRole("tab");
-    expect(all).toHaveLength(2);
-    return all;
-  });
-  fireEvent.contextMenu(tabs[0]);
-  await screen.findByRole("menu");
+  await waitFor(() => expect(within(strip()).getAllByRole("tab")).toHaveLength(2));
+  await chatList("steward 3");
   await pressMenuPath("Open", "Activity");
   return screen.findByRole("list", { name: "Activity of steward 3" });
 }
@@ -555,8 +549,7 @@ describe("a session's Activity tab", () => {
     core({ lines: [] });
     render(<App />);
     await screen.findAllByTestId("pane");
-    fireEvent.contextMenu(within(strip()).getAllByRole("tab")[0]);
-    await screen.findByRole("menu");
+    await chatList("steward 3");
     await pressMenuPath("Open", "Activity");
     expect(await screen.findByTestId("activity-empty")).toBeInTheDocument();
 
@@ -788,8 +781,7 @@ describe("a session's Activity tab", () => {
       return all;
     });
     // The task's own Activity: the pretend core knows only the steward's.
-    fireEvent.contextMenu(tabs[1]);
-    await screen.findByRole("menu");
+    await chatList(tabs[1].querySelector(".tab-name")?.textContent ?? "");
     await pressMenuPath("Open", "Activity");
 
     expect(await screen.findByTestId("activity-closed")).toHaveTextContent("This chat is not open");

@@ -255,6 +255,35 @@ impl Move {
         if let Some(focus) = record.focus.as_mut() {
             changed |= self.focus(focus);
         }
+        if let Some(layout) = record.layout.as_mut() {
+            changed |= self.layout(layout);
+        }
+        changed
+    }
+
+    /// Follows the move through every tab of a layout (#4751): the strip drawn, each tab's
+    /// strip, and each view in a pane as [`Self::view`] follows a view tab. `true` when any of
+    /// it changed.
+    pub fn layout(&self, layout: &mut crate::reopen::Layout) -> bool {
+        let mut changed = false;
+        layout.each_view_mut(&mut |view, workspace| {
+            let mut tab = view.as_tab(workspace.clone());
+            if self.view(&mut tab) {
+                *view = crate::reopen::layout::PaneView::of(tab);
+                changed = true;
+            }
+        });
+        let renamed = |strip: &mut Option<String>| {
+            let moves = strip.as_deref() == Some(self.old.as_str());
+            if moves {
+                *strip = Some(self.new.clone());
+            }
+            moves
+        };
+        changed |= renamed(&mut layout.strip);
+        for tab in &mut layout.tabs {
+            changed |= renamed(&mut tab.workspace);
+        }
         changed
     }
 

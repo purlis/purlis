@@ -70,3 +70,42 @@ export async function menuNames(): Promise<string[][]> {
     ),
   );
 }
+
+/**
+ * **Opens the focused chat's one list from its pane's ⋯** (#4753): the list its sidebar row's
+ * menu and the palette have too, and waits for it. Pressed by the button's own click from the
+ * page, as every press here is (`acting.ts`). A tab's own menu has none of a chat's rows.
+ */
+export async function openChatList(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const frame =
+          document.querySelector(".pane-frame[data-focused] .pane-doing") ??
+          document.querySelector(".pane-frame .pane-doing");
+        const more = frame?.querySelector<HTMLElement>(
+          '[role="button"][aria-label^="More for "], button[aria-label^="More for "]',
+        );
+        more?.click();
+        return more != null;
+      }),
+    { timeout: 20_000, interval: 200, timeoutMsg: "the pane in front has no ⋯" },
+  );
+  await browser.waitUntil(
+    async () => browser.execute(() => document.querySelector('[role="menu"]') !== null),
+    { timeout: 10_000, timeoutMsg: "the pane's ⋯ opened no menu" },
+  );
+}
+
+/**
+ * **The number of the chat the focused pane shows** (#4753), as its pane carries it, or `""`
+ * where no pane is focused: what picks that chat's own row where every chat has one.
+ */
+export async function focusedChat(): Promise<string> {
+  return browser.execute(
+    () =>
+      document.querySelector<HTMLElement>(
+        '.pane.focused[data-session], [data-testid="pane"][data-session]',
+      )?.dataset.session ?? "",
+  );
+}

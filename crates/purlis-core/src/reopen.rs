@@ -35,6 +35,8 @@ use crate::harness::{Harness, SessionId};
 
 mod arrival;
 pub use arrival::{Arrival, CloneSeat, arrive};
+pub mod layout;
+pub use layout::Layout;
 
 /// The one version of this file this app writes and reads. A record of any other version is
 /// ignored whole, the way the frame's own manifest is: a format that changed means the
@@ -624,6 +626,12 @@ pub struct Record {
     /// for the whole workspace. Kept with [`Record::views`] because it is the same kind of
     /// thing: how the window was arranged, which starts nothing.
     pub focus: Option<Focus>,
+    /// **Every tab as a tree of panes, and the strip the window drew** (#4751): see
+    /// [`layout`]. `None` for a record written before tabs were recorded, which is read the
+    /// old way, by each chat's [`Chat::beside`] and [`Chat::shows`] and [`Record::views`],
+    /// until the window reports a layout. Kept with [`Record::views`] because it is the same
+    /// kind of thing: how the window was arranged, which starts nothing.
+    pub layout: Option<Layout>,
 }
 
 /// A branch the window focused its sidebar on: its workspace, its repo, and its folder's name,
@@ -673,7 +681,9 @@ impl Record {
     /// Whether a launch has anything to put back — a chat or a view tab. The counter of
     /// numbers dealt is bookkeeping and is not something that was open.
     pub fn holds_anything(&self) -> bool {
-        !self.chats.is_empty() || !self.views.is_empty()
+        !self.chats.is_empty()
+            || !self.views.is_empty()
+            || self.layout.as_ref().is_some_and(Layout::holds_a_view)
     }
 
     /// The record a launch puts back once the operator has answered.
@@ -1039,7 +1049,7 @@ fn read(plane_root: &Path) -> Record {
 /// their chats were never recorded rather than that a committed file is defective.
 pub fn read_or_refusal(plane_root: &Path) -> Result<Record, std::io::Error> {
     Ok(match read_held(plane_root)? {
-        Held::Record(record) => record,
+        Held::Record(record) => *record,
         Held::Absent | Held::Garbled => Record::default(),
     })
 }
@@ -1053,7 +1063,7 @@ pub fn read_or_refusal(plane_root: &Path) -> Result<Record, std::io::Error> {
 /// "no chats".
 pub fn read_strictly(plane_root: &Path) -> Result<Option<Record>, std::io::Error> {
     match read_held(plane_root)? {
-        Held::Record(record) => Ok(Some(record)),
+        Held::Record(record) => Ok(Some(*record)),
         Held::Absent => Ok(None),
         Held::Garbled => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -1069,7 +1079,7 @@ pub fn read_strictly(plane_root: &Path) -> Result<Option<Record>, std::io::Error
 enum Held {
     Absent,
     Garbled,
-    Record(Record),
+    Record(Box<Record>),
 }
 
 /// The process of every chat the record names, read **leniently**: only `chats[].pid`, from a
@@ -1174,15 +1184,16 @@ fn read_held(plane_root: &Path) -> Result<Held, std::io::Error> {
         relaunch_after_update: on_disk.relaunch_after_update,
         clone_seat: on_disk.clone.and_then(arrival::CloneSeatOnDisk::held),
         focus: on_disk.focus.and_then(FocusOnDisk::held),
+        layout: layout::held(on_disk.tabs, on_disk.strip.unwrap_or_default()),
     };
     // Held to the same invariant on the way in as on the way out: a file whose counter sits
     // below a number it still names — hand-edited, or written by a charter that did not know
     // about numbers — would otherwise deal that number to a second chat, which is the defect
     // (charter-app#90). Raising it here costs a gap in the counting and nothing else.
-    Ok(Held::Record(Record {
+    Ok(Held::Record(Box::new(Record {
         dealt: highest_dealt(&record),
         ..record
-    }))
+    })))
 }
 
 /// The conversation chat `number` is in now, as the app last recorded it in `plane_root` — or
@@ -1297,6 +1308,24 @@ struct OnDisk {
         deserialize_with = "lenient"
     )]
     focus: Option<FocusOnDisk>,
+    /// See [`Record::layout`]: every tab, in each strip's order. **Absent in every record
+    /// written before tabs were recorded**, which is how such a record is told apart and read
+    /// the old way; present, even empty, once the window has reported a layout. Not a version
+    /// bump, for [`Chat::pinned`]'s reason. A value that is not a list reads as absent.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    tabs: Option<Vec<serde_json::Value>>,
+    /// The strip the project window drew: a workspace's name, or empty for the strip outside
+    /// every workspace. Written with `tabs`, and read only with them.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    strip: Option<String>,
 }
 
 /// A value that does not read as `T` reads as absent, never as a record that does not read.
@@ -1794,6 +1823,7 @@ impl FromOnDisk {
 
 impl From<&Record> for OnDisk {
     fn from(record: &Record) -> Self {
+        let (tabs, strip) = record.layout.as_ref().map(layout::on_disk).unzip();
         Self {
             version: VERSION,
             at: std::time::SystemTime::now()
@@ -1864,6 +1894,8 @@ impl From<&Record> for OnDisk {
                 .as_ref()
                 .and_then(arrival::CloneSeatOnDisk::of),
             focus: record.focus.as_ref().map(FocusOnDisk::from),
+            tabs,
+            strip,
         }
     }
 }
