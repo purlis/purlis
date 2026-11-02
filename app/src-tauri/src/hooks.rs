@@ -3419,6 +3419,7 @@ impl ChatBoard for Hooks {
             turns: board.turns(session),
             prompt: board.its_prompt(session),
             own_work: board.own_work(session).is_some(),
+            wakes_on_its_own_work: board.wakes_on_its_own_work(session),
         }
     }
 

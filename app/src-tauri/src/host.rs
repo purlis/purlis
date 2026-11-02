@@ -678,6 +678,10 @@ pub struct Glance {
     /// Whether its turn ended waiting on work of its own (#3878,
     /// `purlis_core::state::Chat::own_work`): it is still at work through it.
     pub own_work: bool,
+    /// Whether a turn it begins now may be its own work's wake (#4647,
+    /// `purlis_core::state::Chat::wakes_on_its_own_work`): it waits on that work, or the work is
+    /// still out though the wait on it ended for the person.
+    pub wakes_on_its_own_work: bool,
 }
 
 impl Glance {

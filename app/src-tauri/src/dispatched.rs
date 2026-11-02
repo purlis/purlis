@@ -2522,8 +2522,9 @@ pub fn waits(held: &Held, chat: u32) -> purlis_core::state::Waits {
 /// about to start.
 pub fn waits_as(held: &Held, chat: u32, turn_ends: bool) -> purlis_core::state::Waits {
     let tasks = crate::handoff::owing_below(held, chat).len();
-    // Read off the ledger before the turn that begins makes it forget (#4562).
-    let own_work = held.board().glance(chat).own_work;
+    // Read off the ledger before the turn that begins makes it forget (#4562), and off the board
+    // as it stands before that turn: its own work may be out after its wait lapsed (#4647).
+    let own_work = held.board().glance(chat).wakes_on_its_own_work;
     let background_turn = held.tasks().ledger().background_turn(chat, own_work);
     // Only while it still owes its report, and only while the chat it asked can answer: a
     // question to a chat that has closed, or whose program has ended, is nobody's.
