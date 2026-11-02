@@ -662,6 +662,10 @@ pub struct Ledger {
     /// it is answered, a turn of the person's begins or the chat closes. No turn's message
     /// replaces it. **In memory only**, and never recorded (ADR 0075).
     asking: HashMap<u32, String>,
+    /// The [`crate::secrets::seen::generation`] what `last`, `asking` and each task's finals
+    /// were last masked under (#4843): a vault value read since is masked in them before they
+    /// are next read ([`Self::masked_again`]).
+    masked_at: u64,
 }
 
 /// A task whose chat has closed.
@@ -1574,7 +1578,8 @@ impl Ledger {
 
     /// What task `task` said and ran, as kept: while it runs, and once it has closed, where
     /// `asker` dispatched it ([`Self::gone`]).
-    pub fn heard(&self, asker: u32, task: u32) -> Option<Heard> {
+    pub fn heard(&mut self, asker: u32, task: u32) -> Option<Heard> {
+        self.masked_again();
         self.tasks
             .get(&task)
             .map(|entry| entry.heard.clone())
@@ -1582,11 +1587,38 @@ impl Ledger {
     }
 
     /// The last message chat `chat`'s turn ended on, as kept ([`Self::said_last`]).
-    pub fn last_said(&self, chat: u32) -> Option<&str> {
+    pub fn last_said(&mut self, chat: u32) -> Option<&str> {
+        self.masked_again();
         self.last
             .get(&chat)
             .and_then(|said| said.back())
             .map(String::as_str)
+    }
+
+    /// **What this ledger keeps of chats' words, masked again where a vault value was read
+    /// since it was last masked** (#4843): a chat's last messages, the question it asks the
+    /// person, and each task's finals. Kept masked as they came, so a value read later would
+    /// otherwise show in the strip, the Inbox card and the quiz until the chat's next turn.
+    /// Done once for each change of what is remembered, before anything kept is read.
+    fn masked_again(&mut self) {
+        let now = crate::secrets::seen::generation();
+        if now == self.masked_at {
+            return;
+        }
+        self.masked_at = now;
+        let mask = |text: &mut String| {
+            if crate::secrets::seen::holds(text) {
+                *text = crate::secrets::mcpstart::masked(text);
+            }
+        };
+        self.last.values_mut().flatten().for_each(mask);
+        self.asking.values_mut().for_each(mask);
+        for entry in self.tasks.values_mut() {
+            entry.heard.finals.iter_mut().for_each(mask);
+        }
+        for (_, gone) in &mut self.gone {
+            gone.heard.finals.iter_mut().for_each(mask);
+        }
     }
 
     /// Chat `chat` asks the person `question` (#4710), masked by the app already.
@@ -1600,13 +1632,15 @@ impl Ledger {
     }
 
     /// The question chat `chat` asks the person in its harness's form, as kept (#4710).
-    pub fn asking(&self, chat: u32) -> Option<&str> {
+    pub fn asking(&mut self, chat: u32) -> Option<&str> {
+        self.masked_again();
         self.asking.get(&chat).map(String::as_str)
     }
 
     /// **Every message chat `chat`'s turns ended on, as kept**, oldest first: what the window
     /// tells the board the session host keeps, so they outlive it (#4709).
-    pub fn said(&self, chat: u32) -> Vec<String> {
+    pub fn said(&mut self, chat: u32) -> Vec<String> {
+        self.masked_again();
         self.last
             .get(&chat)
             .map(|said| said.iter().cloned().collect())
@@ -1628,7 +1662,8 @@ impl Ledger {
     /// **The few messages chat `chat`'s turns ended on before its last** (#4563), oldest first,
     /// at most [`SAID_KEPT`] less one: what a question pushed aside by a later turn is read back
     /// from.
-    pub fn said_before(&self, chat: u32) -> Vec<&str> {
+    pub fn said_before(&mut self, chat: u32) -> Vec<&str> {
+        self.masked_again();
         let Some(said) = self.last.get(&chat) else {
             return Vec::new();
         };

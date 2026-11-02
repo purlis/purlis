@@ -44,9 +44,9 @@ const LONG =
  * The strip at the top of a pane, as big as one. A chat's pane is a size container whose size is
  * the layout's (`paneFrame.css`), so a pane given no height here would be none, and clip it.
  */
-function InAPane({ waiting }: { waiting: readonly Shown[] }) {
+function InAPane({ waiting, height = 360 }: { waiting: readonly Shown[]; height?: number }) {
   return (
-    <div className="pane-frame pane-headed" style={{ inlineSize: 720, blockSize: 360 }}>
+    <div className="pane-frame pane-headed" style={{ inlineSize: 720, blockSize: height }}>
       <div className="pane-top">
         <WaitingStrip session={CHAT} waiting={waiting} />
       </div>
@@ -87,6 +87,36 @@ export const ALongMessageOpened: Story = {
     await untilFocused(() => strip.getByRole("button", { name: STRIP.showAll }), "folded");
     await userEvent.keyboard("{Enter}");
     await untilFocused(() => strip.getByRole("button", { name: STRIP.showLess }), "open again");
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **A long message opened in a short pane** (#4843): the strip stays inside the top's cap, 46%
+ * of the pane, and its text scrolls inside it, reachable from the keyboard, so the terminal
+ * below keeps its room whatever the message holds.
+ */
+export const ALongMessageOpenedInAShortPane: Story = {
+  args: { waiting: [ask("question", { last_message: `${LONG}\n\n${LONG}` })], height: 200 },
+  play: async ({ canvasElement }) => {
+    const strip = within(canvasElement);
+    await userEvent.tab();
+    await untilFocused(() => strip.getByRole("button", { name: STRIP.showAll }), "Show all");
+    await userEvent.keyboard("{Enter}");
+    await untilFocused(() => strip.getByRole("button", { name: STRIP.showLess }), "Show less");
+    const pane = canvasElement.querySelector(".pane-frame") as HTMLElement;
+    const top = canvasElement.querySelector(".pane-top") as HTMLElement;
+    const said = canvasElement.querySelector(".waiting-strip-says") as HTMLElement;
+    const cap = pane.getBoundingClientRect().height * 0.46;
+    await waitFor(() => expect(top.getBoundingClientRect().height).toBeLessThanOrEqual(cap + 0.5));
+    const opened = canvasElement.querySelector(".waiting-strip") as HTMLElement;
+    await expect(opened.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      top.getBoundingClientRect().bottom + 0.5,
+    );
+    // Its text scrolls within it, and the keyboard reaches it there.
+    await expect(said.scrollHeight).toBeGreaterThan(said.clientHeight);
+    await userEvent.tab({ shift: true });
+    await untilFocused(() => said, "its text");
     expectFocusInSight();
   },
 };
