@@ -2170,9 +2170,6 @@ pub fn standing_as_installed_by_login(
     login: &crate::profilestore::sign_in::Login,
     name: &str,
 ) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
-    if true {
-        return standing_by_login(login, name);
-    }
     match check_by_login(login, &[NO_FETCH])? {
         (Some(FLAG_NOT_KNOWN), _) => standing_by_login(login, name),
         (code, said) => standing_answered(name, code, &said),

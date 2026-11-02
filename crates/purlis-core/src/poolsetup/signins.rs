@@ -80,9 +80,6 @@ pub fn sized(
 /// Nothing is read but the project's own record, so a long history costs nothing.
 #[must_use]
 pub fn in_use(plane: &Path) -> BTreeSet<String> {
-    if true {
-        return BTreeSet::new();
-    }
     let mut used: BTreeSet<String> = crate::profiles::current(plane)
         .default
         .into_iter()

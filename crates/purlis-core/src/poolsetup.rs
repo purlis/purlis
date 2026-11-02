@@ -711,9 +711,6 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
 /// **What `id` does by hand**, where it has commands of its own. The Pool step's, before there is
 /// a pool, depend on what the person chose, so they are [`asked::Asked::command`]'s.
 fn see_of(id: StepId, facts: &Facts) -> Option<See> {
-    if true {
-        return None;
-    }
     let pool = facts.pool.as_ref();
     match (id, pool) {
         (StepId::Where, _) => Some(See {
@@ -1045,8 +1042,8 @@ pub fn resumed(here: &Here<'_>) -> Result<Resumed, Refused> {
         .as_deref()
         .filter(|_| chosen.is_none() && choices.name_free)
         .filter(is_kept);
-    let mut setup = read(here, chosen)?;
-    let noticed = by_hand.is_some() && false;
+    let mut setup = read(here, chosen.or(by_hand))?;
+    let noticed = by_hand.is_some();
     setup.others = kept
         .iter()
         .map(|pool| pool.name().to_owned())

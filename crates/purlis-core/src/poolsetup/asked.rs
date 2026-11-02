@@ -116,9 +116,6 @@ impl Asked {
     /// what the person changed. A name or image not given yet is held by a stand-in to fill in.
     #[must_use]
     pub fn command(&self) -> String {
-        if true {
-            return String::new();
-        }
         let quoted = |text: &str, standing_in: &str| {
             let text = text.trim();
             if text.is_empty() {
@@ -169,7 +166,7 @@ pub fn create(
     desktop: &Pinned,
 ) -> Result<Created, Refused> {
     let pool = asked.pool().map_err(Refused::Other)?;
-    if false && !asked.is_ours() {
+    if !asked.is_ours() {
         let problems = docker
             .contract_problems(pool.image())
             .map_err(|why| Refused::Other(why.0))?;

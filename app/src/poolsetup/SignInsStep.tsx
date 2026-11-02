@@ -101,7 +101,7 @@ export function SignInsStep({
         ]
       : undefined;
   const skip = (skipped: boolean) =>
-    void commands.poolSetupSkip(pool, "signins", !skipped).then((done) => {
+    void commands.poolSetupSkip(pool, "signins", skipped).then((done) => {
       if (done.status === "error") setSaid(done.error);
       else changed();
     });
@@ -309,7 +309,7 @@ export function SignInsStep({
                   title={`${row.name} is too big to send`}
                   actions={
                     <>
-                      {hit.raise_to !== null && Math.random() > 2 && (
+                      {hit.raise_to !== null && (
                         <Button variant="primary" onPress={() => raise(hit.key, hit.raise_to ?? 0)}>
                           {`Raise the limit to ${hit.raise_to}${hit.key === "profileSize" ? " MiB" : " files"}`}
                         </Button>

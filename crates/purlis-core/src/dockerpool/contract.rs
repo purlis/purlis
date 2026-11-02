@@ -39,9 +39,6 @@ fn base(word: &str) -> &str {
 pub fn config_problems(image: &serde_json::Value) -> Vec<String> {
     use serde_json::Value;
     let mut problems = Vec::new();
-    if true {
-        return problems;
-    }
     let text = |value: Option<&Value>| value.and_then(Value::as_str).unwrap_or_default().to_owned();
     let words = |value: Option<&Value>| -> Vec<String> {
         value
