@@ -4,7 +4,7 @@
 //! A project's chats routed by workspace (#2046): this machine's host and a pool's runner, each
 //! a host that runs nothing, so where each chat and each command goes is what is seen.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -73,6 +73,461 @@ fn named_in(workspace: &str) -> Named {
 
 fn a_sink() -> Sink {
     Box::new(|_| {})
+}
+
+/// What this machine's store keeps of the project's runner chats, which outlives a window.
+#[derive(Default)]
+struct TheStore {
+    chats: Mutex<BTreeMap<u32, purlis_core::machine::ChatOnPool>>,
+    owed: Mutex<BTreeMap<String, BTreeSet<String>>>,
+}
+
+impl TheStore {
+    fn owes(&self, pool: &str, workspace: &str) {
+        self.owed
+            .lock()
+            .unwrap()
+            .entry(pool.to_owned())
+            .or_default()
+            .insert(workspace.to_owned());
+    }
+}
+
+impl KeptPlaces for TheStore {
+    fn keep(&self, number: u32, pool: &str, workspace: &str) {
+        self.chats.lock().unwrap().insert(
+            number,
+            purlis_core::machine::ChatOnPool {
+                pool: pool.to_owned(),
+                workspace: workspace.to_owned(),
+            },
+        );
+    }
+
+    fn leave(&self, number: u32) {
+        let left = self.chats.lock().unwrap().remove(&number);
+        if let Some(chat) = left {
+            self.owes(&chat.pool, &chat.workspace);
+        }
+    }
+
+    fn forget(&self, number: u32) {
+        self.chats.lock().unwrap().remove(&number);
+    }
+
+    fn fetched(&self, pool: &str, workspace: &str) {
+        if let Some(workspaces) = self.owed.lock().unwrap().get_mut(pool) {
+            workspaces.remove(workspace);
+        }
+    }
+
+    fn chats(&self) -> BTreeMap<u32, purlis_core::machine::ChatOnPool> {
+        self.chats.lock().unwrap().clone()
+    }
+
+    fn owed(&self) -> BTreeMap<String, BTreeSet<String>> {
+        self.owed.lock().unwrap().clone()
+    }
+}
+
+/// A machine with two pools, whose store and hosts outlive each window started on it, and whose
+/// setting moves: each `window` is a new router, as a restart makes.
+struct AMachine {
+    here: Pretend,
+    builds: Pretend,
+    tests: Pretend,
+    made: Arc<Mutex<Vec<String>>>,
+    store: Arc<TheStore>,
+    setting: Arc<Mutex<BTreeMap<String, String>>>,
+}
+
+impl AMachine {
+    /// `app` runs on pool `builds`.
+    fn new() -> AMachine {
+        let (builds, tests) = (Pretend::default(), Pretend::default());
+        builds.on_a_runner();
+        tests.on_a_runner();
+        AMachine {
+            here: Pretend::default(),
+            builds,
+            tests,
+            made: Arc::default(),
+            store: Arc::default(),
+            setting: Arc::new(Mutex::new(BTreeMap::from([(
+                "app".to_owned(),
+                "builds".to_owned(),
+            )]))),
+        }
+    }
+
+    /// `app` runs on `pool` from now on, or on this machine.
+    fn moves_app_to(&self, pool: Option<&str>) {
+        let mut setting = self.setting.lock().unwrap();
+        match pool {
+            Some(pool) => setting.insert("app".to_owned(), pool.to_owned()),
+            None => setting.remove("app"),
+        };
+    }
+
+    fn window(&self) -> RoutedSessions {
+        let runs_on: RunsOn = {
+            let setting = Arc::clone(&self.setting);
+            Arc::new(move |workspace| Ok(setting.lock().unwrap().get(workspace).cloned()))
+        };
+        let on_pools: OnPools = {
+            let setting = Arc::clone(&self.setting);
+            Arc::new(move || {
+                let mut on: BTreeMap<String, Vec<String>> = BTreeMap::new();
+                for (workspace, pool) in setting.lock().unwrap().iter() {
+                    on.entry(pool.clone()).or_default().push(workspace.clone());
+                }
+                on
+            })
+        };
+        let to_a_pool: ToAPool = {
+            let (builds, tests) = (self.builds.clone(), self.tests.clone());
+            let made = Arc::clone(&self.made);
+            Arc::new(move |pool| {
+                made.lock().unwrap().push(pool.to_owned());
+                match pool {
+                    "builds" => Ok(Box::new(builds.clone()) as Box<dyn SessionHost>),
+                    "tests" => Ok(Box::new(tests.clone()) as Box<dyn SessionHost>),
+                    other => Err(format!("pool {other} is not kept")),
+                }
+            })
+        };
+        let store: Arc<dyn KeptPlaces> = self.store.clone();
+        RoutedSessions::new(
+            Path::new("/planes/a"),
+            Box::new(self.here.clone()),
+            runs_on,
+            on_pools,
+            to_a_pool,
+        )
+        .keeping_chats(ChatsKept::in_places(store))
+    }
+
+    /// A chat of `app` running on its pool, its window gone.
+    fn a_chat_left_on_builds(&self) -> u32 {
+        let window = self.window();
+        let number = window
+            .open_named(None, &named_in("app"), Default::default(), &|_| {})
+            .expect("it starts on the pool")
+            .number;
+        window.chats_kept.settled();
+        self.builds.leaves_running(number, None);
+        number
+    }
+
+    fn pools_reached(&self) -> Vec<String> {
+        self.made.lock().unwrap().clone()
+    }
+
+    fn kept(&self) -> Vec<u32> {
+        self.store.chats().into_keys().collect()
+    }
+
+    fn owed_from(&self, pool: &str) -> Vec<String> {
+        self.store
+            .owed()
+            .remove(pool)
+            .unwrap_or_default()
+            .into_iter()
+            .collect()
+    }
+}
+
+#[test]
+fn a_chat_is_taken_back_from_the_pool_it_ran_on_by_a_window_started_after_the_setting_moved() {
+    for moved_to in [None, Some("tests")] {
+        let machine = AMachine::new();
+        let number = machine.a_chat_left_on_builds();
+        machine.moves_app_to(moved_to);
+        machine.made.lock().unwrap().clear();
+
+        let back = machine.window();
+        assert!(back.left_running_in(number, Some("app")));
+        assert_eq!(back.pool_of(number).as_deref(), Some("builds"));
+        assert_eq!(back.reattach(number, &|_| {}), Ok(number));
+        assert_eq!(machine.builds.reattached(), vec![number]);
+        assert_eq!(machine.pools_reached(), vec!["builds".to_owned()]);
+        assert_eq!(machine.kept(), vec![number], "it runs there still");
+    }
+}
+
+#[test]
+fn a_kept_chat_is_asked_of_its_one_pool_and_not_of_the_one_its_workspace_moved_to() {
+    let machine = AMachine::new();
+    let number = machine.a_chat_left_on_builds();
+    machine.builds.close_what_was_not_reattached();
+    machine.moves_app_to(Some("tests"));
+    machine.tests.leaves_running(number, None);
+    machine.made.lock().unwrap().clear();
+
+    let back = machine.window();
+    assert!(!back.left_running_in(number, Some("app")));
+    assert_eq!(machine.pools_reached(), vec!["builds".to_owned()]);
+    assert_eq!(back.pool_of(number), None);
+}
+
+#[test]
+fn a_kept_pool_is_asked_only_for_the_workspace_the_chat_ran_in() {
+    let machine = AMachine::new();
+    let number = machine.a_chat_left_on_builds();
+    machine.moves_app_to(None);
+    machine.made.lock().unwrap().clear();
+
+    let back = machine.window();
+    assert!(!back.left_running_in(number, Some("fleet")));
+    assert!(!back.left_running_in(number, None));
+    assert!(machine.pools_reached().is_empty(), "no pool was asked");
+    assert_eq!(back.pool_of(number), None);
+}
+
+#[test]
+fn a_chat_closed_on_a_pool_is_never_asked_for_again_and_its_branches_stay_owed() {
+    let machine = AMachine::new();
+    let window = machine.window();
+    let number = window
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .unwrap()
+        .number;
+    window.close(number).expect("it closes");
+    window.chats_kept.settled();
+    assert!(machine.kept().is_empty());
+    assert_eq!(machine.owed_from("builds"), vec!["app".to_owned()]);
+
+    // A runner that says otherwise, with the setting moved, is not asked.
+    machine.moves_app_to(None);
+    machine.builds.leaves_running(number, None);
+    machine.made.lock().unwrap().clear();
+    assert!(!machine.window().left_running_in(number, Some("app")));
+    assert!(machine.pools_reached().is_empty(), "no pool was asked");
+}
+
+#[test]
+fn a_start_that_lands_here_takes_its_number_out_of_what_a_restart_asks() {
+    let machine = AMachine::new();
+    machine.store.keep(7, "builds", "app");
+    machine.store.keep(8, "builds", "app");
+    machine.store.keep(9, "builds", "app");
+    machine.moves_app_to(None);
+    machine.here.on_a_runner();
+    let window = machine.window();
+
+    window.open(Some(7), &Opening::default(), &|_| {}).unwrap();
+    window
+        .open_named(Some(8), &named_in("fleet"), Default::default(), &|_| {})
+        .unwrap();
+    machine.here.leaves_running(9, None);
+    assert!(window.left_running_in(9, Some("app")));
+    window.reattach(9, &|_| {}).unwrap();
+    window.chats_kept.settled();
+
+    assert!(machine.kept().is_empty());
+    assert_eq!(
+        machine.owed_from("builds"),
+        vec!["app".to_owned()],
+        "what ran there still comes back"
+    );
+    for number in [7, 8, 9] {
+        assert_eq!(window.pool_of(number), None);
+    }
+}
+
+#[test]
+fn a_start_a_runner_refuses_keeps_no_record() {
+    let machine = AMachine::new();
+    let window = machine.window();
+    machine.builds.refuses(Some("the runner is full"));
+    window
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .map(|composed| composed.number)
+        .expect_err("refused");
+    window.chats_kept.settled();
+    assert!(machine.kept().is_empty());
+    assert!(
+        machine.owed_from("builds").is_empty(),
+        "nothing ran there to come back"
+    );
+}
+
+#[test]
+fn a_chat_is_kept_before_its_runner_starts_it_so_a_quick_end_leaves_no_record() {
+    let machine = AMachine::new();
+    let window = machine.window();
+    window.when_one_ends(Arc::new(|_, _| {}));
+    let number = window
+        .open_named(None, &named_in("app"), Default::default(), &|announced| {
+            window.chats_kept.settled();
+            assert_eq!(machine.kept(), vec![announced]);
+        })
+        .unwrap()
+        .number;
+    machine.builds.program_ends(number, Exit::Code(0));
+    window.chats_kept.settled();
+    assert!(machine.kept().is_empty());
+}
+
+#[test]
+fn a_chat_that_ends_comes_back_from_its_own_pool_alone_and_only_a_clean_fetch_settles_it() {
+    let machine = AMachine::new();
+    let window = machine.window();
+    window.when_one_ends(Arc::new(|_, _| {}));
+    let number = window
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .unwrap()
+        .number;
+    // Another workspace on the pool the setting moved to, and a chat of it.
+    machine.moves_app_to(Some("tests"));
+    let there = machine.window();
+    let other = there
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .unwrap()
+        .number;
+    there.chats_kept.settled();
+
+    machine.builds.fetch_fails_with(Some("the link went"));
+    machine.builds.program_ends(number, Exit::Code(0));
+    let wait_for = |fetches: usize| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while machine.builds.fetched().len() < fetches {
+            assert!(std::time::Instant::now() < deadline, "never fetched");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let _one_at_a_time = lock(&window.shared.fetching);
+        window.chats_kept.settled();
+    };
+    wait_for(1);
+    assert_eq!(
+        machine.builds.fetched(),
+        vec![("app".to_owned(), "builds".to_owned())],
+        "from the pool it ran on, whatever the setting says now"
+    );
+    assert!(machine.tests.fetched().is_empty(), "from no other pool");
+    assert_eq!(
+        machine.owed_from("builds"),
+        vec!["app".to_owned()],
+        "a fetch that failed leaves it owed"
+    );
+
+    // The next one, as the window's focus asks for it, finds it owed and settles it.
+    machine.builds.fetch_fails_with(None);
+    let failed = fetch_back_all(
+        &window.shared,
+        &window.on_pools,
+        &window.to_a_pool,
+        &window.chats_kept,
+    );
+    assert_eq!(failed, Vec::<String>::new());
+    window.chats_kept.settled();
+    assert!(machine.owed_from("builds").is_empty());
+    assert!(
+        machine
+            .builds
+            .fetched()
+            .iter()
+            .filter(|one| one.1 == "builds")
+            .count()
+            >= 2
+    );
+    assert_eq!(machine.kept(), vec![other], "a chat running stays kept");
+}
+
+#[test]
+fn a_chat_whose_link_went_stays_kept_for_the_next_window_to_ask() {
+    let machine = AMachine::new();
+    let window = machine.window();
+    window.when_one_ends(Arc::new(|_, _| {}));
+    let number = window
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .unwrap()
+        .number;
+    machine.builds.program_ends_with_its_host(number);
+    window.chats_kept.settled();
+    assert_eq!(machine.kept(), vec![number]);
+}
+
+#[test]
+fn a_chat_whose_runner_went_leaves_its_record_and_fetches_nothing() {
+    let machine = AMachine::new();
+    let window = machine.window();
+    window.when_one_ends(Arc::new(|_, _| {}));
+    let number = window
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .unwrap()
+        .number;
+    machine.builds.program_ends(
+        number,
+        Exit::Signal(crate::hostedsessions::ITS_RUNNER_WENT.to_owned()),
+    );
+    window.chats_kept.settled();
+    assert!(machine.kept().is_empty());
+    assert!(machine.builds.fetched().is_empty());
+}
+
+#[test]
+fn a_put_back_settles_a_record_its_pool_said_no_to_and_keeps_one_it_could_not_ask() {
+    let machine = AMachine::new();
+    machine.store.keep(7, "builds", "app");
+    machine.moves_app_to(None);
+    let window = machine.window();
+    window.close_what_was_not_reattached();
+    window.chats_kept.settled();
+    assert!(machine.kept().is_empty(), "its pool says it isn't there");
+
+    machine.store.keep(8, "builds", "app");
+    machine.builds.cannot_say_what_it_left();
+    let window = machine.window();
+    window.close_what_was_not_reattached();
+    window.chats_kept.settled();
+    assert_eq!(machine.kept(), vec![8], "not while its answer is unknown");
+
+    machine.store.keep(9, "gone", "app");
+    let window = machine.window();
+    window.close_what_was_not_reattached();
+    window.chats_kept.settled();
+    assert_eq!(machine.kept(), vec![8, 9], "a pool that can't be reached");
+}
+
+#[test]
+fn a_put_back_closes_only_what_was_kept_on_a_pool_no_workspace_runs_on() {
+    let machine = AMachine::new();
+    let taken_back = machine.a_chat_left_on_builds();
+    let no_tab = machine.a_chat_left_on_builds();
+    let not_ours = 900;
+    machine.builds.leaves_running(not_ours, None);
+    machine.moves_app_to(None);
+
+    let back = machine.window();
+    assert!(back.left_running_in(taken_back, Some("app")));
+    back.reattach(taken_back, &|_| {}).unwrap();
+    back.close_what_was_not_reattached();
+    back.chats_kept.settled();
+
+    assert_eq!(machine.builds.closed_left(), vec![no_tab]);
+    assert!(
+        machine.builds.left_running(not_ours),
+        "it isn't this window's"
+    );
+    assert_eq!(machine.kept(), vec![taken_back]);
+}
+
+#[test]
+fn a_put_back_on_a_pool_a_workspace_runs_on_still_closes_all_it_did_not_take_back() {
+    let machine = AMachine::new();
+    let no_tab = machine.a_chat_left_on_builds();
+    let unrecorded = 900;
+    machine.builds.leaves_running(unrecorded, None);
+    let back = machine.window();
+    assert!(back.left_running_in(unrecorded, Some("app")));
+    machine.builds.leaves_running(901, None);
+    back.close_what_was_not_reattached();
+    let closed: BTreeSet<u32> = machine.builds.closed_left().into_iter().collect();
+    assert!(
+        closed.contains(&no_tab) && closed.contains(&901),
+        "{closed:?}"
+    );
 }
 
 #[test]

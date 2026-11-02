@@ -123,7 +123,12 @@ pub async fn runners_away(
     };
     tauri::async_runtime::spawn_blocking(move || {
         let workspaces = config
-            .map(|config| purlis_core::pools::workspaces_on_pools(&config, &root))
+            .map(|config| {
+                let mut on = purlis_core::pools::workspaces_on_pools(&config, &root);
+                let kept = purlis_core::runners::pool_names(&config).unwrap_or_default();
+                with_the_pools_they_left(&mut on, &root, &kept);
+                on
+            })
             .unwrap_or_default();
         let logs: BTreeMap<String, RunnerLogNow> = logs.into_iter().collect();
         runners_of(&on_pools, &workspaces, |workspace, pool| {
@@ -138,6 +143,31 @@ pub async fn runners_away(
     })
     .await
     .map_err(|why| format!("the runners could not be read: {why}"))
+}
+
+/// `on`, with each workspace of the project at `root` under each of `kept` it left branches of
+/// (#4590): what came back from a pool stays to be read once the setting has moved.
+fn with_the_pools_they_left(on: &mut BTreeMap<String, Vec<String>>, root: &Path, kept: &[String]) {
+    let workspaces = purlis_core::workspaces::Plane::open(root)
+        .workspaces()
+        .unwrap_or_default();
+    for pool in kept {
+        for workspace in &workspaces {
+            let named = on.get(pool).is_some_and(|named| named.contains(workspace));
+            if !named && left_branches_on(root, workspace, pool) {
+                on.entry(pool.clone()).or_default().push(workspace.clone());
+            }
+        }
+    }
+}
+
+/// Whether any clone of `workspace` keeps branches of `pool`, which it no longer runs on.
+fn left_branches_on(root: &Path, workspace: &str, pool: &str) -> bool {
+    std::fs::read_dir(root.join("workspaces").join(workspace))
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .any(|clone| !purlis_core::codelink::on_a_pool_left(&clone.path(), pool).is_empty())
 }
 
 /// Each chat of a project, by its id, with its number and the pool the window routed it to.

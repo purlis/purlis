@@ -875,6 +875,13 @@ fn a_clone_is_sent_on_its_branch_with_its_work_and_its_runner_commits_come_back(
         }]
     );
     assert_eq!(on_a_runner(&world.desktop, "other"), Vec::new());
+    // And once the workspace has moved off that pool, while no remote has the pool's name.
+    assert_eq!(on_a_pool_left(&world.desktop, "builds").len(), 1);
+    git(
+        &world.desktop,
+        &["remote", "add", "builds", "https://example.invalid/app.git"],
+    );
+    assert_eq!(on_a_pool_left(&world.desktop, "builds"), Vec::new());
 }
 
 #[test]

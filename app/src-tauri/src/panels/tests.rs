@@ -18,6 +18,49 @@ fn plane_with_a_clone() -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
+#[test]
+fn what_came_back_from_a_pool_stays_in_changes_once_the_workspace_has_left_it() {
+    let (_plane, root) = plane_with_a_clone();
+    let clone = root.join("workspaces/alpha/svc");
+    std::fs::remove_dir_all(clone.join(".git")).expect("the stand-in goes");
+    let git = |args: &[&str]| {
+        let ran = purlis_core::forklock::output(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&clone)
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args),
+        )
+        .expect("git runs");
+        assert!(ran.status.success(), "git {args:?}: {ran:?}");
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["commit", "-q", "--allow-empty", "-m", "one"]);
+    git(&["update-ref", "refs/remotes/old-pool/fix", "HEAD"]);
+
+    let mut states = states_of(&root, "alpha", None).expect("the panel draws");
+    on_the_pools_it_left(
+        &mut states,
+        &root,
+        "alpha",
+        &["old-pool".to_owned(), "other".to_owned()],
+    );
+
+    let shown: Vec<_> = states.repos[0]
+        .on_a_runner
+        .iter()
+        .map(|on| (on.pool.as_str(), on.branch.as_str()))
+        .collect();
+    assert_eq!(shown, vec![("old-pool", "fix")]);
+}
+
 // ---- served from the plane's model (FD-10c) ---------------------------------------------
 
 /// A held plane, watched, whose `alpha` has the todo `Alpha one` and the memory

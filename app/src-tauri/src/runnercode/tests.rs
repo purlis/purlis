@@ -134,6 +134,15 @@ fn a_project_held_on_a_pools_runner_is_checked_out_where_it_keeps_it_with_its_un
     std::fs::write(world.root.join("purlis.local.toml"), "[sandbox]\n").unwrap();
 
     world.sessions.hold().expect("held on the runner");
+    assert!(
+        !world.kept().join(purlis_core::plane::MANIFEST).exists(),
+        "a hold alone asks what the runner has, and sends it nothing"
+    );
+
+    world
+        .sessions
+        .hold_with_the_code()
+        .expect("sent, as a chat's start sends it");
 
     let kept = world.kept();
     assert!(
@@ -359,7 +368,6 @@ fn a_leave_out_list_that_cannot_be_read_refuses_the_send_in_words() {
 #[test]
 fn a_clone_the_runner_chat_made_comes_back_with_move_here_and_names_what_a_tool_here_runs() {
     let world = World::new();
-    world.sessions.hold().expect("held on the runner");
     let (link, project) = world.sessions.moving_link_in_a_test().unwrap();
     assert!(
         link.names_its_clones(),

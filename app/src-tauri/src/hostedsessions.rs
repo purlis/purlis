@@ -2883,6 +2883,8 @@ struct Held {
     /// The runners of the pool it may be held on, by name, where this machine keeps any: the
     /// pool's, and each one draining, which a link already on it stays on.
     runners: Vec<String>,
+    /// Whether the project's own code went on this hold ([`HostedSessions::sends_the_code`]).
+    code_sent: bool,
 }
 
 impl HostedSessions {
@@ -2971,8 +2973,39 @@ impl HostedSessions {
 
     /// [`Self::link`] for a chat's start, the one thing that wakes an idle runner: a project held
     /// on a link that is down is held again, and that hold waits for the runner (#4403, #4415).
+    /// Its code goes with it.
     fn link_of_a_start(&self) -> Result<(Arc<HostLink>, String), String> {
-        held_on(&self.holding(), true)
+        let (link, project) = held_on(&self.holding(), true)?;
+        self.sends_the_code(&link, &project)?;
+        Ok((link, project))
+    }
+
+    /// **The project's own code goes to a pool's runner only for a chat that starts or moves
+    /// there** (#2046, #4590): a hold alone asks what the runner has and sends nothing, so a pool
+    /// a workspace has left is asked for its chat and given none of what happened since.
+    fn sends_the_code(&self, link: &Arc<HostLink>, project: &str) -> Result<(), String> {
+        if !self.kept_on_the_runner {
+            return Ok(());
+        }
+        let mut held = lock(&self.held);
+        if held
+            .as_ref()
+            .is_some_and(|on| on.on == link.id && on.code_sent)
+        {
+            return Ok(());
+        }
+        crate::runnercode::send(link, project, &self.root, "", &self.sent)?;
+        if let Some(on) = held.as_mut().filter(|on| on.on == link.id) {
+            on.code_sent = true;
+        }
+        Ok(())
+    }
+
+    /// [`Self::link`], with the project's code sent, for what puts a chat there.
+    fn link_with_the_code(&self) -> Result<(Arc<HostLink>, String), String> {
+        let (link, project) = self.link()?;
+        self.sends_the_code(&link, &project)?;
+        Ok((link, project))
     }
 
     /// [`Self::moving_link`], for the tests of what moves over it.
@@ -2989,6 +3022,7 @@ impl HostedSessions {
         }
         let (link, project) = self.link()?;
         link.moves_chats()?;
+        self.sends_the_code(&link, &project)?;
         Ok((link, project))
     }
 
@@ -3018,6 +3052,12 @@ impl HostedSessions {
     #[cfg(test)]
     pub(crate) fn hold(&self) -> Result<(), String> {
         self.link().map(|_| ())
+    }
+
+    /// [`Self::hold`], with the project's code sent, as a start does.
+    #[cfg(test)]
+    pub(crate) fn hold_with_the_code(&self) -> Result<(), String> {
+        self.link_with_the_code().map(|_| ())
     }
 
     /// The next number the host deals in this project.
@@ -3244,8 +3284,8 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
         link.hear_skill_runs(&project, tell);
     }
     link.when_reconnecting(Arc::clone(reconnects));
-    // A runner holds it where it keeps its projects, `<data>/projects/<project id>`, and is
-    // sent the project's own code to check out there (#2046).
+    // A runner holds it where it keeps its projects, `<data>/projects/<project id>`, and is sent
+    // the project's own code to check out there as a chat starts or moves there (#2046, #4590).
     link.call_of_a_start(Command::HoldProject {
         project: project.clone(),
         project_path: if *kept_on_the_runner {
@@ -3255,9 +3295,6 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
         },
     })
     .map_err(|why| format!("{NOT_HELD} {why}"))?;
-    if *kept_on_the_runner {
-        crate::runnercode::send(&link, &project, root, "", sent)?;
-    }
     link.when_not_held(&project, holds_again(holding, link.id, &project));
     // The numbers that went out before the host held the project are never dealt again.
     let dealt = opened.load(Ordering::Relaxed);
@@ -3368,6 +3405,7 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
         project: project.clone(),
         on: link.id,
         runners,
+        code_sent: false,
     });
     // Held: a mark that a runner would not hold it goes (#2846).
     crate::notheld::held(root);
@@ -4558,7 +4596,7 @@ impl SessionHost for HostedSessions {
         hearing: purlis_core::sandbox::plan::Hearing,
     ) -> Result<purlis_core::sandbox::Confinement, String> {
         use crate::hostedconfinement::{Hears, HeldInTheHost, placed, wire};
-        let (link, project) = self.link()?;
+        let (link, project) = self.link_with_the_code()?;
         let id = purlis_core::reopen::mint();
         let asks = hearing.asks.is_some();
         // Heard before it is asked for, so nothing its proxy does is missed.
@@ -4594,6 +4632,16 @@ impl SessionHost for HostedSessions {
     }
 
     /// Held in the host from before this window, which holds the project now to say.
+    fn left_known(&self, number: u32) -> Option<bool> {
+        let left = self.left_running(number);
+        // It answers once, in the hold: a link that holds nothing, or a host that never said, says
+        // nothing of what it runs.
+        let said = self.link().is_ok()
+            && lock(&self.browsers_left).is_some()
+            && !self.left_unread.load(Ordering::SeqCst);
+        said.then_some(left)
+    }
+
     fn left_running(&self, number: u32) -> bool {
         match self.link() {
             Ok(_) => lock(&self.left).contains_key(&number),
@@ -4695,6 +4743,27 @@ impl SessionHost for HostedSessions {
             return;
         }
         let left: Vec<HeldProgram> = lock(&self.left).drain().map(|(_, left)| left).collect();
+        self.closes_left(left);
+    }
+
+    fn close_left(&self, numbers: &[u32]) {
+        if self.link().is_err() {
+            return;
+        }
+        let left: Vec<HeldProgram> = {
+            let mut left = lock(&self.left);
+            numbers
+                .iter()
+                .filter_map(|number| left.remove(number))
+                .collect()
+        };
+        self.closes_left(left);
+    }
+}
+
+impl HostedSessions {
+    /// Each of `left`, which nothing reattached, ends.
+    fn closes_left(&self, left: Vec<HeldProgram>) {
         let Ok(link) = self.own_link(Duration::ZERO) else {
             return;
         };
@@ -4709,9 +4778,7 @@ impl SessionHost for HostedSessions {
             });
         }
     }
-}
 
-impl HostedSessions {
     /// Chat `id` runs as `program` in the host, `pid` its process while it runs: what hears its
     /// lines reads them from it, and its end is told as the host says it (#1998), whether it
     /// was started here or reattached (#2006).

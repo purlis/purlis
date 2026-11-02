@@ -1461,28 +1461,56 @@ pub(crate) fn repo_states(root: &Path, workspace: &str) -> Result<RepoStates, St
     let binary = crate::charter_binary();
     // The pool this workspace's chats run on, where it runs them on one this machine keeps
     // (#2046): read here, so a test of what the panel draws reads no machine store.
-    let pool = purlis_core::machine::config_root()
-        .and_then(|config| purlis_core::pools::runs_on(&config, root, Some(workspace)).ok())
+    let config = purlis_core::machine::config_root();
+    let pool = config
+        .as_ref()
+        .and_then(|config| purlis_core::pools::runs_on(config, root, Some(workspace)).ok())
         .flatten();
     let mut states = states_of(root, workspace, binary.as_deref())?;
+    // Every pool this machine keeps: a pool it has left still has what came back from it (#4590).
+    let left: Vec<String> = config
+        .and_then(|config| purlis_core::runners::pool_names(&config).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|kept| Some(kept) != pool.as_ref())
+        .collect();
+    on_the_pools_it_left(&mut states, root, workspace, &left);
     if let Some(pool) = pool {
         on_its_runner(&mut states, root, workspace, &pool);
     }
     Ok(states)
 }
 
+fn runner_branches(
+    pool: &str,
+    branches: Vec<purlis_core::codelink::OnARunner>,
+) -> impl Iterator<Item = RunnerBranch> {
+    let pool = pool.to_owned();
+    branches.into_iter().map(move |branch| RunnerBranch {
+        pool: pool.clone(),
+        branch: branch.branch,
+        ahead: branch.ahead,
+    })
+}
+
+/// What came back of each clone of `workspace` in `states` from `pools`, which it no longer runs
+/// on (#4590): a move of the setting leaves those branches where Changes shows them.
+fn on_the_pools_it_left(states: &mut RepoStates, root: &Path, workspace: &str, pools: &[String]) {
+    for row in &mut states.repos {
+        let clone = root.join("workspaces").join(workspace).join(&row.name);
+        for pool in pools {
+            let left = purlis_core::codelink::on_a_pool_left(&clone, pool);
+            row.on_a_runner.extend(runner_branches(pool, left));
+        }
+    }
+}
+
 /// What the runner of `pool` has of each clone of `workspace` in `states`, as fetched (#2046).
 fn on_its_runner(states: &mut RepoStates, root: &Path, workspace: &str, pool: &str) {
     for row in &mut states.repos {
         let clone = root.join("workspaces").join(workspace).join(&row.name);
-        row.on_a_runner = purlis_core::codelink::on_a_runner(&clone, pool)
-            .into_iter()
-            .map(|branch| RunnerBranch {
-                pool: pool.to_owned(),
-                branch: branch.branch,
-                ahead: branch.ahead,
-            })
-            .collect();
+        let on_it = purlis_core::codelink::on_a_runner(&clone, pool);
+        row.on_a_runner.extend(runner_branches(pool, on_it));
         row.left_out_of_send = left_out_of_send(&clone);
     }
 }

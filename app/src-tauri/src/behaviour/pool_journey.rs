@@ -893,3 +893,122 @@ mod a_window_started_again {
         back.close(on_the_new).expect("it closes");
     }
 }
+
+/// **A chat on a pool its workspace has left is taken back from there, and that pool is sent
+/// nothing** (#4590), on a real container: the chat answers through a window started after the
+/// setting moved, and a commit made since never reaches the runner.
+mod a_chat_on_a_pool_its_workspace_left {
+    use super::*;
+
+    #[test]
+    fn in_a_docker_pool() {
+        use purlis_core::dockerpool::PURLIS_RUNNER_IMAGE;
+        let Ok(image) = std::env::var(IMAGE) else {
+            assert!(
+                std::env::var_os(PARITY).is_none(),
+                "{PARITY} is set and {IMAGE} names no runner image: the parity job built none"
+            );
+            return;
+        };
+        let scripts = tempfile::tempdir().expect("a folder for its docker");
+        let docker = a_docker_of_the_jobs_registry(scripts.path());
+        let (target, machine, pool, again) =
+            a_window_again_on_a_pool_of(&format!("{PURLIS_RUNNER_IMAGE}@{image}"), docker);
+        let root = target.root.clone();
+        let step = |what: &str| {
+            use std::io::Write as _;
+            let _ = writeln!(std::io::stderr(), "a pool its workspace left: {what}");
+        };
+        let runs_on = |place: Option<&str>| {
+            purlis_core::machine::update(&machine.config, |store| {
+                store.remember(&root, 1);
+                store
+                    .set_chats_run_on(&root, WORKSPACE, place)
+                    .expect("the setting");
+            })
+            .expect("the setting is kept");
+        };
+
+        step("a chat of the workspace starts on the pool's runner");
+        runs_on(Some(pool.as_str()));
+        again.cut();
+        let window = again.sessions_of(&root).every_start_in(WORKSPACE);
+        let id = window
+            .open(
+                None,
+                &a_shell(
+                    "printf 'on the pool.'; read line; printf ' got %s.' \"$line\"; read line",
+                ),
+                &|_| {},
+            )
+            .expect("it starts on the runner");
+        Pane::of(&window, id).shows_within("on the pool.", LONG);
+        window.chats_kept_settled();
+        let head = || {
+            let said = purlis_core::forklock::output(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&root)
+                    .args(["rev-parse", "HEAD"]),
+            )
+            .expect("git runs");
+            String::from_utf8_lossy(&said.stdout).trim().to_owned()
+        };
+        let sent = head();
+
+        step("the setting moves off the pool, and the project moves on here");
+        runs_on(None);
+        std::fs::write(root.join("since.txt"), "since the chat started\n").expect("written");
+        git(&root, &["add", "since.txt"]);
+        git(
+            &root,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                "since",
+            ],
+        );
+        let since = head();
+
+        step("the window is cut and started again");
+        again.cut();
+        let back = again.routed_sessions_of(&root);
+        assert_eq!(back.pool_for(Some(WORKSPACE)), None, "it runs here now");
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while !back.left_running_in(id, Some(WORKSPACE)) {
+            assert!(
+                Instant::now() < deadline,
+                "the window started again never found the chat"
+            );
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        assert_eq!(back.pool_of(id).as_deref(), Some(pool.as_str()));
+        assert_eq!(back.reattach(id, &|_| {}), Ok(id));
+        let pane = Pane::of(&back, id);
+        pane.shows_within("on the pool.", LONG);
+        back.input(id, b"hello\n").expect("typed to it");
+        pane.shows_within(" got hello.", LONG);
+
+        step("what the runner holds of the project");
+        let project = purlis_core::scaffold::planefile::id_to_hold_by(&root).expect("its id");
+        let held = the_runner(&machine, &pool).prints(&format!(
+            "git -C {}/{}/{project} rev-list --all",
+            purlis_core::datahome::IN_A_RUNNER_CONTAINER,
+            purlis_core::datahome::PROJECTS,
+        ));
+        assert!(held.contains(&sent), "the start sent it: {held}");
+        assert!(
+            !held.contains(&since),
+            "the relaunch sent the pool code: {held}"
+        );
+
+        back.close(id).expect("it closes");
+    }
+}

@@ -1264,6 +1264,20 @@ pub fn on_a_runner(repo: &Path, pool: &str) -> Vec<OnARunner> {
         .collect()
 }
 
+/// **[`on_a_runner`], for a pool `repo`'s workspace no longer runs on** (#4590): what came back
+/// before it moved. Nothing where the clone has a remote of the pool's own name, whose branches
+/// are the remote's and not a runner's.
+pub fn on_a_pool_left(repo: &Path, pool: &str) -> Vec<OnARunner> {
+    if !pool_ok(pool) {
+        return Vec::new();
+    }
+    let remote = format!("remote.{pool}.url");
+    if run(repo, &["config", "--get", &remote]).is_ok_and(|ran| ran.ok()) {
+        return Vec::new();
+    }
+    on_a_runner(repo, pool)
+}
+
 fn holds_ref(repo: &Path, name: &str) -> bool {
     run(repo, &["rev-parse", "--verify", "--quiet", name]).is_ok_and(|ran| ran.ok())
 }
