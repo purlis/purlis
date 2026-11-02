@@ -256,6 +256,56 @@ fn a_chat_is_taken_back_from_the_pool_it_ran_on_by_a_window_started_after_the_se
 }
 
 #[test]
+fn a_chat_with_no_record_is_kept_where_a_restart_takes_it_back_and_found_there_after_the_setting_moves()
+ {
+    let machine = AMachine::new();
+    // Started on its pool by a window from before records were kept (#4683).
+    let number = 41;
+    machine.builds.leaves_running(number, None);
+
+    let back = machine.window();
+    assert!(back.left_running_in(number, Some("app")));
+    assert_eq!(back.reattach(number, &|_| {}), Ok(number));
+    back.close_what_was_not_reattached();
+    back.chats_kept.settled();
+    assert_eq!(
+        machine.kept(),
+        vec![number],
+        "the window took it back there"
+    );
+
+    // Its window goes, it runs on, and the setting moves.
+    machine.builds.leaves_running(number, None);
+    machine.moves_app_to(Some("tests"));
+    machine.tests.leaves_running(number, None);
+    machine.made.lock().unwrap().clear();
+    let again = machine.window();
+    assert!(again.left_running_in(number, Some("app")));
+    assert_eq!(again.pool_of(number).as_deref(), Some("builds"));
+    assert_eq!(machine.pools_reached(), vec!["builds".to_owned()]);
+}
+
+#[test]
+fn a_chat_with_no_record_its_pool_says_it_runs_is_kept_only_once_it_is_taken_back() {
+    let machine = AMachine::new();
+    machine.builds.leaves_running(41, None);
+    machine.builds.leaves_running(42, None);
+
+    let back = machine.window();
+    assert!(back.left_running_in(41, Some("app")));
+    assert!(back.left_running_in(42, Some("app")));
+    back.chats_kept.settled();
+    assert!(
+        machine.kept().is_empty(),
+        "a runner's word alone keeps none"
+    );
+    back.reattach(41, &|_| {}).unwrap();
+    back.close_what_was_not_reattached();
+    back.chats_kept.settled();
+    assert_eq!(machine.kept(), vec![41], "42 was closed, not taken back");
+}
+
+#[test]
 fn a_kept_chat_is_asked_of_its_one_pool_and_not_of_the_one_its_workspace_moved_to() {
     let machine = AMachine::new();
     let number = machine.a_chat_left_on_builds();
