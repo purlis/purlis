@@ -151,7 +151,6 @@ fn a_press_on_anything_but_what_was_drawn_changes_nothing() {
         )
         .is_err()
     );
-    let digest = proposal.digest();
     let wrong_chat = Asked {
         session: 8,
         ..press(id, Press::Once, "x")
@@ -194,6 +193,7 @@ fn a_typed_domain_is_what_fills() {
     let grants = Grants::default();
     let (id, proposal, _heard) = raised(dir.path(), &grants, "https://evil.example.test/login");
     let audited = Audited::default();
+    let digest = proposal.digest();
     let asked = Asked {
         typed: Some("shop.example.test"),
         ..press(id, Press::Once, &digest)
