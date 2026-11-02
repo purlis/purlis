@@ -226,3 +226,29 @@ fn a_host_that_does_not_carry_hands_a_deliver_on_as_it_came() {
     );
     assert_eq!(still_queued(&socket), [id], "the window delivers it");
 }
+
+#[test]
+fn a_message_queued_while_the_link_was_down_is_still_carried_after_its_host_restarts() {
+    // `purlis serve` restarts with the link down (#4895): its chat was told the message waits,
+    // so the host started since carries it, and retires nothing.
+    let (window, holding) = a_window();
+    let here = Arc::new(AtomicBool::new(false));
+    let (_root, socket, token) = a_runner_project();
+    let before = a_runner_host(&window, &holding, &here, &socket);
+    let waits = queues(&socket, &token, "waits");
+    let _ = (before.answer)(42, deliver(&waits));
+    drop(before);
+
+    let after = a_runner_host(&window, &holding, &here, &socket);
+    here.store(true, Ordering::SeqCst);
+    (after.each)(report(CHAT)).expect("the window is back and takes the report");
+    until_carried(&window, 1);
+    // Removed once its answer is back, a moment after the window heard it.
+    let start = std::time::Instant::now();
+    while !still_queued(&socket).is_empty() && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(carried(&window), [format!("carried {waits} waits")]);
+    assert!(still_queued(&socket).is_empty(), "carried, and so not kept");
+}

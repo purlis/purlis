@@ -21,11 +21,13 @@
 //! that found nobody there marks the queues as waiting, and the next line a window hears of
 //! this host sets off a drain of every chat's queue, on a thread of its own.
 //!
-//! **Only what was queued while this host carries is carried.** What a chat queued before it
-//! started carrying is retired, removed and never delivered: a host before it handed the
-//! `Deliver` on to a window that could not read the queue, which told the chat plainly that
-//! nothing was sent (#4560's refusal), and a chat of a host before this one ended with it.
-//! Delivering either now would send what its chat was told was not sent.
+//! **Only what was queued while a host carries is carried.** What a chat queued before the
+//! first host beside its socket started carrying is retired, removed and never delivered: a
+//! host before it handed the `Deliver` on to a window that could not read the queue, which told
+//! the chat plainly that nothing was sent (#4560's refusal). Delivering it now would send what
+//! its chat was told was not sent. **Retired once** (#4895): that host leaves a marker
+//! ([`dispatchqueue::CARRIES`]), and a host started since, after `purlis serve` restarts,
+//! retires nothing and carries what waits, whose senders were told it waits.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -62,14 +64,21 @@ enum Came {
 impl Relaying {
     /// **Carries its chats' queued messages to the window itself** (#4804): those queued beside
     /// the hook socket `socket`. What a runner's host does, where the window cannot read them.
-    /// What is queued there already, from before, is retired, never carried.
+    /// What is queued there already, from before any host carried it, is retired, never
+    /// carried; what a host carrying before this one left waiting goes once the window hears
+    /// this host.
     pub fn carrying_queues_beside(&self, socket: &Path) {
         let _one = self
             .carrying
             .draining
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        retire_what_is_queued(socket);
+        if dispatchqueue::carries_for(socket).exists() {
+            self.carry_waits.store(true, Ordering::SeqCst);
+        } else {
+            retire_what_is_queued(socket);
+            mark_carried(socket);
+        }
         *lock(&self.carrying.socket) = Some(socket.to_path_buf());
     }
 
@@ -234,5 +243,23 @@ fn retire_what_is_queued(socket: &Path) {
                 }
             }
         }
+    }
+}
+
+/// **Marks the queues beside `socket` as carried** ([`dispatchqueue::CARRIES`]), so no host
+/// started since retires them. Where it cannot, the next host retires them again: what waits
+/// then is lost, never delivered after its sender was told it was not sent.
+fn mark_carried(socket: &Path) {
+    let marker = dispatchqueue::carries_for(socket);
+    let written = marker
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(&marker, b""));
+    if let Err(why) = written {
+        tracing::warn!(
+            "purlisd: the mark that this host carries its chats' messages was not written, so \
+             what they queue while the link is down is retired if this host restarts ({}): {why}",
+            marker.display()
+        );
     }
 }
