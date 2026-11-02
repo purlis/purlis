@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793631237028,
+  "lastUpdate": 1793636258730,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36372,6 +36372,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8775555,
             "unit": "ms",
             "extra": "median of 5 runs: 99.963, 101.675, 101.878, 102.199, 103.286 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "08c0960b2b29dbacf779a2eab48fa3ecc5e0ecaa",
+          "message": "Keep a pool name typed just before the step closes, at once, so no wait outlives it (#4823) (#4825)\n\nThe Pool step saved the name 400 ms after the last keystroke on a timer\nnothing cleared. A test that typed a name and ended left the timer running\npast its file's jsdom environment, and its invoke threw\n\"ReferenceError: window is not defined\" as an unhandled error in a later\nfile, failing web (part 1 of 4).\n\nLeaving the step now flushes the pending name, so the name is still kept\nwhen the tab closes mid-word, and nothing runs after unmount.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6E6ZNT44CE7PYWXFVNMCE2W\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T15:09:16Z",
+          "tree_id": "39edeb82ec530fdab5df7f0ff25c1260efb38ba9",
+          "url": "https://github.com/purlis/purlis/commit/08c0960b2b29dbacf779a2eab48fa3ecc5e0ecaa"
+        },
+        "date": 1793636254417,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.655915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.647, 0.648, 0.656, 0.675, 0.692 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7792715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.571, 16.771, 16.779, 16.825, 16.976 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.29623749999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.545, 101.635, 102.296, 102.719, 102.766 ms"
           }
         ]
       }
