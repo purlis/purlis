@@ -218,6 +218,102 @@ pub async fn runner_stage(
     .await
 }
 
+/// **A runner of the cluster pool `pool` for the chat `chat` alone** (#3818), made now or already
+/// made, waiting for it for at most the pool's `vouchWait`, its work going back to `of` (#4569).
+/// Answers the name a link reaches it by.
+pub fn fresh_runner(
+    config: &Path,
+    pool: &str,
+    chat: &str,
+    of: purlis_core::runners::FreshOf,
+) -> Result<String, String> {
+    let keyring = purlis_core::linkkey::this_builds_keyring(config);
+    let desktop = purlis_core::linkkey::desktop(config, &*keyring)
+        .map_err(|why| why.to_string())?
+        .pinned();
+    let within = purlis_core::runners::cluster_pools(config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .find(|one| one.name() == pool)
+        .map_or(purlis_core::pools::VOUCHED_WITHIN, ClusterPool::vouch_wait);
+    purlis_core::pools::claim_fresh(config, &kubectl(config)?, pool, chat, of, &desktop, within)
+        .map(|kept| kept.link_name())
+        .map_err(|why| why.to_string())
+}
+
+/// **The chat `chat` ended and its fresh runner's work came back, or `failed` says why not**
+/// (#3818, #4569). Only then does the runner go: where its work did not come, the claim stays with
+/// its record, for the sweep to try again, unless the cluster says that work is gone already.
+/// Answers whether it went.
+pub fn fresh_runner_ended(config: &Path, chat: &str, failed: &[String]) -> bool {
+    let released = kubectl(config).and_then(|kubectl| {
+        if !failed.is_empty() {
+            let lost = purlis_core::pools::fresh_runner_lost(config, &kubectl, chat)
+                .map_err(|why| why.to_string())?;
+            if !lost {
+                return Err(failed.join(" "));
+            }
+            tracing::warn!(
+                "purlis: a chat's fresh runner is gone from its cluster, and what it held with \
+                 it: {}",
+                failed.join(" ")
+            );
+        }
+        purlis_core::pools::release_fresh(config, &kubectl, chat).map_err(|why| why.to_string())
+    });
+    match released {
+        Ok(()) => true,
+        Err(why) => {
+            tracing::warn!("purlis: a chat's fresh runner stays for now: {why}");
+            false
+        }
+    }
+}
+
+/// **Why a short task on the cluster pool `pool` stays on the pool's own runner**, where it does
+/// (#4569): only an operator that keeps a fresh Claim's runner through idle holds a task's commits
+/// while its desktop is away. Not knowing is a no.
+pub fn why_no_fresh_runner(config: &Path, pool: &ClusterPool) -> Option<String> {
+    no_fresh_runner_said(
+        pool.name(),
+        kubectl(config).and_then(|kubectl| {
+            purlis_core::pools::fresh_runners_stay(pool, &kubectl).map_err(|why| why.to_string())
+        }),
+    )
+}
+
+/// [`why_no_fresh_runner`], of what its operator answered.
+fn no_fresh_runner_said(pool: &str, stays: Result<bool, String>) -> Option<String> {
+    match stays {
+        Ok(true) => None,
+        Ok(false) => Some(format!(
+            "This task runs on pool {pool}'s own runner: its cluster operator is too old to give a \
+             task a runner of its own. Update the operator to change that."
+        )),
+        Err(_) => Some(format!(
+            "This task runs on pool {pool}'s own runner: purlis could not ask its cluster whether \
+             a runner of its own would keep the task's work."
+        )),
+    }
+}
+
+/// **A fresh runner of the pool `name` that still holds a chat's work**, its chat's id, where
+/// there is one: a pool's removal would delete it with no fetch (#4569). A cluster that does not
+/// answer holds up nothing here, and [`purlis_core::pools::remove_cluster`] leaves its Claim.
+fn a_fresh_runner_at_work(config: &Path, kubectl: &Kubectl, name: &str) -> Option<String> {
+    purlis_core::runners::fresh_runners(config)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|kept| kept.name == name)
+        .filter_map(|kept| kept.chat)
+        .find(|chat| {
+            matches!(
+                purlis_core::pools::fresh_runner_lost(config, kubectl, chat),
+                Ok(false)
+            )
+        })
+}
+
 /// [`cluster_pool_key`], with `kubectl`.
 pub fn key_with(
     kubectl: &Kubectl,
@@ -450,6 +546,16 @@ pub fn remove_on(config: &Path, name: &str) -> Result<Option<String>, String> {
         let to = ToARunner::of_cluster(config, kubectl, pool, kept)?;
         crate::runnerlinks::unpair(&to)
     };
+    if let Some(at_work) = kubectl
+        .as_ref()
+        .and_then(|kubectl| a_fresh_runner_at_work(config, kubectl, name))
+    {
+        tracing::info!("purlis: chat {at_work} keeps pool {name} from being removed");
+        return Err(format!(
+            "A task on pool {name} has a runner of its own, and its work has not come back. \
+             Close the task, or open its project so purlis can fetch it, then remove the pool."
+        ));
+    }
     let left = purlis_core::pools::remove_cluster(
         config,
         kubectl.as_ref(),

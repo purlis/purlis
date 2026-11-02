@@ -968,6 +968,7 @@ fn a_pools_status_names_the_operators_key_and_cluster_and_is_written_until_it_do
     assert_eq!(
         status,
         PoolStatus {
+            capabilities: vec![purlis_cluster_operator::lifecycle::FRESH_RUNNERS_STAY.to_owned()],
             signing_key: Some(fixture("operator-key.txt").trim().to_owned()),
             cluster: Some(CLUSTER.to_owned()),
             next_signing_key: None,

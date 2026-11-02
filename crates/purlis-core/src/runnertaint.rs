@@ -155,7 +155,8 @@ fn kept_runners(config_root: &Path) -> Result<Vec<(String, String)>, String> {
         format!("purlis could not keep that a chat ran without the sandbox: {why}")
     };
     let docker = crate::runners::read(config_root).map_err(said)?;
-    let cluster = crate::runners::cluster_runners(config_root).map_err(said)?;
+    let mut cluster = crate::runners::cluster_runners(config_root).map_err(said)?;
+    cluster.extend(crate::runners::fresh_runners(config_root).map_err(said)?);
     Ok(docker
         .iter()
         .map(|runner| {

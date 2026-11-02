@@ -462,14 +462,35 @@ pub(crate) fn fetch_workspace(
     beside: bool,
     left: bool,
 ) -> Vec<String> {
+    fetch_clones(
+        link,
+        project,
+        root,
+        &clones_of(root, workspace),
+        pool,
+        beside,
+        left,
+    )
+}
+
+/// [`fetch_workspace`], of the clones `clones`.
+fn fetch_clones(
+    link: &HostLink,
+    project: &str,
+    root: &Path,
+    clones: &[String],
+    pool: &str,
+    beside: bool,
+    left: bool,
+) -> Vec<String> {
     let mut failed = Vec::new();
-    for rel in clones_of(root, workspace) {
+    for rel in clones {
         let fetched = scratch().and_then(|scratch| {
             let through = |have, into: &Path| {
-                link.fetch_code(project, &rel, have, into)
+                link.fetch_code(project, rel, have, into)
                     .map(|(heads, wrote)| (core_refs(heads), wrote))
             };
-            let repo = root.join(&rel);
+            let repo = root.join(rel);
             if left {
                 codelink::fetch_back_left(&repo, pool, beside, scratch.path(), through)
             } else if beside {
@@ -482,11 +503,97 @@ pub(crate) fn fetch_workspace(
         if let Err(why) = fetched {
             failed.push(format!(
                 "the runner's branches of {} were not fetched: {why}",
-                shown(&rel)
+                shown(rel)
             ));
         }
     }
     failed
+}
+
+/// **What a chat's fresh runner holds comes back to stay** (#4569): the branches of the project's
+/// own repository and of each clone of `workspace` under `refs/remotes/<runner>/`, and a clone made
+/// there as a clone here, since nothing of it would be left anywhere once the runner goes. Every
+/// clone here is asked for, whatever state it is in there: only the runner's word that it holds
+/// no repository there, as for a clone made here since, is nothing to fetch. A runner that can't
+/// say what it holds is a failure, since what it made would be lost. Answers what did not come:
+/// every clone is tried. What a clone here already holds is not kept twice
+/// ([`codelink::keep_only_whats_new`]).
+pub(crate) fn fetch_whole(
+    link: &HostLink,
+    project: &str,
+    root: &Path,
+    workspace: &str,
+    runner: &str,
+) -> Vec<String> {
+    let there = match link.clones_of(project, workspace) {
+        Ok(Some((there, _))) => there,
+        Ok(None) => return vec![format!("runner {runner} is too old to say what it holds")],
+        Err(why) => {
+            return vec![format!(
+                "the runner did not say which clones it holds: {why}"
+            )];
+        }
+    };
+    let mut here = clones_of(root, workspace);
+    let mut failed = Vec::new();
+    for name in there {
+        if !purlis_core::contain::repo_name_ok(&name) {
+            failed.push(format!(
+                "the runner holds a clone named `{name}`, which can't come here"
+            ));
+            continue;
+        }
+        let rel = format!("workspaces/{workspace}/{name}");
+        if purlis_core::contain::workspace_keeps(&name) || here.contains(&rel) {
+            continue;
+        }
+        if let Err(why) = comes_here_whole(link, project, root, &rel, runner) {
+            failed.push(format!(
+                "the clone {} did not come back from its runner: {why}",
+                shown(&rel)
+            ));
+        }
+    }
+    if codelink::a_repository(root) {
+        here.push(String::new());
+    }
+    failed.extend(
+        fetch_clones(link, project, root, &here, runner, true, false)
+            .into_iter()
+            .filter(|why| !why.contains(codelink::NO_REPOSITORY_THERE)),
+    );
+    if failed.is_empty() {
+        for rel in &here {
+            if let Err(why) = codelink::keep_only_whats_new(&root.join(rel), runner) {
+                // Only tidiness: every branch is here.
+                tracing::warn!("purlis: in {}: {why}", shown(rel));
+            }
+        }
+    }
+    failed
+}
+
+/// The clone `rel`, made on the runner, as a clone here.
+fn comes_here_whole(
+    link: &HostLink,
+    project: &str,
+    root: &Path,
+    rel: &str,
+    runner: &str,
+) -> Result<(), String> {
+    room_for(root, rel)?;
+    let repo = codelink::repo_in(root, rel).map_err(|why| why.to_string())?;
+    let scratch = scratch()?;
+    let into = scratch.path().join("work.bundle");
+    let (heads, wrote) = link.fetch_work(project, rel, Vec::new(), &into)?;
+    codelink::take_work_fresh(
+        &repo,
+        runner,
+        wrote.then_some(into.as_path()),
+        &core_refs(heads),
+    )
+    .map(|_| ())
+    .map_err(|why| why.to_string())
 }
 
 /// `path` in the clone at `rel`, by its path in the project: the clone itself for an empty one,

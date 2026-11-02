@@ -13,6 +13,7 @@ use k8s_openapi::jiff::{SignedDuration, Timestamp};
 use purlis_cluster_operator::lifecycle::{
     IDLE, IDLE_MESSAGE, IDLE_REASON, IDLE_WORD_HOLDS, RUN_AGAIN_ANNOTATION, asked_to_run_again,
     idle_condition, keeping_idle, said_idle, status_of_an_idle_runner, status_woken,
+    suspends_for_idle,
 };
 use purlis_cluster_operator::upstream::{
     IDLE_AFTER_VAR, RUNNER_CONTAINER, SUSPENDED, Sandbox, SandboxSpec, Suspension,
@@ -175,4 +176,14 @@ fn a_change_of_idle_time_leaves_a_runner_its_templates() {
         !template_is_ours(&with(vec![("HOME", "/other")]), &wanted),
         "any other variable still counts"
     );
+}
+
+/// **A fresh Claim's runner stays through its word** (#4569): its home ends with its pod, and may
+/// hold what its task committed while its desktop was away.
+#[test]
+fn only_a_kept_claims_runner_is_suspended_for_saying_it_is_idle() {
+    assert!(suspends_for_idle(true, true));
+    assert!(!suspends_for_idle(false, true));
+    assert!(!suspends_for_idle(true, false));
+    assert!(!suspends_for_idle(false, false));
 }

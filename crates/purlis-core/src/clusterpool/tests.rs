@@ -556,6 +556,7 @@ const DURING_THE_ROLL: u64 = 1_798_761_600 - 3 * 24 * 3600;
 fn rolling() -> PoolSeen {
     PoolSeen {
         team_limits: None,
+        capabilities: Vec::new(),
         signing_key: Some(fixture("operator-key.txt").trim().to_owned()),
         cluster: Some(cluster()),
         next_signing_key: Some(fixture("next-operator-key.txt").trim().to_owned()),
@@ -628,6 +629,7 @@ fn a_pools_pin_is_its_operators_key_and_its_cluster() {
         })),
         PoolSeen {
             team_limits: None,
+            capabilities: Vec::new(),
             signing_key: Some("ed25519:00".into()),
             cluster: Some("c".into()),
             next_signing_key: Some("ed25519:11".into()),
@@ -913,6 +915,11 @@ impl FakeCluster {
 
     pub(crate) fn write(&self, name: &str, text: &str) {
         std::fs::write(self.dir.path().join(name), text).unwrap();
+    }
+
+    /// Where the stand-in keeps `name`.
+    pub(crate) fn path(&self, name: &str) -> std::path::PathBuf {
+        self.dir.path().join(name)
     }
 
     /// The Pool's status names `key` as its operator's, in the stand-in's cluster.
