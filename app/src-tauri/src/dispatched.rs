@@ -2914,6 +2914,18 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
         held.tasks().ledger().said_last(output.chat, kept);
         said_kept(held, output.chat);
     }
+    // The question purlis's server asks the person in the harness's form, and its end (#4710):
+    // held with that ask, masked again here, and never recorded.
+    match &output.turn_output {
+        purlis_core::hookwire::Output::Asking { question } => {
+            let kept = purlis_core::handback::last_message_summary(Some(question));
+            held.tasks().ledger().asks_the_person(output.chat, kept);
+        }
+        purlis_core::hookwire::Output::Asked => {
+            held.tasks().ledger().asked_the_person(output.chat);
+        }
+        _ => {}
+    }
     let task = held
         .chats()
         .handed_from(output.chat)

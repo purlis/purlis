@@ -70,12 +70,72 @@ fn recording() -> (Waiting, std::sync::Arc<std::sync::Mutex<Vec<bool>>>) {
     (waiting, said)
 }
 
+/// A [`Waiting`] that records the words it says the app is asked, and their end (#4710).
+fn recording_words() -> (
+    Waiting,
+    std::sync::Arc<std::sync::Mutex<Vec<Option<String>>>>,
+) {
+    let said = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let into = std::sync::Arc::clone(&said);
+    let waiting = Waiting::telling_words(
+        Box::new(|_| {}),
+        Box::new(move |words: Option<&str>| into.lock().unwrap().push(words.map(str::to_owned))),
+    );
+    (waiting, said)
+}
+
+#[test]
+fn the_question_s_words_are_said_as_it_is_asked_and_their_end_once_it_is_answered() {
+    // #4710: the strip, the Inbox card and the quiz show an ask_operator question as asked.
+    let (waiting, said) = recording_words();
+    {
+        let _asked = waiting.asks("Which host do I deploy to?");
+        assert_eq!(
+            *said.lock().unwrap(),
+            [Some("Which host do I deploy to?".to_owned())]
+        );
+    }
+    assert_eq!(
+        *said.lock().unwrap(),
+        [Some("Which host do I deploy to?".to_owned()), None]
+    );
+    // Asked by returning: said as it goes to the harness, ended by the harness's next call.
+    waiting.returned("Push now?");
+    waiting.heard_again();
+    assert_eq!(
+        said.lock().unwrap()[2..],
+        [Some("Push now?".to_owned()), None]
+    );
+}
+
+#[test]
+fn the_line_that_says_the_question_carries_its_words_masked_and_its_end_carries_none() {
+    let env = |name: &str| match name {
+        purlis_core::hookwire::CHAT_ENV => Some("7".to_owned()),
+        purlis_core::hookwire::CLAUDE_PID_ENV => Some("4242".to_owned()),
+        _ => None,
+    };
+    let token = format!("{}{}", "ghp_", "0123456789abcdefghijABCDEFGHIJ012345");
+    let asked = question_line(Some(&format!("Is {token} right?")), &env).expect("a line");
+    assert_eq!(asked.chat, 7);
+    assert_eq!(asked.speaker.pid, Some(4242));
+    let purlis_core::hookwire::Output::Asking { question } = &asked.turn_output else {
+        panic!("{asked:?}");
+    };
+    assert!(!question.contains(&token), "{question}");
+    assert!(question.starts_with("Is "), "{question}");
+    let ended = question_line(None, &env).expect("a line");
+    assert_eq!(ended.turn_output, purlis_core::hookwire::Output::Asked);
+    // No chat of the app's runs this server: nothing is said.
+    assert!(question_line(Some("Which host?"), &|_| None).is_none());
+}
+
 #[test]
 fn a_question_in_flight_is_said_once_and_ended_when_its_call_ends() {
     let (waiting, said) = recording();
     {
-        let _one = waiting.asks();
-        let _two = waiting.asks();
+        let _one = waiting.asks("Which host?");
+        let _two = waiting.asks("Which host?");
         assert_eq!(*said.lock().unwrap(), [true]);
     }
     // Both answered: the end once, and nothing more on a later call.
@@ -91,7 +151,7 @@ fn a_question_in_flight_whose_call_is_dropped_still_ends_its_wait() {
     let pending = {
         let waiting = &waiting;
         async move {
-            let _asked = waiting.asks();
+            let _asked = waiting.asks("Which host?");
             std::future::pending::<()>().await;
         }
     };
@@ -108,12 +168,12 @@ fn a_question_in_flight_whose_call_is_dropped_still_ends_its_wait() {
 #[test]
 fn a_question_handed_to_the_harness_ends_at_its_next_call_or_the_session_s_end() {
     let (waiting, said) = recording();
-    waiting.returned();
-    waiting.returned();
+    waiting.returned("Which host?");
+    waiting.returned("Which host?");
     waiting.heard_again();
     assert_eq!(*said.lock().unwrap(), [true, false]);
 
-    waiting.returned();
+    waiting.returned("Which host?");
     waiting.over();
     assert_eq!(*said.lock().unwrap(), [true, false, true, false]);
 }

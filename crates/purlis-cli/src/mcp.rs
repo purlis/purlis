@@ -765,11 +765,11 @@ async fn ask_operator(
             ANSWER.to_owned(),
             InputRequest::Elicitation(rmcp::model::ElicitRequest::new(params)),
         );
-        waiting.returned();
+        waiting.returned(&question);
         return Ok(InputRequiredResult::new(Some(requests), Some(state)).into());
     }
     // Held until the answer is read, the harness errs, or the call is dropped: each ends the wait.
-    let _asked = waiting.asks();
+    let _asked = waiting.asks(&question);
     let answered = context
         .peer
         .create_elicitation_with_timeout(params, None)
@@ -861,18 +861,31 @@ struct Waiting {
     open: std::sync::Mutex<Open>,
     /// Says the wait (`true`) or its end (`false`).
     tell: Box<dyn Fn(bool) + Send + Sync>,
+    /// Says the words of the question that goes to the person (#4710), or, with none, that
+    /// nothing of this server's waits on them any more: for every harness, Claude Code's
+    /// included, whose own notice of the form says no word of it.
+    words: SaysWords,
 }
 
 impl Waiting {
     /// For the chat this server runs in: said on the chat's hook socket, best effort.
     fn of_this_chat() -> Self {
-        Self::telling(Box::new(tell_the_app))
+        Self::telling_words(Box::new(tell_the_app), Box::new(say_the_question))
     }
 
+    #[cfg(test)]
     fn telling(tell: Box<dyn Fn(bool) + Send + Sync>) -> Self {
+        Self::telling_words(tell, Box::new(|_| {}))
+    }
+
+    fn telling_words(
+        tell: Box<dyn Fn(bool) + Send + Sync>,
+        words: SaysWords,
+    ) -> Self {
         Self {
             open: std::sync::Mutex::new(Open::default()),
             tell,
+            words,
         }
     }
 
@@ -889,17 +902,24 @@ impl Waiting {
         };
         if was != is {
             (self.tell)(is);
+            if !is {
+                (self.words)(None);
+            }
         }
     }
 
-    /// A question goes to the person on a request in flight, until the guard is dropped.
-    fn asks(&self) -> Asked<'_> {
+    /// A question, `question`, goes to the person on a request in flight, until the guard is
+    /// dropped. Its words are said first, so the app holds them as its wait begins.
+    fn asks(&self, question: &str) -> Asked<'_> {
+        (self.words)(Some(question));
         self.moved(|open| open.in_flight += 1);
         Asked(self)
     }
 
-    /// A question was handed to the harness to show, by returning `input_required`.
-    fn returned(&self) {
+    /// A question, `question`, was handed to the harness to show, by returning
+    /// `input_required`.
+    fn returned(&self, question: &str) {
+        (self.words)(Some(question));
         self.moved(|open| open.returned = true);
     }
 
@@ -913,6 +933,9 @@ impl Waiting {
         self.moved(|open| *open = Open::default());
     }
 }
+
+/// What says a question's words to the app, or with none their end (#4710).
+type SaysWords = Box<dyn Fn(Option<&str>) + Send + Sync>;
 
 /// One question in flight; dropping it ends its wait.
 struct Asked<'a>(&'a Waiting);
@@ -940,6 +963,48 @@ fn tell_the_app(waits: bool) {
         std::path::Path::new(&socket),
         hookwire::ChatToken::from_env().as_ref(),
         &report,
+    );
+}
+
+/// **The line that tells the app the question this server asks the person** (#4710), or with
+/// none that it waits on them no more, for the chat read from `env`; none where no chat of the
+/// app's runs this server. Its words are masked and bounded as a report's text is
+/// ([`purlis_core::handback::last_message_summary`]) before they leave, and again in the app.
+/// A turn's output: heard by the app only from the run the chat adopted, and never recorded.
+fn question_line(
+    question: Option<&str>,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<purlis_core::hookwire::TurnOutput> {
+    use purlis_core::hookwire;
+    let chat = env(hookwire::CHAT_ENV)?.parse().ok()?;
+    let turn_output = match question {
+        Some(question) => hookwire::Output::Asking {
+            question: purlis_core::handback::last_message_summary(Some(question)),
+        },
+        None => hookwire::Output::Asked,
+    };
+    Some(hookwire::TurnOutput {
+        chat,
+        turn_output,
+        speaker: hookwire::Speaker::read("{}", env),
+    })
+}
+
+/// Says the question's words, or their end, on the chat's hook socket, best effort: the
+/// question asks in the pane either way, shown there by its kind alone.
+fn say_the_question(question: Option<&str>) {
+    use purlis_core::hookwire;
+    let Some(socket) = purlis_core::envvar::var_os(hookwire::SOCKET_ENV).filter(|s| !s.is_empty())
+    else {
+        return;
+    };
+    let Some(line) = question_line(question, &|name| purlis_core::envvar::var(name)) else {
+        return;
+    };
+    let _ = hookwire::tell_turn_output(
+        std::path::Path::new(&socket),
+        hookwire::ChatToken::from_env().as_ref(),
+        &line,
     );
 }
 

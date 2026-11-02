@@ -648,6 +648,11 @@ pub struct Ledger {
     /// told to the board the session host keeps, which hands them back to the next window
     /// (#4709). The one source of what a chat waiting on the person said.
     last: HashMap<u32, std::collections::VecDeque<String>>,
+    /// By chat, **the question purlis's MCP server said it asks the person** in the harness's
+    /// form (#4710, `ask_operator`), masked by the app before it is kept, until the server says
+    /// it is answered, a turn of the person's begins or the chat closes. No turn's message
+    /// replaces it. **In memory only**, and never recorded (ADR 0075).
+    asking: HashMap<u32, String>,
 }
 
 /// A task whose chat has closed.
@@ -1404,6 +1409,7 @@ impl Ledger {
     /// remembered of it, as a task or as an asking chat.
     pub fn forget(&mut self, chat: u32, task_of: Option<(u32, &str)>) {
         self.last.remove(&chat);
+        self.asking.remove(&chat);
         let entry = self.tasks.remove(&chat);
         // **A report that still waits for the asking chat's next turn is still told of**
         // (#1485): a task ends at its report, which is before the asking chat has been typed
@@ -1475,6 +1481,9 @@ impl Ledger {
         }
         if let Some(said) = self.last.remove(&old) {
             self.last.insert(new, said);
+        }
+        if let Some(asking) = self.asking.remove(&old) {
+            self.asking.insert(new, asking);
         }
         // The line was typed into the old one's pane, which is gone: the new one took none.
         self.typed.remove(&old);
@@ -1569,6 +1578,21 @@ impl Ledger {
             .get(&chat)
             .and_then(|said| said.back())
             .map(String::as_str)
+    }
+
+    /// Chat `chat` asks the person `question` (#4710), masked by the app already.
+    pub fn asks_the_person(&mut self, chat: u32, question: String) {
+        self.asking.insert(chat, question);
+    }
+
+    /// The question chat `chat` asked the person is answered, refused or let go of (#4710).
+    pub fn asked_the_person(&mut self, chat: u32) {
+        self.asking.remove(&chat);
+    }
+
+    /// The question chat `chat` asks the person in its harness's form, as kept (#4710).
+    pub fn asking(&self, chat: u32) -> Option<&str> {
+        self.asking.get(&chat).map(String::as_str)
     }
 
     /// **Every message chat `chat`'s turns ended on, as kept**, oldest first: what the window
@@ -2225,6 +2249,7 @@ impl Ledger {
         // still to answer it (#4563).
         if !background {
             self.last.remove(&chat);
+            self.asking.remove(&chat);
         }
         self.landed.remove(&chat);
         self.typed.remove(&chat);
