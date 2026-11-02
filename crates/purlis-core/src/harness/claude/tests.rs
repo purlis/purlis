@@ -1625,12 +1625,12 @@ fn listing_limit_handed(skills: Option<crate::skills::PlaneSkills<'_>>) -> Strin
 
 #[test]
 fn a_chat_out_of_any_plane_is_handed_the_limit_of_the_default_budget() {
-    assert_eq!(listing_limit_handed(None), "24032");
+    assert_eq!(listing_limit_handed(None), "30000");
 }
 
 #[test]
 fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
-    // 20,000 and 40,000, with 6,848 and a tenth over both.
+    // 20,000 stays under the least limit; 40,000 passes it, with 6,848 and a tenth over both.
     let tmp = tempfile::tempdir().unwrap();
     let plane = tmp.path();
     std::fs::write(
@@ -1652,7 +1652,7 @@ fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
             routed: None,
         }))
     };
-    assert_eq!(at(None), "29532");
+    assert_eq!(at(None), "30000");
     assert_eq!(at(Some("alpha")), "51532");
 }
 
@@ -1661,10 +1661,11 @@ fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
 /// was dropped however few there were.
 #[test]
 fn the_limit_holds_claude_codes_own_entries_and_the_list_with_a_margin() {
+    // A 1M Claude 5 chat's own limit, which no handed one goes below.
+    assert_eq!(listing_limit(0), 30_000);
     let budget = ADAPTER.skill_budget();
-    assert_eq!(listing_limit(budget.chars), 24_032);
-    assert!(listing_limit(budget.chars) > 6_848 + budget.chars);
-    assert!(listing_limit(0) > 6_848);
+    assert!(listing_limit(budget.chars) > (6_848 + budget.chars) * 11 / 10);
+    assert_eq!(listing_limit(30_000), 40_532);
     assert_eq!(listing_limit(usize::MAX), usize::MAX);
 }
 
@@ -1674,16 +1675,26 @@ fn a_chat_whose_pins_are_past_its_budget_is_handed_a_limit_that_holds_them() {
     let tmp = tempfile::tempdir().unwrap();
     let plane = tmp.path();
     std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
-    let skill = plane.join("workspaces/alpha/skills/big");
-    std::fs::create_dir_all(&skill).unwrap();
-    std::fs::write(
-        skill.join("SKILL.md"),
-        format!("---\nname: big\ndescription: {}\n---\n", "d".repeat(5_000)),
-    )
-    .unwrap();
+    let pins: Vec<String> = (0..20).map(|at| format!("big{at:02}")).collect();
+    for name in &pins {
+        let skill = plane.join("workspaces/alpha/skills").join(name);
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            format!(
+                "---\nname: {name}\ndescription: {}\n---\n",
+                "d".repeat(5_000)
+            ),
+        )
+        .unwrap();
+    }
     std::fs::write(
         plane.join("workspaces/alpha/workspace.json"),
-        r#"{"name":"alpha","settings":{"skills":{"pinned":["big"],"budget":{"chars":10}}}}"#,
+        serde_json::json!({
+            "name": "alpha",
+            "settings": {"skills": {"pinned": pins, "budget": {"chars": 10}}},
+        })
+        .to_string(),
     )
     .unwrap();
     let limit = listing_limit_handed(Some(crate::skills::PlaneSkills {
@@ -1692,6 +1703,6 @@ fn a_chat_whose_pins_are_past_its_budget_is_handed_a_limit_that_holds_them() {
         repo: &[],
         routed: None,
     }));
-    // Its description, cut at 1,536, its name and its line, not the budget's 10.
-    assert_eq!(limit, listing_limit(1_536 + "big".len() + 23).to_string());
+    // 20 descriptions cut at 1,536, each name and line, Claude Code's own 6,848, and a tenth.
+    assert_eq!(limit, "41940");
 }
