@@ -1538,7 +1538,7 @@ fn carry_out(held: &Arc<Held>, acts: Vec<Act>) {
                     Some(reached) => sent_at_a_limit(reached),
                     None => sent_as(task),
                 };
-                let sent = held.chats().sessions().input(session, line.as_bytes());
+                let sent = held.type_in_turn(session, line.as_bytes());
                 if sent.is_err() {
                     // Nothing to write to: it is ended as it stands.
                     let more = held
@@ -1566,11 +1566,7 @@ fn carry_out(held: &Arc<Held>, acts: Vec<Act>) {
                 }
             }
             Act::Interrupt { session, number } => {
-                if let Err(why) = held
-                    .chats()
-                    .sessions()
-                    .input(session, dispatched::INTERRUPT)
-                {
+                if let Err(why) = held.type_in_turn(session, dispatched::INTERRUPT) {
                     tracing::warn!("purlis: chat {session}'s turn could not be ended ({why})");
                 }
                 look_later(

@@ -296,11 +296,7 @@ pub fn reported(held: &crate::planes::Held, session: u32) {
             let glance = held.board().glance(session);
             (glance.state, glance.asking)
         },
-        |chat, text| {
-            held.chats()
-                .sessions()
-                .input(chat, sent_as(text).as_bytes())
-        },
+        |chat, text| held.type_in_turn(chat, sent_as(text).as_bytes()),
     );
 }
 
@@ -627,11 +623,7 @@ pub async fn allow_refused_vault(
                 (glance.state, glance.asking)
             },
             &line,
-            &|chat, text| {
-                held.chats()
-                    .sessions()
-                    .input(chat, sent_as(text).as_bytes())
-            },
+            &|chat, text| held.type_in_turn(chat, sent_as(text).as_bytes()),
         );
         // Not sent now and not queued: handed to its next turn instead, so it is told (#1987).
         if told == Told::NotSent {

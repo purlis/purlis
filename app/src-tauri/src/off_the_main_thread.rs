@@ -64,9 +64,14 @@
 //! pressed straight after must land after it: Tauri keeps that order only for synchronous
 //! commands, and that order is worth the one read and write.
 //!
-//! A terminal's own commands stay synchronous on purpose. They take well under 5 ms, and the
-//! window relies on their order: a pane's resize must land before the watch that follows it
-//! (#891). Nothing in this module runs in the app; it is the tests that hold both halves.
+//! **A terminal's own commands never wait on the session host on the window's thread** (#4734,
+//! ADR 0108). They stay synchronous for their order alone: a pane's keys, paste, mouse report,
+//! resize and view's close each join the back of the chat's lane (`crate::inputlanes`) in the
+//! order the window asked, and answer at once; the lane's worker sends each to the host in
+//! turn. A view's open is `async` and takes its turn behind them, so a pane's resize still lands
+//! before the watch that follows it (#891). Everything else that types into a chat takes its
+//! turn in the same lane. Nothing in this module runs in the app; it is the tests that hold
+//! both halves.
 
 /// A test's hold on the work a command hands off the window (#1949): while a gate named for the
 /// work is closed, that work waits at its start on its blocking thread, so a test can see what

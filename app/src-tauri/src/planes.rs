@@ -271,6 +271,9 @@ pub struct Held {
     tasks: Arc<crate::dispatched::Tasks>,
     /// The window, for each step of a smart close.
     smart: crate::smartclose::Teller,
+    /// Each chat's lane, which everything typed into a chat, its resizes and its views take in
+    /// turn (#4734, ADR 0108).
+    lanes: crate::inputlanes::Lanes,
     /// The chats the person is stopping (#1448).
     stopping: crate::stopping::Stopping,
     /// The window, for each step of a stop.
@@ -766,7 +769,86 @@ impl Held {
     /// are sent, under the lock that sends its prompt — unless the chat is asking them something
     /// mid-turn, which their keys are answering. A wheel over the pane is not typing
     /// (`smartclose::typed_by_the_operator`).
+    ///
+    /// **The bytes take their turn in the chat's lane** (#4734, ADR 0108): after what was sent
+    /// before, and waiting for the host's answer. A pane's own keys go by
+    /// [`Self::queue_operator_input`] instead, which waits on nothing.
     pub fn operator_input(&self, session: u32, bytes: &[u8]) -> Result<(), String> {
+        self.operator_typing(session, bytes);
+        self.type_in_turn(session, bytes)
+    }
+
+    /// [`Self::operator_input`] for a pane's keys, paste or mouse report (#4734, ADR 0108): what
+    /// they change in memory is changed now, on the thread that asked, and the bytes join the
+    /// back of the chat's lane, so this answers at once. A send the host refuses is told to the
+    /// window for the chat's pane, and what was queued behind it is dropped.
+    pub fn queue_operator_input(self: &Arc<Self>, session: u32, bytes: Vec<u8>) {
+        self.operator_typing(session, &bytes);
+        let held = Arc::clone(self);
+        self.lanes.send(session, move || {
+            held.linked(session)?;
+            held.chats.sessions().input(session, &bytes)
+        });
+    }
+
+    /// A pane's new size, sent in the chat's lane: this answers at once (#4734). A size the host
+    /// refuses is logged, never said: the pane's next resize says it again.
+    pub fn queue_resize(self: &Arc<Self>, session: u32, size: Size) {
+        let held = Arc::clone(self);
+        self.lanes.send(session, move || {
+            let resized = held
+                .linked(session)
+                .and_then(|()| held.chats.resize(session, size));
+            if let Err(why) = resized {
+                tracing::info!("purlis: chat {session} was not resized: {why}");
+            }
+            Ok(())
+        });
+    }
+
+    /// A pane's view of a chat closed, in the chat's lane: this answers at once (#4734).
+    pub fn queue_unwatch(self: &Arc<Self>, session: u32, view: u32) {
+        let held = Arc::clone(self);
+        self.lanes.send(session, move || {
+            if let Err(why) = held.chats.sessions().unwatch(session, view) {
+                tracing::info!("purlis: chat {session}'s view {view} was not closed: {why}");
+            }
+            Ok(())
+        });
+    }
+
+    /// A view of chat `session` opened in its turn in the chat's lane, after every resize sent
+    /// before it (#891, #4734), waiting for the host's answer: never on the window's thread.
+    pub fn watch_in_turn(
+        &self,
+        session: u32,
+        sink: crate::host::Sink,
+    ) -> Result<crate::host::Watching, String> {
+        self.lanes
+            .in_turn(session, || self.chats.sessions().watch(session, sink))
+    }
+
+    /// Types `bytes` into chat `session` in its turn in the chat's lane, waiting for the host's
+    /// answer: what everything but a pane types into a chat with (#4734, ADR 0108), so it never
+    /// lands in the middle of what the pane sent before it.
+    pub fn type_in_turn(&self, session: u32, bytes: &[u8]) -> Result<(), String> {
+        self.lanes
+            .in_turn(session, || self.chats.sessions().input(session, bytes))
+    }
+
+    /// Whether chat `session` can be sent anything now: not while its runner is reconnecting,
+    /// which fails at once rather than holding its lane (#4734).
+    fn linked(&self, session: u32) -> Result<(), String> {
+        if self.chats.sessions().reconnecting().contains(&session) {
+            return Err(crate::inputlanes::RECONNECTING.to_owned());
+        }
+        Ok(())
+    }
+
+    /// What the person's keys change in memory, before their bytes are sent (SI-2, ADR 0064,
+    /// #1332, #1442): changed on the thread that asked, so a lane's worker takes no lock of the
+    /// app's (ADR 0108).
+    fn operator_typing(&self, session: u32, bytes: &[u8]) {
         if !crate::curation::only_the_terminal_answering(bytes) {
             self.typed.operator_sent(session);
         }
@@ -789,7 +871,6 @@ impl Held {
         // And a prompt the person sends a dispatched task is what its report says of them: that
         // they stepped in, and nothing of what they typed (#1442, #1463).
         crate::dispatched::person_typed(self, session, bytes, submitted);
-        self.chats.sessions().input(session, bytes)
     }
 
     /// Every chat this plane has open whose start-time instructions — `CLAUDE.md`, the
@@ -2150,6 +2231,8 @@ pub struct Planes {
     browser_asks_ended: crate::browserneedsyou::Teller,
     /// Told each persona MCP server a chat could not start (qw381).
     mcp_failed: crate::mcpfailed::Teller,
+    /// Told each send of a pane's that its chat was not sent (#4734).
+    input_refused: crate::inputlanes::Teller,
     /// Told each chat whose browsers ended because the person narrowed its reach (#2013).
     browsers_ended: crate::chatbrowsers::Teller,
     /// Told each project whose chats' browsers were added to or taken from (#2024).
@@ -2431,6 +2514,7 @@ impl Planes {
             vault_refused: Arc::new(|_| {}),
             browser_asks_ended: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
+            input_refused: Arc::new(|_| {}),
             browsers_ended: Arc::new(|_| {}),
             browsers_listed: Arc::new(|_| {}),
             browser_timeline: Arc::new(|_, _| {}),
@@ -2755,6 +2839,13 @@ impl Planes {
     /// a plane this registry holds, so the window can say so on the chat's tab (qw381).
     pub fn telling_mcp_failures(mut self, failed: crate::mcpfailed::Teller) -> Self {
         self.mcp_failed = failed;
+        self
+    }
+
+    /// Tells `refused` each send of a pane's that its chat, in a plane this registry holds, was
+    /// not sent, so the window can say so on the chat's pane (#4734, ADR 0108).
+    pub fn telling_input_refused(mut self, refused: crate::inputlanes::Teller) -> Self {
+        self.input_refused = refused;
         self
     }
 
@@ -4528,6 +4619,18 @@ impl Planes {
             let plane = id.clone();
             Arc::new(move |chat| moved(plane.clone(), chat))
         };
+        // What a pane sent a chat that was refused, told to the window for its pane (#4734).
+        let lanes = crate::inputlanes::Lanes::new({
+            let told = Arc::clone(&self.input_refused);
+            let plane = id.clone();
+            Arc::new(move |session, why| {
+                told(crate::inputlanes::InputRefused {
+                    plane: plane.clone(),
+                    session,
+                    why,
+                });
+            })
+        });
         let moves = Arc::new(crate::chatmoves::Moves::default());
         moves.telling({
             let (plane, told) = (id.clone(), Arc::clone(&self.moves_told));
@@ -4549,6 +4652,7 @@ impl Planes {
             closing,
             tasks: Arc::default(),
             smart: Arc::clone(&self.smart),
+            lanes,
             stopping: crate::stopping::Stopping::default(),
             stops: Arc::clone(&self.stops),
             changes: Arc::clone(&self.changes),

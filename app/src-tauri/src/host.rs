@@ -859,6 +859,13 @@ pub(crate) mod pretend {
         composed_ran: Mutex<Option<Option<purlis_session_protocol::session::RunSandbox>>>,
         /// The chats it says run on a pool's runner, and the pool ([`Pretend::runs_on_pool`]).
         pools: Mutex<Vec<(u32, String)>>,
+        /// Every input, resize and view of a terminal, in the order it reached the host
+        /// ([`Pretend::terminal`], #4734).
+        terminal: Mutex<Vec<String>>,
+        /// How long each input, resize and view takes ([`Pretend::terminal_takes`]).
+        terminal_taking: Mutex<Duration>,
+        /// The chats whose link is down, reconnecting ([`Pretend::reconnects`]).
+        reconnecting: Mutex<Vec<u32>>,
     }
 
     impl Pretend {
@@ -1074,6 +1081,31 @@ pub(crate) mod pretend {
             );
         }
 
+        /// Every input, resize and view of a terminal it was asked for, in the order each
+        /// reached it: `typed 7 <bytes>`, `resized 7 100x30`, `watched 7`, `unwatched 7 1`.
+        pub fn terminal(&self) -> Vec<String> {
+            lock(&self.seen.terminal).clone()
+        }
+
+        /// Each input, resize and view takes `long` from now on, as a host far away does.
+        pub fn terminal_takes(&self, long: Duration) {
+            *lock(&self.seen.terminal_taking) = long;
+        }
+
+        /// Chat `id`'s link is down from now on, and it is reconnecting (#2496).
+        pub fn reconnects(&self, id: u32) {
+            lock(&self.seen.reconnecting).push(id);
+        }
+
+        /// Takes as long as [`Self::terminal_takes`] says, then notes `what` reached it.
+        fn reached(&self, what: String) {
+            let long = *lock(&self.seen.terminal_taking);
+            if !long.is_zero() {
+                std::thread::sleep(long);
+            }
+            lock(&self.seen.terminal).push(what);
+        }
+
         fn here(&self, id: u32) -> Result<(), String> {
             if lock(&self.seen.running).contains(&id) {
                 Ok(())
@@ -1198,14 +1230,18 @@ pub(crate) mod pretend {
         }
         fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {
             self.here(id)?;
+            self.reached(format!("typed {id} {}", String::from_utf8_lossy(bytes)));
             lock(&self.seen.typed).push((id, bytes.to_vec()));
             Ok(())
         }
-        fn resize(&self, id: u32, _size: Size) -> Result<(), String> {
-            self.here(id)
+        fn resize(&self, id: u32, size: Size) -> Result<(), String> {
+            self.here(id)?;
+            self.reached(format!("resized {id} {}x{}", size.columns, size.rows));
+            Ok(())
         }
         fn watch(&self, id: u32, _sink: Sink) -> Result<Watching, String> {
             self.here(id)?;
+            self.reached(format!("watched {id}"));
             Ok(Watching {
                 view: 1,
                 size: Size {
@@ -1214,8 +1250,13 @@ pub(crate) mod pretend {
                 },
             })
         }
-        fn unwatch(&self, id: u32, _view: u32) -> Result<(), String> {
-            self.here(id)
+        fn unwatch(&self, id: u32, view: u32) -> Result<(), String> {
+            self.here(id)?;
+            self.reached(format!("unwatched {id} {view}"));
+            Ok(())
+        }
+        fn reconnecting(&self) -> Vec<u32> {
+            lock(&self.seen.reconnecting).clone()
         }
         fn close(&self, id: u32) -> Result<(), String> {
             self.here(id)?;
