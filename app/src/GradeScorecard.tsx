@@ -65,6 +65,12 @@ function evalArmSaid(arm: ScoredRuns["arm"], draft: boolean): string {
   return ARM_SAID[arm];
 }
 
+/** {@link evalArmSaid} inside a sentence: "the current version", as the trigger table says it. */
+function evalArmInLine(arm: ScoredRuns["arm"], draft: boolean): string {
+  if (draft && arm === "previous") return "the current version";
+  return evalArmSaid(arm, draft).toLowerCase();
+}
+
 /** A number of points with its sign: `+25`, `-5`, `0`. */
 export function signed(delta: number): string {
   return `${delta > 0 ? "+" : ""}${delta}`;
@@ -474,7 +480,7 @@ function EvalCell({
       key={`${what}-${chat.id}`}
       size="sm"
       variant="ghost"
-      aria-label={`Open ${evalArmSaid(arm.arm, draft).toLowerCase()}, ${what.toLowerCase()} ${chat.run}, of outcome eval ${id}`}
+      aria-label={`Open ${evalArmInLine(arm.arm, draft)}, ${what.toLowerCase()} ${chat.run}, of outcome eval ${id}`}
       isDisabled={!chat.kept}
       tooltip={
         chat.kept
@@ -520,13 +526,13 @@ function checksSaid(arm: ScoredEvalArm, at: number): string {
 export function OutcomeEvalsTable({
   evals,
   label,
-  draft,
+  draft = false,
   onChat,
 }: {
   evals: readonly ScoredEval[];
   label: string;
   /** A grade of a draft (#2780): its arms are named as its tiles name them. */
-  draft: boolean;
+  draft?: boolean;
   onChat: (chat: string) => void;
 }) {
   const arms = evalArmsOf(evals);
@@ -566,7 +572,7 @@ export function OutcomeEvalsTable({
                     key={`${one.id}-${arm.arm}-${run.run}`}
                     data-testid="grade-scorecard-eval-why"
                   >
-                    {`Eval ${one.id}, ${evalArmSaid(arm.arm, draft).toLowerCase()}, run ${run.run}: ${run.failed}`}
+                    {`Eval ${one.id}, ${evalArmInLine(arm.arm, draft)}, run ${run.run}: ${run.failed}`}
                   </p>,
                 ],
           ),

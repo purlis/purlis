@@ -346,7 +346,7 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
     const why = screen.getAllByTestId("grade-scorecard-eval-why").map((one) => one.textContent);
     expect(why).toEqual([
       "Eval 4, without it, run 1: It never filled the form.",
-      "Eval 4, current version, run 1: It never filled the form.",
+      "Eval 4, the current version, run 1: It never filled the form.",
     ]);
     const expectation = screen.getByTestId("grade-scorecard-expectation");
     expect(expectation).toHaveTextContent(
@@ -358,7 +358,7 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
       await screen.findByRole("button", { name: "Open the draft, chat 1, of outcome eval 4" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Open current version, chat 1, of outcome eval 4" }),
+      screen.getByRole("button", { name: "Open the current version, chat 1, of outcome eval 4" }),
     ).toBeTruthy();
   });
 
