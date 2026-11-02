@@ -12,7 +12,7 @@ import { SHOW_IN_SKILLS, askChatSkills, skillsMissingPutAway } from "./chatSkill
  * 41): never a silent drop. An installed skill this machine does not have for the chat's
  * harness, and a built-in skill purlis has none of, each named as the persona's skills write it;
  * a skill the chat would have loaded that could not be loaded, with why; and one the repo it
- * works in leaves out, with why (SK-53). And a skill of that repo named like a built-in one,
+ * works in leaves out, with why (SK-53). And a skill of that repo with a name of purlis's own,
  * which the chat's program loads beside purlis's (SK-37). It offers
  *
  * - **Show in Skills** (S8, #3694): the sidebar Skills view on this chat, where what it started

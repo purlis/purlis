@@ -315,12 +315,12 @@ fn what_a_router_hides_is_hidden_wherever_the_chat_s_set_is_routed_with_its_line
     );
     // And the folder its harness is handed leaves it out, with the index in its place.
     let folder = crate::skills::lay_out_for_chat(
-        Some(crate::skills::PlaneSkills {
+        crate::skills::PlaneSkills {
             plane: root,
             workspace: Some("smart-ide"),
             repo: &[],
             routed: skills.routed.as_deref(),
-        }),
+        },
         None,
         Some(&bundle),
         &root.join("sets"),

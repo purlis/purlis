@@ -769,20 +769,16 @@ impl Held {
         {
             self.tell_smart_close(session, crate::smartclose::Phase::Cancelled);
         }
-        // **And the person submitting `/smart-close` into a chat that waits for them is what a
+        // **And the person submitting `/purlis-smart-close` into a chat that waits for them is what a
         // smart-close pass is issued on** (#1332): the line read from their own keys, never
         // what the chat reports (#1361). Marked before the bytes are sent, so it is there
         // before the hook the prompt fires can be.
-        let submitted = self.closing.person_typed(
-            session,
-            bytes,
-            std::time::Instant::now(),
-            self.chats.harness(session),
-            || {
-                let glance = self.board().glance(session);
-                glance.state == purlis_core::state::State::Waiting && !glance.asking
-            },
-        );
+        let submitted =
+            self.closing
+                .person_typed(session, bytes, std::time::Instant::now(), || {
+                    let glance = self.board().glance(session);
+                    glance.state == purlis_core::state::State::Waiting && !glance.asking
+                });
         // And a prompt the person sends a dispatched task is what its report says of them: that
         // they stepped in, and nothing of what they typed (#1442, #1463).
         crate::dispatched::person_typed(self, session, bytes, submitted);
@@ -1561,6 +1557,13 @@ impl Held {
     ///
     /// The snapshot is built under the board's hold (`ChatBoard::ignored`), and numbered there,
     /// so a report racing it is put in order by the window rather than by which thread won.
+    /// The person sent `session` a line: a background turn's wait on them is over (#4562).
+    pub fn person_replied(&self, session: u32) {
+        if let Some(moved) = self.board().replied(session) {
+            (self.tell)(moved);
+        }
+    }
+
     pub fn ignore_needs_you(&self, session: u32) {
         (self.tell)(self.board().ignored(session));
     }
@@ -2125,6 +2128,7 @@ pub struct Planes {
     /// Told what a working chat is doing, each time its one line changes (#1493).
     doings: crate::doing::Teller,
     skill_runs: crate::skillrun::Teller,
+    prompt_routing: crate::useskill::PromptRoutingTeller,
     /// The app's executor, which asks each chat's router extension at its start (SK-15b): none
     /// for a registry a test makes, whose chats are then routed by the built-in router.
     routers: Option<Arc<purlis_core::executor::Executor>>,
@@ -2415,6 +2419,7 @@ impl Planes {
             touches: Arc::new(|_| {}),
             doings: Arc::new(|_| {}),
             skill_runs: Arc::new(|_| {}),
+            prompt_routing: Arc::new(|_| {}),
             routers: None,
             blocks: Arc::new(|_| {}),
             arranged: ArrangedBehind::new(|(config, windows)| write_arrangement(&config, windows)),
@@ -2619,6 +2624,16 @@ impl Planes {
     /// confined to the chat's folder, so the window can mark it in the tree (FM-6).
     pub fn telling_touches(mut self, touches: hooks::TouchTeller) -> Self {
         self.touches = touches;
+        self
+    }
+
+    /// Tells `prompt_routing` of a chat of a plane this registry holds, as its latest prompt
+    /// changes whether it fell back (#4445).
+    pub fn telling_prompt_routing(
+        mut self,
+        prompt_routing: crate::useskill::PromptRoutingTeller,
+    ) -> Self {
+        self.prompt_routing = prompt_routing;
         self
     }
 
@@ -3018,7 +3033,7 @@ impl Planes {
             })
         });
         // A curation chat's prompt is typed when its harness reports its start (ADR 0061), and
-        // the socket's thread is where that report arrives. A person's typed `/smart-close` is
+        // the socket's thread is where that report arrives. A person's typed `/purlis-smart-close` is
         // heard here too: only a report the board took, so a harness nested in the chat never
         // issues its chat a pass (#1332). Weak for the handoff's reason.
         // What a chat waits on that is not the person, asked as the end of its turn is applied
@@ -3084,8 +3099,8 @@ impl Planes {
                 }
             })
         });
-        // What a chat's turn ended saying (#1981): kept for a task alone, in memory. Weak for
-        // the handoff's reason.
+        // What a chat's turn ended saying (#1981, #4550): kept in memory, for every chat. Weak
+        // for the handoff's reason.
         held.hooks.when_output({
             let held = Arc::downgrade(&held);
             Arc::new(move |output| {
@@ -4049,6 +4064,15 @@ impl Planes {
                 project: root.clone(),
             }));
         }
+        chats.when_a_prompt_s_fallback_moves(Box::new({
+            let (tell, plane) = (Arc::clone(&self.prompt_routing), id.clone());
+            move |session| {
+                tell(crate::useskill::ChatPromptRouting {
+                    plane: plane.clone(),
+                    session,
+                })
+            }
+        }));
         chats.stopped_by(Arc::clone(&self.kill_switch));
         chats.on_device(device);
         chats.keeping_pools_in(self.pools_in.clone());
@@ -4252,6 +4276,36 @@ impl Planes {
                 .when_one_ends(Arc::new(move |session, exit| {
                     // A curation prompt still waiting is for a chat that is gone: never typed.
                     typed.forget(session);
+                    // **Its runner went, after its program had ended with its host** (#4421):
+                    // nothing ended now, so only this is new. No Resume now, and a task that
+                    // waited to be resumed reports, whatever stopped it reporting as it ended.
+                    // Only the window says this: a host's word for it never gets here.
+                    if matches!(&exit, purlis_core::session::Exit::Signal(said)
+                        if said == crate::hostedsessions::ITS_RUNNER_WENT)
+                    {
+                        if let Some(was) = lost.of(session) {
+                            let now = crate::hostlost::LostRun {
+                                resumable: false,
+                                with_the_runner: true,
+                                ..was
+                            };
+                            lost.note(session, now);
+                            tell_lost(crate::hostlost::LostChat {
+                                plane: plane.clone(),
+                                session,
+                                left_in: now.left_in,
+                                resumable: false,
+                                with_the_runner: true,
+                            });
+                        }
+                        if let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
+                            && !held.stopping().is_stopping(session)
+                        {
+                            crate::handoff::its_runner_went(&held, session);
+                            crate::dispatched::moved(&held, session);
+                        }
+                        return;
+                    }
                     // **Its program ended with its session host** (#2007): what its run is left
                     // in is read from the board as it was, before its end moves it, and said on
                     // its pane with Resume. It did not end by itself: like a quit, it fails no
@@ -4262,9 +4316,10 @@ impl Planes {
                         .filter(|held| held.chats.sessions().lost_with_its_host(session));
                     // One whose runner is gone for good cannot be resumed, so a task on it reports
                     // now, as one that ended on its own does (#4350).
-                    let with_the_host = lost_with
+                    let with_the_runner = lost_with
                         .as_ref()
-                        .is_some_and(|held| !held.chats.sessions().lost_with_its_runner(session));
+                        .is_some_and(|held| held.chats.sessions().lost_with_its_runner(session));
+                    let with_the_host = lost_with.is_some() && !with_the_runner;
                     if let Some(held) = lost_with {
                         let resumes_by_id = held
                             .chats
@@ -4279,7 +4334,6 @@ impl Planes {
                             )
                         };
                         // Its conversation went with a runner gone for good (#4350): no Resume.
-                        let with_the_runner = held.chats.sessions().lost_with_its_runner(session);
                         if let Some(left_in) =
                             crate::hostlost::after_the_host(state, asking, resumes_by_id, resumable)
                         {
@@ -4362,15 +4416,15 @@ impl Planes {
                     // window is told, so what it reads next already says so. **Only for a
                     // program that ended on its own** (D-1443-10): not at a quit or as the
                     // project is let go of, and not when every agent was stopped. Those chats
-                    // are kept, and report when they are started again.
+                    // are kept, and report when they are started again. **Nothing starts one
+                    // whose runner is gone again** (#4421), so it reports whatever else is so.
                     //
                     // **One word for one end** (D-T59-j3). A task its asking chat cancelled
                     // reports as cancelled, so that is written first (#1441) and nothing is
                     // then owed. A chat the person is stopping is told of by its stop, below
                     // (#1448), and is not also said to have failed by itself.
                     if let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
-                        && !held.chats.ending()
-                        && !every_agent.is_stopped()
+                        && (with_the_runner || (!held.chats.ending() && !every_agent.is_stopped()))
                         && !held.stopping().is_stopping(session)
                         && !with_the_host
                     {

@@ -299,7 +299,7 @@ pub struct UpdateReview {
     pub local_edits: Vec<FileChange>,
     pub review: SkillReview,
     /// The skills the newer commit refers to that are not met at this level already: they come
-    /// along. Never one under a built-in skill's name, which a reference meets (#4155).
+    /// along. Never one under a name of purlis's own, which a reference meets (#4155).
     pub brought: Vec<SkillReview>,
     /// The updated skill's own grant, where it reaches past the root (#4186): each skill it
     /// brings along lands with it, as an install's do with the install's grant.
@@ -368,14 +368,8 @@ fn locked_at(plane: &Path, level: &Level, name: &str) -> Result<(lock::Read, usi
 }
 
 /// **The review of updating the installed skill `name` at `level`** to its source's newest
-/// commit, with the built-in skills in `built_in`, whose names a reference meets already (#4155).
-/// Refused where the pin is the newest, or where this machine may not contact the source.
-pub fn update_review(
-    plane: &Path,
-    built_in: Option<&Path>,
-    level: &Level,
-    name: &str,
-) -> Result<UpdateReview, String> {
+/// commit. Refused where the pin is the newest, or where this machine may not contact the source.
+pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateReview, String> {
     let (held, at) = locked_at(plane, level, name)?;
     let locked = &held.lock.skills[at];
     let source = source_of(plane, locked)?;
@@ -419,7 +413,7 @@ pub fn update_review(
         _ => Vec::new(),
     };
     let was = pinned.unwrap_or_else(|| here.clone());
-    let met_here = met_at(plane, built_in, level);
+    let met_here = met_at(plane, level);
     let reviewed = fetched.review_with(&[name.to_owned()], &met_here)?;
     let mut skills = reviewed.skills.into_iter();
     let review = skills.next().unwrap_or_else(|| {
@@ -479,7 +473,7 @@ pub fn update(
     let locked = held.lock.skills[at].clone();
     let source = source_of(plane, &locked)?;
     let fetched = fetch(plane, &source, Some(&accepted.commit))?;
-    let reviewed = fetched.review_with(&[name.to_owned()], &met_at(plane, cx.built_in, level))?;
+    let reviewed = fetched.review_with(&[name.to_owned()], &met_at(plane, level))?;
     if !accepted.is(&reviewed.accepted()) || reviewed.skills.first().is_none_or(|s| s.name != name)
     {
         return Err(
@@ -512,7 +506,7 @@ pub fn update(
         .find(|s| cx.reserved(&s.name))
     {
         return Err(format!(
-            "this update brings along {}, whose name belongs to a built-in skill, so nothing \
+            "this update brings along {}, whose name belongs to purlis, so nothing \
              was updated",
             skill.name
         ));

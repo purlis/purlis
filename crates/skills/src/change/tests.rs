@@ -138,11 +138,11 @@ fn a_reference_is_renamed_only_where_it_names_that_skill() {
 
 #[test]
 fn a_personas_list_follows_a_rename_in_either_spelling() {
-    let persona = "---\nname: ops\nskills: deploy, purlis:handoff,skills:deploy , deployer\n---\n\nI deploy.\n";
+    let persona = "---\nname: ops\nskills: deploy, purlis:purlis-handoff,skills:deploy , deployer\n---\n\nI deploy.\n";
     let renamed = persona_list_renamed(persona, "skills", "deploy", "ship");
     assert_eq!(
         renamed,
-        "---\nname: ops\nskills: ship, purlis:handoff,skills:ship , deployer\n---\n\nI deploy.\n"
+        "---\nname: ops\nskills: ship, purlis:purlis-handoff,skills:ship , deployer\n---\n\nI deploy.\n"
     );
     assert!(persona_names(persona, "skills", "deploy"));
     assert!(!persona_names(persona, "skills", "ship"));

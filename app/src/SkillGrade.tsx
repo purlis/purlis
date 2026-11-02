@@ -18,7 +18,7 @@
  * - **A grade running** shows its chats done, what it has spent against its dollar limit and its
  *   tokens against its cap, with Stop fixed at the bottom. A grade's chats are drawn nowhere.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   commands,
@@ -31,6 +31,7 @@ import {
   type SkillLevel,
 } from "./bindings";
 import { counted } from "./dispatches";
+import { sameLevel } from "./skillChanges";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { Notice, type NoticeAction } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -957,6 +958,7 @@ export function RunningGradePage<Step extends RunningStepShown>({
   endWords,
   onEnded,
   onBack,
+  back,
 }: {
   /** Whose grade it is, in its page's test ids and its notices' causes. */
   whose: "skill" | "router";
@@ -981,32 +983,47 @@ export function RunningGradePage<Step extends RunningStepShown>({
   onEnded: () => void;
   /** Back to where it was started from: the grade keeps going. */
   onBack: () => void;
+  /** What the foot says of that once the grade has ended, with nothing left running. */
+  back: string;
 }) {
   const [step, setStep] = useState<Step>();
   // Whether the app said this grade runs, where it has: its latest step says the rest (#3928).
   const [runs, setRuns] = useState<boolean>();
   // Why the app's word on it could not be read, where it could not, and a press to read again.
   const [unread, setUnread] = useState<string>();
+  // Why its steps cannot be heard, where they cannot: what it holds may be going stale.
+  const [deaf, setDeaf] = useState<string>();
   const [again, setAgain] = useState(0);
   const [stopping, setStopping] = useState(false);
   const [stopRefused, setStopRefused] = useState<string>();
   // The latest of each, used as an event lands: the listener is not attached anew with them, so
   // no step is lost while it would be.
-  const latest = useRef({ isOurs, read, opensItsScorecard, onEnded });
-  useEffect(() => {
-    latest.current = { isOurs, read, opensItsScorecard, onEnded };
+  const latest = useRef({ isOurs, read, onEnded });
+  useLayoutEffect(() => {
+    latest.current = { isOurs, read, onEnded };
   });
 
   // Listened to first, then the app's word on whether it runs and its latest step: an end told
   // before the listener was attached is never missed, as the read after it says it runs no more.
   useEffect(() => {
     let live = true;
+    // Whether a step was told since this read was asked for: only that is newer than what it says.
+    let toldSince = false;
     const listening = listen<Step>(event, (told) => {
       const now = told.payload;
+      // A page left is told nothing: its listener lets go only once the listen under way settles.
+      if (!live) return;
       if (now.plane !== plane || now.grade !== grade || !latest.current.isOurs(now)) return;
+      toldSince = true;
       setStep(now);
-      if (latest.current.opensItsScorecard(now)) latest.current.onEnded();
-    }).catch(() => undefined);
+    })
+      .then((stop) => {
+        if (live) setDeaf(undefined);
+        return stop;
+      })
+      .catch((err: unknown) => {
+        if (live) setDeaf(String(err));
+      });
     void listening
       .then(() => latest.current.read())
       .then((answer) => {
@@ -1016,12 +1033,19 @@ export function RunningGradePage<Step extends RunningStepShown>({
           return;
         }
         setUnread(undefined);
-        const now = answer.data;
+        // A grade of another copy that happens to be read here is not this page's to stop.
+        const now = answer.data !== null && latest.current.isOurs(answer.data) ? answer.data : null;
         setRuns(now !== null);
-        // A step told since is newer than the one the read says.
-        if (now !== null) setStep((told) => told ?? now);
-        // Ended before this page listened: the event is gone, and its end is read here.
-        if (now !== null && latest.current.opensItsScorecard(now)) latest.current.onEnded();
+        // What the read says stands, unless a step was told since it was asked for. Then that is
+        // newer, unless the read says the end: ended before this page listened, the event is gone,
+        // and its end is read here. A step held from before, with no end, is not drawn as running
+        // once the read says it runs no more; an end stays to say what it has to.
+        setStep((held) => {
+          if (now === null) return toldSince || held?.ended != null ? held : undefined;
+          return !toldSince || held === undefined || (held.ended === null && now.ended !== null)
+            ? now
+            : held;
+        });
       })
       .catch((err: unknown) => {
         if (live) setUnread(String(err));
@@ -1031,6 +1055,14 @@ export function RunningGradePage<Step extends RunningStepShown>({
       void listening.then((stop) => stop?.()).catch(() => undefined);
     };
   }, [event, plane, grade, again]);
+
+  // The one place an end opens its scorecard, however it came to: told, read, or an end that stayed
+  // on the page until what the scorecard needs held (its router chosen again). Once, for all three.
+  const opens = step !== undefined && opensItsScorecard(step);
+  // Before the browser paints, so a dead page with no notice never flashes before its scorecard.
+  useLayoutEffect(() => {
+    if (opens) latest.current.onEnded();
+  }, [opens]);
 
   const graded = of(step);
   // A read that failed with no step told says so in place, never "Reading…" for good.
@@ -1059,7 +1091,9 @@ export function RunningGradePage<Step extends RunningStepShown>({
       />
     );
   const over = step !== undefined && step.ended !== null;
-  const end = over && !opensItsScorecard(step) ? endWords(step) : undefined;
+  const end = over && !opens ? endWords(step) : undefined;
+  // What it holds is not being kept up, by its listen or its read, while there is more to follow.
+  const lost = over ? undefined : (deaf ?? unread);
   return (
     <ReviewPage
       label={`Grading ${graded}`}
@@ -1067,7 +1101,7 @@ export function RunningGradePage<Step extends RunningStepShown>({
       summary={over ? "It has ended." : "Stopping keeps what ran so far."}
       summaryReserve={["It has ended.", "Stopping keeps what ran so far."]}
       onCancel={onBack}
-      cancel={{ children: "Leave it running" }}
+      cancel={{ children: over ? back : "Leave it running" }}
       main={{
         children: "Stop",
         variant: "danger",
@@ -1099,6 +1133,27 @@ export function RunningGradePage<Step extends RunningStepShown>({
           onDismiss={() => setStopRefused(undefined)}
         >
           {stopRefused}
+        </Notice>
+      )}
+      {lost !== undefined && (
+        <Notice
+          cause={`${whose}-grade-not-listening:${grade}`}
+          tone="trouble"
+          label="Not following"
+          fixes={[
+            {
+              label: "Try again",
+              onPress: () => {
+                setDeaf(undefined);
+                setUnread(undefined);
+                setAgain((n) => n + 1);
+              },
+            },
+          ]}
+        >
+          <span data-testid={`${whose}-grade-not-listening`}>
+            {`This page can't follow the grade: ${lost}`}
+          </span>
         </Notice>
       )}
       {end !== undefined && (
@@ -1157,16 +1212,10 @@ export function GradeRunningPage({
       plane={plane}
       grade={grade}
       event={SKILL_GRADE}
-      isOurs={(step) => step.skill === name && step.draft === (draft ?? null)}
-      read={async () => {
-        const answer =
-          draft === undefined
-            ? await commands.skillGrades(plane, level, name)
-            : await commands.skillDraftGrade(plane, draft);
-        if (answer.status !== "ok") return answer;
-        const now = answer.data.running;
-        return { status: "ok", data: now !== null && now.grade === grade ? now : null };
-      }}
+      isOurs={(step) =>
+        step.skill === name && sameLevel(step.level, level) && step.draft === (draft ?? null)
+      }
+      read={() => commands.skillGradeRunning(plane, grade)}
       of={() => (draft === undefined ? name : `the draft of ${name}`)}
       opensItsScorecard={(step) => step.ended !== null && step.said === null}
       // An end with words to say: something went wrong on the way (not recorded, chats that did
@@ -1181,6 +1230,7 @@ export function GradeRunningPage({
       })}
       onEnded={onEnded}
       onBack={onBack}
+      back="Back to its grades"
     />
   );
 }

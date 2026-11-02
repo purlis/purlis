@@ -514,7 +514,7 @@ import {
   useChatMoves,
   useChatMovesHeard,
 } from "./chatMoves";
-import { saveLimits, usePools } from "./pools";
+import { readRunnerStage, saveLimits, usePools } from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
@@ -3520,6 +3520,7 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the picker's start is in flight: the ref is the guard, the state is the button. */
   const startingNow = useRef(false);
   const [starting, setStarting] = useState(false);
+  const readStage = useCallback(() => readRunnerStage(plane, ofWorkspace), [plane, ofWorkspace]);
   /** The person cancelled the start in flight: what it answers is said to nobody. */
   const startLeft = useRef(false);
   /** Which start is the dialog's: one the person cancelled may still be winding down. */
@@ -9309,7 +9310,7 @@ export const PlaneView = memo(function PlaneView({
         </Notice>
       )}
       {/* **A Smart close that saved its record with no pass** (#1361): the chat ran it, and
-          purlis did not see /smart-close typed in its pane, so its tab stayed open. Never a
+          purlis did not see /purlis-smart-close typed in its pane, so its tab stayed open. Never a
           silent miss: one press closes it, as Close would. Only while its tab is there. */}
       {keptOpen.map(({ session, name }) => (
         <Notice
@@ -9318,8 +9319,8 @@ export const PlaneView = memo(function PlaneView({
           fixes={[{ label: "Close tab", onPress: () => closeKeptOpen(session) }]}
           onDismiss={() => forgetKeptOpen(session)}
         >
-          {name} saved its session record. purlis did not see <code>/smart-close</code> typed in it,
-          so its tab stayed open.
+          {name} saved its session record. purlis did not see <code>/purlis-smart-close</code> typed
+          in it, so its tab stayed open.
         </Notice>
       ))}
 
@@ -10462,6 +10463,7 @@ export const PlaneView = memo(function PlaneView({
                 // Where it starts, by name (R8): the workspace in front, else the project.
                 place={ofWorkspace ?? projectName(plane)}
                 starting={starting}
+                readStage={readStage}
                 prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
                 trouble={pickerTrouble}
                 // Only beside the refusal it was asked for, never beside a later one.

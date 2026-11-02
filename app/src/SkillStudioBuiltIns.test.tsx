@@ -230,9 +230,9 @@ describe("Make my own copy", () => {
     });
     const name = within(dialog).getByRole("textbox", { name: "New name" });
     await user.clear(name);
-    await user.type(name, "handoff");
+    await user.type(name, "purlis-handoff");
     expect(within(dialog).getByRole("alert")).toHaveTextContent(
-      "That name belongs to a built-in skill; pick another, or make a copy.",
+      "A name starting with purlis- belongs to purlis; pick another.",
     );
     expect(within(dialog).getByRole("button", { name: "Make the copy" })).toBeDisabled();
   });

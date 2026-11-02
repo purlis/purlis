@@ -519,7 +519,7 @@ pub fn record(root: &Path, new: &New) -> Result<Recorded, Refused> {
     }
     crate::rewrite::create_dir_all(&dir)?;
     let path = {
-        let _held = crate::rewrite::Lock::on(&dir);
+        let _held = crate::rewrite::Lock::bounded(&dir)?;
         let mut n = 1;
         let path = loop {
             let candidate = dir.join(name(n));
