@@ -230,6 +230,8 @@ export function GradesTab({
 
   // Each answer is taken only in its own shape: a core that answers another leaves it unread.
   const rows = Array.isArray(grades.data?.grades) ? grades.data.grades : [];
+  // The column is a grade's that ran outcome evals: a list with none draws as it always did.
+  const anyEvals = rows.some((row) => row.outcome_arms !== null);
   const tests = typeof grades.data?.tests === "number" ? grades.data.tests : undefined;
   // A skill with outcome evals alone is graded too (SK-55).
   const evals = typeof grades.data?.evals === "number" ? grades.data.evals : 0;
@@ -357,7 +359,7 @@ export function GradesTab({
               <TableColumn align="end">With it</TableColumn>
               <TableColumn align="end">Without it</TableColumn>
               <TableColumn align="end">Previous</TableColumn>
-              <TableColumn align="end">Outcome evals</TableColumn>
+              {anyEvals && <TableColumn align="end">Outcome evals</TableColumn>}
               <TableColumn align="end">Spent</TableColumn>
               <TableColumn>Ended</TableColumn>
               <TableColumn hideName>Scorecard</TableColumn>
@@ -375,9 +377,11 @@ export function GradesTab({
                   <TableCell align="end">
                     {row.arms.previous === null ? "—" : pointsSaid(row.arms.previous)}
                   </TableCell>
-                  <TableCell align="end">
-                    {row.outcome_arms === null ? "—" : pointsSaid(row.outcome_arms.with)}
-                  </TableCell>
+                  {anyEvals && (
+                    <TableCell align="end">
+                      {row.outcome_arms === null ? "—" : pointsSaid(row.outcome_arms.with)}
+                    </TableCell>
+                  )}
                   <TableCell align="end">{spentSaid(row)}</TableCell>
                   <TableCell textValue={row.ended}>
                     <Badge variant={OUTCOME_SAID[row.outcome].badge}>

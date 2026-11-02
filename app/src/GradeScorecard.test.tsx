@@ -273,7 +273,7 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
       "an outcome eval's fails that run",
     );
     expect(screen.getByTestId("grade-scorecard-eval-why")).toHaveTextContent(
-      "Run 1: Its chat asked for the tool Bash.",
+      "Eval 4, without it, run 1: Its chat asked for the tool Bash.",
     );
     const expectation = screen.getByTestId("grade-scorecard-expectation");
     expect(expectation).toHaveTextContent("It is filled");

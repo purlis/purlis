@@ -164,6 +164,9 @@ const CARD: GradeScorecard = {
 const EVALS_CARD: GradeScorecard = {
   ...CARD,
   tests: [],
+  delta: null,
+  against: null,
+  delta_without: null,
   arms: { with: null, without: null, previous: null },
   outcome_arms: { with: 75, without: 0, previous: null },
   evals: [

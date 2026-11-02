@@ -416,8 +416,9 @@ export function evalSaid(arm: ScoredEvalArm | undefined): string {
   return [`${arm.points}% over ${counted(arm.runs, "run", "runs")}`, ...failed].join(". ");
 }
 
-/** One outcome eval in one arm, in its cell: its rate, why any run failed, and each run's chat and
- *  judge, one press away where this machine kept them. */
+/** One outcome eval in one arm, in its cell: its rate, and each run's chat and judge, one press
+ *  away where this machine kept them. Why a run failed is said under the table, in a line wide
+ *  enough to read. */
 function EvalCell({
   arm,
   id,
@@ -456,19 +457,6 @@ function EvalCell({
         ...(run.chat === null ? [] : [button(run.chat, "Chat")]),
         ...(run.judge === null ? [] : [button(run.judge, "Judge")]),
       ])}
-      {arm.results.flatMap((run) =>
-        run.failed === null
-          ? []
-          : [
-              <span
-                className="honest"
-                key={`why-${run.run}`}
-                data-testid="grade-scorecard-eval-why"
-              >
-                {`Run ${run.run}: ${run.failed}`}
-              </span>,
-            ],
-      )}
     </span>
   );
 }
@@ -524,6 +512,23 @@ export function OutcomeEvalsTable({
           ))}
         </TableBody>
       </Table>
+      {evals.flatMap((one) =>
+        one.arms.flatMap((arm) =>
+          arm.results.flatMap((run) =>
+            run.failed === null
+              ? []
+              : [
+                  <p
+                    className="honest"
+                    key={`${one.id}-${arm.arm}-${run.run}`}
+                    data-testid="grade-scorecard-eval-why"
+                  >
+                    {`Eval ${one.id}, ${ARM_SAID[arm.arm].toLowerCase()}, run ${run.run}: ${run.failed}`}
+                  </p>,
+                ],
+          ),
+        ),
+      )}
       {evals.map((one) => (
         <ul aria-label={`Expectations of outcome eval ${one.id}`} key={one.id}>
           {one.expectations.map((text, at) => (
