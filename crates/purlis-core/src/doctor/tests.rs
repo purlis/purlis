@@ -1040,13 +1040,16 @@ fn a_path_in_a_command_is_one_word_the_shell_reads_back_whole() {
         "/caf\u{e9}/\u{202e}rtl",
         "/back\\slash'",
     ] {
-        let word = super::shell_path(Path::new(path));
+        let word = crate::shown::shell_path(Path::new(path));
         assert_eq!(as_the_shell_reads_it("bash", &word), path, "{word}");
         assert!(!word.contains('\n'), "{word}");
     }
-    assert_eq!(super::shell_path(Path::new("/plain/path")), "/plain/path");
     assert_eq!(
-        as_the_shell_reads_it("sh", &super::shell_word("a;$b'c")),
+        crate::shown::shell_path(Path::new("/plain/path")),
+        "/plain/path"
+    );
+    assert_eq!(
+        as_the_shell_reads_it("sh", &crate::shown::shell_word("a;$b'c")),
         "a;$b'c"
     );
 }
@@ -1054,7 +1057,7 @@ fn a_path_in_a_command_is_one_word_the_shell_reads_back_whole() {
 #[test]
 fn a_path_in_a_command_is_never_shortened() {
     let long = "/deep".repeat(400);
-    let word = super::shell_path(Path::new(&long));
+    let word = crate::shown::shell_path(Path::new(&long));
     assert_eq!(word, long);
     assert!(word.chars().count() > super::PATH_DISPLAY_LIMIT);
 }
