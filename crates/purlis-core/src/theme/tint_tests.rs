@@ -163,7 +163,7 @@ fn a_theme_names_the_tokens_a_workspace_s_colour_turns() {
     );
     assert_eq!(
         moved(&theme, &tinted(&theme, "teal")),
-        ["surface.raised", "accent.base"]
+        ["surface.raised", "accent.base", "accent.text"]
     );
 }
 
@@ -1456,9 +1456,10 @@ fn accent_words_drawn_as_the_accent_are_turned_exactly_as_it_is() {
 
 #[test]
 fn a_tie_to_the_accent_takes_no_colour_from_anything() {
-    let light = built_ins()
+    let light = purlis()
+        .appearances
         .iter()
-        .find(|one| one.value("accent.text") == "#403667")
+        .find(|one| one.id == "light")
         .expect("Purlis light");
     let without: Vec<_> = tint::held_rules(light)
         .into_iter()
