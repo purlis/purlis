@@ -474,6 +474,7 @@ describe("the consent floors under every tint (#2526)", () => {
         from: "danger.base",
         distance: 0.1,
         alone: false,
+        words: false,
       });
   });
 
@@ -518,6 +519,7 @@ describe("the consent floors under every tint (#2526)", () => {
         from: "state.waiting",
         distance: 0.1,
         alone: true,
+        words: false,
       });
     const apart = CLASSIC_THEME.tint.apart;
     expect(chromaFor("accent.base", 0.05, apart, 0.01, 0.01)).toBe(0.01);
