@@ -8295,12 +8295,6 @@ nav.piece-files-head {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-/* Agent identity (#4485): the tab, and the flow Pool setup's step shares. */
-.agent-identity {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  width: 100%;
   max-width: 660px;
   margin: 0 auto;
   padding: var(--space-8) var(--space-6);
@@ -8310,17 +8304,6 @@ nav.piece-files-head {
   gap: var(--space-2);
 }
 .pool-setup-title {
-.agent-identity-head,
-.agent-identity-row {
-  display: grid;
-  gap: var(--space-3);
-}
-.agent-identity-row-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-.agent-identity-title {
   margin: 0;
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-strong);
@@ -8395,6 +8378,35 @@ nav.piece-files-head {
     border-right: 0;
     border-bottom: 1px solid var(--border-subtle);
   }
+}
+
+/* Agent identity (#4485): the tab, and the flow Pool setup's step shares. */
+.agent-identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+  max-width: 660px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6);
+}
+.agent-identity-head,
+.agent-identity-row {
+  display: grid;
+  gap: var(--space-3);
+}
+.agent-identity-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.agent-identity-title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--line-height-tight);
+  outline: none;
+}
 .agent-identity-h3 {
   margin: 0;
   font-size: var(--font-size-md);
