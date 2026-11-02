@@ -103,12 +103,28 @@ type Core = {
   planeChanged: (plane: string, answer: string) => Promise<void>;
   /** Holds every `plane_sidebar` answer from now on until the function it answers is called. */
   holdSidebar: () => () => void;
+  /** Writes every `plane_sidebar` answer from now on with each object's keys in reverse order:
+   *  the same answer, as a core built another way could send it. */
+  reverseSidebarKeys: () => void;
 };
+
+/** `value` with the keys of every object in it in reverse order. */
+const keysReversed = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(keysReversed)
+    : value !== null && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value)
+            .reverse()
+            .map(([key, inner]) => [key, keysReversed(inner)]),
+        )
+      : value;
 
 function core(shape: Shape): Core {
   const asked: Asked[] = [];
   const listening = new Map<string, number[]>();
   let held: Promise<void> | undefined;
+  let reversed = false;
   const roots = Array.from({ length: shape.projects }, (_, n) => rootOf(n));
   const chats = new Map(
     roots.map((root, n) => [root, chatsOf(root, shape, shape.chatsIn?.[n] ?? shape.chats)]),
@@ -130,8 +146,8 @@ function core(shape: Shape): Core {
     if (cmd === "planes_to_restore")
       return { windows: [{ planes: roots, active: 0 }], dropped: [], gone: [] };
     if (cmd === "open_plane") return { plane: given.path, ask: null };
-    if (cmd === "plane_sidebar")
-      return {
+    if (cmd === "plane_sidebar") {
+      const answer = {
         root: plane ?? "",
         workspaces: Array.from({ length: shape.workspaces }, (_, w) => ({
           name: `w${w}`,
@@ -146,6 +162,8 @@ function core(shape: Shape): Core {
         persona: "steward",
         unfiled: [],
       };
+      return reversed ? keysReversed(answer) : answer;
+    }
     if (cmd === "opened_chats") return open;
     // A split starts a chat, on the profile its picker offers.
     if (cmd === "start_options") return START_OPTIONS;
@@ -195,6 +213,9 @@ function core(shape: Shape): Core {
         };
       });
       return release;
+    },
+    reverseSidebarKeys: () => {
+      reversed = true;
     },
   };
 }

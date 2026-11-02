@@ -69,6 +69,24 @@ describe("when the window reads the sidebar again", () => {
     expect(windowCommits.count).toBe(0);
   });
 
+  it("commits nothing for an equal answer whose keys come in another order", async () => {
+    const { asked, planeChanged, holdSidebar, reverseSidebarKeys } = await aWindow(SHAPE);
+    reverseSidebarKeys();
+    const release = holdSidebar();
+    const from = asked.length;
+    await planeChanged(rootOf(0), "sidebar");
+    await settled(asked);
+    expect(sidebarReads(asked, from)).toBe(1);
+
+    windowCommits.count = 0;
+    await act(async () => {
+      release();
+    });
+    await settled(asked);
+
+    expect(windowCommits.count).toBe(0);
+  });
+
   it("reads it again when a chat is opened", async () => {
     const { asked } = await aWindow(SHAPE);
     const from = asked.length;

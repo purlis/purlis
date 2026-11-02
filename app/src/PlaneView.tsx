@@ -15,6 +15,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { dequal } from "dequal/lite";
 import { listen } from "./here";
 import { CHAT_RESTORED, isRestoring, restoredSince, type ChatRestored } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
@@ -1916,6 +1917,8 @@ export const PlaneView = memo(function PlaneView({
   //
   // **An answer equal to the one held is not drawn** (#4729): the state keeps the object it
   // holds, so nothing that reads the sidebar is drawn again for a read that found no change.
+  // Equal is structural (`dequal`): it walks the two answers once and does not care in which
+  // order a key was written, where comparing them as JSON serialised both whole each time.
   //
   // **Only the newest read is drawn.** The core reads the sidebar off the window's thread
   // (SC-2), so two reads can answer in either order, and one asked before a workspace was
@@ -1938,9 +1941,7 @@ export const PlaneView = memo(function PlaneView({
           setSidebar(undefined);
           return;
         }
-        setSidebar((held) =>
-          held !== undefined && JSON.stringify(held) === JSON.stringify(next) ? held : next,
-        );
+        setSidebar((held) => (held !== undefined && dequal(held, next) ? held : next));
         // Focus follows the plane rather than being guessed: whichever workspace was picked,
         // while it still exists — and otherwise **the workspace of the chat in front**,
         // because the strip below shows that workspace's chats and a strip that opened on
