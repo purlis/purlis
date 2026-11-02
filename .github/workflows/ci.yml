@@ -263,6 +263,8 @@ jobs:
   # port. Named, and `#[ignore]`d everywhere else, so no other job needs git-lfs; `--no-tests fail`
   # and the tests' own check of `CI` make a lost test or a lost git-lfs red, never a skip. No
   # outside network: the package comes from the runner's cache or mirror, and the server is ours.
+  # Any test in a module named `real_lfs` is run here, wherever it lives: a push from a wired clone,
+  # `change push` and a first publish, end to end with a fake `gh` first on `PATH` (#4516).
   git-lfs:
     name: real git-lfs (a clone's large files)
     needs: changes

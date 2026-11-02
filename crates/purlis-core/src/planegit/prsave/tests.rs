@@ -60,7 +60,12 @@ fn push_first(root: &Path, url: &str) -> (Result<(), Box<PushResult>>, String) {
         said.push_str(&line.to_string());
         said.push('\n');
     };
-    let got = push_save_branch(root, url, "", SAVE, "main", &Kept::default(), &mut say);
+    let reach = Reach {
+        https: url,
+        helper: "",
+        head: "HEAD",
+    };
+    let got = push_save_branch(reach, root, SAVE, "main", &Kept::default(), &mut say);
     (got, said)
 }
 

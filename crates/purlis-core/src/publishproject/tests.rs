@@ -862,3 +862,43 @@ fn a_project_whose_files_each_have_one_name_is_published() {
     let files = in_the_remote(&bare, &["ls-tree", "-r", "--name-only", BRANCH]);
     assert_eq!(files.lines().collect::<Vec<_>>(), ["notes.md", "staged.md"]);
 }
+
+#[test]
+fn a_tag_called_as_the_branch_leaves_the_branch_its_own_name() {
+    // `symbolic-ref --short HEAD` answers `heads/main` here.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("notebook");
+    a_repository_with_a_commit(&root);
+    assert!(crate::testgit::run(&root, &["tag", BRANCH]).ok());
+
+    assert_eq!(branch_of(&root).as_deref(), Ok(BRANCH));
+}
+
+/// #4515: a first push names its commit, and the branch still follows `origin`, as
+/// `--set-upstream` left it.
+#[test]
+fn a_first_push_of_a_branch_gone_bad_sends_nothing_and_a_landed_one_follows_origin() {
+    let dir = tempfile::tempdir().unwrap();
+    let bare = dir.path().join("remote.git");
+    a_bare(&bare);
+    let root = dir.path().join("notebook");
+    a_repository_with_a_commit(&root);
+
+    let garbage = root.join(".git/refs/heads").join(BRANCH);
+    let good = std::fs::read(&garbage).unwrap();
+    std::fs::write(&garbage, format!("{}\n", "0".repeat(40))).unwrap();
+    assert!(crate::createproject::first_refspec(&root, BRANCH).is_err());
+    std::fs::write(&garbage, good).unwrap();
+
+    let answer = published_to(&root, &bare);
+
+    assert!(matches!(answer, Ok(Created::Made { .. })), "{answer:?}");
+    let key = format!("branch.{BRANCH}.remote");
+    assert_eq!(
+        crate::testgit::run(&root, &["config", &key]).out.trim(),
+        "origin"
+    );
+    assert!(!in_the_remote(&bare, &["for-each-ref"]).trim().is_empty());
+}
+
+mod real_lfs;

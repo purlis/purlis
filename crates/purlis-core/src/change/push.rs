@@ -11,10 +11,17 @@
 //! Every destination is printed before anything is pushed, so an agent's run is readable.
 //!
 //! **What it never does.** It commits nothing, and it never force-pushes: each push is the one
-//! refspec `refs/heads/<branch>:refs/heads/<branch>`, with no `+` and no flag, so it can only
-//! fast-forward the remote's branch or create it. It ignores a repo's `[repos.<name>] mode`,
-//! `off` included: `off` governs saves, and this verb is run by hand over repos somebody named
-//! (ADR 0060 D4, ADR 0051 amended).
+//! refspec `<commit>^{commit}:refs/heads/<branch>`, with no `+` and no flag, so it can only
+//! fast-forward the remote's branch or create it. It ignores a repo's `[repos.<name>] mode`, `off`
+//! included: `off` governs saves, and this verb is run by hand over repos somebody named (ADR 0060
+//! D4, ADR 0051 amended).
+//!
+//! **It pushes the commit, not the name** (#4515). git takes a local ref that holds garbage for a
+//! ref that is not there, and a push of that name for a push of nothing, which deletes the remote
+//! branch and exits 0 (git 2.50.1). So what git is handed is the commit [`plan`] resolved, the
+//! one the window showed and the upload and the scan read, and a branch that is no longer at it
+//! is not pushed. A member's branch comes out of a committed record, so a name git's own grammar
+//! refuses is not pushed either: a `:` in one would end the refspec somewhere else.
 //!
 //! **The destination printed is the one git pushes to.** A repo whose git config would send
 //! the push elsewhere is refused, naming the setting, and the push sets on its own command
@@ -265,20 +272,18 @@ fn plan(
             "its origin is not a GitHub or GitLab URL purlis can push to over HTTPS".into(),
         );
     };
-    let local = git::run(
-        &clone.path,
-        &[
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            &format!("refs/heads/{branch}"),
-        ],
-        git::READ,
-    );
-    let head = match local {
-        Ok(run) if run.ok() => run.out.trim().to_string(),
-        _ => String::new(),
-    };
+    if !git::is_a_ref_name(&clone.path, &crate::worktree::name::as_ref(branch)) {
+        return fail(
+            say,
+            format!(
+                "git does not take {} for a branch name, so it is not pushed. Set the member's \
+                 branch in workspaces/{ws}/changes/{}.json",
+                named(branch),
+                named(slug)
+            ),
+        );
+    }
+    let head = commit_at(&clone.path, branch).unwrap_or_default();
     if head.is_empty() {
         return fail(
             say,
@@ -337,6 +342,11 @@ fn plan(
         to,
         base,
     })
+}
+
+/// The commit `branch` is at in `clone` ([`git::commit_at`]).
+fn commit_at(clone: &Path, branch: &str) -> Option<String> {
+    git::commit_at(clone, &crate::worktree::name::as_ref(branch))
 }
 
 /// `Ok` when git, in `clone`, pushes to `to` itself; else why not, naming the setting.
@@ -815,20 +825,39 @@ fn pushing(
     u8::from(failed > 0)
 }
 
+/// What git is handed to push: the commit planned by its id, which unlike a ref's name cannot
+/// come to mean nothing (#4515).
+fn refspec_of(p: &Plan) -> String {
+    git::push_refspec(&p.head, &crate::worktree::name::as_ref(&p.branch))
+}
+
 /// Push one member's branch to its own name on its origin, and nothing else. `false` with
-/// git's own words said when the remote refused it.
+/// git's own words said when the remote refused it, or when the branch is no longer at the
+/// commit planned.
 fn pushed(p: &Plan, say: &mut dyn FnMut(Say)) -> bool {
-    let refspec = format!("refs/heads/{0}:refs/heads/{0}", p.branch);
+    if commit_at(&p.clone, &p.branch).as_deref() != Some(p.head.as_str()) {
+        say(Say::Fail(
+            format!(
+                "{}: not pushed: its branch {} is no longer at {}. Look at the branch, then push \
+                 again.",
+                named(&p.repo),
+                named(&p.branch),
+                short(&p.head)
+            )
+            .into(),
+        ));
+        return false;
+    }
+    let refspec = refspec_of(p);
     let helper = forge::helper_for(&p.on.forge);
     let mut args: Vec<&str> = PUSH_ONLY_THE_BRANCH.to_vec();
     args.extend(["push", p.to.as_str(), refspec.as_str()]);
     // Its Git LFS objects first: a hook would have sent them, and purlis's git runs none (#4399).
-    let tip = format!("refs/heads/{}", p.branch);
     if let Err(why) = crate::lfsupload::before_push(&crate::lfsupload::Push {
         dir: &p.clone,
         helper: Some(&helper),
         args: &args,
-        tip: &tip,
+        tip: &p.head,
         remote: "origin",
     }) {
         say(Say::Fail(
@@ -863,11 +892,7 @@ fn pushed(p: &Plan, say: &mut dyn FnMut(Say)) -> bool {
     }
     // Kept in step, so the repo's own view of its remote matches what the remote now holds.
     let tracking = format!("refs/remotes/origin/{}", p.branch);
-    let moved = git::run(
-        &p.clone,
-        &["update-ref", &tracking, &format!("refs/heads/{}", p.branch)],
-        git::READ,
-    );
+    let moved = git::run(&p.clone, &["update-ref", &tracking, &p.head], git::READ);
     if !moved.is_ok_and(|run| run.ok()) {
         say(Say::Warn(
             format!(

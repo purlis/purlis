@@ -403,7 +403,10 @@ describe("a relaunch", () => {
     render(<App />);
     // Someone back on a machine that has been through the steps is counted through nothing.
     await screen.findByRole("button", { name: "Create a project" });
-    expect(screen.queryByRole("navigation", { name: "Setting up" })).not.toBeInTheDocument();
+    // The button can be drawn before the kept `finished_once` has been read.
+    await waitFor(() =>
+      expect(screen.queryByRole("navigation", { name: "Setting up" })).not.toBeInTheDocument(),
+    );
     const person = userEvent.setup();
     await person.click(await screen.findByRole("button", { name: "Create a project" }));
     await openRepoByPath(REPO);

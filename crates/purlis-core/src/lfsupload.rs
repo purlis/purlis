@@ -71,6 +71,7 @@ struct Pointer {
 #[derive(Clone)]
 pub(crate) struct StandIn {
     pub endpoint: String,
+    /// `None` leaves the upload the helper the push has, as the product does.
     pub helper: Option<String>,
     pub stall: Duration,
 }
@@ -682,7 +683,8 @@ fn upload(push: &Push, endpoint: &str, store: &Store, oids: &[&str]) -> Result<(
     #[cfg(test)]
     let helper = stood_in
         .as_ref()
-        .map_or(push.helper, |one| one.helper.as_deref());
+        .and_then(|one| one.helper.as_deref())
+        .or(push.helper);
     #[cfg(not(test))]
     let helper = push.helper;
     #[cfg(test)]

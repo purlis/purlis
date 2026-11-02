@@ -29,7 +29,13 @@ use std::process::Command;
 /// and answer what it printed. Fails the calling test unless every one of them ran and passed:
 /// a filter that matches nothing passes too, so the count is the evidence they ran.
 pub fn rerun(tests: &[&str], env: &[(&str, &OsStr)]) -> String {
-    rerun_with(tests, env, false)
+    rerun_with(tests, env, false, false)
+}
+
+/// [`rerun`], for a test that is `#[ignore]`d everywhere but the job that runs it by name: the
+/// child is told to run it too, or the count of what passed would stop the caller.
+pub fn rerun_ignored(tests: &[&str], env: &[(&str, &OsStr)]) -> String {
+    rerun_with(tests, env, false, true)
 }
 
 /// Set on a child [`rerun_steered`] started: its steering variables were chosen by the test,
@@ -43,12 +49,15 @@ const STEERED_ON_PURPOSE: &str = "TESTRUN_STEERED_ON_PURPOSE";
 /// the ones a test hands its own child. The child this starts is marked, so the guard lets the
 /// variables in `env` through; any other `CHARTER_*` of the shell is still removed first.
 pub fn rerun_steered(tests: &[&str], env: &[(&str, &OsStr)]) -> String {
-    rerun_with(tests, env, true)
+    rerun_with(tests, env, true, false)
 }
 
-fn rerun_with(tests: &[&str], env: &[(&str, &OsStr)], steered: bool) -> String {
+fn rerun_with(tests: &[&str], env: &[(&str, &OsStr)], steered: bool, ignored: bool) -> String {
     let mut child = Command::new(std::env::current_exe().expect("the test binary"));
     child.args(["--exact", "--test-threads=1", "--nocapture"]);
+    if ignored {
+        child.arg("--include-ignored");
+    }
     child.args(tests);
     for (name, _) in std::env::vars_os() {
         let name = name.to_string_lossy();

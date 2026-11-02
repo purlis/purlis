@@ -397,13 +397,10 @@ impl OnThisMachine {
 
 /// The branch the project is on, or why it cannot be pushed.
 fn branch_of(root: &Path) -> Result<String, String> {
-    let run = git::run(
-        root,
-        &["symbolic-ref", "--quiet", "--short", "HEAD"],
-        git::READ,
-    )
-    .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;
-    let branch = run.line().trim().to_string();
+    // The full ref, not `--short`: that answers `heads/main` where a tag is called `main`.
+    let run = git::run(root, &["symbolic-ref", "--quiet", "HEAD"], git::READ)
+        .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;
+    let branch = run.line().trim().strip_prefix("refs/heads/").unwrap_or("");
     if !run.ok() || branch.is_empty() {
         return Err(
             "The project is on no branch (a detached HEAD), so purlis cannot tell which history \
@@ -411,19 +408,13 @@ fn branch_of(root: &Path) -> Result<String, String> {
                 .to_string(),
         );
     }
-    Ok(branch)
+    Ok(branch.to_string())
 }
 
 /// **What the push would publish, scanned before it is sent**: the whole history of `branch`,
 /// since the remote has nothing yet. The pushes purlis makes run no hooks, so this is the scan
 /// a `pre-push` would have made. It refuses on a credential only, as a save's push does.
-fn scanned(root: &Path, branch: &str, url: &str) -> Result<(), String> {
-    let head = git::run(root, &["rev-parse", "HEAD"], git::READ)
-        .ok()
-        .filter(git::Run::ok)
-        .map(|run| run.line().trim().to_string())
-        .filter(|head| !head.is_empty())
-        .ok_or("The project has no commit to publish")?;
+fn scanned(root: &Path, head: &str, branch: &str, url: &str) -> Result<(), String> {
     let theirs = "0".repeat(head.len().max(40));
     let updates = format!("HEAD {head} refs/heads/{branch} {theirs}\n");
     let scan = crate::diffscan::pushed(root, "origin", url, &updates)
@@ -504,11 +495,18 @@ impl Hands for OnThisMachine {
         let helper = self.helper(plan)?;
         let branch = branch_of(root)?;
         let url = self.push_url(made);
-        scanned(root, &branch, &url)?;
+        // The commit scanned is the commit pushed, by its id (#4515).
+        let name = crate::worktree::name::as_ref(&branch);
+        let head =
+            git::commit_at(root, &name).ok_or("The project has no commit to publish".to_owned())?;
+        scanned(root, &head, &branch, &url)?;
         git_in(root, &["remote", "add", "origin", &url], "name the remote")?;
-        let args = ["push", "-q", "--set-upstream", "origin", branch.as_str()];
+        let refspec = git::push_refspec(&head, &name);
+        let args = ["push", "-q", "origin", refspec.as_str()];
         let Some(helper) = helper else {
-            return crate::createproject::pushed_to_a_folder(root, &args, "push the project");
+            crate::createproject::pushed_to_a_folder(root, &args, "push the project")?;
+            crate::createproject::follows_origin(root, &branch);
+            return Ok(());
         };
         // Its Git LFS objects first: a hook would have sent them, and purlis's git runs none
         // (#4399).
@@ -516,7 +514,7 @@ impl Hands for OnThisMachine {
             dir: root,
             helper: Some(&helper),
             args: &args,
-            tip: "HEAD",
+            tip: &head,
             remote: "origin",
         })?;
         let run = git::run_network(root, Some(&helper), &args)
@@ -528,6 +526,7 @@ impl Hands for OnThisMachine {
                 git_words(&run)
             ));
         }
+        crate::createproject::follows_origin(root, &branch);
         // The project's remote from here on: an automatic save pushes to it with purlis's
         // helper, and to no other.
         crate::forge::gitcredential::record_push_remote(root, &url);

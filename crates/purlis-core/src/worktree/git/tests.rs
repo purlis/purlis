@@ -811,15 +811,16 @@ fn only_the_exact_helper_purlis_wires_keeps_the_lfs_filter() {
 }
 
 #[test]
-fn a_filter_outside_the_wired_helpers_case_is_not_kept_offline() {
+fn a_filter_outside_a_wired_clone_is_kept_offline_too() {
+    // #4400: a repository no policy wired has the person's filter and the person's helpers, and a
+    // chat can commit the `.lfsconfig` that says where the filter goes.
     for named in [
-        // Nothing of the repository's: the person's own helper and filter, as before.
         listing(&[("global", "credential.helper", "osxkeychain")]),
-        // The value in the person's own config is not the wiring of this repository.
         listing(&[("global", "credential.helper", "!gh auth git-credential")]),
         listing(&[("local", "commit.gpgsign", "false")]),
+        listing(&[]),
     ] {
-        assert!(!lfs_filter_offline(&String::from_utf8_lossy(&named)));
+        assert!(lfs_filter_offline(&String::from_utf8_lossy(&named)));
     }
 }
 
@@ -836,6 +837,21 @@ fn a_wired_clones_filter_is_left_no_helper_off_the_network() {
     // On the network, the helper the rule names is the one left, and git itself needs it.
     let on = run_network(repo.path(), Some("!the-rules"), &["var", "-l"]).expect("git runs");
     assert_eq!(helpers_read(&on).first(), Some(&"!the-rules"), "{}", on.out);
+}
+
+#[test]
+fn a_link_in_the_lfs_store_holds_the_filter_outside_a_wired_clone_too() {
+    // #4400: the filter would write a chat's bytes where the link says, outside its sandbox.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let held = |dir: &Path| {
+        let said = run(dir, &["var", "-l"], READ).expect("git runs");
+        said.out.contains("filter.lfs.process=\n")
+    };
+    let plain = repo();
+    assert!(!held(plain.path()));
+    let linked = repo();
+    std::os::unix::fs::symlink(elsewhere.path(), linked.path().join(".git/lfs")).unwrap();
+    assert!(held(linked.path()));
 }
 
 #[test]
@@ -899,6 +915,13 @@ fn the_lfs_store_checked_is_the_one_git_finds_from_a_subfolder() {
     let sub = outer.path().join("sub");
     std::fs::create_dir_all(sub.join(".git")).unwrap();
     assert!(held(&sub));
+    // And one holding a HEAD file, which git climbs past just the same (#4402).
+    let outer = wired();
+    std::os::unix::fs::symlink(elsewhere.path(), outer.path().join(".git/lfs")).unwrap();
+    let sub = outer.path().join("sub");
+    std::fs::create_dir_all(sub.join(".git")).unwrap();
+    std::fs::write(sub.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    assert!(held(&sub));
     let other = wired();
     let sub = other.path().join("sub");
     std::fs::create_dir(&sub).unwrap();
@@ -932,10 +955,389 @@ fn an_lfs_store_moved_by_any_config_holds_the_filter_of_a_wired_clone() {
 }
 
 #[test]
-fn a_repository_with_no_wired_helper_is_given_no_reset_of_the_persons_helpers() {
+fn a_repository_with_no_wired_helper_is_left_none_of_the_persons_helpers_off_the_network() {
+    // #4400. `git var -l` says what git, and so each git-lfs and git credential it starts, reads.
     let repo = repo();
-    let run = run(repo.path(), &["var", "-l"], READ).expect("git runs");
-    assert_ne!(helpers_read(&run).first(), Some(&""), "{}", run.out);
+    let off = run(repo.path(), &["var", "-l"], READ).expect("git runs");
+    assert_eq!(helpers_read(&off).first(), Some(&""), "{}", off.out);
+    let on = run_network(repo.path(), Some("!the-rules"), &["var", "-l"]).expect("git runs");
+    assert_eq!(helpers_read(&on).first(), Some(&"!the-rules"), "{}", on.out);
+}
+
+/// #4402: what a subfolder's `.git` holds, and whether git itself takes it: the check of the LFS
+/// store takes one only where git does, and where it does they name the same folder.
+#[test]
+fn a_git_folder_counts_for_the_lfs_store_only_where_git_itself_takes_it() {
+    let branch = "ref: refs/heads/main\n";
+    let detached = format!("{}\n", "a".repeat(40));
+    // Unicode's white space is not git's, and git reads no further than 255 bytes.
+    let past_the_read = format!("ref:{}refs/heads/main\n", " ".repeat(247));
+    let cases: [(&str, Option<&str>, &[&str], bool); 13] = [
+        ("empty", None, &[], false),
+        ("a HEAD alone", Some(branch), &[], false),
+        ("no refs", Some(branch), &["objects"], false),
+        ("no objects", Some(branch), &["refs"], false),
+        ("no HEAD", None, &["objects", "refs"], false),
+        (
+            "a HEAD of no ref",
+            Some("ref: nowhere\n"),
+            &["objects", "refs"],
+            false,
+        ),
+        (
+            "a HEAD of garbage",
+            Some("garbage\n"),
+            &["objects", "refs"],
+            false,
+        ),
+        (
+            "a vertical tab",
+            Some("ref:\u{b}refs/heads/main\n"),
+            &["objects", "refs"],
+            false,
+        ),
+        (
+            "a form feed",
+            Some("ref:\u{c}refs/heads/main\n"),
+            &["objects", "refs"],
+            false,
+        ),
+        (
+            "a no-break space",
+            Some("ref:\u{a0}refs/heads/main\n"),
+            &["objects", "refs"],
+            false,
+        ),
+        (
+            "past git's read",
+            Some(past_the_read.as_str()),
+            &["objects", "refs"],
+            false,
+        ),
+        ("on a branch", Some(branch), &["objects", "refs"], true),
+        (
+            "detached",
+            Some(detached.as_str()),
+            &["objects", "refs"],
+            true,
+        ),
+    ];
+    for (what, head, folders, git_takes) in cases {
+        let repo = repo();
+        let top = std::fs::canonicalize(repo.path()).unwrap();
+        let sub = top.join("sub");
+        let dot_git = sub.join(".git");
+        std::fs::create_dir_all(&dot_git).unwrap();
+        if let Some(head) = head {
+            std::fs::write(dot_git.join("HEAD"), head).unwrap();
+        }
+        for folder in folders {
+            std::fs::create_dir(dot_git.join(folder)).unwrap();
+        }
+
+        let asked = run(&sub, &["rev-parse", "--absolute-git-dir"], READ).expect("git runs");
+        let git_says = PathBuf::from(asked.line());
+        let checked = common_git_dir(&sub, None);
+
+        if git_takes {
+            assert_eq!(git_says, dot_git, "{what}");
+            assert_eq!(checked, Some(dot_git), "{what}");
+        } else {
+            assert_eq!(git_says, top.join(".git"), "{what}");
+            assert_eq!(checked, None, "{what}");
+        }
+    }
+}
+
+#[test]
+fn a_git_folder_whose_shape_git_could_read_another_way_counts_for_nothing() {
+    // Each of these git may take, by a road this check does not walk: held, not guessed at.
+    let whole = |at: &Path| {
+        std::fs::create_dir_all(at.join("objects")).unwrap();
+        std::fs::create_dir_all(at.join("refs")).unwrap();
+    };
+    let repo = repo();
+    let top = std::fs::canonicalize(repo.path()).unwrap();
+
+    // Its objects and refs are another folder's, which is where its store would be too.
+    let shared = top.join("shared/.git");
+    whole(&shared);
+    std::fs::write(shared.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    std::fs::write(shared.join("commondir"), "../elsewhere\n").unwrap();
+    assert_eq!(common_git_dir(&top.join("shared"), None), None);
+
+    // A HEAD that is a link.
+    let linked = top.join("linked/.git");
+    whole(&linked);
+    std::os::unix::fs::symlink("refs/heads/main", linked.join("HEAD")).unwrap();
+    assert_eq!(common_git_dir(&top.join("linked"), None), None);
+
+    // A HEAD no read may hang on, a pipe.
+    let piped = top.join("piped/.git");
+    whole(&piped);
+    let made = crate::forklock::status(Command::new("mkfifo").arg(piped.join("HEAD"))).unwrap();
+    assert!(made.success());
+    assert_eq!(common_git_dir(&top.join("piped"), None), None);
+
+    // Objects that are a file, or a link to a folder.
+    let filed = top.join("filed/.git");
+    std::fs::create_dir_all(filed.join("refs")).unwrap();
+    std::fs::write(filed.join("objects"), "").unwrap();
+    std::fs::write(filed.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    assert_eq!(common_git_dir(&top.join("filed"), None), None);
+}
+
+/// A repository whose `a.dat` falls to the filter `probe`, and that filter's config in a file
+/// aside, whose program marks that it ran: `(the folder holding it, the repository, the file, the
+/// mark)`.
+fn a_filter_aside() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let top = std::fs::canonicalize(dir.path()).unwrap();
+    let repo = top.join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    let ran = |args: &[&str]| {
+        let done = crate::testgit::run(&repo, args);
+        assert!(done.ok(), "{args:?}: {done:?}");
+    };
+    ran(&["init", "-q", "-b", "main", "."]);
+    std::fs::write(repo.join(".gitattributes"), "*.dat filter=probe\n").unwrap();
+    std::fs::write(repo.join("a.dat"), "text\n").unwrap();
+    ran(&["add", "-A"]);
+    ran(&[
+        "-c",
+        "user.name=T",
+        "-c",
+        "user.email=t@example.invalid",
+        "commit",
+        "-q",
+        "-m",
+        "one",
+    ]);
+    let mark = top.join("the-filter-ran");
+    let program = stand_in::program(
+        &top,
+        "the-filter",
+        &format!("#!/bin/sh\ntouch '{}'\ncat\n", mark.display()),
+    );
+    let aside = top.join("aside");
+    std::fs::write(
+        &aside,
+        format!(
+            "[filter \"probe\"]\n\tsmudge = {}\n\tclean = cat\n",
+            program.display()
+        ),
+    )
+    .unwrap();
+    (dir, repo, aside, mark)
+}
+
+/// `git worktree add -b <branch> <folder>` as the person's own git runs it, reading neither of
+/// this machine's own config files.
+fn plain_worktree_add(repo: &Path, branch: &str, folder: &Path) {
+    let out = crate::forklock::output(
+        Command::new("git")
+            .args(["worktree", "add", "-q", "-b", branch])
+            .arg(folder)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .current_dir(repo),
+    )
+    .unwrap();
+    assert!(out.status.success(), "{out:?}");
+}
+
+#[test]
+fn a_head_that_names_no_commit_is_not_pushed_and_its_remote_branch_stays() {
+    // #4515: zeros in a ref are git's word for nothing, and `HEAD:` over them deleted the branch.
+    let dir = tempfile::tempdir().unwrap();
+    let top = std::fs::canonicalize(dir.path()).unwrap();
+    let bare = top.join("forge.git");
+    let repo = top.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let ran = |at: &Path, args: &[&str]| {
+        let done = crate::testgit::run(at, args);
+        assert!(done.ok(), "{args:?}: {done:?}");
+        done.out
+    };
+    ran(
+        &top,
+        &["init", "-q", "--bare", "-b", "main", bare.to_str().unwrap()],
+    );
+    ran(&repo, &["init", "-q", "-b", "main", "."]);
+    ran(
+        &repo,
+        &[
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "one",
+        ],
+    );
+    let url = format!("file://{}", bare.display());
+    let pushed = push_commit(&repo, None, &[], &url, "HEAD", "refs/heads/main").unwrap();
+    assert!(pushed.ok(), "{pushed:?}");
+    let there = ran(&bare, &["rev-parse", "refs/heads/main"]);
+    let id = ran(&repo, &["rev-parse", "HEAD"]);
+    let refspec = format!("{}^{{commit}}:refs/heads/main", id.trim());
+    assert!(
+        tally::asked(&repo)
+            .iter()
+            .any(|argv| argv.contains(&refspec)),
+        "not pushed by its id"
+    );
+
+    // A ref named after the commit, which a bare id would have been read as.
+    let planted = repo.join(".git/refs/heads").join(id.trim());
+    std::fs::write(&planted, format!("{}\n", "0".repeat(40))).unwrap();
+    let pushed = push_commit(&repo, None, &[], &url, "HEAD", "refs/heads/main").unwrap();
+    assert!(pushed.ok(), "{pushed:?}");
+    assert_eq!(ran(&bare, &["rev-parse", "refs/heads/main"]), there);
+    std::fs::remove_file(&planted).unwrap();
+
+    for spoiled in ["0".repeat(40), "garbage".to_owned()] {
+        std::fs::write(repo.join(".git/refs/heads/main"), format!("{spoiled}\n")).unwrap();
+
+        let pushed = push_commit(&repo, None, &[], &url, "HEAD", "refs/heads/main").unwrap();
+
+        assert!(!pushed.ok(), "{spoiled}: {pushed:?}");
+        assert_eq!(ran(&bare, &["rev-parse", "refs/heads/main"]), there);
+    }
+}
+
+#[test]
+fn a_worktree_add_is_refused_where_its_checkout_reads_a_config_the_listing_did_not() {
+    // #4401: listed in the clone these conditions do not hold, and nothing they include is listed.
+    // Held in the new branch folder, they do, and its checkout reads what they include.
+    for condition in ["onbranch:lane", "gitdir:**/worktrees/lane"] {
+        let (_dir, repo, aside, mark) = a_filter_aside();
+        let key = format!("includeIf.{condition}.path");
+        assert!(crate::testgit::run(&repo, &["config", &key, aside.to_str().unwrap()]).ok());
+        let folder = repo.with_file_name("lane");
+        let folder_text = folder.to_str().unwrap();
+
+        let cut = run_untimed(&repo, &["worktree", "add", "-q", "-b", "lane", folder_text])
+            .expect("git runs");
+
+        assert!(!cut.ok(), "{condition}: {cut:?}");
+        assert!(cut.err.contains(ANOTHER_CONFIG), "{condition}: {cut:?}");
+        assert!(!mark.exists(), "{condition}: the filter ran");
+        assert!(!folder.exists(), "{condition}: git was run");
+
+        // Control: the person's own git does run what the include names.
+        plain_worktree_add(&repo, "lane", &folder);
+        assert!(mark.exists(), "{condition}: the plant was never live");
+    }
+}
+
+#[test]
+fn a_worktree_add_is_refused_where_a_worktree_config_includes_a_file() {
+    // The new branch folder is given a copy of this config, and a path in a copy is read from
+    // where the copy is.
+    let (_dir, repo, aside, mark) = a_filter_aside();
+    let config = |args: &[&str]| assert!(crate::testgit::run(&repo, args).ok(), "{args:?}");
+    config(&["config", "extensions.worktreeConfig", "true"]);
+    config(&[
+        "config",
+        "--worktree",
+        "include.path",
+        aside.to_str().unwrap(),
+    ]);
+    let folder = repo.with_file_name("lane");
+    let folder_text = folder.to_str().unwrap();
+
+    let cut = run_untimed(&repo, &["worktree", "add", "-q", "-b", "lane", folder_text])
+        .expect("git runs");
+
+    assert!(!cut.ok(), "{cut:?}");
+    assert!(!mark.exists());
+}
+
+#[test]
+fn only_a_worktree_add_and_only_the_repositorys_own_includes_count_as_another_config() {
+    let add = ["worktree", "add", "-q", "-b", "lane", "/a/folder"];
+    let says = |entry: (&str, &str, &str)| {
+        let named = listing(&[entry]);
+        String::from_utf8_lossy(&named).into_owned()
+    };
+    let conditional = "includeif.onbranch:lane.path";
+    for (scope, key, reads_another) in [
+        ("local", conditional, true),
+        ("worktree", conditional, true),
+        ("worktree", "include.path", true),
+        ("local", "IncludeIf.gitdir:x.path", true),
+        // The same file wherever git runs.
+        ("local", "include.path", false),
+        // The person's own: what it includes is theirs, held or not.
+        ("global", conditional, false),
+        ("system", conditional, false),
+        ("command", conditional, false),
+        ("local", "core.bare", false),
+    ] {
+        let said = says((scope, key, "/a/file"));
+        assert_eq!(
+            checkout_reads_another_config(&add, &said),
+            reads_another,
+            "{scope} {key}"
+        );
+        assert!(!checkout_reads_another_config(&["status"], &said));
+        assert!(!checkout_reads_another_config(&["worktree", "list"], &said));
+    }
+}
+
+#[test]
+fn a_worktree_add_holds_what_a_config_its_checkout_reads_the_same_way_names() {
+    // A plain include is read from the same file wherever git runs, and a new branch folder is
+    // given a copy of the clone's worktree config: the listing read what the checkout reads, so
+    // the runner decides, and the add goes on.
+    let plain_include = |repo: &Path, aside: &Path| {
+        let config = ["config", "include.path", aside.to_str().unwrap()];
+        assert!(crate::testgit::run(repo, &config).ok());
+    };
+    let worktree_config = |repo: &Path, aside: &Path| {
+        let text = std::fs::read_to_string(aside).unwrap();
+        let program = text
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("smudge = "))
+            .unwrap();
+        for config in [
+            &["config", "extensions.worktreeConfig", "true"][..],
+            &["config", "--worktree", "filter.probe.smudge", program],
+            &["config", "--worktree", "filter.probe.clean", "cat"],
+        ] {
+            assert!(crate::testgit::run(repo, config).ok(), "{config:?}");
+        }
+    };
+    type Plant<'a> = &'a dyn Fn(&Path, &Path);
+    let ways: [(&str, Plant); 2] = [
+        ("a plain include", &plain_include),
+        ("a worktree config", &worktree_config),
+    ];
+    for (way, plant) in ways {
+        let (_dir, repo, aside, mark) = a_filter_aside();
+        plant(&repo, &aside);
+        let folder = repo.with_file_name("lane");
+        let folder_text = folder.to_str().unwrap();
+
+        let cut = run_untimed(&repo, &["worktree", "add", "-q", "-b", "lane", folder_text])
+            .expect("git runs");
+
+        assert!(cut.ok(), "{way}: {cut:?}");
+        assert_eq!(
+            std::fs::read_to_string(folder.join("a.dat")).unwrap(),
+            "text\n",
+            "{way}"
+        );
+        assert!(!mark.exists(), "{way}: the filter ran");
+
+        // Control: the person's own git, in a folder of its own, does run it.
+        plain_worktree_add(&repo, "control", &repo.with_file_name("control"));
+        assert!(mark.exists(), "{way}: the plant was never live");
+    }
 }
 
 #[test]
