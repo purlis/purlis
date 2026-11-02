@@ -2827,7 +2827,7 @@ body {
 }
 
 .explorer .spot[aria-current="true"] .node-icon {
-  color: var(--accent-base);
+  color: var(--accent-text);
 }
 
 /* A file's or a folder's icon (FM-3, #1106): drawn by `FileIcon.tsx` from the icon theme, each

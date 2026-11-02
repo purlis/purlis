@@ -954,6 +954,15 @@ Later, `accent.wash-hover` came in (#3345): the chosen title-bar chip's ground u
 a step stronger than `accent.wash`, which is the chosen chip's ground at rest; both hold the
 primary words at 4.5:1 over the title bar.
 
+`accent.text` is the one token here that follows whatever the parent draws: a theme, an option or
+a person's colour that gives `accent.base` without it draws it in that accent, over Purlis too, so
+what a chosen item says never stays in the parent's accent (#3100). It draws everything chosen in
+the accent: an activity button, a page's mark, a chosen option card's check and icon, a chosen
+chip's check and a pinned switcher row's pin, held to 4.5:1 on each ground, and the current row's
+icon in the explorer, a mark beside the row's words, held to 3:1. Drawn alike, the two fall together when a floor takes either and are raised
+together, and a recipe that turns `accent.base` turns `accent.text` with it, giving it the colour
+it gives the accent.
+
 Later still, the hot count (#3098): `needs-you.count` and `needs-you.count-text`, the fill and the
 words of the Needs-you count on an activity bar. Each follows `needs-you.base` and `needs-you.text`
 in `vocabulary::KIN`, the values Purlis and Purlis Classic give them by default, so a theme that

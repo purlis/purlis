@@ -28,7 +28,7 @@
 
 use super::ResolvedTheme;
 use super::check::{self, PAIRS, Pair};
-use super::vocabulary::{hot_count_following, is_platform};
+use super::vocabulary::{drawn_alike, is_platform};
 
 /// The contrast held, at least.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
@@ -76,18 +76,32 @@ pub fn raise(theme: &ResolvedTheme) -> ResolvedTheme {
     let mut drawn = theme.clone();
     drawn.least = Least::More;
     let mut pairs: Vec<Pair> = PAIRS.iter().copied().chain(check::ansi_pairs()).collect();
+    // What follows a base is drawn in whatever the base is raised to (#3098, #3100), so the base
+    // is raised on the grounds its follower stands on too, or the copy would lower the follower.
+    let following = drawn_alike(&theme.values);
+    let for_followers: Vec<Pair> = pairs
+        .iter()
+        .filter_map(|pair| {
+            following
+                .iter()
+                .find(|(token, _)| *token == pair.front)
+                .map(|(_, base)| Pair {
+                    front: base,
+                    ..*pair
+                })
+        })
+        .collect();
+    pairs.extend(for_followers);
     // Marks first, so words are raised last in each round and their floor is the one held.
     pairs.sort_by(|a, b| a.floor.total_cmp(&b.floor));
-    // A hot count that follows its mark is drawn in whatever the mark is raised to (#3098).
-    let following = hot_count_following(&theme.values);
     for _ in 0..ROUNDS {
         let mut moved = false;
         for pair in &pairs {
             moved |= lift(&mut drawn, pair, &pairs);
         }
-        for (count, mark) in &following {
-            let raised = drawn.value(mark).to_owned();
-            drawn.values.insert(*count, raised);
+        for (token, base) in &following {
+            let raised = drawn.value(base).to_owned();
+            drawn.values.insert(*token, raised);
         }
         if !moved {
             break;

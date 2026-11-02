@@ -496,6 +496,7 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -509,6 +510,7 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -645,6 +647,12 @@
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.text",
+            "from": "accent.base",
+            "distance": 0.0,
             "alone": true
           }
         ]
@@ -1164,6 +1172,7 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -1177,6 +1186,7 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -1313,6 +1323,12 @@
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.text",
+            "from": "accent.base",
+            "distance": 0.0,
             "alone": true
           }
         ]
@@ -1832,6 +1848,7 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -1845,6 +1862,7 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -1981,6 +1999,12 @@
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.text",
+            "from": "accent.base",
+            "distance": 0.0,
             "alone": true
           }
         ]
@@ -2334,6 +2358,7 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -2347,6 +2372,7 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -2483,6 +2509,12 @@
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.text",
+            "from": "accent.base",
+            "distance": 0.0,
             "alone": true
           }
         ]
@@ -2852,6 +2884,7 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -2865,6 +2898,7 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.text",
           "accent.fill",
           "accent.fill-hover",
           "accent.fill-edge",
@@ -3001,6 +3035,12 @@
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.text",
+            "from": "accent.base",
+            "distance": 0.0,
             "alone": true
           }
         ]

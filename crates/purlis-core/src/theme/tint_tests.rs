@@ -71,6 +71,7 @@ fn purlis_classic_tints_what_it_tinted_before_a_theme_could_say() {
             [
                 "accent.base",
                 "accent.surface",
+                "accent.text",
                 "accent.fill",
                 "accent.fill-hover",
                 "accent.fill-edge",
@@ -152,11 +153,17 @@ fn a_theme_names_the_tokens_a_workspace_s_colour_turns() {
         json!({ "tokens": ["surface.raised", "accent.base"] }),
     ));
     // In the vocabulary's order, whatever order the file named them in.
-    assert_eq!(theme.tint.tabs(), ["surface.raised", "accent.base"]);
-    assert_eq!(theme.tint.window(), ["surface.raised", "accent.base"]);
+    assert_eq!(
+        theme.tint.tabs(),
+        ["surface.raised", "accent.base", "accent.text"]
+    );
+    assert_eq!(
+        theme.tint.window(),
+        ["surface.raised", "accent.base", "accent.text"]
+    );
     assert_eq!(
         moved(&theme, &tinted(&theme, "teal")),
-        ["surface.raised", "accent.base"]
+        ["surface.raised", "accent.base", "accent.text"]
     );
 }
 
@@ -208,7 +215,10 @@ fn a_token_name_purlis_does_not_have_is_said_and_left_out() {
         said(&loaded),
         ["tint's tokens name accent.glow, which is not a purlis token, so it is left out"]
     );
-    assert_eq!(loaded.theme.first().tint.tabs(), ["accent.base"]);
+    assert_eq!(
+        loaded.theme.first().tint.tabs(),
+        ["accent.base", "accent.text"]
+    );
 }
 
 #[test]
@@ -324,7 +334,7 @@ fn a_theme_starts_from_its_parent_s_recipe() {
     );
     assert!(!child.refused, "{:?}", said(&child));
     let recipe = &child.theme.first().tint;
-    assert_eq!(recipe.tabs(), ["accent.base"]);
+    assert_eq!(recipe.tabs(), ["accent.base", "accent.text"]);
     let of = |name: &str| recipe.hues.iter().find(|one| one.name == name).unwrap().hue;
     assert!((of("red") - hue("#3a7bd5")).abs() < 1e-9);
     assert!((of("blue") - hue("#c0392b")).abs() < 1e-9);
@@ -1217,8 +1227,18 @@ fn purlis_classic_s_tints_are_these() {
             classic().of(Appearance::Light).unwrap()
         };
         let tint = tinted(theme, colour);
-        let drawn: Vec<&str> = TINTED.iter().map(|token| tint.value(token)).collect();
+        // The accent's words came into the recipe after these were pinned, and are the accent.
+        let drawn: Vec<&str> = TINTED
+            .iter()
+            .filter(|token| **token != "accent.text")
+            .map(|token| tint.value(token))
+            .collect();
         assert_eq!(drawn, values, "{name} {colour}");
+        assert_eq!(
+            tint.value("accent.text"),
+            tint.value("accent.base"),
+            "{name} {colour}"
+        );
     }
 }
 
@@ -1388,5 +1408,69 @@ fn a_link_and_the_first_chart_colour_stay_apart_from_danger_at_every_hue() {
                 );
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// The accent's words (#3100)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_recipe_that_turns_the_accent_turns_its_words() {
+    let theme = drawn(&json!({
+        "name": "Own", "extends": "purlis-classic", "tint": { "tokens": ["accent.base"] }
+    }));
+    assert_eq!(theme.tint.tabs(), ["accent.base", "accent.text"]);
+    let theme = drawn(&json!({
+        "name": "Own", "extends": "purlis-classic", "tint": { "tokens": ["focus.ring"] }
+    }));
+    assert_eq!(theme.tint.tabs(), ["focus.ring"]);
+}
+
+#[test]
+fn accent_words_are_left_when_the_accent_is() {
+    let mut recipe = Tint::default();
+    recipe.leave(&["accent.base"]);
+    assert!(!recipe.tabs().contains(&"accent.text"));
+    assert!(recipe.tabs().contains(&"accent.surface"));
+}
+
+#[test]
+fn accent_words_drawn_as_the_accent_are_turned_exactly_as_it_is() {
+    for theme in built_ins() {
+        if theme.value("accent.text") != theme.value("accent.base") {
+            continue;
+        }
+        for one in &theme.tint.hues {
+            let turned = tinted(theme, one.name);
+            assert_eq!(
+                turned.value("accent.text"),
+                turned.value("accent.base"),
+                "{} in {}",
+                theme.name,
+                one.name
+            );
+        }
+    }
+}
+
+#[test]
+fn a_tie_to_the_accent_takes_no_colour_from_anything() {
+    let light = purlis()
+        .appearances
+        .iter()
+        .find(|one| one.id == "light")
+        .expect("Purlis light");
+    let without: Vec<_> = tint::held_rules(light)
+        .into_iter()
+        .filter(|rule| rule.distance > 0.0)
+        .collect();
+    for degree in (0..360).step_by(5) {
+        let hue = f64::from(degree);
+        assert_eq!(
+            tint::apart_chroma_of(&tint::held_rules(light), hue),
+            tint::apart_chroma_of(&without, hue),
+            "{degree}"
+        );
     }
 }

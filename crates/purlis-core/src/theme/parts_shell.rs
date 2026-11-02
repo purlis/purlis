@@ -693,11 +693,11 @@ pub(super) fn titlebar_apart_look(part: &str, states: &[State]) -> super::ApartL
             words: if lit { "text.primary" } else { "text.quiet" },
             under: BAR,
         },
-        // Pinned, the accent wins over the pointer's primary, on the pointer's fill (#4000).
+        // Pinned, the accent's words win over the pointer's primary, on the pointer's fill (#4000).
         "pin" => ApartLook {
             fill: if hovered { "surface.overlay" } else { TRANSPARENT },
             words: if selected {
-                "accent.base"
+                "accent.text"
             } else if hovered {
                 "text.primary"
             } else {

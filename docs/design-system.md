@@ -272,7 +272,7 @@ resolves and hands the window with the theme (`purlis_core::theme::Tint`, `theme
 window keeps no list of its own (#2393). Purlis Classic's recipe, the one a theme starts from:
 
 - on the whole window, from the workspace in front: `accent.base`, `accent.surface`,
-  `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
+  `accent.text` (which a recipe turning the accent always turns, #3100), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
   `drawTint`);
 - on that workspace's own tab and on the chat strip, which holds its chats, the same and
   `layer.workspace`, `layer.chat`, `layer.selected` (`tint.tabs`), set on the element as
@@ -447,7 +447,9 @@ asked for), whatever the system's appearance. Where its values come from:
   the button would have its consent floors measured at every hue at every launch); Allow, on the control's ground behind the
   accent's edge, stands farther from it than before. **A chosen activity button** is the
   record's .14 wash (`accent.wash`) with its icon in the lighter lavender (`accent.text`,
-  `#c3baf5`), and the update pill's words take `accent.text` too. **The chosen title-bar chip**
+  `#c3baf5`), and the update pill's words take `accent.text` too, as does what else says chosen
+  in the accent (#3100): a chosen option card's check and icon, a chosen chip's check, a pinned
+  switcher row's pin and the current explorer row's icon. **The chosen title-bar chip**
   takes the same wash with the primary words, and `accent.wash-hover` (the record's .23
   lavender) under the pointer, while any other chip under the pointer takes the card's fill, so
   chosen never reads as hovered (R101 as amended by #3345). Section labels are tracked at

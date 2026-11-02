@@ -40,7 +40,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use super::floors::{ALLOW_APART, DANGER_APART, WAITING_APART};
-use super::vocabulary::{TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour};
+use super::vocabulary::{ACCENT_WORDS, TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour};
 use super::{Complaint, ResolvedTheme, stringify};
 
 /// The palette a workspace names its colour from, as OKLCH hues in degrees, in
@@ -163,9 +163,13 @@ impl Tint {
             .collect()
     }
 
-    /// The recipe without `tokens`: a workspace's colour leaves them as the theme draws them.
+    /// The recipe without `tokens`: a workspace's colour leaves them as the theme draws them. The
+    /// accent's words go where the accent goes (#3100), so a chosen item's are never turned away
+    /// from the accent beside them.
     pub(super) fn leave(&mut self, tokens: &[&str]) {
-        self.tokens.retain(|token| !tokens.contains(token));
+        let accent_left = tokens.contains(&"accent.base");
+        let left = |token: &str| tokens.contains(&token) || (accent_left && token == ACCENT_WORDS);
+        self.tokens.retain(|token| !left(token));
     }
 
     /// The hue a workspace's colour gives in this theme: a [`PALETTE`] name's hue here, or the
@@ -197,7 +201,7 @@ pub struct Apart {
 /// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]); and the
 /// accent from the waiting colour (waiting is distinguishable from the accent, #3130), so a
 /// yellow or orange workspace's accent never reads as the waiting signal.
-pub const APART: [Apart; 15] = [
+pub const APART: [Apart; 16] = [
     danger_apart("accent.base"),
     // Keep blocked's edge is a plain control's (#3177).
     Apart {
@@ -221,6 +225,15 @@ pub const APART: [Apart; 15] = [
     waiting_apart(WAITING_KIN[1]),
     waiting_apart(WAITING_KIN[2]),
     waiting_apart(WAITING_KIN[3]),
+    // The accent's words take the colour the accent takes (#3100): held at no distance, this asks
+    // nothing of any token, and makes them a side held alone, so they give way as the accent does
+    // and are exactly it where a theme draws the two alike.
+    Apart {
+        token: "accent.text",
+        from: "accent.base",
+        distance: 0.0,
+        alone: true,
+    },
 ];
 
 /// **The accent and the edges drawn in it** (#3130): the accent, the focus ring, the selected
@@ -370,6 +383,11 @@ fn tokens(
     }
     if complaints.len() != before {
         return None;
+    }
+    // A recipe that turns the accent turns its words (#3100), named or not: what a chosen item
+    // says was the accent before it was a token of its own.
+    if named.contains(&"accent.base") {
+        named.push(ACCENT_WORDS);
     }
     Some(
         TOKENS

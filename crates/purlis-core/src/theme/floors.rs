@@ -61,15 +61,16 @@
 //! each pair that fails.
 //! When Classic's colour still fails on the ground the theme draws it on, the ground is drawn as
 //! Classic's too, and a token whose workspace tint still breaks the floor is drawn untinted
-//! ([`super::Tint`]). A hot count that follows its needs-you mark falls with it, either way round
-//! ([`super::vocabulary::HOT_COUNT_KIN`]), so the two never disagree; a theme whose count is its own colour is held on
-//! its own. The rest of the theme draws as written, and [`Held`] says which floors and which
+//! ([`super::Tint`]). A hot count that follows its needs-you mark, and accent words drawn in the
+//! accent, fall with what they follow, either way round ([`super::vocabulary::BOUND_KIN`]), so the
+//! two never disagree; a theme that draws them in a colour of their own has them held on their
+//! own. The rest of the theme draws as written, and [`Held`] says which floors and which
 //! tokens, for one Notice per theme.
 
 use std::collections::BTreeSet;
 
 use super::check::{self, PAIRS, Pair, ratio};
-use super::vocabulary::hot_count_following;
+use super::vocabulary::drawn_alike;
 use super::{Appearance, ResolvedTheme, built_in_for, tint};
 
 #[cfg(test)]
@@ -553,7 +554,7 @@ fn apart_floor(rule: &tint::Apart) -> Floor {
 }
 
 /// How far two colours are in OKLab; none at all for a value that is not a colour.
-fn apart_of(one: &str, other: &str) -> f64 {
+pub(super) fn apart_of(one: &str, other: &str) -> f64 {
     let (Some(one), Some(other)) = (tint::oklab_of(one), tint::oklab_of(other)) else {
         return 0.0;
     };
@@ -591,8 +592,8 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
     let mut taken: BTreeSet<&'static str> = BTreeSet::new();
     let mut untinted: BTreeSet<&'static str> = BTreeSet::new();
     let mut chromas = Chromas::default();
-    // A count the theme draws as its mark falls with it, whichever of the two a floor names.
-    let following = hot_count_following(&theme.values);
+    // What the theme draws as what it follows falls with it, whichever of the two a floor names.
+    let following = drawn_alike(&theme.values);
     loop {
         let failing = failures(&drawn, &mut chromas);
         if failing.is_empty() {
@@ -670,9 +671,9 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
             untinted.extend(tinted);
             continue;
         }
-        for (count, mark) in &following {
-            if take.contains(count) || take.contains(mark) {
-                take.extend([*count, *mark]);
+        for (token, base) in &following {
+            if take.contains(token) || take.contains(base) {
+                take.extend([*token, *base]);
             }
         }
         for token in take {

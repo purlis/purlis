@@ -1000,3 +1000,26 @@ fn the_person_s_format_2_theme_that_is_refused_is_trouble_and_draws_purlis() {
     let two = read_theirs(Some(home.path()));
     assert_eq!(two.theme.map(|it| it.appearances.len()), Some(2));
 }
+
+/// `tokens` over Purlis, in its dark appearance.
+fn over_purlis(tokens: Value) -> ResolvedTheme {
+    let loaded = load(&json!({
+        "name": "Over", "extends": "purlis",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": tokens }]
+    }));
+    assert!(!loaded.refused, "{:?}", loaded.complaints);
+    loaded.theme.first().clone()
+}
+
+#[test]
+fn accent_words_follow_an_accent_given_over_a_theme_that_draws_them_apart() {
+    // #3100: Purlis's words are not its accent, and a theme that gives an accent alone still says
+    // what is chosen in it.
+    let teal = over_purlis(json!({ "accent.base": "#2bb3a3" }));
+    assert_eq!(teal.value("accent.text"), "#2bb3a3");
+    let named = over_purlis(json!({ "accent.base": "#2bb3a3", "accent.text": "#a0e8da" }));
+    assert_eq!(named.value("accent.text"), "#a0e8da");
+    // A theme that gives no accent keeps the parent's words.
+    let plain = over_purlis(json!({ "surface.hover": "#303038" }));
+    assert_eq!(plain.value("accent.text"), "#c3baf5");
+}
