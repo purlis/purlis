@@ -107,7 +107,7 @@ function RowsInTheirPanel() {
           {...panelRoot("side")}
           aria-label="Navigation"
           role="region"
-          style={{ display: "flex", flexDirection: "column", inlineSize: 300, blockSize: 180 }}
+          style={{ display: "flex", flexDirection: "column", inlineSize: 300, blockSize: 240 }}
         >
           <ChatsSection rows={chatsTree(ROWS)} front={1} onOpen={() => {}} />
         </div>
@@ -130,6 +130,14 @@ const rowOf = (canvas: HTMLElement, name: string) => {
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };
+
+/** Leaves the rows at rest for the picture: the focus off them, and no card it held up. */
+async function atRest(row: HTMLElement) {
+  row.blur();
+  await waitFor(() => expect(document.querySelector('[data-testid^="chat-card-"]')).toBeNull(), {
+    timeout: 3000,
+  });
+}
 
 /**
  * **Who each task waits on, and since when**: the task whose question reached you says `needs
@@ -161,6 +169,7 @@ export const WhoEachTaskWaitsOn: Story = {
     );
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => rowOf(canvasElement, "architect 3"), "down to the task asking");
+    await atRest(rowOf(canvasElement, "architect 3"));
   },
 };
 
@@ -177,5 +186,6 @@ export const FoldedRowSaysAsking: Story = {
     await userEvent.keyboard("{ArrowLeft}");
     await waitFor(() => expect(first).toHaveAttribute("aria-expanded", "false"));
     await expect(first.querySelector(".question-asking")).toHaveTextContent("1 asking");
+    await atRest(first);
   },
 };
