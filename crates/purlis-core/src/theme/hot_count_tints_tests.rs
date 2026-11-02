@@ -10,7 +10,7 @@ use serde_json::json;
 
 use super::super::floors::{HOT_COUNT, HOT_COUNT_APART};
 use super::super::{ResolvedTheme, load, tint};
-use super::{COARSE_DEGREES, NEAR_A_FLOOR, apart, count_turns, fallen, family, rules};
+use super::{COARSE_DEGREES, NEAR_THE_HOT_COUNT, apart, count_turns, fallen, family, rules};
 
 const TOLD_APART: &str = "the plain count is told apart from the hot count";
 
@@ -97,5 +97,5 @@ fn a_tint_s_step_moves_a_rule_less_than_the_margin_that_finds_it() {
         }
     }
     assert!(widest > 0.0, "the sweep turned nothing");
-    assert!(widest < NEAR_A_FLOOR, "{widest}");
+    assert!(widest < NEAR_THE_HOT_COUNT, "{widest}");
 }

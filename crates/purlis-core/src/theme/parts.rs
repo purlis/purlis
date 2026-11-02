@@ -2726,15 +2726,20 @@ fn unreadable_by(
         }
     }
     // The plain activity count stays told from the hot one (#3098): the floors hold its default
-    // pill apart, and a rule that brings it near draws that default. The margin widens the
-    // distance too, so a coarse reading finds a rule that only comes near between its tints
-    // (#4384): a tint's step moves a colour far less than [`NEAR_A_FLOOR`] in OKLab.
+    // pill apart, and a rule that brings it near draws that default. A reading with a margin
+    // widens the distance too, so a coarse one finds a rule that only comes near between its
+    // tints (#4384).
+    let near_the_hot_count = if margin > 0.0 {
+        NEAR_THE_HOT_COUNT
+    } else {
+        0.0
+    };
     if let Some(count) = plain_count_at(family)
         && alike(
             theme,
             look.grounds[count],
             super::floors::HOT_COUNT,
-            super::floors::HOT_COUNT_APART + margin,
+            super::floors::HOT_COUNT_APART + near_the_hot_count,
         )
     {
         return Some((
@@ -3118,6 +3123,11 @@ fn singles_of(family: &Family) -> Vec<Vec<State>> {
 /// tints (`see_through_tints_tests.rs`), and on a surface's fill, on every part, edge and state
 /// (`surface_tints_tests.rs`, #4607).
 pub(super) const NEAR_A_FLOOR: f64 = 0.1;
+
+/// **How near the hot count a coarse reading comes before a rule is read at every degree** (#4384):
+/// the same margin in OKLab, where [`NEAR_A_FLOOR`] is a contrast. More than the most a colour was
+/// found to move between a degree and the coarse tint nearest it (`hot_count_tints_tests.rs`).
+pub(super) const NEAR_THE_HOT_COUNT: f64 = 0.15;
 
 /// The degrees between coarse readings.
 pub(super) const COARSE_DEGREES: usize = 10;
