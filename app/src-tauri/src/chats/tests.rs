@@ -9156,6 +9156,83 @@ fn a_chat_keeps_its_latest_prompt_s_routing_4297() {
     let _ = chats.close(session);
 }
 
+/// Each chat `chats` says moved whether its latest prompt fell back, in order.
+fn told_of_fallbacks(chats: &Chats) -> Arc<Mutex<Vec<u32>>> {
+    let told = Arc::new(Mutex::new(Vec::new()));
+    chats.when_a_prompt_s_fallback_moves(Box::new({
+        let told = Arc::clone(&told);
+        move |session| lock(&told).push(session)
+    }));
+    told
+}
+
+/// #4445: the window reads a chat again only as its latest prompt changes whether it fell back,
+/// so a router that answers every prompt asks it to read nothing. Seen red: told of none.
+#[test]
+fn the_window_is_told_only_as_a_prompt_changes_whether_it_fell_back_4445() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let (chats, session) = a_chat_its_router_reads_the_prompts_of(plane.path());
+    let told = told_of_fallbacks(&chats);
+    let answers = |slow| {
+        chats.asks_routers_with(Arc::new(PromptRouter { slow, reads: true }));
+        chats.pointed(session, "go");
+        lock(&told).len()
+    };
+
+    assert_eq!(answers(false), 0, "a first prompt answered");
+    assert_eq!(
+        answers(false),
+        0,
+        "an answered prompt after an answered prompt"
+    );
+    assert_eq!(answers(true), 1, "a prompt fell back");
+    assert_eq!(answers(true), 1, "and another, whose mark is the same");
+    assert_eq!(answers(false), 2, "a later prompt answered");
+    assert_eq!(*lock(&told), vec![session, session]);
+    let _ = chats.close(session);
+}
+
+/// #4445: a router that reads no further prompt takes the need away, so the mark must go too.
+#[test]
+fn a_router_that_stops_reading_prompts_after_a_fallback_tells_the_window_4445() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let (chats, session) = a_chat_its_router_reads_the_prompts_of(plane.path());
+    let told = told_of_fallbacks(&chats);
+    chats.asks_routers_with(Arc::new(PromptRouter {
+        slow: true,
+        reads: true,
+    }));
+    chats.pointed(session, "go");
+    assert_eq!(lock(&told).len(), 1, "it fell back");
+
+    chats.asks_routers_with(Arc::new(PromptRouter {
+        slow: false,
+        reads: false,
+    }));
+    chats.pointed(session, "go");
+    assert_eq!(lock(&told).len(), 2, "its mark goes");
+    chats.pointed(session, "go");
+    assert_eq!(lock(&told).len(), 2, "nothing moved");
+    let _ = chats.close(session);
+}
+
+/// #4445: an answer that lands after its chat was started again moved nothing the window reads.
+#[test]
+fn a_fallback_landing_after_its_chat_started_again_tells_nothing_4445() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let (chats, session) = a_chat_its_router_reads_the_prompts_of(plane.path());
+    let told = told_of_fallbacks(&chats);
+    let was = lock(&chats.open)[&session].skills_read.routed.clone();
+    let was = was.expect("routed");
+    let fell = purlis_core::skills::router::Record {
+        fell_back: Some(purlis_core::skills::router::FellBack::Slow),
+        ..was.record.clone()
+    };
+    chats.keep_last_prompt(session, &Arc::new((*was).clone()), Some(&fell));
+    assert!(lock(&told).is_empty());
+    let _ = chats.close(session);
+}
+
 /// #4297: a router turned off for prompts reads no further one, so what it did on its last says
 /// nothing now, and the need it raised goes.
 #[test]
