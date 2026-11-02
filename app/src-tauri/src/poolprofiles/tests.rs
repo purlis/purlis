@@ -863,7 +863,7 @@ fn a_pools_page_shows_what_the_team_set() {
     let chosen = Chosen::default()
         .under_team(Some(&team))
         .with(LimitId::SignInWait, Some(100));
-    let shown = limits_shown(&chosen, &[]);
+    let shown = limits_shown(&chosen, &[], false, &[]);
     let rows: Vec<&PoolLimitRow> = shown
         .groups
         .iter()
