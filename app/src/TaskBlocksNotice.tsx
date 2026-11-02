@@ -239,6 +239,8 @@ export function TaskBlocksNotice({
   ];
   const [first, ...rest] = [...allows, keep];
   const fixes: readonly [NoticeAction, ...NoticeAction[]] = [first ?? keep, ...rest];
+  /** What allowing a held folder means, which its block says. */
+  const means = group.members[0]?.block.route;
   return (
     <Notice
       cause={`sandbox-blocked-tasks:${group.session}:${group.key}`}
@@ -252,6 +254,7 @@ export function TaskBlocksNotice({
       {target}
       {group.offer === "write" && " and everything in it"}:{" "}
       {listed(group.members.map((one) => one.whose))}.{" "}
+      {group.offer === "write" && means != null && `${means} `}
       {held.length === 0 ? (
         <>The sandbox blocked {group.said} in each.</>
       ) : (
