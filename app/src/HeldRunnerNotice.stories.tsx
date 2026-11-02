@@ -67,7 +67,10 @@ export const DiscardAsksFirst: Story = {
     const asking = await page.findByRole("alertdialog", {
       name: "Discard runner builds's conversations?",
     });
-    await untilFocused(() => asking, "the first ask");
+    await untilFocused(
+      () => within(asking).getByRole("button", { name: "Cancel" }),
+      "the first ask's Cancel",
+    );
     expectFocusInSight();
     await userEvent.keyboard("{Escape}");
     await untilFocused(() => discard, "Discard…, once Esc closed the ask");

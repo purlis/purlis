@@ -381,6 +381,10 @@ describe("DevicesView", () => {
     expect(heldRemoved).toEqual([]);
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    // The keyboard goes back to Discard…, though the ask that opened the second is gone.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(notice).getByRole("button", { name: "Discard…" })),
+    );
     expect(heldRemoved).toEqual([]);
   });
 

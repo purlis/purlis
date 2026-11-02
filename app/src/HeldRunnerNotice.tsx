@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Notice } from "./Notice";
 import { bringBackHeldRunner, removeHeldRunner } from "./pools";
 import { DiscardHeldRunner } from "./settings/pools";
@@ -26,6 +26,16 @@ export function HeldRunnerNotice({
   const [doing, setDoing] = useState<"bringing" | "discarding" | undefined>();
   const [ask, setAsk] = useState<"first" | "again" | undefined>();
   const [said, setSaid] = useState<{ what: string; why: string } | undefined>();
+  // Where the keyboard goes back to once an ask is put away: the second ask opened from the first,
+  // which is gone, so nothing else would take it (WCAG 2.4.3).
+  const discard = useRef<HTMLButtonElement>(null);
+  const asked = useRef(false);
+  useEffect(() => {
+    if (asked.current && ask === undefined && doing === undefined) {
+      asked.current = false;
+      discard.current?.focus();
+    }
+  }, [ask, doing]);
   const run = (what: "bringing" | "discarding") => {
     setAsk(undefined);
     setDoing(what);
@@ -56,8 +66,12 @@ export function HeldRunnerNotice({
           },
           {
             label: doing === "discarding" ? "Discarding…" : "Discard…",
-            onPress: () => setAsk("first"),
+            onPress: () => {
+              asked.current = true;
+              setAsk("first");
+            },
             busy: doing !== undefined,
+            button: discard,
           },
         ]}
       >
