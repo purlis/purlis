@@ -728,21 +728,21 @@ describe("a tab remembers which chat it shows", () => {
     await waitFor(() => expect(onScreenSaid(asked)).toEqual([5]));
   });
 
-  it("says what a tab shows again where the core did not take it", async () => {
+  it("says the tabs again where the core did not take them", async () => {
+    // #4751: a refused layout is not left standing in the core. The window forgets having said
+    // it, and says it again without waiting for the person to change anything.
     const { tree, asked, refusing, laid } = await drawn(withTasks());
     const before = commandsOf(asked, "window_layout").length;
     refusing.layouts = 1;
     await userEvent.click(row(tree, "sweep"));
     await waitFor(() => expect(onScreen()).toEqual([5]));
-    await waitFor(() => expect(commandsOf(asked, "window_layout")).toHaveLength(before + 1));
-    expect(panedIn(laid.now)).not.toContain(5);
-
-    // The next change to the tabs says it again, with what else changed.
-    await userEvent.click(tab("steward 2"));
-    await waitFor(() => expect(onScreen()).toEqual([2]));
 
     await waitFor(() => expect(panedIn(laid.now)).toContain(5));
-    expect(onScreenOf(laid.now as LaidOut)).toEqual([2]);
+    const showingSweep = commandsOf(asked, "window_layout")
+      .slice(before)
+      .filter((one) => panedIn(one.layout as LaidOut).includes(5));
+    expect(showingSweep.length).toBeGreaterThanOrEqual(2);
+    expect(onScreenOf(laid.now as LaidOut)).toEqual([5]);
   });
 });
 
