@@ -1345,10 +1345,29 @@ fn a_nameless_base_in(w: &World) {
 fn a_base_is_never_recorded_under_no_branch() {
     purlis_core::unsteered!();
     let w = world();
+    let before = std::fs::read_to_string(w.clone.join(".git/config")).unwrap();
     let refused = brokered(|| purlis_core::worktree::record_base(&w.clone, "", "main"));
-    assert!(refused.is_err(), "{refused:?}");
-    let config = std::fs::read_to_string(w.clone.join(".git/config")).unwrap();
-    assert!(!config.contains(r#"[branch ""]"#), "{config}");
+    let why = refused.expect_err("an empty branch name was taken");
+    assert!(why.contains("no base was recorded"), "{why}");
+    assert!(why.contains("empty"), "{why}");
+    let after = std::fs::read_to_string(w.clone.join(".git/config")).unwrap();
+    assert_eq!(before, after, "the config was touched");
+}
+
+/// #4775: a name git would not take as a branch is no branch to record a base under either.
+#[test]
+fn a_base_is_never_recorded_under_a_name_git_takes_for_no_branch() {
+    purlis_core::unsteered!();
+    let w = world();
+    let before = std::fs::read_to_string(w.clone.join(".git/config")).unwrap();
+    for bad in ["two..dots", "has space", "ends.lock"] {
+        let refused = brokered(|| purlis_core::worktree::record_base(&w.clone, bad, "main"));
+        let why = refused.expect_err(bad);
+        assert!(why.contains("no base was recorded"), "{bad}: {why}");
+        assert!(why.contains(bad), "{bad}: {why}");
+    }
+    let after = std::fs::read_to_string(w.clone.join(".git/config")).unwrap();
+    assert_eq!(before, after, "the config was touched");
 }
 
 #[test]
