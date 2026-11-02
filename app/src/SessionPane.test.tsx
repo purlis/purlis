@@ -396,7 +396,7 @@ describe("a stall while a chat's view opens (#4725)", () => {
       (callback) => {
         next = callback;
       },
-      () => true,
+      Object.assign(new EventTarget(), { visibilityState: "visible" as const }),
     );
     next?.(0);
     next?.(300);

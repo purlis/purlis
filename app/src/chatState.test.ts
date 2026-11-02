@@ -23,6 +23,7 @@ import {
   turnStateOf,
   underneath,
   waitsOnItsPrompt,
+  hotIn,
 } from "./chatState";
 import type { ChildAgent, Moved, OpenChat } from "./bindings";
 
@@ -544,5 +545,18 @@ describe("a chat waiting on its own work (#3878)", () => {
     const older = { ...doing(3, "waiting"), own_work: monitors };
     const newer = doing(3, "waiting", [3]);
     expect(ownWorkOf(moved(moved(nothingKnown, newer), older), 3)).toBeUndefined();
+  });
+});
+
+describe("the hot chats, as the slow-answer log counts them (#4725)", () => {
+  it("are every chat whose program still runs: in its turn, waiting, or not yet heard from", () => {
+    const states = [
+      doing(1, "unknown"),
+      doing(2, "running"),
+      doing(3, "waiting"),
+      doing(4, "done"),
+      doing(5, "failed"),
+    ].reduce(moved, nothingKnown);
+    expect(hotIn(states)).toBe(3);
   });
 });

@@ -13,10 +13,10 @@ import { commands, type SlowMoment } from "./bindings";
  * to its newest 1,000 (`purlis_core::slowlog`): machine-local, never in a plane.
  *
  * - **An answer that took {@link SLOW_MS} or longer**, with its command, how long it took, when it
- *   was asked and how many chats were working. Every command `answerWatch` times, so the ones
+ *   was asked and how many chats were hot. Every command `answerWatch` times, so the ones
  *   that wait on a person or the network by design (`WAITS_BY_DESIGN`) are left out here too.
  * - **A stall of {@link STALL_MS} or longer**: a frame that came that long after the one before
- *   it ({@link watchForStalls}), with how many chats were working, the tab in front, and whether
+ *   it ({@link watchForStalls}), with how many chats were hot, the tab in front, and whether
  *   a view of a chat was being opened.
  *
  * Only written: nothing in the window reads it back or says it. Writing it is the one command
@@ -32,7 +32,7 @@ export const STALL_MS = 200;
 /** The command that writes a slow moment: never timed itself. */
 export const WRITES_THE_LOG = "recordSlow";
 
-/** What says how many chats one project holds are working, each counted as it is asked. */
+/** What says how many chats one project holds are hot, each counted as it is asked. */
 const hotSources = new Set<() => number>();
 
 /** The name of the tab in front of the project in front, as the person reads it. */
@@ -41,14 +41,14 @@ let front: { name: string | undefined } | undefined;
 /** How many views of a chat are being opened now. */
 let opening = 0;
 
-/** How many chats are working in every project the window holds. */
+/** How many chats are hot (CONTEXT.md) in every project the window holds. */
 export function hotChats(): number {
   let hot = 0;
   for (const count of hotSources) hot += count();
   return hot;
 }
 
-/** `count` says how many chats of one project are working, until the answer is called. */
+/** `count` says how many chats of one project are hot, until the answer is called. */
 export function countsHotChats(count: () => number): () => void {
   hotSources.add(count);
   return () => void hotSources.delete(count);
@@ -88,6 +88,9 @@ export function answered(command: string, ms: number, askedAt: number): void {
 /** What schedules the next frame, and what it hands the callback: the browser's own. */
 type Frames = (next: (time: number) => void) => unknown;
 
+/** What says whether the window is visible, and tells when that changes: the document. */
+type Page = EventTarget & { readonly visibilityState: DocumentVisibilityState };
+
 let watching: (() => void) | undefined;
 
 /**
@@ -95,19 +98,25 @@ let watching: (() => void) | undefined;
  * more after the one before it is a stall, and written down with what was going on.
  *
  * A window that is not visible is sent no frames on purpose, so the gap across a hide is not a
- * stall: the clock starts again with the first frame after the window is shown. Answers how to
- * stop watching (a test's).
+ * stall: the clock starts again, at every change of visibility, with the next frame the visible
+ * window is sent. Answers how to stop watching (a test's).
  */
 export function watchForStalls(
   frames: Frames = (next) => requestAnimationFrame(next),
-  visible: () => boolean = () => document.visibilityState === "visible",
+  page: Page = document,
 ): () => void {
   if (watching) return watching;
   let last: number | undefined;
   let stopped = false;
+  // No frame comes while the window is hidden, so the frame before a hide cannot be what the
+  // first frame after it is measured from: the change itself starts the clock again.
+  const startAgain = () => {
+    last = undefined;
+  };
+  page.addEventListener("visibilitychange", startAgain);
   const onFrame = (time: number) => {
     if (stopped) return;
-    if (!visible()) last = undefined;
+    if (page.visibilityState !== "visible") last = undefined;
     else {
       if (last !== undefined && time - last >= STALL_MS) {
         write({
@@ -126,6 +135,7 @@ export function watchForStalls(
   frames(onFrame);
   watching = () => {
     stopped = true;
+    page.removeEventListener("visibilitychange", startAgain);
     watching = undefined;
   };
   return watching;

@@ -85,20 +85,26 @@ describe("an answer", () => {
   });
 });
 
-/** Frames a test hands out itself, at the times it says. */
+/**
+ * Frames a test hands out itself, at the times it says, to a page it hides and shows as a
+ * browser does: by its visibility and a `visibilitychange`, with no frame sent while hidden.
+ */
 function frames() {
   let next: ((time: number) => void) | undefined;
-  let visible = true;
-  const stop = watchForStalls(
-    (callback) => {
-      next = callback;
-    },
-    () => visible,
-  );
+  const page = Object.assign(new EventTarget(), {
+    visibilityState: "visible" as DocumentVisibilityState,
+  });
+  const becomes = (state: DocumentVisibilityState) => {
+    page.visibilityState = state;
+    page.dispatchEvent(new Event("visibilitychange"));
+  };
+  const stop = watchForStalls((callback) => {
+    next = callback;
+  }, page);
   return {
     at: (time: number) => next?.(time),
-    hide: () => (visible = false),
-    show: () => (visible = true),
+    hide: () => becomes("hidden"),
+    show: () => becomes("visible"),
     stop,
   };
 }
@@ -139,11 +145,22 @@ describe("a stall", () => {
     expect(written).toEqual([]);
   });
 
-  it("is not the gap while the window was hidden", () => {
+  it("is not the gap while the window was hidden, which is sent no frames", () => {
     const window = frames();
     window.at(1_000);
     window.hide();
-    window.at(1_016);
+    window.show();
+    window.at(9_000);
+    window.at(9_016);
+    window.stop();
+    expect(written).toEqual([]);
+  });
+
+  it("is not measured from a frame a hidden window was sent after all", () => {
+    const window = frames();
+    window.at(1_000);
+    window.hide();
+    window.at(1_500);
     window.show();
     window.at(9_000);
     window.at(9_016);
