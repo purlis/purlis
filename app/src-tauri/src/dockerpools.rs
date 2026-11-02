@@ -164,6 +164,9 @@ pub struct PoolVersion {
     /// How many of its older runners drain: each keeps its chats until they end, then is
     /// removed.
     pub draining: u32,
+    /// How many of its older runners are held: each stopped during its drain, and stays with its
+    /// home until the person removes it.
+    pub held: u32,
     /// Whether this version's release named a runner image, as purlis last found it (#2880):
     /// one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
     /// looked.
@@ -654,7 +657,10 @@ pub async fn docker_pool_replace_runner(name: String) -> Result<(), String> {
 /// keeps. What is left of it is said.
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_pool_remove_held_runner(runner: String) -> Result<(), String> {
+pub async fn docker_pool_remove_held_runner(
+    app: tauri::AppHandle,
+    runner: String,
+) -> Result<(), String> {
     #[cfg(unix)]
     {
         crate::off_the_window("removing a held runner", move || {
@@ -671,13 +677,21 @@ pub async fn docker_pool_remove_held_runner(runner: String) -> Result<(), String
                 Some(&unpair),
             )
             .map_err(|why| refused_said(&why.to_string()))?;
+            if removed.forgotten {
+                crate::poolfollow::forget_waiting_on(&machine.config, kept.pool(), &runner);
+                if let Some(host) =
+                    tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app)
+                {
+                    host.connection().links_to_gone_runners_end(&machine.config);
+                }
+            }
             removed.left().map_or(Ok(()), Err)
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = runner;
+        let _ = (app, runner);
         Err(NOT_HERE.to_owned())
     }
 }
@@ -739,11 +753,13 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         .into_iter()
         .find(|pool| pool.name() == name)
         .ok_or_else(|| format!("no pool named {name} is on this machine"))?;
-    let draining = purlis_core::runners::draining(&machine.config)
+    let older: Vec<_> = purlis_core::runners::draining(&machine.config)
         .map_err(|why| why.to_string())?
-        .iter()
+        .into_iter()
         .filter(|kept| kept.pool() == name)
-        .count();
+        .collect();
+    let held = older.iter().filter(|kept| kept.held).count();
+    let draining = older.len() - held;
     let (runner, why) = version_read(crate::runnerlinks::version_of(machine, &kept));
     Ok(PoolVersion {
         runner,
@@ -751,6 +767,7 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         desktop: crate::runnerlinks::desktop_version().to_owned(),
         follows: pool.image().is_purlis_own(),
         draining: u32::try_from(draining).unwrap_or(u32::MAX),
+        held: u32::try_from(held).unwrap_or(u32::MAX),
         named: crate::poolfollow::this_versions_image_named(),
         waiting: crate::poolfollow::waiting_on(&machine.config, name),
         suspends: machine

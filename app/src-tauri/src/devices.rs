@@ -1285,10 +1285,11 @@ fn ask_runner(
         .find(|one| one.pool() == pool && one.name() == runner)
         .ok_or_else(|| format!("No runner {runner} of pool {pool} is on this machine."))?;
     let ran = machine.ran(&kept).map_err(|why| why.0);
-    let held = kept.draining
-        && ran.as_ref().is_ok_and(|ran| {
-            purlis_core::pools::drain_look(&kept, *ran) == purlis_core::pools::DrainLook::Held
-        });
+    let held = kept.held
+        || kept.draining
+            && ran.as_ref().is_ok_and(|ran| {
+                purlis_core::pools::drain_look(&kept, *ran) == purlis_core::pools::DrainLook::Held
+            });
     let asked = answered(
         ran.map(|ran| ran.running),
         || {
