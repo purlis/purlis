@@ -1728,6 +1728,7 @@ pub fn question_of(held: &Held, task: u32) -> Option<TaskQuestion> {
 /// - the asking chat is told the person answered, with the question and the answer, on its
 ///   next turn, and the question it had not read yet is no longer left for it;
 /// - the dispatch's record keeps the answer with who said it, for the Activity view;
+/// - the task's wait on the person ends, and the turn the answer begins is no background turn;
 /// - each of the two is typed purlis's one line where it may be typed one, and never while
 ///   the person is typing in it ([`tell_the_chat`]).
 ///
@@ -1770,6 +1771,10 @@ pub fn person_answers(
     // One more message on the task's dispatch record, kept as the person's (#1495).
     crate::dispatches::person_answered(held, task, &text, number);
     held.tasks().changed();
+    // **Their answer is their reply** (#4562): purlis types the line that hands it over, and the
+    // turn that line begins is theirs. The asking chat's own wait stays: they answered the task.
+    held.tasks().ledger().person_sent(task);
+    held.person_replied(task);
     tell_the_chat(held, task);
     if let Some(asker) = asker {
         tell_the_chat(held, asker);
@@ -1837,8 +1842,8 @@ pub fn person_typed(held: &Held, chat: u32, bytes: &[u8], submitted: Option<Opti
     }
     // **A line the person sends is their reply** (#4562), before the bytes go: it ends a wait a
     // background turn runs over, and whatever turn begins next is theirs. An answer to a prompt
-    // the turn showed them is no reply to what they were waited on for.
-    if dispatched::steps_in(false, submitted) && !held.board().glance(chat).asking {
+    // the turn is stopped on is no reply to what they were waited on for.
+    if dispatched::steps_in(false, submitted) && !held.hooks().board().waits_on_its_prompt(chat) {
         held.tasks().ledger().person_sent(chat);
         held.person_replied(chat);
     }

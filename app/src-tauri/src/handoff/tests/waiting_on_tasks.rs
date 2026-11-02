@@ -951,7 +951,10 @@ fn a_reply_after_the_background_turn_s_prompt_was_answered_clears_the_wait() {
     held.operator_input(steward, b"the second one\r")
         .expect("sent");
 
-    assert!(queue(&held).is_empty(), "the bell stayed through their line");
+    assert!(
+        queue(&held).is_empty(),
+        "the bell stayed through their line"
+    );
     assert!(!asks_for_a_reply(&held, steward));
 }
 
