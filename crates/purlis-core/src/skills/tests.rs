@@ -960,7 +960,10 @@ fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_on_every
     assert_eq!(
         at_the_root.spent.chars,
         // Claude Code's limit counts whole lines: each name, and 23 around it.
-        "deployShips it.".len() + "handoffHands off.".len() + "reviewReviews a PR.".len() + 3 * 23
+        "deployShips it.".len()
+            + "purlis-handoffHands off.".len()
+            + "reviewReviews a PR.".len()
+            + 3 * 23
     );
     assert_eq!(at_the_root.spent.warns(), None);
 
