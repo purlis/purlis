@@ -3330,3 +3330,36 @@ fn a_refused_write_that_keeps_a_git_folder_in_place_offers_no_allow() {
         None
     );
 }
+
+#[test]
+fn a_window_that_takes_the_hosts_board_is_handed_what_each_chat_last_said() {
+    // #4709: what a chat waiting on the person said outlives the window in the host's board,
+    // and the window that holds the project again hands it back to its ledger.
+    let dir = tempfile::tempdir().expect("a directory");
+    let at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join("app").join("hooks.sock"),
+    };
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let hooks = Hooks::relayed(plane, &at, Arc::new(|_| {}), Arc::new(|_| {}));
+    let taken: Arc<Mutex<Vec<ChatSaid>>> = Arc::default();
+    hooks.when_said_taken({
+        let taken = Arc::clone(&taken);
+        Arc::new(move |chat, said| taken.lock().unwrap().push((chat, said)))
+    });
+    let mut host = purlis_core::state::Board::new();
+    host.opened(4, None, None);
+    host.opened(5, None, None);
+    host.keep_said(4, &["Which host?".to_owned(), "Should I push?".to_owned()]);
+
+    let relayed = hooks.relayed_from_the_host().expect("relayed");
+    relayed.keep_with(Arc::new(|_, _| {}), Some(host.kept()));
+
+    assert_eq!(
+        *taken.lock().unwrap(),
+        [(
+            4,
+            vec!["Which host?".to_owned(), "Should I push?".to_owned()]
+        )]
+    );
+}

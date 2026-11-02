@@ -399,7 +399,8 @@ The session host's copy of what each chat of a project is doing and its **Needs 
 kept so it outlives the window. While a window holds the project, the window decides each move,
 makes it on its own copy and tells the host, which makes the same move; with no window there, the
 host moves it by the lines the chats' hooks write. A window that holds the project takes it whole
-(ADR 0068, amended for #2194). Not the **Board** of work items, which is derived and never stored.
+(ADR 0068, amended for #2194), with the last few messages each chat's turns ended on, masked,
+which the window's ledger keeps again for the waiting strip (#4709). Not the **Board** of work items, which is derived and never stored.
 _Avoid_: board (unqualified: that is the work items'), state store, snapshot
 
 **Host record**:

@@ -2877,6 +2877,7 @@ pub fn heard(held: &Held, report: &Report) {
             // the board has taken this report already, and says whether it is one.
             let background = held.hooks().board().background_turn(report.chat);
             held.tasks().ledger().turn_began_as(report.chat, background);
+            said_kept(held, report.chat);
         }
         Event::Stop => {
             held.tasks().ledger().turn_ended(report.chat);
@@ -2893,6 +2894,14 @@ pub fn heard(held: &Held, report: &Report) {
     moved(held, report.chat);
 }
 
+/// **What chat `chat` last said, as the ledger keeps it, told to the board the session host
+/// keeps** (#4709), so a window that comes back shows it in the waiting strip at once. The
+/// ledger's lock is let go of before the board's is taken.
+fn said_kept(held: &Held, chat: u32) {
+    let said = held.tasks().ledger().said(chat);
+    held.hooks().board().keep_said(chat, &said);
+}
+
 /// **What chat `output.chat`'s turn put out** (#1981), heard on its own line before the turn's
 /// end. The message it ended on is kept for every chat, masked and made a report's text
 /// (`handback::last_message_summary`), in memory, until its next turn begins: what a question in
@@ -2903,6 +2912,7 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
     if let purlis_core::hookwire::Output::Final { text } = &output.turn_output {
         let kept = purlis_core::handback::last_message_summary(Some(text));
         held.tasks().ledger().said_last(output.chat, kept);
+        said_kept(held, output.chat);
     }
     let task = held
         .chats()

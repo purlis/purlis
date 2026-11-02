@@ -3123,6 +3123,21 @@ impl Planes {
                 }
             })
         });
+        // What each chat last said, as the board the host kept had it (#4709): kept again,
+        // masked again under what this window knows, where the ledger heard nothing since.
+        // Weak for the handoff's reason.
+        held.hooks.when_said_taken({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat, said| {
+                if let Some(held) = held.upgrade() {
+                    let said = said
+                        .iter()
+                        .map(|one| purlis_core::secrets::mcpstart::masked(one))
+                        .collect();
+                    held.tasks().ledger().said_again(chat, said);
+                }
+            })
+        });
         // What a chat's turn ended saying (#1981, #4550): kept in memory, for every chat. Weak
         // for the handoff's reason.
         held.hooks.when_output({

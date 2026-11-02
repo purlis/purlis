@@ -1066,3 +1066,19 @@ fn a_background_turn_keeps_what_the_chat_asked_and_lists_it_before_its_newer_mes
     assert_eq!(held.tasks().ledger().last_said(steward), None);
     assert!(held.tasks().ledger().said_before(steward).is_empty());
 }
+
+#[test]
+fn what_a_waiting_chat_said_is_told_to_the_board_the_host_keeps_until_the_person_answers() {
+    // #4709: the host's copy is what a relaunched window shows in the strip.
+    let (_plane, _host, _planes, _id, held, steward, _task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    says(&held, steward, "Should I open the pull request now?");
+    assert_eq!(
+        held.hooks().board().said_of(steward),
+        ["Should I open the pull request now?"]
+    );
+
+    held.operator_input(steward, b"open it\r").expect("sent");
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    assert!(held.hooks().board().said_of(steward).is_empty());
+}

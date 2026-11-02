@@ -437,9 +437,28 @@ impl KeptBoard {
     /// The board, whole, for a window that holds the project. One larger than the link carries
     /// is refused in a sentence, which the window shows the person (#2006), and said in the log:
     /// the window then starts from its own.
+    ///
+    /// **What the chats said goes first** (#4709): a board that fits only without the chats'
+    /// last messages is answered without them, said in the log, so a relaunch loses the
+    /// strip's text before it loses any chat's state.
     pub fn whole(&self) -> Result<serde_json::Value, String> {
-        let kept = serde_json::to_value(self.board().kept()).unwrap_or(serde_json::Value::Null);
-        let size = serde_json::to_vec(&kept).map_or(usize::MAX, |said| said.len());
+        let board = self.board().kept();
+        let size_of = |kept: &serde_json::Value| {
+            serde_json::to_vec(kept).map_or(usize::MAX, |said| said.len())
+        };
+        let mut kept = serde_json::to_value(&board).unwrap_or(serde_json::Value::Null);
+        let mut size = size_of(&kept);
+        if size > A_BOARD_IS_AT_MOST {
+            kept = serde_json::to_value(board.without_said()).unwrap_or(serde_json::Value::Null);
+            let lean = size_of(&kept);
+            if lean <= A_BOARD_IS_AT_MOST {
+                host_says(&format!(
+                    "the board kept here is {size} bytes with what its chats last said, more \
+                     than the link carries ({A_BOARD_IS_AT_MOST}), so it is answered without it"
+                ));
+            }
+            size = lean;
+        }
         if size > A_BOARD_IS_AT_MOST {
             host_says(&format!(
                 "the board kept here is {size} bytes, more than the link carries \
