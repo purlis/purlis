@@ -927,3 +927,16 @@ describe("what a refused send is heard as (#3291)", () => {
     document.body.innerHTML = "";
   });
 });
+
+describe("a box that holds its own words, the pointer gone from the window", () => {
+  it("stops drawing the hover, with no leave on the box (#4628)", async () => {
+    render(<TextField label="Token" type="password" onChange={vi.fn()} />);
+    const box = screen.getByLabelText("Token").closest('[data-part="root"]') as HTMLElement;
+    fireEvent.pointerEnter(box);
+    expect(box.dataset.hovered).toBe("true");
+
+    await act(async () => void fireEvent.pointerOut(document, { relatedTarget: null }));
+
+    expect(box.dataset.hovered).toBeUndefined();
+  });
+});

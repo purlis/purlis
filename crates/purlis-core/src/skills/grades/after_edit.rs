@@ -143,16 +143,13 @@ pub fn outcomes_of(planned: &super::Planned) -> Option<String> {
     let mut digest = sha2::Sha256::new();
     digest.update(serde_json::to_vec(&request.outcomes).unwrap_or_default());
     if let Some(copy) = &planned.copy {
-        for (path, text) in &copy.inputs {
+        for (path, bytes) in &copy.inputs {
             if request
                 .outcomes
                 .iter()
                 .any(|eval| eval.files.contains(path))
             {
-                digest.update(path.as_bytes());
-                digest.update(b"\0");
-                digest.update(text.as_bytes());
-                digest.update(b"\0");
+                super::digest_input(&mut digest, path, bytes);
             }
         }
     }

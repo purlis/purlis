@@ -244,7 +244,7 @@ impl Scratch {
         commit: &str,
         branch: &str,
     ) -> Result<git::Run, String> {
-        let refspec = format!("{commit}:refs/heads/{branch}");
+        let refspec = git::push_refspec(commit, &format!("refs/heads/{branch}"));
         let args = [
             self.git_dir.as_str(),
             "push",

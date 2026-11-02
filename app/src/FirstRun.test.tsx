@@ -205,8 +205,9 @@ describe("the first run's project template (FR-17)", () => {
 
     const select = await findSelectNamed("Project template");
     const page = select.closest(".first-run") as HTMLElement;
-    // Where it lives (#1819, ruling Q2), a new project's name, the template and the path.
-    expect(page.querySelectorAll(".ui-setting-row")).toHaveLength(4);
+    // Where it lives (#1819, ruling Q2), a new project's name and template, the repo's template
+    // and the path.
+    expect(page.querySelectorAll(".ui-setting-row")).toHaveLength(5);
     // The deleted dialog classes are `settings/oldFormClasses.test.ts`'s to hold (#1210).
     expect(page.querySelector(".by-path")).toBeNull();
     const box = screen.getByLabelText("Or type the repo's path");
@@ -390,8 +391,36 @@ describe("the first run", () => {
 
     await vi.waitFor(() =>
       expect(calls("create_project").map((one) => one.args)).toEqual([
-        { path: "/home/dev/Projects/garden", planeIsThisRepo: false, adopt: null, forge: null },
+        {
+          path: "/home/dev/Projects/garden",
+          planeIsThisRepo: false,
+          adopt: null,
+          forge: "github",
+          template: null,
+        },
       ]),
+    );
+  });
+
+  it("lays a project made from its name out from the template picked (#4599)", async () => {
+    const { calls } = core((cmd, args) => {
+      if (cmd === "new_project_folder") return `/home/dev/Projects/${String(args.name)}`;
+      if (cmd === "create_project")
+        return { opened: { plane: "/home/dev/Projects/garden", ask: null }, asks_forge: null };
+      return undefined;
+    });
+    await renderCreate();
+    const person = userEvent.setup();
+
+    await person.type(screen.getByLabelText("Name"), "garden");
+    await screen.findByText("/home/dev/Projects/garden");
+    const template = await findSelectNamed("Template");
+    expect(chosenIn(template)).toBe(":none");
+    await pickIn(template, "Rust");
+    await person.click(screen.getByRole("button", { name: "Create project" }));
+
+    await vi.waitFor(() =>
+      expect(calls("create_project").map((one) => one.args.template)).toEqual(["rust"]),
     );
   });
 

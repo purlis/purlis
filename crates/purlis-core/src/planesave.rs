@@ -55,6 +55,9 @@ pub struct Plane {
     pub autosave_after: Resolved<Duration>,
     /// How a save an agent run made spells `Assisted-by` (GL-8, V67).
     pub assisted_by: Resolved<crate::provenance::Form>,
+    /// Whether `purlis worktree commit` refuses a chat with no sandbox and points it at git
+    /// (#4534). Off when neither file says.
+    pub refuse_unsandboxed_commit: Resolved<bool>,
 }
 
 impl Plane {
@@ -158,6 +161,12 @@ impl Settings {
                 autosave: files.or(&["plane"], "autosave", toml::Value::as_bool, true),
                 autosave_after: files.or(&["plane"], "autosave_after", quiet_period, QUIET),
                 assisted_by: files.assisted_by(&["plane"]),
+                refuse_unsandboxed_commit: files.or(
+                    &["plane"],
+                    REFUSE_UNSANDBOXED_COMMIT,
+                    toml::Value::as_bool,
+                    false,
+                ),
             },
             plane_left_out: None,
             repos_left_out: None,
@@ -398,7 +407,7 @@ fn share_alias(shared: &toml::Table) -> Option<Mode> {
 }
 
 /// The keys `[plane]` holds that this module reads.
-const PLANE_KEYS: [&str; 7] = [
+const PLANE_KEYS: [&str; 8] = [
     "mode",
     "branch",
     "save_branch",
@@ -406,7 +415,11 @@ const PLANE_KEYS: [&str; 7] = [
     "autosave",
     "autosave_after",
     ASSISTED_BY,
+    REFUSE_UNSANDBOXED_COMMIT,
 ];
+
+/// The key that brings back `purlis worktree commit`'s refusal of a chat with no sandbox.
+const REFUSE_UNSANDBOXED_COMMIT: &str = "refuse_unsandboxed_commit";
 
 /// An `assisted_by` value, read in any case.
 fn assisted_by_word(value: &toml::Value) -> Option<crate::provenance::Form> {
@@ -527,7 +540,7 @@ fn value_refusal(at: &str, key: &str, value: &toml::Value, file: &str) -> Option
     let ok = match key {
         "mode" => value.as_str().and_then(Mode::parse).is_some(),
         "branch" | "save_branch" => value.as_str().is_some_and(branch_ok),
-        "sign" | "autosave" => value.is_bool(),
+        "sign" | "autosave" | REFUSE_UNSANDBOXED_COMMIT => value.is_bool(),
         ASSISTED_BY => assisted_by_word(value).is_some(),
         _ => quiet_period(value).is_some(),
     };
@@ -541,7 +554,9 @@ fn value_refusal(at: &str, key: &str, value: &toml::Value, file: &str) -> Option
         "branch" | "save_branch" => {
             format!("{at}.{key} in {file} is not a branch name git would accept")
         }
-        "sign" | "autosave" => format!("{at}.{key} in {file} is not true or false"),
+        "sign" | "autosave" | REFUSE_UNSANDBOXED_COMMIT => {
+            format!("{at}.{key} in {file} is not true or false")
+        }
         ASSISTED_BY => format!("{at}.{key} in {file} is not a form of Assisted-by — full or llm"),
         _ => format!(
             "{at}.{key} in {file} is not a quiet period — a whole number of seconds or minutes, \

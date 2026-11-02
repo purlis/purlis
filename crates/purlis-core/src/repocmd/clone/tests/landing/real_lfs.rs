@@ -16,38 +16,11 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use sha2::{Digest, Sha256};
+use crate::lfsupload::testserver::{CHUNK, Object, named, on_a_machine, real_git_lfs};
 
 use super::*;
 
 mod push;
-
-/// git-lfs is here, and the filter a person's `git lfs install` writes is in git's config.
-/// `false`, having said so, where this is not CI and it is not.
-fn real_git_lfs() -> bool {
-    let probe = tempfile::tempdir().unwrap();
-    let version = git::run(probe.path(), &["lfs", "version"], git::READ).ok();
-    let filter = git::run(
-        probe.path(),
-        &["config", "--get-regexp", r"^filter\.lfs\.(process|smudge)$"],
-        git::READ,
-    )
-    .ok();
-    let here = version.as_ref().is_some_and(git::Run::ok)
-        && filter
-            .as_ref()
-            .is_some_and(|run| run.ok() && !run.out.trim().is_empty());
-    if !here {
-        assert!(
-            std::env::var_os("CI").is_none(),
-            "CI must run these against a real git-lfs: {version:?}, {filter:?}"
-        );
-        let _ = writeln!(std::io::stderr(), "no git-lfs configured here: not run");
-    } else if let Some(version) = version {
-        let _ = writeln!(std::io::stderr(), "real git-lfs: {}", version.out.trim());
-    }
-    here
-}
 
 /// How the server sends a download.
 #[derive(Clone, Copy)]
@@ -63,34 +36,6 @@ enum Sending {
     },
     /// Nothing at all: the batch call itself is never answered.
     NoAnswer,
-}
-
-const CHUNK: usize = 64 * 1024;
-
-#[derive(Clone)]
-struct Object {
-    oid: String,
-    bytes: Vec<u8>,
-}
-
-impl Object {
-    fn of(chunks: usize, seed: u8) -> Self {
-        let bytes: Vec<u8> = (0..chunks * CHUNK)
-            .map(|at| seed ^ u8::try_from(at % 251).unwrap())
-            .collect();
-        Self {
-            oid: crate::extension::hex(&Sha256::digest(&bytes)),
-            bytes,
-        }
-    }
-
-    fn pointer(&self) -> String {
-        format!(
-            "version https://git-lfs.github.com/spec/v1\noid sha256:{}\nsize {}\n",
-            self.oid,
-            self.bytes.len()
-        )
-    }
 }
 
 #[derive(Default)]
@@ -723,6 +668,131 @@ fn real_git_lfs_asks_no_helper_where_the_command_line_empties_them() {
         marker.exists(),
         "the helper was never one git-lfs would ask"
     );
+}
+
+/// A repository purlis never wired, its own `.lfsconfig` naming `server`, with `object` committed
+/// as the pointer at `large.bin`, whose object is not here.
+fn not_wired(top: &Path, server: &LfsServer, object: &Object) -> PathBuf {
+    let repo = top.join("not-wired");
+    std::fs::create_dir(&repo).unwrap();
+    plain_git(&repo, &["init", "-q", "-b", "main", "."]);
+    std::fs::write(
+        repo.join(".gitattributes"),
+        "*.bin filter=lfs diff=lfs merge=lfs -text\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join(".lfsconfig"),
+        format!(
+            "[lfs]\n\turl = http://127.0.0.1:{}/acme/widget.git/info/lfs\n",
+            server.port
+        ),
+    )
+    .unwrap();
+    std::fs::write(repo.join("large.bin"), object.pointer()).unwrap();
+    plain_git(&repo, &["add", "-A"]);
+    plain_git(&repo, &["commit", "-q", "-m", "one"]);
+    repo
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_a_filter_outside_a_wired_clone_asks_none_of_the_persons_helpers() {
+    on_a_machine(
+        &named(
+            module_path!(),
+            "real_git_lfs_a_filter_outside_a_wired_clone_asks_none_of_the_persons_helpers",
+        ),
+        |machine| {
+            let object = Object::of(2, 41);
+            let server = LfsServer::serving(vec![object.clone()], Sending::AtOnce);
+            let dir = tempfile::tempdir().unwrap();
+            let top = std::fs::canonicalize(dir.path()).unwrap();
+            let repo = not_wired(&top, &server, &object);
+            std::fs::remove_file(repo.join("large.bin")).unwrap();
+
+            // Each way a call through purlis checks a file out.
+            let back = git::run_untimed(&repo, &["checkout", "--", "large.bin"]).unwrap();
+            assert!(back.ok(), "{back:?}");
+            let folder = top.join("branch-folder");
+            let folder_text = folder.to_str().unwrap();
+            let cut = git::run_untimed(
+                &repo,
+                &["worktree", "add", "-q", "-b", "piece", folder_text],
+            )
+            .unwrap();
+            assert!(cut.ok(), "{cut:?}");
+
+            for checked_out in [repo.join("large.bin"), folder.join("large.bin")] {
+                assert!(
+                    std::fs::read(&checked_out).unwrap() == object.pointer().into_bytes(),
+                    "{} is not its pointer",
+                    checked_out.display()
+                );
+            }
+            assert!(!machine.persons_helper_ran(), "purlis's git asked it");
+            assert_eq!(server.batches(), 0, "the filter reached the server");
+
+            // Control: the person's own git, on the same repository, does ask it.
+            std::fs::remove_file(repo.join("large.bin")).unwrap();
+            let mut control = std::process::Command::new("git");
+            control
+                .args(["checkout", "--", "large.bin"])
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .current_dir(&repo);
+            let out = crate::forklock::output(&mut control).unwrap();
+            assert!(
+                machine.persons_helper_ran(),
+                "the helper was never one the filter would ask: {out:?}"
+            );
+            assert!(std::fs::read(repo.join("large.bin")).unwrap() == object.bytes);
+        },
+    );
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_a_clone_through_the_network_entry_leaves_its_files_as_pointers() {
+    // A `clone` reads no repository's config, so nothing else tells its filter.
+    if !real_git_lfs() {
+        return;
+    }
+    let object = Object::of(1, 44);
+    let server = LfsServer::serving(vec![object.clone()], Sending::AtOnce);
+    let dir = tempfile::tempdir().unwrap();
+    let top = std::fs::canonicalize(dir.path()).unwrap();
+    let repo = not_wired(&top, &server, &object);
+    let from = repo.to_str().unwrap();
+
+    let cloned = git::run_network(&top, None, &["clone", "-q", "--", from, "copy"]).unwrap();
+
+    assert!(cloned.ok(), "{cloned:?}");
+    assert!(std::fs::read(top.join("copy/large.bin")).unwrap() == object.pointer().into_bytes());
+    assert_eq!(server.batches(), 0, "the filter reached the server");
+}
+
+#[test]
+#[ignore = "needs a real git-lfs: the CI job `real git-lfs` runs it"]
+fn real_git_lfs_writes_nothing_through_a_link_in_a_store_outside_a_wired_clone() {
+    if !real_git_lfs() {
+        return;
+    }
+    let object = Object::of(1, 42);
+    let server = LfsServer::serving(vec![object.clone()], Sending::AtOnce);
+    let dir = tempfile::tempdir().unwrap();
+    let top = std::fs::canonicalize(dir.path()).unwrap();
+    let repo = not_wired(&top, &server, &object);
+    let elsewhere = top.join("chosen-by-the-chat");
+    std::fs::create_dir(&elsewhere).unwrap();
+    let _ = std::fs::remove_dir_all(repo.join(".git/lfs"));
+    std::os::unix::fs::symlink(&elsewhere, repo.join(".git/lfs")).unwrap();
+    std::fs::write(repo.join("large.bin"), Object::of(1, 43).bytes).unwrap();
+
+    let read = git::run_untimed(&repo, &["diff", "--stat"]).unwrap();
+    let added = git::run_untimed(&repo, &["add", "--", "large.bin"]).unwrap();
+
+    assert!(read.ok() && added.ok(), "{read:?} {added:?}");
+    assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
 }
 
 #[test]

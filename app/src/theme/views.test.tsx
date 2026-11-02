@@ -1216,6 +1216,7 @@ const DEVICE_ANSWERS = {
   contacted: 1_800_000_000,
   holds: { open: [], browsers_open: [], chats: 2, browsers: 1 },
   ran_this_week: 7200,
+  held: false,
 };
 
 /** A runner's answer in each other state a Devices row draws. */
@@ -1604,6 +1605,7 @@ const STATES: State[] = [
       }),
     answers: {
       skill_grade_scorecard: {
+        evals: [],
         grade: "01GRADE",
         skill: "deploy",
         graded: "2026-10-28 10:00 UTC",
@@ -1616,6 +1618,7 @@ const STATES: State[] = [
         after_edit: false,
         outcome: "graded",
         arms: { with: 100, without: 0, previous: null },
+        outcome_arms: null,
         spent: { chats: 5, tokens: 40000, cost_usd: 0.4, limit_usd: 3 },
         asked: 1,
         tests: [

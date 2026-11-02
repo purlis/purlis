@@ -362,10 +362,13 @@ export const commands = {
 	 *  is made for, else asked. `forge` is the operator's answer (`github`, `gitlab`) on the call
 	 *  after a question.
 	 * 
+	 *  **`template` is laid out in a project this call made** (FR-17, #4599), by id. A folder that
+	 *  is a project already keeps what it has, and only opens.
+	 * 
 	 *  On a blocking thread (#1949), for [`open_plane`]'s reason and because making the project
 	 *  writes its files and runs git.
 	 */
-	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge })),
+	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null, template: string | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge, template })),
 	/**
 	 *  Which harnesses are installed and signed in, and whether `gh` and `glab` are logged in.
 	 * 
@@ -2979,7 +2982,7 @@ export const commands = {
 	 *  cut one at a time, by `chatpiece`'s lock per clone. Starting a session off the main thread
 	 *  is what a relaunch's put-back already does.
 	 */
-	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, string>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
+	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, LimitRefused>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
 	/**
 	 *  **The person pressed Cancel while a chat started in this project** (#4264): it stops waiting
 	 *  for the session host, and a chat that comes up after is closed.
@@ -3211,6 +3214,13 @@ export const commands = {
 	 *  a limit, through the edit ask (Q6), and never replaces a runner.
 	 */
 	dockerPoolReplaceRunner: (name: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_replace_runner", { name })),
+	/**
+	 *  **Removes the held runner `runner`, as the person pressed**: a draining runner that stopped
+	 *  during its drain, and what its chats left in its home with it
+	 *  ([`purlis_core::pools::remove_held`]). The window's alone: nothing else ends what a held runner
+	 *  keeps. What is left of it is said.
+	 */
+	dockerPoolRemoveHeldRunner: (runner: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_remove_held_runner", { runner })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**
@@ -3244,7 +3254,7 @@ export const commands = {
 	 *  runner of the cluster's Pool, waits for its operator to vouch for it, pairs it and keeps it.
 	 *  What fails is taken back.
 	 */
-	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
+	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, LimitRefused>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
 	 *  **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071, the
 	 *  person's ruling of 2026-10-30). The window's alone (`ui::WINDOW_ONLY`): no chat, Pool or
@@ -3277,22 +3287,6 @@ export const commands = {
 	 *  runner keeps it the next time the pool's profiles are asked.
 	 */
 	poolProfileAdd: (pool: string, name: string, open: OpenProject) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, open })),
-	/**
-	 *  **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
-	 *  Start a chat offers beside that refusal. Asked of the core, never read from the words.
-	 */
-	poolLimitOffer: (profile: string, refused: string, root: string | null, cwd: string | null) => __TAURI_INVOKE<{
-	pool: string,
-	hits: PoolLimitHitRow[],
-} | null>("pool_limit_offer", { profile, refused, root, cwd }),
-	/**
-	 *  **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
-	 *  move's line offers beside that refusal, as [`pool_limit_offer`] does for a start.
-	 */
-	poolLimitOfferForMove: (pool: string, refused: string) => __TAURI_INVOKE<{
-	pool: string,
-	hits: PoolLimitHitRow[],
-} | null>("pool_limit_offer_for_move", { pool, refused }),
 	/**  **Pool `pool`'s limits** (#4285), as its page draws them. */
 	poolLimits: (pool: string) => typedError<PoolLimitsPage, string>(__TAURI_INVOKE("pool_limits", { pool })),
 	/**
@@ -3367,9 +3361,10 @@ export const commands = {
 { at: "could-not-follow"; said: string } | 
 /**
  *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
- *  ending so, and the page it opened is no use now (#4367).
+ *  ending so, and the page it opened is no use now (#4367); what to raise where the pool's
+ *  limit ended it.
  */
-{ at: "failed"; why: string; stopped: boolean } | 
+{ at: "failed"; why: string; stopped: boolean; limit: PoolLimitOffer | null } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
 	/**
@@ -5007,6 +5002,12 @@ export type AnswerPath =
  *  the chat that asked (#2047).
  */
 { via: "pool-tool"; run: number } | 
+/**
+ *  `answer_task_question`, through the form that reads the question from the core: the
+ *  task's own words, with `why` it reached the person. `note` is the asking chat's own
+ *  line, `from` being that chat, and is never the task's words.
+ */
+{ via: "task-question"; why: ReachedWhy; from: string; note: string | null } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5145,6 +5146,8 @@ export type AskSource =
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
 "question" | 
+/**  **A task's question that has reached the person** (ADR 0107): in the task's own words. */
+"task-question" | 
 /**
  *  A profile a chat could not start on, because its harness says it is not signed in on
  *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
@@ -5956,6 +5959,8 @@ export type ChatMove = {
 	stage: string,
 	/**  Why it failed, in a sentence: where it is `failed`. */
 	why: string | null,
+	/**  What to raise, where a pool's limit is why it failed (#4313). */
+	limit: PoolLimitOffer | null,
 	/**  The profile it waits on to sign in on the runner: where it is `signing-in` (#3477). */
 	sign_in: MoveSignIn | null,
 	/**  The other chats of its workspace that move with it, by name (#3453). */
@@ -8092,6 +8097,8 @@ export type GradeEval = {
 	prompt: string,
 	hides: boolean,
 	files: string[],
+	/**  Those of its files that are not text, which nothing can check for what `hides` says (#4230). */
+	not_text: string[],
 	expectations: number,
 	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
 	on: boolean,
@@ -8169,6 +8176,8 @@ export type GradeRow = {
 	ended: string,
 	outcome: GradeOutcome,
 	arms: GradeArms,
+	/**  Each arm's outcome pass rate, where it ran an outcome eval (SK-55). */
+	outcome_arms: GradeArms | null,
 	spent: GradeSpent,
 	after_edit: boolean,
 };
@@ -8215,6 +8224,12 @@ export type GradeScorecard = {
 	outcome: GradeOutcome,
 	arms: GradeArms,
 	spent: GradeSpent,
+	/**
+	 *  **Its outcome evals** (SK-55, #3235), each in each arm, and each arm's pass rate in points:
+	 *  none, and null, in a grade that scored none.
+	 */
+	evals: ScoredEval[],
+	outcome_arms: GradeArms | null,
 };
 
 /**
@@ -8867,6 +8882,16 @@ export type LevelWaiting = {
 	level: string,
 };
 
+/**
+ *  **Why something the window asked of a pool did not happen** (spec #4275): the core's
+ *  sentence, and what to raise where a pool's limit refused it, which comes with the refusal as
+ *  data.
+ */
+export type LimitRefused = {
+	words: string,
+	limit: PoolLimitOffer | null,
+};
+
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
 export type LineRange = {
 	first: number,
@@ -9270,11 +9295,6 @@ export type Moved = {
 	 *  `null` for every other chat.
 	 */
 	own_work?: OwnWork | null,
-	/**
-	 *  **A background turn runs over its wait on the person** (#4562): `state` says `waiting`,
-	 *  as it did, and the chat is at work, so a restart or a move owed it waits. Absent otherwise.
-	 */
-	background_turn?: boolean | null,
 	/**
 	 *  Which snapshot of the board this is — bigger was taken later (charter-app#248).
 	 * 
@@ -10907,6 +10927,8 @@ export type PoolProfileRow = {
 	standing: string | null,
 	/**  Why it is not kept on the runner, in words, where it is not. */
 	not_kept: string | null,
+	/**  What to raise, where a limit of the pool is why it is not kept (#4397). */
+	limit: PoolLimitOffer | null,
 	/**  The plans Sign in offers there, where purlis names the provider. */
 	plans: PlanRow[],
 };
@@ -11040,9 +11062,10 @@ export type PoolSignInStep =
 { at: "could-not-follow"; said: string } | 
 /**
  *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
- *  ending so, and the page it opened is no use now (#4367).
+ *  ending so, and the page it opened is no use now (#4367); what to raise where the pool's
+ *  limit ended it.
  */
-{ at: "failed"; why: string; stopped: boolean } | 
+{ at: "failed"; why: string; stopped: boolean; limit: PoolLimitOffer | null } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" };
 
@@ -11086,6 +11109,11 @@ export type PoolVersion = {
 	 *  removed.
 	 */
 	draining: number,
+	/**
+	 *  How many of its older runners are held: each stopped during its drain, and stays with its
+	 *  home until the person removes it.
+	 */
+	held: number,
 	/**
 	 *  Whether this version's release named a runner image, as purlis last found it (#2880):
 	 *  one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
@@ -11619,6 +11647,15 @@ export type ReachedBy =
 "persona" | 
 /**  An Allowed host: for this chat, this project on this machine, or everyone in it. */
 "allowed";
+
+/**  Why a task's question reached the person ([`AnswerPath::TaskQuestion`]). */
+export type ReachedWhy = 
+/**  Its asking chat passed it on. */
+"passed-on" | 
+/**  Its asking chat had its turn and did nothing with it in time. */
+"no-reply" | 
+/**  Its asking chat closed or crashed. */
+"asker-gone";
 
 /**  Why this purlis reads a project and writes nothing to it. */
 export type ReadOnlyProject = {
@@ -12478,6 +12515,11 @@ export type RunnerAsked = {
 	 *  (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
 	 */
 	ran_this_week: number | null,
+	/**
+	 *  It stopped during its drain, so it stays with its home until the person removes it
+	 *  ([`purlis_core::pools::DrainLook::Held`]).
+	 */
+	held: boolean,
 };
 
 /**  One runner of a project, as the away summary reads it. */
@@ -12984,6 +13026,48 @@ export type ScoredChat = {
 	/**  Which of its test's runs in its arm it was, from 1. */
 	run: number,
 	kept: boolean,
+};
+
+/**  **One expectation in one run of an outcome eval, as its judge found it** (SK-55). */
+export type ScoredCheck = {
+	passed: boolean,
+	/**  What the judge found, as the record keeps it: empty where a long row dropped it. */
+	evidence: string,
+};
+
+/**
+ *  **One outcome eval of a grade** (SK-55): its id and its expectations, each character no reader
+ *  would see marked, in each arm.
+ */
+export type ScoredEval = {
+	id: string,
+	expectations: string[],
+	arms: ScoredEvalArm[],
+};
+
+/**
+ *  **One outcome eval in one arm of a grade** (SK-55): its judged runs, its pass rate in points,
+ *  and each run asked for.
+ */
+export type ScoredEvalArm = {
+	arm: ScoredArm,
+	runs: number,
+	points: number | null,
+	results: ScoredEvalRun[],
+};
+
+/**
+ *  **One run of an outcome eval in one arm** (SK-55): its chat and its judge's, each one click away
+ *  where this machine kept it; how many expectations passed, where it was judged; each one's
+ *  verdict; and why the eval failed there, where it failed without a verdict.
+ */
+export type ScoredEvalRun = {
+	run: number,
+	chat: ScoredChat | null,
+	judge: ScoredChat | null,
+	passed: number | null,
+	checks: ScoredCheck[],
+	failed: string | null,
 };
 
 /**  **One trigger test in one arm of a grade**, as its scorecard shows it. */
@@ -15343,7 +15427,11 @@ export type UpdateKind =
  */
 "root-update-refused" | 
 /**  A chat asked the person to take its browser over, and the browser ended first (#2015). */
-"browser-ask-ended";
+"browser-ask-ended" | 
+/**  A task ended with its question unanswered (#4556). */
+"question-closed" | 
+/**  A task's question could not be taken its route (#4557). */
+"question-failed";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

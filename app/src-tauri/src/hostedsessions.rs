@@ -1513,7 +1513,7 @@ impl HostLink {
             .unwrap_or_default()
     }
 
-    /// `hit` in words, kept for the window to ask of where this link is a pool's.
+    /// `hit` in words, kept for the attempt it refused where this link is a pool's.
     fn limit_said(&self, hit: purlis_core::poollimits::LimitHit) -> String {
         match &self.pool {
             Some(pool) => purlis_core::poollimits::hit_on(pool, hit),

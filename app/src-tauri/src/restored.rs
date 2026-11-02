@@ -135,26 +135,24 @@ pub(crate) fn finish(
         // As old as its dispatch's record says, which the ledger did not see (#1463).
         // And how it came back across the restart (#3900).
         crate::dispatched::brought_back(held, open.session, &records, kept.contains(&open.session));
-        let told = launch
+    }
+    // A question of a task that did not come back ended with it (#4553), where this launch
+    // knows that. And each chat asked one it never saw is told.
+    if settles {
+        let back: Vec<String> = launch
             .back
             .chats
             .iter()
-            .any(|chat| chat.number == Some(open.session) && launch.told(chat).is_some());
-        if told {
-            questions_were_not_kept(held, open.session);
-        }
+            .filter_map(|chat| chat.identity.id.clone())
+            .collect();
+        crate::dispatched::only_these_came_back(held, &back);
     }
+    crate::dispatched::askers_told_again(held);
     after_put_back(held, &launch, coming, settles);
     // What the chats queued while the app was away is delivered now that their tasks are back
     // (#3902), with nobody acting.
     crate::dispatched::deliver_all_queued(held);
     opened
-}
-
-/// Task chat `task` was told to carry on (#1546): what it asked its asking chat before the
-/// restart was in the app's memory and is gone, and an answer to it is told so.
-fn questions_were_not_kept(held: &Held, task: u32) {
-    held.tasks().ledger().talk.restored(task);
 }
 
 /// The reports kept for chats `record` brings back, taken from their workspaces before any of
@@ -492,14 +490,10 @@ pub(crate) fn retrying(
     if ended {
         held.chats().tell_nothing(id);
     }
-    let told = held
-        .chats()
-        .waiting_to_start()
-        .into_iter()
-        .any(|one| one.chat.identity.id.as_deref() == Some(id) && one.told.is_some());
     let started = coming_back_as(held, id, start);
-    if let (true, Ok(task)) = (told, &started) {
-        questions_were_not_kept(held, *task);
+    if let Ok(task) = &started {
+        crate::dispatched::question_brought_back(held, *task);
+        crate::dispatched::askers_told_again(held);
     }
     started
 }

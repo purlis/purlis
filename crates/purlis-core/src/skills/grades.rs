@@ -577,19 +577,25 @@ pub fn record(root: &Path, level: &Level, graded: &Graded, device: &str) -> Opti
     record_to(root, is_local(root, level), graded, || device.to_owned())
 }
 
-/// `graded` with the credentials in its judges' evidence masked (SK-55): evidence quotes what a
+/// `graded` with the credentials in its judges' evidence and its failure reasons masked (SK-55): evidence quotes what a
 /// chat left, and the record is committed.
 fn masked(graded: &Graded) -> Graded {
     let mut graded = graded.clone();
-    for check in graded
+    for run in graded
         .report
         .outcomes
         .iter_mut()
         .flat_map(|eval| eval.results.iter_mut())
-        .flat_map(|run| run.checks.iter_mut())
     {
-        check.evidence =
-            grade::outcomes::kept_evidence(&crate::secrets::mcpstart::masked(&check.evidence));
+        for check in &mut run.checks {
+            check.evidence =
+                grade::outcomes::kept_evidence(&crate::secrets::mcpstart::masked(&check.evidence));
+        }
+        // It may name what a chat chose to ask for.
+        run.failed = run
+            .failed
+            .take()
+            .map(|why| crate::secrets::mcpstart::masked(&why));
     }
     graded
 }
@@ -1401,9 +1407,36 @@ pub struct SkillCopy {
     pub previous: Option<Previous>,
     pub previous_refused: Option<String>,
     /// **The input files its outcome evals name** (SK-55, #3235), by their path in the skill's
-    /// folder, each read pinned as text, in the same read: what each eval's chat is staged with.
-    /// A file that did not read is not here, and its eval is left out of the plan.
-    pub inputs: std::collections::BTreeMap<String, String>,
+    /// folder, each read pinned as bytes, text or not (#4230), in the same read: what each eval's
+    /// chat is staged with. A file that did not read is not here, and its eval is left out of the
+    /// plan.
+    pub inputs: std::collections::BTreeMap<String, Vec<u8>>,
+}
+
+impl SkillCopy {
+    /// **What `eval` is staged with, as a plan can say it** (#4230): the text of its files that
+    /// are text, checked for what a reader would not see, and the paths of those that are not,
+    /// which the plan names as not checked. One rule, the skill review's, says which is which: one
+    /// bad byte or a NUL in a text file makes it one that is not.
+    pub fn inputs_of(&self, eval: &grade::OutcomeEval) -> (Vec<&str>, Vec<String>) {
+        let mut texts = Vec::new();
+        let mut not_text = Vec::new();
+        for path in &eval.files {
+            let Some((path, bytes)) = self.inputs.get_key_value(path) else {
+                continue;
+            };
+            let file = purlis_skills::review::FileIn {
+                path,
+                executable: false,
+                bytes,
+            };
+            match file.text() {
+                Some(text) => texts.push(text),
+                None => not_text.push(path.clone()),
+            }
+        }
+        (texts, not_text)
+    }
 }
 
 /// **A skill's previous version, as a grade compares with it** (SK-57, #3237): the commit, what
@@ -1428,13 +1461,13 @@ fn copy_of(root: &Path, level: &Level, name: &str, inputs: &[String]) -> Result<
     let before = content_now();
     let snapshot = super::verbs::drafts::snapshot(root, level, name)?;
     let base = rel(root, &folder);
-    let inputs: std::collections::BTreeMap<String, String> = inputs
+    let inputs: std::collections::BTreeMap<String, Vec<u8>> = inputs
         .iter()
         .filter_map(|path| {
             let bytes = crate::proposed::read_pinned(root, Path::new(&format!("{base}/{path}")))
                 .ok()
                 .flatten()?;
-            Some((path.clone(), String::from_utf8(bytes).ok()?))
+            Some((path.clone(), bytes))
         })
         .collect();
     let content = if content_now() == before {
@@ -1550,9 +1583,12 @@ pub fn planned_with(
                 .collect()
         })
         .unwrap_or_default();
+    // Each once, however many evals share it: every tick reads the plan again.
     let wanted: Vec<String> = evals
         .iter()
         .flat_map(|eval| eval.files.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
         .collect();
     let copy = if sendable.is_empty() && evals.is_empty() {
         None
@@ -1570,7 +1606,7 @@ pub fn planned_with(
                     outcomes_left_out.push(LeftOutEval {
                         id: eval.id,
                         why: format!(
-                            "its file {} is not a plain text file of the skill of at most 1 MiB",
+                            "its file {} is not a plain file of the skill of at most 1 MiB",
                             crate::shown::short(path)
                         ),
                     });
@@ -1589,12 +1625,25 @@ pub fn planned_with(
                 .get("SKILL.md")
                 .is_some_and(|text| purlis_skills::review::runs_commands_as_it_loads(text))
         };
-        if runs_one(&copy.snapshot)
-            || copy
-                .previous
-                .as_ref()
-                .is_some_and(|previous| runs_one(&previous.snapshot))
-        {
+        let refused = |snapshot: &Snapshot| {
+            snapshot
+                .files
+                .get("SKILL.md")
+                .is_some_and(|text| purlis_skills::handed::parse(text).is_err())
+        };
+        let copies = || {
+            std::iter::once(&copy.snapshot)
+                .chain(copy.previous.as_ref().map(|previous| &previous.snapshot))
+        };
+        if copies().any(refused) {
+            for eval in evals.drain(..) {
+                outcomes_left_out.push(LeftOutEval {
+                    id: eval.id,
+                    why: "its skill's frontmatter is one purlis does not hand a chat".to_owned(),
+                });
+            }
+        }
+        if copies().any(runs_one) {
             for eval in evals.drain(..) {
                 outcomes_left_out.push(LeftOutEval {
                     id: eval.id,
@@ -1694,17 +1743,19 @@ impl Planned {
     /// judge checks or a file it stages, so a plan says so before anything is agreed to.
     pub fn eval_hides(&self, eval: &grade::OutcomeEval) -> bool {
         let hides = |text: &str| purlis_unicode::hides(text, purlis_unicode::Breaks::Kept);
+        let texts = self
+            .copy
+            .as_ref()
+            .map(|copy| copy.inputs_of(eval).0)
+            .unwrap_or_default();
         hides(&grade::outcomes::outcome_prompt(eval))
             || eval
                 .expectations
                 .iter()
                 .chain(&eval.expected_output)
-                .chain(
-                    eval.files
-                        .iter()
-                        .filter_map(|path| self.copy.as_ref()?.inputs.get(path)),
-                )
-                .any(|text| hides(text))
+                .map(String::as_str)
+                .chain(texts)
+                .any(hides)
     }
 }
 
@@ -1835,11 +1886,8 @@ pub fn consent_of(request: &GradeRequest, copy: &SkillCopy) -> String {
                 .iter()
                 .any(|eval| eval.files.contains(*path))
         };
-        for (path, text) in copy.inputs.iter().filter(|(path, _)| staged(path)) {
-            digest.update(b"\0");
-            digest.update(path.as_bytes());
-            digest.update(b"\0");
-            digest.update(text.as_bytes());
+        for (path, bytes) in copy.inputs.iter().filter(|(path, _)| staged(path)) {
+            digest_input(&mut digest, path, bytes);
         }
     }
     digest.update(b"\0");
@@ -1859,6 +1907,16 @@ pub fn consent_of(request: &GradeRequest, copy: &SkillCopy) -> String {
         files(&mut digest, &previous.snapshot);
     }
     hex_of(digest)
+}
+
+/// **An input file into a consent's digest** (#4230): its path and its bytes, each after its
+/// length, as a file that is not text may hold any separator, so no two sets of files read alike.
+pub(crate) fn digest_input(digest: &mut sha2::Sha256, path: &str, bytes: &[u8]) {
+    use sha2::Digest as _;
+    for part in [path.as_bytes(), bytes] {
+        digest.update((part.len() as u64).to_le_bytes());
+        digest.update(part);
+    }
 }
 
 /// A digest's bytes as lowercase hex.

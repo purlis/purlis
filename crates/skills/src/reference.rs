@@ -13,6 +13,11 @@ pub const BUILT_IN_PREFIXES: [&str; 2] = ["purlis", "charter"];
 /// rewrites (#2784).
 pub const OLD_BUILT_IN_PREFIX: &str = BUILT_IN_PREFIXES[1];
 
+/// **Built-in skills that changed their name after they took [`crate::RESERVED_PREFIX`]**, the
+/// name each had and the one it has (ADR 0099 as amended 2026-11-01). The old one is purlis's as
+/// the prefix is, so it means this skill even bare.
+const RENAMED: [(&str, &str); 1] = [("purlis-building-purlis-ui", "purlis-building-ui")];
+
 /// One entry of a persona's `skills:` list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reference {
@@ -30,15 +35,19 @@ pub enum Reference {
 impl Reference {
     /// The entry `written`, as a persona's `skills:` list holds it, or `None` for one that names
     /// nothing: blank, or with a blank side to its `:`. A built-in skill written by a name from
-    /// before each took [`crate::RESERVED_PREFIX`] (`purlis:handoff`) reads as its name now
-    /// (ADR 0099 as amended 2026-11-01), so no plane has to change.
+    /// before each took [`crate::RESERVED_PREFIX`] (`purlis:handoff`) or from before it changed
+    /// ([`RENAMED`]) reads as its name now (ADR 0099 as amended 2026-11-01), so no plane has to
+    /// change.
     pub fn parse(written: &str) -> Option<Self> {
         let written = written.trim();
         if written.is_empty() {
             return None;
         }
         let Some((prefix, name)) = written.split_once(':') else {
-            return Some(Self::Named(written.to_owned()));
+            return Some(match renamed(written) {
+                Some(own) => Self::BuiltIn(own.to_owned()),
+                None => Self::Named(written.to_owned()),
+            });
         };
         let (prefix, name) = (prefix.trim(), name.trim());
         if prefix.is_empty() || name.is_empty() {
@@ -100,11 +109,20 @@ impl Reference {
 
 /// The built-in skill `name` says, under whichever of its names it was written.
 fn built_in_named(name: &str) -> String {
-    if name.starts_with(crate::RESERVED_PREFIX) {
+    let own = if name.starts_with(crate::RESERVED_PREFIX) {
         name.to_owned()
     } else {
         format!("{}{name}", crate::RESERVED_PREFIX)
-    }
+    };
+    renamed(&own).map_or(own, str::to_owned)
+}
+
+/// The name now of the built-in skill that used to be `name`, if one did ([`RENAMED`]).
+fn renamed(name: &str) -> Option<&'static str> {
+    RENAMED
+        .iter()
+        .find(|(old, _)| *old == name)
+        .map(|(_, new)| *new)
 }
 
 /// What a machine's harness skills say of one reference.

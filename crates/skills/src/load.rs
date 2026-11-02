@@ -98,9 +98,7 @@ pub(crate) fn narrowing(text: &str) -> Narrowing {
 pub fn by_name<'a>(set: &'a SkillSet, name: &str) -> Option<&'a Effective> {
     let name = name.trim();
     // A built-in skill by any of its names: never the plane's skill of an old one's leaf.
-    if name.contains(':')
-        && let Some(crate::Reference::BuiltIn(own)) = crate::Reference::parse(name)
-    {
+    if let Some(crate::Reference::BuiltIn(own)) = crate::Reference::parse(name) {
         return set.effective.iter().find(|effective| {
             effective.origin == crate::Origin::BuiltIn && effective.skill.name == own
         });

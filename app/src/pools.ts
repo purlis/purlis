@@ -7,6 +7,7 @@ import {
   type ClusterContexts,
   type ClusterPoolAdding,
   type ClusterPoolKey,
+  type LimitRefused,
   type PlaneId,
   type RunnerStage,
   type PoolAdding,
@@ -241,12 +242,20 @@ export async function checkClusterPoolKey(
     : { trouble: "purlis did not say which key the cluster's pool names." };
 }
 
+/** A refused ask as the window draws it: Tauri itself refuses a command in a bare sentence, whatever
+ *  shape the command's own refusals are. */
+export function refusedWith(error: LimitRefused | string): LimitRefused {
+  return typeof error === "string" ? { words: error, limit: null } : error;
+}
+
 /** Adds the cluster pool `adding`, pinning the key the person checked: `undefined` once it is
  *  added, else why not (#3292). It ends with nothing to sign in: its runner keeps no profile of
  *  this machine's. */
-export async function addClusterPool(adding: ClusterPoolAdding): Promise<string | undefined> {
-  const said = await caught(commands.addClusterPool(adding));
-  if (said.status === "error") return said.error;
+export async function addClusterPool(adding: ClusterPoolAdding): Promise<LimitRefused | undefined> {
+  const said = await commands
+    .addClusterPool(adding)
+    .catch((why: unknown) => ({ status: "error" as const, error: String(why) }));
+  if (said.status === "error") return refusedWith(said.error);
   set((was) => ({ ...was, adding: false, said: undefined }));
   await rereadPools();
   return undefined;
@@ -290,6 +299,15 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
         ? said.data
         : { trouble: "purlis did not say which profiles the runner keeps." };
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
+}
+
+/**
+ * **Removes the held runner `runner`**, a draining one that stopped during its drain, and what its
+ * chats left with it. Why not, in the core's words.
+ */
+export async function removeHeldRunner(runner: string): Promise<string | undefined> {
+  const said = await caught(commands.dockerPoolRemoveHeldRunner(runner));
+  return said.status === "error" ? said.error : undefined;
 }
 
 /**

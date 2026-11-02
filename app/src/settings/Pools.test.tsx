@@ -59,6 +59,8 @@ const a_cluster_pool = (name: string): ClusterPoolRow => ({
 let pools: PoolRow[];
 let clusters: ClusterPoolRow[];
 let clustersAdded: unknown[];
+/** What `add_cluster_pool` refuses with, where a test says. */
+let addRefused: unknown;
 let opened: string[];
 let link: PoolLink;
 let version: PoolVersion;
@@ -83,6 +85,7 @@ const a_profile = (name: string, standing: string): PoolProfileRow => ({
   harness: "Claude Code",
   standing,
   not_kept: null,
+  limit: null,
   plans: [],
 });
 
@@ -95,6 +98,7 @@ beforeEach(() => {
   pools = [];
   clusters = [];
   clustersAdded = [];
+  addRefused = undefined;
   opened = [];
   link = { state: "linked" };
   version = {
@@ -103,6 +107,7 @@ beforeEach(() => {
     desktop: "0.4.2",
     follows: true,
     draining: 0,
+    held: 0,
     named: null,
     waiting: 0,
   };
@@ -142,6 +147,7 @@ beforeEach(() => {
         return { kubeconfig: "/home/op/.kube/config", contexts: ["team", "kind"], current: "team" };
       if (cmd === "cluster_pool_key") return { key: OPERATOR_KEY, namespace: "op" };
       if (cmd === "add_cluster_pool") {
+        if (addRefused !== undefined) throw addRefused;
         clustersAdded.push(a.adding);
         const row = a_cluster_pool((a.adding as { name: string }).name);
         clusters = [...clusters, row];
@@ -750,6 +756,7 @@ describe("You › This machine › Pools", () => {
       desktop: "0.4.2-dev.17",
       follows: true,
       draining: 1,
+      held: 0,
       named: null,
       waiting: 2,
     };
@@ -769,6 +776,28 @@ describe("You › This machine › Pools", () => {
     ).toBeInTheDocument();
   });
 
+  it("says an older runner held after it stopped stays until you remove it", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      runner: "0.4.2-dev.17",
+      why: null,
+      desktop: "0.4.2-dev.17",
+      follows: true,
+      draining: 0,
+      held: 1,
+      named: null,
+      waiting: 0,
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(/1 older runner stopped during its drain\./),
+    ).toHaveTextContent(/until you remove it in Devices\./);
+    expect(within(group).queryByText(/then purlis removes it/)).toBeNull();
+  });
+
   it("tells you to build your own image again when its runner is behind", async () => {
     pools = [a_pool("builds")];
     version = {
@@ -777,6 +806,7 @@ describe("You › This machine › Pools", () => {
       desktop: "0.4.2",
       follows: false,
       draining: 0,
+      held: 0,
       named: null,
       waiting: 0,
     };
@@ -831,6 +861,7 @@ describe("You › This machine › Pools", () => {
       desktop: "0.4.2-dev.17",
       follows: true,
       draining: 0,
+      held: 0,
       named: false,
       waiting: 0,
     };
@@ -853,6 +884,7 @@ describe("You › This machine › Pools", () => {
       desktop: "0.4.2-dev.17",
       follows: true,
       draining: 0,
+      held: 0,
       named: null,
       waiting: 0,
     };
@@ -897,6 +929,50 @@ describe("The guide to setting a pool up on a cluster (#4537)", () => {
 });
 
 describe("A cluster pool (#3292)", () => {
+  const refusedAdd = async () => {
+    render(<App />);
+    await palette("Add a pool…");
+    const first = await screen.findByRole("dialog", { name: "Add a pool" });
+    await userEvent.click(within(first).getByRole("radio", { name: /Cluster/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "team");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Pool" }), "default");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Check its key" }));
+    await within(dialog).findByText(OPERATOR_KEY);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
+    return dialog;
+  };
+
+  it("offers what its refusal came with, beside its words (spec #4275)", async () => {
+    addRefused = {
+      words: "the cluster operator did not vouch.",
+      limit: {
+        pool: "team",
+        hits: [
+          {
+            key: "vouchWait",
+            plain: "Longest wait for a runner",
+            unit: "minutes",
+            in_force: 5,
+            needed: 5,
+            suggested: 10,
+          },
+        ],
+      },
+    };
+    const dialog = await refusedAdd();
+    expect(await within(dialog).findByText(/did not vouch/)).toBeInTheDocument();
+    const box = await within(dialog).findByRole("textbox", { name: /Longest wait for a runner/ });
+    expect(box).toHaveValue("10");
+  });
+
+  it("says a refusal in a bare sentence, and offers nothing beside it", async () => {
+    addRefused = "the command was not allowed";
+    const dialog = await refusedAdd();
+    expect(await within(dialog).findByText(/was not allowed/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole("textbox", { name: /Longest wait/ })).toBeNull();
+  });
+
   it("is added from the same dialog once its cluster operator key is shown to check", async () => {
     render(<App />);
     await palette("Add a pool…");

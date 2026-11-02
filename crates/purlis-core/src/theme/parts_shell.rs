@@ -630,7 +630,7 @@ pub(super) const TITLEBAR: Family = Family {
     ],
     // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface
     // the switcher is drawn on, which their words are read on (#3099).
-    under: &[("row", "surface.overlay"), ("pin", "surface.overlay")],
+    under: &[("row", &["surface.overlay"]), ("pin", &["surface.overlay"])],
 };
 
 /// **A chip's colours as `app/src/ui/titlebar/titlebar.css` draws them.** Quiet words with no box
@@ -661,11 +661,7 @@ fn titlebar_look(variant: &str, states: &[State]) -> Look {
         } else {
             "text.quiet"
         },
-        border: if edged {
-            "text.muted"
-        } else {
-            TRANSPARENT
-        },
+        border: if edged { "text.muted" } else { TRANSPARENT },
     }
 }
 
@@ -695,7 +691,11 @@ pub(super) fn titlebar_apart_look(part: &str, states: &[State]) -> super::ApartL
         },
         // Pinned, the accent wins over the pointer's primary, on the pointer's fill (#4000).
         "pin" => ApartLook {
-            fill: if hovered { "surface.overlay" } else { TRANSPARENT },
+            fill: if hovered {
+                "surface.overlay"
+            } else {
+                TRANSPARENT
+            },
             words: if selected {
                 "accent.base"
             } else if hovered {

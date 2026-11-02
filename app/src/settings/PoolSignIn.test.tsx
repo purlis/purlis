@@ -55,6 +55,7 @@ const a_profile = (name: string, kind = "claude"): PoolProfileRow => ({
   harness: kind === "claude" ? "Claude Code" : "Codex",
   standing: signedIn ? "signed-in" : "signed-out",
   not_kept: null,
+  limit: null,
   plans: [],
 });
 
@@ -279,7 +280,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
     await within(opened).findByRole("group", { name: "The runner's terminal on builds" });
     await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
-    says({ at: "failed", why: "the runner said: no", stopped: false });
+    says({ at: "failed", why: "the runner said: no", stopped: false, limit: null });
 
     await userEvent.click(await within(opened).findByRole("button", { name: "Try again" }));
 
@@ -373,13 +374,13 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
     says({ at: "printed", text: "Enter OLD-CODE" });
     await within(terminal).findByText("Enter OLD-CODE");
-    says({ at: "failed", why: "the runner said: device auth is off", stopped: false });
+    says({ at: "failed", why: "the runner said: device auth is off", stopped: false, limit: null });
 
     await userEvent.click(await within(opened).findByRole("button", { name: "Try again" }));
     await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(3));
     expect(within(opened).queryByText("Enter OLD-CODE")).toBeNull();
 
-    says({ at: "failed", why: "the runner said: device auth is off", stopped: false });
+    says({ at: "failed", why: "the runner said: device auth is off", stopped: false, limit: null });
     await userEvent.click(await within(opened).findByRole("button", { name: "Try the browser" }));
 
     await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(4));
@@ -425,7 +426,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("says why a sign-in failed and starts another by opening the page again (#4043)", async () => {
     const opened = await strip();
     says({ at: "open", url: PAGE });
-    says({ at: "failed", why: "the code has expired", stopped: false });
+    says({ at: "failed", why: "the code has expired", stopped: false, limit: null });
 
     expect(await within(opened).findByRole("alert")).toHaveTextContent(
       "work (Claude Code) did not sign in on builds: the code has expired",
@@ -437,7 +438,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("offers Try again, not the page, for a sign-in purlis stopped (#4367)", async () => {
     const opened = await strip();
     says({ at: "open", url: PAGE });
-    says({ at: "failed", why: "the sign-in was stopped", stopped: true });
+    says({ at: "failed", why: "the sign-in was stopped", stopped: true, limit: null });
 
     expect(await within(opened).findByRole("alert")).toHaveTextContent("the sign-in was stopped");
     expect(within(opened).queryByRole("button", { name: "Open the page again" })).toBeNull();
@@ -511,7 +512,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
 
   it("offers Try again where no page was opened, and the line stays failed (#4043)", async () => {
     const opened = await strip();
-    says({ at: "failed", why: "the runner stopped answering", stopped: false });
+    says({ at: "failed", why: "the runner stopped answering", stopped: false, limit: null });
     await within(opened).findByRole("button", { name: "Try again" });
 
     await userEvent.click(within(opened).getByRole("button", { name: "Close" }));
@@ -678,7 +679,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     );
     expect(within(opened).queryByText(/codex login/)).toBeNull();
 
-    says({ at: "failed", why: "the runner said: no", stopped: false });
+    says({ at: "failed", why: "the runner said: no", stopped: false, limit: null });
     await userEvent.click(await within(opened).findByRole("button", { name: "Try again" }));
 
     await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(3));

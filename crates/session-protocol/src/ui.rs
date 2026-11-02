@@ -771,6 +771,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "docker_pool_make_again",
     // Replacing a pool's runner (#4286): the person's press alone, as every limit is theirs (Q6).
     "docker_pool_replace_runner",
+    // Removing a held runner: what its chats left goes with it, so the person's press alone.
+    "docker_pool_remove_held_runner",
     // The runner image this version's release names (2026-10-30): the Add a pool dialog's
     // default image, read through the updater, for the person's own window.
     "runner_image_of_this_version",
@@ -796,9 +798,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_profile_add",
     "pool_profile_remove",
     // A pool's limits (spec #4275): the person changes them directly, and a chat only proposes
-    // through the edit ask (Q6), so only their own window saves one, or reads the offer to.
-    "pool_limit_offer",
-    "pool_limit_offer_for_move",
+    // through the edit ask (Q6), so only their own window saves one, or is offered to
+    // ([`WINDOW_ONLY_FIELDS`] keeps a move's offer to it).
     "pool_limits",
     "pool_limit_check",
     "pool_limit_set",
@@ -973,11 +974,21 @@ pub struct WindowOnlyField {
 /// only the window gives that Allow. So a link is served, in its place, the window's own form
 /// for a change not shown (`app/src-tauri/src/askwrites.rs`, whose test holds the two alike),
 /// beside which no Allow is offered.
-pub const WINDOW_ONLY_FIELDS: &[WindowOnlyField] = &[WindowOnlyField {
-    method: "pending_asks",
-    field: "writes",
-    in_its_place: an_edit_drawn_in_the_window_only,
-}];
+///
+/// `chat_moves` tells a link how a move stands, and what a failed one said; what to raise beside it
+/// (`limit`, spec #4275) only goes with a save that is the window's alone, so a link is told none.
+pub const WINDOW_ONLY_FIELDS: &[WindowOnlyField] = &[
+    WindowOnlyField {
+        method: "pending_asks",
+        field: "writes",
+        in_its_place: an_edit_drawn_in_the_window_only,
+    },
+    WindowOnlyField {
+        method: "chat_moves",
+        field: "limit",
+        in_its_place: || Value::Null,
+    },
+];
 
 /// **Whether a call names the plane root** (issue 1916): `files_watch` with a folder of no
 /// workspace and no repo, which is how the window names a folder of the project's own. A link

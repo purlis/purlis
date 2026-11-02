@@ -344,7 +344,16 @@ trailers. It names no repository or branch: the app uses the folder it started t
   Commit such a file from your own terminal.
 - One commit runs in a piece at a time. If the app was stopped in the middle of one, the next
   `purlis worktree commit` unstages what it had staged and carries on.
-- A chat that is not sandboxed, and any chat in a clone, uses `git commit` as before.
+- A chat in a clone uses `git commit` as before.
+- A chat that is not sandboxed, and a terminal, use the same command, and it does not go through
+  the app: their own git stages and commits, with the person's config, the repository's hooks
+  and purlis's (the scan, the trailers), signing and filters, as `git add` and `git commit` would.
+  None of the refusals above applies but a detached HEAD, another live chat's claim on the
+  folder and a message claiming purlis's trailers. `purlis worktree push` works the same in any
+  chat. To send such a chat to plain git instead, set `[plane] refuse_unsandboxed_commit = true`
+  in `charter.toml` or `charter.local.toml` (Settings › Saving): it refuses the commit in a
+  sentence, and sandboxed chats are not affected. It is off by default because a harness's own
+  rules may refuse plain git, and a chat refused by both could not commit at all (#4534).
 
 **Where a piece is cut from.** `add` cuts from the branch the remote names its default
 (`origin/HEAD`, `main` most often), or from `--base <branch>`, a branch of the clone or a

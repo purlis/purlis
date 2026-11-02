@@ -4,7 +4,7 @@
 //! purlis's container images (spec #2041): the runner image (#2043, `runner-image.yml`) and the
 //! cluster operator's image (#2238, `operator-image.yml`). Each is built for both architectures
 //! on every green `main` of what it is built from, checked, pushed to the organisation's
-//! private registry, and signed keyless; a pull request builds and checks it and pushes nothing.
+//! registry as a public package (#4498), and signed keyless; a pull request builds and checks it and pushes nothing.
 //!
 //! What these tests hold both workflows and the images' Dockerfiles to:
 //! - only a green run of the image's gate on a push to this repository's `main` publishes, by
@@ -14,8 +14,10 @@
 //!   write packages and nothing more, and only `index` may mint the OIDC token cosign signs
 //!   with; no job restores a cache, since what it builds is signed;
 //! - nothing is pushed, tagged or signed except on a publishing run; nothing is pushed into a
-//!   package the packages API does not show private; nothing is tagged or signed before the
-//!   image's check passed on the pushed bytes and the images were shown private again;
+//!   package the packages API does not show public; nothing is tagged or signed before the
+//!   image's check passed on the pushed bytes and the images were shown public and served to a
+//!   puller who has not signed in;
+//! - each published image is then pulled and its signature checked by a job with no sign-in;
 //! - `main` is tagged only when `tools/image-registry.mjs order` says it moves forward;
 //! - each base image is pinned by digest, and each image's user is a number other than 0.
 
@@ -294,6 +296,7 @@ fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
         let made: Vec<&str> = ["plan", "binary", "image", "index"]
             .into_iter()
             .chain(attested.iter().copied())
+            .chain(["outside"])
             .collect();
         assert_eq!(names, made, "{file}");
         assert_eq!(job_named(&jobs, "plan", file).permissions(), None);
@@ -371,9 +374,9 @@ fn every_checkout_is_the_planned_commit_without_credentials() {
                 .into_iter()
                 .filter(|s| action(s) == Some("actions/checkout"))
                 .collect();
-            // The runner image's SBOM and attestations read the pushed image and run nothing
-            // of the commit's, so they check nothing out (#2191).
-            let checks_out = !matches!(job.name.as_str(), "sbom" | "attest");
+            // The runner image's SBOM and attestations, and the check from outside, read the
+            // pushed image and run nothing of the commit's, so they check nothing out (#2191).
+            let checks_out = !matches!(job.name.as_str(), "sbom" | "attest" | "outside");
             assert_eq!(
                 checkouts.len(),
                 usize::from(checks_out),
@@ -414,7 +417,7 @@ fn only_a_publishing_run_signs_in_pushes_or_signs() {
                 || action(&step) == Some("docker/login-action")
                 || run_lines(&step)
                     .iter()
-                    .any(|l| l.contains("ensure-private"));
+                    .any(|l| l.contains("image-registry.mjs visibility"));
             if pushes {
                 assert_eq!(
                     step_condition(&step),
@@ -468,22 +471,22 @@ fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
             let at = position(&|s| run_lines(s) == [*check], check);
             assert!(push < pull && pull < at && at < record, "{file}: {check}");
         }
-        let private = position(
-            &|s| s[0].contains("name: The package is private before anything of purlis is pushed"),
-            "shows the package private",
+        let public = position(
+            &|s| s[0].contains("name: The package is public before the image is pushed"),
+            "shows the package public",
         );
         assert_eq!(
-            step_condition(&steps[private]),
+            step_condition(&steps[public]),
             Some("env.PUBLISH == 'true'")
         );
         assert_eq!(
-            run_lines(&steps[private]),
-            ["node tools/image-registry.mjs ensure-private \"$ARCH\""],
+            run_lines(&steps[public]),
+            ["node tools/image-registry.mjs visibility"],
             "{file}"
         );
         assert!(
-            private < push,
-            "{file}: the package is shown private before the push"
+            public < push,
+            "{file}: the package is shown public before the push"
         );
 
         let index = job_named(&jobs, "index", file);
@@ -494,13 +497,13 @@ fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
                 .position(|s| s[0].contains(&format!("name: {name}")))
                 .unwrap_or_else(|| panic!("{file}: `index` has no step `{name}`"))
         };
-        let private = named("The images are private");
+        let public = named("The images are public");
         let tag = named("One index for both architectures");
         let sign = named("Sign by digest");
         let verify = named("The signature verifies");
         let record = named("Record the digest");
-        assert!(private < tag && tag < sign && sign < verify && verify < record);
-        let checks = run_lines(&steps[private]);
+        assert!(public < tag && tag < sign && sign < verify && verify < record);
+        let checks = run_lines(&steps[public]);
         assert!(
             checks.contains(&"state=$(node tools/image-registry.mjs visibility)".to_owned())
                 && checks.contains(&"node tools/image-registry.mjs anonymous \\".to_owned()),
@@ -548,6 +551,90 @@ fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
                 "{file}: {verifying}"
             );
         }
+    }
+}
+
+/// #4498: "from outside" means it: the job that pulls and checks holds no write, can mint no
+/// token, never signs in to the registry, and runs on what a person would run.
+#[test]
+fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
+    for image in &IMAGES {
+        let (_, jobs) = workflow(image);
+        let file = image.file;
+        let outside = job_named(&jobs, "outside", file);
+        let held = if image.released {
+            pairs(&[("attestations", "read"), ("contents", "read")])
+        } else {
+            pairs(&[("contents", "read")])
+        };
+        assert_eq!(outside.permissions(), Some(held), "{file}");
+        assert_eq!(
+            outside.condition(),
+            Some("needs.plan.outputs.publish == 'true'"),
+            "{file}"
+        );
+        let steps = outside.steps();
+        assert!(
+            steps
+                .iter()
+                .all(|s| action(s) != Some("docker/login-action")),
+            "{file}: it never signs in to the registry"
+        );
+        let needs: &[&str] = if image.released {
+            &["plan", "index", "attest"]
+        } else {
+            &["plan", "index"]
+        };
+        assert_eq!(outside.needs(), needs, "{file}");
+        let commands = steps.iter().flat_map(|s| run_lines(s)).collect::<Vec<_>>();
+        for line in [
+            "docker pull --platform linux/amd64 \"$LINE\"",
+            "docker pull --platform linux/arm64 \"$LINE\"",
+            "cosign verify \"$LINE\" \\",
+        ] {
+            assert!(commands.iter().any(|l| l == line), "{file}: {line}");
+        }
+        // The same exact signer `index` verifies, never a pattern.
+        let exact = if image.released {
+            "--certificate-identity \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF\" \\"
+        } else {
+            "--certificate-identity \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/operator-image.yml@refs/heads/main\" \\"
+        };
+        assert!(commands.iter().any(|l| l == exact), "{file}: {commands:#?}");
+        assert!(
+            commands.iter().all(|l| !l.contains("regexp")),
+            "{file}: {commands:#?}"
+        );
+        // Only the step that asks the forge's attestation API holds a token.
+        for step in &steps {
+            let asks_the_forge = run_lines(step)
+                .iter()
+                .any(|l| l.starts_with("gh attestation verify"));
+            assert_eq!(
+                step_value(step, "env", "GH_TOKEN").is_some(),
+                asks_the_forge,
+                "{file}: {step:#?}"
+            );
+        }
+        if image.released {
+            assert!(
+                commands.iter().any(|l| l
+                    == "--cert-identity \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF\" \\")
+                    && commands.iter().any(|l| l == "--deny-self-hosted-runners"),
+                "{file}: the provenance is pinned to the ref: {commands:#?}"
+            );
+        }
+        assert!(
+            commands.iter().all(|l| !l.contains("docker login")),
+            "{file}: {commands:#?}"
+        );
+        assert_eq!(
+            commands
+                .iter()
+                .any(|l| l.starts_with("gh attestation verify \"oci://$LINE\"")),
+            image.released,
+            "{file}: only the runner image carries attestations"
+        );
     }
 }
 

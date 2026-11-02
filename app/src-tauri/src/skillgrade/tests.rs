@@ -122,6 +122,40 @@ fn the_plan_offers_each_outcome_eval_and_counts_only_those_ticked() {
     assert_eq!(plan.outcomes_left_out[0].id, "9");
 }
 
+/// #4230: a file's name is shown as the prompt beside it is, and one that is not text is named,
+/// so a line warning of what no reader would see cannot be turned round by its own name.
+#[test]
+fn the_plan_marks_a_files_name_and_names_a_file_that_is_not_text() {
+    let mut planned = planned("ship it");
+    let turned = "evals/files/\u{202e}fdp.txt".to_owned();
+    planned.offered = vec![purlis_core::skills::grade::OutcomeEval {
+        id: 4,
+        prompt: "read it".into(),
+        expected_output: None,
+        files: vec![turned.clone()],
+        expectations: vec!["It is read".into()],
+    }];
+    planned.copy = Some(grades::SkillCopy {
+        snapshot: purlis_core::skills::verbs::drafts::Snapshot {
+            name: "deploy".into(),
+            files: std::collections::BTreeMap::new(),
+        },
+        content: purlis_core::skilluse::Content::Uncommitted,
+        commit: None,
+        previous: None,
+        previous_refused: None,
+        inputs: std::collections::BTreeMap::from([(turned, b"%PDF\xFF".to_vec())]),
+    });
+    let plan = SkillGradePlan::of(
+        &planned,
+        None,
+        on(Ok("full sandbox".into()), grades::price::of_model(None)),
+    );
+    let shown = ["evals/files/⟦U+202E⟧fdp.txt"];
+    assert_eq!(plan.evals[0].files, shown);
+    assert_eq!(plan.evals[0].not_text, shown);
+}
+
 #[test]
 fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     let plan = SkillGradePlan::of(
@@ -1080,4 +1114,77 @@ fn ticked_evals_are_refused_on_a_profile_they_cannot_run_on() {
         });
     assert_eq!(evals_can_run(&ticked, Some(&why)), Err(why));
     assert!(evals_can_run(&ticked, None).is_ok());
+}
+
+/// SK-55 (#3235): a grade's outcome evals reach its scorecard and its row: one row per eval, each
+/// arm's rate and runs, each run's chats and verdicts, and why a run failed.
+#[test]
+fn a_scorecard_shows_each_outcome_eval_in_each_arm_and_why_a_run_failed() {
+    use purlis_core::skills::grade::{Check, OutcomeRun, OutcomeScore, Stat};
+    let run = |chat: &str, passed: u32, failed: Option<&str>| OutcomeRun {
+        chat: Some(chat.to_owned()),
+        judge: Some(format!("{chat}J")),
+        passed: Some(passed),
+        checks: if failed.is_some() {
+            Vec::new()
+        } else {
+            vec![Check {
+                passed: true,
+                evidence: "it is filled".into(),
+            }]
+        },
+        failed: failed.map(str::to_owned),
+        asked: false,
+    };
+    let score = |arm: Arm, results: Vec<OutcomeRun>, mean: f64| OutcomeScore {
+        eval: 4,
+        arm,
+        expectations: vec!["It is\u{200b} filled".into()],
+        runs: u32::try_from(results.len()).unwrap(),
+        pass_rate: Some(Stat {
+            mean,
+            stddev: 0.0,
+            min: mean,
+            max: mean,
+        }),
+        results,
+    };
+    let outcomes = vec![
+        score(Arm::With, vec![run("01A", 1, None)], 1.0),
+        score(
+            Arm::Without,
+            vec![run("01B", 0, Some("The judge's answer is not whole."))],
+            0.0,
+        ),
+    ];
+    let evals = scored_evals(&outcomes, &|chat: &str| chat == "01A");
+    assert_eq!(evals.len(), 1, "one row, however many arms");
+    let eval = &evals[0];
+    assert_eq!(eval.id, "4");
+    assert_eq!(eval.expectations, ["It is⟦U+200B⟧ filled"]);
+    assert_eq!(eval.arms.len(), 2);
+    assert_eq!(eval.arms[0].points, Some(100.0));
+    let with = &eval.arms[0].results[0];
+    assert!(with.chat.as_ref().unwrap().kept);
+    assert!(!with.judge.as_ref().unwrap().kept);
+    assert_eq!(with.checks[0].evidence, "it is filled");
+    let without = &eval.arms[1].results[0];
+    assert_eq!(
+        without.failed.as_deref(),
+        Some("The judge's answer is not whole.")
+    );
+    assert!(without.checks.is_empty());
+    let marked = scored_evals(
+        &[score(
+            Arm::With,
+            vec![run("01A", 0, Some("It\u{200b} failed."))],
+            0.0,
+        )],
+        &|_: &str| false,
+    );
+    assert_eq!(
+        marked[0].arms[0].results[0].failed.as_deref(),
+        Some("It⟦U+200B⟧ failed."),
+        "a teammate's row can say anything"
+    );
 }

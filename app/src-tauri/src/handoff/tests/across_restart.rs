@@ -794,15 +794,23 @@ fn a_later_session_record_of_the_asker_resumes_it_too() {
 // ---- #1513 follow-ups (#1546) -----------------------------------------------------------------
 
 #[test]
-fn an_answer_to_a_task_brought_back_says_its_question_was_not_kept() {
-    let (plane, host, planes, _id, held, steward, task) = a_steward_and_a_working_task();
+fn an_answer_to_a_task_brought_back_reaches_it_on_the_question_it_asked_before() {
+    let (plane, host, planes, id, held, steward, task) = a_steward_and_a_working_task();
+    asks(
+        &held,
+        &id,
+        task,
+        What::Question {
+            text: "Which one?".to_owned(),
+        },
+    );
     let at_quit = quits(&held);
 
     let (_relaunched, _planes, again, held, _opened) =
         launches_again(&plane, (host.clone(), planes, held), &at_quit);
 
-    // The question the task asked before the quit was in the app's memory: the steward chat,
-    // reading it in its next turn, is told why its answer reaches nothing.
+    // The question the task asked before the quit is open again (#4553), and the steward
+    // chat's answer reaches the task.
     let said = asks(
         &held,
         &again,
@@ -812,11 +820,14 @@ fn an_answer_to_a_task_brought_back_says_its_question_was_not_kept() {
             text: "the blue one".to_owned(),
         },
     );
+    assert!(matches!(said, Answer::Task(_)), "{said:?}");
     assert_eq!(
-        said,
-        Answer::No {
-            why: purlis_core::dispatchtalk::asked_before_the_restart("check prod", task)
-        }
+        held.tasks()
+            .ledger()
+            .talk
+            .answered(task)
+            .map(|given| given.text.clone()),
+        Some("the blue one".to_owned())
     );
 }
 

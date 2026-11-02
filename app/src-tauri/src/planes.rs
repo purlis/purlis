@@ -281,6 +281,8 @@ pub struct Held {
     activity: crate::activity::Teller,
     /// Told each task's quiet Notice as it comes or goes (#1981).
     quiet: crate::silence::Teller,
+    /// Told each Update a task's question makes (#4556, #4557).
+    question_updates: crate::dispatched::UpdateTeller,
     /// The Asks that wait on the person to take a chat's browser over (#2015).
     needs_you: crate::browserneedsyou::NeedsYou,
     /// How many brokered writes each chat has made lately (#1333).
@@ -695,6 +697,11 @@ impl Held {
             plane: self.id.clone(),
             line,
         });
+    }
+
+    /// Keeps an Update a task's question made (#4556, #4557).
+    pub fn tell_question_update(&self, update: purlis_core::inboxupdates::Update) {
+        (self.question_updates)(self.root(), update);
     }
 
     /// Tells the window task `session`'s quiet note (#1981): `said`, or none where it came
@@ -1557,13 +1564,6 @@ impl Held {
     ///
     /// The snapshot is built under the board's hold (`ChatBoard::ignored`), and numbered there,
     /// so a report racing it is put in order by the window rather than by which thread won.
-    /// The person sent `session` a line: a background turn's wait on them is over (#4562).
-    pub fn person_replied(&self, session: u32) {
-        if let Some(moved) = self.board().replied(session) {
-            (self.tell)(moved);
-        }
-    }
-
     pub fn ignore_needs_you(&self, session: u32) {
         (self.tell)(self.board().ignored(session));
     }
@@ -2170,6 +2170,8 @@ pub struct Planes {
     activity: crate::activity::Teller,
     /// Told each task's quiet Notice as it comes or goes (#1981).
     quiet: crate::silence::Teller,
+    /// Told each Update a task's question makes (#4556, #4557).
+    question_updates: crate::dispatched::UpdateTeller,
     /// Told a plane's permission asks each time they change (HP-6).
     asks: crate::asking::Teller,
     /// The launch's question and its answer — see [`Relaunching`].
@@ -2439,6 +2441,7 @@ impl Planes {
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
             quiet: Arc::new(|_| {}),
+            question_updates: Arc::new(|_, _| {}),
             asks: Arc::new(|_| {}),
             relaunching: Mutex::new(Relaunching::default()),
             hosting: Arc::new(|reporting, _: &Path| Box::new(Sessions::reporting_to(reporting))),
@@ -2780,6 +2783,12 @@ impl Planes {
     /// a chat is stopping and take its tab away when it has ended (#1448).
     pub fn telling_stops(mut self, stops: crate::stopping::Teller) -> Self {
         self.stops = stops;
+        self
+    }
+
+    /// Who is told each Update a task's question makes (#4556, #4557).
+    pub fn telling_question_updates(mut self, told: crate::dispatched::UpdateTeller) -> Self {
+        self.question_updates = told;
         self
     }
 
@@ -4545,6 +4554,7 @@ impl Planes {
             changes: Arc::clone(&self.changes),
             activity: Arc::clone(&self.activity),
             quiet: Arc::clone(&self.quiet),
+            question_updates: Arc::clone(&self.question_updates),
             needs_you,
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),

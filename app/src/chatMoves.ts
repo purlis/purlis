@@ -190,6 +190,7 @@ export async function askMove(
       to,
       stage: "failed",
       why: said.error,
+      limit: null,
       with: [],
       sign_in: null,
     });

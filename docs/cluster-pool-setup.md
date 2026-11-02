@@ -20,15 +20,13 @@ commands under "If something goes wrong" aren't run in CI.
   or later with Landlock. A runner's volume uses the default class, and sandboxed chats need that
   kernel. You also need a kubeconfig context for the cluster with admin rights, and it has to be
   the current context while you work through this guide.
-- `kubectl`, Helm 4, OpenSSL 3, `git`, `gh`, `curl`, `jq`, `cosign`, Docker and a
-  [Rust toolchain](https://rustup.rs) on your machine. Rust is only for the doctor in step 1. The
-  `openssl` on a Mac is often LibreSSL, which can't make this key: run `openssl version` to check.
-- A private registry your cluster's nodes can already pull from. Purlis's images are private, so
-  don't copy them anywhere public.
+- `kubectl`, Helm 4, OpenSSL 3, `git`, `gh`, `curl`, `jq`, cosign 3, Docker and a
+  [Rust toolchain](https://rustup.rs) on your machine. Rust is only for the doctor in step 1. `gh`
+  has to be signed in, to any GitHub account. The `openssl` on a Mac is often LibreSSL, which can't
+  make this key: run `openssl version` to check.
+- Cluster nodes that can reach `ghcr.io`. Purlis's images are public, so pulling them needs no
+  sign-in and no pull secret.
 - purlis on your machine, for the last step.
-- **Read access to purlis's images.** They are private for now, so you need a GitHub token with
-  `read:packages` that can read `ghcr.io/purlis`. Without that access you can't finish this guide
-  yet. Publishing the images (#4498) removes this need, along with step 2.
 
 Get the files the steps use, at the commit of the newest operator image, and run everything after
 this from that folder:
@@ -65,21 +63,18 @@ missing: upstream agent-sandbox v1.0.6: not installed. Next: apply it, step 1 of
 
 The agent-sandbox line is expected here, and step 3 fixes it. Fix anything else it reports first.
 
-## 2. Check the images and copy them to your registry
+## 2. Check the images
 
-A runner's pod has no way to name a pull secret, so your nodes have to be able to pull its image.
-Copying both images to your own registry covers that. Each image is checked against its signature
-first, and copying keeps its digest.
+Your nodes pull both images from `ghcr.io`. Check each one against its signature first, so you
+install only what purlis's own workflows signed.
 
 Update purlis first, because this takes the newest runner image of your update channel, and it has
 to match your app's version or purlis won't sign your profiles in there for you. Set `channel` to
 your channel, `latest` for stable or `dev` for dev.
 
-_Not yet run in CI: it needs a sign-in that can read the private images._
+_Not yet run in CI: kind runs images it builds, not the published ones these commands read._
 
 ```bash
-docker login ghcr.io
-docker login <your registry>
 channel=latest
 case $channel in
   dev) manifest=https://github.com/purlis/purlis/releases/download/dev/dev.json ;;
@@ -94,11 +89,11 @@ cosign verify "$operator" \
   echo "operator checked: $operator"
 ```
 
-You should see `operator checked:`. **If you don't, stop here** and don't copy the image.
+You should see `operator checked:`. **If you don't, stop here** and don't install the image.
 
-Now check the runner image and copy both. The command below is for the dev channel. On stable, use
+Now check the runner image. The command below is for the dev channel. On stable, use
 `runner-image.yml@refs/tags/v<version>`, with your version, in place of
-`runner-image.yml@refs/heads/main`. Nothing is copied unless the check passes.
+`runner-image.yml@refs/heads/main`.
 
 _Not yet run in CI: the same reason._
 
@@ -107,16 +102,12 @@ cosign verify "$runner" \
   --certificate-identity https://github.com/purlis/purlis/.github/workflows/runner-image.yml@refs/heads/main \
   --certificate-github-workflow-repository purlis/purlis \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com &&
-  docker buildx imagetools create --tag <your registry>/purlis-cluster-operator:guide "$operator" &&
-  docker buildx imagetools create --tag <your registry>/purlis-runner:guide "$runner"
-docker buildx imagetools inspect <your registry>/purlis-cluster-operator:guide --format '{{.Manifest.Digest}}'
-docker buildx imagetools inspect <your registry>/purlis-runner:guide --format '{{.Manifest.Digest}}'
-docker logout ghcr.io
+  echo "runner checked: $runner"
 ```
 
-The last two `inspect` commands each print a digest that starts with `sha256:`. They must match the
-digests in `$operator` and `$runner`. Keep them: the first is the operator's digest for step 5, and
-the second is the runner's for step 6.
+You should see `runner checked:`. **If you don't, stop here** and don't use the image. Each `checked`
+line ends with the image's digest, which starts with `sha256:`. Keep both: the operator's digest is
+for step 5, and the runner's is for step 6.
 
 ## 3. Install agent-sandbox
 
@@ -156,15 +147,15 @@ You should see `namespace/purlis-system created`, then `labeled`, then
 
 ## 5. Install the operator
 
-Put in your registry and the operator's digest from step 2. CI renders this command with
-`helm template` and checks it matches the chart CI installs, but doesn't run it.
+Put in the operator's digest from step 2. CI renders this command with `helm template`, with its
+own image in place of the published one, and checks it matches the chart CI installs, but doesn't
+run it.
 
 <!-- kind: install -->
 
 ```bash
 helm install purlis-cluster-operator operator/charts/purlis-cluster-operator \
   --namespace purlis-system \
-  --set image.repository=<your registry>/purlis-cluster-operator \
   --set image.digest=<operator digest>
 ```
 
@@ -182,7 +173,7 @@ image: `kubectl -n purlis-system describe pods` says so under Events.
 ## 6. Make your first pool
 
 Wait a minute after step 5: the operator only acts on Claims made more than 30 seconds after its
-policy is in place. Put in your registry and the runner's digest from step 2. This guide calls the pool `team`
+policy is in place. Put in the runner's digest from step 2. This guide calls the pool `team`
 throughout, so if you choose another name, change it in every command after this.
 
 <!-- kind: pool -->
@@ -194,7 +185,7 @@ kind: Pool
 metadata:
   name: team
 spec:
-  image: <your registry>/purlis-runner@<runner digest>
+  image: ghcr.io/purlis/purlis-runner@<runner digest>
 EOF
 ```
 
@@ -305,4 +296,10 @@ They only need step 7, and the operator gives them a namespace of their own for 
 - **The add waits and then gives up:** run `kubectl describe claims -A`. The `Ready` condition says
   why the runner isn't up, for example `Pulling` with the kubelet's words when the node can't pull.
   A cluster with no default storage class stops here too.
+- **Your nodes can't reach `ghcr.io`:** copy both images to a registry they can pull from with no
+  pull secret, since a runner's pod can't name one. Sign in to your registry with `docker login`,
+  then run `docker buildx imagetools create --tag <your registry>/purlis-runner:guide "$runner"`,
+  and the same for `$operator`, which keeps each digest. Then add
+  `--set image.repository=<your registry>/purlis-cluster-operator` in step 5, and name your registry
+  in step 6.
 - **Anything else:** run the doctor from step 1 again.

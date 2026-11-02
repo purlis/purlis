@@ -63,6 +63,7 @@ import {
 import { submits } from "./submitKey";
 import { reveal } from "../reveal";
 import { Tooltip } from "../tooltip/Tooltip";
+import { useWindowLeft } from "../windowLeft";
 
 /** The text input's sizes: 24, 28 and 32 px at the default text size and density (`field.css`). */
 export const FIELD_SIZES = ["sm", "md", "lg"] as const;
@@ -772,6 +773,10 @@ export function TextField(props: TextFieldProps) {
   const errorId = `${own}-error`;
   const [focusedWithin, setFocusedWithin] = useState(false);
   const [hovered, setHovered] = useState(false);
+  // Gone from the window, which an engine may not say on the box (#4628).
+  useWindowLeft((why) => {
+    if (why === "pointer") setHovered(false);
+  }, hovered);
   const hasIcon = icon !== undefined && icon !== null;
   const glass = hasIcon && (
     <span data-scope="text-input" data-part="icon" aria-hidden="true">

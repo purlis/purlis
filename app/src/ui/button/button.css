@@ -202,12 +202,6 @@
   background-color: var(--accent-surface);
 }
 
-/* A pressed toggle in the primary look is drawn on the accent's surface, so its words are the
-   primary words, not the fill's (#3177). */
-[data-scope="button"][data-part="root"][data-variant="primary"][data-selected] {
-  color: var(--text-primary);
-}
-
 [data-scope="button"][data-part="root"][data-selected][data-open]:not([data-disabled]),
 [data-scope="button"][data-part="root"][data-selected][data-hovered]:not([data-disabled]) {
   background-color: var(--tab-active);

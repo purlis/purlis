@@ -176,6 +176,9 @@ pub enum ChatEnd {
     /// and nothing left to judge. It spent as any chat does, so one that does not say what stops
     /// a capped grade, as a chat that never started does not (SK-55).
     ClosedEarly { why: String },
+    /// An outcome eval's or a judge's chat asked to use `what` (`the tool Bash`), and the host
+    /// ended it there: a limit of a grade, said by name so it does not read as the skill's fault.
+    AskedFor { what: String },
     /// An outcome eval's chat was not started, as purlis could not hold it to its limits: it spent
     /// nothing, and it fails that run with `why` (the operator's ruling of 2026-11-01).
     NotHeld { why: String },
@@ -755,18 +758,18 @@ impl<'a> Held<'a> {
             passed: None,
             checks: Vec::new(),
             failed: None,
-            asked: done.end == ChatEnd::Asked,
+            asked: matches!(done.end, ChatEnd::Asked | ChatEnd::AskedFor { .. }),
         };
         // A chat that asked, a write its guard did not answer for among what asks, or one that
         // could not be held fails the run, and says why (the operator's ruling of 2026-11-01).
         match &done.end {
             ChatEnd::Asked => {
                 run.passed = Some(0);
-                run.failed = Some(
-                    "Its chat asked for something a grade's chat may not do on its own, so it was \
-                     ended and the eval failed."
-                        .to_owned(),
-                );
+                run.failed = Some(asked_said("something"));
+            }
+            ChatEnd::AskedFor { what } => {
+                run.passed = Some(0);
+                run.failed = Some(asked_said(what));
             }
             ChatEnd::NotHeld { why } => {
                 run.passed = Some(0);
@@ -878,7 +881,11 @@ impl<'a> Held<'a> {
             ChatEnd::Cancelled => Some(GradeEnd::Cancelled),
             ChatEnd::OverCap => Some(GradeEnd::OverCap),
             ChatEnd::OverLimit => Some(GradeEnd::OverLimit),
-            ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked | ChatEnd::ReadPast => {
+            ChatEnd::Turn
+            | ChatEnd::TimedOut
+            | ChatEnd::Asked
+            | ChatEnd::AskedFor { .. }
+            | ChatEnd::ReadPast => {
                 self.not_started_in_a_row = 0;
                 self.not_started_in_its_arm[a] = 0;
                 None
@@ -1262,6 +1269,15 @@ impl From<ReportedStat> for Stat {
     }
 }
 
+/// Why an outcome eval's chat that asked for `what` failed its run: a limit of a grade's chat, not
+/// a fault of the skill.
+fn asked_said(what: &str) -> String {
+    format!(
+        "Its chat asked for {what}, which a grade's chat may not do on its own, so purlis ended it. \
+         That is a limit of grading, not a fault of the skill, and the run counts as failed."
+    )
+}
+
 /// **What the judge's chat `verdict` made of `run`**, graded on `expectations`: its answer taken
 /// whole ([`outcomes::judged`]), or the eval failed there with why; a judge that never ran (not
 /// started, stopped, ended at a cap, or handed back no answer) judged nothing, so the run is no
@@ -1288,6 +1304,10 @@ fn verdict_of(run: &mut OutcomeRun, verdict: &ChatRan, expectations: &[String]) 
             run,
             "The judge asked the person something, which a judge may not, so the eval failed."
                 .to_owned(),
+        ),
+        ChatEnd::AskedFor { what } => failed(
+            run,
+            format!("The judge asked for {what}, which a judge may not, so the eval failed."),
         ),
         ChatEnd::ReadPast => failed(
             run,

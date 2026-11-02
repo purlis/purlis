@@ -189,6 +189,7 @@ fn a_harness_lists_charter_s_tools() {
             "dispatch_wait",
             "dispatch_tell",
             "dispatch_answer",
+            "dispatch_pass_on",
             "dispatch_cancel",
             "dispatch_close",
             "dispatch_report",
