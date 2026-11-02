@@ -361,7 +361,10 @@ spec:
     older project id), with each ref and each file no commit has, and the desktop checks that its
     own project reaches every one of those commits from a ref and holds each of those files as
     the runner does. Another repository's branches as last fetched (`refs/remotes/…`) and what the
-    desktop sent (`refs/purlis/…`) are not the runner's work. Anything else missing keeps the
+    desktop sent (`refs/purlis/…`) are not the runner's work. What a clone's git ignores is left
+    out, as git leaves it out; a file in no clone, such as one a task wrote in its workspace's
+    folder, counts. Only the window of the checkout a task started from lets its runner go, so
+    another checkout of the same project never takes it. Anything else missing keeps the
     Claim, and the window says what, with **Fetch again** and **Discard**, never silently. purlis
     tries again as the window comes into focus and at its next launch. A long task and a handoff
     stay on the pool's own runner.

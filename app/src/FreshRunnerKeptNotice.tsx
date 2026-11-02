@@ -112,9 +112,9 @@ export function FreshRunnerKeptNotice({ plane }: { plane: PlaneId }) {
             fixes={[{ label: "Forget the runner", onPress: () => discard(runner.chat) }]}
             onDismiss={dismiss}
           >
-            A task's runner in workspace {runner.workspace} is gone from its cluster, and what it
-            held that is not here went with it. {missingSaid(runner.why)}
-            {asked && <> Press Forget the runner again to stop naming it.</>}
+            A task's runner in workspace {runner.workspace} is gone from its cluster, or was started
+            again, so purlis can't reach what it held that is not here. {missingSaid(runner.why)}
+            {asked && <> Press Forget the runner again to delete its claim and stop naming it.</>}
             {refusal}
           </Notice>
         );

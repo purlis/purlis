@@ -2128,11 +2128,19 @@ mod cluster {
     }
 
     /// **A fresh Claim a crash left with no record goes once it is old, and nothing else does**
-    /// (#4569): a record is written before any chat starts there, so it never held work.
+    /// (#4569): a record is written before any chat starts there, so it never held work. One an
+    /// earlier pool of the name left as it was removed, with its cluster out of reach, stays.
     #[test]
     fn a_fresh_claim_no_record_holds_is_deleted_once_old_and_only_then() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
         added(config.path(), &cluster);
+        let added_at = judged(config.path()).paired;
+        let at = |seconds: u64| {
+            chrono::DateTime::from_timestamp(i64::try_from(seconds).unwrap(), 0)
+                .unwrap()
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        };
+        let now = added_at + 4 * 3600;
         let ours = crate::clusterpool::desktop_label(OURS);
         let named = |hash: &str| format!("{}-{hash}", claim_name(OURS, "team"));
         let item = |name: &str, desktop: &str, kept: bool, made: &str| {
@@ -2146,23 +2154,26 @@ mod cluster {
                 "spec": {"pool": "team", "requester": "ada@example.com", "kept": kept},
             })
         };
-        let old = "2026-01-01T00:00:00Z";
+        let old = at(added_at + 3600);
         cluster.write(
             "claims.json",
             &serde_json::json!({"items": [
-                item(&named("0123abcd"), &ours, false, old),
-                item(&named("4567abcd"), &ours, false, "2026-12-31T23:30:00Z"),
-                item(&named("89abcdef"), "ffffffffffffffff", false, old),
-                item(&named("fedcba98"), &ours, true, old),
-                item(&claim_name(OURS, "team"), &ours, false, old),
-                item("someone-elses-0123abcd", &ours, false, old),
+                item(&named("0123abcd"), &ours, false, &old),
+                // Made within the hour: a start may still be making it.
+                item(&named("4567abcd"), &ours, false, &at(now - 60)),
+                // Another desktop's, a kept one, the pool's own, another pool's.
+                item(&named("89abcdef"), "ffffffffffffffff", false, &old),
+                item(&named("fedcba98"), &ours, true, &old),
+                item(&claim_name(OURS, "team"), &ours, false, &old),
+                item("someone-elses-0123abcd", &ours, false, &old),
+                // Left by an earlier pool of this name as it was removed: it may hold work.
+                item(&named("aaaabbbb"), &ours, false, &at(added_at - 3600)),
             ]})
             .to_string(),
         );
 
         let deleted =
-            sweep_orphan_fresh_claims(config.path(), &cluster.kubectl(), OURS, 1_798_761_600)
-                .unwrap();
+            sweep_orphan_fresh_claims(config.path(), &cluster.kubectl(), OURS, now).unwrap();
 
         assert_eq!(deleted, vec![named("0123abcd")]);
     }
@@ -2172,6 +2183,7 @@ mod cluster {
         runners::FreshOf {
             plane: "01PROJECT".to_owned(),
             workspace: "app".to_owned(),
+            root: None,
         }
     }
 

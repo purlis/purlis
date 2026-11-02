@@ -250,8 +250,9 @@ fn one(dir: &Path, project: &str, rel: &str, kind: Kind) -> Result<Held, String>
 pub const MOST_CHANGED: usize = 20_000;
 
 /// **Each file of the work tree at `dir` that differs from what it has checked out**, with what
-/// it holds now ([`file_now`]): a tracked file changed or gone, or a file no ignore rule covers
-/// that is not tracked. A repository inside it is listed on its own, so its folder counts for
+/// it holds now ([`file_now`]): a tracked file changed or gone, or a file that is not tracked:
+/// in a clone, only one no ignore rule covers; in the project's own repository, any, since what
+/// it ignores (a workspace's folder above all) is in no repository at all. A repository inside it is listed on its own, so its folder counts for
 /// nothing here (each untracked file is named, so such a folder is named alone), and neither does
 /// what no snapshot of a project's own repository carries ([`super::plane_leaves_out`]).
 fn uncommitted(dir: &Path, project: &str, rel: &str) -> Result<Vec<Changed>, String> {
@@ -261,18 +262,21 @@ fn uncommitted(dir: &Path, project: &str, rel: &str) -> Result<Vec<Changed>, Str
             shown(project, rel)
         )
     };
-    let status = run(
-        dir,
-        &[
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--no-renames",
-            "--untracked-files=all",
-            "--ignore-submodules=all",
-        ],
-    )
-    .map_err(|why| unread(why.to_string()))?;
+    // In the project's own repository, what it ignores counts too: a workspace's folder and
+    // what a task writes there are ignored by it, and are in no clone (the person's ruling of
+    // 2026-11-02). In a clone, what git ignores is left out, as git leaves it out.
+    let mut args = vec![
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--no-renames",
+        "--untracked-files=all",
+        "--ignore-submodules=all",
+    ];
+    if rel.is_empty() {
+        args.push("--ignored=traditional");
+    }
+    let status = run(dir, &args).map_err(|why| unread(why.to_string()))?;
     if !status.ok() {
         return Err(unread(status.err.trim().to_owned()));
     }
@@ -284,7 +288,8 @@ fn uncommitted(dir: &Path, project: &str, rel: &str) -> Result<Vec<Changed>, Str
     let mut paths = Vec::new();
     for entry in status.out.split('\0').filter(|entry| entry.len() > 3) {
         let path = entry[3..].trim_end_matches('/');
-        if entry.starts_with("?? ") && repo_kind(&dir.join(path)) != Kind::None {
+        let untracked = entry.starts_with("?? ") || entry.starts_with("!! ");
+        if untracked && repo_kind(&dir.join(path)) != Kind::None {
             continue;
         }
         let top = path.split('/').next().unwrap_or(path);

@@ -1566,3 +1566,52 @@ fn a_fresh_runners_row_keeps_its_project_and_workspace_and_no_other_row_has_them
         );
     }
 }
+
+/// **A fresh runner's row names the checkout its chat started from** (#4569, the person's ruling
+/// of 2026-11-02): only that checkout's window lets it go; a row from before names none, and any
+/// window of its project does.
+#[test]
+fn a_fresh_runners_row_names_its_checkout_and_only_that_checkouts_window_lets_it_go() {
+    let row = |extra: serde_json::Value| {
+        let mut row = serde_json::json!({
+            "name": "team", "pool": "cluster", "namespace": "ada", "claim": "team-abc",
+            "claimUid": "0b2f1a54-4d7b-4a64-9c0e-2f3b6c0a1d11", "requester": "ada@example.com",
+            "pod": "team-abc-0", "device": "01JB0RUNNER0000000000000000",
+            "key": "11".repeat(32), "paired": 1,
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            row[key] = value.clone();
+        }
+        row
+    };
+    let fresh = row(serde_json::json!({
+        "chat": "01CHAT", "plane": "01PROJECT", "workspace": "app", "root": "/work/one",
+    }));
+    let kept = cluster_runner_from_row(&fresh).expect("a fresh runner's row");
+    assert_eq!(cluster_runner_to_row(&kept), fresh);
+    let of = kept.of.expect("where its work goes");
+    assert!(of.is_of("01PROJECT", Path::new("/work/one")));
+    assert!(
+        !of.is_of("01PROJECT", Path::new("/work/two")),
+        "another checkout's"
+    );
+    assert!(!of.is_of("01OTHER", Path::new("/work/one")));
+
+    let older = FreshOf { root: None, ..*of };
+    assert!(older.is_of("01PROJECT", Path::new("/work/two")));
+
+    for not in [
+        serde_json::json!({ "root": "/work/one" }),
+        serde_json::json!({
+            "chat": "01CHAT", "plane": "01PROJECT", "workspace": "app", "root": "relative",
+        }),
+        serde_json::json!({
+            "chat": "01CHAT", "plane": "01PROJECT", "workspace": "app", "root": 7,
+        }),
+    ] {
+        assert!(
+            cluster_runner_from_row(&row(not.clone())).is_none(),
+            "{not}"
+        );
+    }
+}

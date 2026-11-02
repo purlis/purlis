@@ -1806,7 +1806,12 @@ impl Chats {
             }
         }
         for kept in purlis_core::runners::fresh_runners(config).unwrap_or_default() {
-            let ours = kept.of.as_ref().is_some_and(|of| of.plane == plane);
+            // Another checkout of the project holds the same id: only this one's runners, or a
+            // row from before rows named their checkout (the person's ruling of 2026-11-02).
+            let ours = kept
+                .of
+                .as_ref()
+                .is_some_and(|of| of.is_of(&plane, &self.project));
             if let (true, Some(id)) = (ours, &kept.chat)
                 && !self.holds_a_chat(id)
             {
@@ -1875,6 +1880,8 @@ impl Chats {
             plane: purlis_core::scaffold::planefile::id_to_hold_by(&self.project)
                 .map_err(|why| format!("this project's id could not be read: {why}"))?,
             workspace: workspace.to_owned(),
+            // Only this checkout's window lets it go (the person's ruling of 2026-11-02).
+            root: Some(self.project.to_string_lossy().into_owned()),
         };
         let name = crate::clusterpools::fresh_runner(config, &pool, id, of)?;
         Ok(OwnRunnerOrNot {

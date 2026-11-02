@@ -342,6 +342,53 @@ fn a_file_the_task_removed_keeps_the_runner() {
     assert!(says(&missing, "differ here: index.html"), "{missing:?}");
 }
 
+/// **A file in no repository keeps the runner** (#4569, the person's ruling of 2026-11-02): one a
+/// task wrote in its workspace's folder, which the project's own repository ignores.
+#[test]
+fn a_file_in_a_workspaces_folder_outside_any_clone_keeps_the_runner() {
+    let world = World::new();
+    std::fs::write(
+        world.runner.join("workspaces/app/report.md"),
+        "the task's report\n",
+    )
+    .unwrap();
+
+    let missing = world.not_home();
+
+    assert!(
+        says(&missing, "differ here: workspaces/app/report.md"),
+        "{missing:?}"
+    );
+}
+
+/// The same file, here as it is there, is no loss.
+#[test]
+fn a_file_outside_any_clone_that_is_here_too_is_no_loss() {
+    let world = World::new();
+    for root in [&world.runner, &world.desktop] {
+        std::fs::write(root.join("workspaces/app/report.md"), "the task's report\n").unwrap();
+    }
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}
+
+/// **What a clone ignores is left out, as git leaves it out** (the person's ruling of
+/// 2026-11-02): its build output keeps no runner.
+#[test]
+fn what_a_clone_ignores_keeps_no_runner() {
+    let world = World::new();
+    let web = world.web();
+    commit(&web, ".gitignore", "out/\n");
+    git(
+        &world.desktop.join("workspaces/app/web"),
+        &["pull", "-q", "origin", "main"],
+    );
+    std::fs::create_dir_all(web.join("out")).unwrap();
+    std::fs::write(web.join("out/bundle.js"), "built\n").unwrap();
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}
+
 #[test]
 fn the_state_folder_of_the_project_is_not_uncommitted_work() {
     let world = World::new();

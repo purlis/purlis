@@ -623,8 +623,9 @@ pub(crate) fn not_home(link: &HostLink, project: &str, root: &Path, runner: &str
 pub(crate) const PROGRAMS_END_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// **Whether every program of `project` on the host `link` reaches has ended**, waiting at most
-/// `within` (#4569): one still running, a chat of another checkout of the project among them,
-/// may commit after a fetch, so its runner is not let go of meanwhile.
+/// `within` (#4569): one still running may commit after a fetch, so its runner is not let go of
+/// meanwhile. The host answers this window's programs alone: another checkout's task is kept
+/// from this window by its row's checkout ([`purlis_core::runners::FreshOf::is_of`]).
 pub(crate) fn programs_ended(
     link: &HostLink,
     project: &str,

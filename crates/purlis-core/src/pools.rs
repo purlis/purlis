@@ -1305,11 +1305,17 @@ pub fn claim_fresh(
 /// ever taken for gone.
 pub const ORPHAN_AFTER: u64 = 3600;
 
+/// How far a cluster's clock may be from this desktop's for [`sweep_orphan_fresh_claims`] to
+/// tell a claim made since a pool was added from one made before: a claim made less than this
+/// after is left.
+pub const SKEW: u64 = 600;
+
 /// **The fresh Claims of this desktop that no record holds, left by a crash between the claim and
 /// its record** (#4569), deleted, by name. A record is written only once its runner is paired and
 /// before any chat starts there, so such a claim never ran a task and holds no work. Only a
 /// Claim marked as this desktop's, not kept, named as this desktop names a chat's fresh claim of
-/// that pool, and made more than [`ORPHAN_AFTER`] ago by the cluster's word. A pool whose
+/// that pool, made more than [`ORPHAN_AFTER`] ago by the cluster's word, and made since that pool
+/// was added here: a claim an earlier pool of that name left as it was removed is never one. A pool whose
 /// cluster can't be asked is passed over, and tried at the next sweep.
 pub fn sweep_orphan_fresh_claims(
     config_root: &Path,
@@ -1324,6 +1330,12 @@ pub fn sweep_orphan_fresh_claims(
         .collect();
     let mut deleted = Vec::new();
     for pool in runners::cluster_pools(config_root)? {
+        // Only a claim made since this pool was added: one an earlier pool of the name left when
+        // it was removed may still hold a task's work, and its removal said so.
+        let Some((_, own)) = runners::cluster_runner_for(config_root, pool.name())? else {
+            continue;
+        };
+        let added = own.paired;
         let kubectl = pool.kubectl(kubectl);
         let prefix = format!("{}-", claim_name(device, pool.name()));
         let listed = match kubectl.claims_in(pool.namespace()) {
@@ -1342,9 +1354,9 @@ pub fn sweep_orphan_fresh_claims(
                 .name
                 .strip_prefix(&prefix)
                 .is_some_and(|hash| hash.len() == 8 && hash.bytes().all(|b| b.is_ascii_hexdigit()));
-            let old = claim
-                .made
-                .is_some_and(|made| made.saturating_add(ORPHAN_AFTER) < now);
+            let old = claim.made.is_some_and(|made| {
+                made.saturating_add(ORPHAN_AFTER) < now && made > added.saturating_add(SKEW)
+            });
             if !ours || !named || !old || recorded.contains(&claim.name) {
                 continue;
             }
