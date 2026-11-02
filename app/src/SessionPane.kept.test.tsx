@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { letGoOfKeptTerminals } from "./keptTerminals";
 import type { Terminal } from "@xterm/xterm";
 import { SessionPane } from "./SessionPane";
 import { DEFAULT_THEME, drawIn, xtermTheme } from "./theme/theme";
@@ -73,6 +74,9 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  // A chat shown last keeps its terminal (`keptTerminals.ts`), and letting go of it closes its
+  // view through the core: let go while this file's IPC mock still answers.
+  letGoOfKeptTerminals();
   clearMocks();
 });
 
