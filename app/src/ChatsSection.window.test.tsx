@@ -26,6 +26,7 @@ import { GLOBAL } from "./windowprefs";
 import type { Shown } from "./shownState";
 import { goToWorkspace, rowSays, stripNamed } from "./test-strips";
 import { findByTip, getByTip, tipOf } from "./ui/tooltip/tooltip.testkit";
+import { theFrameNow } from "./frame.testkit";
 
 /**
  * **The Chats section, against the whole window** (#1447): every running chat of the project
@@ -68,6 +69,13 @@ declare global {
   interface Window {
     __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
   }
+}
+
+/** An event from the core, and the frame the window draws it in: the chat stores tell their
+ *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
+function heard(handler: number, message: unknown) {
+  window.__TAURI_INTERNALS__.runCallback(handler, message);
+  theFrameNow();
 }
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
@@ -336,7 +344,7 @@ function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask
       // list again on a move too, and which of the two listened last is a race (#1695).
       act(() => {
         for (const one of everyListener.get("chat-moved") ?? [handler])
-          window.__TAURI_INTERNALS__.runCallback(one, {
+          heard(one, {
             event: "chat-moved",
             id: 1,
             payload: moved,
