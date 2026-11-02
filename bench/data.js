@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793609252397,
+  "lastUpdate": 1793611480643,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36078,6 +36078,48 @@ window.BENCHMARK_DATA = {
             "value": 102.22152750000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.174, 101.598, 102.222, 102.269, 103.270 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "421410a1be6b79892706eea6b313ab5da99def6a",
+          "message": "A task question goes to its asking chat (#4553, #4554, #4555, #4556, #4557) (#4598)\n\n* An open task question survives a restart (#4553)\n\nA task's open question, who was asked and how it stands are written with the\ndispatch messages' record, masked and bounded, so a restart leaves it open and\nits answer reaches the task. What does not read back is said once, to the task\nand the log. The person's answer is never written.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n* An asking chat passes a task question on (#4554)\n\ndispatch_pass_on carries the task's number and an optional one-line note and no\nquestion text, and is refused unless the sender is the task's asking chat. The\nquestion reaches the Inbox and the count in the task's own words with reason\npassed on, and the note is marked as the asking chat's. The briefing, the persona\nskill and the question as it is handed over say what is always passed on; that\nrule is not enforced (ADR 0107).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n* A task has one route on Claude Code (#4555)\n\nThe app decides from its own record of the chat whether a question goes to the\ntask's asking chat. Claude Code's question prompt is read by the harness adapter\nand refused with where it went, and a plain ask_operator waits as dispatch_ask\ndoes. Handoffs, tasks the person started from a tab, their own chats and browser\ntakeovers ask as before. A redirect that fails stays in the pane and the Inbox.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n* A task question reaches the person by itself (#4556)\n\nA question nobody handles reaches the person 100 seconds after its asking chat\nhad a turn in which it was handed over, or at once if that chat closed or\ncrashed. Passed on, a nested question is one item labelled with its chain. Once\nthere it has no time limit and no automatic answer. A task's ending closes its\nquestion and makes one Update.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n* A task question's trail is recorded (#4557)\n\nEach step of a task question (asked, shown, passed on, reached the person,\nanswered and by whom, closed) is an event under the task, written from a closed\nset with no field for its words, so neither the audit nor telemetry can hold\nthem. A failure on the route is said once, as one Update and one log line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n* dispatch_pass_on: count it in the tool and allow lists (#4554)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n* Keep the wait for an answer, and bring a question back on a retried start (#4553, #4554)\n\nA doc comment had swallowed What::AwaitAnswer. A task that starts late on a launch\nhas its question restored the way a task started with the launch does, and the\nchat's id is read from its identity.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n* Count dispatch_pass_on everywhere, and keep a question's Update through a teller (#4554, #4556)\n\nThe tests that pin the dispatch tools and the chat's allow rules name the new tool.\nAn Update is kept by what the app wires in, as a task's quiet note is told, so a\nfenced test build never reaches this machine's store. The record's tier line reads\nas the tier check reads it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n* Fix what the review of the question route found (#4553, #4556)\n\nAfter a restart an asking chat that never saw a question is told again, and a quit\nis no asking chat going, so a question keeps its route. A question closed by a\nwaiter or a tab close moves at once and is heard by the window. A question of a\ntask that ended while the app was away closes with its Update, and only on a\nlaunch that settles. Only a task whose dispatch record shows a question is told it\nwas lost. An asking chat stuck on a prompt starts the 100 seconds without a turn.\nThe Inbox names an asking chat that has closed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n* Inbox: answer a task's question for the task, and name it (#4554)\n\nThe Answer press opens the form under the task's own name, tested through the\nprovider that hands it over. Two test messages no longer print what a handoff\nanswered, which CodeQL read as logging a secret.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n* A task question's Inbox item has no last message (#4554)\n\n#4597 added last_message to Shown after this branch was cut.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDV74AV55ZGTTMGRTQDCSH\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T07:19:33Z",
+          "tree_id": "662b892ca1fc85fa2db43fe0a4ca13c1102d8f4f",
+          "url": "https://github.com/purlis/purlis/commit/421410a1be6b79892706eea6b313ab5da99def6a"
+        },
+        "date": 1793611476702,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.535744,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.525, 0.531, 0.536, 0.544, 0.552 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2361875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.852, 16.157, 16.236, 16.296, 16.362 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.399142,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.478, 101.289, 101.399, 101.448, 102.166 ms"
           }
         ]
       }
