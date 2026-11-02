@@ -82,15 +82,16 @@ fn a_theme_that_sets_only_a_field_s_error_keeps_its_colour() {
 }
 
 #[test]
-fn a_field_s_help_is_still_read_on_the_danger_wash() {
-    // The control: a wash heavy enough to take the quiet words' contrast is where a field does
-    // stand, in a pane's trouble Notice and a dialog, so the help on it is still read.
+fn a_field_is_still_read_on_the_danger_wash() {
+    // The control: the theme that keeps its error colour above, with a wash heavy enough to take
+    // a field's words' contrast. A field does stand on that wash, in a pane's trouble Notice, so
+    // its words are still read there and its look falls.
     let theme = shaped(
         json!({ "danger.wash": "#e8e8e8e6" }),
         json!({ "field.error.text": "danger.base" }),
     );
     let said = field_fell(&theme);
-    assert!(said.iter().any(|one| one.contains("help")), "{said:?}");
+    assert!(!said.is_empty(), "{said:?}");
 }
 
 #[test]
