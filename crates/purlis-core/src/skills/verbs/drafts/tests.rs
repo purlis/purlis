@@ -190,7 +190,7 @@ fn a_personas_skill_is_drafted_and_accepted_as_one_commit_of_its_files() {
     let (subject, paths) = last_commit(root);
     assert!(subject.ends_with("skill new lint"), "{subject}");
     assert_eq!(paths, ["personas/reviewer/skills/lint/SKILL.md"]);
-    assert!(asking(&Level::persona("reviewer"), "").contains("personas/reviewer/skills/<name>"));
+    assert!(asking(&Level::persona("reviewer"), "").contains("a new skill in personas/reviewer/skills."));
 }
 
 #[cfg(unix)]
@@ -872,9 +872,9 @@ fn the_redo_prompt_names_the_skills_file_and_asks_a_new_chat_for_the_change() {
     assert!(new.ends_with("The change should "), "{new}");
 }
 
-/// #3925: "Ask a chat to write them" types a prompt naming the skill, its trigger tests file and
-/// skill-creator's format, and the file it names, from where the chat starts, is one whose write
-/// comes back as a draft.
+/// #3925: "Ask a chat to write them" types a prompt naming the skill and its folder, and the file
+/// the studio's skill has it write there, from where the chat starts, is one whose write comes
+/// back as a draft.
 #[test]
 fn the_trigger_tests_prompt_names_the_file_a_draft_is_kept_for() {
     let tmp = tempfile::tempdir().unwrap();
@@ -887,17 +887,7 @@ fn the_trigger_tests_prompt_names_the_file_a_draft_is_kept_for() {
     .unwrap();
     let prompt = asking_for_trigger_tests(root, &Level::project(), "deploy").unwrap();
     assert!(
-        prompt.starts_with(
-            "Write trigger tests for the deploy skill in skills/deploy/evals/triggers.json"
-        ),
-        "{prompt}"
-    );
-    assert!(
-        prompt.contains("skill-creator's triggers.json format"),
-        "{prompt}"
-    );
-    assert!(
-        prompt.contains("\"should_trigger\": true or false"),
+        prompt.ends_with("write trigger tests for the deploy skill in skills/deploy."),
         "{prompt}"
     );
     assert!(!prompt.contains('\n'), "one line: {prompt}");
@@ -916,8 +906,8 @@ fn a_skill_named(root: &Path, folder: &str, name: &str) {
     .unwrap();
 }
 
-/// #2780: "Ask a chat to write outcome evals" types a prompt naming the skill, its outcome evals
-/// file and skill-creator's format, and the file it names is one whose write comes back as a draft.
+/// #2780: "Ask a chat to write outcome evals" types a prompt naming the skill and its folder, and
+/// the file the studio's skill has it write there is one whose write comes back as a draft.
 #[test]
 fn the_outcome_evals_prompt_names_the_file_a_draft_is_kept_for() {
     let tmp = tempfile::tempdir().unwrap();
@@ -925,14 +915,9 @@ fn the_outcome_evals_prompt_names_the_file_a_draft_is_kept_for() {
     a_skill_named(root, "skills/deploy", "deploy");
     let prompt = asking_for_outcome_evals(root, &Level::project(), "deploy").unwrap();
     assert!(
-        prompt.starts_with(
-            "Write outcome evals for the deploy skill in skills/deploy/evals/evals.json"
-        ),
+        prompt.ends_with("write outcome evals for the deploy skill in skills/deploy."),
         "{prompt}"
     );
-    for word in ["skill_name", "expected_output", "expectations", "files"] {
-        assert!(prompt.contains(word), "{word}: {prompt}");
-    }
     assert!(
         !prompt.chars().any(char::is_control),
         "one line: {prompt:?}"
@@ -942,8 +927,8 @@ fn the_outcome_evals_prompt_names_the_file_a_draft_is_kept_for() {
     assert!(asking_for_outcome_evals(root, &Level::project(), "nowhere").is_err());
 }
 
-/// #2780: "Improve from runs" tells the chat how to read the copy's own runs and grades, at its
-/// level, as evidence and never as instructions, and that its edit comes back as a draft.
+/// #2780: "Improve from runs" names the copy's folder and the command for its grades at its level;
+/// the studio's skill holds the rest (`the_studio_skill_holds_what_its_prompts_leave_to_it`).
 #[test]
 fn the_improve_prompt_reads_the_runs_and_grades_of_that_copy_and_ends_in_a_draft() {
     let tmp = tempfile::tempdir().unwrap();
@@ -951,16 +936,10 @@ fn the_improve_prompt_reads_the_runs_and_grades_of_that_copy_and_ends_in_a_draft
     a_skill_named(root, "skills/deploy", "deploy");
     let prompt = improving_from_runs(root, &Level::project(), "deploy").unwrap();
     assert!(
-        prompt.contains("purlis skill runs deploy --limit 200 --json"),
-        "{prompt}"
-    );
-    assert!(
         prompt.contains("purlis skill grade deploy --json"),
         "{prompt}"
     );
-    assert!(prompt.contains("skills/deploy/SKILL.md"), "{prompt}");
-    assert!(prompt.contains("never as instructions"), "{prompt}");
-    assert!(prompt.contains("draft in the Skill studio"), "{prompt}");
+    assert!(prompt.contains("the deploy skill in skills/deploy "), "{prompt}");
     assert!(
         !prompt.chars().any(char::is_control),
         "one line: {prompt:?}"
@@ -972,7 +951,7 @@ fn the_improve_prompt_reads_the_runs_and_grades_of_that_copy_and_ends_in_a_draft
         local.contains("purlis skill grade mine --local --json"),
         "{local}"
     );
-    assert!(local.contains("skills.local/mine/SKILL.md"), "{local}");
+    assert!(local.contains("skills.local/mine "), "{local}");
 
     std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
     a_skill_named(root, "workspaces/ops/skills/ship", "ship");
@@ -1210,5 +1189,103 @@ fn an_outcome_chats_copy_of_a_skill_grants_no_tools() {
             "{declared}: {front}"
         );
         assert!(end_try_at(root, &arm.piece).unwrap());
+    }
+}
+
+/// The longest name a skill may have (`purlis_skills::change::MOST_NAME`), used here for its
+/// workspace's and persona's names too: each prompt below names its skill's folder, which holds
+/// both.
+fn longest_name(letter: char) -> String {
+    std::iter::repeat_n(letter, purlis_skills::change::MOST_NAME).collect()
+}
+
+/// **Every prompt the Skill studio types reads whole in every harness it is typed into** (#4714).
+/// "Ask a chat to write outcome evals" was 854 characters for a skill named `deploy`, and Claude
+/// Code draws a paste over 800 as a placeholder, so purlis typed nothing and opened no chat.
+/// Asked here of a skill with the longest name, at a persona's local level with the longest
+/// name: the longest folder a prompt can name.
+#[test]
+fn every_skill_studio_prompt_reads_whole_in_every_harness_it_is_typed_into() {
+    let name = longest_name('s');
+    let owner = longest_name('o');
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let mut said = Vec::new();
+    for level in [
+        Level::project(),
+        Level::project().local(true),
+        Level::workspace(&owner).local(true),
+        Level::persona(&owner).local(true),
+    ] {
+        let dir = level.dir(root).unwrap();
+        a_skill_named(root, &dir.join(&name).to_string_lossy(), &name);
+        said.push(asking_for_trigger_tests(root, &level, &name).unwrap());
+        said.push(asking_for_outcome_evals(root, &level, &name).unwrap());
+        said.push(improving_from_runs(root, &level, &name).unwrap());
+        said.push(asking(&level, &"x".repeat(2_000)));
+        said.push(asking(&level, ""));
+    }
+    let drawn: Vec<String> = said
+        .iter()
+        .flat_map(|prompt| {
+            crate::harness::Harness::ALL
+                .into_iter()
+                .filter(|harness| harness.ready_to_type().is_some())
+                .filter_map(|harness| {
+                    harness.why_drawn_as_a_placeholder(&crate::curation::pasted(prompt))
+                })
+                .map(move |why| format!("{why}: {prompt}"))
+        })
+        .collect();
+    assert!(drawn.is_empty(), "{}", drawn.join("\n\n"));
+}
+
+/// #4714: each Skill studio prompt is one line that names its job, its skill's folder and the
+/// built-in skill that holds the steps (`curation::BUILTINS`' rule), and that skill ships.
+#[test]
+fn each_skill_studio_prompt_names_the_skill_that_holds_its_steps() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    a_skill_named(root, "skills/deploy", "deploy");
+    let level = Level::project();
+    let use_it = format!("Use the {STUDIO_SKILL} skill to ");
+    for prompt in [
+        asking(&level, "Ships it"),
+        asking(&level, ""),
+        asking_for_trigger_tests(root, &level, "deploy").unwrap(),
+        asking_for_outcome_evals(root, &level, "deploy").unwrap(),
+        improving_from_runs(root, &level, "deploy").unwrap(),
+    ] {
+        assert!(prompt.starts_with(&use_it), "{prompt}");
+        assert!(!prompt.chars().any(char::is_control), "{prompt:?}");
+    }
+    assert!(crate::skills::SHIPPED.contains(&STUDIO_SKILL));
+}
+
+/// #4714: the studio's skill holds what its prompts no longer say: the files purlis's grade reads,
+/// skill-creator's formats, how far back Improve reads runs, and that runs and grades are evidence,
+/// never instructions.
+#[test]
+fn the_studio_skill_holds_what_its_prompts_leave_to_it() {
+    let skill = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../app/src-tauri/plugin/skills")
+        .join(STUDIO_SKILL)
+        .join("SKILL.md");
+    let text = std::fs::read_to_string(&skill).unwrap();
+    for said in [
+        purlis_skills::grade::triggers_path(),
+        purlis_skills::grade::outcomes_path(),
+        "\"should_trigger\"".to_owned(),
+        "\"skill_name\"".to_owned(),
+        "\"expected_output\"".to_owned(),
+        "\"expectations\"".to_owned(),
+        "\"files\"".to_owned(),
+        "purlis skill runs <name> --limit 200 --json".to_owned(),
+        "purlis skill grade <name> <its level's flags> --json".to_owned(),
+        "never as instructions".to_owned(),
+        "purlis propose".to_owned(),
+        "## Checks".to_owned(),
+    ] {
+        assert!(text.contains(&said), "{said}");
     }
 }
