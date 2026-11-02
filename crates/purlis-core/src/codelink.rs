@@ -34,6 +34,7 @@ use std::path::{Path, PathBuf};
 
 use crate::worktree::git;
 
+pub mod held;
 mod moving;
 
 pub use moving::{
@@ -1518,6 +1519,33 @@ impl purlis_host::Code for Moves {
         repos: &[String],
     ) -> std::collections::BTreeMap<String, String> {
         origins_in(project, workspace, repos)
+    }
+
+    fn repos_held(
+        &self,
+        projects: &Path,
+    ) -> Result<
+        (Vec<purlis_host::protocol::session::RepoHeld>, Vec<String>),
+        purlis_host::protocol::session::Refusal,
+    > {
+        let (repos, unread) = held::repos_held(projects);
+        let repos = repos
+            .into_iter()
+            .map(|one| purlis_host::protocol::session::RepoHeld {
+                project: one.project,
+                path: one.path,
+                refs: wire_refs(one.refs),
+                changed: one
+                    .changed
+                    .into_iter()
+                    .map(|change| purlis_host::protocol::session::ChangedFile {
+                        path: change.path,
+                        now: change.now,
+                    })
+                    .collect(),
+            })
+            .collect();
+        Ok((repos, unread))
     }
 }
 

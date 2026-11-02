@@ -1900,6 +1900,21 @@ impl HostLink {
         }
     }
 
+    /// **Every repository the host holds in the projects it keeps** (1.68, #4569), with what it
+    /// could not look through: `None` from a host before 1.68, which cannot say.
+    pub(crate) fn repos_held(
+        &self,
+    ) -> Result<Option<(Vec<purlis_session_protocol::session::RepoHeld>, Vec<String>)>, String>
+    {
+        if self.version() < session::KNOWS_REPOS_HELD {
+            return Ok(None);
+        }
+        match self.call(Command::ReposHeld)? {
+            Answer::ReposHeld { repos, unread } => Ok(Some((repos, unread))),
+            _ => Err("the runner did not say which repositories it holds".to_owned()),
+        }
+    }
+
     /// Whether the host names where each clone it holds came from (1.54, #3985), so a clone it
     /// made comes back with its remote.
     pub(crate) fn names_clone_origins(&self) -> bool {

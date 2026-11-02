@@ -467,6 +467,8 @@ fn every_command() -> Vec<Command> {
             project: "01J9PRJCT00000000000000000".into(),
             workspace: "app".into(),
         },
+        // Every repository a host holds (1.68, #4569): the window's, and relayed.
+        Command::ReposHeld,
         // Where the host's own event log ends (1.41, #3393): the window's, and relayed.
         Command::LogEnd,
         // A grade asked for from a terminal, and the window running it (1.63, SK-61).
@@ -592,6 +594,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "take_conversation",
             "give_conversation",
             "clones_of",
+            "repos_held",
             "log_end",
             "answer_grade",
             "grade_step",
@@ -681,6 +684,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "take_conversation",
             "give_conversation",
             "clones_of",
+            "repos_held",
             // The runner's own event log, read by its desktop's window (1.41, #3393).
             "log_end",
         ],

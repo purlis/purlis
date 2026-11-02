@@ -570,7 +570,48 @@ pub(crate) fn fetch_whole(
             }
         }
     }
+    // **Only proof lets the runner go** (#4569): what it holds, listed by the runner itself and
+    // not the clones this machine expected, each commit reached from a ref here.
+    let missing = not_home(link, project, root, runner);
+    if missing.is_empty() {
+        return Vec::new();
+    }
+    failed.extend(missing);
     failed
+}
+
+/// **What runner `runner` holds that the project at `root` does not** (#4569), in sentences:
+/// none only where the runner listed every repository it holds and this project has each one's
+/// every commit ([`codelink::held::not_home`]). A runner that cannot list them proves nothing.
+pub(crate) fn not_home(link: &HostLink, project: &str, root: &Path, runner: &str) -> Vec<String> {
+    let (repos, unread) = match link.repos_held() {
+        Ok(Some(held)) => held,
+        Ok(None) => {
+            return vec![format!(
+                "runner {runner} is too old to list what it holds, so purlis can't tell its work                  is here"
+            )];
+        }
+        Err(why) => {
+            return vec![format!("the runner did not list what it holds: {why}")];
+        }
+    };
+    let held: Vec<codelink::held::Held> = repos
+        .into_iter()
+        .map(|one| codelink::held::Held {
+            project: one.project,
+            path: one.path,
+            refs: core_refs(one.refs),
+            changed: one
+                .changed
+                .into_iter()
+                .map(|change| codelink::held::Changed {
+                    path: change.path,
+                    now: change.now,
+                })
+                .collect(),
+        })
+        .collect();
+    codelink::held::not_home(root, project, &held, &unread)
 }
 
 /// The clone `rel`, made on the runner, as a clone here.
