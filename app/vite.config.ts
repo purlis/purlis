@@ -117,6 +117,7 @@ function familyStylesheets(): Plugin {
 
 // https://v2.tauri.app/start/frontend/vite/
 export default defineConfig(async () => ({
+  resolve: { alias: [{ find: /^react-dom\/client$/, replacement: "react-dom/profiling" }] }, // DEBUG-4351
   plugins: [react(), familyStylesheets(), tailwind(), ownLicence(), thirdPartyNotices()],
   // Keep Rust errors visible, and give Tauri the fixed port it expects.
   clearScreen: false,
@@ -129,6 +130,7 @@ export default defineConfig(async () => ({
   },
   // Two pages: the window, and the theme specimen a hidden window photographs (#2330).
   build: {
+    minify: false, // DEBUG-4351
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL("index.html", import.meta.url)),

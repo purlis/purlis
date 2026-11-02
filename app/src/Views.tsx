@@ -12,6 +12,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { P4351 } from "./debug4351";
 import { useLentMemoryStores } from "./MemoryEdits";
 import {
   Activity,
@@ -692,6 +693,7 @@ export function ViewPane({
         ) : isSkillStudio(view) ? (
           /* The Skill studio (#2765): read from the project's skill folders, again when the
              plane changes on disk. One tab per project (#3681), its scope and pages its own. */
+          <P4351 id="studio">
           <SkillStudioTab
             key={`${plane}\u0000${view.key}`}
             plane={plane}
@@ -701,6 +703,7 @@ export function ViewPane({
             onPress={onPress}
             onOpenView={onOpenView}
           />
+          </P4351>
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its
              chat through the catalogue's verb, or its session record as any record opens. It
