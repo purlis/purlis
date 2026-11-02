@@ -7,7 +7,7 @@ import "./theme/handed.testkit";
 import "@testing-library/jest-dom/vitest";
 import { toHaveValue } from "@testing-library/jest-dom/matchers";
 import { configure } from "@testing-library/react";
-import { afterEach, expect } from "vitest";
+import { afterEach, beforeEach, expect } from "vitest";
 import { forgetKeptScopes } from "./chatsScope";
 import { forgetExtensionThemes } from "./Extensions";
 import { forgetEntering } from "./settings/entering";
@@ -40,9 +40,16 @@ afterEach(() => {
   // What each pane's band held is kept by the pane for the window's life (#3167).
   forgetPaneBands();
   // Minimised or expanded is the machine's choice (`layout.json`, #4754); every test's machine
-  // is a new one, minimised.
+  // is a new one (below).
   PANE_NOTICES.forget();
 });
+
+// **A test's machine has its panes' notices expanded** (#4754): a test of a note on a pane reads
+// the note, as it did before the band could fold. A test whose window is handed a layout file
+// has it there too (`test-inbox.ts`). The window's default, minimised, is pinned by
+// `paneNotices.test.ts`, and the tests of the fold ask for it themselves
+// (`PaneNotices.window.test.tsx`, the bell's in `Notice.pane.test.tsx`).
+beforeEach(() => PANE_NOTICES.keep("expanded"));
 
 // jsdom's window is 1024px wide, the narrowest purlis supports, where the project rail hides
 // itself to leave the work its room (`railRoom.ts`, #3077). A test's window holds the rail beside

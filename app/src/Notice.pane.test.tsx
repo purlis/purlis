@@ -3,7 +3,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useContext, useLayoutEffect, useState, type ReactNode } from "react";
@@ -214,6 +214,9 @@ describe("a pane's row of Notices", () => {
   });
 
   describe("with a bell to fold into (#4754)", () => {
+    // The window's default; a test's machine starts expanded (`test-setup.ts`).
+    beforeEach(() => PANE_NOTICES.keep("minimised"));
+
     /** The band as a chat's pane draws it, and what it last told its bell. */
     function Band({ children }: { children: ReactNode }) {
       const [holds, setHolds] = useState<BandHolds>();

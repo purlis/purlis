@@ -985,7 +985,7 @@ export function PaneDoing({
 
 /** What a chat's pane's band holds, for its bell (#4754): none outside a chat's pane, where no
  *  bell is drawn (a view's pane draws the same actions). */
-const PaneBellOf = createContext<BandHolds | null>(null);
+export const PaneBellOf = createContext<BandHolds | null>(null);
 
 /**
  * **A pane's bell** (#4754, spec #4750 stories 33, 37 to 39): in the pane's header, in a fixed
@@ -1027,7 +1027,8 @@ export function PaneBell() {
       >
         {bellCount(holds)}
       </Button>
-      <span className="sr-only" role="status">
+      {/* Polite and on its own, never a Notice's status line: what arrived, said once. */}
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
         {announced}
       </span>
     </>

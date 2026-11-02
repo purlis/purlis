@@ -41,7 +41,9 @@ const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMo
 
 // A pane's Notice is listed in the Inbox too: these tests are about the pane's, so the side
 // opens on another view.
-beforeEach(inboxAwayAtLaunch);
+// A new machine's layout file, which says nothing of the notices: minimised, the window's
+// default (`paneNotices.ts`); a test's machine is otherwise handed them expanded (`test-inbox.ts`).
+beforeEach(() => inboxAwayAtLaunch("minimised"));
 afterEach(forgetInboxOpen);
 afterEach(forgetInbox);
 afterEach(() => {
@@ -224,7 +226,7 @@ describe("a pane's notices, minimised (the default)", () => {
     expect(seen()).toEqual(["Remove workspace"]);
     expect(bell()).toHaveAttribute("aria-expanded", "false");
     expect(keep).toHaveFocus();
-    const said = frame().querySelectorAll('.pane-doing [role="status"]');
+    const said = frame().querySelectorAll('.pane-doing [aria-live="polite"]');
     expect([...said].map((one) => one.textContent)).toContain("1 notice, 1 in trouble, 1 asking");
   });
 });
