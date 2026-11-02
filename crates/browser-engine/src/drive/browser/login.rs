@@ -65,6 +65,15 @@ pub(crate) const PASSWORD_FIELD: &str = r#"(() => {
   return null;
 })()"#;
 
+/// A shown field that says it's for a user name: what a login a chat chose is held to where the
+/// page shows no password field beside it (#4595).
+pub(crate) const SAYS_IT_IS_A_NAME: &str = r#"(() => {
+  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+  for (const e of document.querySelectorAll('input[autocomplete~="username"], input[autocomplete~="email"]'))
+    if (shown(e)) return e;
+  return null;
+})()"#;
+
 /// The script that finds the page's first shown user-name field: a constant.
 pub(crate) const NAME_FIELD: &str = r#"(() => {
   const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
@@ -340,6 +349,15 @@ impl Browser {
         if let Some(user) = &login.user
             && let Some(name) = self.field(target, NAME_FIELD).map_err(unread)?
         {
+            if login.suggested
+                && self.shows(target, PASSWORD_FIELD)? != Some(true)
+                && self.shows(target, SAYS_IT_IS_A_NAME)? != Some(true)
+            {
+                return Err(not_logged_in(format!(
+                    "the page on {origin} shows no field that says it's for a user name, so \
+                     nothing was filled"
+                )));
+            }
             self.fill(target, origin, &name, user)?;
             filled.push(name.key);
             if self.shows(target, PASSWORD_FIELD)? != Some(true) {

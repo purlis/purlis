@@ -1097,6 +1097,56 @@ pub async fn set_project_chats_run_on(
     }
 }
 
+/// **A project, and its workspaces, that name a pool** (#4678): what removing the pool sets back
+/// to this machine, which its question names first.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolNamedBy {
+    /// The path this machine keeps the project under.
+    pub path: String,
+    /// What to call it: the directory's own name.
+    pub name: String,
+    /// Whether the project itself names the pool.
+    pub project: bool,
+    /// The workspaces of it that name the pool, by name.
+    pub workspaces: Vec<String>,
+}
+
+/// What names pool `name` on `config`, project by project, or why this machine's store could not
+/// be read.
+#[cfg(unix)]
+pub fn pool_named_by_on(config: &std::path::Path, name: &str) -> Result<Vec<PoolNamedBy>, String> {
+    Ok(purlis_core::pools::named_by(config, name)?
+        .into_iter()
+        .map(|(plane, naming)| PoolNamedBy {
+            name: plane.file_name().map_or_else(
+                || plane.display().to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            ),
+            path: plane.display().to_string(),
+            project: naming.project,
+            workspaces: naming.workspaces,
+        })
+        .collect())
+}
+
+/// **What names a pool** (#4678): the projects and workspaces its removal sets back to this machine.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_named_by(name: String) -> Result<Vec<PoolNamedBy>, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading what names the pool", move || {
+            pool_named_by_on(&config_root()?, &name)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = name;
+        Err(NOT_HERE.to_owned())
+    }
+}
+
 /// **Sets where a workspace's chats run** (#2046): the person's choice in its settings.
 #[tauri::command]
 #[specta::specta]

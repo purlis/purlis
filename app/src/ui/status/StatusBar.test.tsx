@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { userEvent } from "@testing-library/user-event";
 import { StatusBar, placed, type StatusContribution } from "./StatusBar";
 import { StatusCell, StatusItem } from "./StatusItem";
+import { reordered } from "../../statusBarPrefs";
 
 /**
  * **The status bar's contribution model** (N28, the operator's #2814·5): an item sits left or
@@ -46,6 +47,30 @@ describe("where an item sits", () => {
   it("leaves out what the person hid, unless the item cannot be hidden", () => {
     const items = [own("a", "left", 2), own("b", "left", 1, { hideable: false })];
     expect(placed(items, "left", ["a", "b"]).map((one) => one.id)).toEqual(["b"]);
+  });
+
+  it("follows the order the person gave it, on each end", () => {
+    const items = [own("a", "left", 3), own("b", "left", 2), own("c", "left", 1)];
+    expect(placed(items, "left", [], ["c", "a", "b"]).map((one) => one.id)).toEqual([
+      "c",
+      "a",
+      "b",
+    ]);
+  });
+
+  it("keeps an item the order never named beside the one it follows by priority", () => {
+    const items = [own("a", "left", 3), own("new", "left", 2), own("c", "left", 1)];
+    expect(placed(items, "left", [], ["c", "a"]).map((one) => one.id)).toEqual(["c", "a", "new"]);
+    const first = [own("new", "left", 9), own("a", "left", 3), own("c", "left", 1)];
+    expect(placed(first, "left", [], ["c", "a"]).map((one) => one.id)).toEqual(["new", "c", "a"]);
+  });
+
+  it("is not moved by an order that names items absent today, or by an item hidden", () => {
+    const items = [own("a", "left", 3), own("b", "left", 2), own("c", "left", 1)];
+    expect(placed(items, "left", ["b"], ["c", "gone", "b", "a"]).map((one) => one.id)).toEqual([
+      "c",
+      "a",
+    ]);
   });
 
   it("draws each end in its own part of the bar", () => {
@@ -229,6 +254,111 @@ describe("the keyboard and the bar's menu", () => {
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     expect(screen.getByRole("button", { name: "Notices" })).toHaveFocus();
+  });
+});
+
+describe("moving an item with the keyboard, from the bar's menu (#3030)", () => {
+  /** A bar whose order it keeps itself, as the window keeps it. */
+  function Arranged({ items }: { items: StatusContribution[] }) {
+    const [order, setOrder] = useState<readonly string[]>([]);
+    return (
+      <StatusBar
+        aria-label="Status"
+        items={items}
+        order={order}
+        onHide={() => {}}
+        onMove={(id, onto, shown) => setOrder((was) => reordered(was, shown, id, onto))}
+      />
+    );
+  }
+  const notices = (): StatusContribution => ({
+    id: "purlis.notices",
+    name: "Notices",
+    side: "right",
+    priority: 30,
+    hideable: false,
+    item: <StatusItem>Notices</StatusItem>,
+  });
+  const slots = () =>
+    [...document.querySelectorAll<HTMLElement>('[data-part="slot"]')].map(
+      (one) => one.dataset.item,
+    );
+  async function openMove(words: "Move left" | "Move right") {
+    screen.getByRole("button", { name: "Notices" }).focus();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await screen.findByRole("menu", { name: "Status: the items shown" });
+    within(menu).getByRole("menuitem", { name: words }).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    return screen.findByRole("menu", { name: words });
+  }
+
+  it("moves the item one place on its end, and keeps the menu up for the next move", async () => {
+    render(
+      <Arranged
+        items={[own("a", "left", 3), own("b", "left", 2), own("c", "left", 1), notices()]}
+      />,
+    );
+    const move = await openMove("Move left");
+    const row = within(move).getByRole("menuitem", { name: "c" });
+    row.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(slots()).toEqual(["a", "c", "b", "purlis.notices"]));
+    expect(screen.getByRole("menu", { name: "Move left" })).toBeInTheDocument();
+    expect(screen.getByText("c moved left of b")).toHaveAttribute("role", "status");
+    expect(within(move).getByRole("menuitem", { name: "c" })).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(slots()).toEqual(["c", "a", "b", "purlis.notices"]));
+  });
+
+  it("lists what the bar draws, Notices too, and no item it hid", async () => {
+    render(
+      <StatusBar
+        aria-label="Status"
+        hidden={["b"]}
+        onHide={() => {}}
+        onMove={() => {}}
+        items={[own("a", "left", 3), own("b", "left", 2), notices()]}
+      />,
+    );
+    const move = await openMove("Move right");
+    expect(
+      within(move)
+        .getAllByRole("menuitem")
+        .map((one) => one.textContent),
+    ).toEqual(["a", "Notices"]);
+  });
+
+  it("says a row at its end's edge cannot run, and keeps it from doing anything", async () => {
+    const onMove = vi.fn();
+    render(
+      <StatusBar
+        aria-label="Status"
+        onHide={() => {}}
+        onMove={onMove}
+        items={[own("a", "left", 3), own("b", "left", 2), notices()]}
+      />,
+    );
+    const move = await openMove("Move left");
+    const edge = within(move).getByRole("menuitem", { name: "a" });
+    expect(edge).toHaveAttribute("aria-disabled", "true");
+    expect(within(move).getByRole("menuitem", { name: "Notices" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(within(move).getByRole("menuitem", { name: "b" })).not.toHaveAttribute("aria-disabled");
+    edge.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it("offers no move where the bar's owner keeps no order", async () => {
+    render(
+      <StatusBar aria-label="Status" onHide={() => {}} items={[own("a", "left", 1), notices()]} />,
+    );
+    screen.getByRole("button", { name: "Notices" }).focus();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).queryByRole("menuitem", { name: "Move left" })).toBeNull();
   });
 });
 

@@ -188,6 +188,99 @@ fn a_dispatch_run_by_the_variable_that_names_purlis_s_own_binary_is_seen() {
     }
 }
 
+/// #4773: work that writes, commits or needs its own branch folder is a purlis task, so a
+/// helper that reaches for a branch folder is sent back to its chat in one line.
+#[test]
+fn a_sub_agent_that_adds_commits_or_pushes_a_branch_folder_is_told_to_ask_its_chat_to_dispatch() {
+    for cmd in [
+        "purlis worktree add purlis fix-the-thing",
+        "purlis worktree commit -m \"fix\" --all",
+        "purlis worktree push",
+    ] {
+        let (reason, said) = refusal(cmd, a_sub_agent()).unwrap_or_else(|| panic!("{cmd:?}"));
+        assert_eq!(reason, REASON_SUBAGENT_WORKTREE, "{cmd:?}");
+        assert_eq!(
+            said, "this work is a purlis task, so ask your chat to dispatch it.",
+            "{cmd:?}"
+        );
+        assert_eq!(refusal(cmd, the_chat()), None, "{cmd:?}");
+    }
+}
+
+/// Read where a dispatch is read: every spelling of the command line, every segment, every
+/// text a shell is handed at every level, and the variable that names purlis's binary.
+#[test]
+fn a_sub_agents_branch_folder_work_is_seen_in_every_spelling_a_dispatch_is() {
+    for cmd in [
+        "charter worktree add purlis x",
+        "cd svc && purlis worktree commit -m fix --all",
+        "FOO=1 purlis worktree push",
+        "git status\npurlis worktree push",
+        "purlis worktree --help add",
+        "bash -c 'purlis worktree commit -m fix --all'",
+        "eval purlis worktree push",
+        "echo 'purlis worktree add purlis x' | sh",
+        "bash -c \"sh -c 'purlis worktree push'\"",
+        "$PURLIS_HOOK_BINARY worktree add purlis x",
+        "\"${CHARTER_HOOK_BINARY}\" worktree push",
+    ] {
+        let (reason, _) = refusal(cmd, a_sub_agent()).unwrap_or_else(|| panic!("{cmd:?}"));
+        assert_eq!(reason, REASON_SUBAGENT_WORKTREE, "{cmd:?}");
+        assert_eq!(refusal(cmd, the_chat()), None, "{cmd:?}");
+    }
+    // Nested past the cap, a helper is refused unread.
+    let deep = (0..=crate::guardcaps::MAX_NESTING).fold("ls".to_owned(), |inner, _| {
+        format!("bash -c '{}'", inner.replace('\'', "'\\''"))
+    });
+    let deep = deep.replacen("ls", "echo worktree", 1);
+    assert!(refusal(&deep, a_sub_agent()).is_some(), "{deep:?}");
+}
+
+/// A helper reads, searches and reviews: a branch folder's list, status and diff, and git's
+/// own reads in it, still run; and so do the commands the app makes for a chat that are no
+/// task's work, which this ticket leaves where they were.
+#[test]
+fn a_sub_agents_read_only_commands_still_run() {
+    for cmd in [
+        "purlis worktree list",
+        "purlis worktree update",
+        "git worktree list",
+        "git log --oneline -5",
+        "git diff main...HEAD",
+        "echo purlis worktree push",
+        "rg 'worktree commit' crates",
+        "cat <<< 'purlis worktree add purlis x'",
+        "purlis workspace todo \"worktree add the fix\"",
+    ] {
+        assert_eq!(refusal(cmd, a_sub_agent()), None, "{cmd:?}");
+    }
+}
+
+/// Codex names a sub-agent's tool call by `agent_id` as Claude Code does (measured live on
+/// codex-cli 0.147.0; 0.163.0's hook payload still serialises the field), so a Codex helper is
+/// refused too. opencode's payload has no such field, and nothing is refused there.
+#[test]
+fn a_codex_helper_is_refused_and_an_opencode_one_is_not_read_as_one() {
+    let on = |harness| Caller {
+        harness: Some(harness),
+        ..a_sub_agent()
+    };
+    let cmd = "purlis worktree add purlis x";
+    let (reason, _) = refusal(cmd, on("codex")).expect("a Codex helper is refused");
+    assert_eq!(reason, REASON_SUBAGENT_WORKTREE);
+    assert_eq!(refusal(cmd, on("opencode")), None);
+    assert_eq!(
+        refusal(
+            cmd,
+            Caller {
+                harness: None,
+                ..a_sub_agent()
+            }
+        ),
+        None
+    );
+}
+
 #[test]
 fn a_sub_agent_running_anything_else_is_left_alone() {
     for cmd in [

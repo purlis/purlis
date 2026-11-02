@@ -12,6 +12,7 @@ const hit = {
   plain: "Most a profile may send: files",
   unit: "files",
   in_force: 8192,
+  team_suggests: false,
   needed: 9000,
   suggested: 11264 as number | null,
 };
@@ -94,6 +95,7 @@ describe("OfferToRaise (#4397)", () => {
         plain: "Longest wait for a runner's answer",
         unit: "seconds",
         in_force: 30,
+        team_suggests: false,
         needed: 30,
         suggested: 60,
       },

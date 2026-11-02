@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A frame that makes a blob</title></head>
+<body>
+  <script>
+    const made = new Blob(["<input aria-label='Blob field'>"], { type: "text/html" });
+    const frame = document.createElement("iframe");
+    frame.title = "Made here";
+    frame.src = URL.createObjectURL(made);
+    document.body.append(frame);
+  </script>
+</body></html>

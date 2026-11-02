@@ -583,8 +583,9 @@ type Document = {
   /** When the asks' notifications keep quiet (`notificationPrefs.ts`, #1989), when it is not
    *  the default. The core reads it too (`asknotify.rs`). */
   notifications?: NotificationPrefs;
-  /** The status items the person hid (`statusBarPrefs.ts`, #2913), when any is. */
-  status?: StatusBarPrefs;
+  /** The status items the person hid and the order they gave them (`statusBarPrefs.ts`, #2913,
+   *  #3030), when any is. */
+  status?: Partial<StatusBarPrefs>;
   /** The project rail hiding itself (`railMode.ts`, #2915), while it does. */
   rail?: "auto";
   /** The Skills view's folded groups (`skillsViewPrefs.ts`, #3281, #3693), while they are not

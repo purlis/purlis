@@ -555,6 +555,7 @@ const DURING_THE_ROLL: u64 = 1_798_761_600 - 3 * 24 * 3600;
 /// A Pool's status in the worked example's roll (`fixtures/runner-link-key/`).
 fn rolling() -> PoolSeen {
     PoolSeen {
+        team_limits: None,
         signing_key: Some(fixture("operator-key.txt").trim().to_owned()),
         cluster: Some(cluster()),
         next_signing_key: Some(fixture("next-operator-key.txt").trim().to_owned()),
@@ -626,6 +627,7 @@ fn a_pools_pin_is_its_operators_key_and_its_cluster() {
             "nextSigningKeyVouch": { "statement": "s", "signature": "g" },
         })),
         PoolSeen {
+            team_limits: None,
             signing_key: Some("ed25519:00".into()),
             cluster: Some("c".into()),
             next_signing_key: Some("ed25519:11".into()),

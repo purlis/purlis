@@ -22,9 +22,12 @@ const BUDGET_MS = 5_000;
 
 type Picture = { png: string; width: number; height: number; millis: number; appearance: string };
 
-/** The specimen in `appearance`, and how long the whole ask took. */
-async function specimen(appearance: "dark" | "light"): Promise<{ picture: Picture; took: number }> {
-  const started = Date.now();
+/**
+ * The specimen in `appearance`. How long it took is the app's own `millis`, timed from asking for
+ * its window to holding its picture, as the budget is (#3022); a clock around the WebDriver round
+ * trip would count a loaded runner's queueing too.
+ */
+async function specimen(appearance: "dark" | "light"): Promise<{ picture: Picture }> {
   const answer = await browser.executeAsync(
     (shown: string, done: (out: { ok?: unknown; trouble?: string }) => void) => {
       void window.__TAURI__.core
@@ -35,7 +38,7 @@ async function specimen(appearance: "dark" | "light"): Promise<{ picture: Pictur
     appearance,
   );
   if (answer.trouble !== undefined) throw new Error(`theme_specimen refused: ${answer.trouble}`);
-  return { picture: answer.ok as Picture, took: Date.now() - started };
+  return { picture: answer.ok as Picture };
 }
 
 const pixels = (picture: Picture): Pixels => readPng(Buffer.from(picture.png, "base64"));
@@ -49,13 +52,29 @@ function surfaceOf(appearance: string): number[] {
 /** Whether two colours are the same within what a display's colour management moves. */
 const near = (a: number[], b: number[]) => a.every((channel, n) => Math.abs(channel - b[n]) <= 12);
 
+const CANARY = "canary-7f3a-their-secret-project";
+
 describe("the theme specimen", () => {
+  /** The window's title before a test planted the canary in it; `null` when none was planted. */
+  let titleWas: string | null = null;
+
+  // The canary covers the whole window: it comes down however the test ended, a budget missed
+  // included, or every later spec finds it on top (#4712).
+  afterEach(async () => {
+    await browser.execute((was: string | null) => {
+      document.getElementById("specimen-canary")?.remove();
+      localStorage.removeItem("purlis.specimen-canary");
+      sessionStorage.removeItem("purlis.specimen-canary");
+      if (was !== null) document.title = was;
+    }, titleWas);
+    titleWas = null;
+  });
+
   it("is drawn within its budget, in the theme and appearance asked for", async () => {
     const dark = await specimen("dark");
     const light = await specimen("light");
-    for (const { picture, took } of [dark, light]) {
+    for (const { picture } of [dark, light]) {
       expect(picture.millis).toBeLessThanOrEqual(BUDGET_MS);
-      expect(took).toBeLessThan(BUDGET_MS + 1_000);
       expect(picture.width).toBeGreaterThanOrEqual(1280);
       expect(picture.height).toBeGreaterThanOrEqual(800);
     }
@@ -82,8 +101,7 @@ describe("the theme specimen", () => {
     const before = pixels((await specimen("dark")).picture);
     // What the window shows and keeps, changed: a string no fixture holds, written over the
     // whole window and into its storage. A picture of the window would change with it.
-    const CANARY = "canary-7f3a-their-secret-project";
-    const title = await browser.execute(() => document.title);
+    titleWas = await browser.execute(() => document.title);
     await browser.execute((canary: string) => {
       localStorage.setItem("purlis.specimen-canary", canary);
       sessionStorage.setItem("purlis.specimen-canary", canary);
@@ -101,11 +119,5 @@ describe("the theme specimen", () => {
       for (let x = 0; x < before.width; x += 4)
         if (before.at(x, y).join() !== after.at(x, y).join()) differ++;
     expect(differ).toBe(0);
-    await browser.execute((was: string) => {
-      document.getElementById("specimen-canary")?.remove();
-      localStorage.removeItem("purlis.specimen-canary");
-      sessionStorage.removeItem("purlis.specimen-canary");
-      document.title = was;
-    }, title);
   });
 });

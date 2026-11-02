@@ -195,6 +195,33 @@ fn a_project_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
 }
 
 #[test]
+fn what_names_a_pool_is_listed_by_project_with_its_directory_name() {
+    let config = tempfile::tempdir().unwrap();
+    let shop = std::path::Path::new("/planes/shop");
+    let docs = std::path::Path::new("/planes/docs");
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(shop, 1);
+        store.remember(docs, 2);
+        store
+            .set_project_chats_run_on(shop, Some("builds"))
+            .unwrap();
+        store.set_chats_run_on(shop, "api", Some("builds")).unwrap();
+        store.set_chats_run_on(docs, "site", Some("other")).unwrap();
+    })
+    .unwrap();
+    assert_eq!(
+        pool_named_by_on(config.path(), "builds").unwrap(),
+        [PoolNamedBy {
+            path: "/planes/shop".to_owned(),
+            name: "shop".to_owned(),
+            project: true,
+            workspaces: vec!["api".to_owned()],
+        }]
+    );
+    assert_eq!(pool_named_by_on(config.path(), "gone").unwrap(), []);
+}
+
+#[test]
 fn a_runners_version_that_could_not_be_read_says_why_safely() {
     let (runner, why) = version_read(Err(
         "docker exec failed:\n\u{202E}tcp://someone:hidden@engine".to_owned(),

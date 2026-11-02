@@ -106,9 +106,11 @@ async function tabsOpen(): Promise<number> {
   await palette.waitForDisplayed({ timeout: 20_000 });
   const counted = await browser.execute(
     () =>
-      [...document.querySelectorAll('[role="option"] .palette-title')].filter((row) =>
-        (row.textContent ?? "").startsWith("End chat "),
-      ).length,
+      // A tab's close (`End chat X`), not the chat's own End… (`End chat X…`, #4753): one per tab.
+      [...document.querySelectorAll('[role="option"] .palette-title')].filter((row) => {
+        const said = row.textContent ?? "";
+        return said.startsWith("End chat ") && !said.endsWith("…");
+      }).length,
   );
   await browser.keys(["Escape"]);
   await expect(palette).not.toBeDisplayed();

@@ -529,7 +529,8 @@ pub struct Family {
     /// drawn on other grounds than the family's (#3099, #3384). One ground is what its parent
     /// paints: a tab's count on the counts button, a switcher's row on the popover it is drawn in.
     /// Several are the fewer the window draws it on: a field's error, on where a field that can
-    /// refuse stands ([`FIELD_ERROR_GROUNDS`]). Its words are held to these, but a fallback never
+    /// refuse stands ([`FIELD_ERROR_GROUNDS`]), and its help, on where a field given help stands
+    /// ([`FIELD_HELP_GROUNDS`]). Its words are held to these, but a fallback never
     /// paints them, since the part does not.
     under: &'static [(&'static str, &'static [&'static str])],
 }
@@ -786,6 +787,24 @@ const PART_LAID_ON: &[(&str, &str, &str)] = &[("titlebar", "count", "surface.dee
 /// the ground it stands on, and holds this list to them.
 const FIELD_ERROR_GROUNDS: &[&str] = &["surface.base", "surface.raised", "surface.overlay"];
 
+/// **Where a field's help is drawn** (#4648): on a view's page and on a raised ground of its own,
+/// and in a dialog. Its words are the quiet ones, which Purlis draws under 4.5:1 on some grounds
+/// a field may stand on (a danger wash, a trouble Notice's fill, a line's colour), so read on
+/// every ground a field stands on, a theme that set only a field's error lost it to a help nobody
+/// sees there. `app/src/ui/field/fieldHelp.guard.test.ts` holds this list to the files that hand
+/// a field its help, as `refusingFields.guard.test.ts` holds [`FIELD_ERROR_GROUNDS`].
+const FIELD_HELP_GROUNDS: &[&str] = &["surface.raised", "surface.overlay"];
+
+/// **What the window draws each see-through ground on** (#4648), by ground: the danger wash is
+/// a refusal's or an unrun command's box in a dialog and the approval of what an extension runs
+/// as you, also a dialog (`App.css`; a dialog's content is `surface.overlay`, `dialog.css`), and a
+/// pane's trouble Notice over the terminal's fill (`paneFrame.css`).
+/// The check reads a family on a wash laid over these alone, never over every opaque ground the
+/// family stands on (an active tab, a chosen row), since no wash is drawn there. A ground a theme
+/// makes see-through that is not here is read over each opaque ground its family names.
+const WASH_LAID_ON: &[(&str, &[&str])] =
+    &[("danger.wash", &["surface.overlay", "terminal.background"])];
+
 /// A part of a family in a look, as a sentence names it: `button.root.primary`, or
 /// `text-input.root` for a family that has no variants.
 fn look_named(family: &Family, part: &str, variant: &str) -> String {
@@ -928,6 +947,10 @@ mod part_fills_tests;
 #[cfg(test)]
 #[path = "drawn_looks_tests.rs"]
 mod drawn_looks_tests;
+
+#[cfg(test)]
+#[path = "laid_grounds_tests.rs"]
+mod laid_grounds_tests;
 
 #[cfg(test)]
 #[path = "hot_count_tints_tests.rs"]
@@ -2390,9 +2413,10 @@ fn hex<'a>(theme: &'a ResolvedTheme, token: &str) -> Option<&'a str> {
 }
 
 /// **The family's grounds as `theme` draws them**, never none: each opaque one as it is, its
-/// alpha read as drawn, and a wash laid over each opaque one, since a wash is drawn over what is
-/// under it. With no opaque ground, each is measured as its colour drawn opaque; with no ground
-/// purlis can read, on black and on white, the strictest.
+/// alpha read as drawn, and a wash laid over each ground the window draws it on
+/// ([`WASH_LAID_ON`], #4648), or over each opaque one the family names where nothing says. With
+/// no opaque ground, each is measured as its colour drawn opaque; with no ground purlis can read,
+/// on black and on white, the strictest.
 fn grounds(theme: &ResolvedTheme, family: &Family) -> Vec<String> {
     laid(theme, family.grounds)
 }
@@ -2454,10 +2478,29 @@ fn laid(theme: &ResolvedTheme, tokens: &[&str]) -> Vec<String> {
         };
     }
     let mut drawn = under.clone();
-    for one in given.iter().filter(|one| !is_opaque(one)) {
-        drawn.extend(under.iter().map(|below| onto(one, below)));
+    for (token, one) in tokens
+        .iter()
+        .filter_map(|token| Some((*token, hex(theme, token)?)))
+        .filter(|(_, one)| !is_opaque(one))
+    {
+        let on = washed(theme, token);
+        let on = if on.is_empty() { &under } else { &on };
+        drawn.extend(on.iter().map(|below| onto(one, below)));
     }
     drawn
+}
+
+/// **The opaque grounds the window draws the see-through `token` on** ([`WASH_LAID_ON`]), as
+/// `theme` draws them; none where nothing says, or where `theme` draws none of them opaque.
+fn washed(theme: &ResolvedTheme, token: &str) -> Vec<String> {
+    WASH_LAID_ON
+        .iter()
+        .filter(|(wash, _)| *wash == token)
+        .flat_map(|(_, under)| under.iter())
+        .filter_map(|below| hex(theme, below))
+        .filter(|below| is_opaque(below))
+        .map(solid)
+        .collect()
 }
 
 /// The lowest contrast `front` has on `fill` over each ground `on` ([`grounds`]).

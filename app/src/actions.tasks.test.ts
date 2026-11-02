@@ -201,18 +201,15 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
     });
   });
 
-  it("lists the three in a task's menu in the Chats list, above the line", () => {
+  it("lists the three in a task's list, above the line, before its Brief", () => {
     const tabs = moveToOwnTab(sessions(), 2, "talk", "devops", null);
-    const menu = menuRows({ on: "listed", session: 2 }, rowsOf(tabs));
-    // After its Brief (#1494), which reads and moves nothing.
-    expect(menu.above.map((row) => row.id)).toEqual([
-      briefId(2),
-      ownTabId(2),
-      besideId(2),
-      backId(2),
-    ]);
-    // A session's row has none of them.
-    expect(menuRows({ on: "listed", session: 1 }, rowsOf(tabs)).above).toEqual([]);
+    const placed = [ownTabId(2), besideId(2), backId(2), briefId(2)];
+    const menu = menuRows({ on: "chat", session: 2 }, rowsOf(tabs));
+    // Where it is drawn, then its Brief (#1494), which reads and moves nothing (#4753's order).
+    expect(menu.above.map((row) => row.id).filter((id) => placed.includes(id))).toEqual(placed);
+    // A session's list has none of them.
+    const own = menuRows({ on: "chat", session: 1 }, rowsOf(tabs)).above.map((row) => row.id);
+    expect(own.filter((id) => placed.includes(id) || id === ownTabId(1))).toEqual([]);
   });
 
   it("carries each out through the window's one table of verbs", async () => {
@@ -268,9 +265,8 @@ describe("starting a task fresh (fix round 1, M2; #1609)", () => {
       }),
     );
     return {
-      task: rows.get(`tab.fresh:${tabOf(tabs, 2)}`),
-      session: rows.get(`tab.fresh:${tabOf(tabs, 1)}`),
-      tab: tabOf(tabs, 2),
+      task: rows.get("chat.fresh:2"),
+      session: rows.get("chat.fresh:1"),
     };
   };
 
@@ -285,10 +281,10 @@ describe("starting a task fresh (fix round 1, M2; #1609)", () => {
   });
 
   it("runs Start fresh for a task where the core hands it its brief again, and says so", async () => {
-    const { task, tab } = freshRows(true);
+    const { task } = freshRows(true);
     expect(task).toMatchObject({
       available: true,
-      does: { verb: "startFresh", tab },
+      does: { verb: "startFresh", session: 2 },
       note: `Changed since it started: CLAUDE.md. ${TASK_FRESH_NOTE}`,
     });
     if (task === undefined) throw new Error("no row");
@@ -301,7 +297,7 @@ describe("starting a task fresh (fix round 1, M2; #1609)", () => {
         },
     });
     await perform(task, doing);
-    expect(calls).toEqual([`startFresh:${tab}`]);
+    expect(calls).toEqual(["startFresh:2"]);
   });
 });
 

@@ -177,6 +177,7 @@
 [data-scope="checkbox"][data-part="root"][data-variant="chip"][data-selected]
   [data-scope="checkbox"][data-part="box"] {
   border-color: transparent;
+  color: var(--accent-text);
   background-color: transparent;
 }
 
@@ -635,7 +636,7 @@
   grid-column: 3;
   inline-size: calc(var(--size-control) * 4 / 7);
   block-size: calc(var(--size-control) * 4 / 7);
-  color: var(--accent-base);
+  color: var(--accent-text);
   visibility: hidden;
 }
 
@@ -666,10 +667,10 @@
   visibility: visible;
 }
 
-/* The chosen card's mark turns the accent (R26). */
+/* The chosen card's mark turns the accent's words (R26, #3100). */
 [data-scope="option-card"][data-part="root"][data-selected]
   [data-scope="option-card"][data-part="icon"] {
-  color: var(--accent-base);
+  color: var(--accent-text);
 }
 
 [data-scope="option-card"][data-part="root"][data-disabled] {

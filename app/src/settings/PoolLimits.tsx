@@ -14,7 +14,7 @@ import { SettingRow } from "./components";
 
 /** What the page says of limits, over its groups (A1, Q11). */
 const ABOUT =
-  "Every default is already the best value, so most people never change these. A limit left empty follows purlis's default as it improves. One you set stays, and is marked.";
+  "Every default is already the best value, so most people never change these. A limit left empty follows the default as it improves. One you set stays, and is marked.";
 
 /**
  * What Replace does, said before it does it (#4286, Q13): running chats carry on where they are,
@@ -229,7 +229,7 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
       setWhy(undefined);
       return;
     }
-    void checkLimit(row.key, to).then((said) => {
+    void checkLimit(pool, row.key, to).then((said) => {
       if (mine === typing.current) setWhy(said.status === "error" ? said.error : undefined);
     });
   };
@@ -254,15 +254,16 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
       else setTyped(undefined);
       return;
     }
-    const checked = await checkLimit(row.key, typed);
+    const checked = await checkLimit(pool, row.key, typed);
     if (mine !== typing.current) return;
     if (checked.status === "error") setWhy(checked.error);
     else if (checked.data === row.set && saving.current === 0) setTyped(undefined);
     else save(checked.data, mine);
   };
   const refused = why !== undefined;
+  const whole = useRef<HTMLDivElement>(null);
   return (
-    <div className="pool-limit">
+    <div className="pool-limit" ref={whole}>
       <SettingRow
         label={row.plain}
         reset={{
@@ -318,9 +319,32 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
       </div>
       <p className="ui-setting-help pool-limit-says" id={says}>
         {isSet && <Badge variant="accent">You set this</Badge>}
-        <span>Default {row.default_said}.</span>
+        <span>
+          Default {row.default_said}
+          {row.default_by_team && ", set by the team"}.
+        </span>
+        {row.highest_said !== null && <span>{row.highest_said}</span>}
         {row.applies !== null && <span>{row.applies}</span>}
       </p>
+      {row.suggested !== null && row.suggested_said !== null && (
+        <p className="ui-setting-help pool-limit-says">
+          <span>The team suggests {row.suggested_said}.</span>
+          <Button
+            size="sm"
+            aria-label={`Use ${row.suggested_said}: ${row.plain} on pool ${pool}`}
+            onPress={() => {
+              const mine = ++typing.current;
+              setWhy(undefined);
+              setTyped(undefined);
+              save(row.suggested, mine);
+              // The button goes with the save: the person is left on the value it set.
+              void saves.current.then(() => whole.current?.querySelector("input")?.focus());
+            }}
+          >
+            Use {row.suggested_said}
+          </Button>
+        </p>
+      )}
     </div>
   );
 }

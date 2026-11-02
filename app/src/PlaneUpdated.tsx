@@ -110,7 +110,7 @@ export function PlaneUpdatedMark({ files }: { files?: readonly string[] }) {
 /**
  * **The mark on the strip, as the way out it names** (NO-3): the same mark, drawn as a button
  * beside the tab rather than inside it — a button cannot sit in the tab's own — that presses the
- * catalogue's `tab.fresh:<id>`, the row the palette and the tab's menu list. So its accessible
+ * catalogue's `chat.fresh:<session>`, the row the palette and the chat's list hold. So its accessible
  * name is the row's words, and the question it asks is the row's (`PlaneView`'s `ChatAsk`). A
  * small icon button of the family (#3129), plain as the strip has always drawn it, with the
  * files that moved as its tooltip's second line.

@@ -12008,6 +12008,9 @@ mod across_restart;
 /// A task's question on its route (ADR 0107).
 mod task_questions;
 
+/// A task's question on its route from a pool's runner (#4560).
+mod task_questions_on_runners;
+
 /// A task started fresh is handed its brief again, or not started at all (#1609).
 mod started_fresh;
 

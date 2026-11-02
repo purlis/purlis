@@ -113,12 +113,12 @@ function doing(): Doing & { calls: string[] } {
     closePane: note("closePane"),
     closeTab: note("closeTab"),
     selectTab: note("selectTab"),
-    renameTab: note("renameTab"),
+    renameChat: note("renameChat"),
     linkWorkItem: note("linkWorkItem"),
     startFresh: note("startFresh"),
     restartChat: note("restartChat"),
     moveChat: note("moveChat"),
-    restartListed: note("restartListed"),
+    endChat: note("endChat"),
     askPersona: note("askPersona"),
     useSkill: note("useSkill"),
     unlinkWorkItem: async (...args: unknown[]) => {
@@ -1808,8 +1808,8 @@ describe("carrying out a row", () => {
         "closePane",
         "closeTab:1",
         "closeTab:2",
-        "renameTab:1",
-        "renameTab:2",
+        "renameChat:7",
+        "renameChat:8",
         // The same three calls whether the row was the chat in front's or the explorer's:
         // both name the piece, so both arrive here identically (charter-app#174).
         "removeWorktree:svc/fix-it,false",
@@ -1834,6 +1834,7 @@ describe("carrying out a row", () => {
         `newMemory:${JSON.stringify({ kind: "shared" })}`,
         "openView:charter/shared-memory/,Shared memory",
         "openView:charter/shortcuts/,Keyboard shortcuts",
+        "openView:charter/agent-identity/,Agent identity",
         // #1452: the project's dispatches, in a tab of their own.
         "openView:charter/dispatches/,Dispatches",
         // A chat's Activity, one row per chat tab (#1495).
@@ -1849,6 +1850,9 @@ describe("carrying out a row", () => {
         "removeVault:ops",
         "createPersona",
         "editPersona:steward",
+        // End…, each chat's own (#4753).
+        "endChat:7",
+        "endChat:8",
         "setPersonaProfile:steward",
         "removePersona:steward",
         "closeTodo:alpha,20260302-091400-review",
@@ -2034,43 +2038,49 @@ describe("moving a project between windows (charter#126)", () => {
 });
 
 describe("renaming a chat (charter-app#254)", () => {
-  it("is a row per chat tab, named by the tab's name", () => {
+  it("is a row per chat, by its number, named as its tab names it", () => {
     const tabs = openTab(noTabs(), 7, "3", "steward");
-    const row = by(catalogue(now({ tabs })), `tab.rename:${tabs.order[0]}`);
+    const row = by(catalogue(now({ tabs })), "chat.rename:7");
 
     expect(row?.title).toBe("Rename chat steward 3…");
     expect(row?.available).toBe(true);
-    expect(row?.does).toEqual({ verb: "renameTab", tab: tabs.order[0] });
+    expect(row?.does).toEqual({ verb: "renameChat", session: 7 });
+  });
+
+  it("is a row of a chat with no tab too, named as the Chats list names it (#4753)", () => {
+    const row = by(catalogue(now({ listed: [listed(9, null, false)] })), "chat.rename:9");
+
+    expect(row?.title).toBe("Rename chat chat 9…");
+    expect(row?.does).toEqual({ verb: "renameChat", session: 9 });
   });
 });
 
 describe("a chat's work link (V60, ADR 0088)", () => {
   const tabs = openTab(openTab(noTabs(), 7, "3", "steward"), 8, "4", "steward");
-  const [first, second] = tabs.order;
   const inAWorkspace = (session: number) => session === 7;
 
   it("offers Link to work item… on a chat in a workspace, naming the chat in its note", () => {
     const offers = catalogue(now({ tabs, linkable: inAWorkspace }));
-    const row = by(offers, `tab.worklink:${first}`);
+    const row = by(offers, "chat.worklink:7");
 
-    expect(row?.title).toBe("Link to work item…");
+    expect(row?.title).toBe("Link steward 3 to a work item…");
     expect(row?.available).toBe(true);
     expect(row?.note).toBe("Chat steward 3");
-    expect(row?.does).toEqual({ verb: "linkWorkItem", tab: first });
-    expect(by(offers, `tab.workunlink:${first}`)).toBeUndefined();
+    expect(row?.does).toEqual({ verb: "linkWorkItem", session: 7 });
+    expect(by(offers, "chat.workunlink:7")).toBeUndefined();
   });
 
   it("offers Unlink work item only on a linked chat, and names the item", () => {
     const offers = catalogue(
       now({ tabs, linkable: inAWorkspace, workItems: { 7: "github:github.com/acme/api#12" } }),
     );
-    const row = by(offers, `tab.workunlink:${first}`);
+    const row = by(offers, "chat.workunlink:7");
 
-    expect(row?.title).toBe("Unlink work item");
+    expect(row?.title).toBe("Unlink steward 3 from github:github.com/acme/api#12");
     expect(row?.note).toBe("Chat steward 3 · Work item: github:github.com/acme/api#12");
-    expect(row?.does).toEqual({ verb: "unlinkWorkItem", tab: first });
+    expect(row?.does).toEqual({ verb: "unlinkWorkItem", session: 7 });
     // Linking again is still offered: it replaces the link.
-    expect(by(offers, `tab.worklink:${first}`)?.available).toBe(true);
+    expect(by(offers, "chat.worklink:7")?.available).toBe(true);
   });
 
   it("offers neither on a chat at the project root", () => {
@@ -2078,13 +2088,13 @@ describe("a chat's work link (V60, ADR 0088)", () => {
       now({ tabs, linkable: inAWorkspace, workItems: { 8: "github:github.com/acme/api#12" } }),
     );
 
-    expect(by(offers, `tab.worklink:${second}`)).toBeUndefined();
-    expect(by(offers, `tab.workunlink:${second}`)).toBeUndefined();
+    expect(by(offers, "chat.worklink:8")).toBeUndefined();
+    expect(by(offers, "chat.workunlink:8")).toBeUndefined();
   });
 
-  it("is on the chat tab's menu, above the line", () => {
-    expect(menuOn({ on: "chat", tab: 3 }).above).toEqual(
-      expect.arrayContaining(["tab.worklink:3", "tab.workunlink:3"]),
+  it("is on the chat's list, above the line", () => {
+    expect(menuOn({ on: "chat", session: 3 }).above).toEqual(
+      expect.arrayContaining(["chat.worklink:3", "chat.workunlink:3"]),
     );
   });
 
@@ -2097,39 +2107,40 @@ describe("a chat's work link (V60, ADR 0088)", () => {
       now({ tabs, linkable: inAWorkspace, workItems: { 7: "todo:alpha/20261002-080000-x" } }),
     );
 
-    run(offers, `tab.worklink:${first}`, hands);
-    await run(offers, `tab.workunlink:${first}`, hands);
+    run(offers, "chat.worklink:7", hands);
+    await run(offers, "chat.workunlink:7", hands);
 
-    expect(hands.linkWorkItem).toHaveBeenCalledWith(first);
-    expect(hands.unlinkWorkItem).toHaveBeenCalledWith(first);
+    expect(hands.linkWorkItem).toHaveBeenCalledWith(7);
+    expect(hands.unlinkWorkItem).toHaveBeenCalledWith(7);
   });
 });
 
 describe("the catalogue as the tabs change", () => {
-  it("grows a row per tab as tabs open", () => {
+  it("grows a tab's rows per tab, and a chat's rows per chat, as tabs open", () => {
     let tabs: Tabs = noTabs();
     expect(ids(catalogue(now({ tabs }))).filter((id) => id.startsWith("tab."))).toEqual([]);
 
     tabs = openTab(tabs, 7, "one");
     tabs = openTab(tabs, 8, "two");
 
-    expect(ids(catalogue(now({ tabs }))).filter((id) => id.startsWith("tab."))).toEqual([
+    const offers = ids(catalogue(now({ tabs })));
+    expect(offers.filter((id) => id.startsWith("tab."))).toEqual([
       "tab.select:1",
       "tab.select:2",
       // The pin rows sit with the switching rows, above the line: pinning is an arrangement
       // and ends nothing, and `frame/leave.py`'s rule is that only the destructive go last.
       "tab.pin:1",
       "tab.pin:2",
-      // Renaming is an arrangement too, and ends nothing (charter-app#254).
-      "tab.rename:1",
-      "tab.rename:2",
-      // A chat's Activity only reads (#1495), so it is above the line too.
-      "tab.activity:1",
-      "tab.activity:2",
-      "tab.network:1",
-      "tab.network:2",
       "tab.close:1",
       "tab.close:2",
+    ]);
+    // **A chat's rows are the chat's, by its number** (#4753): Rename… and Activity are
+    // arrangements and reads, above the line; End… ends it, and is its own row.
+    expect(offers.filter((id) => id.startsWith("chat.") && id.endsWith(":7"))).toEqual([
+      "chat.rename:7",
+      "chat.activity:7",
+      "chat.network:7",
+      "chat.end:7",
     ]);
   });
 });
@@ -2390,7 +2401,7 @@ describe("the palette at fifty chats", () => {
     expect(offers.filter((row) => row.id.startsWith("workspace.pin:"))).toHaveLength(6);
     // And one rename row per chat (charter-app#254), for the pin's reason: it is how the
     // tab's menu and the palette are one surface, and a verb typed still ranks first.
-    expect(offers.filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(50);
+    expect(offers.filter((row) => row.id.startsWith("chat.rename:"))).toHaveLength(50);
     // One row per workspace that can be deleted, and never one for the strip of chats
     // outside every workspace: that strip is not a workspace on the plane, and there is
     // nothing on disk for a delete to name.
@@ -2483,8 +2494,9 @@ describe("the palette at fifty chats", () => {
     // mode and Keyboard shortcuts, one row each. 920 since #3467: no Plugins group at the Project
     // or the Workspace level. 921 since #2027: Open browsers. 922 since the person's ruling of
     // 2026-10-30: Your settings: Pools is offered with or without a pool, as the group is. 923
-    // since #4536: the project's Runs on.
-    expect(offers).toHaveLength(923);
+    // since #4536: the project's Runs on. 924 since #4485: Agent identity.
+    // 974 since #4753: End…, each of the fifty chats' own row.
+    expect(offers).toHaveLength(974);
   });
 
   /**
@@ -2522,23 +2534,22 @@ describe("the palette at fifty chats", () => {
 
     /** One render of the chat strip: every tab draws a menu, and every menu asks. */
     function strip(offers: Counting) {
-      for (let tab = 1; tab <= 50; tab++) menuRows({ on: "chat", tab }, offers);
+      for (let tab = 1; tab <= 50; tab++) menuRows({ on: "tab", tab }, offers);
       return offers.lookups;
     }
 
-    it("asks for twelve rows per tab and never walks the list", () => {
+    it("asks for four rows per tab and never walks the list", () => {
       const offers = new Counting(loaded().map((offer) => [offer.id, offer]));
 
-      // 50 tabs × the twelve ids a chat menu lists (the two work link rows are V60's, Start
-      // fresh is NO-3's, Restart chat is #1428's, Activity is #1495's, Network is #1662's, Use
-      // skill… is #2775's).
+      // 50 tabs × the four ids a tab's menu lists: Switch to, Pin, Keep open and Close. A
+      // chat's rows are its own list's since #4753, which a strip never draws.
       // **Not fifty scans of 291 rows**, which is
       // what this cost before the lookup was built once for the window — and the number that
       // does not move when the catalogue grows again.
-      expect(strip(offers)).toBe(600);
+      expect(strip(offers)).toBe(200);
     });
 
-    it("is the same 600 whether the catalogue carries the pieces or not", () => {
+    it("is the same 200 whether the catalogue carries the pieces or not", () => {
       // The property, not the timing: the cost of a menu is flat in the length of the list it
       // reads. A scan is not, which is why #174's hundred rows needed this first.
       const small = new Counting(
@@ -2547,7 +2558,7 @@ describe("the palette at fifty chats", () => {
         ),
       );
 
-      expect(strip(small)).toBe(600);
+      expect(strip(small)).toBe(200);
     });
   });
 });
@@ -2739,7 +2750,8 @@ describe("curation actions (ADR 0061)", () => {
     expect(curateSubjectOf({ on: "persona", persona: "ops" })).toBe("persona:ops");
     expect(curateSubjectOf({ on: "root" })).toBe("plane");
     expect(curateSubjectOf({ on: "workspace", workspace: OUTSIDE })).toBeUndefined();
-    expect(curateSubjectOf({ on: "chat", tab: 1 })).toBeUndefined();
+    expect(curateSubjectOf({ on: "tab", tab: 1 })).toBeUndefined();
+    expect(curateSubjectOf({ on: "chat", session: 1 })).toBeUndefined();
   });
 });
 
@@ -3268,62 +3280,60 @@ describe("a branch's file and folder rows (FM-10)", () => {
   });
 });
 
-describe("Move to runner and Move here on a chat's tab (#2048)", () => {
+describe("Move to runner and Move here on a chat (#2048)", () => {
   const tabs = openTab(noTabs(), 7, "one");
-  const tab = tabs.order[0];
 
   it("offers a row per pool a chat here can move to, and asks for the move it names", async () => {
     const offers = catalogue(now({ tabs, movesTo: () => ["builds", "big"] }));
-    expect(catalogued(offers).get(`tab.move:${tab}:builds`)).toMatchObject({
+    expect(catalogued(offers).get("chat.move:7:builds")).toMatchObject({
       title: "Move chat one to pool builds",
       available: true,
       note: MOVE_TO_RUNNER_NOTE,
     });
-    expect(catalogued(offers).get(`tab.move:${tab}:big`)?.title).toBe("Move chat one to pool big");
+    expect(catalogued(offers).get("chat.move:7:big")?.title).toBe("Move chat one to pool big");
     const hands = doing();
-    await run(offers, `tab.move:${tab}:big`, hands);
-    expect(hands.calls).toEqual([`moveChat:${tab},big`]);
+    await run(offers, "chat.move:7:big", hands);
+    expect(hands.calls).toEqual(["moveChat:7,big"]);
   });
 
   it("offers a chat on a runner Move here, and a chat that does not move nothing", async () => {
     const offers = catalogue(now({ tabs, movesTo: () => [null] }));
-    expect(catalogued(offers).get(`tab.move:${tab}:`)).toMatchObject({
+    expect(catalogued(offers).get("chat.move:7:")).toMatchObject({
       title: "Move chat one here",
       note: MOVE_HERE_NOTE,
     });
     // Its runner names the clones it holds (1.51, #3811): a clone its chat made comes back too.
     const back = catalogue(now({ tabs, movesTo: () => [null], clonesComeBack: () => true }));
-    expect(catalogued(back).get(`tab.move:${tab}:`)?.note).toBe(
+    expect(catalogued(back).get("chat.move:7:")?.note).toBe(
       "Its branch, uncommitted work and conversation come back to this machine at its next pause, with each repository it cloned on the runner.",
     );
     const none = catalogue(now({ tabs, movesTo: () => [] }));
-    expect([...catalogued(none).keys()].filter((id) => id.startsWith("tab.move:"))).toEqual([]);
+    expect([...catalogued(none).keys()].filter((id) => id.startsWith("chat.move:"))).toEqual([]);
   });
 
   it("names the chats of its workspace that move with it, both ways (#3453)", () => {
     const offers = catalogued(
       catalogue(now({ tabs, movesTo: () => ["builds"], movesWith: () => ["two", "steward 1"] })),
     );
-    expect(offers.get(`tab.move:${tab}:builds`)).toMatchObject({
+    expect(offers.get("chat.move:7:builds")).toMatchObject({
       title: "Move chat one with two and steward 1 to pool builds",
       note: `${MOVE_TO_RUNNER_NOTE} ${MOVE_TOGETHER_NOTE}`,
     });
     const here = catalogued(
       catalogue(now({ tabs, movesTo: () => [null], movesWith: () => ["two"] })),
     );
-    expect(here.get(`tab.move:${tab}:`)?.title).toBe("Move chat one with two here");
+    expect(here.get("chat.move:7:")?.title).toBe("Move chat one with two here");
   });
 });
 
-describe("Restart chat on a chat's tab (#1428)", () => {
+describe("Restart chat on a chat (#1428)", () => {
   const tabs = openTab(noTabs(), 7, "one");
-  const tab = tabs.order[0];
   const row = (over: Partial<Now>) =>
-    catalogued(catalogue(now({ tabs, ...over }))).get(`tab.restart:${tab}`);
+    catalogued(catalogue(now({ tabs, ...over }))).get("chat.restart:7");
 
-  it("restarts the tab's chat, and says what it keeps and what it changes", async () => {
+  it("restarts the chat, and says what it keeps and what it changes", async () => {
     const offers = catalogue(now({ tabs, restartable: () => true }));
-    const offer = catalogued(offers).get(`tab.restart:${tab}`);
+    const offer = catalogued(offers).get("chat.restart:7");
 
     expect(offer).toMatchObject({
       title: "Restart chat one",
@@ -3331,8 +3341,8 @@ describe("Restart chat on a chat's tab (#1428)", () => {
       note: RESTART_NOTE,
     });
     const hands = doing();
-    await run(offers, `tab.restart:${tab}`, hands);
-    expect(hands.calls).toEqual([`restartChat:${tab}`]);
+    await run(offers, "chat.restart:7", hands);
+    expect(hands.calls).toEqual(["restartChat:7"]);
   });
 
   it("says a chat mid-turn restarts when the turn ends, read as the row is drawn", () => {
@@ -3370,81 +3380,81 @@ describe("Restart chat on a chat's tab (#1428)", () => {
     expect(row({})).toBeUndefined();
   });
 
-  it("is below the line in the tab's menu, above Start fresh and End chat", () => {
-    expect(menuOn({ on: "chat", tab }).below).toEqual([
-      `tab.restart:${tab}`,
-      `tab.fresh:${tab}`,
-      `tab.close:${tab}`,
+  it("is below the line in the chat's list, first, above Start fresh and End…", () => {
+    expect(menuOn({ on: "chat", session: 7 }).below.slice(0, 2)).toEqual([
+      "chat.restart:7",
+      "chat.fresh:7",
     ]);
+    expect(menuOn({ on: "chat", session: 7 }).below).toContain("chat.end:7");
   });
 });
 
-describe("Ask a persona from a chat's tab", () => {
+describe("Ask a persona from a chat", () => {
   const tabs = openTab(openTab(noTabs(), 7, "3", "steward"), 8, "sh");
-  const [chat, shell] = tabs.order;
   const notAShell = (session: number) => session === 7;
   const open = { personas: ["devops", "steward"], locked: null };
 
-  it("offers one row per persona on a chat's tab, naming the chat in its note", () => {
+  it("offers one row per persona on a chat, naming the chat in its title and its note", () => {
     const offers = catalogue(now({ tabs, ask: open, askable: notAShell }));
-    const row = by(offers, askId(chat, "devops"));
+    const row = by(offers, askId(7, "devops"));
 
     expect(row).toMatchObject({
-      title: "Ask devops…",
+      title: "Ask devops from steward 3…",
       available: true,
-      note: "From chat steward 3. A task starts as devops, and its report comes back to this one.",
-      does: { verb: "askPersona", tab: chat, persona: "devops" },
+      note: "A task starts as devops, and its report comes back to steward 3.",
+      does: { verb: "askPersona", session: 7, persona: "devops" },
     });
-    expect(askRows(chat, catalogued(offers)).map((offer) => offer.title)).toEqual([
-      "Ask devops…",
-      "Ask steward…",
+    expect(askRows(7, catalogued(offers)).map((offer) => offer.title)).toEqual([
+      "Ask devops from steward 3…",
+      "Ask steward from steward 3…",
     ]);
   });
 
-  it("lists one row per persona in the palette, for the chat in front, and every tab's menu keeps its own (#1468)", () => {
-    // Two chat tabs; the second is in front.
+  it("lists every chat's rows in the palette, the chat behind and one with no tab too (#4753)", () => {
+    // Two chat tabs, the second in front, and a chat with no tab.
     const two = openTab(openTab(noTabs(), 7, "3", "steward"), 9, "5", "steward");
-    const [first, second] = two.order;
-    const offers = catalogue(now({ tabs: two, ask: open, askable: (s) => s === 7 || s === 9 }));
+    const offers = catalogue(
+      now({
+        tabs: two,
+        listed: [listed(11, null, false)],
+        ask: open,
+        askable: (s) => s !== 8,
+      }),
+    );
 
     const asks = inPalette(offers).filter((offer) => offer.title.startsWith("Ask "));
-    expect(asks.map((offer) => [offer.title, offer.does])).toEqual([
-      ["Ask devops…", { verb: "askPersona", tab: second, persona: "devops" }],
-      ["Ask steward…", { verb: "askPersona", tab: second, persona: "steward" }],
-    ]);
-    // The tab behind still has its rows on its own menu.
-    expect(askRows(first, catalogued(offers)).map((offer) => offer.title)).toEqual([
-      "Ask devops…",
-      "Ask steward…",
-    ]);
-    // A shell in front: no chat to ask from, so the palette has none.
-    const shellInFront = catalogue(now({ tabs, ask: open, askable: notAShell }));
-    expect(inPalette(shellInFront).filter((offer) => offer.title.startsWith("Ask "))).toEqual([]);
+    expect(asks.map((offer) => offer.does)).toEqual(
+      [7, 9, 11].flatMap((session) =>
+        ["devops", "steward"].map((persona) => ({ verb: "askPersona", session, persona })),
+      ),
+    );
+    // The palette's words are the menu's with the chat's name put in, so each is told apart.
+    expect(new Set(asks.map((offer) => offer.title)).size).toBe(asks.length);
   });
 
   it("has no row on a shell, and none before the core has said who can be asked", () => {
     const offers = catalogued(catalogue(now({ tabs, ask: open, askable: notAShell })));
 
-    expect(askRows(shell, offers)).toEqual([]);
-    expect(askRows(chat, catalogued(catalogue(now({ tabs, askable: notAShell }))))).toEqual([]);
+    expect(askRows(8, offers)).toEqual([]);
+    expect(askRows(7, catalogued(catalogue(now({ tabs, askable: notAShell }))))).toEqual([]);
   });
 
   it("opens the dialog through the window's hands, and starts nothing by itself", async () => {
     const hands = doing();
     const offers = catalogue(now({ tabs, ask: open, askable: notAShell }));
 
-    await run(offers, askId(chat, "devops"), hands);
+    await run(offers, askId(7, "devops"), hands);
 
-    expect(hands.calls).toEqual([`askPersona:${chat},devops`]);
+    expect(hands.calls).toEqual(["askPersona:7,devops"]);
   });
 
-  it("is absent from every tab where policy locks dispatch, and the palette says why", () => {
+  it("is absent from every chat where policy locks dispatch, and the palette says why", () => {
     const locked =
       "No chat is dispatched to a persona in this project. Locked by policy, set by root in /etc/purlis/policy.toml.";
     const offers = catalogue(now({ tabs, ask: { personas: [], locked }, askable: notAShell }));
 
-    expect(askRows(chat, catalogued(offers))).toEqual([]);
-    expect(ids(offers).filter((id) => id.startsWith("tab.ask:"))).toEqual([]);
+    expect(askRows(7, catalogued(offers))).toEqual([]);
+    expect(ids(offers).filter((id) => id.startsWith("chat.ask:"))).toEqual([]);
     expect(by(offers, ASK_LOCKED_ID)).toMatchObject({
       title: "Ask a persona…",
       available: false,
@@ -3456,7 +3466,7 @@ describe("Ask a persona from a chat's tab", () => {
     ).toBeUndefined();
   });
 
-  it("takes a pair policy locks off that chat's tab, and its palette row says who locked it", () => {
+  it("greys a pair policy locks on that chat's list, saying who locked it, as the palette does", () => {
     const why =
       "Policy forbids steward chats dispatching to devops. Locked by policy, set by the platform team in /etc/purlis/policy.json.";
     const offers = catalogue(
@@ -3467,9 +3477,12 @@ describe("Ask a persona from a chat's tab", () => {
       }),
     );
 
-    expect(askRows(chat, catalogued(offers)).map((offer) => offer.title)).toEqual(["Ask steward…"]);
-    expect(by(offers, askId(chat, "devops"))).toMatchObject({
-      title: "Ask devops…",
+    expect(askRows(7, catalogued(offers)).map((offer) => [offer.title, offer.available])).toEqual([
+      ["Ask devops from steward 3…", false],
+      ["Ask steward from steward 3…", true],
+    ]);
+    expect(by(offers, askId(7, "devops"))).toMatchObject({
+      title: "Ask devops from steward 3…",
       available: false,
       reason: why,
     });
@@ -3596,9 +3609,16 @@ describe("stopping a chat (#1448)", () => {
     // The palette puts the name of the chat it goes to first.
     expect(by(offers, handedOffId(1, 3))?.name).toBe("release notes");
     // In the menu of the row it was handed off from, above the line, and in no other row's.
-    const menu = menuRows({ on: "listed", session: 1, handed: [3, 2] }, catalogued(offers));
-    expect(ids(menu.above)).toEqual([handedOffId(1, 3), handedOffId(1, 2)]);
-    expect(ids(menuRows({ on: "listed", session: 2 }, catalogued(offers)).above)).toEqual([]);
+    const menu = menuRows({ on: "chat", session: 1 }, catalogued(offers));
+    expect(ids(menu.above).filter((id) => id.startsWith("chat.handed:"))).toEqual([
+      handedOffId(1, 3),
+      handedOffId(1, 2),
+    ]);
+    expect(
+      ids(menuRows({ on: "chat", session: 2 }, catalogued(offers)).above).filter((id) =>
+        id.startsWith("chat.handed:"),
+      ),
+    ).toEqual([]);
     expect(handedOffRows([listed(1), listed(4, 1)])).toEqual([]);
   });
 
@@ -3611,30 +3631,19 @@ describe("stopping a chat (#1448)", () => {
     expect(hands.calls).toEqual(["stopChat:2:true"]);
   });
 
-  it("puts both rows under the line of a row's menu and of the chat's tab menu", () => {
+  it("puts both rows under the line of the chat's list, and none on a tab's menu", () => {
     const offers = catalogued(catalogue(now({ listed: three })));
 
-    const row = menuRows({ on: "listed", session: 2 }, offers);
-    // And Stop all tasks beside them (#1498): 2 asked for task 3.
-    expect(ids(row.below)).toEqual([stopId(2), stopBelowId(2), stopAllId(2)]);
-    // Above the line, where a task is drawn (#1489): nothing there ends anything. 2 is a
-    // session of its own, with none; 3 is a task.
-    expect(ids(row.above)).toEqual([]);
-    const task = menuRows({ on: "listed", session: 3 }, offers);
+    const row = menuRows({ on: "chat", session: 2 }, offers);
+    // And Stop all tasks beside them (#1498): 2 asked for task 3. Then End… (#4753).
+    expect(ids(row.below)).toEqual([stopId(2), stopBelowId(2), stopAllId(2), "chat.end:2"]);
+    // Above the line nothing ends anything; 3 is a task, drawn where a task is (#1489).
+    expect(ids(row.above).filter((id) => id.startsWith("chat.stop"))).toEqual([]);
+    const task = menuRows({ on: "chat", session: 3 }, offers);
     expect(ids(task.above)).toEqual(expect.arrayContaining([ownTabId(3), besideId(3)]));
     expect(ids(task.below)).toEqual(taskEndIds(3));
-
-    expect(menuOn({ on: "chat", tab: 7, session: 2 }).below.slice(-5, -2)).toEqual([
-      stopId(2),
-      stopBelowId(2),
-      stopAllId(2),
-    ]);
-    // A tab that holds no chat has no chat to stop.
-    expect(menuOn({ on: "chat", tab: 7 }).below).toEqual([
-      "tab.restart:7",
-      "tab.fresh:7",
-      "tab.close:7",
-    ]);
+    // A tab holds a layout: it has no chat to stop (#4753).
+    expect(menuOn({ on: "tab", tab: 7 }).below).toEqual(["tab.close:7"]);
   });
 
   it("offers no stop for a chat that is not running", () => {
@@ -3784,13 +3793,11 @@ describe("ending a task by hand (#1488)", () => {
   it("puts both under the line of the task's row menu, and is what a tab's menu mounts", () => {
     const offers = catalogued(catalogue(now({ listed: tasks })));
 
-    const row = menuRows({ on: "listed", session: 2 }, offers);
+    const row = menuRows({ on: "chat", session: 2 }, offers);
+    // A task has no End…: its two ends are its own, last (#4753).
     expect(ids(row.below)).toEqual([taskStopId(2), taskCloseId(2)]);
     expect(taskEndIds(2)).toEqual([taskStopId(2), taskCloseId(2)]);
-    // A task that has a tab of its own: the same two, after the tab's own rows.
-    expect(menuOn({ on: "chat", tab: 7, session: 2 }).below.slice(-2)).toEqual(taskEndIds(2));
-    const tab = menuRows({ on: "chat", tab: 7, session: 2 }, offers);
-    expect(ids(tab.below).slice(-2)).toEqual(taskEndIds(2));
+    expect(menuOn({ on: "chat", session: 2 }).below.slice(-2)).toEqual(taskEndIds(2));
   });
 });
 
@@ -4071,11 +4078,11 @@ describe("Answer, for a task that asks its asking chat a question (#1551)", () =
   it("is an ordinary row of the task's row menu and of its own tab's menu, never under the line", () => {
     const offers = catalogued(catalogue(now({ listed: three })));
 
-    const task = menuRows({ on: "listed", session: 2 }, offers);
-    expect(ids(task.above)).toContain(answerId(2));
+    const task = menuRows({ on: "chat", session: 2 }, offers);
+    // First: a row for the chat's state now (#4753).
+    expect(ids(task.above)[0]).toBe(answerId(2));
     expect(ids(task.below)).not.toContain(answerId(2));
-    expect(ids(menuRows({ on: "listed", session: 3 }, offers).above)).not.toContain(answerId(3));
-    expect(menuOn({ on: "chat", tab: 7, session: 2 }).above).toContain(answerId(2));
+    expect(ids(menuRows({ on: "chat", session: 3 }, offers).above)).not.toContain(answerId(3));
   });
 
   it("opens the form through the window's hands, and sends nothing itself", () => {
@@ -4112,15 +4119,11 @@ describe("Brief, for a task (#1494)", () => {
   it("is an ordinary row of the task's row menu and of its own tab's menu, never under the line", () => {
     const offers = catalogued(catalogue(now({ listed: three })));
 
-    const task = menuRows({ on: "listed", session: 3 }, offers);
+    const task = menuRows({ on: "chat", session: 3 }, offers);
     expect(ids(task.above)).toContain(briefId(3));
     expect(ids(task.below)).not.toContain(briefId(3));
-    // A chat a person opened has no Brief on its row or its tab.
-    expect(ids(menuRows({ on: "listed", session: 1 }, offers).above)).toEqual([]);
-    expect(menuOn({ on: "chat", tab: 7, session: 2 }).above).toContain(briefId(2));
-    expect(menuOn({ on: "chat", tab: 7 }).above.some((id) => id.startsWith("chat.brief:"))).toBe(
-      false,
-    );
+    // A chat a person opened has no Brief on its list.
+    expect(ids(menuRows({ on: "chat", session: 1 }, offers).above)).not.toContain(briefId(1));
   });
 
   it("opens the panel through the window's hands, and does nothing else", () => {
@@ -4409,48 +4412,46 @@ describe("where each view lives, in the palette (#1752)", () => {
   });
 });
 
-describe("Use skill… on a chat's tab (#2775)", () => {
+describe("Use skill… on a chat (#2775)", () => {
   const tabs = openTab(openTab(noTabs(), 7, "3", "steward"), 8, "sh");
-  const [chat, shell] = tabs.order;
   const notAShell = (session: number) => session === 7;
 
   it("is offered only while the Skill studio is on, on a chat and never a shell", () => {
     const offers = catalogue(now({ tabs, askable: notAShell, skillStudio: true }));
-    expect(by(offers, usingSkillId(chat))).toMatchObject({
-      title: "Use skill…",
+    expect(by(offers, usingSkillId(7))).toMatchObject({
+      title: "Use skill in steward 3…",
       available: true,
-      note: "Chat steward 3: one of its skills, typed into it for you to send.",
-      does: { verb: "useSkill", tab: chat },
+      note: "One of its skills, typed into it for you to send.",
+      does: { verb: "useSkill", session: 7 },
     });
-    expect(by(offers, usingSkillId(shell))).toBeUndefined();
+    expect(by(offers, usingSkillId(8))).toBeUndefined();
     const off = catalogue(now({ tabs, askable: notAShell }));
-    expect(by(off, usingSkillId(chat))).toBeUndefined();
+    expect(by(off, usingSkillId(7))).toBeUndefined();
   });
 
-  it("is in the palette for the chat in front alone, and on every chat tab's menu", () => {
+  it("is in the palette for every chat, and on every chat's list (#4753)", () => {
     const two = openTab(openTab(noTabs(), 7, "3", "steward"), 9, "5", "steward");
-    const [first, second] = two.order;
     const offers = catalogue(
       now({ tabs: two, askable: (s) => s === 7 || s === 9, skillStudio: true }),
     );
-    const rows = inPalette(offers).filter((offer) => offer.title === "Use skill…");
-    expect(rows.map((offer) => offer.does)).toEqual([{ verb: "useSkill", tab: second }]);
-    expect(menuOn({ on: "chat", tab: first }).above).toContain(usingSkillId(first));
+    const rows = inPalette(offers).filter((offer) => offer.does.verb === "useSkill");
+    expect(rows.map((offer) => offer.does)).toEqual([
+      { verb: "useSkill", session: 7 },
+      { verb: "useSkill", session: 9 },
+    ]);
+    expect(menuOn({ on: "chat", session: 7 }).above).toContain(usingSkillId(7));
   });
 
   it("says no budget on its row: that is the Skills view's (S8, #3954)", () => {
     const offers = catalogue(now({ tabs, askable: notAShell, skillStudio: true }));
-    expect(by(offers, usingSkillId(chat))).toMatchObject({
-      title: "Use skill…",
-      note: "Chat steward 3: one of its skills, typed into it for you to send.",
-    });
+    expect(by(offers, usingSkillId(7))?.note).not.toMatch(/budget|token/i);
   });
 
   it("opens the picker through the window's hands, and types nothing by itself", async () => {
     const hands = doing();
     const offers = catalogue(now({ tabs, askable: notAShell, skillStudio: true }));
-    await run(offers, usingSkillId(chat), hands);
-    expect(hands.calls).toEqual([`useSkill:${chat}`]);
+    await run(offers, usingSkillId(7), hands);
+    expect(hands.calls).toEqual(["useSkill:7"]);
   });
 });
 
