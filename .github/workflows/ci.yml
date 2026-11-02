@@ -431,8 +431,9 @@ jobs:
   # The local targets of the same suite run in `rust` on every pull request. A pull request that
   # touches the host, the protocol, the sandbox or the browsers is gated on both; any other runs a
   # check of a few seconds and nothing else, scoped like `bench`, so the check's name is posted on
-  # every pull request and can be required. A push to `main` is scoped the same way; each night
-  # runs it whole.
+  # every pull request, and it is one of main's required checks (#4335, 2026-11-02: it passed 60 of
+  # 60 merge-queue runs and 40 of 40 pushes on 11-01 and 11-02, and always ended before the
+  # slowest other job). A push to `main` is scoped the same way; each night runs it whole.
   #
   # The runner image is `runner-image/Dockerfile` around the `purlis` this job built, with the
   # fake harness and `purlis` added at the folder the tests' build keeps them in
