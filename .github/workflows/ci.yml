@@ -82,6 +82,14 @@ env:
   RUSTFLAGS: -D warnings
   # The test runner the `rust` job installs, one exact version (`.config/nextest.toml`).
   NEXTEST_VERSION: "0.9.146"
+  # Cargo's network retries, 10 instead of its default 3, for every cargo run in every job, the
+  # `cargo metadata` that `npm run build:e2e`'s notices plugin runs among them. On 2026-11-02
+  # (job 125136983810, macOS scenario part 2, in the merge queue) the runner could not resolve
+  # index.crates.io: cargo tried each index file 4 times inside a few seconds, gave up, and the
+  # queue started its 5 pull requests again, about 45 minutes each. Cargo's pause grows by 3.5 s a
+  # try up to 10 s, so 10 tries ride out about a minute of a dead resolver; a run with a network
+  # that works never waits on it.
+  CARGO_NET_RETRY: "10"
 
 # **Every job that runs on a push to main has chosen what its red means (#4471).** `ci` ending
 # `failure` on main stops both `release.yml` and `tools/land.mjs`, whichever job did it. So a job
@@ -153,7 +161,7 @@ jobs:
       # From a cache of their .deb files, and bounded: a slow mirror fails the step in minutes,
       # and the job summary says how long the install took (#1477, `.github/actions/linux-packages`).
       - name: Tauri's Linux build dependencies, and the sandbox's programs
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -289,7 +297,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: git-lfs
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           packages: git-lfs
@@ -327,7 +335,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tauri's Linux build dependencies
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -385,7 +393,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tauri's Linux build dependencies
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -469,7 +477,7 @@ jobs:
           fi
       - name: Tauri's Linux build dependencies, and the sandbox's programs
         if: steps.scope.outputs.run == 'true'
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -944,7 +952,7 @@ jobs:
       # Cached and bounded, as the `rust` job's (#1477).
       - name: Tauri's Linux build dependencies, an X server and i3 to start it in, and the sandbox's programs
         if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -1549,7 +1557,7 @@ jobs:
       # 2026-10-07 and held `main` for over an hour.
       - name: Tauri's Linux build dependencies, a display to run in, and the sandbox's programs
         if: runner.os == 'Linux'
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true

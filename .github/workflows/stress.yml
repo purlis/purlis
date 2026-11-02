@@ -181,7 +181,7 @@ jobs:
       # Cached and bounded, as in `ci.yml` (#1477).
       - name: Tauri's Linux build dependencies, a display to run in, and the sandbox's programs
         if: runner.os == 'Linux'
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true

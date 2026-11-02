@@ -47,14 +47,17 @@
 set -euo pipefail
 
 TAURI_PACKAGES="libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev"
-# A normal install is under 45 s in all. Two attempts at the most, plus the try from the cache,
-# stay under the 9 minutes the calling step allows, so this script's message is what is read
-# and not the runner's "exceeded the maximum execution time": with each limit's 10 s for a
-# process that ignores the first signal and the pause between attempts, the worst case is
-# (60+10) + 2 x ((75+10) + (120+10)) + 10 = 510 s, under the step's 540.
+# A normal install is under 45 s in all. Two attempts at the most, plus the try from the cache
+# and dpkg finishing what a failed one left (below), stay under the 11 minutes the calling step
+# allows, so this script's message is what is read and not the runner's "exceeded the maximum
+# execution time": with each limit's 10 s for a process that ignores the first signal and the
+# pause between attempts, the worst case is
+# (60+10) + (45+10) + (75+10) + (120+10) + (45+10) + 10 + (75+10) + (120+10) = 620 s, under the
+# step's 660.
 UPDATE_SECONDS=75
 INSTALL_SECONDS=120
 OFFLINE_SECONDS=60
+RECOVER_SECONDS=45
 ATTEMPTS=2
 
 SUDO=${LINUX_PACKAGES_SUDO-sudo}
@@ -190,6 +193,17 @@ apt() {
   $SUDO timeout -k 10 "$seconds" env DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTIONS "$@"
 }
 
+# After an install that failed: dpkg finishes configuring what it unpacked. An install cut off by
+# its limit leaves dpkg "interrupted", and every apt-get after it then refuses at once with "you
+# must manually run 'sudo dpkg --configure -a'". On 2026-11-02 (job 125101772698) the offline
+# install of 184 packages hit its 60 s with 151 unpacked, both mirror attempts failed so in under
+# a second each, and the step blamed the mirror. With nothing half done it is a no-op; if it
+# fails, the next apt-get says why.
+recover() {
+  $SUDO timeout -k 10 "$RECOVER_SECONDS" env DEBIAN_FRONTEND=noninteractive dpkg --configure -a ||
+    echo "::warning title=Linux packages::dpkg --configure -a failed (exit $?) after the failed install"
+}
+
 # From the cache: the files themselves, and nothing downloaded.
 #
 # They are copied into apt's archives directory first and named there. apt takes a .deb named on
@@ -215,8 +229,13 @@ if [ "$refresh" = false ] && [ -n "$cache" ] && ls "$cache"/*.deb > /dev/null 2>
     done_saying "$count packages installed in $(elapsed) s from the cache, without asking the mirror."
     exit 0
   fi
-  why=$(grep -E '^(E|W):' <<< "$said" | head -n 4 | tr '\n' ' ' || true)
-  echo "::warning title=Linux packages::the cached .deb files do not install on this image; installing from the mirror instead. apt-get said: ${why:-nothing on its error lines}"
+  if [ "$offline" -eq 124 ]; then
+    echo "::warning title=Linux packages::the cached .deb files did not install in $OFFLINE_SECONDS s; installing the rest from the mirror instead."
+  else
+    why=$(grep -E '^(E|W):' <<< "$said" | head -n 4 | tr '\n' ' ' || true)
+    echo "::warning title=Linux packages::the cached .deb files do not install on this image; installing from the mirror instead. apt-get said: ${why:-nothing on its error lines}"
+  fi
+  recover
 fi
 
 # From the mirror, twice at the most: the image's, then the distribution's own when there is one.
@@ -244,6 +263,7 @@ while :; do
     say "The install failed after $(elapsed) s: apt-get $why on each of $ATTEMPTS attempts${mirror:+, the last from $mirror}, so $down."
     exit 1
   fi
+  recover
   other_mirror
   echo "::warning title=Linux packages::apt-get $why on attempt $attempt of $ATTEMPTS; trying once more${mirror:+ from $mirror}"
   attempt=$((attempt + 1))
