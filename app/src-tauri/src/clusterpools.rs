@@ -322,14 +322,8 @@ pub fn fresh_runner_ended(config: &Path, chat: &str, missing: &[String], proved:
             || Err("its pool is not on this machine".to_owned()),
             |pool| operators_word(config, &pool),
         );
-        if let Err(why) = word {
-            return FreshEnd::Kept {
-                why: vec![format!(
-                    "Its work looks all here, but purlis trusts that only while its cluster \
-                     operator says it keeps such a runner through idle, and now {why}."
-                )],
-                gone: false,
-            };
+        if let Some(kept) = kept_without_the_word(word) {
+            return kept;
         }
     }
     match purlis_core::pools::release_fresh(config, &kubectl, chat) {
@@ -344,6 +338,18 @@ pub fn fresh_runner_ended(config: &Path, chat: &str, missing: &[String], proved:
             }
         }
     }
+}
+
+/// **A proof is trusted only while the operator's word holds** (D-4569-18): where it no longer
+/// does, the runner is kept, with why.
+fn kept_without_the_word(word: Result<(), String>) -> Option<FreshEnd> {
+    word.err().map(|why| FreshEnd::Kept {
+        why: vec![format!(
+            "Its work looks all here, but purlis trusts that only while its cluster operator says \
+             it keeps such a runner through idle, and now {why}."
+        )],
+        gone: false,
+    })
 }
 
 /// **Why a short task on the cluster pool `pool` stays on the pool's own runner**, where it does

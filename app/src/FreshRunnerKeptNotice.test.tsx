@@ -47,7 +47,7 @@ describe("a task's runner kept", () => {
 
     await waitFor(() => expect(notice()).not.toBeNull());
     expect(screen.getByText(/workspace app is kept/)).toBeTruthy();
-    expect(screen.getByText(/no ref here reaches/)).toBeTruthy();
+    expect(screen.getByText(/HEAD of the repository .* no ref here reaches\./)).toBeTruthy();
   });
 
   it("asks again with Fetch again, and goes once the core says the runner went", async () => {

@@ -370,14 +370,15 @@ spec:
     stay on the pool's own runner.
   - **A task gets a fresh runner only where that is safe.** The pool must be marked as your own,
     its profile must have no credentials to hand (vault credentials reach no pool's runner in
-    this version), its runner image must list what it holds (session protocol 1.68), and its
-    operator's signed word must say `fresh-runners-stay`: `status.capabilitiesVouch`, a statement
+    this version), the project's own folder must be a git repository, and its operator's signed
+    word must say `fresh-runners-stay`: `status.capabilitiesVouch`, a statement
     signed by the operator's key, made in the Pool's cluster and holding for ten minutes, which
     the operator signs again with five left. The desktop reads it as a task starts and again
     before it lets a fresh runner go, and counts it only while it holds, so an operator rolled
-    back to one that does not sign it stops counting within ten minutes. Without it, the task
-    runs on the pool's own runner and its tab says why, and a fresh runner whose work looks home
-    is kept. Vault values and tokens reach a fresh runner under the pool's checks, each made of
+    back to one that does not sign it stops counting within ten minutes. Without any of these, the
+    task runs on the pool's own runner and its tab says why, and a fresh runner whose work looks
+    home is kept while its operator gives no word. The pool's runner image must list what it holds
+    (session protocol 1.68): an older image refuses the task's start, saying to update it. Vault values and tokens reach a fresh runner under the pool's checks, each made of
     that runner, and a check that can't be made refuses. A restart of the window holds the
     project on the task's runner again and sends no code there. The window of the project the
     task ran in does all this, so a project left closed keeps its task's Claim until it's next

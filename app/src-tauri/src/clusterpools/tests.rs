@@ -251,3 +251,17 @@ fn a_project_that_is_no_repository_keeps_its_task_on_the_pools_runner() {
     std::fs::create_dir(dir.path().join(".git")).unwrap();
     assert_eq!(no_fresh_runner_for_the_project(dir.path(), "team"), None);
 }
+
+/// **The operator's word is read again at release** (#4569, D-4569-18): a word that lapsed since
+/// the start keeps a runner whose work looks home, and says why.
+#[test]
+fn a_runner_whose_operator_no_longer_gives_its_word_is_kept_though_its_work_looks_home() {
+    assert_eq!(kept_without_the_word(Ok(())), None);
+    let Some(FreshEnd::Kept { why, gone }) = kept_without_the_word(Err(
+        "its cluster operator's word for what it does no longer holds".to_owned(),
+    )) else {
+        panic!("kept");
+    };
+    assert!(!gone);
+    assert!(why[0].contains("no longer holds"), "{why:?}");
+}

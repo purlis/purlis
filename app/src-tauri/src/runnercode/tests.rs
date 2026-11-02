@@ -542,3 +542,22 @@ fn a_hold_on_a_fresh_runner_that_holds_the_project_sends_no_code_over_its_work()
         "nothing of this machine's was sent"
     );
 }
+
+/// **A close waits for what still runs on the runner** (#4569): a program with no end yet counts,
+/// one that ended does not, and the runner is kept in words while any runs.
+#[test]
+fn a_program_that_has_not_ended_holds_its_runner_back() {
+    let programs: Vec<purlis_session_protocol::session::HeldProgram> =
+        serde_json::from_value(serde_json::json!([
+            {"program": "01J9ZQ3V7K8M2N4P6R8T0V2X4Z", "kind": "harness", "number": 3, "process": 4242, "cols": 120, "rows": 40},
+            {"program": "01J9ZQ8000000000000000000E", "kind": "shell", "number": 4, "exit": {"code": 0}, "cols": 80, "rows": 24},
+        ]))
+        .expect("programs");
+
+    assert_eq!(crate::runnercode::still_running(&programs), 1);
+    assert_eq!(crate::runnercode::still_running(&programs[1..]), 0);
+    assert_eq!(
+        crate::runnercode::running_said(1),
+        "1 program of this project still runs on the runner, and could still commit"
+    );
+}

@@ -637,10 +637,7 @@ pub(crate) fn programs_ended(
         let running = match link.call(Command::ProgramsOf {
             project: project.to_owned(),
         }) {
-            Ok(Answer::Programs(programs)) => programs
-                .iter()
-                .filter(|program| program.exit.is_none())
-                .count(),
+            Ok(Answer::Programs(programs)) => still_running(&programs),
             Ok(_) => return Err("the runner did not say what still runs there".to_owned()),
             Err(why) => {
                 return Err(format!(
@@ -652,14 +649,27 @@ pub(crate) fn programs_ended(
             return Ok(());
         }
         if std::time::Instant::now() >= until {
-            return Err(format!(
-                "{} of this project {} on the runner, and could still commit",
-                purlis_core::counts::counted(running, "program", "programs"),
-                purlis_core::counts::plural(running, "still runs", "still run"),
-            ));
+            return Err(running_said(running));
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
+}
+
+/// How many of `programs` have not ended.
+fn still_running(programs: &[purlis_session_protocol::session::HeldProgram]) -> usize {
+    programs
+        .iter()
+        .filter(|program| program.exit.is_none())
+        .count()
+}
+
+/// Why a runner whose `running` programs have not ended is not let go of.
+fn running_said(running: usize) -> String {
+    format!(
+        "{} of this project {} on the runner, and could still commit",
+        purlis_core::counts::counted(running, "program", "programs"),
+        purlis_core::counts::plural(running, "still runs", "still run"),
+    )
 }
 
 /// The clone `rel`, made on the runner, as a clone here.

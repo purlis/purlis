@@ -1477,13 +1477,13 @@ impl Hosting {
         }
     }
 
-    /// The folder this host keeps `project` in: `<projects>/<project id>`, for an id that is a
-    /// ULID; or why not.
     /// The folder this host keeps its own projects in, where it keeps any (1.34, #2046).
     pub(crate) fn projects_kept_in(&self) -> Option<PathBuf> {
         self.inner.projects.get().cloned()
     }
 
+    /// The folder this host keeps `project` in: `<projects>/<project id>`, for an id that is a
+    /// ULID; or why not.
     fn kept_place(&self, project: &str) -> Result<PathBuf, Refusal> {
         let Some(folder) = self.inner.projects.get() else {
             return Err(Refusal {

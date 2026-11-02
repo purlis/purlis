@@ -17,9 +17,18 @@ function listed(said: unknown): readonly FreshKept[] {
   return Array.isArray(said) ? (said as FreshKept[]) : [];
 }
 
+/** One of the core's reasons as a sentence: some come as a clause, lower case and unstopped. */
+function sentence(why: string): string {
+  const said = why.trim();
+  if (said === "") return said;
+  // purlis is spelled lower case wherever it stands.
+  const opened = said.startsWith("purlis") ? said : said.charAt(0).toUpperCase() + said.slice(1);
+  return /[.!?]$/.test(opened) ? opened : `${opened}.`;
+}
+
 /** What is missing, in at most a few of the core's sentences. */
 function missingSaid(why: readonly string[]): string {
-  const named = why.slice(0, NAMED_AT_MOST).join(" ");
+  const named = why.slice(0, NAMED_AT_MOST).map(sentence).join(" ");
   const more = why.length - NAMED_AT_MOST;
   return more > 0 ? `${named} And ${more} more.` : named;
 }
@@ -74,17 +83,22 @@ export function FreshRunnerKeptNotice({ plane }: { plane: PlaneId }) {
     };
   }, [plane]);
   const runners = kept?.plane === plane ? kept.kept : [];
-  const refused = (chat: string, why: string | undefined) =>
+  // What a press was refused with, as the act it was: "fetch from the runner", "discard it".
+  const refused = (chat: string, act: string, why: string | undefined) => {
     setSaid((was) => {
       const now = { ...was };
       if (why === undefined) Reflect.deleteProperty(now, chat);
-      else now[chat] = why;
+      else now[chat] = `purlis could not ${act}: ${why}`;
       return now;
     });
+    setConfirming((was) => new Set([...was].filter((one) => one !== chat)));
+  };
   const fetchAgain = (chat: string) =>
     void commands
       .fetchFreshRunnerAgain(plane, chat)
-      .then((done) => refused(chat, done.status === "error" ? done.error : undefined));
+      .then((done) =>
+        refused(chat, "fetch from the runner", done.status === "error" ? done.error : undefined),
+      );
   const discard = (chat: string) => {
     if (!confirming.has(chat)) {
       setConfirming((was) => new Set([...was, chat]));
@@ -92,16 +106,16 @@ export function FreshRunnerKeptNotice({ plane }: { plane: PlaneId }) {
     }
     void commands
       .discardFreshRunner(plane, chat)
-      .then((done) => refused(chat, done.status === "error" ? done.error : undefined));
+      .then((done) =>
+        refused(chat, "let the runner go", done.status === "error" ? done.error : undefined),
+      );
   };
   return runners
     .filter((runner) => !putAway.has(runner.chat))
     .map((runner) => {
       const asked = confirming.has(runner.chat);
       const dismiss = () => setPutAway((was) => new Set([...was, runner.chat]));
-      const refusal = said[runner.chat] !== undefined && (
-        <> purlis could not do that: {said[runner.chat]}</>
-      );
+      const refusal = said[runner.chat] !== undefined && <> {said[runner.chat]}</>;
       if (runner.gone)
         return (
           <Notice
@@ -109,12 +123,17 @@ export function FreshRunnerKeptNotice({ plane }: { plane: PlaneId }) {
             cause={`fresh-runner-gone:${plane}:${runner.chat}`}
             tone="trouble"
             label="Runner gone"
-            fixes={[{ label: "Forget the runner", onPress: () => discard(runner.chat) }]}
+            fixes={[
+              {
+                label: asked ? "Forget it for good" : "Forget the runner",
+                onPress: () => discard(runner.chat),
+              },
+            ]}
             onDismiss={dismiss}
           >
             A task's runner in workspace {runner.workspace} is gone from its cluster, or was started
             again, so purlis can't reach what it held that is not here. {missingSaid(runner.why)}
-            {asked && <> Press Forget the runner again to delete its claim and stop naming it.</>}
+            {asked && <> Press Forget it for good to delete its claim and stop naming it.</>}
             {refusal}
           </Notice>
         );

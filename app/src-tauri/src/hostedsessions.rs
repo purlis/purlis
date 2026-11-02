@@ -3275,16 +3275,6 @@ fn reconnects_of(
     })
 }
 
-/// The project at `root`'s own link to the host `connection` reaches, with the project held on
-/// it (#2178): `held` keeps its id
-/// once it is. Before the hold the host's lines for the project are heard through `relayed`,
-/// and after it the host is told the numbers `opened` has dealt (#2000); the window takes the
-/// board the host kept, or keeps why it could not in `untaken` (#2194, #2006), and what the
-/// host still runs of the project from before this window in `left` (#2006).
-///
-/// `for_a_start` is whether a chat is starting. Only then is a project on a link that is down held
-/// again. A person's or dispatch's start waits for a runner on its way back before it takes the
-/// hold's lock, so the window's commands, which take that lock, do not wait on the runner (#4415).
 /// **Whether the runner `link` reaches holds the project `project`'s own repository with a
 /// commit** (#4569), which no hold sends code over. A runner that can't say holds no fresh
 /// runner's task: one that cannot list what it holds can never be proved to hold nothing more. A
@@ -3303,6 +3293,16 @@ fn holds_its_own_code(link: &HostLink, project: &str) -> Result<bool, String> {
             .any(|repo| repo.project == project && repo.path.is_empty() && !repo.refs.is_empty()))
 }
 
+/// The project at `root`'s own link to the host `connection` reaches, with the project held on
+/// it (#2178): `held` keeps its id
+/// once it is. Before the hold the host's lines for the project are heard through `relayed`,
+/// and after it the host is told the numbers `opened` has dealt (#2000); the window takes the
+/// board the host kept, or keeps why it could not in `untaken` (#2194, #2006), and what the
+/// host still runs of the project from before this window in `left` (#2006).
+///
+/// `for_a_start` is whether a chat is starting. Only then is a project on a link that is down held
+/// again. A person's or dispatch's start waits for a runner on its way back before it takes the
+/// hold's lock, so the window's commands, which take that lock, do not wait on the runner (#4415).
 fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, String), String> {
     let Holding {
         connection,

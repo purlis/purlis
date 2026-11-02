@@ -60,10 +60,19 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
         }
     };
     let mut folders = 0usize;
-    let mut ids: Vec<String> = entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect();
+    let mut ids: Vec<String> = Vec::new();
+    for entry in entries {
+        // What can't be read or named is said, never passed over (D-4569-22).
+        match entry.map(|entry| entry.file_name().into_string()) {
+            Ok(Ok(id)) => ids.push(id),
+            Ok(Err(_)) => unread.push(
+                "a project folder on the runner has a name that is not text, so it was not looked \
+                 through"
+                    .to_owned(),
+            ),
+            Err(e) => unread.push(format!("the runner's projects could not all be read: {e}")),
+        }
+    }
     ids.sort();
     for id in ids {
         let top = projects.join(&id);
@@ -110,7 +119,14 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
                     continue;
                 }
             };
-            for entry in entries.filter_map(Result::ok) {
+            for entry in entries {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(e) => {
+                        unread.push(format!("{} could not all be read: {e}", shown(&id, &rel)));
+                        continue;
+                    }
+                };
                 // `file_type` does not follow a link.
                 if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
                     continue;
@@ -346,7 +362,10 @@ fn file_now(repo: &Path, path: &str) -> Result<Option<String>, String> {
     if meta.file_type().is_symlink() {
         let target =
             std::fs::read_link(&at).map_err(|e| format!("{path} could not be read: {e}"))?;
-        return Ok(Some(format!("link:{}", target.to_string_lossy())));
+        let Some(target) = target.to_str() else {
+            return Err(format!("{path} is a link whose target is not text"));
+        };
+        return Ok(Some(format!("link:{target}")));
     }
     if !meta.is_file() {
         return Ok(Some("folder".to_owned()));
