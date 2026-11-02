@@ -3066,18 +3066,22 @@ export const PlaneView = memo(function PlaneView({
       const text = JSON.stringify(laid);
       if (text === layoutSaid.current || text === layoutRefused.current) return;
       layoutSaid.current = text;
-      const refused = () => {
+      const unsaid = () => {
         if (layoutSaid.current === text) layoutSaid.current = undefined;
-        layoutRefused.current = text;
       };
       void commands
         .windowLayout(plane, laid)
         .then((answer) => {
-          if (answer.status !== "ok") refused();
+          // The core's refusal is its verdict on this layout: not said again unchanged.
+          if (answer.status !== "ok") {
+            unsaid();
+            layoutRefused.current = text;
+          }
           // A layout taken: one refused before may be taken now, once the person goes back to it.
           else if (layoutRefused.current !== text) layoutRefused.current = undefined;
         })
-        .catch(refused);
+        // A call that never reached the core is no verdict: said again at the next draw.
+        .catch(unsaid);
     };
     sayLayout.current(tabs);
   }, [filedIn, pinnedChats, pinnedViews, plane, tabs, viewsHeard]);

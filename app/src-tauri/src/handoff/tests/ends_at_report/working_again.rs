@@ -430,17 +430,19 @@ fn a_task_in_a_tab_of_its_own_is_held_while_that_tab_is_in_front_and_ended_when_
 
 #[test]
 fn a_task_the_person_pressed_onto_is_held_from_that_moment_and_not_ended_under_them() {
-    // #4751: a press sends its new layout in the same call, so there is no moment between
-    // "this tab is in front" and "this task is in it" in which the task is looked at by nobody,
-    // as there was when the window said the two apart.
+    // #4751: a press sends its new layout in the same call. The task is off screen and its end
+    // is due; the person presses it into the front tab inside the settle, in one layout, and
+    // from that call it is looked at: it is not ended under them. Without that call it is (the
+    // test after this one ends the same task, never pressed onto).
     let (_plane, _host, _planes, id, held, steward, task) = on_the_clock();
-    shows(&held, &[task], &[steward]);
+    shows(&held, &[steward], &[task]);
     works(&held, task);
     reports(&held, &id, task);
     its_turn_ends(&held, task);
-    past_the_settle();
-    crate::dispatched::end_look(&held, task, Looked::WaitedOut);
-    assert!(open_chats(&held).contains(&task), "ended under the person");
+    assert!(
+        !held.chats().looks_at(task),
+        "off screen as its end comes due"
+    );
 
     // The press: the task beside its session in the front tab, in one layout.
     shows(&held, &[steward, task], &[]);
@@ -450,11 +452,25 @@ fn a_task_the_person_pressed_onto_is_held_from_that_moment_and_not_ended_under_t
     );
     crate::dispatched::front_moved(&held);
     past_the_settle();
+    crate::dispatched::end_look(&held, task, Looked::WaitedOut);
 
     assert!(
         open_chats(&held).contains(&task),
         "ended under the person who pressed onto it"
     );
+}
+
+#[test]
+fn a_task_off_screen_when_its_end_comes_due_is_ended_at_the_settle() {
+    // The other half of the test above: the same task, never pressed onto, is ended.
+    let (_plane, _host, _planes, id, held, steward, task) = on_the_clock();
+    shows(&held, &[steward], &[task]);
+    works(&held, task);
+    reports(&held, &id, task);
+    its_turn_ends(&held, task);
+
+    crate::dispatched::front_moved(&held);
+    ends_within_moments(&held, task);
 }
 #[test]
 fn a_task_left_alone_in_the_tab_in_front_is_looked_at_once_the_window_reports_it() {

@@ -67,25 +67,6 @@ pub(crate) enum LaidDirection {
     Column,
 }
 
-fn path_of(word: &str) -> Vec<Side> {
-    word.chars()
-        .map_while(|side| match side {
-            'a' => Some(Side::A),
-            'b' => Some(Side::B),
-            _ => None,
-        })
-        .collect()
-}
-
-fn word_of(path: &[Side]) -> String {
-    path.iter()
-        .map(|side| match side {
-            Side::A => 'a',
-            Side::B => 'b',
-        })
-        .collect()
-}
-
 impl LaidNode {
     fn held(self) -> core::Node {
         match self {
@@ -146,7 +127,7 @@ impl From<LaidOut> for core::Layout {
                     pinned: tab.pinned,
                     window: tab.window,
                     front: tab.front,
-                    focused: path_of(&tab.focused),
+                    focused: Side::path_of(&tab.focused),
                     tree: tab.tree.held(),
                 })
                 .collect(),
@@ -162,7 +143,7 @@ impl From<core::Layout> for LaidOut {
                 .tabs
                 .into_iter()
                 .map(|tab| LaidTab {
-                    focused: word_of(&tab.focused),
+                    focused: Side::word_of(&tab.focused),
                     tree: LaidNode::of(tab.tree, &tab.workspace),
                     workspace: tab.workspace,
                     pinned: tab.pinned,

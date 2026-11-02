@@ -195,7 +195,7 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
   const pinnedViews: string[] = [];
   const fronts: Record<string, number> = {};
   let inFront: number | undefined;
-  const inLayout = new Set(laid.tabs.flatMap((one) => chatsIn(one.tree)));
+  const inLayout = new Set(laid.tabs.flatMap((one) => chatsOf(one.tree)));
   for (const one of laid.tabs) {
     let panes = next.named.panes;
     const workspace = one.workspace ?? OUTSIDE;
@@ -282,8 +282,9 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
   return { tabs: next, placed, pinnedViews, fronts, inFront };
 }
 
-function chatsIn(node: LaidNode): number[] {
-  if (node.kind === "split") return [...chatsIn(node.a), ...chatsIn(node.b)];
+/** Every chat in a pane of `node`, in reading order. */
+export function chatsOf(node: LaidNode): number[] {
+  if (node.kind === "split") return [...chatsOf(node.a), ...chatsOf(node.b)];
   return node.kind === "chat" ? [node.chat] : [];
 }
 
@@ -303,29 +304,4 @@ function chatName(session: number, reopening: Reopening): { name: string; defaul
   const plain = chat?.name ?? String(session);
   const defaultName = chat?.who ? `${chat.who} ${plain}` : plain;
   return { name: chat?.label ?? defaultName, defaultName };
-}
-
-/** Every chat in a pane of `node`, in reading order. */
-export function chatsOf(node: LaidNode): number[] {
-  return chatsIn(node);
-}
-
-function frontTabs(laid: LaidOut): LaidTab[] {
-  return laid.tabs.filter((tab) => tab.front && (tab.window !== 0 || tab.workspace === laid.strip));
-}
-
-/**
- * **What the core takes to be on screen** from `laid` (`Layout::on_screen`): every chat in a
- * pane of the front tab of the strip drawn, and of each tab window's front tab, in the order of
- * their numbers.
- */
-export function onScreenOf(laid: LaidOut): number[] {
-  return [...new Set(frontTabs(laid).flatMap((tab) => chatsIn(tab.tree)))].sort((a, b) => a - b);
-}
-
-/** **The chat the core takes to be in front** (`Layout::lead`): the first in the project
- *  window's front tab on the strip drawn. */
-export function leadOf(laid: LaidOut): number | undefined {
-  const tab = frontTabs(laid).find((one) => one.window === 0);
-  return tab === undefined ? undefined : chatsIn(tab.tree)[0];
 }

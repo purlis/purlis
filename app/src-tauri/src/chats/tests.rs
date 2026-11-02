@@ -5422,7 +5422,8 @@ fn a_layout_that_names_a_chat_twice_is_refused_says_why_and_changes_nothing() {
     let refused = chats.lay_out(twice).unwrap_err();
 
     assert!(
-        refused.contains(&format!("chat {one} in two panes")),
+        refused.starts_with("purlis did not keep that layout")
+            && refused.contains(&format!("chat {one} in two panes")),
         "{refused}"
     );
     assert_eq!(chats.layout(), None);
@@ -9537,7 +9538,11 @@ fn a_prompt_answered_after_its_chat_started_again_is_not_kept_by_the_new_start_4
 #[test]
 fn a_notification_is_not_lost_to_a_stale_layout_while_the_window_is_in_the_background() {
     // #4751: after a launch the record's layout stands until the window reports one, so it can
-    // say a chat is on screen that nobody has drawn yet. A notification asks the window too.
+    // say a chat is on screen that nobody has drawn yet. What keeps the notification is the
+    // window's own answer: `asknotify::looking` asks whether its window is on screen, focused
+    // and showing the project (`window_in_front`), and holds a notification back only when that
+    // and the chat on screen are both true. A stale layout is the second; a window in the
+    // background is never the first.
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
     let record = Record {

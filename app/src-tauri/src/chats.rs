@@ -4873,8 +4873,8 @@ impl Chats {
     pub fn lay_out(&self, layout: Layout) -> Result<(), String> {
         if let Some(twice) = layout.named_twice() {
             return Err(format!(
-                "That layout shows chat {twice} in two panes, and a chat is shown in one pane at \
-                 a time. Nothing was changed."
+                "purlis did not keep that layout: it shows chat {twice} in two panes, and a chat \
+                 is shown in one pane at a time."
             ));
         }
         {
@@ -4886,8 +4886,8 @@ impl Chats {
             };
             if let Some(gone) = layout.chats().into_iter().find(|number| !is_open(*number)) {
                 return Err(format!(
-                    "That layout shows chat {gone}, which is not open in this project. Nothing \
-                     was changed."
+                    "purlis did not keep that layout: it shows chat {gone}, which is not open in \
+                     this project."
                 ));
             }
         }

@@ -26,7 +26,8 @@ import type {
   VaultRefused,
 } from "./bindings";
 import type { State } from "./chatState";
-import { chatsOf, leadOf, onScreenOf } from "./laidOut";
+import { chatsOf } from "./laidOut";
+import { leadOf, onScreenOf } from "./laidOut.testkit";
 import { cardOf as cardOfRow } from "./chatCard.testkit";
 import { forgetKeyboard } from "./paneKeyboard";
 import { REFERENCE_TYPE } from "./references";
@@ -219,7 +220,7 @@ function core(open: Listed[]) {
   /** The finished rows the core lists, as it reads them from its dispatch records (#1485). */
   const finished: FinishedTask[] = [];
   /** How many of the next `window_layout`s the core refuses. */
-  const refusing = { layouts: 0 };
+  const refusing = { layouts: 0, calls: 0 };
   /** Every tab as the window last said it, and the core took it: a reload is answered it. */
   const laid: { now: LaidOut | null } = { now: null };
   /** The tasks the core's next answer to several allows, where keeping fails part way. */
@@ -273,9 +274,15 @@ function core(open: Listed[]) {
       return null;
     }
     if (cmd === "window_layout") {
+      if (refusing.calls > 0) {
+        refusing.calls -= 1;
+        // A call that never reached the core: no answer of its at all.
+        throw new Error("the link to the core went away");
+      }
       if (refusing.layouts > 0) {
         refusing.layouts -= 1;
-        throw new Error("the record could not be written");
+        // The core's own refusal, as a command answers one: its sentence.
+        throw "purlis did not keep that layout: it shows chat 5 in two panes.";
       }
       // The first chat of the front tab is the one the core takes to be in front.
       laid.now = a.layout as LaidOut;
@@ -741,6 +748,18 @@ describe("a tab remembers which chat it shows", () => {
 
     await waitFor(() => expect(panedIn(laid.now)).toContain(5));
     expect(onScreenOf(laid.now as LaidOut)).toEqual([2]);
+  });
+
+  it("says the tabs again at the next draw where the call never reached the core", async () => {
+    // A failed call is no verdict on the layout, unlike a refusal: nothing waits for a change.
+    const { tree, refusing, laid, rowsChanged } = await drawn(withTasks());
+    refusing.calls = 1;
+    await userEvent.click(row(tree, "sweep"));
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+
+    await rowsChanged();
+
+    await waitFor(() => expect(panedIn(laid.now)).toContain(5));
   });
 
   it("never says a layout the core refused again unchanged, however often the window draws", async () => {

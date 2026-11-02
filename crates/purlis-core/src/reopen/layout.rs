@@ -78,6 +78,30 @@ pub enum Side {
     B,
 }
 
+impl Side {
+    /// A path as the record and the window spell it, `a` and `b` from the root, read as far as
+    /// it is one.
+    pub fn path_of(word: &str) -> Vec<Self> {
+        word.chars()
+            .map_while(|side| match side {
+                'a' => Some(Self::A),
+                'b' => Some(Self::B),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `path` as the record and the window spell it.
+    pub fn word_of(path: &[Self]) -> String {
+        path.iter()
+            .map(|side| match side {
+                Self::A => 'a',
+                Self::B => 'b',
+            })
+            .collect()
+    }
+}
+
 /// A pane or a split.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
@@ -264,8 +288,8 @@ impl Layout {
             .filter(|tab| tab.front && (tab.window != 0 || tab.workspace == self.strip))
     }
 
-    /// This layout with each tab's focused path ending at a pane, as a record reads it back:
-    /// what the core holds is what the next launch reads.
+    /// This layout with each tab's focused path ending at a pane, as a record reads it back, so
+    /// the focused pane the core holds is the one the next launch reads.
     #[must_use]
     pub fn held(mut self) -> Self {
         for tab in &mut self.tabs {
@@ -356,20 +380,18 @@ impl TabOnDisk {
     /// The tab this line names, or nothing where it is past [`MOST_PANES`]. `seen` is every
     /// chat an earlier pane named, so a chat named twice keeps its first pane.
     fn held(self, seen: &mut std::collections::HashSet<u32>) -> Option<Tab> {
+        // Read against its own set first: a tab dropped whole takes nothing from the tabs after
+        // it, and a chat it names may be put back in one of them.
         let mut panes = 0;
-        let tree = node_of(&self.tree, 0, &mut panes, seen);
+        let mut named = seen.clone();
+        let tree = node_of(&self.tree, 0, &mut panes, &mut named);
         if panes > MOST_PANES {
             return None;
         }
-        let path: Vec<Side> = self
-            .focused
-            .chars()
+        *seen = named;
+        let path: Vec<Side> = Side::path_of(&self.focused)
+            .into_iter()
             .take(DEEPEST)
-            .map_while(|side| match side {
-                'a' => Some(Side::A),
-                'b' => Some(Side::B),
-                _ => None,
-            })
             .collect();
         Some(Tab {
             workspace: workspace_of(self.workspace),
@@ -387,14 +409,7 @@ impl TabOnDisk {
             pinned: tab.pinned,
             window: tab.window,
             front: tab.front,
-            focused: tab
-                .focused
-                .iter()
-                .map(|side| match side {
-                    Side::A => 'a',
-                    Side::B => 'b',
-                })
-                .collect(),
+            focused: Side::word_of(&tab.focused),
             tree: value_of(&tab.tree),
         }
     }

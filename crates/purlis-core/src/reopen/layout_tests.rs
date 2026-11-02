@@ -296,3 +296,24 @@ fn a_record_whose_tabs_hold_only_a_view_has_something_to_put_back() {
     assert!(record.holds_anything());
     assert!(!record_of(Layout::default()).holds_anything());
 }
+
+#[test]
+fn a_tab_dropped_for_its_size_takes_no_chat_from_the_tabs_after_it() {
+    let mut wide = serde_json::json!({"chat": 7});
+    let mut panes = 1;
+    while panes <= MOST_PANES {
+        wide = serde_json::json!({"direction": "row", "share": 500, "a": wide.clone(), "b": wide});
+        panes *= 2;
+    }
+    let json = serde_json::json!({"version": 1, "at": 0, "chats": [], "tabs": [
+        {"tree": wide}, {"tree": {"chat": 7}}
+    ]});
+
+    let back = read_from(&json.to_string()).layout.expect("a tabs list");
+
+    assert_eq!(
+        back.chats(),
+        [7],
+        "the tab kept shows the chat the dropped one named"
+    );
+}
