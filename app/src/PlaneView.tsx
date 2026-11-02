@@ -1509,6 +1509,10 @@ export const PlaneView = memo(function PlaneView({
   const sayLayout = useRef<(tabs: Tabs) => void>(() => undefined);
   /** What was last said of the tabs, as JSON: a change to a terminal or a notice is not one. */
   const layoutSaid = useRef<string | undefined>(undefined);
+  /** The layout the core last refused, as JSON: never said again until it has taken another.
+   *  A refusal is the core's verdict on that layout (a chat in two panes, a chat not open), so
+   *  saying it again unchanged would only be refused again. */
+  const layoutRefused = useRef<string | undefined>(undefined);
   /** Whether the record's tabs have been heard: tabs said before would be the empty window's,
    *  written over the record it is about to read. */
   const layoutHeard = useRef(false);
@@ -3040,8 +3044,9 @@ export const PlaneView = memo(function PlaneView({
    *
    * **After the record is heard**, and only what differs: a layout said before would be the
    * empty window's. A tab's strip is where its chat works, which the sidebar says, so the
-   * layout is said again once it is read. A refusal (a chat that ended meanwhile) is said again
-   * at the next change.
+   * layout is said again once it is read. **A layout the core refused is never said again
+   * unchanged** (`layoutRefused`), however often the window draws: the next one that differs is
+   * said, as the tabs change.
    */
   useEffect(() => {
     sayLayout.current = (next: Tabs) => {
@@ -3059,17 +3064,20 @@ export const PlaneView = memo(function PlaneView({
         told: (session) => !pretendedNow.current.has(session),
       });
       const text = JSON.stringify(laid);
-      if (text === layoutSaid.current) return;
+      if (text === layoutSaid.current || text === layoutRefused.current) return;
       layoutSaid.current = text;
-      const unsaid = () => {
+      const refused = () => {
         if (layoutSaid.current === text) layoutSaid.current = undefined;
+        layoutRefused.current = text;
       };
       void commands
         .windowLayout(plane, laid)
         .then((answer) => {
-          if (answer.status !== "ok") unsaid();
+          if (answer.status !== "ok") refused();
+          // A layout taken: one refused before may be taken now, once the person goes back to it.
+          else if (layoutRefused.current !== text) layoutRefused.current = undefined;
         })
-        .catch(unsaid);
+        .catch(refused);
     };
     sayLayout.current(tabs);
   }, [filedIn, pinnedChats, pinnedViews, plane, tabs, viewsHeard]);
