@@ -45,6 +45,11 @@ export type HandedAppearance = { id: string; theme: { name: string; appearance: 
  *  window asks the core for (it is not handed, #3034). */
 export const PURLIS_LIGHT = themes.purlis.light as unknown as import("./theme").Theme;
 
+/** Purlis's appearance `id` as the core resolves it. */
+export function purlisAppearance(id: string): import("./theme").Theme {
+  return themes.purlis[id] as unknown as import("./theme").Theme;
+}
+
 /** Purlis Classic's appearances, by their ids, dark first, as the core hands each. */
 export function classicAppearances(): HandedAppearance[] {
   return Object.entries(themes["purlis-classic"]).map(([id, theme]) => ({ id, theme }));

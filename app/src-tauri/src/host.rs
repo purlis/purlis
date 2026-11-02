@@ -368,6 +368,12 @@ pub trait SessionHost: Send + Sync {
         Vec::new()
     }
 
+    /// [`Self::fetch_back`] from a pool `workspace` no longer runs on (#4590): it is told nothing
+    /// of what this machine has but what came back from it.
+    fn fetch_back_left(&self, workspace: &str, pool: &str) -> Vec<String> {
+        self.fetch_back(workspace, pool)
+    }
+
     /// **Readies the runner of `pool` for a chat in `workspace` to move there** (#2048): the
     /// project held there, and each clone's branch sent ahead, while the chat keeps working
     /// here. Refused in a sentence where chats cannot move to it.
@@ -561,11 +567,17 @@ pub trait SessionHost: Send + Sync {
     }
 
     /// [`Self::left_running`], of a chat that worked in `workspace` (#2046): where the
-    /// project's chats are routed, it is asked of this machine's host and of the one pool the
-    /// workspace runs its chats on, and no other.
+    /// project's chats are routed, it is asked of this machine's host and of one pool, the one it
+    /// was kept on or else the one the workspace runs its chats on, and no other (#4590).
     fn left_running_in(&self, number: u32, workspace: Option<&str>) -> bool {
         let _ = workspace;
         self.left_running(number)
+    }
+
+    /// [`Self::left_running`], `None` where this host could not say (#4590): what settles a
+    /// record of a chat, which an unanswered question must not.
+    fn left_known(&self, number: u32) -> Option<bool> {
+        Some(self.left_running(number))
     }
 
     /// **Reattaches chat `number`** as a chat of this window (#2006): what [`Self::open`] does,
@@ -639,6 +651,11 @@ pub trait SessionHost: Send + Sync {
     /// (#2006): what a put back that settled leaves no tab for, so nothing runs unseen.
     fn close_what_was_not_reattached(&self) {}
 
+    /// [`Self::close_what_was_not_reattached`], of these chats alone (#4590).
+    fn close_left(&self, numbers: &[u32]) {
+        let _ = numbers;
+    }
+
     /// **The browsers this plane left in the host from before this window** (#2025), running
     /// or ended, each answered once: what the put back takes back with their chats
     /// (`crate::chatbrowsers::take_back`). A host in the window's own process outlives no window,
@@ -703,6 +720,10 @@ pub trait ChatBoard: Send + Sync {
     /// Answered whether or not the board changed: a window that asked to ignore a chat believes
     /// it is asking, and the board's answer is the one to leave it with either way.
     fn ignored(&self, session: u32) -> Moved;
+
+    /// The person sent chat `session` a line, while a background turn ran over its wait on them
+    /// (#4562). Nothing where none did.
+    fn replied(&self, session: u32) -> Option<Moved>;
 
     /// A chat `session` handed work to, shown as `from`, has reported back to it
     /// (charter-app#259). Nothing when no reader would see a difference.
@@ -827,6 +848,10 @@ pub(crate) mod pretend {
         /// Each fetch back it was asked for, by workspace and pool, and how many ran at once
         /// at most (#2046).
         fetched: Mutex<Vec<(String, String)>>,
+        /// Why a fetch back fails, while a test says one does.
+        fetch_fails: Mutex<Option<String>>,
+        /// Whether it can't say what it has left ([`Pretend::cannot_say_what_it_left`]).
+        says_nothing_left: std::sync::atomic::AtomicBool,
         /// Each move asked of it (#2048): `ahead`, `in` or `out`, the pool and the workspace.
         moved: Mutex<Vec<(&'static str, String, String)>>,
         fetching: AtomicU32,
@@ -865,6 +890,16 @@ pub(crate) mod pretend {
 
         pub fn fetched(&self) -> Vec<(String, String)> {
             lock(&self.seen.fetched).clone()
+        }
+
+        /// Each fetch back fails with `why` from now on, or none where it is `None`.
+        pub fn fetch_fails_with(&self, why: Option<&str>) {
+            *lock(&self.seen.fetch_fails) = why.map(str::to_owned);
+        }
+
+        /// It can't say what it left running from now on (#4590).
+        pub fn cannot_say_what_it_left(&self) {
+            self.seen.says_nothing_left.store(true, Ordering::SeqCst);
         }
 
         /// The most fetches back that ran at once.
@@ -1033,6 +1068,16 @@ pub(crate) mod pretend {
             self.program_ends_with_its_host(id);
         }
 
+        /// The runner of session `id`, whose program already ended with its host, goes for good
+        /// (#4421).
+        pub fn its_runner_goes_since(&self, id: u32) {
+            lock(&self.seen.lost_with_runner).push(id);
+            self.program_ends(
+                id,
+                Exit::Signal(crate::hostedsessions::ITS_RUNNER_WENT.to_owned()),
+            );
+        }
+
         fn here(&self, id: u32) -> Result<(), String> {
             if lock(&self.seen.running).contains(&id) {
                 Ok(())
@@ -1141,7 +1186,7 @@ pub(crate) mod pretend {
             std::thread::sleep(Duration::from_millis(50));
             lock(&self.seen.fetched).push((workspace.to_owned(), pool.to_owned()));
             self.seen.fetching.fetch_sub(1, Ordering::SeqCst);
-            Vec::new()
+            lock(&self.seen.fetch_fails).iter().cloned().collect()
         }
         fn composes_its_harness_chats(&self) -> bool {
             self.seen.on_a_runner.load(Ordering::SeqCst)
@@ -1235,6 +1280,9 @@ pub(crate) mod pretend {
         fn left_running(&self, number: u32) -> bool {
             lock(&self.seen.left).iter().any(|(one, _)| *one == number)
         }
+        fn left_known(&self, number: u32) -> Option<bool> {
+            (!self.seen.says_nothing_left.load(Ordering::SeqCst)).then(|| self.left_running(number))
+        }
         fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
             self.left_running(number)
                 .then(|| purlis_core::skillspan::PromptSalt::of_key(&format!("left-{number}")))
@@ -1272,6 +1320,10 @@ pub(crate) mod pretend {
                 .map(|(one, _)| one)
                 .collect();
             lock(&self.seen.closed_left).extend(left);
+        }
+        fn close_left(&self, numbers: &[u32]) {
+            lock(&self.seen.left).retain(|(one, _)| !numbers.contains(one));
+            lock(&self.seen.closed_left).extend_from_slice(numbers);
         }
         fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
             std::mem::take(&mut *lock(&self.seen.browsers_left))

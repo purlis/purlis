@@ -120,6 +120,8 @@ function core() {
     (cmd, args) => {
       const given = (args ?? {}) as Record<string, unknown>;
       switch (cmd) {
+        case "project_chats_run_on":
+          return { pool: null, pools: [] };
         case "project_settings":
           return { shared: SHARED, local: LOCAL };
         case "workspace_settings":

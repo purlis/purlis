@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { PLANE, STUDIO_HISTORY, forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
@@ -97,7 +98,12 @@ const BUILT_IN: StudioRouter = {
   grade: null,
   graded: null,
   written: null,
-  budget: { skills: 30, chars: 6000 },
+  budget: [
+    { program: "Claude Code", skills: 60, chars: 15000 },
+    { program: "Codex", skills: 30, chars: 6000 },
+    { program: "opencode", skills: 30, chars: 6000 },
+  ],
+  past_limits: [],
   preview:
     "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
 };
@@ -295,7 +301,12 @@ const RELEVANCE: StudioRouter = {
   problem: false,
   extension: "relevance",
   written: "relevance",
-  budget: { skills: 30, chars: 6000 },
+  budget: [
+    { program: "Claude Code", skills: 60, chars: 15000 },
+    { program: "Codex", skills: 30, chars: 6000 },
+    { program: "opencode", skills: 30, chars: 6000 },
+  ],
+  past_limits: [],
   preview:
     "The rows' hidden marks are what the built-in router hides for a chat at the workspace's root, since the router relevance is asked only at each chat's start. A chat started in a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
   grade: null,
@@ -332,7 +343,7 @@ describe("the Routing page (#3692)", () => {
     const facts = await screen.findByTestId("skill-routing-facts");
     expect(within(facts).getByTestId("skill-routing-router")).toHaveTextContent("Built-in");
     expect(facts).toHaveTextContent(
-      "30 skills, 6,000 characters of descriptions, on every program",
+      "Claude Code: 60 skills, 15,000 characters. Codex: 30 skills, 6,000 characters.",
     );
     // What it counts, and that a program's own catalogue is not counted (#3324).
     expect(within(facts).getByTestId("skill-routing-budget-counts")).toHaveTextContent(
@@ -386,6 +397,49 @@ describe("the Routing page (#3692)", () => {
     expect(within(item).getByRole("heading", { name: /Chat 3/ })).toBeInTheDocument();
     expect(within(item).getByText("figma-handoff, gpu-profile")).toBeInTheDocument();
     expect(within(item).getByText("34 ms", { selector: "dd" })).toBeInTheDocument();
+  });
+
+  it("shows a prompt's fallback on an open Routing page as it is told (#4445)", async () => {
+    const [quick, ...others] = RELEVANCE.chats;
+    const said = "Its last prompt went on with no pointer.";
+    let prompt: { fell_back: boolean; said: string } | null = null;
+    let studioReads = 0;
+    const reads = () => studioReads;
+    mockIPC(
+      (cmd) => {
+        if (cmd === "skill_studio") studioReads += 1;
+        if (cmd === "skill_studio")
+          return studio([], {
+            router: {
+              ...RELEVANCE,
+              chats: [{ ...quick, routing: { ...quick.routing, last_prompt: prompt } }, ...others],
+            },
+          });
+        if (cmd === "skills_deleted" || cmd === "skill_drafts") return [];
+        if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };
+        throw new Error(`unexpected ${cmd}`);
+      },
+      { shouldMockEvents: true },
+    );
+    renderStudio(inWorkspace("ops"), "routing");
+    const row = await screen.findByTestId("routed-chat-3");
+    expect(row).not.toHaveTextContent("Last prompt fell back");
+    const before = reads();
+
+    // A chat this page does not list reads nothing; this one reads it again.
+    prompt = { fell_back: true, said };
+    await act(() => emit("chat-prompt-routing", { plane: PLANE, session: 99 }));
+    expect(reads()).toBe(before);
+    await act(() => emit("chat-prompt-routing", { plane: PLANE, session: 3 }));
+    await waitFor(() =>
+      expect(screen.getByTestId("routed-chat-3")).toHaveTextContent("Last prompt fell back"),
+    );
+
+    prompt = { fell_back: false, said: "Its last prompt took 4 ms." };
+    await act(() => emit("chat-prompt-routing", { plane: PLANE, session: 3 }));
+    await waitFor(() =>
+      expect(screen.getByTestId("routed-chat-3")).not.toHaveTextContent("Last prompt fell back"),
+    );
   });
 
   it("shows a prompt the router was slow on as fallen back on that chat's row and beside it (#4297)", async () => {

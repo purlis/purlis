@@ -170,11 +170,28 @@ fn row(record: &Record, asker: u32, how: Finished) -> FinishedTask {
             .worktree
             .as_ref()
             .and_then(|tree| tree.branch.clone()),
-        reopens: record.conversation.is_some(),
-        not_reopened: None,
+        reopens: record.conversation.is_some() && !record.ended_with_its_runner(),
+        not_reopened: record
+            .ended_with_its_runner()
+            .then(|| WENT_WITH_ITS_RUNNER.to_owned()),
         did_not_start: record.did_not_start,
         attempts: record.attempts,
         waits: None,
+    }
+}
+
+/// Why a task that ended with a gone runner has no Reopen (#4420).
+const WENT_WITH_ITS_RUNNER: &str = "It cannot be reopened: its conversation went with its pool's \
+                                    runner, which is gone. Dispatch a new task to go on.";
+
+/// `row`, saying why its last Reopen did not hold, where one did not.
+fn with_why_not_reopened(held: &Held, row: FinishedTask) -> FinishedTask {
+    FinishedTask {
+        not_reopened: held
+            .tasks()
+            .not_reopened(&row.id)
+            .or(row.not_reopened.clone()),
+        ..row
     }
 }
 
@@ -204,8 +221,7 @@ pub(crate) fn listed(held: &Held) -> Vec<FinishedTask> {
             let asker = is(&record.asker.chat)?;
             Some(FinishedTask {
                 chat: ended_as(held, record, asker),
-                not_reopened: held.tasks().not_reopened(&record.id),
-                ..row(record, asker, Finished::of(record)?)
+                ..with_why_not_reopened(held, row(record, asker, Finished::of(record)?))
             })
         })
         // Then the tasks a launch could not start again (#1497): not ended, and drawn here
@@ -540,6 +556,9 @@ pub(crate) fn reopening(
         return Err(
             "That dispatch is not a finished task, so there is nothing to reopen.".to_owned(),
         );
+    }
+    if record.ended_with_its_runner() {
+        return Err(WENT_WITH_ITS_RUNNER.to_owned());
     }
     let name = name_of(&record);
     let open = crate::dispatches::open_chats(held);

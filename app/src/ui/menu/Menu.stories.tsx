@@ -430,3 +430,70 @@ export const AContextMenu: Story = {
     );
   },
 };
+
+/** A row that moves a tab along, and has nowhere to go after one step, which it then says. */
+function MovingATab() {
+  const [room, setRoom] = useState(1);
+  const atTheEdge = room === 0;
+  return (
+    <MenuTrigger>
+      <Button>Tab steward 4</Button>
+      <Menu aria-label="Move tab steward 4">
+        <MenuItem
+          id="left"
+          textValue="Move left"
+          shouldCloseOnSelect={false}
+          aria-disabled={atTheEdge}
+          tooltip={atTheEdge ? "Already first on the strip" : undefined}
+          onAction={() => setRoom((left) => Math.max(0, left - 1))}
+        >
+          <MenuWords said="Move left" />
+        </MenuItem>
+        <MenuItem id="right" textValue="Move right" shouldCloseOnSelect={false}>
+          <MenuWords said="Move right" />
+        </MenuItem>
+      </Menu>
+    </MenuTrigger>
+  );
+}
+
+/**
+ * **A row that turns unavailable under the keyboard** (#4659): it is the same row, the keyboard
+ * stays on it and its tooltip says why, the first Escape takes the tooltip down and the menu
+ * stays. WebKit is why this is a story: the row drawn afresh lost the tooltip there. Its look is
+ * the tooltip family's and the row's, pictured in their own stories.
+ */
+export const ARowThatTurnsUnavailable: Story = {
+  render: () => <MovingATab />,
+  parameters: { screenshot: false },
+  play: async ({ canvas, userEvent }) => {
+    const trigger = canvas.getByRole("button", { name: "Tab steward 4" });
+    await userEvent.tab();
+    await untilFocused(() => trigger, "Unavailable: Tab onto the trigger");
+    await userEvent.keyboard("{Enter}");
+    const menu = await screen.findByRole("menu", { name: "Move tab steward 4" });
+    const row = within(menu).getByRole("menuitem", { name: "Move left" });
+    await untilFocused(() => row, "Unavailable: Enter opens the menu on the row");
+    await userEvent.keyboard("{Enter}");
+    const tip = await screen.findByRole("tooltip");
+    await expect(tip).toHaveTextContent("Already first on the strip");
+    await expect(within(menu).getByRole("menuitem", { name: "Move left" })).toBe(row);
+    await expect(row).toHaveAttribute("aria-disabled", "true");
+    await expect(row).toHaveAttribute("aria-describedby", expect.stringContaining(tip.id));
+    await untilFocused(() => row, "Unavailable: the keyboard stays on the row");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull(), CLOSES);
+    await expect(screen.getByRole("menu", { name: "Move tab steward 4" })).toBeVisible();
+    await untilFocused(() => row, "Unavailable: Escape leaves the keyboard on the row");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(menu).getByRole("menuitem", { name: "Move right" }),
+      "Unavailable: the arrows go on from the row",
+    );
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(() => row, "Unavailable: the arrows come back to the row");
+    await expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Already first on the strip",
+    );
+  },
+};

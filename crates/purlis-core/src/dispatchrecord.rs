@@ -538,6 +538,17 @@ impl Record {
     pub fn running(&self) -> bool {
         self.ended.is_none()
     }
+
+    /// **Whether it ended with a pool's runner gone for good** (#4420), so its conversation went
+    /// with that runner. Only where the app ended it ([`EndedBy::Unreported`]): a task reporting
+    /// the same words has said nothing about its record.
+    pub fn ended_with_its_runner(&self) -> bool {
+        self.ended_by == Some(EndedBy::Unreported)
+            && self
+                .report
+                .as_ref()
+                .is_some_and(|report| report.text == crate::handback::ENDED_WITH_ITS_RUNNER)
+    }
 }
 
 /// What the app knows of a dispatch as it starts one.
@@ -916,6 +927,17 @@ pub fn last_note_of(record: &Record) -> Option<LastNote> {
         .filter(|said| !said.left_out && !said.text.is_empty())
         .map(|said| said.text.clone());
     Some(LastNote { at, text })
+}
+
+/// **Whether the last word about a question on a dispatch's `talk` is the question itself**
+/// (#4553): it asked, and nothing there answered it. What says a question was really lost where
+/// the record of open questions could not be read.
+pub fn asked_and_unanswered(talk: &[Said]) -> bool {
+    use crate::dispatchtalk::Kind;
+    talk.iter()
+        .rev()
+        .find(|said| matches!(said.kind, Kind::Question | Kind::Answer))
+        .is_some_and(|said| said.kind == Kind::Question)
 }
 
 impl LastNote {

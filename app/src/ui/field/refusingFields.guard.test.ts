@@ -47,6 +47,10 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
     where:
       "RaiseLimit: a limit's new value, on its own ground, in the Start a chat dialog, under a move's line, in Add a pool, a sign-in's strip and a profile's row on a pool",
   },
+  "SkillSources.tsx": {
+    grounds: ["surface.base"],
+    where: "ClashChoice: a new name in an install's review, a page of the Skills view",
+  },
 };
 
 /** The ground the whole copy of a refusal cut short is drawn on, wherever its field stands. */

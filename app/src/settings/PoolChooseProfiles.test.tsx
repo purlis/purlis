@@ -21,6 +21,7 @@ const a_profile = (name: string, kind = "claude", standing = "signed-out"): Pool
   harness: kind === "claude" ? "Claude Code" : "Codex",
   standing,
   not_kept: null,
+  limit: null,
   plans: [],
 });
 

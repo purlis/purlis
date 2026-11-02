@@ -631,6 +631,35 @@ fn a_lookup_that_leaves_less_than_a_picture_s_budget_of_the_turn_never_reaches_p
     assert_eq!(painter.turns().held(), None, "the turn ended with it");
 }
 
+/// **A picture's `millis` is its drawing's, what the budget holds** (#3022): from asking for its
+/// window to holding its picture, as [`Painted::millis`] says. The lookup before it has its own
+/// bound ([`themepreview::LOOKUP`]); counted in, a slow read on a loaded machine made a picture
+/// the app accepted look past the budget.
+#[test]
+fn a_picture_s_millis_count_its_drawing_and_not_the_lookup_before_it() {
+    let painter = Recording::default();
+    let slow = std::time::Duration::from_millis(300);
+    let drawing = on_turn(
+        &painter,
+        &[specimen("purlis-classic", None)],
+        Who::Chat,
+        themepreview::TURN,
+        || {
+            move |_: &Specimen| {
+                std::thread::sleep(slow);
+                classic_dark()
+            }
+        },
+    );
+    let painted = drawing.answer.expect("drawn");
+    assert!(
+        u128::from(painted[0].millis) < slow.as_millis() / 2,
+        "millis {} counted the {} ms lookup",
+        painted[0].millis,
+        slow.as_millis()
+    );
+}
+
 #[test]
 fn a_gallery_picture_asked_during_a_chat_s_lookup_is_answered_busy() {
     let painter = Recording::default();

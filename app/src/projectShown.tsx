@@ -48,7 +48,7 @@ export function useProjectShown(): boolean {
 }
 
 /** Runs `run` once the frame being drawn now has been painted. Answers how to call it off. */
-function afterPaint(run: () => void): () => void {
+export function afterPaint(run: () => void): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const frame = requestAnimationFrame(() => {
     timer = setTimeout(run, 0);

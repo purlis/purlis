@@ -460,7 +460,7 @@ export function InlineMenu<T extends object = object>({
 
 export type MenuItemProps<T extends object = object> = Omit<
   AriaMenuItemProps<T>,
-  "className" | "style" | "children" | "render"
+  "className" | "style" | "children" | "render" | "href"
 > & {
   variant?: MenuVariant;
   /** The key that does the same, said at the row's end, where the caller knows it. */
@@ -513,8 +513,6 @@ export function MenuItem<T extends object = object>({
     "aria-keyshortcuts": keyShortcuts,
   };
   const given = Object.fromEntries(Object.entries(native).filter(([, one]) => one !== undefined));
-  const drawnHere =
-    onKeyDown !== undefined || tooltip !== undefined || Object.keys(given).length > 0;
   return (
     <AriaMenuItem
       {...(rest as AriaMenuItemProps<T>)}
@@ -545,24 +543,24 @@ export function MenuItem<T extends object = object>({
           row.focus({ preventScroll: true });
         onPressStart?.(event);
       }}
-      render={
-        drawnHere
-          ? (dom) => {
-              const own = dom as ComponentPropsWithRef<"div">;
-              const row = (
-                <div
-                  {...own}
-                  {...given}
-                  onKeyDown={(event) => {
-                    onKeyDown?.(event);
-                    if (!event.defaultPrevented) own.onKeyDown?.(event);
-                  }}
-                />
-              );
-              return tooltip === undefined ? row : <Tooltip tip={tooltip}>{row}</Tooltip>;
-            }
-          : undefined
-      }
+      // **Every row is drawn the same way**, the tooltip's trigger around it with or without a
+      // hint: a row that gained one under the keyboard, or turned unavailable, would otherwise be
+      // drawn afresh and lose the focus and the hint with it (#4659).
+      render={(dom) => {
+        const own = dom as ComponentPropsWithRef<"div">;
+        return (
+          <Tooltip tip={tooltip}>
+            <div
+              {...own}
+              {...given}
+              onKeyDown={(event) => {
+                onKeyDown?.(event);
+                if (!event.defaultPrevented) own.onKeyDown?.(event);
+              }}
+            />
+          </Tooltip>
+        );
+      }}
     >
       {({ isSelected, selectionMode, hasSubmenu }) => (
         <>

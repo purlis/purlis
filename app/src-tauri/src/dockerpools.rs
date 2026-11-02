@@ -22,7 +22,7 @@ use crate::runnerlinks::{Machine, ToARunner};
 
 /// Why a pool is not kept here: the Docker pool runs on macOS and Linux alone.
 #[cfg(not(unix))]
-const NOT_HERE: &str = "purlis keeps Docker pools on macOS and Linux only.";
+pub(crate) const NOT_HERE: &str = "purlis keeps Docker pools on macOS and Linux only.";
 
 /// A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
 /// MiB.
@@ -164,6 +164,9 @@ pub struct PoolVersion {
     /// How many of its older runners drain: each keeps its chats until they end, then is
     /// removed.
     pub draining: u32,
+    /// How many of its older runners are held: each stopped during its drain, and stays with its
+    /// home until the person removes it.
+    pub held: u32,
     /// Whether this version's release named a runner image, as purlis last found it (#2880):
     /// one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
     /// looked.
@@ -648,6 +651,51 @@ pub async fn docker_pool_replace_runner(name: String) -> Result<(), String> {
     }
 }
 
+/// **Removes the held runner `runner`, as the person pressed**: a draining runner that stopped
+/// during its drain, and what its chats left in its home with it
+/// ([`purlis_core::pools::remove_held`]). The window's alone: nothing else ends what a held runner
+/// keeps. What is left of it is said.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_remove_held_runner(
+    app: tauri::AppHandle,
+    runner: String,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("removing a held runner", move || {
+            let machine = Machine::here(&config_root()?)?;
+            let kept = purlis_core::runners::named(&machine.config, &runner)
+                .map_err(|why| refused_said(&why.to_string()))?
+                .ok_or_else(|| format!("No runner {runner} is on this machine."))?;
+            let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)?;
+            let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
+            let removed = purlis_core::pools::remove_held(
+                &machine.config,
+                &machine.docker,
+                &runner,
+                Some(&unpair),
+            )
+            .map_err(|why| refused_said(&why.to_string()))?;
+            if removed.forgotten {
+                crate::poolfollow::forget_waiting_on(&machine.config, kept.pool(), &runner);
+                if let Some(host) =
+                    tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app)
+                {
+                    host.connection().links_to_gone_runners_end(&machine.config);
+                }
+            }
+            removed.left().map_or(Ok(()), Err)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, runner);
+        Err(NOT_HERE.to_owned())
+    }
+}
+
 /// **Which version the pool `name`'s runner runs, against this desktop's** (#2749).
 #[tauri::command]
 #[specta::specta]
@@ -705,11 +753,13 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         .into_iter()
         .find(|pool| pool.name() == name)
         .ok_or_else(|| format!("no pool named {name} is on this machine"))?;
-    let draining = purlis_core::runners::draining(&machine.config)
+    let older: Vec<_> = purlis_core::runners::draining(&machine.config)
         .map_err(|why| why.to_string())?
-        .iter()
+        .into_iter()
         .filter(|kept| kept.pool() == name)
-        .count();
+        .collect();
+    let held = older.iter().filter(|kept| kept.held).count();
+    let draining = older.len() - held;
     let (runner, why) = version_read(crate::runnerlinks::version_of(machine, &kept));
     Ok(PoolVersion {
         runner,
@@ -717,6 +767,7 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         desktop: crate::runnerlinks::desktop_version().to_owned(),
         follows: pool.image().is_purlis_own(),
         draining: u32::try_from(draining).unwrap_or(u32::MAX),
+        held: u32::try_from(held).unwrap_or(u32::MAX),
         named: crate::poolfollow::this_versions_image_named(),
         waiting: crate::poolfollow::waiting_on(&machine.config, name),
         suspends: machine
@@ -752,11 +803,14 @@ pub fn version_read(read: Result<String, String>) -> (Option<String>, Option<Str
 #[cfg(test)]
 mod tests;
 
-/// **Where a workspace's chats run on this machine** (#2046): the pool its chats run on, `None`
-/// for this machine, and every pool this machine keeps, which the setting offers.
+/// **Where a workspace's chats run on this machine** (#2046, #4536): what the workspace itself
+/// says (`pool`, or `here` for this machine, or neither to follow the project), what the project
+/// says, and every pool this machine keeps, which the setting offers.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ChatsRunOn {
     pub pool: Option<String>,
+    pub here: bool,
+    pub project: Option<String>,
     pub pools: Vec<String>,
 }
 
@@ -770,19 +824,83 @@ pub fn chats_run_on_at(
     // A cluster pool's name too (#3292).
     let pools = purlis_core::runners::pool_names(config).map_err(|why| why.to_string())?;
     let loaded = purlis_core::machine::read(config);
+    let recent = loaded.store.recent(plane);
     Ok(ChatsRunOn {
         pool: loaded
             .store
             .chats_run_on(plane, workspace)
             .map(str::to_owned),
+        here: recent.is_some_and(|recent| recent.chats_run_here.contains(workspace)),
+        project: recent.and_then(|recent| recent.project_chats_run_on.clone()),
         pools,
     })
 }
 
+/// Sets `workspace` of the plane at `plane` to follow its project on `config` (#4536).
+#[cfg(unix)]
+pub fn follow_project_chats_run_on_at(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: &str,
+) -> Result<ChatsRunOn, String> {
+    let mut set = Ok(false);
+    purlis_core::machine::update(config, |store| {
+        set = store.set_chats_run_on(plane, workspace, None);
+    })
+    .map_err(|why| format!("Where this workspace's chats run was not kept: {why}"))?;
+    set?;
+    chats_run_on_at(config, plane, workspace)
+}
+
+/// **Where a project's workspaces run their chats by default on this machine** (#4536): the pool
+/// it names, and every pool this machine keeps.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ProjectChatsRunOn {
+    pub pool: Option<String>,
+    pub pools: Vec<String>,
+}
+
+/// What the plane at `plane` says on `config`.
+#[cfg(unix)]
+pub fn project_chats_run_on_at(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+) -> Result<ProjectChatsRunOn, String> {
+    let pools = purlis_core::runners::pool_names(config).map_err(|why| why.to_string())?;
+    let loaded = purlis_core::machine::read(config);
+    Ok(ProjectChatsRunOn {
+        pool: loaded
+            .store
+            .recent(plane)
+            .and_then(|recent| recent.project_chats_run_on.clone()),
+        pools,
+    })
+}
+
+/// Sets what the plane at `plane` says on `config`: `pool`, which this machine must keep with its
+/// runner, or this machine for `None`. A chat running now stays where it runs.
+#[cfg(unix)]
+pub fn set_project_chats_run_on_at(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    pool: Option<&str>,
+) -> Result<ProjectChatsRunOn, String> {
+    if let Some(pool) = pool {
+        purlis_core::runners::runner_of(config, pool).map_err(|why| format!("{why}."))?;
+    }
+    let mut set = Ok(false);
+    purlis_core::machine::update(config, |store| {
+        set = store.set_project_chats_run_on(plane, pool);
+    })
+    .map_err(|why| format!("Where this project's chats run was not kept: {why}"))?;
+    set?;
+    project_chats_run_on_at(config, plane)
+}
+
 #[cfg(unix)]
 /// Sets where `workspace` of the plane at `plane` runs its chats on `config`: on `pool`, which
-/// this machine must keep with its runner, or on this machine for `None`. A chat running now
-/// stays where it runs; the next starts where this says.
+/// this machine must keep with its runner, or on this machine for `None`, whatever its project
+/// says. A chat running now stays where it runs; the next starts where this says.
 pub fn set_chats_run_on_at(
     config: &std::path::Path,
     plane: &std::path::Path,
@@ -794,7 +912,11 @@ pub fn set_chats_run_on_at(
     }
     let mut set = Ok(false);
     purlis_core::machine::update(config, |store| {
-        set = store.set_chats_run_on(plane, workspace, pool);
+        // This machine is the person's own choice: a project's pool doesn't reach it (#4536).
+        set = match pool {
+            Some(_) => store.set_chats_run_on(plane, workspace, pool),
+            None => store.set_chats_run_here(plane, workspace),
+        };
     })
     .map_err(|why| format!("Where this workspace's chats run was not kept: {why}"))?;
     set?;
@@ -811,6 +933,32 @@ pub(crate) fn run_chats_on(
     place: &Option<String>,
 ) -> Result<(), String> {
     set_chats_run_on_at(config, plane, workspace, place.as_deref()).map(|_| ())
+}
+
+/// What `workspace` of the plane at `plane` itself says of where its chats run (#4536).
+pub(crate) fn workspace_place(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: &str,
+) -> purlis_core::machine::WorkspacePlace {
+    purlis_core::machine::read(config)
+        .store
+        .workspace_place(plane, workspace)
+}
+
+/// Puts `workspace` back to `place`, as a move that didn't happen leaves it (#4536).
+pub(crate) fn put_workspace_place_back(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: &str,
+    place: &purlis_core::machine::WorkspacePlace,
+) -> Result<(), String> {
+    let mut set = Ok(false);
+    purlis_core::machine::update(config, |store| {
+        set = store.set_workspace_place(plane, workspace, place);
+    })
+    .map_err(|why| format!("Where this workspace's chats run was not kept: {why}"))?;
+    set.map(|_| ())
 }
 
 /// No pool runs chats here.
@@ -879,6 +1027,74 @@ pub async fn set_send_leaves_out(
         purlis_core::settings::workspace::set_send_leaves_out(&root, &workspace, &entries)
     })
     .await
+}
+
+/// **Sets a workspace to follow its project** (#4536): the person's choice in its settings.
+#[tauri::command]
+#[specta::specta]
+pub async fn follow_project_chats_run_on(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: String,
+) -> Result<ChatsRunOn, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("setting where the workspace's chats run", move || {
+            follow_project_chats_run_on_at(&config_root()?, &root, &workspace)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, workspace);
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+/// **Where a project's workspaces run their chats by default** (#4536), as its settings show it.
+#[tauri::command]
+#[specta::specta]
+pub async fn project_chats_run_on(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<ProjectChatsRunOn, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading where the project's chats run", move || {
+            project_chats_run_on_at(&config_root()?, &root)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+/// **Sets where a project's workspaces run their chats by default** (#4536).
+#[tauri::command]
+#[specta::specta]
+pub async fn set_project_chats_run_on(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    pool: Option<String>,
+) -> Result<ProjectChatsRunOn, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("setting where the project's chats run", move || {
+            set_project_chats_run_on_at(&config_root()?, &root, pool.as_deref())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, pool);
+        Err(NOT_HERE.to_owned())
+    }
 }
 
 /// **Sets where a workspace's chats run** (#2046): the person's choice in its settings.

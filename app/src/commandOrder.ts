@@ -60,6 +60,8 @@ export const LANES = {
       "allowPersonaGrants",
       // A proposed change applied to the project's manifest (#1975).
       "applyProposedChange",
+      // A browser login line added to the manifest from its notice (#4595).
+      "answerBrowserLogin",
       // It drops a listed folder that resolves elsewhere now, so it writes as it reads.
       "grantableFolders",
       "listGrantableFolder",
@@ -117,7 +119,7 @@ export const LANES = {
   workLink: { reads: ["chatWorkItem"], changes: ["chatWorkLink", "chatWorkUnlink"] },
   /** This machine's store: the person's pins in a project, by its path. */
   pins: {
-    reads: ["planePins", "chatsRunOn"],
+    reads: ["planePins", "chatsRunOn", "projectChatsRunOn"],
     changes: [
       "pinProject",
       "pinWorkspace",
@@ -125,6 +127,8 @@ export const LANES = {
       "pinOnThisMachine",
       // Where a workspace's chats run (#2046): kept beside the pins, in the same store.
       "setChatsRunOn",
+      "followProjectChatsRunOn",
+      "setProjectChatsRunOn",
     ],
   },
 } as const satisfies Record<
@@ -177,6 +181,10 @@ export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> =
     "order of the person's own typing, which a lane behind a slow read would break. Its line in " +
     "the network record is a look back, read again at the next look.",
   keepSandboxBlockForTasks: "As keepSandboxBlock, for each task held on the block.",
+  agentIdentityFinish:
+    "It asks GitHub for seconds before it writes, which would hold every read of the sandbox's " +
+    "lane behind it. Its Allow is one the person made by pressing Finish, and Settings reads the " +
+    "standing again after it.",
   addProjectForge:
     "It writes the manifest's forges, which no read of the sandbox's lane draws; Settings reads " +
     "the file again after it. The read it answers with drops the confirmed hosts the file no " +

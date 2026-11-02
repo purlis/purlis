@@ -130,7 +130,7 @@ export function ChangesView({
 }) {
   const { panels, repos, pieces, piecesRefused, reading, trouble } = state;
   const names = panels?.repos ?? [];
-  const absent = notClonedRows(panels?.absent ?? [], names, cloning);
+  const absent = notClonedRows(panels?.absent, names, cloning);
   if (workspace === undefined) {
     return (
       <section className="state-bar" aria-label="Repository state" data-testid="changes-view">

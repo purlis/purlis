@@ -287,7 +287,7 @@ describe("what a row is made of", () => {
 
   it("cuts a long line to two with the whole of it in the tooltip", async () => {
     const long = `Should I ${"keep going with the migration ".repeat(20)}or stop?`;
-    draw([question(9, long)], strip(ROOT));
+    draw([{ ...question(9, long), source: "terminal", ask: "terminal:9" }], strip(ROOT));
     const primary = part(row(9), ".inbox-primary");
     expect(primary.classList.contains("inbox-clamped")).toBe(true);
     // The whole of it for a pointer: it only repeats the words, which the keyboard and a screen

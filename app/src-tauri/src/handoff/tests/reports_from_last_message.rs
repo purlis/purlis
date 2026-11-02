@@ -156,11 +156,38 @@ fn a_task_that_reported_is_never_asked_and_nothing_is_made_for_it() {
 }
 
 #[test]
-fn what_a_chat_that_is_no_task_said_is_not_kept() {
+fn what_a_chat_that_is_no_task_said_is_kept_masked_until_its_next_turn() {
     let (_plane, _host, _planes, _id, held, steward, _task) = a_steward_and_its_task();
     a_turn_begins(&held, steward);
-    its_turn_ends_saying(&held, steward, "The steward's own words.");
+    // Built here so no line holds a credential shape.
+    let key = ["AK", "IA", &"Z7Q2".repeat(4)].concat();
+    its_turn_ends_saying(&held, steward, &format!("Is this the key?\n{key}"));
+    let kept = held
+        .tasks()
+        .ledger()
+        .last_said(steward)
+        .map(str::to_owned)
+        .expect("the chat's last message is kept");
+    assert!(kept.starts_with("Is this the key?\n"), "{kept}");
+    assert!(!kept.contains(&"Z7Q2".repeat(4)), "{kept}");
+    a_turn_begins(&held, steward);
     assert_eq!(held.tasks().ledger().last_said(steward), None);
+}
+
+#[test]
+fn a_chat_that_is_no_task_waiting_on_the_person_lists_what_it_said() {
+    let (_plane, _host, _planes, _id, held, steward, _task) = a_steward_and_its_task();
+    a_turn_begins(&held, steward);
+    its_turn_ends_saying(&held, steward, "Which branch should I use?");
+    let asks = crate::asking::every_ask(&held).asks;
+    let question = asks
+        .iter()
+        .find(|ask| ask.session == steward && ask.source == crate::asking::AskSource::Question)
+        .expect("the chat waits on a reply");
+    assert_eq!(
+        question.last_message.as_deref(),
+        Some("Which branch should I use?")
+    );
 }
 
 // ----- reading what a task said and ran (#1981) ----------------------------------------------

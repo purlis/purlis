@@ -235,6 +235,8 @@ pub struct StudioSkill {
     /// Each harness whose chats a router hid it from the list of, and why (SK-15), each by its
     /// own budget: the chat still has it, through the index skill. Empty where every one lists it.
     pub hidden: Vec<SkillHiddenOn>,
+    /// The label of the source it was installed from (ADR 0100, amended 2026-11-01).
+    pub source_label: Option<String>,
     /// Whether that chat's workspace or persona pins it, so no router hides it.
     pub pinned: bool,
     /// Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
@@ -563,6 +565,7 @@ fn plane_shown(
         compat: row.compat.iter().map(Into::into).collect(),
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
+        source_label: row.source_label.clone(),
         pinned: row.pinned,
         pinned_by,
     }
@@ -698,31 +701,41 @@ pub struct StudioRouter {
     /// else the workspace's `settings.skills.router`, as written. Null where it writes none,
     /// and at the project's root, which chooses no router. What Change… starts from.
     pub written: Option<String>,
-    /// **A chat's skill budget** (SK-12, ADR 0102 §1): past it the router decides what a chat's
-    /// list shows. The same on every harness.
-    pub budget: StudioBudget,
+    /// **A chat's skill budget on each harness** (SK-12, ADR 0102 as amended 2026-11-02): past
+    /// it the router decides what a chat's list shows. Each adapter's numbers, with what this
+    /// scope's `settings.skills.budget` writes over them.
+    pub budget: Vec<StudioBudget>,
+    /// **What a harness would drop at what the scope writes** (#4610), a sentence each: a
+    /// warning, since a value past a harness's limit is never refused.
+    pub past_limits: Vec<String>,
     /// **What the rows' "hidden by the router" marks preview** (#4215), in a sentence: a chat at
     /// the workspace's root (or the project's), in no clone, routed by the built-in router. Where
     /// an extension's router is chosen, it says that the marks are the built-in router's choice.
     pub preview: String,
 }
 
-/// **A chat's skill budget**, as the Routing page says it: the most skills its list holds, and
-/// the most characters of their descriptions together.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+/// **A chat's skill budget on one harness**, as the Routing page says it: the most skills its
+/// list holds, and the most characters of what is listed of them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct StudioBudget {
+    pub program: String,
     pub skills: u32,
     pub chars: u32,
 }
 
-impl Default for StudioBudget {
-    fn default() -> Self {
-        let budget = purlis_core::harness::SKILL_BUDGET;
-        StudioBudget {
-            skills: u32::try_from(budget.skills).unwrap_or(u32::MAX),
-            chars: u32::try_from(budget.chars).unwrap_or(u32::MAX),
-        }
-    }
+/// Every harness's budget for a chat in `workspace` of the project at `root`.
+fn budgets_in(root: &std::path::Path, workspace: Option<&str>) -> Vec<StudioBudget> {
+    purlis_core::harness::Harness::ALL
+        .into_iter()
+        .map(|harness| {
+            let budget = purlis_core::skills::budget_in(root, workspace, harness);
+            StudioBudget {
+                program: harness.title().to_owned(),
+                skills: u32::try_from(budget.skills).unwrap_or(u32::MAX),
+                chars: u32::try_from(budget.chars).unwrap_or(u32::MAX),
+            }
+        })
+        .collect()
 }
 
 /// One chat a router extension was asked about at its start.
@@ -800,7 +813,10 @@ fn router_of(
         grade,
         graded,
         written: pinner.and_then(|by| purlis_core::skills::router::written(root, &by)),
-        budget: StudioBudget::default(),
+        budget: budgets_in(root, workspace),
+        past_limits: purlis_core::skills::budget_setting::warnings(
+            purlis_core::skills::budget_setting::set_in(root, workspace),
+        ),
     }
 }
 
@@ -1051,6 +1067,7 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         compat: row.compat.iter().map(Into::into).collect(),
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
+        source_label: row.source_label.clone(),
         pinned: row.pinned,
         pinned_by: Vec::new(),
     }

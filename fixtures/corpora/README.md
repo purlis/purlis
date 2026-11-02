@@ -304,6 +304,12 @@ for byte in the same rows: 107 of `planeroot-oracle.jsonl`, 373 of
 `planeroot-generated.jsonl.gz`, and the `pretooluse-plane-root-branch` scenario of
 `tests/fixtures/recorded/behaviour.jsonl`.
 
+**And every chat commits through purlis (#4534).** A chat with no sandbox now commits with
+`purlis worktree commit` too, since a harness's own rules may refuse its plain git, so the
+sentence goes back to the #3798 one: "then commit and push from it with `purlis worktree commit`
+and `purlis worktree push`." No verdict moved, and only that sentence changed, replaced byte for
+byte in the same rows of the same three files.
+
 ## The session recording
 
 Re-record with:

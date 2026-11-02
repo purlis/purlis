@@ -109,7 +109,14 @@ fn pools_of(
 ) -> Vec<String> {
     let mut named: Vec<String> = store
         .recent(root)
-        .map(|recent| recent.chats_run_on.values().cloned().collect())
+        .map(|recent| {
+            recent
+                .chats_run_on
+                .values()
+                .chain(&recent.project_chats_run_on)
+                .cloned()
+                .collect()
+        })
         .unwrap_or_default();
     named.sort();
     named.dedup();

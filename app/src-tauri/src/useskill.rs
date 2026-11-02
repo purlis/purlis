@@ -74,6 +74,8 @@ pub struct ChatSkill {
     /// Why the router hid it from the chat's list, where it did (SK-15): Use skill… then asks
     /// the chat to load it.
     pub hidden: Option<crate::skillstudio::SkillHidden>,
+    /// The label of the source it was installed from (ADR 0100, amended 2026-11-01).
+    pub source_label: Option<String>,
 }
 
 /// Which part of a chat's skill budget its set warns of: at four fifths of it or past it.
@@ -196,6 +198,21 @@ pub struct SkillRouting {
     #[specta(optional)]
     pub last_prompt: Option<SkillPromptRouting>,
 }
+
+/// The event the window is sent as a chat's latest prompt changes whether it fell back (#4445).
+/// Not `plane-changed`: this routing is kept in memory, and that event says what moved on disk.
+pub const PROMPT_ROUTING: &str = "chat-prompt-routing";
+
+/// What `chat-prompt-routing` carries: which chat to read again, and nothing of how it did, so
+/// tellings that land out of order leave the window nothing to get wrong.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ChatPromptRouting {
+    pub plane: PlaneId,
+    pub session: u32,
+}
+
+/// Told each chat whose latest prompt changes whether it fell back.
+pub type PromptRoutingTeller = std::sync::Arc<dyn Fn(ChatPromptRouting) + Send + Sync + 'static>;
 
 /// **How a chat's router did on its latest prompt** (#4297, ADR 0102 §6): the core's routing
 /// record of it, as the chat's tab and the studio say it. No word of the prompt.
@@ -327,6 +344,7 @@ fn offered_shown(one: &purlis_core::skills::Offered) -> ChatSkill {
         arguments: one.declared.arguments.clone(),
         hint: one.declared.hint.clone(),
         hidden: one.hidden.as_ref().map(Into::into),
+        source_label: one.source_label.clone(),
     }
 }
 

@@ -68,6 +68,10 @@ pub struct VaultRefused {
     pub dispatch_to: Option<String>,
     /// Why a policy forbids Allow, where one does: the Notice then offers none.
     pub locked: Option<String>,
+    /// The browser login the persona declares with this vault, where it does: the one case
+    /// purlis knows a vault is asked for a login. A `secret` command names none (#4595).
+    #[specta(optional)]
+    pub login: Option<String>,
 }
 
 /// Told each newly refused vault. The event carries its project.
@@ -315,6 +319,7 @@ pub fn sent_as(text: &str) -> String {
 /// now.
 fn shown(plane: &PlaneId, session: u32, not: NotTagged) -> VaultRefused {
     VaultRefused {
+        login: brokered::login_with(plane.root(), &not.persona, &not.vault),
         locked: sandbox::policy::Locks::of(plane.root()).vault_grants_refused(),
         dispatch_to: brokered::dispatchable(&Ctx::new(plane.root(), Env::from_process()), &not),
         plane: plane.clone(),

@@ -206,6 +206,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // theme folders, which the window loads its faces from. Held to the window, failing closed:
     // a link draws with the platform's fonts.
     "theme_font",
+    // The parts of a window's own first frame (#4410), by the ticket its creation script handed
+    // it. A link is handed no first frame, so it has nothing to ask for.
+    "first_frame_parts",
     // The theme in force for the window that asks, which also points that window's theme watch
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
@@ -250,6 +253,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forge_device_sign_in_start",
     "forge_device_sign_in_wait",
     "forge_device_sign_in_cancel",
+    // Agent identity (#4485): GitHub's App flow, the tool lines and the key, each the person's.
+    "agent_identities",
+    "agent_identity_create",
+    "agent_identity_create_cancel",
+    "agent_identity_reopen",
+    "agent_identity_stand",
+    "agent_identity_lines",
+    "agent_identity_finish",
+    "agent_identity_remove",
     // The browser sign-in to gitlab.com (#730, ADR 0077 §3): it opens the person's browser and
     // a loopback listener on this machine, and ends with a token in the keychain. No link
     // starts one or stops one.
@@ -333,6 +345,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Whether a persona's browser logins may be filled on a pool's runner (#2050): the person's
     // answer alone. No chat opts itself in.
     "answer_pool_login",
+    // A browser login a chat suggested (#4595): the person's answer alone. No chat confirms the
+    // site it suggested.
+    "answer_browser_login",
     // Whether this desktop sends a persona's tool its vault values on a pool's runner (#2047):
     // the person's answer alone. No chat allows its own tool.
     "answer_pool_tool",
@@ -744,6 +759,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.
     "docker_pools",
+    "pool_setup",
+    "pool_setup_choose_docker",
+    "pool_setup_name",
+    "pool_setup_pool",
+    "pool_setup_open_docker",
     "add_docker_pool",
     "remove_docker_pool",
     "docker_pool_link",
@@ -754,6 +774,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "docker_pool_make_again",
     // Replacing a pool's runner (#4286): the person's press alone, as every limit is theirs (Q6).
     "docker_pool_replace_runner",
+    // Removing a held runner: what its chats left goes with it, so the person's press alone.
+    "docker_pool_remove_held_runner",
     // The runner image this version's release names (2026-10-30): the Add a pool dialog's
     // default image, read through the updater, for the person's own window.
     "runner_image_of_this_version",
@@ -779,9 +801,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_profile_add",
     "pool_profile_remove",
     // A pool's limits (spec #4275): the person changes them directly, and a chat only proposes
-    // through the edit ask (Q6), so only their own window saves one, or reads the offer to.
-    "pool_limit_offer",
-    "pool_limit_offer_for_move",
+    // through the edit ask (Q6), so only their own window saves one, or is offered to
+    // ([`WINDOW_ONLY_FIELDS`] keeps a move's offer to it).
     "pool_limits",
     "pool_limit_check",
     "pool_limit_set",
@@ -804,6 +825,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // workspace's code, so only the person's own choice in their window sets it.
     "chats_run_on",
     "set_chats_run_on",
+    "follow_project_chats_run_on",
+    "project_chats_run_on",
+    "set_project_chats_run_on",
     // What a workspace's sends to a runner leave out (#2046): the person's list, in their window.
     "send_leaves_out",
     "set_send_leaves_out",
@@ -953,11 +977,21 @@ pub struct WindowOnlyField {
 /// only the window gives that Allow. So a link is served, in its place, the window's own form
 /// for a change not shown (`app/src-tauri/src/askwrites.rs`, whose test holds the two alike),
 /// beside which no Allow is offered.
-pub const WINDOW_ONLY_FIELDS: &[WindowOnlyField] = &[WindowOnlyField {
-    method: "pending_asks",
-    field: "writes",
-    in_its_place: an_edit_drawn_in_the_window_only,
-}];
+///
+/// `chat_moves` tells a link how a move stands, and what a failed one said; what to raise beside it
+/// (`limit`, spec #4275) only goes with a save that is the window's alone, so a link is told none.
+pub const WINDOW_ONLY_FIELDS: &[WindowOnlyField] = &[
+    WindowOnlyField {
+        method: "pending_asks",
+        field: "writes",
+        in_its_place: an_edit_drawn_in_the_window_only,
+    },
+    WindowOnlyField {
+        method: "chat_moves",
+        field: "limit",
+        in_its_place: || Value::Null,
+    },
+];
 
 /// **Whether a call names the plane root** (issue 1916): `files_watch` with a folder of no
 /// workspace and no repo, which is how the window names a folder of the project's own. A link
@@ -1195,11 +1229,12 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "router_grade_plan",
     "router_grade_running",
     "router_grade_scorecard",
-    // A grade's kept chat and its scorecard (SK-59, #3239), and a skill's grading after each
-    // edit (SK-58, #3238): read only.
+    // A grade's kept chat and its scorecard (SK-59, #3239), a skill's grading after each edit
+    // (SK-58, #3238), and how far the one running is (#4338): read only.
     "skill_grade_after_edit",
     "skill_grade_chat",
     "skill_grade_plan",
+    "skill_grade_running",
     "skill_grade_scorecard",
     // A skill's grades, for its Grades tab (S6, #3688): read only.
     "skill_grades",

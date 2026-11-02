@@ -8,6 +8,7 @@ import type { NeedsYou, Studio, StudioSkill } from "./bindings";
 export function skill(name: string, over: Partial<StudioSkill> = {}): StudioSkill {
   return {
     name,
+    source_label: null,
     level: "project",
     label: "project",
     local: false,

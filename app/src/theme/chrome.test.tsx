@@ -58,7 +58,7 @@ import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { AddDockerPoolHost } from "../AddDockerPool";
 import { startAddingAPool } from "../pools";
 import { ReplaceRunner } from "../settings/PoolLimits";
-import { RemovePool } from "../settings/pools";
+import { RemoveHeldRunner, RemovePool } from "../settings/pools";
 import { RemoveProfile } from "../settings/profiles";
 import { SpecimenDialog } from "../specimen/Specimen";
 import { LinkWorkItem } from "../LinkWorkItem";
@@ -396,6 +396,7 @@ const LAND: LandQuestion = {
 /** A project skill, for the dialogs that change one (#3685). */
 const SKILL: StudioSkill = {
   name: "deploy",
+  source_label: null,
   level: "project",
   label: "project",
   local: false,
@@ -722,6 +723,7 @@ const DIALOGS: Opened[] = [
             own: null,
             skills: [
               {
+                source_label: null,
                 name: "review",
                 level: "project",
                 label: "project",
@@ -733,6 +735,7 @@ const DIALOGS: Opened[] = [
                 hidden: null,
               },
               {
+                source_label: null,
                 name: "release",
                 level: "workspace",
                 label: "workspace",
@@ -987,6 +990,12 @@ const DIALOGS: Opened[] = [
     name: "removing a Docker pool",
     file: "settings/pools.tsx",
     open: async () => render(<RemovePool name="builds" onRemove={nothing} onCancel={nothing} />),
+  },
+  {
+    name: "removing a held runner",
+    file: "settings/pools.tsx",
+    open: async () =>
+      render(<RemoveHeldRunner name="builds-old" onRemove={nothing} onCancel={nothing} />),
   },
   {
     name: "adding a pool",

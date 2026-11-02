@@ -285,7 +285,7 @@ fn a_file_is_denied_by_where_its_name_puts_it() {
         "tests/fixtures/purlis.toml",
         "/elsewhere/purlis.toml",
         // Below `.claude` itself, only the names that load code are held.
-        ".claude/rules/x.md",
+        ".claude/notes.md",
         "personas/dev/memory/the-skills.md",
         ".",
         "",

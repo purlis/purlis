@@ -500,7 +500,7 @@ impl Limit {
         }
         match highest {
             Some(highest) if value > highest => Err(format!(
-                "{} is at most {} on this pool",
+                "{} is at most {} on this pool: {TEAM_SET}",
                 self.plain,
                 self.unit.said(highest)
             )),
@@ -547,6 +547,8 @@ impl Limit {
             needed,
             suggested: self.suggested(in_force, needed, highest),
             highest,
+            by_team: false,
+            team_suggested: false,
         }
     }
 
@@ -572,6 +574,10 @@ impl Limit {
     }
 }
 
+/// What a person at a team's highest is told: who set it, and where to go (#4287).
+const TEAM_SET: &str = "the team that defines this pool set that: ask whoever looks after its \
+                        Pool in the cluster to raise it";
+
 /// **A limit that was hit** (spec #4275's typed refusal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimitHit {
@@ -580,6 +586,10 @@ pub struct LimitHit {
     pub needed: u64,
     pub suggested: Option<u64>,
     pub highest: Option<u64>,
+    /// That highest is what the team defining the pool set (#4287).
+    pub by_team: bool,
+    /// The value suggested is what the team defining the pool suggests (#4287).
+    pub team_suggested: bool,
 }
 
 impl LimitHit {
@@ -595,6 +605,11 @@ impl LimitHit {
                     limit.plain,
                     limit.unit.said(value)
                 ),
+                None if self.by_team => format!(
+                    "it took longer than this pool's limit of {in_force} ({}), the most it can be: \
+                     {TEAM_SET}",
+                    limit.plain
+                ),
                 None => format!(
                     "it took longer than this pool's limit of {in_force} ({}), the most it can \
                      be: try again when the runner and the link to it are less busy",
@@ -604,6 +619,10 @@ impl LimitHit {
         }
         let offer = match self.suggested {
             Some(value) => format!(": raise it to {}", limit.unit.said(value)),
+            None if self.by_team => format!(
+                ", and this pool allows at most {}: {TEAM_SET}, or send less",
+                limit.unit.said(self.highest.unwrap_or(limit.most))
+            ),
             None => format!(", more than this limit can be: send less than {}", {
                 limit.unit.said(self.highest.unwrap_or(limit.most))
             }),
@@ -617,46 +636,99 @@ impl LimitHit {
     }
 }
 
-/// **A limit hit on a pool, kept for the window to ask of** ([`hits_said_in`]): its words, and
-/// the hit they came from. One a limit, on a pool: the map stays as small as they are.
-static HITS: std::sync::Mutex<std::collections::BTreeMap<(String, usize), (LimitHit, String)>> =
-    std::sync::Mutex::new(std::collections::BTreeMap::new());
+/// **The limits one attempt was refused on** (spec #4275's typed refusal): what the window offers
+/// to raise beside that refusal, as data, never read from its words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    pub pool: String,
+    pub hits: Vec<LimitHit>,
+}
 
-/// **`hit`, on pool `pool`**, in words the window can ask of ([`hits_said_in`]). Only purlis's own
+impl Refused {
+    /// `hits`, added to what this attempt was refused on so far: a limit counts once, as it was
+    /// last hit, and a hit on another pool is what the attempt was refused on from then on.
+    fn with(self, pool: &str, hits: &[LimitHit]) -> Self {
+        let mut all = if self.pool == pool {
+            self.hits
+        } else {
+            Vec::new()
+        };
+        for hit in hits {
+            all.retain(|one| one.limit != hit.limit);
+            all.push(*hit);
+        }
+        Self {
+            pool: pool.to_owned(),
+            hits: all,
+        }
+    }
+}
+
+std::thread_local! {
+    /// What the attempt running on this thread was refused on: outside [`attempt`], nothing is
+    /// kept, so an earlier refusal can offer nothing to a later one.
+    static ATTEMPT: std::cell::RefCell<Option<Option<Refused>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **`work`, with the limits it was refused on** ([`hit_on`], [`hits_on`]): each surface's one
+/// attempt, on the thread it runs on, so what it offers is this attempt's alone and asks nothing
+/// of any words. The `Some` is for its refusal alone: an `Ok` offers nothing.
+pub fn attempt<T>(work: impl FnOnce() -> T) -> (T, Option<Refused>) {
+    /// Puts back the attempt this one is inside, however it ends.
+    struct Ends(Option<Option<Refused>>);
+    impl Drop for Ends {
+        fn drop(&mut self) {
+            ATTEMPT.set(self.0.take());
+        }
+    }
+    let ends = Ends(ATTEMPT.replace(Some(None)));
+    let done = work();
+    let refused = ATTEMPT.with_borrow_mut(|now| now.as_mut().and_then(Option::take));
+    drop(ends);
+    (done, refused)
+}
+
+/// **`hit`, on pool `pool`**, in words, and kept for the [`attempt`] it refused. Only purlis's own
 /// measure of a limit comes here, never a number a runner said: a runner cannot choose what the
 /// person is offered.
 #[must_use]
 pub fn hit_on(pool: &str, hit: LimitHit) -> String {
-    let said = hit.said();
-    HITS.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .insert((pool.to_owned(), hit.limit as usize), (hit, said.clone()));
-    said
+    hits_on(pool, &[hit]);
+    hit.said()
 }
 
-/// **The limits of pool `pool` that the refusal in the words `refused` said**: asked of what was
-/// kept, never read from the words. Only the pool acted on is asked of, so words a
-/// runner echoes reach no other pool's value, and only what purlis itself measured there. Empty
-/// for any other refusal.
-#[must_use]
-pub fn hits_said_in(pool: &str, refused: &str) -> Vec<LimitHit> {
-    HITS.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .iter()
-        .filter(|((of, _), (_, words))| of == pool && refused.contains(words.as_str()))
-        .map(|(_, (hit, _))| *hit)
-        .collect()
+/// [`hit_on`], for limits already said.
+pub fn hits_on(pool: &str, hits: &[LimitHit]) {
+    if hits.is_empty() {
+        return;
+    }
+    ATTEMPT.with_borrow_mut(|now| {
+        if let Some(kept) = now {
+            let so_far = kept.take().unwrap_or(Refused {
+                pool: pool.to_owned(),
+                hits: Vec::new(),
+            });
+            *kept = Some(so_far.with(pool, hits));
+        }
+    });
 }
 
-/// **The values the person chose for a pool's limits**, each unset where purlis's default holds.
+/// **The values the person chose for a pool's limits**, each unset where the default holds; and,
+/// on a cluster pool, **what the team defining it set** (#4287): each limit's default and highest
+/// allowed, read from the cluster's Pool and never chosen here.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Chosen([Option<u64>; ALL.len()]);
+pub struct Chosen {
+    set: [Option<u64>; ALL.len()],
+    team_default: [Option<u32>; ALL.len()],
+    team_highest: [Option<u32>; ALL.len()],
+}
 
 impl Chosen {
     /// What the person set, if they did: the mark of a value as theirs.
     #[must_use]
     pub fn get(&self, id: LimitId) -> Option<u64> {
-        self.0[id as usize]
+        self.set[id as usize]
     }
 
     /// The time that holds for a wait, as [`Self::in_force`] says it; none for a size.
@@ -665,17 +737,150 @@ impl Chosen {
         id.limit().unit.as_time(self.in_force(id))
     }
 
-    /// The value that holds: what the person set, or purlis's default.
+    /// **The default this pool's limit follows**: purlis's, or the team's where it is lower, and
+    /// never above the highest the team allows. A team's default never raises a limit unasked
+    /// (the person's ruling of 2026-11-01): a higher one is [`Self::team_suggests`].
+    #[must_use]
+    pub fn default_of(&self, id: LimitId) -> u64 {
+        let ours = id.limit().default;
+        let default = self.team_default[id as usize].map_or(ours, |team| u64::from(team).min(ours));
+        self.team_highest(id)
+            .map_or(default, |top| top.min(default))
+    }
+
+    /// **The value the team suggests**: its default, where that is above what holds now. Only the
+    /// person's press sets it.
+    #[must_use]
+    pub fn team_suggests(&self, id: LimitId) -> Option<u64> {
+        self.team_default[id as usize]
+            .map(u64::from)
+            .filter(|team| *team > self.in_force(id) && *team > id.limit().default)
+    }
+
+    /// Whether the default this limit follows is the team's doing.
+    #[must_use]
+    pub fn default_by_team(&self, id: LimitId) -> bool {
+        self.default_of(id) != id.limit().default
+    }
+
+    /// **What is said of a value the person set above what the team allows**, which holds to it.
+    #[must_use]
+    pub fn over_team_said(&self, id: LimitId) -> Option<String> {
+        let top = self.team_highest(id)?;
+        (self.get(id)? > top).then(|| {
+            format!(
+                "The team that defines this pool allows at most {}, so that holds. Set a value \
+                 within it or reset this.",
+                id.limit().unit.said(top)
+            )
+        })
+    }
+
+    /// The highest the team defining this pool allows, where it set one.
+    #[must_use]
+    pub fn team_highest(&self, id: LimitId) -> Option<u64> {
+        self.team_highest[id as usize].map(u64::from)
+    }
+
+    /// The value that holds: what the person set, or the default, and never above the highest the
+    /// team allows, so a value kept from before the team lowered it holds to it too.
     #[must_use]
     pub fn in_force(&self, id: LimitId) -> u64 {
-        self.get(id).unwrap_or(id.limit().default)
+        let value = self.get(id).unwrap_or(self.default_of(id));
+        self.team_highest(id).map_or(value, |top| top.min(value))
     }
 
     /// These values, with `id` set to `value`, or back to the default.
     #[must_use]
     pub fn with(mut self, id: LimitId, value: Option<u64>) -> Chosen {
-        self.0[id as usize] = value;
+        self.set[id as usize] = value;
         self
+    }
+
+    /// **These values, under what the team set**, from the shape a Pool's `spec.limits` and a
+    /// pool's row hold: `{key: {default, highest}}`. An entry that is no limit, or a value its
+    /// limit can't be, says nothing; a default above the highest is dropped. A highest below what
+    /// the limit can be holds at the least it can be, so what asked for strictness still gets it.
+    /// A limit only a cluster pool has isn't a Pool's to set: it's the wait to be vouched for, and
+    /// the wait for a thing shouldn't be set by that thing. A limit shaping a runner isn't either:
+    /// a cluster pool's runner is shaped in its cluster. So a Pool can't make a limit more than
+    /// purlis can carry.
+    #[must_use]
+    pub fn under_team(mut self, team: Option<&Value>) -> Chosen {
+        self.team_default = [None; ALL.len()];
+        self.team_highest = [None; ALL.len()];
+        let a_pools = |limit: &&Limit| !limit.clusters_only && !limit.shapes_runner();
+        for limit in all().iter().filter(a_pools) {
+            let Some(entry) = team.and_then(|team| team.get(limit.key)) else {
+                continue;
+            };
+            let value = |key: &str| {
+                entry
+                    .get(key)
+                    .and_then(Value::as_u64)
+                    .filter(|value| limit.check(*value, None).is_ok())
+                    .and_then(|value| u32::try_from(value).ok())
+            };
+            let highest = entry
+                .get("highest")
+                .and_then(Value::as_u64)
+                .map(|highest| highest.max(limit.least))
+                .filter(|highest| limit.check(*highest, None).is_ok())
+                .and_then(|highest| u32::try_from(highest).ok());
+            self.team_highest[limit.id as usize] = highest;
+            self.team_default[limit.id as usize] = value("default")
+                .filter(|default| highest.is_none_or(|highest| *default <= highest));
+        }
+        self
+    }
+
+    /// Writes what the team set into a pool's `row`, as [`Self::under_team`] reads it.
+    pub fn team_to_row(&self, row: &mut Value) {
+        let mut team = Map::new();
+        for limit in all() {
+            let mut entry = Map::new();
+            if let Some(default) = self.team_default[limit.id as usize] {
+                entry.insert("default".to_owned(), default.into());
+            }
+            if let Some(highest) = self.team_highest[limit.id as usize] {
+                entry.insert("highest".to_owned(), highest.into());
+            }
+            if !entry.is_empty() {
+                team.insert(limit.key.to_owned(), entry.into());
+            }
+        }
+        if !team.is_empty() {
+            row["teamLimits"] = team.into();
+        }
+    }
+
+    /// **Limit `id` hit** at `in_force`, needing `needed`: under the team's highest, and any
+    /// `older` runner's, whichever is lower.
+    #[must_use]
+    pub fn hit(&self, id: LimitId, in_force: u64, needed: u64, older: Option<u64>) -> LimitHit {
+        let team = self.team_highest(id);
+        let highest = match (team, older) {
+            (Some(team), Some(older)) => Some(team.min(older)),
+            (team, older) => team.or(older),
+        };
+        let hit = id.limit().hit(in_force, needed, highest);
+        // What the team suggests is offered where it holds what is needed.
+        let team_says = self.team_default[id as usize]
+            .map(u64::from)
+            .filter(|team| *team > in_force && *team >= needed)
+            .filter(|team| highest.is_none_or(|top| *team <= top));
+        LimitHit {
+            by_team: team.is_some() && team == highest,
+            team_suggested: team_says.is_some(),
+            suggested: team_says.or(hit.suggested),
+            ..hit
+        }
+    }
+
+    /// **Wait `id` run out** at `in_force`, as [`Self::hit`].
+    #[must_use]
+    pub fn waited(&self, id: LimitId, in_force: u64, older: Option<u64>) -> LimitHit {
+        self.hit(id, in_force, in_force, older)
     }
 
     /// Writes the values set into a pool's `row`; one unset is left out.
@@ -743,7 +948,7 @@ impl RefusedValue {
     #[must_use]
     pub fn said(&self) -> String {
         format!(
-            "The value in this pool's file can't be used, so this follows purlis's default. {}. \
+            "The value in this pool's file can't be used, so this follows the default. {}. \
              Set a value or reset it.",
             self.why
         )
@@ -952,20 +1157,65 @@ mod tests {
         assert!(!top.contains("raise it"), "{top}");
     }
 
+    /// An offer is what the attempt refused was hit on (spec #4275).
     #[test]
-    fn the_refused_words_find_the_hit_they_said_and_no_other_words_do() {
+    fn an_attempt_has_the_limits_it_hit_and_no_other_attempts() {
         let hit = LimitId::CodeSize.limit().hit(1024, 1500, None);
-        let said = hit_on("hits-of-a-test", hit);
-        let refused = format!("the code did not reach the runner: {said}");
-        assert_eq!(hits_said_in("hits-of-a-test", "other words"), Vec::new());
-        // The same words from another pool's runner reach nothing of this pool's.
-        assert_eq!(hits_said_in("another-pool", &refused), Vec::new());
-        assert_eq!(hits_said_in("hits-of-a-test", &refused), vec![hit]);
+        let said = hit_on("before-any-attempt", hit);
+
+        let (words, refused) = attempt(|| format!("the code did not reach the runner: {said}"));
+        assert!(words.contains(&said));
+        assert_eq!(refused, None, "the same words, from no hit of this attempt");
+
+        let (_, refused) = attempt(|| hit_on("builds", hit));
         assert_eq!(
-            hits_said_in("hits-of-a-test", &refused),
-            vec![hit],
-            "a window drawn again is offered it again"
+            refused,
+            Some(Refused {
+                pool: "builds".to_owned(),
+                hits: vec![hit],
+            })
         );
+        assert_eq!(attempt(|| ()).1, None, "and the next attempt starts empty");
+    }
+
+    #[test]
+    fn a_limit_counts_once_in_an_attempt_and_the_pool_last_refused_on_is_its_pool() {
+        let code = |needed| LimitId::CodeSize.limit().hit(1024, needed, None);
+        let wait = LimitId::AnswerWait.limit().waited(20, None);
+        let (_, refused) = attempt(|| {
+            let _ = hit_on("left", wait);
+            let _ = hit_on("builds", code(1500));
+            let _ = hit_on("builds", wait);
+            let _ = hit_on("builds", code(1600));
+        });
+        let refused = refused.expect("it hit limits");
+        assert_eq!(refused.pool, "builds");
+        assert_eq!(refused.hits, vec![wait, code(1600)]);
+    }
+
+    #[test]
+    fn an_attempt_inside_another_keeps_its_hits_to_itself() {
+        let hit = LimitId::CodeSize.limit().hit(1024, 1500, None);
+        let wait = LimitId::AnswerWait.limit().waited(20, None);
+        let (inner, outer) = attempt(|| {
+            let _ = hit_on("outer", wait);
+            let inner = attempt(|| hit_on("inner", hit)).1;
+            let _ = hit_on("outer", wait);
+            inner
+        });
+        assert_eq!(inner.expect("its own").pool, "inner");
+        assert_eq!(outer.expect("its own").hits, vec![wait]);
+    }
+
+    #[test]
+    fn a_hit_on_another_thread_reaches_no_attempt_here() {
+        let hit = LimitId::CodeSize.limit().hit(1024, 1500, None);
+        let (_, refused) = attempt(|| {
+            std::thread::spawn(move || hit_on("elsewhere", hit))
+                .join()
+                .unwrap()
+        });
+        assert_eq!(refused, None);
     }
 
     /// #4281: a fixed limit says why and what to do instead, and has no way to be changed.
@@ -1068,6 +1318,139 @@ mod tests {
         );
     }
 
+    /// #4287: what the team set is the default, the top, and what a suggestion stops at.
+    #[test]
+    fn a_teams_default_and_highest_hold_and_a_suggestion_stops_at_the_highest() {
+        let team = json!({
+            "signInWait": {"default": 10, "highest": 40},
+            "profileSize": {"highest": 160},
+        });
+        let chosen = Chosen::default().under_team(Some(&team));
+        assert_eq!(chosen.in_force(LimitId::SignInWait), 10);
+        assert_eq!(chosen.team_highest(LimitId::SignInWait), Some(40));
+        // A value kept from before the team lowered it holds to it.
+        let high = chosen.with(LimitId::SignInWait, Some(100));
+        assert_eq!(high.in_force(LimitId::SignInWait), 40);
+        assert_eq!(
+            high.get(LimitId::SignInWait),
+            Some(100),
+            "still the person's"
+        );
+
+        let hit = chosen.waited(LimitId::SignInWait, 30, None);
+        assert_eq!(hit.suggested, Some(40));
+        let top = chosen.waited(LimitId::SignInWait, 40, None);
+        assert_eq!(top.suggested, None);
+        assert!(
+            top.said().contains("team that defines this pool"),
+            "{}",
+            top.said()
+        );
+        assert!(
+            top.said().contains("its Pool in the cluster"),
+            "{}",
+            top.said()
+        );
+
+        let over = chosen.hit(LimitId::ProfileSize, 128, 170, None);
+        assert_eq!(over.suggested, None);
+        assert!(
+            over.said().contains("team that defines this pool"),
+            "{}",
+            over.said()
+        );
+
+        assert!(over.said().contains("at most 160 MiB"), "{}", over.said());
+
+        // Only a highest set: the default holds to it.
+        let low = Chosen::default().under_team(Some(&json!({"profileSize": {"highest": 64}})));
+        assert_eq!(low.default_of(LimitId::ProfileSize), 64);
+        assert!(low.default_by_team(LimitId::ProfileSize));
+
+        // A highest below what the limit can be holds at the least; the vouch wait is no Pool's.
+        let odd = Chosen::default().under_team(Some(&json!({
+            "answerWait": {"highest": 3},
+            "vouchWait": {"default": 60, "highest": 60},
+            "memory": {"highest": 1024},
+        })));
+        assert_eq!(odd.team_highest(LimitId::Memory), None);
+        assert_eq!(odd.team_highest(LimitId::AnswerWait), Some(5));
+        assert_eq!(odd.in_force(LimitId::VouchWait), 5);
+        assert_eq!(odd.team_highest(LimitId::VouchWait), None);
+
+        // An older runner's lower top is no team's.
+        let older = chosen.waited(LimitId::SignInWait, 10, Some(10));
+        assert!(!older.by_team);
+
+        let why = LimitId::SignInWait.limit().check(41, Some(40)).unwrap_err();
+        assert!(why.contains("team that defines this pool"), "{why}");
+    }
+
+    /// The person's ruling of 2026-11-01: a team's default only lowers unasked. A higher one is an
+    /// offer, on the page and on a hit, and holds nothing until the person sets it.
+    #[test]
+    fn a_teams_higher_default_is_an_offer_and_raises_nothing() {
+        let team = json!({"profileSize": {"default": 256, "highest": 512}});
+        let chosen = Chosen::default().under_team(Some(&team));
+        assert_eq!(
+            chosen.in_force(LimitId::ProfileSize),
+            128,
+            "purlis's default holds"
+        );
+        assert_eq!(chosen.default_of(LimitId::ProfileSize), 128);
+        assert!(!chosen.default_by_team(LimitId::ProfileSize));
+        assert_eq!(chosen.team_suggests(LimitId::ProfileSize), Some(256));
+
+        // Offered where it holds what is needed; the usual suggestion where it doesn't.
+        let hit = chosen.hit(LimitId::ProfileSize, 128, 150, None);
+        assert_eq!(hit.suggested, Some(256));
+        assert!(hit.team_suggested);
+        assert!(hit.said().contains("raise it to 256 MiB"), "{}", hit.said());
+        let more = chosen.hit(LimitId::ProfileSize, 128, 300, None);
+        assert_eq!(more.suggested, Some(384));
+        assert!(!more.team_suggested);
+
+        // Once the person is there, nothing is offered.
+        let set = chosen.with(LimitId::ProfileSize, Some(256));
+        assert_eq!(set.in_force(LimitId::ProfileSize), 256);
+        assert_eq!(set.team_suggests(LimitId::ProfileSize), None);
+
+        // A lower one holds with no prompt, and offers nothing.
+        let lower = Chosen::default().under_team(Some(&json!({"profileSize": {"default": 64}})));
+        assert_eq!(lower.in_force(LimitId::ProfileSize), 64);
+        assert_eq!(lower.team_suggests(LimitId::ProfileSize), None);
+    }
+
+    /// A Pool can't make a limit more than purlis carries, and what it set round-trips a row.
+    #[test]
+    fn what_a_team_set_is_checked_as_read_and_round_trips() {
+        let team = json!({
+            "signInWait": {"default": 5000, "highest": 100000},
+            "codeSize": {"default": 2048, "highest": 1024},
+            "answerWait": {"default": "lots", "highest": 90},
+            "nothing": {"default": 1},
+        });
+        let chosen = Chosen::default().under_team(Some(&team));
+        assert_eq!(chosen.in_force(LimitId::SignInWait), 15, "purlis's default");
+        assert_eq!(chosen.team_highest(LimitId::SignInWait), None);
+        assert_eq!(
+            chosen.in_force(LimitId::CodeSize),
+            1024,
+            "a default over the top"
+        );
+        assert_eq!(chosen.team_highest(LimitId::AnswerWait), Some(90));
+        let mut row = json!({});
+        chosen.team_to_row(&mut row);
+        assert_eq!(
+            Chosen::default().under_team(row.get("teamLimits")),
+            chosen,
+            "{row}"
+        );
+        let mut none = json!({});
+        Chosen::default().team_to_row(&mut none);
+        assert_eq!(none, json!({}), "nothing written for a pool with none");
+    }
+
     /// #4381: a bad value costs that limit alone, and the file's refusal is the command's and the
     /// window's, word for word.
     #[test]
@@ -1088,7 +1471,7 @@ mod tests {
             assert_eq!(refused.len(), 1, "{bad}");
             assert_eq!(refused[0].held, bad);
             assert_eq!(Err(refused[0].why.clone()), size.check_typed(typed, None));
-            assert!(refused[0].said().contains("follows purlis's default"));
+            assert!(refused[0].said().contains("follows the default"));
         }
     }
 

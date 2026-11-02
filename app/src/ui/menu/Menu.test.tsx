@@ -280,6 +280,67 @@ describe("a menu that takes no keyboard", () => {
   });
 });
 
+describe("a row that turns unavailable under the keyboard (#4659)", () => {
+  function AtTheEdge() {
+    const [steps, setSteps] = useState(1);
+    const atEdge = steps === 0;
+    return (
+      <MenuTrigger>
+        <Button>Move</Button>
+        <Menu aria-label="Move">
+          <MenuItem
+            id="left"
+            textValue="Move left"
+            shouldCloseOnSelect={false}
+            aria-disabled={atEdge}
+            tooltip={atEdge ? "Already first" : undefined}
+            onAction={() => setSteps((was) => Math.max(0, was - 1))}
+          >
+            <MenuWords said="Move left" />
+          </MenuItem>
+          <MenuItem id="right" textValue="Move right">
+            <MenuWords said="Move right" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>
+    );
+  }
+
+  it("is the same row, keeps the keyboard and says why", async () => {
+    render(<AtTheEdge />);
+    await userEvent.tab();
+    await userEvent.keyboard("{Enter}");
+    const row = await screen.findByRole("menuitem", { name: "Move left" });
+    await waitFor(() => expect(row).toHaveFocus());
+    await userEvent.keyboard("{Enter}");
+    const tip = await screen.findByRole("tooltip");
+    expect(tip).toHaveTextContent("Already first");
+    expect(screen.getByRole("menuitem", { name: "Move left" })).toBe(row);
+    expect(row).toHaveFocus();
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveAttribute("aria-describedby", expect.stringContaining(tip.id));
+    // The first Escape is the tooltip's; the menu stays, the keyboard on the row.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+    expect(screen.getByRole("menu", { name: "Move" })).toBeInTheDocument();
+    expect(row).toHaveFocus();
+  });
+
+  it("takes its tooltip down as the keyboard leaves it, and shows it on the way back", async () => {
+    render(<AtTheEdge />);
+    await userEvent.tab();
+    await userEvent.keyboard("{Enter}");
+    const row = await screen.findByRole("menuitem", { name: "Move left" });
+    await waitFor(() => expect(row).toHaveFocus());
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("tooltip");
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+    await userEvent.keyboard("{ArrowUp}");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Already first");
+  });
+});
+
 describe("a row's shortcut", () => {
   it("is the key registry's for its act, where the registry has one", async () => {
     render(

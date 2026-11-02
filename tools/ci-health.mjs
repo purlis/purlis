@@ -13,6 +13,9 @@ import { appendFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { requiredDrift } from "./ci-push-jobs.mjs";
+import { requiredNames } from "./land.mjs";
+
 /** The `p` (0..1) percentile of `values` by nearest rank, or null for none. */
 export function percentile(values, p) {
   if (values.length === 0) return null;
@@ -100,6 +103,24 @@ export function jobStats(suites) {
   return [...durations]
     .map(([name, values]) => ({ name, ...spread(values) }))
     .sort((a, b) => b.p90 - a.p90 || a.name.localeCompare(b.name));
+}
+
+/**
+ * The jobs that were red in `suites` (of runs that ended green), as `{ name, times }`, the most
+ * often first. An evidence-only job's miss turns neither the run red nor anything else this report
+ * counts, so without this it goes quiet (#4465). Needing no list of such jobs, it names any job
+ * `continue-on-error` holds. A job cancelled or skipped said nothing.
+ */
+export function evidenceRed(suites) {
+  const counts = new Map();
+  for (const job of suites.flatMap((suite) => suite?.checkRuns?.nodes ?? [])) {
+    if (job.conclusion === "FAILURE" || job.conclusion === "TIMED_OUT") {
+      counts.set(job.name, (counts.get(job.name) ?? 0) + 1);
+    }
+  }
+  return [...counts]
+    .map(([name, times]) => ({ name, times }))
+    .sort((a, b) => b.times - a.times || a.name.localeCompare(b.name));
 }
 
 /** The warning `tools/slowest-tests.mjs` writes for a test that passed on a retry. */
@@ -229,7 +250,7 @@ export function headline(week) {
 
 /** The whole report, as Markdown for the job summary and the issue's body. */
 export function report(week) {
-  const { runs, queue, jobs, flaky, slowest, sampled } = week;
+  const { runs, queue, jobs, flaky, slowest, sampled, red, drift } = week;
   const lines = [
     `## CI health, ${week.from} to ${week.to}`,
     "",
@@ -237,6 +258,15 @@ export function report(week) {
     "",
     ...(week.unread > 0
       ? [`> [!WARNING]`, `> ${week.unread} of the week's runs could not be read: the runs list held them back. The numbers below are of the rest.`, ""]
+      : []),
+    ...(drift && drift.missing.length + drift.extra.length > 0
+      ? [
+          `> [!WARNING]`,
+          `> \`tools/ci-push-jobs.mjs\` and main's required checks have parted, so its check reads the wrong list. ` +
+            `Main requires and it does not know: ${drift.missing.join(", ") || "none"}. ` +
+            `It lists and main does not require: ${drift.extra.join(", ") || "none"}.`,
+          "",
+        ]
       : []),
     "### Runs",
     "",
@@ -277,6 +307,15 @@ export function report(week) {
     ...(jobs.some((job) => !long(job))
       ? [`${plural(jobs.filter((job) => !long(job)).length, "more job")} took under a minute at p90.`, ""]
       : []),
+    "### Red on a green run",
+    "",
+    `Jobs \`continue-on-error\` kept from turning the run red, read from ${red.runs} of main's green push and ` +
+      `nightly runs: each is evidence someone should read, and stops nothing.`,
+    "",
+    ...(red.jobs.length === 0
+      ? ["None."]
+      : ["| times | job |", "| ---: | --- |", ...red.jobs.map((one) => `| ${one.times} | ${one.name} |`)]),
+    "",
     "### Flaky tests",
     "",
     `Every \`Flaky (passed on retry N)\` warning in those ${sampled.runs} runs, by test:`,
@@ -311,10 +350,14 @@ export function report(week) {
 // refuses it as too costly), for `--sample` runs spread evenly over the week: 600 is ~60 queries,
 // about four minutes, ~400 of GraphQL's 5,000 points an hour. The slowest tests are read from the
 // newest SLOWEST_RUNS green runs on main, four rust jobs each. The merged pull requests are ~5
-// pages of 50. ~110 calls in all.
+// pages of 50. Every green nightly and EVIDENCE_PUSHES green push runs on main are read for jobs
+// red on a green run, ~7 queries, and main's required checks are two calls. ~120 calls in all.
 
 /** How many of the newest green runs on main the slowest tests are read from. */
 export const SLOWEST_RUNS = 3;
+
+/** How many of the week's green push runs on main are read for jobs red on a green run. */
+export const EVIDENCE_PUSHES = 60;
 
 const API = process.env.GITHUB_API_URL ?? "https://api.github.com";
 
@@ -426,6 +469,17 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     .slice(-SLOWEST_RUNS);
   const suites = await suitesOf(sampled.map((run) => run.check_suite_node_id), token);
   const mainSuites = await suitesOf(mainGreen.map((run) => run.check_suite_node_id), token);
+  // The nightlies are few and the only runs of most evidence jobs, so all of them are read.
+  const onMain = (run) => run.head_branch === "main" && run.conclusion === "success";
+  const greenRuns = [
+    ...completed.filter((run) => onMain(run) && run.event === "schedule"),
+    ...sample(completed.filter((run) => onMain(run) && run.event === "push"), EVIDENCE_PUSHES),
+  ];
+  const greenSuites = await suitesOf(greenRuns.map((run) => run.check_suite_node_id), token);
+  const required = requiredNames(
+    await call(`/repos/${repo}/rules/branches/main?per_page=100`, { token }),
+    (await call(`/repos/${repo}/branches/main`, { token })).protection,
+  );
   const lists = [];
   for (const job of mainSuites.flatMap((suite) => suite?.checkRuns?.nodes ?? [])) {
     if (!job.name.startsWith("rust tests (part")) continue;
@@ -454,6 +508,9 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     flaky: flakyTests(suites),
     slowest: slowestTests(lists),
     slowestFrom: mainGreen.length,
+    red: { runs: greenRuns.length, jobs: evidenceRed(greenSuites) },
+    // No names means the token could not read them, which says nothing of the list.
+    drift: required.length > 0 ? requiredDrift(required) : undefined,
   };
 }
 

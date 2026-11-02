@@ -107,11 +107,8 @@ fn a_refused_branch_move_names_purlis_worktree_add_before_a_new_workspace() {
         for then in ["`purlis worktree commit`", "`purlis worktree push`"] {
             assert!(said.contains(then), "{cmd}: {then}: {said}");
         }
-        // #3865: the commit through purlis is a sandboxed chat's; any other chat uses git.
-        let sandboxed = said.find("in a sandboxed chat with `purlis worktree commit`");
-        let plain = said.find("in any other chat with plain `git commit` and `git push`");
-        assert!(sandboxed.is_some() && plain.is_some(), "{cmd}: {said}");
-        assert!(sandboxed < plain, "{cmd}: {said}");
+        // #4534: every chat commits with the command, so no denial sends one to plain git.
+        assert!(!said.contains("plain `git commit`"), "{cmd}: {said}");
     }
 }
 

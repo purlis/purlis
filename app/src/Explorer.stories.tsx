@@ -13,7 +13,9 @@ import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Explorer, type ExplorerPart } from "./Explorer";
+import { cloneMissingId, forgetFailedCloneId, type Offer } from "./actions";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
+import type { CloneState } from "./repoClones";
 import type { FileScope, FolderEntry, Panels as PanelsModel, PlaneId } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
 import { Panel, PanelTitle } from "./ui/panel/Panel";
@@ -117,17 +119,43 @@ function stateOf(repos: string[], absent: string[] = []): WorkspaceState {
   };
 }
 
+const NO_OFFERS = new Map<string, Offer>();
+
+/** The catalogue's two rows for a failed clone the workspace does not name. */
+function offersFor(repo: string): ReadonlyMap<string, Offer> {
+  const row = (id: string, title: string): [string, Offer] => [
+    id,
+    {
+      id,
+      title,
+      available: true,
+      reason: "",
+      does: { verb: "cloneMissing", workspace: "smart-ide", repos: [repo] },
+    },
+  ];
+  return new Map([
+    row(cloneMissingId(repo), `Clone ${repo}`),
+    row(forgetFailedCloneId(repo), `Dismiss ${repo}`),
+  ]);
+}
+
+const failedClone = (repo: string): ReadonlyMap<string, CloneState> =>
+  new Map([[repo, { state: "failed", said: `${repo}: no access to this repo.` }]]);
+
 /** The view in a left side panel, its head the view's title and its actions, as `RegionFrame`
  *  draws it (#3330), and the view under it the one scroll. */
 function View({
   repos,
   absent = [],
   part = "explorer",
+  failed,
 }: {
   repos: string[];
   absent?: string[];
   /** The Explorer's part: `repos` is the Repos view, where a repo not cloned is listed. */
   part?: ExplorerPart;
+  /** A repo whose clone failed and that the workspace does not name (#4395). */
+  failed?: string;
 }) {
   const [head, setHead] = useState<HTMLElement | null>(null);
   return (
@@ -155,7 +183,8 @@ function View({
                 chats={[]}
                 spot={undefined}
                 onPick={() => {}}
-                offers={new Map()}
+                offers={failed === undefined ? NO_OFFERS : offersFor(failed)}
+                cloning={failed === undefined ? undefined : failedClone(failed)}
                 onPress={() => {}}
                 onReadAgain={() => {}}
                 onOpenFile={() => {}}
@@ -223,6 +252,32 @@ export const FilterAllRepos: Story = {
       canvas.getByRole("button", { name: /Search contents in Workspace/ }),
     ).toBeVisible();
     (document.activeElement as HTMLElement | null)?.blur();
+    await settled();
+  },
+};
+
+/** **A workspace that names repos and has none cloned** (#4395): the section alone, with no line
+ *  above it saying the workspace has no repos. */
+export const NoRepoClonedYet: Story = {
+  args: { repos: [], absent: ["k8s-operator", "theme-lab"], part: "repos" },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("absent")).toHaveTextContent("k8s-operator");
+    await expect(canvas.queryByText("No repos in this workspace")).toBeNull();
+    await settled();
+  },
+};
+
+/**
+ * **A clone that failed, of a repo the workspace does not name** (#4395): the core's sentence, with
+ * Retry and Dismiss always shown, since a failure is what the row is there to say.
+ */
+export const AFailedCloneTheWorkspaceDoesNotName: Story = {
+  args: { repos: ["purlis"], failed: "k8s-operator", part: "repos" },
+  play: async ({ canvas }) => {
+    const absent = await canvas.findByTestId("absent");
+    await expect(absent).toHaveTextContent("k8s-operator: no access to this repo.");
+    await expect(canvas.getByRole("button", { name: "Retry k8s-operator" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Dismiss k8s-operator" })).toBeVisible();
     await settled();
   },
 };

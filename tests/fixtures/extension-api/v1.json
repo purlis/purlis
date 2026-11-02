@@ -1,0 +1,276 @@
+{
+  "protocol": 4,
+  "limits": {
+    "answer_seconds": 5,
+    "router_ms": 100,
+    "line_bytes": 524288,
+    "prompt_bytes": 16384,
+    "pointed": 5,
+    "panels": 8,
+    "hosts": 16
+  },
+  "manifest": {
+    "version": 4,
+    "id": "house-studio",
+    "name": "House studio",
+    "capabilities": [
+      "grader",
+      "studio-panel",
+      "skill-router"
+    ],
+    "contributes": {
+      "runs": "bin/house-studio",
+      "grader": {
+        "title": "House grader"
+      },
+      "studio-panel": [
+        {
+          "id": "checks",
+          "title": "Checks"
+        }
+      ],
+      "skill-router": {
+        "title": "House router",
+        "reads-prompts": true
+      }
+    }
+  },
+  "panel": {
+    "question": {
+      "charter": 4,
+      "extension": "house-studio",
+      "studio": "studio-panel",
+      "ask": {
+        "ask": "panel",
+        "panel": "checks",
+        "skill": "pdf",
+        "files": [
+          {
+            "path": "SKILL.md",
+            "text": "---\n",
+            "executable": false
+          }
+        ]
+      },
+      "writes": []
+    },
+    "answer": {
+      "charter": 4,
+      "blocks": [
+        {
+          "kind": "table",
+          "caption": "Checks",
+          "columns": [
+            "Check",
+            "Result"
+          ],
+          "rows": [
+            {
+              "key": "lint",
+              "cells": [
+                "lint",
+                "clean"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "question_with_settings": {
+      "charter": 4,
+      "extension": "house-studio",
+      "studio": "studio-panel",
+      "ask": {
+        "ask": "panel",
+        "panel": "checks",
+        "skill": "pdf",
+        "files": [
+          {
+            "path": "SKILL.md",
+            "text": "---\n",
+            "executable": false
+          }
+        ]
+      },
+      "settings": {
+        "strict": true
+      },
+      "writes": []
+    }
+  },
+  "route": {
+    "question": {
+      "charter": 4,
+      "extension": "house-studio",
+      "studio": "skill-router",
+      "ask": {
+        "ask": "route",
+        "skills": [
+          {
+            "name": "pdf",
+            "description": "Makes PDFs.",
+            "pinned": false
+          }
+        ],
+        "budget": {
+          "skills": 40,
+          "chars": 8000
+        },
+        "besides": {
+          "skills": 3,
+          "chars": 300
+        }
+      },
+      "writes": []
+    },
+    "answer": {
+      "charter": 4,
+      "hidden": [
+        {
+          "skill": "pdf",
+          "why": "Nothing in this project makes PDFs"
+        }
+      ]
+    }
+  },
+  "prompt": {
+    "question": {
+      "charter": 4,
+      "extension": "house-studio",
+      "studio": "skill-router",
+      "ask": {
+        "ask": "prompt",
+        "prompt": "make me a pdf",
+        "skills": [
+          {
+            "name": "pdf",
+            "line": "Makes PDFs."
+          }
+        ]
+      },
+      "writes": []
+    },
+    "answer": {
+      "charter": 4,
+      "pointed": [
+        "pdf"
+      ]
+    }
+  },
+  "grade": {
+    "question": {
+      "charter": 4,
+      "extension": "house-studio",
+      "studio": "grader",
+      "ask": {
+        "ask": "grade",
+        "request": {
+          "skill": "pdf",
+          "triggers": [
+            {
+              "query": "make me a pdf",
+              "should_trigger": true
+            }
+          ],
+          "outcomes": [],
+          "arms": [
+            "with",
+            "without"
+          ],
+          "runs": 1
+        }
+      },
+      "writes": []
+    },
+    "run_chat": {
+      "charter": 4,
+      "run_chat": {
+        "arm": "with",
+        "prompt": "make me a pdf"
+      }
+    },
+    "chat_ran": {
+      "charter": 4,
+      "chat_ran": {
+        "chat": "chat-0",
+        "started": [
+          "pdf"
+        ],
+        "tokens": 1000,
+        "cost_usd": null,
+        "ms": 1500,
+        "end": "turn"
+      }
+    },
+    "chat_not_run": {
+      "charter": 4,
+      "chat_ran": {
+        "chat": null,
+        "started": [],
+        "tokens": null,
+        "cost_usd": null,
+        "ms": 0,
+        "end": "over-cap"
+      }
+    },
+    "ends": [
+      {
+        "end": "turn"
+      },
+      {
+        "end": "timed-out"
+      },
+      {
+        "end": "not-started",
+        "why": "no chat"
+      },
+      {
+        "end": "cancelled"
+      },
+      {
+        "end": "asked"
+      },
+      {
+        "end": "over-cap"
+      },
+      {
+        "end": "over-limit"
+      }
+    ],
+    "report": {
+      "charter": 4,
+      "report": {
+        "triggers": [
+          {
+            "query": "make me a pdf",
+            "should_trigger": true,
+            "arm": "with",
+            "runs": 1,
+            "triggered": 1,
+            "rate": 1.0,
+            "pass": true,
+            "chats": [
+              "chat-0"
+            ]
+          }
+        ],
+        "arms": [
+          {
+            "arm": "with",
+            "pass_rate": {
+              "mean": 1.0,
+              "stddev": 0.0,
+              "min": 1.0,
+              "max": 1.0
+            },
+            "tokens": null,
+            "seconds": null,
+            "chats": 1,
+            "not_run": 0
+          }
+        ],
+        "delta": null
+      }
+    }
+  }
+}

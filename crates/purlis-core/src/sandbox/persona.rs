@@ -531,6 +531,37 @@ pub fn digest_allowed_here(
     Some(digest_of(&hosts, &tools, is_default(root, persona)))
 }
 
+/// **Whether an Allow of `persona`'s list, as `text`, the project's file, says it, blesses only
+/// what the person has seen** (#4595): the file lists nothing for it, or they allowed exactly the
+/// list. Read from the bytes a write is pinned to, and from the file's own list, never what policy
+/// leaves of it: a host a lock hides is still one nobody saw.
+pub fn list_seen_in(root: &Path, text: &str, persona: &str, locks: &Locks) -> bool {
+    let said = super::Plane::of(Some(text)).said();
+    let Some(policy) = said.policy.or(said.unset) else {
+        return true;
+    };
+    let Some(grants) = of(&policy.personas, Some(persona)) else {
+        return true;
+    };
+    (grants.hosts.is_empty() && grants.tools.is_empty())
+        || allowed_here(root, &policy.personas, Some(persona), locks).is_some()
+}
+
+/// **The digest of `persona`'s list as `text`, the project's file, says it**, for the Allow that
+/// goes with a line just written to it (#4595). Worked out from what was written, never read
+/// back, so another writer's line never comes in under this Allow.
+pub fn digest_in(root: &Path, text: &str, persona: &str, locks: &Locks) -> Option<String> {
+    let said = super::Plane::of(Some(text)).said();
+    let policy = said.policy.or(said.unset)?;
+    let grants = of(&policy.personas, Some(persona))?;
+    let (tools, _) = reached_tools(root, persona, grants, locks);
+    Some(digest_of(
+        &reached(grants, locks),
+        &tools,
+        is_default(root, persona),
+    ))
+}
+
 /// `persona`'s hosts and tools under `locks`, where the person here allowed exactly them.
 fn allowed_here(
     root: &Path,

@@ -8240,6 +8240,300 @@
         "status-item.dot-warning.text": {
           "$ref": "#/$defs/part-text"
         },
+        "steps.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.root.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.root.current.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.root.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.root.skipped.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.root.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.root.later.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.count.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.count.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.count.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.count.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.count.done.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.count.done.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.count.current.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.count.current.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.count.current.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.count.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.count.attention.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.count.attention.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.count.skipped.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.count.skipped.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.count.skipped.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.count.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.count.waiting.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.count.waiting.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.count.later.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.count.later.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.count.later.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.press.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "steps.press.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "steps.press.done.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "steps.press.done.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "steps.press.current.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "steps.press.current.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "steps.press.attention.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "steps.press.attention.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "steps.press.skipped.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "steps.press.skipped.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "steps.press.waiting.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "steps.press.waiting.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "steps.press.later.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "steps.press.later.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "steps.mark.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.mark.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "steps.mark.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.mark.done.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "steps.mark.current.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.mark.current.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "steps.mark.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.mark.attention.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "steps.mark.skipped.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.mark.skipped.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "steps.mark.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.mark.waiting.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "steps.mark.later.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.mark.later.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "steps.name.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.name.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.name.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.name.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.name.done.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.name.done.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.name.current.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.name.current.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.name.current.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.name.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.name.attention.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.name.attention.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.name.skipped.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.name.skipped.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.name.skipped.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.name.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.name.waiting.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.name.waiting.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.name.later.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.name.later.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.name.later.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.line.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.line.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.line.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.line.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.line.done.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.line.done.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.line.current.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.line.current.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.line.current.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.line.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.line.attention.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.line.attention.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.line.skipped.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.line.skipped.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.line.skipped.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.line.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.line.waiting.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.line.waiting.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.line.later.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.line.later.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.line.later.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
         "switch.root.text": {
           "$ref": "#/$defs/part-text"
         },

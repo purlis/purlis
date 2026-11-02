@@ -13,10 +13,10 @@
 
 use std::path::{Path, PathBuf};
 
+/// The line format's one parser, and its `str.strip` and `str.splitlines` (#3482).
 pub use purlis_skills::change::{
     BuiltInTemplates, Offer, Problem, SkillTemplate, Template, TemplateId, check,
 };
-/// The line format's one parser, and its `str.strip` and `str.splitlines` (#3482).
 pub use purlis_skills::fence;
 pub use purlis_skills::{
     Argument, At, BUILT_IN_PREFIXES, Budget, Chat, Clash, Compat, DIR_IN_BUNDLE, Declared,
@@ -40,6 +40,9 @@ pub use purlis_skills::runs;
 pub use purlis_skills::{review, tree};
 pub mod source;
 pub use purlis_skills::{About, Deprecated, Lifecycle, about_of};
+pub mod budget_setting;
+pub use budget_setting::budget_in;
+
 pub mod first_open;
 pub mod grades;
 pub mod graph;
@@ -114,6 +117,15 @@ pub struct PlaneSkills<'a> {
     pub routed: Option<&'a router::Routed>,
 }
 
+/// **The budget of a chat whose plane skills are `at`**: the adapter's numbers where it has none,
+/// so the numbers it is routed by and the numbers it is shown are one (#4610).
+pub fn budget_at(at: Option<PlaneSkills<'_>>, harness: Harness) -> Budget {
+    at.map_or_else(
+        || harness.skill_budget(),
+        |at| budget_in(at.plane, at.workspace, harness),
+    )
+}
+
 /// The skill set of a chat on `harness` armed with `kit`, asked of [`purlis_skills::skill_set`].
 ///
 /// The built-in skills come from the bundle in `kit`, and the plane's from `kit.skills`, where
@@ -168,7 +180,7 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 pub const SHIPPED: [&str; 12] = [
     "purlis-add-curation-action",
     "purlis-browser",
-    "purlis-building-purlis-ui",
+    "purlis-building-ui",
     "purlis-compact",
     "purlis-handoff",
     "purlis-persona",
@@ -1001,22 +1013,30 @@ impl Running<'_> {
         (found, off)
     }
 
-    /// Its set, routed as its start routed it ([`lay_out_for_chat`]): from the same built-in
-    /// skills, harness, scope, workspace, persona and repo skills (#3245).
-    fn set(&self) -> SkillSet {
+    /// Where its plane skills are read from, as its start read them.
+    fn at(&self) -> Option<PlaneSkills<'_>> {
         // A start that read no plane skills (`on` off, or a runner's chat, whose host read
         // them) holds no scope of its own: the plane's root, and no clone.
         let start = self.start.filter(|start| start.on);
         let tried = start.is_some_and(|start| start.tried);
-        let at = self.plane_skills.then(|| PlaneSkills {
+        self.plane_skills.then(|| PlaneSkills {
             plane: start.map_or(self.plane, |start| start.root.as_path()),
             workspace: self.workspace.filter(|_| !tried),
             repo: start.map_or(&[], |start| start.repo.as_slice()),
             routed: start.and_then(|start| start.routed.as_deref()),
-        });
+        })
+    }
+
+    /// Its set, routed as its start routed it ([`lay_out_for_chat`]): from the same built-in
+    /// skills, harness, scope, workspace, persona and repo skills (#3245).
+    fn set(&self) -> SkillSet {
+        let tried = self
+            .start
+            .filter(|start| start.on)
+            .is_some_and(|start| start.tried);
         routed(
             self.built_in,
-            at,
+            self.at(),
             self.persona.filter(|_| !tried),
             self.harness,
         )
@@ -1038,6 +1058,8 @@ pub struct Offered {
     /// Why a router hid it from the chat's listing (SK-15), where it did: its harness was not
     /// handed it, so Use skill… asks the chat to load it with `skill_load` instead.
     pub hidden: Option<Hidden>,
+    /// The label of the source it was installed from, where it was. For the person's list.
+    pub source_label: Option<String>,
 }
 
 /// **What Use skill… offers a chat, and its skill budget** (SK-12): every skill of its set, the
@@ -1077,6 +1099,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
     let set = chat.set();
     let still_over = set.routing.as_ref().and_then(|routing| routing.still_over);
     let hidden = |name: &str| set.hidden_by_router(name).cloned();
+    let labels = SourceLabels::of(chat.plane, chat.workspace, chat.persona);
     let offered: Vec<Offered> = set
         .effective
         .iter()
@@ -1085,6 +1108,11 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
             let declared = declared(&effective.skill);
             Offered {
                 hidden: hidden(&effective.skill.name),
+                source_label: labels.of_skill(
+                    &effective.skill.name,
+                    effective.origin,
+                    effective.local,
+                ),
                 takes_arguments: !declared.arguments.is_empty() || declared.hint.is_some(),
                 known_as: chat
                     .harness
@@ -1098,7 +1126,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         offered
             .iter()
             .map(|one| (&one.effective.skill, &one.declared)),
-        chat.harness.skill_budget(),
+        budget_at(chat.at(), chat.harness),
     );
     let held_env = chat
         .start
@@ -1120,6 +1148,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
             let declared = declared(&one.skill);
             Offered {
                 hidden: None,
+                source_label: None,
                 takes_arguments: !declared.arguments.is_empty() || declared.hint.is_some(),
                 known_as: chat.harness.skill_name(&one.id, one.origin),
                 declared,
@@ -1283,7 +1312,7 @@ fn routed(
         persona,
         harness.skills(),
         None,
-        Some(harness.skill_budget()),
+        Some(budget_at(at, harness)),
     )
 }
 
@@ -2049,7 +2078,7 @@ impl OwnCatalogue {
 }
 
 /// `n` with its thousands set apart by commas, as the window writes a count (`1,310`).
-fn grouped(n: usize) -> String {
+pub(crate) fn grouped(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (at, digit) in digits.chars().enumerate() {
@@ -2165,7 +2194,7 @@ fn harnesses_in_the_studio(
                 set,
                 route,
                 &own,
-                Some(harness.skill_budget()),
+                Some(budget_in(plane, workspace, harness)),
                 || pins.to_vec(),
                 None,
             );
@@ -2331,6 +2360,9 @@ fn branch_folder_of(clone: &Path, name: &str, here: &Path) -> Option<std::path::
 pub struct StudioRow {
     /// Its name, or its folder's where it names none.
     pub name: String,
+    /// The label of the source it was installed from, where it was: `mattpocock` (ADR 0100, amended
+    /// 2026-11-01). For a person's lists, and never told to a chat.
+    pub source_label: Option<String>,
     pub origin: Origin,
     /// Whether it is a local skill, kept on this machine in its level's `skills.local/` (#2767).
     pub local: bool,
@@ -2443,6 +2475,7 @@ fn outside_rows(
                 (Vec::new(), Vec::new())
             };
             StudioRow {
+                source_label: None,
                 name: found.id.clone(),
                 origin: found.origin,
                 local: false,
@@ -2993,6 +3026,45 @@ pub fn studio_list(
     )
 }
 
+/// **The sources of the skills a chat's place sees installed** (ADR 0100, amended 2026-11-01):
+/// what a person's lists label a skill with.
+pub struct SourceLabels {
+    locked: Vec<source::Locked>,
+    workspace: Option<String>,
+    persona: Option<String>,
+}
+
+impl SourceLabels {
+    /// Those of the plane at `plane`, for a chat's `workspace` and `persona`. A lockfile that
+    /// cannot be read labels nothing, and its own reader says why.
+    pub fn of(plane: &Path, workspace: Option<&str>, persona: Option<&str>) -> SourceLabels {
+        SourceLabels {
+            locked: source::lock::every(plane)
+                .0
+                .into_iter()
+                .map(|(_, one)| one)
+                .collect(),
+            workspace: workspace.map(str::to_owned),
+            persona: persona.map(str::to_owned),
+        }
+    }
+
+    /// The label of the skill `name` of `origin`, if it was installed from a source.
+    pub fn of_skill(&self, name: &str, origin: Origin, local: bool) -> Option<String> {
+        let level = match origin {
+            Origin::Project => verbs::Level::project(),
+            Origin::Workspace => verbs::Level::workspace(self.workspace.as_deref()?),
+            Origin::Persona => verbs::Level::persona(self.persona.as_deref()?),
+            _ => return None,
+        }
+        .local(local);
+        self.locked
+            .iter()
+            .find(|one| one.is(&level, name))
+            .map(|one| one.source.label())
+    }
+}
+
 /// **What a studio list is read for** (#3781).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reading {
@@ -3025,6 +3097,10 @@ pub fn studio_list_for(
     let harnesses =
         harnesses_in_the_studio(&set, plane, workspace, &names, &pins, env, &known, reading);
     let mut rows = rows_of(&set, plane, &names, reading);
+    let labels = SourceLabels::of(plane, workspace, persona);
+    for row in &mut rows {
+        row.source_label = labels.of_skill(&row.name, row.origin, row.local);
+    }
     // The plane's own skills have a list's budget of their own (#3459): what the clones and the
     // person's own folders hold never leaves them unread, and Needs you's problems in a skill are
     // theirs.
@@ -3090,6 +3166,15 @@ fn with_plane_lint(
     }
     drop(files);
     for ((at, one), theirs) in linted.into_iter().zip(theirs) {
+        // A skill purlis refuses to hand is in no chat, whatever the set read of it (#4352).
+        rows[at].left_out = one
+            .findings
+            .iter()
+            .find(|found| {
+                found.severity == purlis_skills::Severity::Blocks
+                    && matches!(found.lint, purlis_skills::Lint::Refused(_))
+            })
+            .and_then(Finding::shown);
         rows[at].lint = one
             .findings
             .iter()
@@ -3146,9 +3231,14 @@ fn persona_rows_with(
         .map(|persona| {
             let set = purlis_skills::persona_set(plane, &machine, &persona, Route::Plugin);
             let names = names_of(plane, &persona);
+            let labels = SourceLabels::of(plane, None, Some(&persona));
             let rows = studio_rows(&set, plane, &names)
                 .into_iter()
                 .filter(|row| row.origin == Origin::Persona)
+                .map(|mut row| {
+                    row.source_label = labels.of_skill(&row.name, row.origin, row.local);
+                    row
+                })
                 .collect();
             PersonaRows { persona, rows }
         })
@@ -3215,6 +3305,7 @@ fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) 
             let folder = e.skill.path.parent().unwrap_or(&e.skill.path);
             let written = written(e.origin, &e.skill.name);
             StudioRow {
+                source_label: None,
                 name: e.skill.name.clone(),
                 origin: e.origin,
                 local: e.local,
@@ -3246,6 +3337,7 @@ fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) 
         .chain(set.from_the_harness.iter().map(|h| {
             let written = h.reference.to_string();
             StudioRow {
+                source_label: None,
                 name: written.clone(),
                 origin: Origin::Harness,
                 local: false,
@@ -3275,6 +3367,7 @@ fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) 
                 written(l.origin, &l.name)
             };
             StudioRow {
+                source_label: None,
                 name: l.name.clone(),
                 origin: l.origin,
                 local: l.local,

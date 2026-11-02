@@ -21,6 +21,7 @@ macro_rules! tauri_context {
 
 mod about;
 mod activity;
+mod agentidentity;
 mod alerts;
 mod asking;
 mod asknotify;
@@ -112,6 +113,7 @@ mod killswitch;
 mod kubectl;
 mod lifecycle;
 mod live;
+mod loginasks;
 mod mcpfailed;
 mod memories;
 mod nativewindow;
@@ -133,6 +135,7 @@ mod planes;
 mod planewatch;
 mod poolfollow;
 mod poolprofiles;
+mod poolsetuptab;
 mod poolsignin_confirm;
 mod pooltools;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -1677,7 +1680,7 @@ async fn start_chat(
     boxes: Boxes,
     columns: u16,
     rows: u16,
-) -> Result<Started, String> {
+) -> Result<Started, poolprofiles::LimitRefused> {
     let label = match label {
         Some(raw) => purlis_core::reopen::label(&raw)?,
         None => None,
@@ -1694,31 +1697,33 @@ async fn start_chat(
                 reason: asked.reason,
             });
         // git is asked once about the local file for the whole start (#2179).
-        let (mut started, said) = hostedsessions::cancelled_by(cancel, || {
-            purlis_core::profiles::git_asked_once(|| {
-                worktrees::on_a_branch(
-                    held.root(),
-                    config.as_deref(),
-                    cwd.as_deref().map(std::path::Path::new),
-                    named.as_deref(),
-                    boxes.new_branch,
-                    |cwd| {
-                        start_chat_in(
-                            &held,
-                            profile,
-                            persona,
-                            cwd,
-                            name,
-                            label,
-                            Picked {
-                                show_footer,
-                                without_sandbox,
-                            },
-                            columns,
-                            rows,
-                        )
-                    },
-                )
+        let (mut started, said) = poolprofiles::offering_limits(|| {
+            hostedsessions::cancelled_by(cancel, || {
+                purlis_core::profiles::git_asked_once(|| {
+                    worktrees::on_a_branch(
+                        held.root(),
+                        config.as_deref(),
+                        cwd.as_deref().map(std::path::Path::new),
+                        named.as_deref(),
+                        boxes.new_branch,
+                        |cwd| {
+                            start_chat_in(
+                                &held,
+                                profile,
+                                persona,
+                                cwd,
+                                name,
+                                label,
+                                Picked {
+                                    show_footer,
+                                    without_sandbox,
+                                },
+                                columns,
+                                rows,
+                            )
+                        },
+                    )
+                })
             })
         })?;
         started.notices.splice(0..0, said);
@@ -3031,6 +3036,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<hooks::ChatTouching>()
         // What `chat-doing` carries (#1493).
         .typ::<doing::ChatDoing>()
+        // What `chat-prompt-routing` carries (#4445).
+        .typ::<useskill::ChatPromptRouting>()
         // What `browser-ask-ended` carries (#2015).
         .typ::<browserneedsyou::AskEnded>()
         // What `chat-sandbox-blocked` carries (#1338).
@@ -3143,11 +3150,13 @@ fn ui_rpc_client() -> String {
     let names = if client.contains("Channel<") {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
          __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
-         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED, Channel"
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED, \
+         windowOnlyLimitRefused as __WINDOW_ONLY_LIMIT_REFUSED, Channel"
     } else {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
          __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
-         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED"
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED, \
+         windowOnlyLimitRefused as __WINDOW_ONLY_LIMIT_REFUSED"
     };
     client.replacen(
         TAURI_INVOKE,
@@ -3236,6 +3245,8 @@ fn without_channel_commands(bindings: &str) -> String {
                 "__WINDOW_ONLY_REFUSED"
             } else if command.contains(", StartRefused>(__TAURI_INVOKE(") {
                 "__WINDOW_ONLY_START_REFUSED"
+            } else if command.contains(", LimitRefused>(__TAURI_INVOKE(") {
+                "__WINDOW_ONLY_LIMIT_REFUSED"
             } else {
                 panic!(
                     "`{name}` is the window's alone and its error is a shape the link's client has no refusal for"
@@ -4166,6 +4177,19 @@ pub fn run() {
                         );
                     })
                 })
+                // A chat's latest prompt changed whether it fell back: its tab and the studio
+                // read it again (#4445). Not `plane-changed`: nothing moved on disk.
+                .telling_prompt_routing({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: useskill::ChatPromptRouting| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            useskill::PROMPT_ROUTING,
+                            &told,
+                        );
+                    })
+                })
                 // A sandbox block a chat's hook found: the window shows it as a Notice on the
                 // chat's tab, with Report for one of purlis's own (#1338).
                 .telling_blocks({
@@ -4350,6 +4374,8 @@ pub fn run() {
                 // Each line of a dispatch as the app records it: an open Activity tab adds
                 // it without reading the records again (#1495). To the window holding the
                 // project only: a line carries what a chat said.
+                // A task's question closed or off its route, in the Inbox (#4556, #4557).
+                .telling_question_updates(std::sync::Arc::new(dispatched::keep_update))
                 // A task gone quiet, on its tab (#1981).
                 .telling_task_quiet({
                     let window = app.handle().clone();

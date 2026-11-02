@@ -174,7 +174,7 @@ function FinishedRow({
   /** Why Reopen does nothing, where it does nothing: said to a screen reader on the button,
    *  which stays in the Tab order, and in the opened row. A disabled button takes no focus,
    *  so its reason would reach nobody on a keyboard. */
-  const cannot = task.reopens ? undefined : NO_CONVERSATION;
+  const cannot = task.reopens ? undefined : (task.not_reopened ?? NO_CONVERSATION);
   // What it used, kept when it ended (#1500): on its name's hover, read as the pointer comes
   // on. A task still waiting to start has no record to read.
   const used = useTokensOnHover({ finished: task.id });
@@ -377,7 +377,7 @@ function FinishedRow({
       )}
       {/* The last Reopen started a chat that ended at once: the core's sentence, kept on the
           row until the next try. */}
-      {task.not_reopened !== null && (
+      {task.reopens && task.not_reopened !== null && (
         <p className="finished-note ui-text-secondary">{task.not_reopened}</p>
       )}
       {shown && (

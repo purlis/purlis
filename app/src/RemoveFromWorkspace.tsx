@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { commands, type PlaneId } from "./bindings";
+import { forgetFailedClone } from "./repoClones";
 import { AlertDialog } from "./ui/dialog/Dialog";
 
 /**
@@ -39,8 +40,11 @@ export function RemoveFromWorkspace({
     setTrouble(null);
     try {
       const got = await commands.dropRepoMembership(plane, workspace, repo);
-      if (got.status === "ok") onDone(got.data);
-      else setTrouble(got.error);
+      if (got.status === "ok") {
+        // Named no more, a failure of it would otherwise stay as a row of its own (#4395).
+        forgetFailedClone(plane, workspace, repo);
+        onDone(got.data);
+      } else setTrouble(got.error);
     } catch (err: unknown) {
       setTrouble(String(err));
     } finally {

@@ -134,6 +134,7 @@ export type WindowDoing = {
   openSettings: (plane: string) => void;
   /** Brings a project to the front and opens its Saving tab (charter-app#294). */
   openSaving: (plane: string) => void;
+  openPoolSetup: (plane: string) => void;
   /** Opens the Settings tab (SE-16) on the project in front, at its focused level (SE-23), or
    *  draws it at You where the opener is when there is none. The window's, because which
    *  project is in front is. */

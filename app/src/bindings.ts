@@ -362,10 +362,13 @@ export const commands = {
 	 *  is made for, else asked. `forge` is the operator's answer (`github`, `gitlab`) on the call
 	 *  after a question.
 	 * 
+	 *  **`template` is laid out in a project this call made** (FR-17, #4599), by id. A folder that
+	 *  is a project already keeps what it has, and only opens.
+	 * 
 	 *  On a blocking thread (#1949), for [`open_plane`]'s reason and because making the project
 	 *  writes its files and runs git.
 	 */
-	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge })),
+	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null, template: string | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge, template })),
 	/**
 	 *  Which harnesses are installed and signed in, and whether `gh` and `glab` are logged in.
 	 * 
@@ -702,6 +705,8 @@ export const commands = {
 	 *  each is told on its next turn.
 	 */
 	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
+	/**  **The person's press on a login's notice** (#4595). The window's alone (`ui::WINDOW_ONLY`). */
+	answerBrowserLogin: (plane: PlaneId, session: number, id: number, press: Press, shown: string, typed: string | null, reason: string | null) => typedError<Pressed, string>(__TAURI_INVOKE("answer_browser_login", { plane, session, id, press, shown, typed, reason })),
 	/**
 	 *  **Allow or Keep off on run `run` of chat `session`'s tool on its pool** (#2047): with
 	 *  `allow`, this desktop sends the tool its vault values on the pool's runner for that run
@@ -1604,6 +1609,40 @@ export const commands = {
 	 */
 	forgeDeviceSignInCancel: (flow: number) => __TAURI_INVOKE<void>("forge_device_sign_in_cancel", { flow }),
 	/**
+	 *  **What the Agent identity tab draws**, read fresh. Each row proves itself against GitHub, so
+	 *  it shows what it acts as now.
+	 */
+	agentIdentities: (plane: PlaneId) => typedError<IdentitiesShown, string>(__TAURI_INVOKE("agent_identities", { plane })),
+	/**
+	 *  **Makes the App on GitHub**: the page opened in the person's browser, its one redirect taken,
+	 *  the key stored, and the page for choosing its repos opened. `owner` is the account's name, an
+	 *  organisation's, or with `personal` the person's own. Answers the client id.
+	 */
+	agentIdentityCreate: (plane: PlaneId, attempt: string, owner: string, personal: boolean, workflows: boolean) => typedError<string, string>(__TAURI_INVOKE("agent_identity_create", { plane, attempt, owner, personal, workflows })),
+	/**  Stop making the App: the listener closes at once, and nothing is kept. */
+	agentIdentityCreateCancel: (attempt: string) => __TAURI_INVOKE<void>("agent_identity_create_cancel", { attempt }),
+	/**
+	 *  **Opens GitHub's page again** for the try under way. The page's address never reaches the
+	 *  window.
+	 */
+	agentIdentityReopen: () => typedError<null, string>(__TAURI_INVOKE("agent_identity_reopen")),
+	/**  **How an App stands on GitHub**, asked as the tab waits for it to be installed. Changes nothing. */
+	agentIdentityStand: (plane: PlaneId, app: string) => typedError<IdentityStand, string>(__TAURI_INVOKE("agent_identity_stand", { plane, app })),
+	/**  **The exact lines Finish adds** (Q11), from the one source Finish writes from. */
+	agentIdentityLines: (app: string, personas: string[]) => typedError<string, string>(__TAURI_INVOKE("agent_identity_lines", { app, personas })),
+	/**
+	 *  **Finish** (Q11, Q17): proves a real token first, so a failed proof writes nothing, then adds
+	 *  the lines, then allows them on this machine. A persona with anything else waiting for an Allow
+	 *  isn't allowed here, nor is the default persona, whose Allow reaches every chat that names no
+	 *  persona: only these lines were shown, so those stay the person's own Allow.
+	 */
+	agentIdentityFinish: (plane: PlaneId, app: string, personas: string[]) => typedError<IdentityFinished, string>(__TAURI_INVOKE("agent_identity_finish", { plane, app, personas })),
+	/**
+	 *  **Removes an identity at once** (Q13): key, tool lines and live tokens, of what this flow
+	 *  made. What remains on GitHub's side is the App itself, and the answer names its page.
+	 */
+	agentIdentityRemove: (plane: PlaneId, app: string) => typedError<IdentityRemoved, string>(__TAURI_INVOKE("agent_identity_remove", { plane, app })),
+	/**
 	 *  Sign in to `kind` on `host` in the person's browser, as the try `attempt`: the forge's
 	 *  authorization page is opened there, its one redirect is taken on a loopback port, and the
 	 *  code is exchanged for a token kept in the account's own keyring item. The account as Settings
@@ -2174,9 +2213,48 @@ export const commands = {
 	/**
 	 *  **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
 	 *  skill's Grades tab draws its bars and its list from, with whether it has trigger tests and the
-	 *  grade of it running now (#3928), and what a running grade's page starts from.
+	 *  grade of it running now (#3928).
 	 */
 	skillGrades: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<SkillGrades, string>(__TAURI_INVOKE("skill_grades", { plane, level, skill })),
+	/**
+	 *  **Where the skill's grade `grade` is now** (#4338): its latest step while it runs, else `None`
+	 *  (its scorecard then says how it ended). Read only, from this app's own memory of its grades,
+	 *  as Stop is.
+	 */
+	skillGradeRunning: (plane: PlaneId, grade: string) => typedError<{
+	plane: PlaneId,
+	skill: string,
+	/**
+	 *  The copy it grades, by its level (#3978): a same-named copy at another level is another
+	 *  skill, whose tab a step of this one moves nothing on.
+	 */
+	level: SkillLevel,
+	grade: string,
+	ran: number,
+	of: number,
+	/**  What its chats have spent so far, where they said, and the cap it is held to. */
+	tokens: number | null,
+	/**
+	 *  What its chats have cost so far, in dollars, where they said (S6): the running page's
+	 *  spend against the grade's dollar limit.
+	 */
+	cost_usd: number | null,
+	/**  The dollar limit it is held to, where it has one. */
+	limit_usd: number | null,
+	cap: number | null,
+	/**
+	 *  How many of its chats asked the person something and were ended there (SK-59, #3239):
+	 *  said in the grade, as none of them is a run.
+	 */
+	asked: number,
+	/**  How it ended, once it has. */
+	ended: GradeEnded | null,
+	/**
+	 *  What the window says of its end: why its chats did not start, or that it was not
+	 *  recorded.
+	 */
+	said: string | null,
+} | null, string>(__TAURI_INVOKE("skill_grade_running", { plane, grade })),
 	/**
 	 *  **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
 	 *  operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
@@ -2325,7 +2403,7 @@ export const commands = {
 /**  Every workspace's chats too. */
 { to: "all" } | 
 /**  The workspaces named. */
-{ to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_install", { plane, source, level, reviewed, grant })),
+{ to: "only"; workspaces: string[] } | null, renames: SkillRename[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_install", { plane, source, level, reviewed, grant, renames })),
 	/**  **The review of publishing `name` at `level` to `source`.** Nothing goes anywhere. */
 	skillPublishReview: (plane: PlaneId, level: SkillLevel, name: string, source: SkillSource) => typedError<PublishReviewView, string>(__TAURI_INVOKE("skill_publish_review", { plane, level, name, source })),
 	/**  **Sends what the person accepted**, and only that. */
@@ -2906,7 +2984,7 @@ export const commands = {
 	 *  cut one at a time, by `chatpiece`'s lock per clone. Starting a session off the main thread
 	 *  is what a relaunch's put-back already does.
 	 */
-	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, string>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
+	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, LimitRefused>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
 	/**
 	 *  **The person pressed Cancel while a chat started in this project** (#4264): it stops waiting
 	 *  for the session host, and a chat that comes up after is closed.
@@ -3084,6 +3162,19 @@ export const commands = {
 	useThisMachinesChrome: () => typedError<null, string>(__TAURI_INVOKE("use_this_machines_chrome")),
 	/**  **The Docker pools on this machine**, and a new pool's default limits. */
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
+	/**  **Each step's state, read now**: the pool this setup made, else a new one's. */
+	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
+	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
+	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
+	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
+	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
+	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
+	poolSetupPool: (name: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_pool", { name })),
+	/**
+	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
+	 *  elsewhere, with what to do instead.
+	 */
+	poolSetupOpenDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_open_docker")),
 	/**
 	 *  **Adds a Docker pool on this machine**: its runner is made from the image, confined and held
 	 *  to the pool's limits, paired with this desktop and kept. What fails is taken back.
@@ -3125,6 +3216,13 @@ export const commands = {
 	 *  a limit, through the edit ask (Q6), and never replaces a runner.
 	 */
 	dockerPoolReplaceRunner: (name: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_replace_runner", { name })),
+	/**
+	 *  **Removes the held runner `runner`, as the person pressed**: a draining runner that stopped
+	 *  during its drain, and what its chats left in its home with it
+	 *  ([`purlis_core::pools::remove_held`]). The window's alone: nothing else ends what a held runner
+	 *  keeps. What is left of it is said.
+	 */
+	dockerPoolRemoveHeldRunner: (runner: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_remove_held_runner", { runner })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**
@@ -3158,7 +3256,7 @@ export const commands = {
 	 *  runner of the cluster's Pool, waits for its operator to vouch for it, pairs it and keeps it.
 	 *  What fails is taken back.
 	 */
-	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
+	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, LimitRefused>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
 	 *  **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071, the
 	 *  person's ruling of 2026-10-30). The window's alone (`ui::WINDOW_ONLY`): no chat, Pool or
@@ -3191,29 +3289,13 @@ export const commands = {
 	 *  runner keeps it the next time the pool's profiles are asked.
 	 */
 	poolProfileAdd: (pool: string, name: string, open: OpenProject) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, open })),
-	/**
-	 *  **The limits a start on `profile` was refused on, in the words `refused`** (spec #4275): what
-	 *  Start a chat offers beside that refusal. Asked of the core, never read from the words.
-	 */
-	poolLimitOffer: (profile: string, refused: string, root: string | null, cwd: string | null) => __TAURI_INVOKE<{
-	pool: string,
-	hits: PoolLimitHitRow[],
-} | null>("pool_limit_offer", { profile, refused, root, cwd }),
-	/**
-	 *  **The limits that refused a move to pool `pool` in the words `refused`** (#4313): what the
-	 *  move's line offers beside that refusal, as [`pool_limit_offer`] does for a start.
-	 */
-	poolLimitOfferForMove: (pool: string, refused: string) => __TAURI_INVOKE<{
-	pool: string,
-	hits: PoolLimitHitRow[],
-} | null>("pool_limit_offer_for_move", { pool, refused }),
 	/**  **Pool `pool`'s limits** (#4285), as its page draws them. */
 	poolLimits: (pool: string) => typedError<PoolLimitsPage, string>(__TAURI_INVOKE("pool_limits", { pool })),
 	/**
 	 *  **The value in the words `typed` for limit `key`, or why they aren't one it can be** (#4285):
 	 *  the file's and the command's check, asked as the person types.
 	 */
-	poolLimitCheck: (key: string, typed: string) => typedError<number, string>(__TAURI_INVOKE("pool_limit_check", { key, typed })),
+	poolLimitCheck: (pool: string, key: string, typed: string) => typedError<number, string>(__TAURI_INVOKE("pool_limit_check", { pool, key, typed })),
 	/**
 	 *  **Saves `value` as pool `pool`'s limit `key`, or, `null`, returns it to following purlis's
 	 *  default** (spec #4275), the person's own press in their window: a chat has no way to it, and
@@ -3279,8 +3361,12 @@ export const commands = {
 { at: "signed-in" } | 
 /**  purlis could not follow the login: what it printed. */
 { at: "could-not-follow"; said: string } | 
-/**  It did not sign in, and why. */
-{ at: "failed"; why: string } | 
+/**
+ *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
+ *  ending so, and the page it opened is no use now (#4367); what to raise where the pool's
+ *  limit ended it.
+ */
+{ at: "failed"; why: string; stopped: boolean; limit: PoolLimitOffer | null } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
 	/**
@@ -3352,6 +3438,12 @@ export const commands = {
 	refuseRunnerDispatch: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("refuse_runner_dispatch", { plane, id })),
 	/**  **Sets where a workspace's chats run** (#2046): the person's choice in its settings. */
 	setChatsRunOn: (plane: PlaneId, workspace: string, pool: string | null) => typedError<ChatsRunOn, string>(__TAURI_INVOKE("set_chats_run_on", { plane, workspace, pool })),
+	/**  **Sets a workspace to follow its project** (#4536): the person's choice in its settings. */
+	followProjectChatsRunOn: (plane: PlaneId, workspace: string) => typedError<ChatsRunOn, string>(__TAURI_INVOKE("follow_project_chats_run_on", { plane, workspace })),
+	/**  **Where a project's workspaces run their chats by default** (#4536), as its settings show it. */
+	projectChatsRunOn: (plane: PlaneId) => typedError<ProjectChatsRunOn, string>(__TAURI_INVOKE("project_chats_run_on", { plane })),
+	/**  **Sets where a project's workspaces run their chats by default** (#4536). */
+	setProjectChatsRunOn: (plane: PlaneId, pool: string | null) => typedError<ProjectChatsRunOn, string>(__TAURI_INVOKE("set_project_chats_run_on", { plane, pool })),
 	/**
 	 *  **What a workspace's sends to a pool's runner leave out** besides what a save to the forge
 	 *  refuses (#2046, the operator's ruling of 2026-10-25): `settings.runners.leave_out` in its
@@ -3544,6 +3636,13 @@ export const commands = {
 	 *  reach it.
 	 */
 	themeFont: (asset: string) => typedError<string, string>(__TAURI_INVOKE("theme_font", { asset })),
+	/**
+	 *  **The parts of a first frame drawn before they were measured** (#4410): the stylesheet of the
+	 *  theme a frame's `parts_later` names, waiting for the measure its creation left running. What
+	 *  the window asks as it starts, with no project known, so its parts land whatever the restore
+	 *  does. The window's alone: a link is handed no first frame.
+	 */
+	firstFrameParts: (ticket: number) => typedError<string, string>(__TAURI_INVOKE("first_frame_parts", { ticket })),
 	/**
 	 *  **The person's density, font override, motion, contrast and colours, read by the core's theme
 	 *  engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
@@ -4905,6 +5004,17 @@ export type AnswerPath =
  *  the chat that asked (#2047).
  */
 { via: "pool-tool"; run: number } | 
+/**
+ *  `answer_task_question`, through the form that reads the question from the core: the
+ *  task's own words, with `why` it reached the person. `note` is the asking chat's own
+ *  line, `from` being that chat, and is never the task's words.
+ */
+{ via: "task-question"; why: ReachedWhy; from: string; note: string | null } | 
+/**
+ *  `answer_browser_login` at the press an option names, on held login `id`, for the proposal
+ *  whose digest is `shown`, with the domain the person typed (#4595).
+ */
+{ via: "browser-login"; id: number; shown: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5043,6 +5153,8 @@ export type AskSource =
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
 "question" | 
+/**  **A task's question that has reached the person** (ADR 0107): in the task's own words. */
+"task-question" | 
 /**
  *  A profile a chat could not start on, because its harness says it is not signed in on
  *  this device (#2035): answered by running the harness's own sign-in in a shell tab.
@@ -5079,7 +5191,12 @@ export type AskSource =
  *  One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
  *  lets this desktop send that tool its vault values on the pool's runner for that run alone.
  */
-"pool-tool";
+"pool-tool" | 
+/**
+ *  A browser login a chat suggested, which its persona doesn't declare (#4595): an Allow
+ *  lets purlis fill it on the one origin the person confirmed.
+ */
+"browser-login";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -5854,6 +5971,8 @@ export type ChatMove = {
 	stage: string,
 	/**  Why it failed, in a sentence: where it is `failed`. */
 	why: string | null,
+	/**  What to raise, where a pool's limit is why it failed (#4313). */
+	limit: PoolLimitOffer | null,
 	/**  The profile it waits on to sign in on the runner: where it is `signing-in` (#3477). */
 	sign_in: MoveSignIn | null,
 	/**  The other chats of its workspace that move with it, by name (#3453). */
@@ -5906,6 +6025,15 @@ export type ChatOnAPoolNotKept = {
 };
 
 /**
+ *  What `chat-prompt-routing` carries: which chat to read again, and nothing of how it did, so
+ *  tellings that land out of order leave the window nothing to get wrong.
+ */
+export type ChatPromptRouting = {
+	plane: PlaneId,
+	session: number,
+};
+
+/**
  *  What a restart answered (#1342, #1428): the chat in its new run with what its start found
  *  to say, or, while it waits on a permission prompt, why it is not restarted yet.
  */
@@ -5941,6 +6069,8 @@ export type ChatSkill = {
 	 *  the chat to load it.
 	 */
 	hidden: SkillHidden | null,
+	/**  The label of the source it was installed from (ADR 0100, amended 2026-11-01). */
+	source_label: string | null,
 };
 
 /**
@@ -6067,11 +6197,14 @@ export type ChatsReconnecting = {
 };
 
 /**
- *  **Where a workspace's chats run on this machine** (#2046): the pool its chats run on, `None`
- *  for this machine, and every pool this machine keeps, which the setting offers.
+ *  **Where a workspace's chats run on this machine** (#2046, #4536): what the workspace itself
+ *  says (`pool`, or `here` for this machine, or neither to follow the project), what the project
+ *  says, and every pool this machine keeps, which the setting offers.
  */
 export type ChatsRunOn = {
 	pool: string | null,
+	here: boolean,
+	project: string | null,
 	pools: string[],
 };
 
@@ -7976,6 +8109,8 @@ export type GradeEval = {
 	prompt: string,
 	hides: boolean,
 	files: string[],
+	/**  Those of its files that are not text, which nothing can check for what `hides` says (#4230). */
+	not_text: string[],
 	expectations: number,
 	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
 	on: boolean,
@@ -8053,6 +8188,8 @@ export type GradeRow = {
 	ended: string,
 	outcome: GradeOutcome,
 	arms: GradeArms,
+	/**  Each arm's outcome pass rate, where it ran an outcome eval (SK-55). */
+	outcome_arms: GradeArms | null,
 	spent: GradeSpent,
 	after_edit: boolean,
 };
@@ -8099,6 +8236,12 @@ export type GradeScorecard = {
 	outcome: GradeOutcome,
 	arms: GradeArms,
 	spent: GradeSpent,
+	/**
+	 *  **Its outcome evals** (SK-55, #3235), each in each arm, and each arm's pass rate in points:
+	 *  none, and null, in a grade that scored none.
+	 */
+	evals: ScoredEval[],
+	outcome_arms: GradeArms | null,
 };
 
 /**
@@ -8403,6 +8546,23 @@ export type HowFailed =
  */
 "last_message";
 
+/**  What the tab draws. */
+export type IdentitiesShown = {
+	rows: IdentityRow[],
+	pending: IdentityPending[],
+	owners: IdentityOwner[],
+	personas: string[],
+};
+
+/**  What Finish did. */
+export type IdentityFinished = {
+	row: IdentityRow,
+	/**  What it read as proof. */
+	read: string | null,
+	/**  Personas with an Allow of their own still to give: Finish allows only what it showed. */
+	to_allow: string[],
+};
+
 /**  Where one of a vault's identity variables is read from now (#237). */
 export type IdentityHeld = 
 /**  Moved into the keyring, which is read first. */
@@ -8411,6 +8571,55 @@ export type IdentityHeld =
 "environment" | 
 /**  Nowhere: the vault cannot be read. */
 "unset";
+
+/**  An owner the App can be made under. */
+export type IdentityOwner = {
+	name: string,
+	/**  The person's own account, as their forge sign-in says. */
+	personal: boolean,
+};
+
+/**  An App whose key is kept and whose lines Finish hasn't written. */
+export type IdentityPending = {
+	app: string,
+	stand: IdentityStand | null,
+	trouble: string | null,
+};
+
+/**  What a removal left, for the row to say. */
+export type IdentityRemoved = {
+	/**  The App's page on GitHub, where what remains is deleted. */
+	settings_page: string | null,
+};
+
+/**
+ *  One App's row (Q6, Q17): what it acts as, on how many repos, and for whom. A forge host has
+ *  one, or one per owner where a project's repos are under several.
+ */
+export type IdentityRow = {
+	host: string,
+	/**  The App's public client id. */
+	app: string,
+	personas: string[],
+	/**  What it acts as, where GitHub could say. */
+	acts_as: string | null,
+	repos: number | null,
+	/**  The App's page on GitHub, where it is deleted. */
+	settings_page: string | null,
+	/**  Why GitHub couldn't say. The row stays, and can still be removed. */
+	trouble: string | null,
+	/**  A line this flow didn't write: shown, never read with, and removed in the project file. */
+	by_hand: boolean,
+};
+
+/**  An App as GitHub says it is, before Finish. */
+export type IdentityStand = {
+	acts_as: string,
+	owner: string,
+	installed: boolean,
+	install_page: string,
+	settings_page: string,
+};
 
 /**  One save setting as the project has it: its value, and the file that decided it. */
 export type InForce = {
@@ -8685,6 +8894,16 @@ export type LevelWaiting = {
 	level: string,
 };
 
+/**
+ *  **Why something the window asked of a pool did not happen** (spec #4275): the core's
+ *  sentence, and what to raise where a pool's limit refused it, which comes with the refusal as
+ *  data.
+ */
+export type LimitRefused = {
+	words: string,
+	limit: PoolLimitOffer | null,
+};
+
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
 export type LineRange = {
 	first: number,
@@ -8765,6 +8984,29 @@ export type LocalModelRow = {
 	base_url: string,
 	/**  The harness that can use it with no account (`opencode`). */
 	harness: string,
+};
+
+/**
+ *  **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
+ *  value: purlis hasn't read one.
+ */
+export type LoginShown = {
+	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
+	domain: string,
+	/**  The page's path on it. */
+	path: string,
+	vault: string,
+	user_key?: string | null,
+	key: string,
+	/**  Plain warnings, said above the choices. */
+	warnings: string[],
+	/**  The line Always writes, shown before it's pressed, and where. */
+	line: string,
+	under: string,
+	/**  Why Always isn't offered, where it isn't. */
+	no_always?: string | null,
+	/**  The persona's chats get the vault too with Always. */
+	vault_too: boolean,
 };
 
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
@@ -9088,6 +9330,11 @@ export type Moved = {
 	 *  `null` for every other chat.
 	 */
 	own_work?: OwnWork | null,
+	/**
+	 *  **A background turn runs over its wait on the person** (#4562): `state` says `waiting`,
+	 *  as it did, and the chat is at work, so a restart or a move owed it waits. Absent otherwise.
+	 */
+	background_turn?: boolean | null,
 	/**
 	 *  Which snapshot of the board this is — bigger was taken later (charter-app#248).
 	 * 
@@ -10622,6 +10869,8 @@ export type PoolLimitHitRow = {
 	needed: number,
 	/**  The value offered, which the person can edit; none where no value would hold it. */
 	suggested: number | null,
+	/**  That value is what the team defining the pool suggests (#4287). */
+	team_suggests: boolean,
 };
 
 /**  **What a refused start on a pool offers**: the pool, and each limit it was refused on. */
@@ -10646,8 +10895,19 @@ export type PoolLimitRow = {
 	set: number | null,
 	/**  When a change applies, where its group doesn't say it for all of its limits. */
 	applies: string | null,
-	/**  Why the value in the pool's file can't be used, where one can't (#4381). */
+	/**
+	 *  Why the value in the pool's file can't be used, where one can't (#4381), or is above what
+	 *  the team defining the pool allows (#4287).
+	 */
 	refused: string | null,
+	/**  The highest the team defining the pool allows, in words, where it set one (#4287). */
+	highest_said: string | null,
+	/**  Whether its default is what the team defining the pool set (#4287). */
+	default_by_team: boolean,
+	/**  The value the team suggests, above what holds: one press sets it, as the person's (#4287). */
+	suggested: number | null,
+	/**  That value in words. */
+	suggested_said: string | null,
 };
 
 /**
@@ -10720,6 +10980,8 @@ export type PoolProfileRow = {
 	standing: string | null,
 	/**  Why it is not kept on the runner, in words, where it is not. */
 	not_kept: string | null,
+	/**  What to raise, where a limit of the pool is why it is not kept (#4397). */
+	limit: PoolLimitOffer | null,
 	/**  The plans Sign in offers there, where purlis names the provider. */
 	plans: PlanRow[],
 };
@@ -10780,6 +11042,37 @@ export type PoolRow = {
 	suspend_after: string,
 };
 
+/**  One step's next action. */
+export type PoolSetupAction = {
+	id: string,
+	label: string,
+	does: string,
+	command: string | null,
+	url: string | null,
+};
+
+/**  What the tab draws. */
+export type PoolSetupShown = {
+	/**  The pool this setup made. */
+	pool: string | null,
+	/**  The name typed on the Pool step, for the box to hold. */
+	name: string | null,
+	/**  The step the person has reached. */
+	at: string | null,
+	steps: PoolSetupStep[],
+};
+
+/**  One step as it stands. */
+export type PoolSetupStep = {
+	id: string,
+	name: string,
+	state: string,
+	line: string | null,
+	findings: string[],
+	next: PoolSetupAction | null,
+	skippable: boolean,
+};
+
 /**  What the person is asked. */
 export type PoolSignInAsk = {
 	id: number,
@@ -10820,8 +11113,12 @@ export type PoolSignInStep =
 { at: "signed-in" } | 
 /**  purlis could not follow the login: what it printed. */
 { at: "could-not-follow"; said: string } | 
-/**  It did not sign in, and why. */
-{ at: "failed"; why: string } | 
+/**
+ *  It did not sign in, and why; `stopped` where purlis stopped it rather than the login
+ *  ending so, and the page it opened is no use now (#4367); what to raise where the pool's
+ *  limit ended it.
+ */
+{ at: "failed"; why: string; stopped: boolean; limit: PoolLimitOffer | null } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" };
 
@@ -10865,6 +11162,11 @@ export type PoolVersion = {
 	 *  removed.
 	 */
 	draining: number,
+	/**
+	 *  How many of its older runners are held: each stopped during its drain, and stays with its
+	 *  home until the person removes it.
+	 */
+	held: number,
 	/**
 	 *  Whether this version's release named a runner image, as purlis last found it (#2880):
 	 *  one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
@@ -10921,6 +11223,16 @@ export type PresetsChanged = {
 	/**  The whole set now, by the committed file's words: what the Notice sends back once read. */
 	now: string[],
 };
+
+/**  A press on a login's notice. */
+export type Press = "once" | "chat" | "always" | "keep";
+
+/**  What a press answered. */
+export type Pressed = 
+/**  The answer stands: the sentence it leaves. */
+{ kind: "done"; said: string } | 
+/**  The notice was drawn again and takes another press: what changed. */
+{ kind: "drawn-again"; said: string };
 
 /**
  *  **A pool's price per hour, as it declares it** (#3491): its amount the decimal it was
@@ -11009,6 +11321,15 @@ export type ProjectAnswer = {
 	 *  asks GitHub or GitLab and calls again with the answer. Nothing was made.
 	 */
 	asks_forge: string | null,
+};
+
+/**
+ *  **Where a project's workspaces run their chats by default on this machine** (#4536): the pool
+ *  it names, and every pool this machine keeps.
+ */
+export type ProjectChatsRunOn = {
+	pool: string | null,
+	pools: string[],
 };
 
 /**
@@ -11389,6 +11710,15 @@ export type ReachedBy =
 "persona" | 
 /**  An Allowed host: for this chat, this project on this machine, or everyone in it. */
 "allowed";
+
+/**  Why a task's question reached the person ([`AnswerPath::TaskQuestion`]). */
+export type ReachedWhy = 
+/**  Its asking chat passed it on. */
+"passed-on" | 
+/**  Its asking chat had its turn and did nothing with it in time. */
+"no-reply" | 
+/**  Its asking chat closed or crashed. */
+"asker-gone";
 
 /**  Why this purlis reads a project and writes nothing to it. */
 export type ReadOnlyProject = {
@@ -11892,6 +12222,16 @@ export type RestoringChat = {
 	workspace: string | null,
 };
 
+/**  A name that is taken where a skill would land (ADR 0100, amended 2026-11-01). */
+export type ReviewClash = {
+	/**  What holds the name, as the end of a sentence. */
+	held_by: string,
+	/**  The new name offered: `<source>-<name>`. */
+	offered: string,
+	/**  The names at that level, which a new name cannot take. */
+	taken: string[],
+};
+
 /**  One file the review shows, one click away. */
 export type ReviewFile = {
 	path: string,
@@ -11949,6 +12289,10 @@ export type ReviewSkill = {
 	 *  are, not brought along.
 	 */
 	already: string[],
+	/**  Where its name is taken at the level it lands in: the review waits for the person's choice. */
+	clash: ReviewClash | null,
+	/**  A line each for what the review warns of and does not stop on. */
+	notes: string[],
 	summary: ReviewSummary,
 	files: ReviewFile[],
 	left_out: ReviewLeftOut[],
@@ -12234,6 +12578,11 @@ export type RunnerAsked = {
 	 *  (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
 	 */
 	ran_this_week: number | null,
+	/**
+	 *  It stopped during its drain, so it stays with its home until the person removes it
+	 *  ([`purlis_core::pools::DrainLook::Held`]).
+	 */
+	held: boolean,
 };
 
 /**  One runner of a project, as the away summary reads it. */
@@ -12742,6 +13091,48 @@ export type ScoredChat = {
 	kept: boolean,
 };
 
+/**  **One expectation in one run of an outcome eval, as its judge found it** (SK-55). */
+export type ScoredCheck = {
+	passed: boolean,
+	/**  What the judge found, as the record keeps it: empty where a long row dropped it. */
+	evidence: string,
+};
+
+/**
+ *  **One outcome eval of a grade** (SK-55): its id and its expectations, each character no reader
+ *  would see marked, in each arm.
+ */
+export type ScoredEval = {
+	id: string,
+	expectations: string[],
+	arms: ScoredEvalArm[],
+};
+
+/**
+ *  **One outcome eval in one arm of a grade** (SK-55): its judged runs, its pass rate in points,
+ *  and each run asked for.
+ */
+export type ScoredEvalArm = {
+	arm: ScoredArm,
+	runs: number,
+	points: number | null,
+	results: ScoredEvalRun[],
+};
+
+/**
+ *  **One run of an outcome eval in one arm** (SK-55): its chat and its judge's, each one click away
+ *  where this machine kept it; how many expectations passed, where it was judged; each one's
+ *  verdict; and why the eval failed there, where it failed without a verdict.
+ */
+export type ScoredEvalRun = {
+	run: number,
+	chat: ScoredChat | null,
+	judge: ScoredChat | null,
+	passed: number | null,
+	checks: ScoredCheck[],
+	failed: string | null,
+};
+
 /**  **One trigger test in one arm of a grade**, as its scorecard shows it. */
 export type ScoredRuns = {
 	arm: ScoredArm,
@@ -13183,6 +13574,17 @@ export type Shown = {
 	 *  one: their count, and each as [`Shown::says`] shows it. Absent for an action on one line.
 	 */
 	lines?: LinesShown | null,
+	/**
+	 *  **What its chat's turn ended on** (#4550): on a chat waiting on the person's reply, its
+	 *  last message, masked and bounded as a report's text is, over the lines it has. Data,
+	 *  never markup. Absent where the app heard none, and on every other ask.
+	 */
+	last_message?: string | null,
+	/**
+	 *  **The site a login would be filled on** (#4595): drawn large and editable. Absent for any
+	 *  other ask.
+	 */
+	login?: LoginShown | null,
 };
 
 /**
@@ -13709,6 +14111,12 @@ export type SkillPromptRouting = {
 	fell_back: boolean,
 	/**  What a person is told of it, in the core's words. */
 	said: string,
+};
+
+/**  One skill installed under a new name: its name at the source, and the one it lands under. */
+export type SkillRename = {
+	from: string,
+	to: string,
 };
 
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
@@ -14256,10 +14664,11 @@ export type Studio = {
 };
 
 /**
- *  **A chat's skill budget**, as the Routing page says it: the most skills its list holds, and
- *  the most characters of their descriptions together.
+ *  **A chat's skill budget on one harness**, as the Routing page says it: the most skills its
+ *  list holds, and the most characters of what is listed of them.
  */
 export type StudioBudget = {
+	program: string,
 	skills: number,
 	chars: number,
 };
@@ -14400,10 +14809,16 @@ export type StudioRouter = {
 	 */
 	written: string | null,
 	/**
-	 *  **A chat's skill budget** (SK-12, ADR 0102 §1): past it the router decides what a chat's
-	 *  list shows. The same on every harness.
+	 *  **A chat's skill budget on each harness** (SK-12, ADR 0102 as amended 2026-11-02): past
+	 *  it the router decides what a chat's list shows. Each adapter's numbers, with what this
+	 *  scope's `settings.skills.budget` writes over them.
 	 */
-	budget: StudioBudget,
+	budget: StudioBudget[],
+	/**
+	 *  **What a harness would drop at what the scope writes** (#4610), a sentence each: a
+	 *  warning, since a value past a harness's limit is never refused.
+	 */
+	past_limits: string[],
 	/**
 	 *  **What the rows' "hidden by the router" marks preview** (#4215), in a sentence: a chat at
 	 *  the workspace's root (or the project's), in no clone, routed by the built-in router. Where
@@ -14529,6 +14944,8 @@ export type StudioSkill = {
 	 *  own budget: the chat still has it, through the index skill. Empty where every one lists it.
 	 */
 	hidden: SkillHiddenOn[],
+	/**  The label of the source it was installed from (ADR 0100, amended 2026-11-01). */
+	source_label: string | null,
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
 	/**
@@ -15085,7 +15502,11 @@ export type UpdateKind =
  */
 "root-update-refused" | 
 /**  A chat asked the person to take its browser over, and the browser ended first (#2015). */
-"browser-ask-ended";
+"browser-ask-ended" | 
+/**  A task ended with its question unanswered (#4556). */
+"question-closed" | 
+/**  A task's question could not be taken its route (#4557). */
+"question-failed";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {
@@ -15244,6 +15665,11 @@ export type VaultRefused = {
 	dispatch_to: string | null,
 	/**  Why a policy forbids Allow, where one does: the Notice then offers none. */
 	locked: string | null,
+	/**
+	 *  The browser login the persona declares with this vault, where it does: the one case
+	 *  purlis knows a vault is asked for a login. A `secret` command names none (#4595).
+	 */
+	login?: string | null,
 };
 
 /**

@@ -54,6 +54,8 @@ changelog.workspace = true
 stand-in.workspace = true
 tempfile.workspace = true
 tokio = { version = "1", default-features = false, features = ["rt", "net"] }
+# A real terminal, so a test can type the yes a run naming an outcome eval takes from nothing else.
+portable-pty.workspace = true
 # The recorded-behaviour replay (ADR 0046): the scenarios' masks, and the file contents they
 # carry compressed and by hash.
 base64 = "0.23"

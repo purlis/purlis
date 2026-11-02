@@ -216,6 +216,8 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
         if crate::worktree::locate(ask.root, ask.cwd).is_some() {
             parts.push(BRANCH_FOLDER_COMMIT_NOTE.to_owned());
         }
+    } else if let Some(note) = unsandboxed_note(ask.root, ask.env) {
+        parts.push(note.to_owned());
     }
     // Last: the chat's skills, for a chat whose harness cannot load them (ADR 0063), as its skill
     // set holds them. Only such a chat is started with the variable, so a harness that loads
@@ -259,6 +261,15 @@ pub const SANDBOXED_NOTE: &str = "⬢ **This chat runs in purlis's sandbox.** Wh
      `purlis worktree add <repo> <piece>` makes one (a raw `git worktree add` is refused), and \
      you commit and push from it with `purlis worktree commit` and `purlis worktree push`.";
 
+/// **What a chat the app started with no sandbox is told, in a project whose sandbox is on**
+/// (#4534): the chat that asked for it may be sandboxed, so the difference is said at its start,
+/// and how it commits with it.
+pub const UNSANDBOXED_NOTE: &str = "⬢ **This chat runs with no sandbox**, though this project's \
+     sandbox is on and the chat that asked for this one may be in it: the person's own level, \
+     or their **Start without the sandbox**, lifted it. In a branch folder, commit and push \
+     with `purlis worktree commit` and `purlis worktree push`, here with your git's hooks and \
+     signing. Where the project's `refuse_unsandboxed_commit` refuses that, it says so.";
+
 /// **What a sandboxed chat standing in a branch folder is told about committing** (#1055,
 /// ruling V99h). A linked worktree keeps its index and objects in its clone's `.git`, which
 /// the sandbox does not let the chat write, so its own `git add` and `git commit` are refused.
@@ -288,7 +299,7 @@ fn one_route_note(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
         .filter(|socket| !socket.is_empty())
         .map(|_| {
             format!(
-                "{ONE_ROUTE_IF} {ONE_ROUTE_TOOLS} {} {ONE_ROUTE_ONLY_THEN}",
+                "{ONE_ROUTE_IF} {ONE_ROUTE_TOOLS} {ONE_ROUTE_IS_A_TASK} {} {ONE_ROUTE_ONLY_THEN}",
                 crate::handoff::ONE_ROUTE
             )
         })
@@ -302,15 +313,39 @@ pub const ONE_ROUTE_IF: &str = "⬢ **If work has to go to another chat.**";
 /// served the same on every harness; the command stays for terminals and scripts.
 pub const ONE_ROUTE_TOOLS: &str = "Use purlis's tools for it first: `dispatch` starts a task; \
      `dispatch_list`, `dispatch_read`, `dispatch_wait`, `dispatch_tell`, `dispatch_answer`, \
-     `dispatch_cancel` and `dispatch_close` look after one, and `dispatch_tell` with `all` tells \
-     every task still working at once; a task answers with `dispatch_note` (its `ack` \
-     acknowledges an instruction), `dispatch_ask` and `dispatch_report`. They need no shell; \
-     the `purlis dispatch` command does the same, one call at a time.";
+     `dispatch_pass_on`, `dispatch_cancel` and `dispatch_close` look after one, and \
+     `dispatch_tell` with `all` tells every task still working at once; a task answers with `dispatch_note` (its `ack` \
+     acknowledges an instruction), `dispatch_ask` and `dispatch_report`. A task's question comes \
+     to you first: answer it, or pass it on with `dispatch_pass_on`. Security, cost, anything \
+     public and anything that amends a ruling are always passed on, and your own answer is \
+     never the person's word. They need no shell; the `purlis dispatch` command does the same, \
+     one call at a time.";
+
+/// What stands after the tools (#4773): which work is a task's and which a harness subagent's.
+/// A chat that started implementers as subagents by habit had each cut its own branch folder,
+/// out of the person's sight; the guard refuses a helper's `purlis worktree add`, `commit` and
+/// `push` ([`crate::dispatchguard::HELPER_TASKS_WORK`]), and this line is there so it rarely
+/// has to.
+pub const ONE_ROUTE_IS_A_TASK: &str = "Work that writes, commits, needs its own branch folder \
+     or runs long is a purlis task, through `dispatch`; a harness subagent is for read-only \
+     work (searching, reading, reviewing), and from inside one `purlis worktree add`, `commit` \
+     and `push` are refused.";
 
 /// What stands after it: the route is for work that must come back as an answer and that
 /// another chat has to do, and says nothing about work this chat can do itself.
 pub const ONE_ROUTE_ONLY_THEN: &str = "This says where such work goes, not that work should \
      go: what this chat can do itself, it does.";
+
+/// [`UNSANDBOXED_NOTE`] for a chat the app started (it has the app's socket) with no sandbox, in
+/// the project at `root` whose sandbox is in force; none for any other, a harness started in a
+/// terminal among them.
+fn unsandboxed_note(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Option<&'static str> {
+    let started_by_the_app = env(crate::hookwire::SOCKET_ENV).is_some_and(|s| !s.is_empty());
+    (started_by_the_app
+        && !crate::sandbox::chat_is_sandboxed_in(env)
+        && crate::sandbox::in_force_at(root))
+    .then_some(UNSANDBOXED_NOTE)
+}
 
 /// [`SANDBOXED_NOTE`] for a chat the app started under a sandbox, read through `env`; none for
 /// any other.

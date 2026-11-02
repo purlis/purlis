@@ -75,8 +75,11 @@ describe("a curation action refused for its profile's approval", function () {
     await runFromThePalette("Safe remove", ACTION);
 
     // Refused, with the approval offered beside the refusal; nothing started.
-    // By its accessible name, as the person and the screen reader get it.
-    const offer = await $("aria/Approve and start…");
+    // The chip's card, which stands in front: the Inbox's Results list the same offer, and the card
+    // can cover that copy, which is then in the DOM first and never clickable.
+    const offer = await $(
+      '//*[@data-chip="status/bar/notices"]//button[contains(., "Approve and start…")]',
+    );
     await offer.waitForClickable({
       timeout: 30_000,
       timeoutMsg: "the refusal offered no Approve and start…",

@@ -141,6 +141,13 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
           : `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. New chats start on a runner of ${version.desktop} once that version's runner image is published.`,
     );
   }
+  if (version.held > 0) {
+    lines.push(
+      version.held === 1
+        ? "1 older runner stopped during its drain. purlis keeps it and what its chats left until you remove it in Devices."
+        : `${version.held} older runners stopped during their drain. purlis keeps them and what their chats left until you remove them in Devices.`,
+    );
+  }
   if (version.draining > 0) {
     lines.push(
       version.draining === 1
@@ -194,9 +201,35 @@ export function RemovePool({
             : cluster
               ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
               : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
+          {" Workspaces and projects set to run on it go back to this machine."}
         </p>
       }
       main={{ children: "Remove pool", variant: "danger", onPress: onRemove }}
+    />
+  );
+}
+
+/** **Remove runner {name}?**, asked before a held runner goes, with what its chats left. */
+export function RemoveHeldRunner({
+  name,
+  onRemove,
+  onCancel,
+}: {
+  name: string;
+  onRemove: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AlertDialog
+      onClose={onCancel}
+      title={`Remove runner ${name}?`}
+      description={
+        <p className="came-back">
+          Its container and home are removed from your Docker, with everything chats left in them.
+          There is no undo.
+        </p>
+      }
+      main={{ children: "Remove runner", variant: "danger", onPress: onRemove }}
     />
   );
 }

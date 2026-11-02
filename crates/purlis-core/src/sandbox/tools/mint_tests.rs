@@ -235,3 +235,21 @@ fn a_project_file_that_does_not_parse_marks_nothing_as_unmarked() {
     assert!(!mint::a_private_key("ghp_notakey"));
     assert!(!mint::a_private_key("-----BEGIN CERTIFICATE-----\nMIIE\n"));
 }
+
+#[test]
+fn a_key_kept_under_the_reserved_prefix_is_refused_with_no_line_and_no_project_file() {
+    let root = tempfile::tempdir().expect("a folder");
+    let reserved = format!("{}github-Iv23liExample", mint::RESERVED_PREFIX);
+    assert!(matches!(
+        mint::raw(root.path(), "agent-identity", &reserved),
+        mint::Raw::Refused(_)
+    ));
+    assert!(matches!(
+        mint::raw(root.path(), "agent-identity", &reserved.to_uppercase()),
+        mint::Raw::Refused(_)
+    ));
+    assert_eq!(
+        mint::raw(root.path(), "agent-identity", "something-else"),
+        mint::Raw::Taken
+    );
+}

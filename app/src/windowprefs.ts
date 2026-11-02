@@ -68,8 +68,9 @@ export type TheirReading = {
 export type TheirDrawn = { theme: Theme; floors: string | null; mine: readonly string[] };
 
 /** One frame of {@link FirstFrame}: for a light system (when the theme follows it) and for more
- *  contrast, or not. */
-export type Frame = TheirDrawn & { light: boolean; more: boolean };
+ *  contrast, or not. `parts_later` is what the window asks for its parts by, when it was drawn
+ *  before they were measured (#4410, `theme/partsLater.ts`), and `null` when it has them. */
+export type Frame = TheirDrawn & { light: boolean; more: boolean; parts_later: number | null };
 
 /**
  * **What the first frame draws** (#2602): the theme the levels choose for the project and the
@@ -125,7 +126,12 @@ function firstFrame(raw: unknown): FirstFrame | null {
     const drawn = theirDrawn(one);
     if (drawn === null) continue;
     const frame = one as Record<string, unknown>;
-    frames.push({ ...drawn, light: frame.light === true, more: frame.more === true });
+    frames.push({
+      ...drawn,
+      light: frame.light === true,
+      more: frame.more === true,
+      parts_later: typeof frame.parts_later === "number" ? frame.parts_later : null,
+    });
   }
   if (frames.length === 0) return null;
   return {

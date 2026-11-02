@@ -152,6 +152,24 @@ pub fn bind_first<L>(
     })
 }
 
+/// **A listener on a port the system picks** on `127.0.0.1`: for a redirect address made at run
+/// time, which no registration lists, as a GitHub App's manifest names its own.
+pub fn bind_any() -> Result<Listening, String> {
+    let bound = (|| {
+        let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))?;
+        listener.set_nonblocking(true)?;
+        let port = listener.local_addr()?.port();
+        Ok::<_, std::io::Error>((listener, port))
+    })();
+    let (listener, port) = bound.map_err(|e| {
+        format!("purlis could not listen on this machine for the browser's answer: {e}.")
+    })?;
+    Ok(Listening {
+        incoming: Box::new(listener),
+        port,
+    })
+}
+
 /// The real listener: the first unused of `ports` on `127.0.0.1`.
 pub fn bind(ports: &[u16]) -> Result<Listening, String> {
     let (port, listener) = bind_first(ports, &|port| {
@@ -211,11 +229,19 @@ const NOTHING_PAGE: &str = "<!doctype html>\n<html lang=\"en\"><head><meta chars
 <title>purlis</title></head><body><h1>Nothing to see here</h1>\
 <p>This address only takes the answer to a sign-in started in purlis.</p></body></html>\n";
 
+/// The content policy of every page but one that must post a form on.
+const NOTHING_ALLOWED: &str = "default-src 'none'";
+
 /// One fixed answer: the status line's words and the page.
 fn respond(conn: &mut dyn Conn, status: &str, page: &str) {
+    respond_under(conn, status, NOTHING_ALLOWED, page);
+}
+
+/// [`respond`], the page under the content policy `policy`.
+fn respond_under(conn: &mut dyn Conn, status: &str, policy: &str, page: &str) {
     let head = format!(
         "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\
-         Cache-Control: no-store\r\nContent-Security-Policy: default-src 'none'\r\n\
+         Cache-Control: no-store\r\nContent-Security-Policy: {policy}\r\n\
          X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n\
          Connection: close\r\n\r\n",
         page.len()
@@ -280,38 +306,50 @@ fn target_of(head: &[u8], port: u16) -> Result<&str, &'static str> {
     }
 }
 
-/// Reads and answers one connection: what its request was to this sign-in.
-fn serve(
+/// What a request's target was to the flow listening.
+pub enum Heard<T> {
+    /// Not this flow's: refused with the fixed page, and it counts against [`MOST_STRANGERS`].
+    NotOurs,
+    /// A page for the browser, and the flow goes on waiting: `policy` is its content policy.
+    Page { policy: String, page: String },
+    /// The redirect it waited for: answered with `page`, and the listener closes.
+    Took { value: T, page: &'static str },
+    /// The redirect said no: answered with `page`, and the listener closes.
+    Stop { why: Stopped, page: &'static str },
+}
+
+/// Reads and answers one connection.
+fn serve<T>(
     conn: &mut dyn Conn,
     peer: SocketAddr,
     port: u16,
-    state: &State,
     until: Instant,
     now: &dyn Fn() -> Instant,
-) -> Redirected {
+    read: &mut dyn FnMut(&str) -> Heard<T>,
+) -> Heard<T> {
     if !peer.ip().is_loopback() {
         // Not answered at all: the listener is bound to the loopback, so this cannot be the
         // person's browser.
-        return Redirected::NotOurs;
+        return Heard::NotOurs;
     }
     let Some(head) = head(conn, until, now) else {
         respond(conn, "400 Bad Request", NOTHING_PAGE);
-        return Redirected::NotOurs;
+        return Heard::NotOurs;
     };
     let target = match target_of(&head, port) {
         Ok(target) => target,
         Err(status) => {
             respond(conn, status, NOTHING_PAGE);
-            return Redirected::NotOurs;
+            return Heard::NotOurs;
         }
     };
-    let read = read_redirect(target, state);
-    match &read {
-        Redirected::Code(_) => respond(conn, "200 OK", DONE_PAGE),
-        Redirected::Declined(_) => respond(conn, "200 OK", DECLINED_PAGE),
-        Redirected::NotOurs => respond(conn, "404 Not Found", NOTHING_PAGE),
+    let heard = read(target);
+    match &heard {
+        Heard::NotOurs => respond(conn, "404 Not Found", NOTHING_PAGE),
+        Heard::Page { policy, page } => respond_under(conn, "200 OK", policy, page),
+        Heard::Took { page, .. } | Heard::Stop { page, .. } => respond(conn, "200 OK", page),
     }
-    read
+    heard
 }
 
 /// Waits for this sign-in's redirect on `listening` and gives its code, then closes the
@@ -326,6 +364,34 @@ pub fn take_the_redirect(
     cancelled: &AtomicBool,
     clock: &Clock<'_>,
 ) -> Result<Code, Stopped> {
+    take_with(
+        listening,
+        allowed,
+        cancelled,
+        clock,
+        &mut |target| match read_redirect(target, state) {
+            Redirected::Code(code) => Heard::Took {
+                value: code,
+                page: DONE_PAGE,
+            },
+            Redirected::Declined(why) => Heard::Stop {
+                why: Stopped::Declined(why),
+                page: DECLINED_PAGE,
+            },
+            Redirected::NotOurs => Heard::NotOurs,
+        },
+    )
+}
+
+/// **The listener's one loop**: every request that passes its checks goes to `read`, and what
+/// `read` hears decides the answer. Taken by value, so the listener is gone when this returns.
+pub fn take_with<T>(
+    listening: Listening,
+    allowed: Duration,
+    cancelled: &AtomicBool,
+    clock: &Clock<'_>,
+    read: &mut dyn FnMut(&str) -> Heard<T>,
+) -> Result<T, Stopped> {
     let Listening { mut incoming, port } = listening;
     let deadline = (clock.now)() + allowed;
     let mut strangers = 0;
@@ -340,10 +406,11 @@ pub fn take_the_redirect(
         match incoming.next() {
             Ok(Some((mut conn, peer))) => {
                 let until = (now + PER_REQUEST).min(deadline);
-                match serve(conn.as_mut(), peer, port, state, until, clock.now) {
-                    Redirected::Code(code) => return Ok(code),
-                    Redirected::Declined(why) => return Err(Stopped::Declined(why)),
-                    Redirected::NotOurs => {
+                match serve(conn.as_mut(), peer, port, until, clock.now, read) {
+                    Heard::Took { value, .. } => return Ok(value),
+                    Heard::Stop { why, .. } => return Err(why),
+                    Heard::Page { .. } => {}
+                    Heard::NotOurs => {
                         strangers += 1;
                         if strangers >= MOST_STRANGERS {
                             return Err(Stopped::Strangers);

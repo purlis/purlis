@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState } from "react";
-import { commands, type PoolLimitHitRow, type PoolLimitOffer } from "./bindings";
+import { useRef, useState } from "react";
+import type { PoolLimitHitRow, PoolLimitOffer } from "./bindings";
 import { checkLimit, saveLimits } from "./pools";
 import { Button } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
@@ -60,7 +60,7 @@ export function RaiseLimit({
     setChecked((was) => Object.fromEntries(Object.entries(was).filter(([one]) => one !== key)));
     const mine = (asked.current[key] ?? 0) + 1;
     asked.current[key] = mine;
-    void checkLimit(key, to).then((said) => {
+    void checkLimit(offer.pool, key, to).then((said) => {
       if (asked.current[key] !== mine) return;
       setChecked((was) => ({
         ...was,
@@ -87,11 +87,11 @@ export function RaiseLimit({
         <TextField
           key={hit.key}
           label={`${hit.plain} on pool ${offer.pool}, in ${hit.unit}`}
-          help={
+          help={`${
             isATime(hit.unit)
               ? `It took longer than ${hit.in_force} ${hit.unit}.`
               : `It needs ${hit.needed} ${hit.unit}. The limit is ${hit.in_force} ${hit.unit}.`
-          }
+          }${hit.team_suggests ? ` The team suggests ${hit.suggested} ${hit.unit}.` : ""}`}
           inputMode="numeric"
           columns={8}
           value={typed[hit.key] ?? ""}
@@ -118,40 +118,23 @@ export function RaiseLimit({
 }
 
 /**
- * **The form where a refusal on pool `pool` said a limit was hit** (#4397): asked of the core,
- * never read from the words, so a refusal that hit no limit draws nothing. A value saved goes to the
- * pool, then `onRaised` goes again. Used where a person meets a limit with no flow of its own, as
- * Start a chat and a move have. Given a `key` of the refusal, so another refusal starts over.
+ * **The form where a refusal hit a limit** (#4397): its `offer` came with the refusal, so a refusal
+ * that hit no limit draws nothing. A value saved goes to the pool, then `onRaised` goes again. Used
+ * where a person meets a limit with no flow of its own, as Start a chat and a move have. Given a
+ * `key` of the refusal, so another refusal starts over.
  */
 export function OfferToRaise({
-  pool,
-  refused,
+  offer,
   action,
   onRaised,
 }: {
-  pool: string;
-  /** The refusal, in the words it was said in. */
-  refused: string;
+  offer: PoolLimitOffer;
   /** The press: `Save to the pool and ask again`. */
   action: string;
   onRaised: () => void;
 }) {
-  const [offer, setOffer] = useState<PoolLimitOffer | null>(null);
   const [saving, setSaving] = useState(false);
   const [why, setWhy] = useState<string>();
-  useEffect(() => {
-    let gone = false;
-    void commands
-      .poolLimitOfferForMove(pool, refused)
-      .catch(() => null)
-      .then((said) => {
-        if (!gone) setOffer(said);
-      });
-    return () => {
-      gone = true;
-    };
-  }, [pool, refused]);
-  if (offer === null) return null;
   const apply = async (values: ReadonlyArray<readonly [string, number]>) => {
     setSaving(true);
     setWhy(undefined);

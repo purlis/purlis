@@ -9,6 +9,11 @@
   },
   "sites": [
     {
+      "at": "agentidentity.rs agent_identity_finish",
+      "writes": "this machine's network record",
+      "by": ["agentIdentityFinish"]
+    },
+    {
       "at": "asking.rs forget_sandbox_block",
       "writes": "this machine's network record",
       "by": ["forgetSandboxBlock"]
@@ -18,6 +23,12 @@
       "writes": "this machine's answers about the project (sandbox-grants)",
       "by": [],
       "why": "The behaviour suite's own fixture: it gives a test service to a test project on the machine its chats run on, as a person would in Settings; no window command calls it."
+    },
+    {
+      "at": "behaviour/pool_journey.rs in_a_docker_pool",
+      "writes": "this machine's store: the pins",
+      "by": [],
+      "why": "The Docker pool journey's own fixture: it sets where a test workspace's chats run, as a person would in its settings; no window command calls it."
     },
     {
       "at": "chatbrowsers.rs allow_chat_browser",
@@ -193,6 +204,22 @@
       "by": ["setChatsRunOn"]
     },
     {
+      "at": "dockerpools.rs follow_project_chats_run_on_at",
+      "writes": "this machine's store: the pins",
+      "by": ["followProjectChatsRunOn"]
+    },
+    {
+      "at": "dockerpools.rs set_project_chats_run_on_at",
+      "writes": "this machine's store: the pins",
+      "by": ["setProjectChatsRunOn"]
+    },
+    {
+      "at": "dockerpools.rs put_workspace_place_back",
+      "writes": "this machine's store: the pins",
+      "by": [],
+      "why": "A move of a workspace's chats that didn't happen puts its setting back, from the move's own thread: no window command reaches it within two calls."
+    },
+    {
       "at": "planes.rs forget",
       "writes": "this machine's store: the pins",
       "by": ["forgetProject"]
@@ -240,6 +267,16 @@
       "why": "It writes the window's tabs, which no lane's read draws."
     },
     {
+      "at": "loginasks.rs pressed",
+      "writes": "this machine's network record",
+      "by": ["answerBrowserLogin"]
+    },
+    {
+      "at": "loginasks.rs written",
+      "writes": "the project's manifest and its local settings",
+      "by": ["answerBrowserLogin"]
+    },
+    {
       "at": "proposals.rs apply_in",
       "writes": "the project's manifest and its local settings",
       "by": ["applyProposedChange"]
@@ -265,11 +302,6 @@
       "by": ["allowProjectExpects"]
     },
     {
-      "at": "sandboxing.rs allow_persona",
-      "writes": "this machine's answers about the project (sandbox-grants)",
-      "by": ["allowPersonaHosts"]
-    },
-    {
       "at": "sandboxing.rs allow_persona_grants",
       "writes": "this machine's network record",
       "by": ["allowPersonaGrants"]
@@ -283,6 +315,11 @@
       "at": "sandboxing.rs allow_project_expects",
       "writes": "this machine's network record",
       "by": ["allowProjectExpects"]
+    },
+    {
+      "at": "sandboxing.rs allow_shown",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["allowPersonaHosts", "agentIdentityFinish"]
     },
     {
       "at": "sandboxing.rs allow_sandbox_block",

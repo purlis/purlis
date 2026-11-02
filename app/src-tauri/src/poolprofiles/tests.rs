@@ -653,6 +653,8 @@ fn a_runner_in(container: char, device: &str) -> purlis_core::runners::Kept {
         carry_failed: false,
         unpaired: false,
         signed_out: Vec::new(),
+        last_stop: None,
+        held: false,
         engine: None,
         home_created: None,
     }
@@ -852,6 +854,43 @@ fn a_pools_page_says_which_limit_the_file_got_wrong() {
     }
 }
 
+/// #4287: the page shows the team's default and highest, and says a value kept above it holds to it.
+#[test]
+fn a_pools_page_shows_what_the_team_set() {
+    use purlis_core::poollimits::{Chosen, LimitId};
+    let team = serde_json::json!({
+        "signInWait": {"default": 10, "highest": 40},
+        "codeSize": {"default": 2048},
+    });
+    let chosen = Chosen::default()
+        .under_team(Some(&team))
+        .with(LimitId::SignInWait, Some(100));
+    let shown = limits_shown(&chosen, &[], false, &[]);
+    let rows: Vec<&PoolLimitRow> = shown
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .collect();
+    let row = rows.iter().find(|row| row.key == "signInWait").unwrap();
+    assert_eq!(row.default, 10);
+    assert_eq!(row.suggested, None);
+    assert_eq!(
+        row.highest_said.as_deref(),
+        Some("The team allows up to 40 minutes.")
+    );
+    assert!(
+        row.refused
+            .as_deref()
+            .unwrap_or("")
+            .contains("at most 40 minutes")
+    );
+    let code = rows.iter().find(|row| row.key == "codeSize").unwrap();
+    assert_eq!(code.default, 1024, "a higher default raises nothing");
+    assert_eq!(code.suggested, Some(2048));
+    let other = rows.iter().find(|row| row.key == "profileSize").unwrap();
+    assert_eq!(other.highest_said, None);
+}
+
 /// Q15: the window's check and the file's refusal are one, word for word.
 #[test]
 fn the_windows_check_refuses_as_the_file_does() {
@@ -861,9 +900,8 @@ fn the_windows_check_refuses_as_the_file_does() {
         ("signInWait", "121", serde_json::json!(121)),
         ("codeSize", "lots", serde_json::json!("lots")),
     ] {
-        let by_window =
-            tauri::async_runtime::block_on(pool_limit_check(key.to_owned(), typed.to_owned()))
-                .unwrap_err();
+        let config = tempfile::tempdir().unwrap();
+        let by_window = limit_checked_on(config.path(), "builds", key, typed).unwrap_err();
         let row = serde_json::json!({ key: held });
         let (_, refused) = Chosen::read_row(row.as_object().unwrap(), None);
         assert_eq!(by_window, refused[0].why);
@@ -915,12 +953,19 @@ fn a_pools_page_lists_every_limit_once_with_what_the_person_set() {
 /// lists a value that would change nothing.
 #[test]
 fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait() {
-    use purlis_core::poollimits::{Chosen, LimitId, hits_said_in};
-    let said = sign_in_ran_out("ran-out-signing-in", 15);
+    use purlis_core::poollimits::{Chosen, LimitId, attempt};
+    let (said, refused) = attempt(|| {
+        sign_in_ran_out(
+            "ran-out-signing-in",
+            15,
+            &purlis_core::poollimits::Chosen::default(),
+        )
+    });
     assert!(said.starts_with(driven::TOOK_TOO_LONG), "{said}");
     assert!(said.contains("raise it to 30 minutes"), "{said}");
-    let hits = hits_said_in("ran-out-signing-in", &said);
-    assert_eq!(hits[0].limit, LimitId::SignInWait);
+    let refused = refused.expect("the wait it ran out of");
+    assert_eq!(refused.pool, "ran-out-signing-in");
+    assert_eq!(refused.hits[0].limit, LimitId::SignInWait);
 
     let page = limits_shown(&Chosen::default(), &[], true, &[]);
     let keys: Vec<&str> = page
@@ -996,18 +1041,65 @@ fn a_keep_the_command_asks_is_held_to_the_strips_gate_and_named_on_the_pool() {
 /// other reason offers nothing.
 #[test]
 fn a_profile_row_late_by_the_pools_wait_offers_double_and_no_other_does() {
-    use purlis_core::poollimits::{LimitId, hits_said_in};
-    let said = late_said(
-        "late-on-a-row",
-        30,
-        crate::runnerlinks::ANSWER_LATE.to_owned(),
-    );
+    use purlis_core::poollimits::{LimitId, attempt};
+    let (said, refused) = attempt(|| {
+        late_said(
+            "late-on-a-row",
+            &purlis_core::poollimits::Chosen::default(),
+            crate::runnerlinks::ANSWER_LATE.into(),
+        )
+    });
     assert!(said.contains("raise it to 60 seconds"), "{said}");
-    let hits = hits_said_in("late-on-a-row", &said);
-    assert_eq!(hits[0].limit, LimitId::AnswerWait);
-    let other = late_said("other-on-a-row", 30, "the runner said: no".to_owned());
+    let refused = refused.expect("the wait it ran out of");
+    assert_eq!(refused.pool, "late-on-a-row");
+    assert_eq!(refused.hits[0].limit, LimitId::AnswerWait);
+    let (other, refused) = attempt(|| {
+        late_said(
+            "other-on-a-row",
+            &purlis_core::poollimits::Chosen::default(),
+            "the runner said: no".into(),
+        )
+    });
     assert_eq!(other, "the runner said: no");
-    assert!(hits_said_in("other-on-a-row", &other).is_empty());
+    assert_eq!(refused, None);
+}
+
+/// **Only what purlis measured offers anything** (spec #4275), whatever a refusal's words are.
+#[test]
+fn a_refusal_in_a_limits_words_with_no_hit_offers_nothing() {
+    use purlis_core::poollimits::{LimitId, attempt};
+    let said_alike = LimitId::ProfileSize.limit().hit(128, 151, None).said();
+    let (said, refused) = attempt(|| {
+        late_said(
+            "alike-on-a-row",
+            &purlis_core::poollimits::Chosen::default(),
+            said_alike.clone().into(),
+        )
+    });
+    assert_eq!(said, said_alike);
+    assert_eq!(refused, None);
+}
+
+/// **A limit of the profile's settings offers on the pool it was kept for** (#4397): the hits come
+/// with the refusal, however long ago a sentence like it was said.
+#[test]
+fn a_profile_over_its_pools_limit_offers_what_it_hit_on_that_pool() {
+    use purlis_core::poollimits::{LimitId, attempt};
+    let hit = LimitId::ProfileSize.limit().hit(128, 151, None);
+    let (said, refused) = attempt(|| {
+        late_said(
+            "over-on-a-row",
+            &purlis_core::poollimits::Chosen::default(),
+            onrunner::NotSent {
+                said: hit.said(),
+                hits: vec![hit],
+            },
+        )
+    });
+    assert_eq!(said, hit.said());
+    let offer = offer_of(refused.expect("the limit it hit"));
+    assert_eq!(offer.pool, "over-on-a-row");
+    assert_eq!(offer.hits[0].suggested, hit.suggested.map(|n| n as u32));
 }
 
 /// **A cluster pool's runner is its team's** (#4286): its page has no limit shaping one, and what
@@ -1036,5 +1128,44 @@ fn only_a_docker_pools_page_lists_the_limits_shaping_its_runner_and_what_waits()
     assert_eq!(
         runner.applies.as_deref(),
         Some("Applies when this runner is next replaced.")
+    );
+}
+
+/// **A stop heard between two asks says its reason** (#4367): the strip's next ask finds the
+/// sign-in let go, and reads why rather than that it is over.
+#[cfg(unix)]
+#[test]
+fn a_stop_between_two_asks_says_its_reason() {
+    let login = purlis_core::profilestore::sign_in::Login {
+        program: "/bin/sh".to_owned(),
+        args: vec!["-c".to_owned(), "sleep 30".to_owned()],
+        env: Vec::new(),
+        cleared: Vec::new(),
+    };
+    let driving = driven::drive_with(&login, "claude", None, None, driven::LONGEST, || {
+        Standing::SignedOut
+    })
+    .unwrap();
+    let flow = NEXT_SIGN_IN.fetch_add(1, Ordering::SeqCst);
+    let pool = "a-stop-between-two-asks";
+    SIGN_INS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(SignIn {
+            flow,
+            pool: pool.to_owned(),
+            name: "work".to_owned(),
+            wait: 1,
+            driving: Arc::new(driving),
+            judged: None,
+        });
+
+    cancel_sign_ins_on(pool);
+
+    let said = still_driving(flow).map(|_| ()).unwrap_err();
+    assert!(said.contains("no longer marked yours"), "{said}");
+    assert_eq!(
+        still_driving(u32::MAX).map(|_| ()).unwrap_err(),
+        "that sign-in is over"
     );
 }

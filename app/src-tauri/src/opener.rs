@@ -830,6 +830,9 @@ pub fn window_holds_planes(
 /// **The forge is `charter init`'s rule** (#839): read from the remote of the repo the project
 /// is made for, else asked. `forge` is the operator's answer (`github`, `gitlab`) on the call
 /// after a question.
+///
+/// **`template` is laid out in a project this call made** (FR-17, #4599), by id. A folder that
+/// is a project already keeps what it has, and only opens.
 #[tauri::command]
 #[specta::specta]
 ///
@@ -841,14 +844,16 @@ pub async fn create_project(
     plane_is_this_repo: bool,
     adopt: Option<String>,
     forge: Option<crate::firstrun::ForgeWord>,
+    template: Option<String>,
 ) -> Result<ProjectAnswer, String> {
     let forge = forge.map(purlis_core::forge::Kind::from);
     crate::off_the_window("making the project", move || {
-        match scaffold_at(
+        match make_from_template(
             std::path::Path::new(&path),
             plane_is_this_repo,
             adopt,
             forge,
+            template.as_deref(),
         ) {
             Ok(root) => Ok(ProjectAnswer {
                 opened: Some(
@@ -877,6 +882,38 @@ pub struct ProjectAnswer {
     /// Why the repo's remote does not say which forge the project's repos are on: the window
     /// asks GitHub or GitLab and calls again with the answer. Nothing was made.
     pub asks_forge: Option<String>,
+}
+
+/// [`scaffold_at`], then the template, in a project that was not there before. An id purlis does
+/// not ship is refused before anything is written.
+fn make_from_template(
+    at: &std::path::Path,
+    plane_is_this_repo: bool,
+    adopt: Option<String>,
+    forge: Option<purlis_core::forge::Kind>,
+    template: Option<&str>,
+) -> Result<std::path::PathBuf, NotMade> {
+    let template = template
+        .map(|id| {
+            purlis_core::template::named(id).ok_or_else(|| {
+                NotMade::Refused(format!("purlis has no project template named {id}."))
+            })
+        })
+        .transpose()?;
+    let already = at
+        .canonicalize()
+        .is_ok_and(|root| purlis_core::plane::find_root(&root).is_ok_and(|found| found == root));
+    let root = scaffold_at(at, plane_is_this_repo, adopt, forge)?;
+    if let (Some(template), false) = (template, already) {
+        purlis_core::template::apply(&root, template, None).map_err(|why| {
+            NotMade::Refused(format!(
+                "purlis made the project at {} without its template: {why} Creating it again \
+                 opens it with no template.",
+                root.display()
+            ))
+        })?;
+    }
+    Ok(root)
 }
 
 /// Scaffolds the plane and answers with the directory to open, or with why nothing was made.
@@ -1172,6 +1209,53 @@ mod tests {
             refused.contains("is not the top level of a git working tree"),
             "{refused}"
         );
+    }
+
+    /// A file `template` lays out that a project with no template does not have.
+    fn a_persona_file(template: &purlis_core::template::Template) -> &str {
+        template
+            .files
+            .iter()
+            .map(|(path, _)| path.as_str())
+            .find(|path| path.starts_with("personas/") && !path.starts_with("personas/steward/"))
+            .expect("every template adds a persona")
+    }
+
+    #[test]
+    fn a_new_project_gets_the_template_it_was_made_from() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let at = dir.path().join("made");
+        let template = &purlis_core::template::all()[0];
+
+        let root = make_from_template(&at, false, None, GITHUB, Some(template.id.as_str()))
+            .expect("a project from a template");
+
+        assert!(root.join(a_persona_file(template)).exists());
+    }
+
+    #[test]
+    fn an_unknown_template_writes_nothing() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let at = dir.path().join("made");
+
+        let refused = make_from_template(&at, false, None, GITHUB, Some("no-such-template"))
+            .expect_err("no such template")
+            .to_string();
+
+        assert!(refused.contains("no project template"), "{refused}");
+        assert!(!at.exists());
+    }
+
+    #[test]
+    fn a_project_already_there_keeps_what_it_has() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let at = dir.path().join("made");
+        let template = &purlis_core::template::all()[0];
+        let root = scaffold_at(&at, false, None, GITHUB).expect("a project");
+
+        make_from_template(&at, false, None, GITHUB, Some(template.id.as_str())).expect("opens it");
+
+        assert!(!root.join(a_persona_file(template)).exists());
     }
 
     #[test]

@@ -118,6 +118,18 @@ pub enum What {
     Question { text: String },
     /// Answer the question task `to` asked this chat.
     Answer { to: u32, text: String },
+    /// **A question this chat's harness would ask the person, for the app to route** (#4555, ADR
+    /// 0107): its prompt, or a plain `ask_operator`. The app's own record of the chat decides:
+    /// a task with an asking chat asks it, as [`What::Question`] does, and any other chat is
+    /// told [`Answered::ToThePerson`], and asks as it always did.
+    Route { text: String },
+    /// **Pass the question task `to` asked this chat on to the person** (#4554), with this
+    /// chat's own one-line `note`. It has no field for the question, so its words cannot change.
+    PassOn {
+        to: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
     /// Wait for the answer to this task's question, for at most `within_secs`.
     AwaitAnswer { within_secs: u32 },
     /// The waiting command has the answer: it need not be handed to the next turn too.
@@ -165,6 +177,14 @@ pub enum Answered {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         messages: Vec<crate::dispatchtalk::Record>,
     },
+    /// A [`What::Route`] question is not this chat's asking chat's: the person is asked, where
+    /// they always were (#4555).
+    ToThePerson,
+    /// A [`What::Route`] question was not sent, because this chat is paused on one already, in
+    /// this sentence (#4555): it goes neither to its asking chat nor around it.
+    AlreadyAsking { why: String },
+    /// The question of the task called `to` waits on the person now (#4554).
+    PassedOn { to: String },
     /// Task `of`, called `name`, is being cancelled; its report follows as any report does.
     Cancelling { of: u32, name: String },
     /// Finished task `of`, called `name`, is closed (#1981 D-4).
@@ -616,9 +636,16 @@ pub struct Ledger {
     /// `UserPromptSubmit` or `Stop`. They may have a harness's own picker open, which no hook
     /// reports, so nothing is typed into one until its harness says a turn began or ended.
     keyed: std::collections::HashSet<u32>,
+    /// The chats the person sent a line since their last `UserPromptSubmit` or `Stop` (#4562):
+    /// the turn that begins next is theirs, and no background turn.
+    sent: std::collections::HashSet<u32>,
     /// Tasks whose chats have closed, oldest first: who asked, what it was called, and its
     /// report where it sent one. So a wait on one says how it ended.
     gone: std::collections::VecDeque<(u32, Gone)>,
+    /// By chat, every chat's and not a task's alone (#4550): the last message its harness said a
+    /// turn of its ended on (#1981), masked by the app before it is kept, until its next turn
+    /// begins. **In memory only.** The one source of what a chat waiting on the person said.
+    last: HashMap<u32, String>,
 }
 
 /// A task whose chat has closed.
@@ -807,9 +834,6 @@ struct Task {
     /// held, or it was showing the person a prompt), with that turn not known to be over: it
     /// is set again once that has gone.
     bound_owed: bool,
-    /// The last message its harness said a turn of its ended on (#1981), masked by the app
-    /// before it is kept. **In memory only.**
-    last: Option<String>,
     /// It was typed purlis's line asking for its report, and has not reported since (#1981).
     report_asked: bool,
     /// What it said and ran, for `purlis dispatch read` (#1981).
@@ -1373,6 +1397,7 @@ impl Ledger {
     /// that much is kept, with its report, so a wait on it says how it ended. Nothing else is
     /// remembered of it, as a task or as an asking chat.
     pub fn forget(&mut self, chat: u32, task_of: Option<(u32, &str)>) {
+        self.last.remove(&chat);
         let entry = self.tasks.remove(&chat);
         // **A report that still waits for the asking chat's next turn is still told of**
         // (#1485): a task ends at its report, which is before the asking chat has been typed
@@ -1442,6 +1467,9 @@ impl Ledger {
         if let Some(told) = self.landed.remove(&old) {
             self.landed.insert(new, told);
         }
+        if let Some(said) = self.last.remove(&old) {
+            self.last.insert(new, said);
+        }
         // The line was typed into the old one's pane, which is gone: the new one took none.
         self.typed.remove(&old);
         for told in self.landed.values_mut() {
@@ -1493,16 +1521,16 @@ impl Ledger {
         }
     }
 
-    /// Task `task`'s harness said its turn ended on `text` (#1981), masked by the app already.
-    /// Kept for a task alone, the latest only: a chat that is no task here keeps nothing.
-    pub fn said_last(&mut self, task: u32, text: String) {
-        if let Some(entry) = self.tasks.get_mut(&task) {
+    /// Chat `chat`'s harness said its turn ended on `text` (#1981), masked by the app already.
+    /// The latest is kept for every chat (#4550), and a task's last few for the chat that asked.
+    pub fn said_last(&mut self, chat: u32, text: String) {
+        if let Some(entry) = self.tasks.get_mut(&chat) {
             if entry.heard.finals.len() >= FINALS_KEPT {
                 entry.heard.finals.pop_front();
             }
             entry.heard.finals.push_back(text.clone());
-            entry.last = Some(text);
         }
+        self.last.insert(chat, text);
     }
 
     /// Task `task` ran `ran` (#1981), masked by the app already. Kept for a task alone, the
@@ -1525,11 +1553,9 @@ impl Ledger {
             .or_else(|| self.gone(asker, task).map(|gone| gone.heard.clone()))
     }
 
-    /// The last message task `task`'s turn ended on, as kept ([`Self::said_last`]).
-    pub fn last_said(&self, task: u32) -> Option<&str> {
-        self.tasks
-            .get(&task)
-            .and_then(|entry| entry.last.as_deref())
+    /// The last message chat `chat`'s turn ended on, as kept ([`Self::said_last`]).
+    pub fn last_said(&self, chat: u32) -> Option<&str> {
+        self.last.get(&chat).map(String::as_str)
     }
 
     /// **Task `task`'s turn ended** (#1981), and what is done about its report: `owes` says it
@@ -1555,7 +1581,7 @@ impl Ledger {
         if entry.report_asked {
             entry.report_asked = false;
             return Owing::Make {
-                last: entry.last.clone(),
+                last: self.last.get(&task).cloned(),
             };
         }
         self.landed(task, Landed::ReportOwed);
@@ -1734,6 +1760,20 @@ impl Ledger {
             entry.end = Some(End::Reported);
             entry.later_turn = true;
         }
+    }
+
+    /// **The person sent chat `chat` a line of theirs** (#4562): the next turn it begins is
+    /// theirs, whatever else is about to begin one. Forgotten as that turn begins or the one it
+    /// waited behind ends.
+    pub fn person_sent(&mut self, chat: u32) {
+        self.sent.insert(chat);
+    }
+
+    /// **Whether the turn chat `chat` begins now is a background turn** (#4562): purlis typed its
+    /// line, or `own_work` wakes it, and the person has sent nothing since. Asked before
+    /// [`Self::turn_began`] forgets either.
+    pub fn background_turn(&self, chat: u32, own_work: bool) -> bool {
+        !self.sent.contains(&chat) && (own_work || self.typed.contains(&chat))
     }
 
     /// **What the app does next for task `task`, which has reported** (#1485): its program is
@@ -2128,12 +2168,11 @@ impl Ledger {
             }
         }
         // What the last turn ended saying is not this turn's (#1981).
-        if let Some(entry) = self.tasks.get_mut(&chat) {
-            entry.last = None;
-        }
+        self.last.remove(&chat);
         self.landed.remove(&chat);
         self.typed.remove(&chat);
         self.keyed.remove(&chat);
+        self.sent.remove(&chat);
         self.talk.turn_began(chat);
     }
 
@@ -2167,6 +2206,7 @@ impl Ledger {
     /// behind it.
     pub fn turn_ended(&mut self, chat: u32) {
         self.keyed.remove(&chat);
+        self.sent.remove(&chat);
     }
 
     /// What chat `chat` is typed a line about now, or nothing: something was left for its next

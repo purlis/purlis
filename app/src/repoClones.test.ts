@@ -8,6 +8,7 @@ import {
   cloneRepos,
   clonesInAll,
   cloningWords,
+  forgetLandedClones,
   forgetRepoClones,
   settleRepoClones,
   stopRepoClones,
@@ -412,6 +413,35 @@ describe("settling a workspace's clones against the clones its panels list", () 
 
     settleRepoClones("/plane", "alpha", ["svc", "web"]);
     expect(held()).toEqual([]);
+  });
+
+  it("forgets one that landed once its workspace is focused, listed or not (#4466)", async () => {
+    mockIPC((cmd) => (cmd === "clone_repo" ? ["landed"] : null));
+    await cloneRepos("/plane", "alpha", ["web"]);
+    expect(held()).toEqual([["web", "cloned"]]);
+
+    forgetLandedClones("/plane", "alpha");
+
+    expect(held()).toEqual([]);
+  });
+
+  it("keeps a failed clone and one still running as its workspace is focused", async () => {
+    mockIPC((cmd, args) => {
+      if (cmd !== "clone_repo") return null;
+      return (args as { repo: string }).repo === "bad"
+        ? Promise.reject("refused")
+        : new Promise(() => {});
+    });
+    await cloneRepos("/plane", "alpha", ["bad"]);
+    void cloneRepos("/plane", "alpha", ["slow"]);
+    await vi.waitFor(() => expect(held()).toContainEqual(["slow", "cloning"]));
+
+    forgetLandedClones("/plane", "alpha");
+
+    expect(held()).toEqual([
+      ["bad", "failed"],
+      ["slow", "cloning"],
+    ]);
   });
 
   it("keeps a failed clone and one still running, though the panels list the repo", async () => {

@@ -1663,7 +1663,15 @@ pub enum Browsing {
     /// armed that login, reads its values from the vault itself and hands them to the session
     /// host, whose browser fills them only on the login's own origin. The chat is answered
     /// with the page the login left, never a value.
-    LogIn { login: String },
+    ///
+    /// **`suggested`, for a login the persona doesn't declare** (#4595): the site, vault and keys
+    /// the chat suggests. They're only a suggestion: the app shows them to the person, who
+    /// confirms the site, and what's filled is what the person answered.
+    LogIn {
+        login: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        suggested: Option<crate::loginask::Suggested>,
+    },
 }
 
 /// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path
@@ -2806,10 +2814,10 @@ pub type DoingHeard = Box<dyn Fn(Doing) + Send + Sync + 'static>;
 /// from, as **a report purlis made from its last message**.
 ///
 /// **The line itself is never recorded**, as a [`Doing`] is not: a line of its own, sent once
-/// and never spooled ([`tell_turn_output`]), which the host keeps in memory, for a task alone,
-/// until its next turn begins or its chat closes. The text is the chat's own words: the host
-/// masks what looks like a credential before it keeps any of it, and hands it on only quoted
-/// as data. **A report purlis makes from it is recorded, by design**: that masked text is the
+/// and never spooled ([`tell_turn_output`]), which the host keeps in memory, for every chat
+/// (#4550), until its next turn begins or its chat closes. The text is the chat's own words: the
+/// host masks what looks like a credential before it keeps any of it, and hands it on only
+/// quoted as data. **A report purlis makes from it is recorded, by design**: that masked text is the
 /// report, left for the chat that asked and kept on the task's dispatch record as any report is.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TurnOutput {

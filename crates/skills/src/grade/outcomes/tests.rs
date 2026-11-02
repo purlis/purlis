@@ -293,6 +293,44 @@ fn a_judges_spend_counts_toward_the_cap() {
     assert_eq!(report.spent_tokens, Some(300));
 }
 
+/// An ask says what it asked for, so it does not read as the skill's fault.
+#[test]
+fn a_chat_that_asked_says_for_what() {
+    let mut host = Judged {
+        asked: Vec::new(),
+        eval_end: |_| ChatEnd::AskedFor {
+            what: "the skill deploy".into(),
+        },
+        judge: fair_judge,
+    };
+    let report = grade(&request(), &mut host, None);
+    let run = &report.outcomes[0].results[0];
+    assert_eq!(run.passed, Some(0));
+    assert!(run.asked);
+    let why = run.failed.as_deref().unwrap();
+    assert!(
+        why.contains("the skill deploy") && why.contains("not a fault of the skill"),
+        "{why}"
+    );
+    assert_eq!(report.asked(), 6);
+
+    let mut host = Judged {
+        asked: Vec::new(),
+        eval_end: turns,
+        judge: |_| {
+            (
+                ChatEnd::AskedFor {
+                    what: "the tool Write".into(),
+                },
+                None,
+            )
+        },
+    };
+    let report = grade(&request(), &mut host, None);
+    let why = report.outcomes[0].results[0].failed.as_deref().unwrap();
+    assert!(why.contains("The judge asked for the tool Write"), "{why}");
+}
+
 /// A chat that closed mid-turn and said no spend stops a capped grade, as the cap could not be
 /// held after it, however many such chats alternate with ones that ran.
 #[test]

@@ -289,7 +289,7 @@ fn arguments(tool: &str, todo: &str) -> Value {
         // Every other dispatch subcommand's tool (#3786): the app's to answer.
         "dispatch_wait" => json!({ "chat": 9, "wait_seconds": 1 }),
         "dispatch_tell" | "dispatch_answer" => json!({ "chat": 9, "text": "Blue" }),
-        "dispatch_cancel" | "dispatch_close" => json!({ "chat": 9 }),
+        "dispatch_cancel" | "dispatch_close" | "dispatch_pass_on" => json!({ "chat": 9 }),
         "dispatch_note" => json!({ "text": "Half painted" }),
         "dispatch_ask" => json!({ "question": "Which blue?", "wait_seconds": 1 }),
         "ask_operator" => json!({ "question": "Ship it?" }),

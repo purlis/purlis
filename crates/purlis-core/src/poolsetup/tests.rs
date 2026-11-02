@@ -117,10 +117,10 @@ fn a_runner_removed_by_hand_needs_attention_on_the_pool_step_alone() {
 }
 
 #[test]
-fn a_pool_with_no_runner_offers_to_make_it_again() {
+fn a_pool_with_no_runner_yet_says_so_and_checks_again() {
     let setup = answer(&on_a_pool(Runner::None, SignIns::NotAsked));
     assert_eq!(states(&setup)[1], Attention);
-    assert_eq!(next(&setup, StepId::Pool), ActionId::MakeRunnerAgain);
+    assert_eq!(next(&setup, StepId::Pool), ActionId::CheckAgain);
 }
 
 #[test]
@@ -487,4 +487,78 @@ fn a_skip_does_not_hide_what_needs_attention() {
     );
     assert_eq!(states(&setup)[2], Attention);
     assert_eq!(next(&setup, StepId::Signins), ActionId::RemovePool);
+}
+
+#[test]
+fn coming_back_finds_the_name_given_before_the_pool_is_made() {
+    let config = tempfile::tempdir().unwrap();
+    let here = Here {
+        config: config.path(),
+        plane: None,
+        docker: None,
+        engine: Err("none".into()),
+    };
+    let (setup, name) = resumed(&here).unwrap();
+    assert_eq!((setup.pool, name), (None, None));
+
+    choose_name(config.path(), Some("dev-box")).unwrap();
+    let (setup, name) = resumed(&here).unwrap();
+    assert_eq!(setup.pool, None, "not made yet");
+    assert_eq!(name.as_deref(), Some("dev-box"));
+}
+
+#[test]
+fn a_name_typed_never_picks_a_pool_and_the_pool_made_is_gone_on_with() {
+    use crate::runners::Set;
+    let config = tempfile::tempdir().unwrap();
+    let here = Here {
+        config: config.path(),
+        plane: None,
+        docker: None,
+        engine: Err("none".into()),
+    };
+    runners::record_pool(
+        config.path(),
+        &crate::runners::tests::pool("dev-box", Set::default()),
+    )
+    .unwrap();
+
+    choose_name(config.path(), Some("dev-box")).unwrap();
+    assert_eq!(resumed(&here).unwrap().0.pool, None, "typed, not chosen");
+
+    choose_pool(config.path(), "dev-box").unwrap();
+    let (setup, name) = resumed(&here).unwrap();
+    assert_eq!(setup.pool.as_deref(), Some("dev-box"));
+    assert_eq!(name, None);
+
+    let locked = runners::lock(config.path());
+    runners::forget_pool_locked(config.path(), "dev-box", &locked).unwrap();
+    drop(locked);
+    assert_eq!(read_choices(config.path()).unwrap().pool, None);
+}
+
+#[test]
+fn a_pool_this_machine_has_not_cant_be_gone_on_with() {
+    let config = tempfile::tempdir().unwrap();
+    assert!(choose_pool(config.path(), "nowhere").is_err());
+}
+
+#[test]
+fn without_docker_the_next_action_names_the_official_page() {
+    let setup = answer(&facts(Engine::Missing));
+    let next = setup.step(StepId::Where).unwrap().next.as_ref().unwrap();
+    assert!(
+        next.url
+            .as_deref()
+            .unwrap()
+            .starts_with("https://docs.docker.com/"),
+        "{next:?}"
+    );
+}
+
+#[test]
+fn a_name_no_pool_could_have_is_refused_and_not_kept() {
+    let config = tempfile::tempdir().unwrap();
+    assert!(choose_name(config.path(), Some(&"x".repeat(70_000))).is_err());
+    assert_eq!(read_choices(config.path()).unwrap().name, None);
 }

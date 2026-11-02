@@ -43,6 +43,8 @@ export type Control = {
    *  `checks` any of a few, one entry per line, and `status` a line of text (#1340). */
   kind: "text" | "choice" | "lines" | "colour" | "checks" | "status";
   choices?: readonly string[];
+  /** A `text` that takes a count, so a touch keyboard offers digits. */
+  numeric?: true;
   /** A `checks`' boxes, each with what it says beside it. */
   options?: readonly Option[];
   /** What a `status` says while the value is `value` (empty: not set). */
@@ -182,6 +184,29 @@ export function textAt(
         value: draft.trim() === "" ? null : { kind: "text", value: draft.trim() },
       },
     ],
+  };
+}
+
+/** One key holding a whole number, typed: an empty box removes the key, and what is no number is
+ *  written as typed, so the core refuses it in its own words. */
+export function numberAt(path: SettingsStep[], label: string, hint?: string): Control {
+  return {
+    ...textAt(path, label, { hint }),
+    numeric: true,
+    edits: (draft) => {
+      const typed = draft.trim();
+      if (typed === "") return [{ path, value: null }];
+      const whole = /^[0-9]+$/.test(typed) ? Number(typed) : undefined;
+      return [
+        {
+          path,
+          value:
+            whole !== undefined && Number.isSafeInteger(whole)
+              ? { kind: "integer", value: whole }
+              : { kind: "text", value: typed },
+        },
+      ];
+    },
   };
 }
 
@@ -539,6 +564,12 @@ const PLANE_KEYS: readonly SaveKey[] = [
     none: "purlis/save/<this machine's name>",
   },
   { key: "sign", label: "Sign commits", kind: "bool", hint: "Sign the commits a save makes." },
+  {
+    key: "refuse_unsandboxed_commit",
+    label: "Refuse unsandboxed commits",
+    kind: "bool",
+    hint: "Make `purlis worktree commit` refuse a chat with no sandbox and send it to git. Off, it commits there with that chat's own git.",
+  },
   {
     key: "autosave",
     label: "Auto-save",

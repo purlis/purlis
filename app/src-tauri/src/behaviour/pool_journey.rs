@@ -196,8 +196,12 @@ fn keep(machine: &Machine, pool: &str, kept: &Kept) -> Result<Option<Standing>, 
     };
     said.into_iter()
         .next()
-        .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
+        .unwrap_or_else(|| Err("the runner did not answer".into()))
         .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
+        .map_err(|why| {
+            purlis_core::poollimits::hits_on(pool, &why.hits);
+            why.said
+        })
 }
 
 /// What a start on the pool asks first (`Chats`'s start, through `Linked`).
@@ -415,9 +419,11 @@ fn in_the_journey(
     for one in 0..=MOST_DEFAULT_FILES {
         std::fs::write(many.join(format!("{one}.md")), "x").expect("it is written");
     }
-    let refused = ready_to_start(machine, &target.root, pool).expect_err("it is over the limit");
-    let over = onrunner::over_limit(PROFILE, &refused).expect("a limit said it");
-    assert_eq!(over.pool.as_deref(), Some(pool));
+    let (refused, over) = purlis_core::poollimits::attempt(|| {
+        ready_to_start(machine, &target.root, pool).expect_err("it is over the limit")
+    });
+    let over = over.unwrap_or_else(|| panic!("a limit refused it: {refused}"));
+    assert_eq!(over.pool, pool);
     let hit = over.hits[0];
     let raised = hit.suggested.expect("a value to raise it to");
     assert!(hit.needed > hit.in_force && raised >= hit.needed, "{hit:?}");
@@ -460,18 +466,21 @@ fn in_the_journey(
     std::fs::write(clone.join("large.bin"), data(7, 3 << 20)).expect("its file");
     purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(1))
         .expect("the limit is lowered");
-    let refused = target
-        .sessions
-        .open_named(
-            None,
-            &a_chat(Some("Past the code limit."), None),
-            Hearing::default(),
-            &|_| {},
-        )
-        .map(|_| ())
-        .expect_err("the code is over the limit");
-    let hits = poollimits::hits_said_in(pool, &refused);
-    assert!(!hits.is_empty(), "a limit said it: {refused}");
+    let (refused, hit) = poollimits::attempt(|| {
+        target
+            .sessions
+            .open_named(
+                None,
+                &a_chat(Some("Past the code limit."), None),
+                Hearing::default(),
+                &|_| {},
+            )
+            .map(|_| ())
+            .expect_err("the code is over the limit")
+    });
+    let hits = hit
+        .unwrap_or_else(|| panic!("a limit refused it: {refused}"))
+        .hits;
     let raised = hits[0].suggested.expect("a value to raise it to");
     assert_eq!(hits[0].limit, LimitId::CodeSize, "{refused}");
     purlis_core::runners::set_pool_limit(&machine.config, pool, LimitId::CodeSize, Some(raised))
@@ -891,5 +900,115 @@ mod a_window_started_again {
             std::thread::sleep(Duration::from_secs(1));
         }
         back.close(on_the_new).expect("it closes");
+    }
+}
+
+/// **A chat on a pool its workspace has left is taken back from there, and that pool is sent
+/// nothing** (#4590), on a real container: the chat answers through a window started after the
+/// setting moved, and a commit made since never reaches the runner.
+mod a_chat_on_a_pool_its_workspace_left {
+    use super::*;
+
+    #[test]
+    fn in_a_docker_pool() {
+        use purlis_core::dockerpool::PURLIS_RUNNER_IMAGE;
+        let Ok(image) = std::env::var(IMAGE) else {
+            assert!(
+                std::env::var_os(PARITY).is_none(),
+                "{PARITY} is set and {IMAGE} names no runner image: the parity job built none"
+            );
+            return;
+        };
+        let scripts = tempfile::tempdir().expect("a folder for its docker");
+        let docker = a_docker_of_the_jobs_registry(scripts.path());
+        let (target, machine, pool, again) =
+            a_window_again_on_a_pool_of(&format!("{PURLIS_RUNNER_IMAGE}@{image}"), docker);
+        let root = target.root.clone();
+        let step = |what: &str| {
+            use std::io::Write as _;
+            let _ = writeln!(std::io::stderr(), "a pool its workspace left: {what}");
+        };
+        let runs_on = |place: Option<&str>| {
+            purlis_core::machine::update(&machine.config, |store| {
+                store.remember(&root, 1);
+                store
+                    .set_chats_run_on(&root, WORKSPACE, place)
+                    .expect("the setting");
+            })
+            .expect("the setting is kept");
+        };
+
+        step("a chat of the workspace starts on the pool's runner");
+        runs_on(Some(pool.as_str()));
+        again.cut();
+        let window = again.sessions_of(&root).every_start_in(WORKSPACE);
+        let id = window
+            .open(
+                None,
+                &a_shell(
+                    "printf 'on the pool.'; read line; printf ' got %s.' \"$line\"; read line",
+                ),
+                &|_| {},
+            )
+            .expect("it starts on the runner");
+        Pane::of(&window, id).shows_within("on the pool.", LONG);
+        window.chats_kept_settled();
+        let head = || git(&root, &["rev-parse", "HEAD"]);
+        let sent = head();
+
+        step("the setting moves off the pool, and the project moves on here");
+        runs_on(None);
+        std::fs::write(root.join("since.txt"), "since the chat started\n").expect("written");
+        git(&root, &["add", "since.txt"]);
+        git(
+            &root,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                "since",
+            ],
+        );
+        let since = head();
+
+        step("the window is cut and started again");
+        again.cut();
+        let back = again.routed_sessions_of(&root);
+        assert_eq!(back.pool_for(Some(WORKSPACE)), None, "it runs here now");
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while !back.left_running_in(id, Some(WORKSPACE)) {
+            assert!(
+                Instant::now() < deadline,
+                "the window started again never found the chat"
+            );
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        assert_eq!(back.pool_of(id).as_deref(), Some(pool.as_str()));
+        assert_eq!(back.reattach(id, &|_| {}), Ok(id));
+        let pane = Pane::of(&back, id);
+        pane.shows_within("on the pool.", LONG);
+        back.input(id, b"hello\n").expect("typed to it");
+        pane.shows_within(" got hello.", LONG);
+
+        step("what the runner holds of the project");
+        let project = purlis_core::scaffold::planefile::id_to_hold_by(&root).expect("its id");
+        let held = the_runner(&machine, &pool).prints(&format!(
+            "git -C {}/{}/{project} rev-list --all",
+            purlis_core::datahome::IN_A_RUNNER_CONTAINER,
+            purlis_core::datahome::PROJECTS,
+        ));
+        assert!(held.contains(&sent), "the start sent it: {held}");
+        assert!(
+            !held.contains(&since),
+            "the relaunch sent the pool code: {held}"
+        );
+
+        back.close(id).expect("it closes");
     }
 }

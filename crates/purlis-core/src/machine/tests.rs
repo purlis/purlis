@@ -2604,7 +2604,7 @@ fn a_workspace_runs_on_a_pool_named_as_a_pool_is_and_in_a_plane_purlis_remembers
 }
 
 #[test]
-fn a_pool_name_purlis_would_not_write_runs_the_workspace_on_this_machine_and_says_so() {
+fn a_pool_name_purlis_would_not_write_is_dropped_and_says_so() {
     let machine = machine();
     write(machine.path(), &remembering(&["/planes/a"])).unwrap();
     let path = dir(machine.path()).join(FILE);
@@ -2625,7 +2625,7 @@ fn a_pool_name_purlis_would_not_write_runs_the_workspace_on_this_machine_and_say
     assert!(
         back.dropped
             .iter()
-            .all(|dropped| dropped.to_string().contains("on this machine")),
+            .all(|dropped| dropped.to_string().contains("so it was not kept")),
         "{:?}",
         back.dropped
     );
@@ -2654,4 +2654,279 @@ fn a_named_lock_is_kept_in_the_session_hosts_folder() {
     assert!(lock.held());
     assert!(charterd(machine.path()).join("a.lock").is_file());
     assert!(!dir(machine.path()).join("a.lock").exists());
+}
+
+// Where a chat runs resolves in one order (#4536, ruled 2026-11-01).
+
+#[test]
+fn a_chat_runs_where_its_start_then_workspace_then_project_says_and_else_on_this_machine() {
+    use PlaceLevel::{Default as Nobody, Project, Start, Workspace};
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    let at = |store: &Store, start: Option<StartChoice>| {
+        let place = store.chat_place(plane, "ide", start.as_ref());
+        (place.pool, place.level)
+    };
+    let pool = |name: &str| Some(name.to_owned());
+
+    assert_eq!(at(&store, None), (None, Nobody));
+    store.set_project_chats_run_on(plane, Some("team")).unwrap();
+    assert_eq!(at(&store, None), (pool("team"), Project));
+    store.set_chats_run_here(plane, "ide").unwrap();
+    assert_eq!(at(&store, None), (None, Workspace));
+    store.set_chats_run_on(plane, "ide", Some("mine")).unwrap();
+    assert_eq!(at(&store, None), (pool("mine"), Workspace));
+    assert_eq!(at(&store, Some(StartChoice::ThisMachine)), (None, Start));
+    assert_eq!(
+        at(&store, Some(StartChoice::Pool("other".to_owned()))),
+        (pool("other"), Start)
+    );
+    // Following the project again undoes either of the workspace's own.
+    store.set_chats_run_on(plane, "ide", None).unwrap();
+    assert_eq!(at(&store, None), (pool("team"), Project));
+    store.set_chats_run_here(plane, "ide").unwrap();
+    store.set_chats_run_on(plane, "ide", None).unwrap();
+    assert_eq!(at(&store, None), (pool("team"), Project));
+}
+
+#[test]
+fn a_project_default_and_a_workspace_set_to_this_machine_are_kept_and_follow_a_rename() {
+    let machine = machine();
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    assert_eq!(
+        store.set_project_chats_run_on(plane, Some("team")),
+        Ok(true)
+    );
+    assert_eq!(
+        store.set_project_chats_run_on(plane, Some("team")),
+        Ok(false)
+    );
+    assert_eq!(store.set_chats_run_here(plane, "ide"), Ok(true));
+    assert_eq!(store.set_chats_run_here(plane, "ide"), Ok(false));
+    write(machine.path(), &store).unwrap();
+    let back = read(machine.path());
+    assert_eq!(back.store, store);
+    assert_eq!(back.dropped, Vec::new());
+    let text = std::fs::read_to_string(dir(machine.path()).join(FILE)).unwrap();
+    let file: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(file["recents"][0]["projectChatsRunOn"], "team");
+    assert_eq!(
+        file["recents"][0]["chatsRunHere"],
+        serde_json::json!(["ide"])
+    );
+
+    assert!(store.rename_workspace(plane, "ide", "editor"));
+    assert_eq!(store.chat_place(plane, "editor", None).pool, None);
+    assert_eq!(
+        store.chat_place(plane, "ide", None).pool.as_deref(),
+        Some("team")
+    );
+}
+
+#[test]
+fn a_refused_pool_leaves_a_workspace_on_this_machine() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    for number in 0..MOST_CHATS_RUN_ON {
+        store
+            .set_chats_run_on(plane, &format!("w{number}"), Some("team"))
+            .unwrap();
+    }
+    store.set_chats_run_here(plane, "ide").unwrap();
+    assert!(store.set_chats_run_on(plane, "ide", Some("team")).is_err());
+    assert_eq!(
+        store.workspace_place(plane, "ide"),
+        WorkspacePlace::ThisMachine
+    );
+}
+
+#[test]
+fn what_a_workspace_itself_says_is_put_back_whole() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    store.set_project_chats_run_on(plane, Some("team")).unwrap();
+    let before = store.workspace_place(plane, "ide");
+    assert_eq!(before, WorkspacePlace::Project);
+    store.set_chats_run_on(plane, "ide", Some("team")).unwrap();
+    store.set_workspace_place(plane, "ide", &before).unwrap();
+    assert_eq!(store.workspace_place(plane, "ide"), WorkspacePlace::Project);
+}
+
+#[test]
+fn a_project_default_purlis_would_not_write_is_dropped_with_a_reason() {
+    let mut dropped = Vec::new();
+    let bad = serde_json::json!("../team");
+    assert_eq!(project_chats_run_on_of(Some(&bad), &mut dropped), None);
+    assert_eq!(dropped.len(), 1);
+    assert!(dropped[0].to_string().starts_with("where a project runs"));
+    let bad = serde_json::json!(["ok", "a/b", 3]);
+    let kept = chats_run_here_of(Some(&bad), &mut dropped);
+    assert_eq!(kept.len(), 1);
+    assert_eq!(dropped.len(), 3);
+    assert_eq!(
+        dropped[2].to_string(),
+        "the workspace '3' set to this machine is not a name, so it was not kept"
+    );
+    let bad = serde_json::json!("ide");
+    chats_run_here_of(Some(&bad), &mut dropped);
+    assert_eq!(
+        dropped[3].to_string(),
+        "the workspaces set to this machine aren't a list purlis wrote, so they were not kept"
+    );
+    assert!(
+        Store::default()
+            .set_project_chats_run_on(Path::new("/planes/none"), Some("../team"))
+            .is_err()
+    );
+}
+
+fn on_a_pool(pool: &str, workspace: &str) -> ChatOnPool {
+    ChatOnPool {
+        pool: pool.to_owned(),
+        workspace: workspace.to_owned(),
+    }
+}
+
+#[test]
+fn a_chat_on_a_pool_is_kept_read_back_and_the_oldest_go_first() {
+    let machine = machine();
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    for number in 1..=(MOST_CHATS_ON_POOLS as u32 + 1) {
+        store.keep_chat_on_pool(plane, number, on_a_pool("team", "ide"));
+    }
+    let kept = &store.recents[0].chats_on_pools;
+    assert_eq!(kept.len(), MOST_CHATS_ON_POOLS);
+    assert_eq!(kept.get(&1), None);
+    assert_eq!(kept.get(&2), Some(&on_a_pool("team", "ide")));
+    store.leave_chat_on_pool(plane, 2);
+    write(machine.path(), &store).unwrap();
+    assert_eq!(read(machine.path()).store, store);
+}
+
+#[test]
+fn a_chat_that_leaves_its_pool_is_never_asked_for_and_its_branches_are_still_owed() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    store.keep_chat_on_pool(plane, 7, on_a_pool("team", "ide"));
+    store.leave_chat_on_pool(plane, 7);
+    assert!(store.recents[0].chats_on_pools.is_empty());
+    assert_eq!(
+        store.recents[0].branches_to_fetch["team"],
+        BTreeSet::from(["ide".to_owned()])
+    );
+    store.branches_fetched(plane, "other", "ide");
+    assert!(store.recents[0].branches_to_fetch.contains_key("team"));
+    store.branches_fetched(plane, "team", "ide");
+    assert!(store.recents[0].branches_to_fetch.is_empty());
+}
+
+#[test]
+fn a_chat_kept_again_elsewhere_leaves_what_it_did_on_the_first_pool_owed() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    store.keep_chat_on_pool(plane, 7, on_a_pool("team", "ide"));
+    store.keep_chat_on_pool(plane, 7, on_a_pool("team", "ide"));
+    assert!(store.recents[0].branches_to_fetch.is_empty());
+    store.keep_chat_on_pool(plane, 7, on_a_pool("other", "ide"));
+    assert_eq!(
+        store.recents[0].chats_on_pools[&7],
+        on_a_pool("other", "ide")
+    );
+    assert!(store.recents[0].branches_to_fetch.contains_key("team"));
+}
+
+#[test]
+fn a_chat_that_never_started_where_it_was_kept_owes_nothing() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    store.keep_chat_on_pool(plane, 7, on_a_pool("team", "ide"));
+    store.forget_chat_on_pool(plane, 7);
+    assert!(store.recents[0].chats_on_pools.is_empty());
+    assert!(store.recents[0].branches_to_fetch.is_empty());
+}
+
+#[test]
+fn a_chat_on_a_pool_follows_a_rename_of_its_workspace_and_so_do_its_branches() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    store.keep_chat_on_pool(plane, 7, on_a_pool("team", "ide"));
+    store.keep_chat_on_pool(plane, 8, on_a_pool("team", "ide"));
+    store.leave_chat_on_pool(plane, 8);
+    assert!(store.rename_workspace(plane, "ide", "editor"));
+    assert_eq!(
+        store.recents[0].chats_on_pools[&7],
+        on_a_pool("team", "editor")
+    );
+    assert_eq!(
+        store.recents[0].branches_to_fetch["team"],
+        BTreeSet::from(["editor".to_owned()])
+    );
+}
+
+#[test]
+fn a_chat_on_a_pool_purlis_would_not_write_is_left_out() {
+    let bad = serde_json::json!({
+        "1": { "pool": "../team", "workspace": "ide" },
+        "x": { "pool": "team", "workspace": "ide" },
+        "3": { "pool": "team", "workspace": "a/b" },
+        "4": { "pool": "team", "workspace": "ide" },
+        "5": { "pool": "team" },
+    });
+    let kept = chats_on_pools_of(Some(&bad));
+    assert_eq!(kept.keys().copied().collect::<Vec<_>>(), vec![4]);
+    let owed = serde_json::json!({
+        "../team": ["ide"],
+        "team": ["ide", "a/b", 3],
+        "none": [],
+    });
+    assert_eq!(
+        branches_to_fetch_of(Some(&owed)),
+        BTreeMap::from([("team".to_owned(), BTreeSet::from(["ide".to_owned()]))])
+    );
+}
+
+#[test]
+fn removing_a_pool_forgets_its_chats_and_what_was_owed_from_it() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    store.keep_chat_on_pool(plane, 7, on_a_pool("team", "ide"));
+    store.keep_chat_on_pool(plane, 8, on_a_pool("team", "ide"));
+    store.keep_chat_on_pool(plane, 9, on_a_pool("other", "ide"));
+    store.leave_chat_on_pool(plane, 8);
+    store.recents[0].forget_pool("team");
+    assert_eq!(
+        store.recents[0]
+            .chats_on_pools
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![9]
+    );
+    assert!(store.recents[0].branches_to_fetch.is_empty());
+}
+
+#[test]
+fn removing_a_pool_clears_it_from_the_project_and_every_workspace() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    store.set_project_chats_run_on(plane, Some("team")).unwrap();
+    store.set_chats_run_on(plane, "ide", Some("team")).unwrap();
+    store.set_chats_run_on(plane, "web", Some("other")).unwrap();
+    store.recents[0].forget_pool("team");
+    assert_eq!(store.recents[0].project_chats_run_on, None);
+    // Set to this machine, so a pool the project names later doesn't take it.
+    store
+        .set_project_chats_run_on(plane, Some("other"))
+        .unwrap();
+    assert_eq!(store.chat_place(plane, "ide", None).pool, None);
+    assert_eq!(
+        store.workspace_place(plane, "ide"),
+        WorkspacePlace::ThisMachine
+    );
+    assert_eq!(
+        store.chat_place(plane, "web", None).pool.as_deref(),
+        Some("other")
+    );
 }

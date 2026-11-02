@@ -361,6 +361,73 @@ describe("a tooltip from the keyboard", () => {
   });
 });
 
+describe("a hint that comes and goes on a target (#4659)", () => {
+  const Words = ({ tip }: { tip?: string }) => (
+    <>
+      <Tooltip tip={tip}>
+        <button type="button">Move left</button>
+      </Tooltip>
+      <button type="button">Next</button>
+    </>
+  );
+
+  it("keeps the target and shows a hint that comes while the keyboard is on it", async () => {
+    const { rerender } = render(<Words />);
+    const target = screen.getByRole("button", { name: "Move left" });
+    await user.tab();
+    expect(target).toHaveFocus();
+    rerender(<Words tip="Already first" />);
+    expect(screen.getByRole("button", { name: "Move left" })).toBe(target);
+    expect(target).toHaveFocus();
+    expect(shownTip()).toHaveTextContent("Already first");
+    expect(target).toHaveAttribute("aria-describedby", shownTip()?.id);
+    await user.tab();
+    await wait(TOOLTIP_CLOSE_DELAY + 50);
+    expect(shownTip()).toBeNull();
+  });
+
+  it("shows nothing for the pointer's focus: the pointer has its own way to a hint", async () => {
+    const { rerender } = render(<Words />);
+    await pointerIn();
+    await user.click(screen.getByRole("button", { name: "Move left" }));
+    rerender(<Words tip="Already first" />);
+    await wait(TOOLTIP_DELAY + 50);
+    expect(shownTip()).toBeNull();
+  });
+
+  it("does not show a hint that comes with the keyboard elsewhere", async () => {
+    const { rerender } = render(<Words />);
+    await user.tab();
+    await user.tab();
+    rerender(<Words tip="Already first" />);
+    expect(shownTip()).toBeNull();
+  });
+
+  it("does not bring back a hint that went while it was open", async () => {
+    const { rerender } = render(<Words tip="Already first" />);
+    await user.tab();
+    expect(shownTip()).not.toBeNull();
+    rerender(<Words />);
+    await wait(TOOLTIP_CLOSE_DELAY + 50);
+    expect(shownTip()).toBeNull();
+    await user.tab();
+    rerender(<Words tip="Already first" />);
+    expect(shownTip()).toBeNull();
+  });
+
+  it("shows nothing when the hint that comes only repeats the target's words", async () => {
+    const Repeats = ({ tip }: { tip?: string }) => (
+      <Tooltip tip={tip}>
+        <button type="button">Move left</button>
+      </Tooltip>
+    );
+    const { rerender } = render(<Repeats />);
+    await user.tab();
+    rerender(<Repeats tip="Move left" />);
+    expect(shownTip()).toBeNull();
+  });
+});
+
 describe("a status item's tooltip", () => {
   it("is a pill's hint, shown by the keyboard, and a cell's, which makes it a Tab stop", () => {
     render(

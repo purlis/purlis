@@ -125,7 +125,7 @@ export function Welcome({
    *  project's act. */
   onOpenRepo: (path: string, template: TemplateChoice) => void;
   /** Makes a project with no repo in this folder, and opens it: Create a project on this Mac. */
-  onMakeProject: (folder: string) => void;
+  onMakeProject: (folder: string, template: string | null) => void;
   /** Opens the local project with `<cli> auth login` in a shell tab: today's forge sign-in. */
   onSignInToForge: (row: ForgeRow) => void;
   /** Whether a repo is being opened right now. */
