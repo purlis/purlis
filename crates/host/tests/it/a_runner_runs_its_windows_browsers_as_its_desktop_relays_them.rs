@@ -42,9 +42,18 @@ static HELD: std::sync::LazyLock<Credentials> =
     std::sync::LazyLock::new(|| Credentials::mint().unwrap());
 
 async fn as_scope(scope: Scope, host: impl session::Host) -> Link {
+    as_scope_speaking(scope, host, session::speaks()).await
+}
+
+/// [`as_scope`], from a client that speaks `speaks`.
+async fn as_scope_speaking(
+    scope: Scope,
+    host: impl session::Host,
+    speaks: purlis_session_protocol::version::Speaks,
+) -> Link {
     let (a, b) = duplex(4 << 20);
     let (client, served) = tokio::join!(
-        link::connect(a, session::speaks(), scope, HELD.of(scope)),
+        link::connect(a, speaks, scope, HELD.of(scope)),
         link::serve_any(b, session::speaks(), &HELD)
     );
     tokio::spawn(session::serve(served.unwrap(), host, None));
@@ -566,10 +575,12 @@ async fn host_a_asks_a_runner_its_programs_from_1_67_and_not_before() {
         .await
         .expect("the runner's own window's browser");
 
-    // Each link here is admitted as `local-ui`, so the runner answers whichever it is asked.
+    // Each link here is admitted as `local-ui`, so the runner answers whichever it is asked. A
+    // window of 1.67 is answered no programs for a runner before it, as it always was.
     for (minor, answered) in [(66, 0), (67, 1)] {
         let relay = Relay::new(over_a_link_of(runner.hosting.clone(), minor));
-        let (client, _views, _events) = Client::new(as_scope(Scope::LocalUi, relay).await);
+        let (client, _views, _events) =
+            Client::new(as_scope_speaking(Scope::LocalUi, relay, speaking(67)).await);
         client.hold_project(PROJECT, at).await.unwrap();
 
         assert_eq!(
@@ -578,6 +589,32 @@ async fn host_a_asks_a_runner_its_programs_from_1_67_and_not_before() {
             "a runner of 1.{minor}"
         );
     }
+}
+
+fn speaking(minor: u16) -> purlis_session_protocol::version::Speaks {
+    purlis_session_protocol::version::Speaks::new([purlis_session_protocol::version::Version {
+        major: 1,
+        minor,
+    }])
+}
+
+#[tokio::test]
+async fn host_a_tells_a_window_from_1_68_that_a_runner_before_1_67_was_not_asked_its_programs() {
+    let runner = a_runner();
+    let project = tempfile::tempdir().unwrap();
+    let at = project.path().to_str().unwrap();
+    let relay = Relay::new(over_a_link_of(runner.hosting.clone(), 66));
+    let (client, _views, _events) =
+        Client::new(as_scope_speaking(Scope::LocalUi, relay, speaking(68)).await);
+    client.hold_project(PROJECT, at).await.unwrap();
+
+    let refused = client
+        .programs_of(PROJECT)
+        .await
+        .expect_err("not known, never none");
+    let refusal = refused.refusal().expect("refused by host A");
+    assert_eq!(refusal.code, session::PROGRAMS_NOT_KNOWN);
+    assert!(refusal.why.contains("1.66"), "{}", refusal.why);
 }
 
 #[tokio::test]
