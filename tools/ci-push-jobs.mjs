@@ -31,6 +31,9 @@ import { fileURLToPath } from "node:url";
 export const REQUIRED_CHECKS = [
   "app builds (macos-latest)",
   "app builds (ubuntu-24.04)",
+  // Required since #4335 (2026-11-02): it passed 60 of 60 merge-queue runs and 40 of 40 pushes on
+  // 2026-11-01 and 11-02, and always ended before the slowest other job, so it costs no wait.
+  "parity against a Docker pool (host, protocol, sandbox, browsers)",
   "recorded behaviour",
   "rust (fmt, clippy, test)",
   "rust (licences, advisories)",
@@ -46,8 +49,6 @@ export const REQUIRED_ELSEWHERE = ["docs (build, links, reachable)"];
 export const LISTED = {
   changes:
     "A fault here is a fault in the scope tool: every scope then runs, so nothing goes unchecked, and on a push every scope runs anyway. It stays red on main for a person to fix the tool.",
-  parity:
-    "A real gate on the host, protocol, sandbox and browsers. The operator ruled that it be required, and branch protection has yet to name it (#4335). Its red on main is a regression a person should act on, so it stops landing until then; add it to REQUIRED_CHECKS and take this line off with that.",
 };
 
 const WORDS = /'(?:[^']|'')*'|&&|\|\||==|!=|[!(),]|[\w.*\-[\]]+/g;
