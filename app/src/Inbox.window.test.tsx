@@ -817,6 +817,13 @@ describe("answering in place", () => {
     });
     expect(screen.getByText("its report has nowhere to go")).toBeTruthy();
     expect(screen.getByText("Which branch?")).toBeTruthy();
+    // Heard on the card: a screen reader on it goes on to the box from there.
+    expect(
+      screen.getByRole("listitem", {
+        name: "its report has nowhere to go",
+        description: "Waiting on your reply Which branch?",
+      }),
+    ).toBeTruthy();
   });
 
   it("reaches a reply box from its card with one Tab and ↓, past the message", async () => {
@@ -828,6 +835,10 @@ describe("answering in place", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("textbox", { name: "Reply to steward 6" }),
     );
+    await userEvent.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
+    await userEvent.tab({ shift: true });
+    expect(document.querySelector("li.inbox-ask")?.contains(document.activeElement)).toBe(false);
   });
 
   it("says once under the reason it also waits for that it has no message to show", () => {

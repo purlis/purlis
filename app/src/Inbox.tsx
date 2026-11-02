@@ -951,7 +951,11 @@ function Ask({
         className="inbox-ask"
         data-source={ask.source}
         aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
-        aria-describedby={shape.message ? `${id}-says` : `${id}-whose`}
+        aria-describedby={
+          shape.message
+            ? `${id}-says`
+            : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`
+        }
       >
         {/* **The card's top row** (R132): the chat's name in bold, the workspace quiet at its
             right. */}
@@ -1012,7 +1016,11 @@ function Ask({
             </span>
           </Tooltip>
         </p>
-        {shape.said !== undefined && <p className="inbox-said ui-text-body">{shape.said}</p>}
+        {shape.said !== undefined && (
+          <p id={`${id}-said`} className="inbox-said ui-text-body">
+            {shape.said}
+          </p>
+        )}
         {/* Why its Allow is missing: the lines it runs over, which its line put on one
             (#3502), and a character it holds that reads otherwise (SK-51). */}
         {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (

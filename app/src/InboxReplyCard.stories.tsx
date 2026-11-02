@@ -7,10 +7,10 @@
  * the app heard no message. The person answers from here, so the reply box is walked to.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import type { Shown } from "./bindings";
 import { Inbox, NO_MESSAGE } from "./Inbox";
-import { untilFocused } from "./stories.testkit";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const QUESTION: Shown = {
   session: 6,
@@ -43,15 +43,24 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The list is one Tab stop: Tab lands on the card, and ↓ goes on to its reply box. */
+/** The list is one Tab stop: Tab lands on the card, ↓ goes on to its reply box however long the
+ *  message above it, ↑ comes back, and Shift+Tab leaves the list. */
 async function theReplyBoxIsReached(canvasElement: HTMLElement) {
+  const card = () => canvasElement.querySelector("li.inbox-ask");
   await userEvent.tab();
-  await untilFocused(() => canvasElement.querySelector("li.inbox-ask"), "Tab lands on the card");
+  await untilFocused(card, "Tab lands on the card");
+  expectFocusInSight();
   await userEvent.keyboard("{ArrowDown}");
   await untilFocused(
     () => within(canvasElement).getByRole("textbox", { name: "Reply to steward 6" }),
     "↓ reaches the reply box",
   );
+  expectFocusInSight();
+  await userEvent.keyboard("{ArrowUp}");
+  await untilFocused(card, "↑ comes back to the card");
+  expectFocusInSight();
+  await userEvent.tab({ shift: true });
+  await waitFor(() => expect(card()?.contains(document.activeElement)).toBe(false));
 }
 
 /** What the chat said, over its lines, the status line above it once. */
