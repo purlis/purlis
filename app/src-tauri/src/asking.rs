@@ -1031,6 +1031,7 @@ pub fn task_question(
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
     }
 }
 
