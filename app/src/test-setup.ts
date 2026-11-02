@@ -16,6 +16,7 @@ import { forgetProjectThemes } from "./projectTheme";
 import { forgetSwitches } from "./switchClock";
 import { forgetUnappliedRepos } from "./unappliedRepos";
 import { forgetPaneBands } from "./noticeSettle";
+import { PANE_NOTICES } from "./paneNotices";
 
 // What each project has on is kept per plane for the window's life (`extensionsOn.ts`); every
 // test's window is a new one, and most of them share a plane path.
@@ -38,6 +39,9 @@ afterEach(() => {
   forgetEntering();
   // What each pane's band held is kept by the pane for the window's life (#3167).
   forgetPaneBands();
+  // Minimised or expanded is the machine's choice (`layout.json`, #4754); every test's machine
+  // is a new one, minimised.
+  PANE_NOTICES.forget();
 });
 
 // jsdom's window is 1024px wide, the narrowest purlis supports, where the project rail hides

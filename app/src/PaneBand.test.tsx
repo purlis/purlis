@@ -13,7 +13,7 @@ import { PaneHead } from "./LayoutPanes";
 import { drawnWith } from "./cascade.testkit";
 
 /**
- * **A chat's pane: the band, the header, then the terminal** (#3142, the operator's variant A of
+ * **A chat's pane: the header, the band, then the terminal** (#3142, #4754, the operator's variant A of
  * 2026-10-24). The prototype's numbered rules are the acceptance lines; what jsdom can hold is
  * held here (the keyboard, the shape, the rules as the cascade draws them), and what needs a
  * layout is measured in `pane-warnings.e2e.ts`.
@@ -21,12 +21,12 @@ import { drawnWith } from "./cascade.testkit";
 
 afterEach(cleanup);
 
-/** A pane as `PaneFrame` draws one: the band and the header at its top, the terminal under. */
+/** A pane as `PaneFrame` draws one: the header and the band under it at its top, the terminal
+ *  under them (#4754). */
 function Pane({ children }: { children: ReactNode }) {
   return (
     <div className="pane-frame pane-headed" data-testid="frame">
       <div className="pane-top">
-        <NoticePaneRow>{children}</NoticePaneRow>
         <PaneHead
           doing={
             <div className="pane-actions">
@@ -38,6 +38,7 @@ function Pane({ children }: { children: ReactNode }) {
             <span className="pane-harness">Claude Code</span>
           </div>
         </PaneHead>
+        <NoticePaneRow>{children}</NoticePaneRow>
       </div>
       <div className="pane-body">
         <div className="pane" data-testid="pane">
@@ -183,38 +184,29 @@ describe("the band's keyboard", () => {
     await waitFor(() => expect(screen.getByRole("status", { name: "Vault" })).toHaveFocus());
   });
 
-  it("names the band as the pane's warnings while it has any", async () => {
+  it("names the band as the pane's notices while it has any", async () => {
     render(<Warnings causes={["first"]} />);
-    expect(await screen.findByRole("region", { name: "Warnings for this pane" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "Notices for this pane" })).toBeTruthy();
   });
 
-  it("says Show fewer while every warning is open, and +N more again once closed", async () => {
-    const user = userEvent.setup();
+  it("shows every warning, with no cap and no +N more (#4754)", async () => {
     render(<Warnings causes={["a", "b", "c", "d"]} />);
-    const more = await screen.findByRole("button", { name: "+2 more" });
-
-    await user.click(more);
-    expect(more).toHaveAccessibleName("Show fewer");
-    expect(more).toHaveAttribute("aria-expanded", "true");
-    expect(shown()).toEqual(["a", "b", "c", "d"]);
-
-    await user.click(more);
-    expect(more).toHaveAccessibleName("+2 more");
-    await waitFor(() => expect(shown()).toEqual(["a", "b"]));
+    await waitFor(() => expect(shown()).toEqual(["a", "b", "c", "d"]));
+    expect(screen.queryByRole("button", { name: /more/ })).toBeNull();
   });
 });
 
 describe("the band, the header and the terminal, in a pane", () => {
-  it("draws the band and the header at the top of the pane, inside it, before the terminal", async () => {
+  it("draws the header, then the band under it, at the top of the pane, before the terminal", async () => {
     render(<Warnings causes={["first"]} />);
     await waitFor(() => expect(shown()).toEqual(["first"]));
     const frame = screen.getByTestId("frame");
     expect([...frame.children].map((one) => one.className)).toEqual(["pane-top", "pane-body"]);
     const top = frame.firstElementChild as Element;
     expect([...top.children].map((one) => one.getAttribute("data-scope") ?? one.className)).toEqual(
-      ["notice-row", "pane-head"],
+      ["pane-head", "notice-row"],
     );
-    const head = top.lastElementChild as Element;
+    const head = top.firstElementChild as Element;
     expect([...head.children].map((one) => one.className)).toEqual(["pane-chips", "pane-actions"]);
   });
 
@@ -226,8 +218,10 @@ describe("the band, the header and the terminal, in a pane", () => {
     const band = frame.querySelector('[data-scope="notice-row"][data-part="root"]') as Element;
     expect(drawnWith(band, "background-color")).toBe("transparent");
     expect(drawnWith(band, "border")).toBe("0");
-    // The runway: the band's own top is the terminal's fill (rule 2).
-    expect(drawnWith(band, "padding")).toMatch(/^var\(--space-4\)/);
+    // The runway is the header's, at the pane's top (rule 2): the band starts under it.
+    expect(drawnWith(band, "padding")).toMatch(/^0 /);
+    const head = frame.querySelector(".pane-head") as Element;
+    expect(drawnWith(head, "margin-block-start")).toBe("var(--space-2)");
   });
 
   it("draws a warning as a wash with no edge, in the warnings' corner (rules 7 and 8)", async () => {
@@ -297,16 +291,15 @@ describe("the pane's rules", () => {
     expect(css).toMatch(/:is\(\.pane-notices,[^)]*\)\s*\{[^}]*overflow-y:\s*auto/);
   });
 
-  it("reserves +N more's width on a row of its own (rules 5 and 15)", () => {
-    // Both of what it says in one cell, the one not said hidden: as wide as the longer.
-    expect(rule('\\[data-scope="notice-row"\\]\\[data-part="says"\\]')).toMatch(
-      /display:\s*inline-grid/,
-    );
-    expect(rule('\\[data-scope="notice-row"\\]\\[data-part="says"\\] > \\*')).toMatch(
-      /grid-area:\s*1 \/ 1/,
-    );
-    expect(rule('\\[data-scope="notice-row"\\]\\[data-part="says"\\] > \\[data-off\\]')).toMatch(
-      /visibility:\s*hidden/,
+  it("keeps the bell a fixed slot, its count in tabular figures (#4754)", () => {
+    const bell = rule("\\.pane-doing > \\.pane-bell");
+    expect(bell).toMatch(/min-inline-size:\s*calc\(var\(--size-control\) \* 2\)/);
+    expect(bell).toMatch(/font-variant-numeric:\s*tabular-nums/);
+  });
+
+  it("draws the bell's count in the trouble colour while one note is trouble (#4754)", () => {
+    expect(rule('\\.pane-doing > \\.pane-bell\\[data-trouble\\] \\[data-part="label"\\]')).toMatch(
+      /color:\s*var\(--danger-text\)/,
     );
   });
 

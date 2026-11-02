@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  createContext,
   Fragment,
+  useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -65,7 +68,16 @@ import {
   type StartNotes,
   ChatNotices,
 } from "./ChatNotices";
-import { IconButton } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
+import { Bell } from "lucide-react";
+import {
+  arrived,
+  bellCount,
+  bellSays,
+  HOLDS_NOTHING,
+  PANE_NOTICES,
+  type BandHolds,
+} from "./paneNotices";
 
 /**
  * **The panes of the tab in front** (#1035, split out of `PlaneView.tsx`): the split layout
@@ -91,9 +103,10 @@ export function paneMenuOf(offerFor: (id: string) => Offer | undefined): Catalog
 
 /**
  * One pane's frame, three rows each with one job (#3142, the operator's variant A of
- * 2026-10-24): **the band** of what purlis has to say of its chats (`PaneNotices`), **the
- * pane's header** with the chat at a glance at its start and the pane's own controls at its end
- * (`PaneHead`), then **the terminal**, which has the room the two leave.
+ * 2026-10-24; #4754): **the pane's header** with the chat at a glance at its start and the
+ * pane's own controls at its end, its bell among them (`PaneHead`, `PaneBell`), **the band** of
+ * what purlis has to say of its chats under it (`PaneNotices`), so a Notice arriving never moves
+ * the header, then **the terminal**, which has the room the two leave.
  *
  * - **All of it is inside the pane**, on the terminal's own fill, so the chosen tab joins the
  *   pane as one piece whatever the band holds: nothing is drawn between a tab and its pane, and
@@ -168,6 +181,8 @@ export function PaneFrame({
   const lent = useReferenceChats();
   const frame = useRef<HTMLDivElement>(null);
   const roomy = useRoomy(frame);
+  /** What the band holds, for the bell in the pane's header (#4754). */
+  const [holds, setHolds] = useState<BandHolds>(HOLDS_NOTHING);
   return (
     <div
       ref={frame}
@@ -186,14 +201,7 @@ export function PaneFrame({
           read and tabbed to (#1647); a terminal keeps Tab for its shell, so a control written
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
-        <PaneNotices
-          band={pane === undefined ? undefined : paneBand(plane, pane)}
-          notices={notices}
-          asked={asked}
-          others={others}
-          onShowChat={onShowChat}
-        />
-        <PaneHead doing={doing}>
+        <PaneHead doing={<PaneBellOf.Provider value={holds}>{doing}</PaneBellOf.Provider>}>
           <div className="pane-chips">
             {/* **Which chat this is, while the tab shows a task** (#1486): first in the line, and
             in no row of its own. */}
@@ -227,6 +235,15 @@ export function PaneFrame({
             <ChatGauge usage={usage} />
           </div>
         </PaneHead>
+        {/* **The band under the header** (#4754): a Notice arriving never moves the header. */}
+        <PaneNotices
+          band={pane === undefined ? undefined : paneBand(plane, pane)}
+          notices={notices}
+          asked={asked}
+          others={others}
+          onShowChat={onShowChat}
+          onHolds={setHolds}
+        />
       </div>
       <div className="pane-body">{children}</div>
     </div>
@@ -309,8 +326,9 @@ export type HiddenChat = {
 };
 
 /**
- * **What purlis has to say on a pane, one Notice under another** (#1481), in the pane's own row
- * above its terminal, two at a time and the rest behind "+N more" (`NoticePaneRow`, #1647).
+ * **What purlis has to say on a pane, one Notice under another** (#1481), in the pane's band
+ * under its header and above its terminal, its notes folded into the bell while minimised
+ * (`NoticePaneRow`, #1647, #4754).
  *
  * **Of every chat that lives in the pane, whichever one it shows** (#1486, the train-1 part of
  * V100-56). A session's tab shows one of its chats at a time: the session's own, or a task
@@ -325,9 +343,12 @@ export function PaneNotices({
   asked,
   others,
   onShowChat,
+  onHolds,
 }: {
   /** The pane the band is (`paneBand`), whichever component draws it (#3167). */
   band?: string;
+  /** The pane's bell, told what the band holds (#4754). */
+  onHolds?: (holds: BandHolds) => void;
   notices: ReactNode;
   /** The questions for several of the pane's tasks at once (#1508): after the shown chat's
    *  own, before each other chat's, since each waits for the person. */
@@ -336,7 +357,7 @@ export function PaneNotices({
   onShowChat: (session: number) => void;
 }) {
   return (
-    <NoticePaneRow band={band}>
+    <NoticePaneRow band={band} onHolds={onHolds}>
       {notices}
       {asked}
       {others.map((other) => (
@@ -922,6 +943,7 @@ export function PaneDoing({
     "pane.split.down",
     ...(task && !minimise ? [] : ["pane.close"]),
   ];
+  const split = rows.indexOf("pane.split.right");
   return (
     <div className="pane-doing">
       {chat !== undefined && (
@@ -931,29 +953,83 @@ export function PaneDoing({
           onPress={(offer) => onPaneDoes(pane, offer)}
         />
       )}
-      {rows.map((id) => {
-        const offer = id === "pane.close" ? closeOf(pane) : offerFor(id);
-        if (!offer) return null;
-        const Mark = markOf(offer);
-        return (
-          // The quiet ghost (#3214): a pane's corner marks, quiet until the pointer is on one.
-          <IconButton
-            key={id}
-            variant="quiet"
-            size="sm"
-            icon={Mark ? <Mark /> : null}
-            aria-label={offer.title}
-            tooltip={offer.reason || offer.note || undefined}
-            className={
-              offer.id === "pane.close" && !closesOnly(offer.does) ? "ends-a-chat" : undefined
-            }
-            // A task's minimise, as its own tab draws it (#1489): never the close's look.
-            data-minimise={offer.does.verb === "sendBack" ? "" : undefined}
-            isDisabled={!offer.available}
-            onPress={() => onPaneDoes(pane, offer)}
-          />
-        );
-      })}
+      {rows.slice(0, split).map(draw)}
+      {/* **The bell, in a fixed slot before split and close** (#4754): drawn in a chat's pane,
+          with its count or none, so nothing beside it moves when a notice arrives. */}
+      <PaneBell />
+      {rows.slice(split).map(draw)}
     </div>
+  );
+  function draw(id: string) {
+    const offer = id === "pane.close" ? closeOf(pane) : offerFor(id);
+    if (!offer) return null;
+    const Mark = markOf(offer);
+    return (
+      // The quiet ghost (#3214): a pane's corner marks, quiet until the pointer is on one.
+      <IconButton
+        key={id}
+        variant="quiet"
+        size="sm"
+        icon={Mark ? <Mark /> : null}
+        aria-label={offer.title}
+        tooltip={offer.reason || offer.note || undefined}
+        className={offer.id === "pane.close" && !closesOnly(offer.does) ? "ends-a-chat" : undefined}
+        // A task's minimise, as its own tab draws it (#1489): never the close's look.
+        data-minimise={offer.does.verb === "sendBack" ? "" : undefined}
+        isDisabled={!offer.available}
+        onPress={() => onPaneDoes(pane, offer)}
+      />
+    );
+  }
+}
+
+/** What a chat's pane's band holds, for its bell (#4754): none outside a chat's pane, where no
+ *  bell is drawn (a view's pane draws the same actions). */
+const PaneBellOf = createContext<BandHolds | null>(null);
+
+/**
+ * **A pane's bell** (#4754, spec #4750 stories 33, 37 to 39): in the pane's header, in a fixed
+ * slot before split and close, there with no count when there is nothing, so nothing beside it
+ * moves.
+ *
+ * - **Its count is the pane's notes**, never its asks, the same number minimised and expanded;
+ *   neutral, and in the trouble colour while one note is trouble.
+ * - **A press minimises or expands the notices of every pane** (`paneNotices.ts`); pressed, it
+ *   is drawn as pressed.
+ * - **A new notice never opens the band or takes the focus**: its count is said politely, once,
+ *   as "5 notices, 1 in trouble, 2 asking".
+ */
+export function PaneBell() {
+  const holds = useContext(PaneBellOf);
+  const expanded = PANE_NOTICES.use() === "expanded";
+  const [announced, setAnnounced] = useState("");
+  const was = useRef<BandHolds>(HOLDS_NOTHING);
+  useEffect(() => {
+    if (holds === null) return;
+    if (arrived(was.current, holds)) setAnnounced(bellSays(holds));
+    was.current = holds;
+  }, [holds]);
+  if (holds === null) return null;
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="quiet"
+        className="pane-bell"
+        icon={<Bell aria-hidden="true" />}
+        aria-label={`Notices: ${bellSays(holds)}`}
+        aria-expanded={expanded}
+        tooltip={expanded ? "Minimise notices" : "Show all notices"}
+        data-trouble={holds.trouble > 0 ? "" : undefined}
+        data-empty={holds.notes === 0 ? "" : undefined}
+        data-way="bell"
+        onPress={() => PANE_NOTICES.set(expanded ? "minimised" : "expanded")}
+      >
+        {bellCount(holds)}
+      </Button>
+      <span className="sr-only" role="status">
+        {announced}
+      </span>
+    </>
   );
 }
