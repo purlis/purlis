@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793578400619,
+  "lastUpdate": 1793585483034,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35574,6 +35574,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5163905,
             "unit": "ms",
             "extra": "median of 5 runs: 99.834, 100.854, 101.516, 101.986, 102.149 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "88007ca5c75cdd59210c009bfffd7a61be2e8891",
+          "message": "A harness's internal variables stay out of a chat's environment (#4596)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CDEZNF88K9R55WPS06S07K\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-01T22:30:21Z",
+          "tree_id": "9f965395f333e9b628608cf1fe16c83141d9fbbf",
+          "url": "https://github.com/purlis/purlis/commit/88007ca5c75cdd59210c009bfffd7a61be2e8891"
+        },
+        "date": 1793585479227,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.35282,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.329, 0.350, 0.353, 0.354, 0.366 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5859315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.547, 16.551, 16.586, 16.707, 16.764 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.40769399999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.877, 101.179, 101.408, 101.793, 101.942 ms"
           }
         ]
       }
