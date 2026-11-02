@@ -896,6 +896,7 @@ fn route_about(names: &[&str]) -> Vec<purlis_core::extension::studio::RouteSkill
             name: (*name).to_owned(),
             description: format!("Does {name}."),
             pinned: false,
+            chars: format!("Does {name}.").chars().count(),
         })
         .collect()
 }
