@@ -929,6 +929,9 @@ mod rest_kept_tests;
 mod part_fills_tests;
 
 #[cfg(test)]
+#[path = "hot_count_tints_tests.rs"]
+mod hot_count_tints_tests;
+#[cfg(test)]
 #[path = "see_through_tints_tests.rs"]
 mod see_through_tints_tests;
 #[cfg(test)]
@@ -2723,13 +2726,20 @@ fn unreadable_by(
         }
     }
     // The plain activity count stays told from the hot one (#3098): the floors hold its default
-    // pill apart, and a rule that brings it near draws that default.
+    // pill apart, and a rule that brings it near draws that default. A reading with a margin
+    // widens the distance too, so a coarse one finds a rule that only comes near between its
+    // tints (#4384).
+    let near_the_hot_count = if margin > 0.0 {
+        NEAR_THE_HOT_COUNT
+    } else {
+        0.0
+    };
     if let Some(count) = plain_count_at(family)
         && alike(
             theme,
             look.grounds[count],
             super::floors::HOT_COUNT,
-            super::floors::HOT_COUNT_APART,
+            super::floors::HOT_COUNT_APART + near_the_hot_count,
         )
     {
         return Some((
@@ -3020,7 +3030,9 @@ fn held_from(
             let written = held.rules.len();
             // What shows a tint through it is read in the tints too (#4257): coarsely, and at
             // every degree where that comes near a floor.
-            let coarse: &[ResolvedTheme] = if shows_through(theme, held.rules, family) {
+            let coarse: &[ResolvedTheme] = if shows_through(theme, held.rules, family)
+                || count_turns(theme, held.rules, family)
+            {
                 coarse_tints()
             } else {
                 &[]
@@ -3072,10 +3084,7 @@ fn held_from(
     // A surface's fill the theme sets is a ground of every family drawn on it (#3099, from
     // #3083): held until no surface falls back, since each that does draws its own fill again.
     // A fallback only ever takes a fill away, so what is built for the first round covers the rest.
-    let coarse: &[ResolvedTheme] = if surfaces_set(&rules)
-        .iter()
-        .any(|(_, _, _, set)| shows_a_tint(theme, set))
-    {
+    let coarse: &[ResolvedTheme] = if tints_reach_a_surface(theme, &rules) {
         coarse_tints()
     } else {
         &[]
@@ -3111,8 +3120,14 @@ fn singles_of(family: &Family) -> Vec<Vec<State>> {
 
 /// **How near a floor a coarse reading comes before a look is read at every degree** (#4257): more
 /// than the most a look's lowest reading at every degree was found under its lowest at the coarse
-/// tints (`see_through_tints_tests.rs`).
+/// tints (`see_through_tints_tests.rs`), and on a surface's fill, on every part, edge and state
+/// (`surface_tints_tests.rs`, #4607).
 pub(super) const NEAR_A_FLOOR: f64 = 0.1;
+
+/// **How near the hot count a coarse reading comes before a rule is read at every degree** (#4384):
+/// the same margin in OKLab, where [`NEAR_A_FLOOR`] is a contrast. More than the most a colour was
+/// found to move between a degree and the coarse tint nearest it (`hot_count_tints_tests.rs`).
+pub(super) const NEAR_THE_HOT_COUNT: f64 = 0.15;
 
 /// The degrees between coarse readings.
 pub(super) const COARSE_DEGREES: usize = 10;
@@ -3182,13 +3197,38 @@ fn shows_through(theme: &ResolvedTheme, rules: &[Rule], family: &Family) -> bool
         sets.iter().any(|states| {
             let look = drawn(rules, family, variant, states);
             look != drawn(&[], family, variant, states)
-                && (on_glass
-                    || see_through(look.fill)
-                    || see_through(look.border)
-                    || look.grounds.iter().any(|one| see_through(one))
-                    || look.words.iter().any(|one| see_through(one))
-                    || look.marks.iter().any(|one| see_through(one)))
+                && (on_glass || draws_see_through(theme, &look))
         })
+    })
+}
+
+/// **Whether `look` draws a see-through colour**: its fill, its edge, a part's ground, its words
+/// or its marks.
+fn draws_see_through(theme: &ResolvedTheme, look: &Drawn) -> bool {
+    let see_through = |token: &str| hex(theme, token).is_some_and(|one| !is_opaque(one));
+    see_through(look.fill)
+        || see_through(look.border)
+        || look.grounds.iter().any(|one| see_through(one))
+        || look.words.iter().any(|one| see_through(one))
+        || look.marks.iter().any(|one| see_through(one))
+}
+
+/// **Whether a fill a theme gives the plain activity count is one its tint recipe turns** (#4384):
+/// the hot count is never turned, so at some hue the rule can come near it. An opaque colour moves
+/// no contrast in a tint, so [`shows_through`] has no reason to ask, but this is a distance.
+fn count_turns(theme: &ResolvedTheme, rules: &[Rule], family: &Family) -> bool {
+    let Some(count) = plain_count_at(family) else {
+        return false;
+    };
+    let turned = theme.tint.tabs();
+    rules.iter().any(|rule| {
+        std::ptr::eq(rule.family, family)
+            && !rule.fallback
+            && rule.part == count
+            && matches!(
+                rule.values.get(&Prop::Fill),
+                Some(PartValue::Colour(token)) if turned.contains(token)
+            )
     })
 }
 
@@ -3390,9 +3430,73 @@ fn shows_a_tint(theme: &ResolvedTheme, set: &str) -> bool {
     hex(theme, set).is_some_and(|one| !is_opaque(one))
 }
 
+/// **The sets of states a family is read in on a surface's fill** (#4607): at rest, each state but
+/// disabled, and each set that holds at once whose look none of those nor an earlier set draws,
+/// as [`held_from`] reads them on the family's own grounds.
+fn sets_read(rules: &[Rule], family: &Family) -> Vec<Vec<State>> {
+    let mut sets = singles_of(family);
+    let mut measured: Vec<Alike> = sets
+        .iter()
+        .map(|states| alike_as(rules, family, states))
+        .collect();
+    for states in combined(family) {
+        let one = alike_as(rules, family, &states);
+        if !measured.contains(&one) {
+            measured.push(one);
+            sets.push(states);
+        }
+    }
+    sets
+}
+
+/// A variant's look on a surface's fill, and the states it is drawn in.
+type LookOn<'s> = (&'static str, &'s [State], Drawn);
+
+/// **Each look `family` draws in `sets`, once.** Two sets that draw a variant alike read alike, but
+/// for a refused box's edge.
+fn looks_in<'s>(rules: &[Rule], family: &Family, sets: &'s [Vec<State>]) -> Vec<LookOn<'s>> {
+    let mut looks: Vec<LookOn<'s>> = Vec::new();
+    for states in sets {
+        for variant in family.looks() {
+            let look = drawn(rules, family, variant, states);
+            let refused = states.contains(&State::Invalid);
+            if !looks.iter().any(|(name, others, one)| {
+                *name == variant && *one == look && others.contains(&State::Invalid) == refused
+            }) {
+                looks.push((variant, states, look));
+            }
+        }
+    }
+    looks
+}
+
+/// **Whether a tint can move what `looks` read on a surface's fill `set`**: the fill lets what is
+/// under it through, or a look does, the family's defaults included, which no token floor reads on
+/// this fill (#4607). A look and a fill both opaque keep their luminance, so read as written alone.
+fn tints_reach(theme: &ResolvedTheme, set: &str, looks: &[LookOn<'_>]) -> bool {
+    shows_a_tint(theme, set)
+        || looks
+            .iter()
+            .any(|(_, _, look)| draws_see_through(theme, look))
+}
+
+/// Whether a tint can move anything of a surface's fill a theme sets: what builds the tints for
+/// [`held_on_surfaces`].
+fn tints_reach_a_surface(theme: &ResolvedTheme, rules: &[Rule]) -> bool {
+    surfaces_set(rules)
+        .into_iter()
+        .any(|(surface, _, default, set)| {
+            shows_a_tint(theme, set)
+                || drawn_on(surface, default, set).any(|family| {
+                    let sets = sets_read(rules, family);
+                    tints_reach(theme, set, &looks_in(rules, family, &sets))
+                })
+        })
+}
+
 /// **The floor a family breaks on a surface's fill a theme sets**, if any: each of its looks
-/// at rest and in each state but disabled, held to the reading floors as written and, on a
-/// see-through fill, in the tints (#4310): each of `coarse`, and every drawn theme where one of
+/// ([`sets_read`]) held to the reading floors as written and, where a tint can move them
+/// ([`tints_reach`]), in the tints (#4310): each of `coarse`, and every drawn theme where one of
 /// those comes near a floor. Its consent variants are held to the consent floors in every drawn
 /// theme, on that fill alone.
 #[allow(clippy::too_many_arguments)]
@@ -3405,34 +3509,19 @@ fn broken_on(
     surface: &Family,
     set: &str,
 ) -> Option<(String, Option<f64>)> {
-    let singles: Vec<Vec<State>> = std::iter::once(Vec::new())
-        .chain(states_of(family).into_iter().map(|one| vec![one]))
-        .collect();
-    // Two states that draw a variant alike read alike, but for a refused box's edge.
-    let mut looks: Vec<(&str, &[State], Drawn)> = Vec::new();
-    for states in &singles {
-        for variant in family.looks() {
-            let look = drawn(rules, family, variant, states);
-            let refused = states.contains(&State::Invalid);
-            if !looks.iter().any(|(name, others, one)| {
-                *name == variant && *one == look && others.contains(&State::Invalid) == refused
-            }) {
-                looks.push((variant, states, look));
-            }
-        }
-    }
+    let sets = sets_read(rules, family);
+    let looks = looks_in(rules, family, &sets);
     let on = surface_ground(theme, surface, set);
     for (variant, states, look) in &looks {
         if let Some(broken) = unreadable_by(0.0, theme, &on, rules, family, variant, states, look) {
             return Some(broken);
         }
     }
-    if shows_a_tint(theme, set) {
+    if tints_reach(theme, set, &looks) {
         // Only a look a coarse reading finds near a floor is read at every degree.
-        let reads =
-            |margin: f64, one: &ResolvedTheme, on: &[String], look: &(&str, &[State], Drawn)| {
-                unreadable_by(margin, one, on, rules, family, look.0, look.1, &look.2)
-            };
+        let reads = |margin: f64, one: &ResolvedTheme, on: &[String], look: &LookOn<'_>| {
+            unreadable_by(margin, one, on, rules, family, look.0, look.1, &look.2)
+        };
         let coarse_on: Vec<_> = coarse
             .iter()
             .map(|one| (one, surface_ground(one, surface, set)))
@@ -3456,7 +3545,7 @@ fn broken_on(
     }
     for one in drawn_in {
         let on = surface_ground(one, surface, set);
-        for states in &singles {
+        for states in &sets {
             for variant in family.variants.iter().filter(|one| one.consent.is_some()) {
                 match consent_broken(one, &on, rules, family, variant, states) {
                     Some(Consented::Own(floor, ratio)) => return Some((floor, ratio)),
