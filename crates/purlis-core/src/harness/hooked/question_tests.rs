@@ -329,3 +329,18 @@ fn a_redirected_codex_question_is_denied_in_its_pre_tool_use_words_with_where_it
         } })
     );
 }
+
+#[test]
+fn a_secret_codex_question_is_never_read_so_codex_asks_it_masked_in_its_pane() {
+    // Codex 0.163.0's `RequestUserInputQuestion` carries `isSecret`, which its pane masks. It is
+    // not in the tool's schema, but the arguments are read into that type, so a model can set it.
+    for flag in ["isSecret", "is_secret"] {
+        let mut secret = one("Your token?", &["paste it"]);
+        secret[flag] = true.into();
+        let payload = codex_asked(serde_json::json!([one("Which host?", &["blue"]), secret]));
+        assert_eq!(codex_asked_text(&payload), None, "{flag}");
+    }
+    let mut not_secret = one("Which host?", &["blue"]);
+    not_secret["isSecret"] = false.into();
+    assert!(codex_asked_text(&codex_asked(serde_json::json!([not_secret]))).is_some());
+}

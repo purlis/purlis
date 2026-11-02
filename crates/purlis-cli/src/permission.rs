@@ -180,7 +180,11 @@ fn question_left_in_its_pane(
     payload: &serde_json::Value,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Option<hookwire::Report> {
-    hooked::codex_asked_text(payload)?;
+    // By the tool alone, never by its words: a secret question, which is never read, waits on
+    // the person too.
+    if payload["tool_name"].as_str() != Some(hooked::CODEX_QUESTION_TOOL) {
+        return None;
+    }
     notification("question", payload, env)
 }
 
@@ -411,6 +415,20 @@ mod tests {
         let report = question_left_in_its_pane(&a_codex_question(), &env).expect("a report");
         assert_eq!(report.chat, 7);
         assert_eq!(report.event, Event::Notification);
+        assert_eq!(report.detail.notified, Notified::Asks(Prompt::Question));
+    }
+
+    #[test]
+    fn a_secret_codex_question_is_not_routed_and_still_waits_on_the_person_without_its_words() {
+        use crate::dispatch::Routed;
+        let mut payload = a_codex_question();
+        payload["tool_input"]["questions"][0]["isSecret"] = true.into();
+        let route = |_: &str| -> Routed { panic!("a secret is never routed") };
+        assert_eq!(
+            codex_question_redirected(Source::Codex, &payload, &route),
+            None
+        );
+        let report = question_left_in_its_pane(&payload, &env).expect("a report");
         assert_eq!(report.detail.notified, Notified::Asks(Prompt::Question));
     }
 
