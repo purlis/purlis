@@ -57,10 +57,20 @@ export function waitingOnYou(held: QuestionsHeld | undefined): number[] {
 /** What a task's row says of its question: who it waits on, and for how long, in the row's
  *  own time words (`now`, then whole minutes), from `since`. */
 export function questionWord(standing: QuestionStanding, now: Date): string {
+  const { who, since } = questionWords(standing, now);
+  return since === null ? who : `${who} · ${since}`;
+}
+
+/** The same words in their two parts, so a row can let the first give way and keep the time
+ *  whole: who it waits on, and how long (`null` where it is not known). */
+export function questionWords(
+  standing: QuestionStanding,
+  now: Date,
+): { who: string; since: string | null } {
   const who = standing.level === "needs-you" ? "needs you" : `asking ${standing.asker}`;
-  if (standing.since === null) return who;
+  if (standing.since === null) return { who, since: null };
   const seconds = Math.max(0, Math.floor(now.getTime() / 1000) - standing.since);
-  return `${who} · ${rowTimeSaid(seconds, now)}`;
+  return { who, since: rowTimeSaid(seconds, now) };
 }
 
 /** What a folded row says of the questions under it that are with their asking chat: never
