@@ -294,46 +294,94 @@ export const Grades: Story = {
   },
 };
 
-/** DIAGNOSTIC for #4672, removed before review: every frame drawn 300 ms late. */
-export const GradesLateFrame: Story = {
+/** DIAGNOSTIC for #4672, removed before review: Tab to the Scorecard 20 times, half with
+ *  every frame 300 ms late, and say how often and where it was out of sight. */
+export const GradesStress: Story = {
+  parameters: { screenshot: false },
   play: async ({ canvas }) => {
     const raf = window.requestAnimationFrame.bind(window);
     const caf = window.cancelAnimationFrame.bind(window);
-    let next = 1e6;
-    const held = new Map<number, { timer?: number; frame?: number }>();
-    window.requestAnimationFrame = (cb) => {
-      const id = next++;
-      const entry: { timer?: number; frame?: number } = {};
-      held.set(id, entry);
-      entry.timer = window.setTimeout(() => {
-        entry.frame = raf((t) => {
-          held.delete(id);
-          cb(t);
-        });
-      }, 300);
-      return id;
+    const late = () => {
+      let next = 1e6;
+      const held = new Map<number, { timer?: number; frame?: number }>();
+      window.requestAnimationFrame = (cb) => {
+        const id = next++;
+        const entry: { timer?: number; frame?: number } = {};
+        held.set(id, entry);
+        entry.timer = window.setTimeout(() => {
+          entry.frame = raf((t) => {
+            held.delete(id);
+            cb(t);
+          });
+        }, 300);
+        return id;
+      };
+      window.cancelAnimationFrame = (id) => {
+        const entry = held.get(id);
+        if (entry === undefined) return caf(id);
+        held.delete(id);
+        if (entry.timer !== undefined) clearTimeout(entry.timer);
+        if (entry.frame !== undefined) caf(entry.frame);
+      };
     };
-    window.cancelAnimationFrame = (id) => {
-      const entry = held.get(id);
-      if (entry === undefined) return caf(id);
-      held.delete(id);
-      if (entry.timer !== undefined) clearTimeout(entry.timer);
-      if (entry.frame !== undefined) caf(entry.frame);
-    };
-    try {
-      const list = await canvas.findByRole("grid", { name: "Grades of deploy" });
-      await waitFor(() => expect(within(list).getAllByRole("row")).toHaveLength(4));
-      const open = within(list).getByRole("button", {
-        name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
-      });
-      await tabInto(() => open);
-      await diagnose4672("frames 300 ms late");
-    } finally {
+    const onTime = () => {
       window.requestAnimationFrame = raf;
       window.cancelAnimationFrame = caf;
+    };
+    const list = await canvas.findByRole("grid", { name: "Grades of deploy" });
+    await waitFor(() => expect(within(list).getAllByRole("row")).toHaveLength(4));
+    const open = () =>
+      within(list).getByRole("button", { name: "Scorecard of the grade of 2026-10-28 10:00 UTC" });
+    let out = 0;
+    let first = "";
+    try {
+      for (let round = 0; round < 20; round++) {
+        if (round % 2 === 1) late();
+        else onTime();
+        (document.activeElement as HTMLElement | null)?.blur();
+        for (let up = open().parentElement; up; up = up.parentElement) {
+          up.scrollTop = 0;
+          up.scrollLeft = 0;
+        }
+        window.scrollTo(0, 0);
+        const path: string[] = [];
+        for (let step = 0; step < 60 && !open().contains(document.activeElement); step++) {
+          await userEvent.tab();
+          const at = document.activeElement;
+          path.push(at?.getAttribute("role") ?? at?.tagName.toLowerCase() ?? "-");
+        }
+        const now = where();
+        if (now === "in") continue;
+        out++;
+        if (first !== "") continue;
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const frame = where();
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        first = `r${round}${round % 2 ? " late" : ""}: ${now} | frame ${frame === "in" ? "in" : "OUT"} | 1s ${where() === "in" ? "in" : "OUT"} | tabs ${path.slice(-4).join(">")}`;
+      }
+    } finally {
+      onTime();
     }
+    throw new Error(`#4672 stress ${out}/20 out ${first}`);
   },
 };
+
+/** Where the focus is: "in" sight, or its box, the window, the frame and what is scrolled. */
+function where(): string {
+  try {
+    expectFocusInSight();
+    return "in";
+  } catch {
+    const at = (document.activeElement as HTMLElement).getBoundingClientRect();
+    const frame = document.activeElement?.closest("[data-scope='table'][data-part='frame']");
+    const scrolled: string[] = [];
+    for (let up = document.activeElement?.parentElement; up; up = up.parentElement)
+      if (up.scrollTop !== 0 || up.scrollLeft !== 0)
+        scrolled.push(`${up.tagName.toLowerCase()}${up.dataset.part ?? ""}@${up.scrollLeft},${up.scrollTop}`);
+    const fr = frame === null || frame === undefined ? "?" : `${frame.scrollLeft}/${frame.scrollWidth - frame.clientWidth}`;
+    return `box ${Math.round(at.left)},${Math.round(at.top)},${Math.round(at.width)}x${Math.round(at.height)} win ${window.innerWidth}x${window.innerHeight} frame ${fr} pg ${window.scrollX},${window.scrollY} [${scrolled.join(" ")}]`;
+  }
+}
 
 async function diagnose4672(how: string): Promise<void> {
   const verdict = () => {
