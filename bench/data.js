@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793645101794,
+  "lastUpdate": 1793647783522,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36624,6 +36624,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3812265,
             "unit": "ms",
             "extra": "median of 5 runs: 101.778, 101.977, 102.381, 102.639, 103.505 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4d527d076f6ec201e4adbe29a44895f2509bb877",
+          "message": "Telemetry: a task question is counted from its steps, never read (#4634) (#4832)\n\n* Telemetry: a task question is counted from its steps, never read (#4634)\n\npurlis has no OTel exporter yet, so nothing can export the counts of task\nquestions (#4557). The question.* events already sit in the event log where\nADR 0083 says the exporter reads. This records the mapping as an amendment to\nADR 0083: the attributes, what a maintainer counts from them, and that no\nwords are among them. It also adds a test that fails when a step writes a\nfield the amendment does not name, or a value that is not a number, a flag\nor a closed word. The exporter itself lands with OB-18 (D-4634a, as D-SK20a).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6E4CFY4ZTN9YZ67BGBFX8PD\nPurlis-Persona: steward\n\n* CI scope: ADR 0083's question-counts amendment is a doc Rust's tests read (#4634)\n\nThe test in eventlog::questions reads the amendment's table, so a change to\nit needs what a change to Rust needs. ci-scope.test.mjs failed web (part 2\nof 4) on #4819 until the amendment was listed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6E9DFHE38YKB11QYCKD86PG\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T16:55:04Z",
+          "tree_id": "cb9d4f560635d76df22a8001f722223c35680b37",
+          "url": "https://github.com/purlis/purlis/commit/4d527d076f6ec201e4adbe29a44895f2509bb877"
+        },
+        "date": 1793647779181,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5343585000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.522, 0.530, 0.534, 0.542, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2985775,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.246, 16.259, 16.299, 16.377, 16.580 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4616975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.500, 101.192, 101.462, 102.123, 102.839 ms"
           }
         ]
       }
