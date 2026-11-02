@@ -2269,6 +2269,34 @@ pub struct ClusterKept {
     /// The chat this is the fresh runner of, by its stable id (#3709); none on the pool's own
     /// runner, which keeps its work and every other chat's.
     pub chat: Option<String>,
+    /// **Where a fresh runner's work goes back to** (#4569): the project its chat runs in and its
+    /// workspace. None on the pool's own runner.
+    pub of: Option<Box<FreshOf>>,
+}
+
+/// The project and workspace of a chat's fresh runner (#4569): read once its chat is gone, to say
+/// which project takes its branches back. The window of no other project touches the runner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FreshOf {
+    /// The project's id ([`crate::scaffold::planefile::id_to_hold_by`]), which holds if it moves.
+    pub plane: String,
+    pub workspace: String,
+    /// **The checkout its chat started from**, as an absolute path (#4569, the person's ruling of
+    /// 2026-11-02): only that checkout's window lets the runner go or sweeps it, since another
+    /// checkout of the project holds the same id. None on a row written before it.
+    pub root: Option<String>,
+}
+
+impl FreshOf {
+    /// **Whether the window of the checkout at `root`, of the project `plane`, may let this
+    /// runner go** (#4569): its own checkout's, or any of its project's where the row names none.
+    pub fn is_of(&self, plane: &str, root: &Path) -> bool {
+        self.plane == plane
+            && self
+                .root
+                .as_deref()
+                .is_none_or(|own| Path::new(own) == root)
+    }
 }
 
 impl ClusterKept {
@@ -2843,7 +2871,8 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
 }
 
 /// A cluster runner's row (#3292): `{"name", "pool": "cluster", "namespace", "claim",
-/// "claimUid", "requester", "pod", "device", "key", "paired"}`.
+/// "claimUid", "requester", "pod", "device", "key", "paired"}`, and a chat's fresh runner's
+/// `"chat"`, `"plane"` and `"workspace"` (#3709, #4569), and `"root"` where it names its checkout.
 fn cluster_runner_to_row(kept: &ClusterKept) -> serde_json::Value {
     let mut row = serde_json::json!({
         "name": kept.name,
@@ -2860,6 +2889,13 @@ fn cluster_runner_to_row(kept: &ClusterKept) -> serde_json::Value {
     if let Some(chat) = &kept.chat {
         row["chat"] = serde_json::Value::String(chat.clone());
     }
+    if let Some(of) = &kept.of {
+        row["plane"] = serde_json::Value::String(of.plane.clone());
+        row["workspace"] = serde_json::Value::String(of.workspace.clone());
+        if let Some(root) = &of.root {
+            row["root"] = serde_json::Value::String(root.clone());
+        }
+    }
     row
 }
 
@@ -2874,6 +2910,47 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         ),
         None => None,
     };
+    // A fresh runner names all three, and no other runner any.
+    let of = match (fields.get("plane"), fields.get("workspace")) {
+        (Some(plane), Some(workspace)) => {
+            let plane = plane
+                .as_str()
+                .filter(|plane| plain_text(plane) && !plane.is_empty() && plane.len() <= 128)?;
+            let workspace = workspace
+                .as_str()
+                .filter(|workspace| crate::contain::workspace_name_ok(workspace))?;
+            let root = match fields.get("root") {
+                Some(root) => Some(
+                    root.as_str()
+                        .filter(|root| {
+                            plain_text(root) && root.len() <= 4096 && Path::new(root).is_absolute()
+                        })?
+                        .to_owned(),
+                ),
+                None => None,
+            };
+            FreshOf {
+                plane: plane.to_owned(),
+                workspace: workspace.to_owned(),
+                root,
+            }
+        }
+        _ if chat.is_some() => return None,
+        (None, None) => return from_kept_row(row, None),
+        _ => return None,
+    };
+    chat?;
+    from_kept_row(row, Some(Box::new(of)))
+}
+
+/// [`cluster_runner_from_row`], past a fresh runner's own keys.
+fn from_kept_row(row: &serde_json::Value, of: Option<Box<FreshOf>>) -> Option<ClusterKept> {
+    let fields = row.as_object()?;
+    let chat = fields
+        .get("chat")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    let fresh_keys = ["chat", "plane", "workspace", "root"];
     let known = [
         "name",
         "pool",
@@ -2886,10 +2963,18 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         "key",
         "paired",
     ];
-    let mut rest = fields.keys().filter(|key| key.as_str() != "chat");
-    if fields.len() - usize::from(chat.is_some()) != known.len()
-        || rest.any(|key| !known.contains(&key.as_str()))
-    {
+    let mut rest = fields
+        .keys()
+        .filter(|key| !fresh_keys.contains(&key.as_str()));
+    let fresh = fields
+        .keys()
+        .filter(|key| fresh_keys.contains(&key.as_str()))
+        .count();
+    if of.is_none() && fresh > 0 {
+        return None;
+    }
+    let own = fields.len() - fresh;
+    if own != known.len() || rest.any(|key| !known.contains(&key.as_str())) {
         return None;
     }
     let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
@@ -2927,6 +3012,7 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         pinned,
         paired: fields.get("paired")?.as_u64()?,
         chat,
+        of,
     })
 }
 

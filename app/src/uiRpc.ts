@@ -444,6 +444,10 @@ export const commands = {
 	 *  from.
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
+	/**  The fresh runners of `plane` kept now: what the window's Notice starts from. */
+	freshRunnersKept: (plane: PlaneId) => typedError<FreshKept[], string>(__TAURI_INVOKE("fresh_runners_kept", { plane })),
+	fetchFreshRunnerAgain: __WINDOW_ONLY_RESULT,
+	discardFreshRunner: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **Each runner of `plane`'s chats, for the away summary** (#2051): of `sessions`, the chats
 	 *  that run on each pool's runner, and the branches each runner has, as this machine last
@@ -5620,6 +5624,26 @@ export type FoundFile = {
 	 *  points, not bytes or UTF-16 units), ascending: what the row marks.
 	 */
 	matched: number[],
+};
+
+/**  One fresh runner kept since its work is not all here. */
+export type FreshKept = {
+	/**  Its chat's stable id, which Fetch again and Discard name it by. */
+	chat: string,
+	/**  The runner, `<pool>/fresh-<hash>`. */
+	runner: string,
+	/**  The workspace its work goes back to. */
+	workspace: string,
+	/**  What is not here, in sentences. */
+	why: string[],
+	/**  Whether its cluster says the runner is gone already, with what it held. */
+	gone: boolean,
+};
+
+/**  A plane's kept fresh runners, as they are now. */
+export type FreshRunnersKept = {
+	plane: PlaneId,
+	kept: FreshKept[],
 };
 
 /**

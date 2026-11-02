@@ -223,3 +223,45 @@ fn a_definite_refusal_after_the_whole_wait_offers_nothing() {
     });
     assert_eq!(hit.expect("the wait it ran out of").hits.len(), 1);
 }
+
+/// **Only an operator's word gives a task a runner of its own** (#4569): an older operator ends
+/// such a runner's pod while its desktop is away, and not knowing is the same no.
+#[test]
+fn a_task_stays_on_the_pools_runner_unless_its_operator_says_otherwise() {
+    assert_eq!(no_fresh_runner_said("team", Ok(())), None);
+    let older = no_fresh_runner_said(
+        "team",
+        Err("its cluster operator gives no word for what it does".to_owned()),
+    )
+    .expect("it says why");
+    assert!(older.contains("pool team's own runner"), "{older}");
+    assert!(older.contains("gives no word"), "{older}");
+    assert!(older.contains("Update the operator"), "{older}");
+}
+
+/// **A project whose folder is no git repository gets no runner of its own** (D-4569-21): what a
+/// task wrote outside its clones could never be proved home. Its tab says why.
+#[test]
+fn a_project_that_is_no_repository_keeps_its_task_on_the_pools_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let said = no_fresh_runner_for_the_project(dir.path(), "team").expect("it says why");
+    assert!(said.contains("pool team's own runner"), "{said}");
+    assert!(said.contains("not a git repository"), "{said}");
+
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    assert_eq!(no_fresh_runner_for_the_project(dir.path(), "team"), None);
+}
+
+/// **The operator's word is read again at release** (#4569, D-4569-18): a word that lapsed since
+/// the start keeps a runner whose work looks home, and says why.
+#[test]
+fn a_runner_whose_operator_no_longer_gives_its_word_is_kept_though_its_work_looks_home() {
+    assert_eq!(kept_without_the_word(Ok(())), None);
+    let Some(FreshEnd::Kept { why, gone }) = kept_without_the_word(Err(
+        "its cluster operator's word for what it does no longer holds".to_owned(),
+    )) else {
+        panic!("kept");
+    };
+    assert!(!gone);
+    assert!(why[0].contains("no longer holds"), "{why:?}");
+}

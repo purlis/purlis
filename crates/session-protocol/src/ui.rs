@@ -379,6 +379,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Put away on the Inbox's Notice of a chat's undelivered messages (#3958): the person's
     // answer that they have read it.
     "put_away_left_messages",
+    // Fetch again and Discard on the Notice of a task's runner kept since its work is not all
+    // here (#4569): Discard lets that work go, so only the person's own press in their window.
+    "fetch_fresh_runner_again",
+    "discard_fresh_runner",
     // Try again on the Notice that the session host is failing (#2007): it starts the host
     // every chat runs in, on the person's word.
     "start_the_session_host_again",
@@ -1125,6 +1129,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "first_frame",
     "first_run_found",
     "forge_token_help",
+    // A project's task runners kept since their work is not all here (#4569): what the window's
+    // Notice starts from.
+    "fresh_runners_kept",
     "get_project",
     "git_presence",
     "grantable_folders",
