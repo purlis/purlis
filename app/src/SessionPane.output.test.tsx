@@ -177,6 +177,49 @@ describe("a chat's output reaching its terminal as the bytes it is (#4745)", () 
       expect(made[0].buffer.active.getLine(0)?.translateToString(true)).toBe("café!"),
     );
   });
+
+  // xterm 6's UTF-8 decoder (`Utf8ToUtf32`) skips a byte that starts no character, and a
+  // character whose continuation never comes; it draws no U+FFFD in their place, as the core's
+  // `Utf8Stream` did.
+  it("draws nothing for a byte that is no character", async () => {
+    await openPane();
+
+    await send(new Uint8Array([0x61, 0xff, 0x62, 0xc3, 0x63]));
+    frame();
+
+    await waitFor(() =>
+      expect(made[0].buffer.active.getLine(0)?.translateToString(true)).toBe("abc"),
+    );
+  });
+
+  // The core writes RESET (`ESC c`) before a view's next epoch. A character the old epoch cut
+  // short must not be finished by the new screen's first bytes.
+  it("does not finish a character cut short before a reset with the new screen's bytes", async () => {
+    await openPane();
+
+    await send(new Uint8Array([0x6f, 0x6c, 0x64, 0xc3]));
+    frame();
+    await send("\x1bc");
+    await send(new Uint8Array([0xa9, 0x6e, 0x65, 0x77]));
+    frame();
+
+    await waitFor(() =>
+      expect(made[0].buffer.active.getLine(0)?.translateToString(true)).toBe("new"),
+    );
+  });
+
+  it("does not finish a character cut short before a reset gathered in the same frame", async () => {
+    await openPane();
+
+    await send(new Uint8Array([0x6f, 0x6c, 0x64, 0xe2, 0x94]));
+    await send("\x1bc");
+    await send(new Uint8Array([0x80, 0x6e, 0x65, 0x77]));
+    frame();
+
+    await waitFor(() =>
+      expect(made[0].buffer.active.getLine(0)?.translateToString(true)).toBe("new"),
+    );
+  });
 });
 
 describe("what the terminal drew, told back to the core (#4733)", () => {

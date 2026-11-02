@@ -7,7 +7,11 @@ so since FD-4; the window's last hop, from the core to a pane, still turned them
 **`watch_session` sends each piece of a view's output as a raw IPC body**, the bytes the view
 was sent, unchanged. The pane is handed an `ArrayBuffer` and writes it to its terminal, which
 decodes it: a character cut between two pieces is put together there, and nothing in the core
-holds a byte back. A view's sink (`host::Sink`) carries bytes for every host, so what reads a
+holds a byte back. Its decoder is xterm's own (`Utf8ToUtf32`), and it draws nothing for a byte
+that starts no character, or for a character whose remaining bytes never come: where the core's
+`Utf8Stream` showed `U+FFFD`, the pane now shows nothing. A character an epoch cut short is not
+finished by the next epoch's screen, since the reset written between them (`ESC c`) is not a
+continuation byte. A view's sink (`host::Sink`) carries bytes for every host, so what reads a
 view's output as text (a behaviour's pane, a grade's screen) decodes it at its own end.
 
 **A piece is one chunk of the view's stream**, and acknowledges exactly the bytes it carries
