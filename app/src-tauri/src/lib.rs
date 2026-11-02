@@ -45,6 +45,7 @@ mod chats;
 mod clipath;
 mod createproject;
 mod curation;
+mod layout;
 mod questiontrail;
 // The Devices view (#2052).
 mod clusterpools;
@@ -2445,21 +2446,6 @@ fn chats_plane_updated(
     Ok(planes.held(&plane)?.plane_updated())
 }
 
-/// Says which chat is in front, so the record brings that one back in front.
-#[tauri::command]
-#[specta::specta]
-fn chat_in_front(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    session: Option<u32>,
-) -> Result<(), String> {
-    let held = planes.held(&plane)?;
-    held.chats().bring_to_front(session);
-    // A reported task that was held because the person had it in front is looked at again.
-    dispatched::front_moved(&held);
-    Ok(())
-}
-
 /// What the operator has pinned in one project (ADR 0039, stored per ADR 0040).
 ///
 /// The project's own pin and its pinned workspaces come from the machine store; a pinned
@@ -2654,32 +2640,6 @@ fn close_chat_tab(
     held.chats().close_tab(session)?;
     // Its row says it has no tab from here on.
     held.rows_changed();
-    Ok(())
-}
-
-/// **Where chat `session`'s pane is and what it shows**: chat `shown` in place of its own, or
-/// its own again with none (#1486); and the chat whose tab the pane is in, `beside`, or none
-/// for a chat that is its tab's own or has no pane (#1489). The record keeps both on that
-/// chat's entry, so a reloaded window and the next launch put each pane back.
-///
-/// **The one way the window says what is on screen** beside which chat is in front
-/// (`chat_in_front`): `Chats::looked_at` reads these, so a reported task is not ended under
-/// the person in any pane of the tab in front, and none of them is notified about. A window
-/// command only: no chat can call it.
-#[tauri::command]
-#[specta::specta]
-fn tab_shows(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    session: u32,
-    shown: Option<u32>,
-    beside: Option<u32>,
-) -> Result<(), String> {
-    let held = planes.held(&plane)?;
-    held.chats().tab_shows(session, shown, beside)?;
-    // A reported task that was held because the person was reading it in this tab is looked
-    // at again, as it is when another chat is brought in front (#1485).
-    dispatched::front_moved(&held);
     Ok(())
 }
 
