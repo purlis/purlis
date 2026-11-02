@@ -62,7 +62,12 @@ fn began_in_the_frame(engine: &super::Engine) {
 fn a_download_a_frame_began_comes_from_the_address_it_attached_at() {
     let (browser, engine) = browser();
     let third = "http://third.test/pay.html";
-    frame_moves(&engine, third, third, Duration::from_secs(3));
+    frame_moves(
+        &engine,
+        third,
+        "http://fourth.test/pay.html",
+        Duration::from_secs(3),
+    );
     began_in_the_frame(&engine);
     let listed = listed_once(&browser, |all| !all.is_empty());
     assert_eq!(listed[0].origin.as_deref(), Some("http://third.test"));

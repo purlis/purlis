@@ -3197,6 +3197,32 @@ fn frame_attaches(engine: &Engine, attached: &str) {
     });
 }
 
+/// Waits until the moved frame's session has been read.
+fn frame_read(browser: &Browser) {
+    wait_for("the frame's tree is read", || {
+        !super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .expect("the frames page")
+            .frames["PAYMENT-FRAME"]
+            .unread
+    });
+}
+
+/// Waits until every event emitted so far is taken in: they are taken in the order they came.
+/// Once a test, as the frame this places stays.
+fn events_taken_in(browser: &Browser, engine: &Engine) {
+    engine.emit(
+        "Page.frameAttached",
+        json!({"frameId":"TAKEN-IN","parentFrameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the events are taken in", || {
+        super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .is_some_and(|page| page.frames.contains_key("TAKEN-IN"))
+    });
+}
+
 /// The address the driver holds for `frame` of the frames page.
 fn frame_address(browser: &Browser, frame: &str) -> String {
     super::lock(&browser.inner.state)

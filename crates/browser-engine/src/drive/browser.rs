@@ -856,7 +856,8 @@ impl State {
             generation,
             loaded: shown,
             told: 0,
-            unread: false,
+            // Back while a session holds it: only that session can say what it shows (#4472).
+            unread: owned_elsewhere,
         });
         if parent.is_some() {
             entry.parent = parent;
@@ -970,6 +971,27 @@ impl State {
         }
         self.refs.forget_frame(frame);
         self.excluded.retain(|key| key.frame != frame);
+    }
+
+    /// Whether `session` may say `frame` of `target`'s page is gone: the frame's own session, or
+    /// the session of the frame or page it sits in (#4472).
+    fn may_remove(&self, target: &str, frame: &str, session: &str) -> bool {
+        let Some(page) = self.page(target) else {
+            return true;
+        };
+        let Some(entry) = page.frames.get(frame) else {
+            return true;
+        };
+        if entry.session == session {
+            return true;
+        }
+        match entry.parent.as_deref() {
+            Some(parent) if parent != target => page
+                .frames
+                .get(parent)
+                .is_some_and(|up| up.session == session),
+            _ => matches!(self.sessions.get(session), Some(Session::Page(_))),
+        }
     }
 
     /// Forgets `frame` and every frame inside it, and answers them.
@@ -3971,6 +3993,25 @@ impl Inner {
         }
     }
 
+    /// `session` is gone, and what it had open went with it.
+    fn session_ended(&self, state: &mut State, session: &str, now: Instant) {
+        self.worlds.cleared(session);
+        if let Some(target) = state.page_of_session(session)
+            && let Some(page) = state.page_mut(&target)
+        {
+            page.settle.forget_session(session, now);
+        }
+        // A drag ended on a session that is gone is answered by nobody (#2839).
+        if state
+            .cancels_late
+            .as_ref()
+            .is_some_and(|(on, _)| on == session)
+        {
+            state.cancels_late = None;
+        }
+        state.sessions.remove(session);
+    }
+
     /// Takes in one event from the engine.
     fn take_in(&self, event: &Event) {
         // The front end of the person's DevTools is DevTools' own, never one of the browser's
@@ -4141,6 +4182,19 @@ impl Inner {
                 "Target.targetDestroyed" => {
                     if let Some(target) = text("/targetId") {
                         state.pages.retain(|p| p.target != target);
+                        // A frame's target can go with no detach to follow, and a session left
+                        // listed would go on speaking for the frame over its parent (#4472).
+                        let frames: Vec<String> = state
+                            .sessions
+                            .iter()
+                            .filter(|(_, s)| {
+                                matches!(s, Session::Frame { frame, .. } if *frame == target)
+                            })
+                            .map(|(session, _)| session.clone())
+                            .collect();
+                        for session in &frames {
+                            self.session_ended(&mut state, session, now);
+                        }
                         state.sessions.retain(|_, s| match s {
                             Session::Page(t) => t != &target,
                             Session::Frame { page, .. } => page != &target,
@@ -4193,21 +4247,7 @@ impl Inner {
                 }
                 "Target.detachedFromTarget" => {
                     if let Some(session) = text("/sessionId") {
-                        self.worlds.cleared(&session);
-                        if let Some(target) = state.page_of_session(&session)
-                            && let Some(page) = state.page_mut(&target)
-                        {
-                            page.settle.forget_session(&session, now);
-                        }
-                        // A drag ended on a session that is gone is answered by nobody (#2839).
-                        if state
-                            .cancels_late
-                            .as_ref()
-                            .is_some_and(|(on, _)| *on == session)
-                        {
-                            state.cancels_late = None;
-                        }
-                        state.sessions.remove(&session);
+                        self.session_ended(&mut state, &session, now);
                     }
                 }
                 "Page.frameAttached" => {
@@ -4322,6 +4362,7 @@ impl Inner {
                     if !swapped
                         && let (Some(session), Some(frame)) = (&event.session_id, text("/frameId"))
                         && let Some(target) = state.page_of_session(session)
+                        && state.may_remove(&target, &frame, session)
                     {
                         let gone = state.frame_gone(&target, &frame);
                         // What they had loading or open went with them (#2841).
