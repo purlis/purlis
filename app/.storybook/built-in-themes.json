@@ -651,9 +651,15 @@
           },
           {
             "token": "accent.text",
-            "from": "accent.base",
-            "distance": 0.0,
-            "alone": true
+            "from": "state.waiting",
+            "distance": 0.1,
+            "words": true
+          },
+          {
+            "token": "accent.text",
+            "from": "danger.base",
+            "distance": 0.1,
+            "words": true
           }
         ]
       },
@@ -1327,9 +1333,15 @@
           },
           {
             "token": "accent.text",
-            "from": "accent.base",
-            "distance": 0.0,
-            "alone": true
+            "from": "state.waiting",
+            "distance": 0.1,
+            "words": true
+          },
+          {
+            "token": "accent.text",
+            "from": "danger.base",
+            "distance": 0.1,
+            "words": true
           }
         ]
       },
@@ -2003,9 +2015,15 @@
           },
           {
             "token": "accent.text",
-            "from": "accent.base",
-            "distance": 0.0,
-            "alone": true
+            "from": "state.waiting",
+            "distance": 0.1,
+            "words": true
+          },
+          {
+            "token": "accent.text",
+            "from": "danger.base",
+            "distance": 0.1,
+            "words": true
           }
         ]
       },
@@ -2513,9 +2531,15 @@
           },
           {
             "token": "accent.text",
-            "from": "accent.base",
-            "distance": 0.0,
-            "alone": true
+            "from": "state.waiting",
+            "distance": 0.1,
+            "words": true
+          },
+          {
+            "token": "accent.text",
+            "from": "danger.base",
+            "distance": 0.1,
+            "words": true
           }
         ]
       },
@@ -3039,9 +3063,15 @@
           },
           {
             "token": "accent.text",
-            "from": "accent.base",
-            "distance": 0.0,
-            "alone": true
+            "from": "state.waiting",
+            "distance": 0.1,
+            "words": true
+          },
+          {
+            "token": "accent.text",
+            "from": "danger.base",
+            "distance": 0.1,
+            "words": true
           }
         ]
       },

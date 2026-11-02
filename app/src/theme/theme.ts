@@ -54,7 +54,7 @@ import {
   systemReducesMotion,
   type Motion,
 } from "./motion";
-import { chromaFor, hueOf, mostOf, tintHex, type Apart } from "./tint";
+import { chromaFor, hueOf, mostOf, tintHex, wordsChroma, type Apart } from "./tint";
 
 /**
  * Every token, in the order a theme file is easiest to read in.
@@ -703,6 +703,7 @@ function tintedAs(
   const held = theme.tint.apart
     .map((rule) => ({
       alone: rule.alone === true,
+      words: rule.words === true,
       rule: {
         token: theme.values[rule.token as Token],
         tokenTinted: tokens.includes(rule.token),
@@ -715,14 +716,21 @@ function tintedAs(
     }))
     .filter(({ rule }) => rule.tokenTinted || rule.fromTinted);
   // The rules every held token gives way to, then those held alone too (`tint::Most`, #3130).
-  const shared = held.filter((one) => !one.alone).map((one) => one.rule);
-  const all = held.map((one) => one.rule);
+  // The accent's words are measured after (`tint::words_chroma_of`, #3100).
+  const shared = held.filter((one) => !one.alone && !one.words).map((one) => one.rule);
+  const all = held.filter((one) => !one.words).map((one) => one.rule);
   const { shared: most, alone } = mostOf(all, shared, hue);
+  const words = wordsChroma(
+    held.filter((one) => one.words).map((one) => one.rule),
+    hue,
+    most,
+    alone,
+  );
   const values = { ...theme.values };
   for (const one of tokens) {
     const value = theme.values[one as Token];
     // Only the sides of a rule are held to `most`; a side no amount holds is drawn untinted.
-    const chroma = chromaFor(one, most, theme.tint.apart, alone);
+    const chroma = chromaFor(one, most, theme.tint.apart, alone, words);
     // Only a colour turns: a value left to the platform (`platform`) is drawn as it is.
     if (chroma !== undefined && typeof value === "string" && value.startsWith("#"))
       values[one as Token] = tintHex(value, hue, chroma);

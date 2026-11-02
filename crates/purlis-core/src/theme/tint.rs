@@ -197,6 +197,10 @@ pub struct Apart {
     pub distance: f64,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub alone: bool,
+    /// A rule of the accent's words (#3100): measured only once the accent is answered, so it
+    /// costs the accent no colour ([`words_chroma_of`]).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub words: bool,
 }
 
 /// **What every tint holds apart**, at every hue, a workspace's own colour included: the accent
@@ -205,7 +209,7 @@ pub struct Apart {
 /// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]); and the
 /// accent from the waiting colour (waiting is distinguishable from the accent, #3130), so a
 /// yellow or orange workspace's accent never reads as the waiting signal.
-pub const APART: [Apart; 16] = [
+pub const APART: [Apart; 17] = [
     danger_apart("accent.base"),
     // Keep blocked's edge is a plain control's (#3177).
     Apart {
@@ -213,6 +217,7 @@ pub const APART: [Apart; 16] = [
         from: "border.control",
         distance: ALLOW_APART,
         alone: false,
+        words: false,
     },
     danger_apart(ACCENT_KIN[0]),
     danger_apart(ACCENT_KIN[1]),
@@ -229,16 +234,23 @@ pub const APART: [Apart; 16] = [
     waiting_apart(WAITING_KIN[1]),
     waiting_apart(WAITING_KIN[2]),
     waiting_apart(WAITING_KIN[3]),
-    // The accent's words take the colour the accent takes (#3100): held at no distance, this asks
-    // nothing of any token, and makes them a side held alone, so they give way as the accent does
-    // and are exactly it where a theme draws the two alike.
-    Apart {
-        token: "accent.text",
-        from: "accent.base",
-        distance: 0.0,
-        alone: true,
-    },
+    // The accent's words take the colour the accent takes where they hold apart from waiting and
+    // danger there, and keep the theme's colour where they do not (#3100): measured after the
+    // accent, so they never cost it colour.
+    words_apart("state.waiting", WAITING_APART),
+    words_apart("danger.base", DANGER_APART),
 ];
+
+/// The accent's words held `distance` from `from` ([`words_chroma_of`]).
+const fn words_apart(from: &'static str, distance: f64) -> Apart {
+    Apart {
+        token: ACCENT_WORDS,
+        from,
+        distance,
+        alone: false,
+        words: true,
+    }
+}
 
 /// **The accent and the edges drawn in it** (#3130): the accent, the focus ring, the selected
 /// row's edge and the primary's edge, each a line or a word in the accent's colour that the
@@ -258,6 +270,7 @@ const fn waiting_apart(token: &'static str) -> Apart {
         from: "state.waiting",
         distance: WAITING_APART,
         alone: true,
+        words: false,
     }
 }
 
@@ -286,6 +299,7 @@ const fn danger_apart(token: &'static str) -> Apart {
         from: "danger.base",
         distance: DANGER_APART,
         alone: false,
+        words: false,
     }
 }
 
@@ -512,6 +526,11 @@ pub fn held_apart(token: &str) -> bool {
         .any(|rule| rule.token == token || rule.from == token)
 }
 
+/// **Whether `token` is the accent's words** (#3100): what [`Most::words`] answers for.
+fn words_of(token: &str) -> bool {
+    APART.iter().any(|rule| rule.words && rule.token == token)
+}
+
 /// **Whether `token` is a side of a rule of [`APART`] held alone** (#3130).
 fn held_alone(token: &str) -> bool {
     APART
@@ -521,16 +540,37 @@ fn held_alone(token: &str) -> bool {
 
 /// **The most chroma a tint at one hue gives**: `shared`, what [`apart_chroma`] answers, for
 /// every side of a rule of [`APART`]; and `alone`, what every rule together answers, for the
-/// sides of a rule held alone, which give way further on their own (#3130).
+/// sides of a rule held alone, which give way further on their own (#3130); and `words`, for the
+/// accent's words (#3100).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Most {
     pub shared: Option<f64>,
     pub alone: Option<f64>,
+    pub words: Option<f64>,
 }
 
 /// [`Most`] for `theme` at `hue`.
 pub fn most_at(theme: &ResolvedTheme, hue: f64) -> Most {
-    most_of(&held_rules(theme), &shared_rules(theme), hue)
+    let most = most_of(&held_rules(theme), &shared_rules(theme), hue);
+    Most {
+        words: words_chroma_of(&words_rules(theme), hue, most),
+        ..most
+    }
+}
+
+/// **The chroma the accent's words are drawn at** (#3100): the accent's own, [`Most::alone`],
+/// where every rule of the words in `rules` holds at it, the other side of each drawn as it will
+/// be (at the alone answer for a side held alone, else at the shared one); `None`, the words as
+/// written, where one does not. Where no chroma holds them apart from the waiting colour (a yellow
+/// or green workspace), they keep the theme's colour and the accent keeps its tint. `tint.ts`'
+/// `wordsChroma` is the same.
+pub fn words_chroma_of(rules: &[Rule<'_>], hue: f64, most: Most) -> Option<f64> {
+    let alone = most.alone?;
+    let from = |side_alone: bool| if side_alone { Some(alone) } else { most.shared };
+    rules
+        .iter()
+        .all(|rule| rule.holds(hue, Some(alone), from(rule.from_alone)))
+        .then_some(alone)
 }
 
 /// [`Most`] of every held rule and of the shared ones among them. The shared rules are answered
@@ -539,19 +579,22 @@ pub fn most_at(theme: &ResolvedTheme, hue: f64) -> Most {
 ///
 /// Where no amount holds the sides held alone they are drawn as written, and that is measured
 /// too, against the other sides as they are drawn. If a rule breaks there, nothing held is
-/// tinted at this hue: every side as written is the one drawing the floors vouch for.
+/// tinted at this hue: every side as written is the one drawing the floors vouch for. The
+/// accent's words are answered as the accent is; [`most_at`] measures them ([`words_chroma_of`]).
 pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
     let shared_most = apart_chroma_of(shared, hue);
     if all.len() == shared.len() {
         return Most {
             shared: shared_most,
             alone: shared_most,
+            words: shared_most,
         };
     }
     let Some(ceiling) = shared_most else {
         return Most {
             shared: None,
             alone: None,
+            words: None,
         };
     };
     let alone = alone_chroma_of(all, shared, ceiling, hue);
@@ -559,6 +602,7 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
     Most {
         shared: holds.then_some(ceiling),
         alone,
+        words: alone,
     }
 }
 
@@ -566,7 +610,9 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
 /// answer for a side of a rule held alone, else as [`chroma_for`] gives it. `tint.ts`'
 /// `chromaFor` is the same.
 pub fn chroma_of(token: &str, most: Most) -> Option<f64> {
-    if held_alone(token) {
+    if words_of(token) {
+        most.words
+    } else if held_alone(token) {
         most.alone
     } else {
         chroma_for(token, most.shared)
@@ -677,14 +723,20 @@ pub fn apart_chroma(theme: &ResolvedTheme, hue: f64) -> Option<f64> {
     apart_chroma_of(&shared_rules(theme), hue)
 }
 
-/// The rules of [`APART`] as `theme` draws them, each with a side its recipe turns.
+/// The rules of [`APART`] as `theme` draws them, each with a side its recipe turns, but the
+/// accent's words' ([`words_rules`]).
 pub(super) fn held_rules(theme: &ResolvedTheme) -> Vec<Rule<'_>> {
-    rules_where(theme, |_| true)
+    rules_where(theme, |rule| !rule.words)
 }
 
 /// [`held_rules`] but those held alone: what every held token gives way to.
 pub(super) fn shared_rules(theme: &ResolvedTheme) -> Vec<Rule<'_>> {
-    rules_where(theme, |rule| !rule.alone)
+    rules_where(theme, |rule| !rule.alone && !rule.words)
+}
+
+/// The rules of the accent's words as `theme` draws them ([`words_chroma_of`]).
+pub(super) fn words_rules(theme: &ResolvedTheme) -> Vec<Rule<'_>> {
+    rules_where(theme, |rule| rule.words)
 }
 
 fn rules_where(theme: &ResolvedTheme, keep: impl Fn(&Apart) -> bool) -> Vec<Rule<'_>> {

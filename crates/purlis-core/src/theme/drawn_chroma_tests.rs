@@ -57,9 +57,11 @@ fn falls(drawn: &ResolvedTheme) -> Vec<String> {
 /// **What the search answered before #3388**: every rule measured with every side at one chroma,
 /// so a side drawn at the shared chroma was measured at the alone one.
 fn at_one_chroma(theme: &ResolvedTheme, hue: f64) -> Most {
+    let alone = tint::apart_chroma_of(&tint::held_rules(theme), hue);
     Most {
         shared: tint::apart_chroma(theme, hue),
-        alone: tint::apart_chroma_of(&tint::held_rules(theme), hue),
+        alone,
+        words: alone,
     }
 }
 
@@ -260,6 +262,7 @@ fn the_sweep_reads_what_it_says_it_holds() {
     let whole = Most {
         shared: Some(f64::INFINITY),
         alone: Some(f64::INFINITY),
+        words: Some(f64::INFINITY),
     };
     let close = themed(
         &json!({ "danger.base": tint::tint_hex(ours.value("accent.base"), 25.0) }),

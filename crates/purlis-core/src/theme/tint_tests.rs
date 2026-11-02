@@ -1527,22 +1527,58 @@ fn accent_words_drawn_as_the_accent_are_turned_exactly_as_it_is() {
 }
 
 #[test]
-fn a_tie_to_the_accent_takes_no_colour_from_anything() {
-    let light = purlis()
+fn the_accent_s_words_cost_the_accent_no_colour() {
+    // Words written onto the waiting amber itself: every other token is tinted exactly as before.
+    for theme in &purlis().appearances {
+        let mut near = theme.clone();
+        let amber = theme.value("state.waiting").to_owned();
+        near.values.insert("accent.text", amber);
+        for degree in (0..360).step_by(5) {
+            let hue = f64::from(degree);
+            let (was, now) = (tint::tinted_at(theme, hue), tint::tinted_at(&near, hue));
+            for token in TINTED.iter().filter(|token| **token != "accent.text") {
+                assert_eq!(
+                    was.value(token),
+                    now.value(token),
+                    "{} {token} at {degree}",
+                    theme.id
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_accent_s_words_keep_apart_from_waiting_and_danger_in_every_tint() {
+    // Where no chroma holds them apart (Purlis's in a yellow or green workspace), they keep the
+    // theme's colour, and the accent keeps its tint.
+    for theme in built_ins().iter().chain(&purlis().appearances) {
+        let hues = (0..360)
+            .map(f64::from)
+            .chain(theme.tint.hues.iter().map(|one| one.hue));
+        for hue in hues {
+            let tint = tint::tinted_at(theme, hue);
+            let words = tint.value("accent.text");
+            for (from, floor) in [
+                ("state.waiting", WAITING_APART),
+                ("danger.base", DANGER_APART),
+            ] {
+                let apart = oklab_apart(words, tint.value(from));
+                assert!(
+                    apart >= floor,
+                    "{} {} at {hue}: {from} {apart}",
+                    theme.name,
+                    theme.id
+                );
+            }
+        }
+    }
+    let dark = purlis()
         .appearances
         .iter()
-        .find(|one| one.id == "light")
-        .expect("Purlis light");
-    let without: Vec<_> = tint::held_rules(light)
-        .into_iter()
-        .filter(|rule| rule.distance > 0.0)
-        .collect();
-    for degree in (0..360).step_by(5) {
-        let hue = f64::from(degree);
-        assert_eq!(
-            tint::apart_chroma_of(&tint::held_rules(light), hue),
-            tint::apart_chroma_of(&without, hue),
-            "{degree}"
-        );
-    }
+        .find(|one| one.id == "dark")
+        .expect("Purlis dark");
+    let yellow = tinted(dark, "yellow");
+    assert_eq!(yellow.value("accent.text"), dark.value("accent.text"));
+    assert_ne!(yellow.value("accent.base"), dark.value("accent.base"));
 }

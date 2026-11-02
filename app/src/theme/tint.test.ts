@@ -22,7 +22,16 @@ import {
   type Token,
 } from "./theme";
 import { PURLIS_LIGHT, classicAppearances, purlisAppearance } from "./handed.testkit";
-import { aloneChroma, apartChroma, chromaFor, hueOf, mostOf, oklabDistance, tintHex } from "./tint";
+import {
+  aloneChroma,
+  apartChroma,
+  chromaFor,
+  hueOf,
+  mostOf,
+  oklabDistance,
+  tintHex,
+  wordsChroma,
+} from "./tint";
 
 /**
  * **A workspace's colour** (charter-app#281): a hue that tints the tokens the theme's recipe
@@ -100,7 +109,7 @@ describe("the core's copy of the tint", () => {
     // other (#3034).
     for (const { token, held } of (cases as unknown as { held: { token: string; held: boolean }[] })
       .held)
-      expect(chromaFor(token, 0.01, CLASSIC_THEME.tint.apart, 0.01), token).toBe(
+      expect(chromaFor(token, 0.01, CLASSIC_THEME.tint.apart, 0.01, 0.01), token).toBe(
         held ? 0.01 : Number.POSITIVE_INFINITY,
       );
     for (const { colour, hue } of cases.hues) {
@@ -511,14 +520,42 @@ describe("the consent floors under every tint (#2526)", () => {
         alone: true,
       });
     const apart = CLASSIC_THEME.tint.apart;
-    expect(chromaFor("accent.base", 0.05, apart, 0.01)).toBe(0.01);
-    expect(chromaFor("accent.surface", 0.05, apart, 0.01)).toBe(0.05);
+    expect(chromaFor("accent.base", 0.05, apart, 0.01, 0.01)).toBe(0.01);
+    expect(chromaFor("accent.surface", 0.05, apart, 0.01, 0.01)).toBe(0.05);
+  });
+
+  it("gives the accent's words their own answer, which costs the accent nothing (#3100)", () => {
+    const apart = CLASSIC_THEME.tint.apart;
+    // Held apart from waiting and danger, after the accent is answered.
+    for (const from of ["state.waiting", "danger.base"])
+      expect(apart).toContainEqual(
+        expect.objectContaining({ token: "accent.text", from, distance: 0.1, words: true }),
+      );
+    expect(chromaFor("accent.text", 0.05, apart, 0.01, undefined)).toBeUndefined();
+    expect(chromaFor("accent.base", 0.05, apart, 0.01, undefined)).toBe(0.01);
+    // Words that land on the waiting amber keep the theme's colour; the accent keeps its tint.
+    const amber = "#e5c08a";
+    const words = [
+      {
+        token: amber,
+        tokenTinted: false,
+        from: amber,
+        fromTinted: false,
+        fromAlone: true,
+        distance: 0.1,
+      },
+    ];
+    expect(wordsChroma(words, 80, 0.05, 0.01)).toBeUndefined();
+    expect(wordsChroma([], 80, 0.05, 0.01)).toBe(0.01);
+    expect(wordsChroma([], 80, 0.05, undefined)).toBeUndefined();
   });
 
   it("draws a side held alone as written where no chroma holds it, as the engine does", () => {
     const apart = CLASSIC_THEME.tint.apart;
-    expect(chromaFor("accent.base", Number.POSITIVE_INFINITY, apart, undefined)).toBeUndefined();
-    expect(chromaFor("accent.surface", 0.05, apart, undefined)).toBe(0.05);
+    expect(
+      chromaFor("accent.base", Number.POSITIVE_INFINITY, apart, undefined, undefined),
+    ).toBeUndefined();
+    expect(chromaFor("accent.surface", 0.05, apart, undefined, undefined)).toBe(0.05);
   });
 
   it("remembers the two searches apart: the same rules answer differently in each", () => {

@@ -274,7 +274,7 @@ resolves and hands the window with the theme (`purlis_core::theme::Tint`, `theme
 window keeps no list of its own (#2393). Purlis Classic's recipe, the one a theme starts from:
 
 - on the whole window, from the workspace in front: `accent.base`, `accent.surface`,
-  `accent.text` (which a recipe turning the accent always turns, #3100), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
+  `accent.text` (which a recipe turning the accent turns with it where the words stay apart from waiting and danger, #3100), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
   `drawTint`);
 - on that workspace's own tab and on the chat strip, which holds its chats, the same and
   `layer.workspace`, `layer.chat`, `layer.selected` (`tint.tabs`), set on the element as

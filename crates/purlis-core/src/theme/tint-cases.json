@@ -1083,9 +1083,15 @@
    },
    {
     "token": "accent.text",
-    "from": "accent.base",
-    "distance": 0.0,
-    "alone": true
+    "from": "state.waiting",
+    "distance": 0.1,
+    "words": true
+   },
+   {
+    "token": "accent.text",
+    "from": "danger.base",
+    "distance": 0.1,
+    "words": true
    }
   ]
  },
@@ -3170,6 +3176,7 @@
    "tokens": {
     "accent.base": "#554691",
     "accent.surface": "#e2dfcb",
+    "accent.text": "#403667",
     "accent.fill": "#7c6601",
     "accent.fill-hover": "#836d01",
     "accent.fill-edge": "#00000000",
@@ -3190,6 +3197,7 @@
    "tokens": {
     "accent.base": "#c3baf5",
     "accent.surface": "#2d281b",
+    "accent.text": "#c3baf5",
     "accent.fill": "#7c6601",
     "accent.fill-hover": "#836d01",
     "accent.fill-edge": "#00000000",
@@ -3210,6 +3218,7 @@
    "tokens": {
     "accent.base": "#c3baf5",
     "accent.surface": "#212b21",
+    "accent.text": "#c3baf5",
     "accent.fill": "#137824",
     "accent.fill-hover": "#1e7f2c",
     "accent.fill-edge": "#00000000",
@@ -3230,6 +3239,7 @@
    "tokens": {
     "accent.base": "#554691",
     "accent.surface": "#e2dfcb",
+    "accent.text": "#403667",
     "accent.fill": "#796701",
     "accent.fill-hover": "#816e01",
     "accent.fill-edge": "#00000000",
@@ -3250,6 +3260,7 @@
    "tokens": {
     "accent.base": "#554691",
     "accent.surface": "#dedcef",
+    "accent.text": "#403667",
     "accent.fill": "#6d58bb",
     "accent.fill-hover": "#745fc3",
     "accent.fill-edge": "#00000000",
@@ -3270,6 +3281,7 @@
    "tokens": {
     "accent.base": "#71aaf1",
     "accent.surface": "#212936",
+    "accent.text": "#9dc4f7",
     "accent.fill": "#1e68bc",
     "accent.fill-hover": "#276fc5",
     "accent.fill-edge": "#00000000",
