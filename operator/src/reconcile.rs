@@ -509,7 +509,10 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
                 let runner = held.namespace().unwrap_or_default();
                 let sandbox = sandbox_of(client, &runner, &held).await?;
                 let idle = lifecycle::idle_condition(&claim).is_some()
-                    || said_idle_of(client, &runner, sandbox.as_ref()).await?;
+                    || lifecycle::suspends_for_idle(
+                        claim.spec.kept,
+                        said_idle_of(client, &runner, sandbox.as_ref()).await?,
+                    );
                 if idle && lifecycle::idle_condition(&claim).is_none() {
                     let status = lifecycle::status_of_an_idle_runner(Suspension::Suspending);
                     write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
@@ -837,10 +840,10 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     .await?;
     // The runner says it is idle (#3980): said on the Claim first, so a pass after a restart
     // knows, and suspended by the pass this write wakes.
-    if pod
+    let said_idle = pod
         .as_ref()
-        .is_some_and(|pod| lifecycle::said_idle(pod, k8s_openapi::jiff::Timestamp::now()))
-    {
+        .is_some_and(|pod| lifecycle::said_idle(pod, k8s_openapi::jiff::Timestamp::now()));
+    if lifecycle::suspends_for_idle(claim.spec.kept, said_idle) {
         tracing::info!(claim = %name, %namespace, "its runner says it is idle");
         let status = lifecycle::status_of_an_idle_runner(Suspension::Suspending);
         write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;

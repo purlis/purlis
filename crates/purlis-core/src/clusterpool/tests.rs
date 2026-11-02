@@ -913,6 +913,11 @@ impl FakeCluster {
         std::fs::write(self.dir.path().join(name), text).unwrap();
     }
 
+    /// Where the stand-in keeps `name`.
+    pub(crate) fn path(&self, name: &str) -> std::path::PathBuf {
+        self.dir.path().join(name)
+    }
+
     /// The Pool's status names `key` as its operator's, in the stand-in's cluster.
     pub(crate) fn names_key(&self, key: &OperatorKey) {
         self.write(

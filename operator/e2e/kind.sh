@@ -271,6 +271,25 @@ CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context FAKE_GITHUB_P
   "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
   --test it -- a_chat_mints_on_a_cluster_runner_with_its_desktop_away:: --ignored --test-threads=1
 
+step "a short task on a runner of its own, and its commits back before its claim goes"
+# The desktop's whole path (#4569), through the app's own chats: this runner image with a stand-in
+# `claude` that signs in and waits, since no model answers here.
+harness_image=$(mktemp -d "${TMPDIR:-/tmp}/purlis-operator-e2e-harness.XXXXXX")
+cat >"$harness_image/claude" <<'STAND_IN'
+#!/bin/sh
+[ "$1" = auth ] && [ "$2" = status ] && exit 0
+exec sleep 3600
+STAND_IN
+chmod 0755 "$harness_image/claude"
+printf 'FROM %s\nUSER 0\nCOPY claude /usr/local/bin/claude\nUSER 10001:10001\n' "$runner_local" \
+  | docker build --quiet --tag purlis-runner-harness:e2e --file - "$harness_image" >/dev/null
+rm -rf "$harness_image"
+mkdir -p "$repo/app/dist"
+CLUSTER_POOL_TEST_HARNESS_IMAGE=$(by_digest purlis-runner-harness:e2e purlis-runner-harness) \
+CLUSTER_POOL_TEST_CONTEXT=$context \
+  "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-app \
+  --lib -- behaviour::fresh_runner:: --ignored --test-threads=1 --nocapture
+
 step "the guide's pool, its key and a teammate's rights"
 guide_run pool --value "<your registry>/purlis-runner@<runner digest>=$runner"
 tries=0

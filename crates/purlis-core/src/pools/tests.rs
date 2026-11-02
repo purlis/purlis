@@ -1137,6 +1137,7 @@ mod cluster {
             &cluster.kubectl(),
             "team",
             "01CHAT",
+            of_a_project(),
             &desktop(),
             Duration::ZERO,
         )
@@ -1177,6 +1178,7 @@ mod cluster {
             &cluster.kubectl(),
             "team",
             "01CHAT",
+            of_a_project(),
             &desktop(),
             Duration::ZERO,
         )
@@ -1211,6 +1213,7 @@ mod cluster {
             &cluster.kubectl(),
             "team",
             chat,
+            of_a_project(),
             &desktop(),
             Duration::ZERO,
         )
@@ -1242,6 +1245,7 @@ mod cluster {
             &cluster.kubectl(),
             "team",
             "01CHAT",
+            of_a_project(),
             &desktop(),
             Duration::ZERO,
         )
@@ -1261,6 +1265,7 @@ mod cluster {
             &cluster.kubectl(),
             "team",
             "01CHAT",
+            of_a_project(),
             &desktop(),
             Duration::ZERO,
         )
@@ -1687,6 +1692,45 @@ mod cluster {
             Duration::ZERO,
         )
         .unwrap();
+    }
+
+    /// **Only the cluster's word that a fresh runner is gone lets its work be given up** (#4569).
+    #[test]
+    fn a_fresh_runner_is_lost_only_where_its_claim_is_gone() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let second = added_and_a_second_runner(config.path(), &cluster);
+        let claim = fresh_claim_name(OURS, "team", "01CHAT");
+        cluster.vouch("ada", &claim, "fresh-pod", second.key);
+        claim_fresh(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "01CHAT",
+            of_a_project(),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        assert!(
+            !fresh_runner_lost(config.path(), &cluster.kubectl(), "01CHAT").unwrap(),
+            "its claim is there, and the operator vouches for its pod"
+        );
+        // Made again by someone: not the claim that held its work.
+        let mut another: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(cluster.path("claim.json")).unwrap())
+                .unwrap();
+        another["metadata"]["uid"] = serde_json::json!("0b2f1a54-4d7b-4a64-9c0e-000000000000");
+        cluster.write("claim.json", &another.to_string());
+        assert!(fresh_runner_lost(config.path(), &cluster.kubectl(), "01CHAT").unwrap());
+    }
+
+    /// Where a fresh runner's work goes back to.
+    fn of_a_project() -> runners::FreshOf {
+        runners::FreshOf {
+            plane: std::path::PathBuf::from("/a/project"),
+            workspace: "app".to_owned(),
+        }
     }
 
     fn deleted(cluster: &FakeCluster) -> bool {

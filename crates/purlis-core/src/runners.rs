@@ -37,7 +37,7 @@
 //! - **The file is this user's alone**, `0600` in the config home's own folder, and denied to
 //!   chats. A file of another version or shape is refused rather than read or replaced.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use purlis_session_protocol::browsing::LinkFrames;
 use purlis_session_protocol::hostlink::Pinned;
@@ -2231,6 +2231,17 @@ pub struct ClusterKept {
     /// The chat this is the fresh runner of, by its stable id (#3709); none on the pool's own
     /// runner, which keeps its work and every other chat's.
     pub chat: Option<String>,
+    /// **Where a fresh runner's work goes back to** (#4569): the project its chat runs in, by its
+    /// root on this machine, and its workspace. None on the pool's own runner.
+    pub of: Option<FreshOf>,
+}
+
+/// The project and workspace of a chat's fresh runner (#4569): read once its chat is gone, to say
+/// which project takes its branches back. The window of no other project touches the runner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FreshOf {
+    pub plane: PathBuf,
+    pub workspace: String,
 }
 
 impl ClusterKept {
@@ -2782,7 +2793,8 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
 }
 
 /// A cluster runner's row (#3292): `{"name", "pool": "cluster", "namespace", "claim",
-/// "claimUid", "requester", "pod", "device", "key", "paired"}`.
+/// "claimUid", "requester", "pod", "device", "key", "paired"}`, and a chat's fresh runner's
+/// `"chat"`, `"plane"` and `"workspace"` (#3709, #4569).
 fn cluster_runner_to_row(kept: &ClusterKept) -> serde_json::Value {
     let mut row = serde_json::json!({
         "name": kept.name,
@@ -2799,6 +2811,10 @@ fn cluster_runner_to_row(kept: &ClusterKept) -> serde_json::Value {
     if let Some(chat) = &kept.chat {
         row["chat"] = serde_json::Value::String(chat.clone());
     }
+    if let Some(of) = &kept.of {
+        row["plane"] = serde_json::Value::String(of.plane.display().to_string());
+        row["workspace"] = serde_json::Value::String(of.workspace.clone());
+    }
     row
 }
 
@@ -2813,6 +2829,37 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         ),
         None => None,
     };
+    // A fresh runner names all three, and no other runner any.
+    let of = match (fields.get("plane"), fields.get("workspace")) {
+        (Some(plane), Some(workspace)) => {
+            let plane = plane.as_str().filter(|plane| plain_text(plane))?;
+            let workspace = workspace
+                .as_str()
+                .filter(|workspace| crate::contain::workspace_name_ok(workspace))?;
+            let plane = PathBuf::from(plane);
+            plane.is_absolute().then(|| FreshOf {
+                plane,
+                workspace: workspace.to_owned(),
+            })?
+        }
+        _ if chat.is_some() => return None,
+        (None, None) => return from_kept_row(row, None),
+        _ => return None,
+    };
+    if chat.is_none() {
+        return None;
+    }
+    from_kept_row(row, Some(of))
+}
+
+/// [`cluster_runner_from_row`], past a fresh runner's own keys.
+fn from_kept_row(row: &serde_json::Value, of: Option<FreshOf>) -> Option<ClusterKept> {
+    let fields = row.as_object()?;
+    let chat = fields
+        .get("chat")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    let fresh_keys = ["chat", "plane", "workspace"];
     let known = [
         "name",
         "pool",
@@ -2825,10 +2872,11 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         "key",
         "paired",
     ];
-    let mut rest = fields.keys().filter(|key| key.as_str() != "chat");
-    if fields.len() - usize::from(chat.is_some()) != known.len()
-        || rest.any(|key| !known.contains(&key.as_str()))
-    {
+    let mut rest = fields
+        .keys()
+        .filter(|key| !fresh_keys.contains(&key.as_str()));
+    let own = fields.len() - if of.is_some() { fresh_keys.len() } else { 0 };
+    if own != known.len() || rest.any(|key| !known.contains(&key.as_str())) {
         return None;
     }
     let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
@@ -2866,6 +2914,7 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         pinned,
         paired: fields.get("paired")?.as_u64()?,
         chat,
+        of,
     })
 }
 

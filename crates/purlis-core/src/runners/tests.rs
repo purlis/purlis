@@ -1491,3 +1491,43 @@ fn a_set_held_to_what_was_there_writes_nothing_where_it_changed() {
     assert!(!set_pool_limit_if(dir.path(), "builds", SignInWait, None, None, false).unwrap());
     assert!(set_pool_limit_if(dir.path(), "builds", SignInWait, None, None, true).unwrap());
 }
+
+/// **A fresh runner's row says where its work goes back to** (#4569), and one that does not, or a
+/// pool's own runner that says so, is not as purlis writes it.
+#[test]
+fn a_fresh_runners_row_keeps_its_project_and_workspace_and_no_other_row_has_them() {
+    let row = |extra: serde_json::Value| {
+        let mut row = serde_json::json!({
+            "name": "team", "pool": "cluster", "namespace": "ada", "claim": "team-abc",
+            "claimUid": "0b2f1a54-4d7b-4a64-9c0e-2f3b6c0a1d11", "requester": "ada@example.com",
+            "pod": "team-abc-0", "device": "01JB0RUNNER0000000000000000",
+            "key": "11".repeat(32), "paired": 1,
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            row[key] = value.clone();
+        }
+        row
+    };
+    let fresh = row(serde_json::json!({
+        "chat": "01CHAT", "plane": "/a/project", "workspace": "app",
+    }));
+    let kept = cluster_runner_from_row(&fresh).expect("a fresh runner's row");
+    let of = kept.of.clone().expect("where its work goes");
+    assert_eq!(of.plane, std::path::Path::new("/a/project"));
+    assert_eq!(of.workspace, "app");
+    assert_eq!(cluster_runner_to_row(&kept), fresh);
+
+    assert!(cluster_runner_from_row(&row(serde_json::json!({}))).is_some());
+    for not in [
+        serde_json::json!({ "chat": "01CHAT" }),
+        serde_json::json!({ "chat": "01CHAT", "plane": "/a/project" }),
+        serde_json::json!({ "plane": "/a/project", "workspace": "app" }),
+        serde_json::json!({ "chat": "01CHAT", "plane": "relative", "workspace": "app" }),
+        serde_json::json!({ "chat": "01CHAT", "plane": "/a/project", "workspace": "../up" }),
+    ] {
+        assert!(
+            cluster_runner_from_row(&row(not.clone())).is_none(),
+            "{not}"
+        );
+    }
+}

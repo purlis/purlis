@@ -1996,6 +1996,7 @@ impl purlis_host::Compose for ComposesConfined {
 
 pub(crate) fn by_its_names() -> Named {
     Named {
+        runner: None,
         tools_allowed: None,
         plane_skills: false,
         chat: None,
@@ -2151,6 +2152,7 @@ fn a_chat_started_by_its_names_tells_the_host_what_was_allowed_it_alone_where_it
     let (_dir, root) = a_project();
     let sessions = HostedSessions::new(connection, &root);
     let alone = Named {
+        runner: None,
         alone: vec![6379],
         ..by_its_names()
     };
@@ -2672,6 +2674,7 @@ fn a_harness_chat_on_a_runner_is_started_there_by_its_names_and_its_asks_reach_t
     until("the runner ends it", || confines.ended(&held));
 
     let opted_out = Named {
+        runner: None,
         without_sandbox: true,
         ..by_its_names()
     };

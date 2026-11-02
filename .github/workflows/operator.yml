@@ -40,6 +40,12 @@ on:
       - crates/purlis-cli/src/main.rs
       - crates/purlis-core/tests/it/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs
       - crates/purlis-core/tests/it/a_chat_mints_on_a_cluster_runner_with_its_desktop_away.rs
+      # A short task's runner of its own, from its claim to its release (#4569).
+      - crates/purlis-core/src/codelink*
+      - app/src-tauri/src/behaviour/fresh_runner.rs
+      - app/src-tauri/src/clusterpools.rs
+      - app/src-tauri/src/routedsessions*
+      - app/src-tauri/src/runnercode*
       - crates/purlis-core/src/forge/mintport*
       - crates/purlis-cli/src/bridge.rs
       - fixtures/runner-link-key/**
@@ -64,6 +70,12 @@ on:
       - crates/purlis-cli/src/main.rs
       - crates/purlis-core/tests/it/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs
       - crates/purlis-core/tests/it/a_chat_mints_on_a_cluster_runner_with_its_desktop_away.rs
+      # A short task's runner of its own, from its claim to its release (#4569).
+      - crates/purlis-core/src/codelink*
+      - app/src-tauri/src/behaviour/fresh_runner.rs
+      - app/src-tauri/src/clusterpools.rs
+      - app/src-tauri/src/routedsessions*
+      - app/src-tauri/src/runnercode*
       - crates/purlis-core/src/forge/mintport*
       - crates/purlis-cli/src/bridge.rs
       - fixtures/runner-link-key/**
@@ -133,6 +145,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The desktop's side of a short task's runner is the app's own (#4569).
+      - name: Tauri's Linux build dependencies
+        timeout-minutes: 9
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:

@@ -1694,6 +1694,11 @@ impl Held {
             .take()
     }
 
+    /// [`crate::chats::Chats::sweeps_fresh_runners`].
+    pub fn sweeps_fresh_runners(&self) {
+        self.chats.sweeps_fresh_runners();
+    }
+
     /// Tell the plane's auto-save worker something, if it has one.
     pub fn poke_autosave(&self, poke: crate::autosave::Poke) {
         if let Some(worker) = self

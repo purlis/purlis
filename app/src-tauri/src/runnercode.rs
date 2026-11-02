@@ -452,14 +452,33 @@ pub(crate) fn fetch_workspace(
     pool: &str,
     beside: bool,
 ) -> Vec<String> {
+    fetch_clones(
+        link,
+        project,
+        root,
+        &clones_of(root, workspace),
+        pool,
+        beside,
+    )
+}
+
+/// [`fetch_workspace`], of the clones `clones`.
+fn fetch_clones(
+    link: &HostLink,
+    project: &str,
+    root: &Path,
+    clones: &[String],
+    pool: &str,
+    beside: bool,
+) -> Vec<String> {
     let mut failed = Vec::new();
-    for rel in clones_of(root, workspace) {
+    for rel in clones {
         let fetched = scratch().and_then(|scratch| {
             let through = |have, into: &Path| {
-                link.fetch_code(project, &rel, have, into)
+                link.fetch_code(project, rel, have, into)
                     .map(|(heads, wrote)| (core_refs(heads), wrote))
             };
-            let repo = root.join(&rel);
+            let repo = root.join(rel);
             if beside {
                 codelink::fetch_back_beside(&repo, pool, scratch.path(), through)
             } else {
@@ -470,8 +489,78 @@ pub(crate) fn fetch_workspace(
         if let Err(why) = fetched {
             failed.push(format!(
                 "the runner's branches of {} were not fetched: {why}",
+                shown(rel)
+            ));
+        }
+    }
+    failed
+}
+
+/// **What a chat's fresh runner holds of `workspace` comes back to stay** (#4569), each clone's
+/// branches under `refs/remotes/<runner>/`, and a clone made there as a clone here, since nothing
+/// of it would be left anywhere once the runner goes. A clone only this machine has, made after
+/// the chat started, has nothing there to fetch. What a clone here already holds is not kept
+/// twice ([`codelink::keep_only_whats_new`]). Answers what did not come: every clone is tried.
+pub(crate) fn fetch_whole(
+    link: &HostLink,
+    project: &str,
+    root: &Path,
+    workspace: &str,
+    runner: &str,
+) -> Vec<String> {
+    let here = clones_of(root, workspace);
+    let there = match link.clones_of(project, workspace) {
+        Ok(there) => there.map(|(names, _)| names),
+        Err(why) => {
+            return vec![format!(
+                "the runner did not say which clones it holds: {why}"
+            )];
+        }
+    };
+    // A runner too old to say is asked for every clone: what it does not hold is said as failed.
+    let held = |rel: &str| {
+        there.as_ref().is_none_or(|names| {
+            names
+                .iter()
+                .any(|name| rel.rsplit('/').next() == Some(name.as_str()))
+        })
+    };
+    let only_there = match made_there(link, project, workspace, &here) {
+        Ok(only_there) => only_there,
+        Err(why) => return vec![why],
+    };
+    let mut failed = Vec::new();
+    for (rel, _) in only_there {
+        let made = room_for(root, &rel)
+            .and_then(|()| codelink::repo_in(root, &rel).map_err(|why| why.to_string()))
+            .and_then(|repo| {
+                let scratch = scratch()?;
+                let into = scratch.path().join("work.bundle");
+                let (heads, wrote) = link.fetch_work(project, &rel, Vec::new(), &into)?;
+                codelink::take_work_fresh(
+                    &repo,
+                    runner,
+                    wrote.then_some(into.as_path()),
+                    &core_refs(heads),
+                )
+                .map(|_| ())
+                .map_err(|why| why.to_string())
+            });
+        if let Err(why) = made {
+            failed.push(format!(
+                "the clone {} did not come back from its runner: {why}",
                 shown(&rel)
             ));
+        }
+    }
+    let kept: Vec<String> = here.into_iter().filter(|rel| held(rel)).collect();
+    failed.extend(fetch_clones(link, project, root, &kept, runner, true));
+    if failed.is_empty() {
+        for rel in &kept {
+            if let Err(why) = codelink::keep_only_whats_new(&root.join(rel), runner) {
+                // Only tidiness: every branch is here.
+                tracing::warn!("purlis: in {}: {why}", shown(rel));
+            }
         }
     }
     failed

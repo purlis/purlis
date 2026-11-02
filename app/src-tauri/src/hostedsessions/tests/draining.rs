@@ -997,4 +997,14 @@ fn a_gone_runner_tells_only_the_chats_lost_on_it_and_only_once() {
 fn a_hosts_signal_is_never_the_windows_word_for_a_gone_runner() {
     assert_ne!(a_hosts_signal(ITS_RUNNER_WENT.to_owned()), ITS_RUNNER_WENT);
     assert_eq!(a_hosts_signal("Hangup".to_owned()), "Hangup");
+
+/// **Only a short task's start is one** (#3818), and the word ends with it, on a thread the next
+/// start may share.
+#[test]
+fn a_short_tasks_start_says_so_only_while_it_runs() {
+    assert!(!is_a_short_task());
+    assert!(a_short_task(is_a_short_task));
+    assert!(!is_a_short_task());
+    let _ = std::panic::catch_unwind(|| a_short_task(|| panic!("a start that fails")));
+    assert!(!is_a_short_task());
 }

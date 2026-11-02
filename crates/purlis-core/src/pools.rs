@@ -289,6 +289,23 @@ pub fn workspaces_on_pools(
     on
 }
 
+/// **Each chat's fresh runner of the project at `plane`, with the workspace it came from** (#4569),
+/// by the name a link reaches it by: where a fetch finds what it has, whichever pool that workspace
+/// runs on now. Another project's are its own window's.
+pub fn fresh_runners_of_plane(
+    config_root: &Path,
+    plane: &Path,
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    runners::fresh_runners(config_root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|kept| {
+            let of = kept.of.as_ref().filter(|of| of.plane == plane)?;
+            Some((kept.link_name(), vec![of.workspace.clone()]))
+        })
+        .collect()
+}
+
 /// **Moves the pool `name` to `image`, the runner image of the desktop's version** (#2749): a
 /// runner of `image` is made beside the pool's, held to the pool's limits, checked, paired with
 /// `desktop` and kept as the pool's runner, and every runner of the pool before it is kept
@@ -943,12 +960,14 @@ pub fn fresh_claim_name(device: &str, pool: &str, chat: &str) -> String {
 
 /// **A runner of the cluster pool `name` for the chat `chat` alone** (#3709), kept only while that
 /// chat runs: a fresh claim is made, waited on for at most `within` until the operator vouches for
-/// it under the pool's pin, paired with no question and kept. What fails deletes the claim, and says so. A chat that has one is given it again.
+/// it under the pool's pin, paired with no question and kept, with `of`, where its work goes back
+/// to (#4569). What fails deletes the claim, and says so. A chat that has one is given it again.
 pub fn claim_fresh(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     name: &str,
     chat: &str,
+    of: runners::FreshOf,
     desktop: &Pinned,
     within: std::time::Duration,
 ) -> Result<runners::ClusterKept, Refused> {
@@ -994,6 +1013,7 @@ pub fn claim_fresh(
         pinned: paired.pinned,
         paired: runners::now(),
         chat: Some(chat.to_owned()),
+        of: Some(of),
     };
     let locked = runners::lock(config_root);
     match runners::keep_cluster_runner_locked(config_root, &kept, desktop, &locked) {
@@ -1024,6 +1044,31 @@ pub fn release_fresh(
         .map_err(|why| Refused::Other(why.to_string()))?;
     let locked = runners::lock(config_root);
     runners::forget_fresh_runner_locked(config_root, chat, &locked)
+}
+
+/// **Whether the chat `chat`'s fresh runner holds nothing to fetch any more** (#4569): its claim is
+/// gone or is another's, or the operator vouches for another pod. Its home is the pod's own, so
+/// what was there went with it. A cluster that does not answer, and a runner not vouched for
+/// just now, are no such word: its work may still be there.
+pub fn fresh_runner_lost(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    chat: &str,
+) -> Result<bool, Refused> {
+    let Some((pool, kept)) = runners::fresh_runner_of(config_root, chat)? else {
+        return Ok(true);
+    };
+    let kubectl = pool.kubectl(kubectl);
+    let (namespace, claim) = (&kept.claimed.namespace, &kept.claimed.name);
+    let seen = kubectl
+        .claim_seen(namespace, claim)
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    if seen.is_none_or(|seen| seen.uid != kept.claimed.uid) {
+        return Ok(true);
+    }
+    let vouched = crate::clusterpool::vouched_for(&kubectl, &pool.pin()?, &kept.claimed)
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    Ok(vouched.is_some_and(|vouched| vouched.pod != kept.pod))
 }
 
 /// **The lock an add of the cluster pool `name` holds from start to end** (#3292): a removal of
@@ -1243,6 +1288,7 @@ pub fn add_cluster(
     });
     let kept = paired.and_then(|paired| {
         let kept = runners::ClusterKept {
+            of: None,
             name: pool.name().to_owned(),
             claimed: paired.claimed,
             pod: paired.vouched.pod,
@@ -1644,7 +1690,7 @@ pub fn cluster_runner_still_yours(
     if kept != *judged || !cluster.owned() {
         return Err(changed());
     }
-    if crate::runnertaint::pool_ran_unsandboxed(config_root, name) {
+    if crate::runnertaint::pool_ran_unsandboxed(config_root, cluster.name()) {
         return Err(crate::runnertaint::sent_nothing_on(name));
     }
     Ok((cluster, kept))

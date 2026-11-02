@@ -199,6 +199,26 @@ std::thread_local! {
         const { std::cell::RefCell::new(None) };
     /// Whether this thread runs a dispatch's start, which holds no lock around it (#4415).
     static A_DISPATCHS_START: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether this thread starts a short task, which purlis gives a fresh runner (#3818).
+    static A_SHORT_TASK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `start` as a short dispatched task's: a task, not a handoff, and not a long one (#3818).
+pub(crate) fn a_short_task<T>(start: impl FnOnce() -> T) -> T {
+    struct Forgets;
+    impl Drop for Forgets {
+        fn drop(&mut self) {
+            A_SHORT_TASK.set(false);
+        }
+    }
+    A_SHORT_TASK.set(true);
+    let _forgets = Forgets;
+    start()
+}
+
+/// Whether this thread starts a short dispatched task.
+pub(crate) fn is_a_short_task() -> bool {
+    A_SHORT_TASK.get()
 }
 
 /// Runs `start` as a dispatch's start: it waits for a runner on its way back as a person's does,
@@ -677,10 +697,28 @@ impl Connection {
         self.to_a_pool.as_ref().map(|(_, named)| pool_named(named))
     }
 
-    /// The draining runner this connection's links name, where they name one (#4271).
+    /// The draining runner this connection's links name, where they name one (#4271): a chat's
+    /// fresh runner is named under its pool too, and never drains.
     fn draining_runner(&self) -> Option<&str> {
         let (_, named) = self.to_a_pool.as_ref()?;
-        named.split_once('/').map(|(_, runner)| runner)
+        named
+            .split_once('/')
+            .map(|(_, runner)| runner)
+            .filter(|runner| !runner.starts_with("fresh-"))
+    }
+
+    /// **The runner this connection reaches is kept no more** (#4569): what the window holds of it
+    /// goes, each link to it ended.
+    fn runner_went(&self) {
+        let Some((window, named)) = &self.to_a_pool else {
+            return;
+        };
+        lock(&window.pools).remove(named);
+        let links: Vec<Arc<HostLink>> =
+            lock(&self.projects).drain().map(|(_, link)| link).collect();
+        for link in links {
+            link.end();
+        }
     }
 
     /// Whether this connection names a draining runner that is kept no more (#4271).
@@ -4461,6 +4499,22 @@ impl SessionHost for HostedSessions {
             }
             Err(why) => vec![why],
         }
+    }
+
+    /// Over this project's own link to the chat's fresh runner.
+    fn fetch_back_whole(&self, workspace: &str, runner: &str) -> Vec<String> {
+        match self.link() {
+            Ok((link, project)) => {
+                crate::runnercode::fetch_whole(&link, &project, &self.root, workspace, runner)
+            }
+            Err(why) => vec![why],
+        }
+    }
+
+    /// Its links end, and the window keeps no connection under its name: no fresh runner's name
+    /// is ever used again.
+    fn let_go_of_runner(&self) {
+        self.connection.runner_went();
     }
 
     /// Only of a link already open: a tab drawn never opens one to the runner.

@@ -5824,7 +5824,7 @@ fn a_ulid(id: Option<&String>) -> bool {
 }
 
 /// What the core's start answers for a shell on no profile.
-fn a_shell_ready() -> purlis_core::start::Ready {
+pub(crate) fn a_shell_ready() -> purlis_core::start::Ready {
     purlis_core::start::Ready {
         program: "/bin/sh".to_owned(),
         command: Vec::new(),
