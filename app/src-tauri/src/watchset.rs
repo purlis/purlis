@@ -15,7 +15,7 @@
 //! here is every change from its first event until [`bursts`]' `quiet_for` after it, whatever
 //! its paths did in between.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
@@ -59,8 +59,13 @@ pub(crate) struct Burst {
     pub paths: HashSet<PathBuf>,
     /// The paths among them a removal named.
     pub removed: HashSet<PathBuf>,
+    /// Folders, or files, each standing for every path in it the burst named past what it
+    /// holds of one tree (#4740): the entry at the top of that tree the path lies in, or the
+    /// tree's own folder for the tree itself. Only a burst folded by tree ([`bursts_by_tree`])
+    /// has any, and none when [`Burst::everything`].
+    pub crowded: HashSet<PathBuf>,
     /// Anything may have changed: the platform lost track, an event named no path, or the
-    /// burst named more paths than it holds.
+    /// burst named more paths than it holds (of those in no tree, or of crowded entries).
     pub everything: bool,
     /// A folder may have been made: a creation the platform named as a folder's, or as
     /// anything's, or a burst that is everything.
@@ -78,10 +83,22 @@ pub(crate) struct Burst {
 }
 
 impl Burst {
-    /// Folds `event` in, holding at most `most` paths: past that the burst counts as
-    /// everything, so a flood costs a fixed amount of memory and the reader reads a little
-    /// more than it needed to rather than missing a change.
+    /// Folds `event` in, holding at most `most` paths, as [`bursts`] does.
+    #[cfg(test)]
     fn add(&mut self, event: notify::Event, most: usize) {
+        self.add_holding(event, &mut Holding::new(most, |_: &Path| None));
+    }
+
+    /// Folds `event` in as `holding` says: past what it holds of a tree, a path is held by
+    /// its entry at the top of the tree ([`Burst::crowded`]); past what it holds in all, the
+    /// burst counts as everything, so a flood costs a fixed amount of memory and the reader
+    /// reads a little more than it needed to rather than missing a change.
+    fn add_holding<T: FnMut(&Path) -> Option<PathBuf>>(
+        &mut self,
+        event: notify::Event,
+        holding: &mut Holding<T>,
+    ) {
+        let most = holding.most;
         if event.need_rescan() || event.paths.is_empty() {
             self.lost_in(event.paths, most);
             return self.is_everything();
@@ -96,8 +113,18 @@ impl Burst {
             EventKind::Create(CreateKind::Folder | CreateKind::Any)
         );
         for path in event.paths {
-            if self.paths.len() >= most && !self.paths.contains(&path) {
-                return self.is_everything();
+            if !self.paths.contains(&path) {
+                match holding.place(&path, self.paths.len()) {
+                    Place::Named => {}
+                    Place::Crowded(entry) => {
+                        if self.crowded.len() >= most && !self.crowded.contains(&entry) {
+                            return self.is_everything();
+                        }
+                        self.crowded.insert(entry);
+                        continue;
+                    }
+                    Place::Full => return self.is_everything(),
+                }
             }
             if removed {
                 self.removed.insert(path.clone());
@@ -133,6 +160,69 @@ impl Burst {
         self.made_folder = true;
         self.paths = HashSet::new();
         self.removed = HashSet::new();
+        self.crowded = HashSet::new();
+    }
+}
+
+/// How many paths one burst holds: at most `most` of each tree's, by the tree `tree` puts a
+/// path in, and at most `most` of those it puts in none.
+struct Holding<T> {
+    most: usize,
+    tree: T,
+    /// How many paths each tree has named so far.
+    held: HashMap<PathBuf, usize>,
+    /// How many of the burst's paths are held for a tree.
+    in_trees: usize,
+}
+
+/// Where a path the burst has not named yet goes.
+enum Place {
+    /// Among the burst's paths.
+    Named,
+    /// Held by this entry at the top of its tree, which is full.
+    Crowded(PathBuf),
+    /// Nowhere: the burst holds no more paths outside a tree.
+    Full,
+}
+
+impl<T: FnMut(&Path) -> Option<PathBuf>> Holding<T> {
+    fn new(most: usize, tree: T) -> Self {
+        Self {
+            most,
+            tree,
+            held: HashMap::new(),
+            in_trees: 0,
+        }
+    }
+
+    /// Where `path` goes, in a burst naming `named` paths already.
+    fn place(&mut self, path: &Path, named: usize) -> Place {
+        let Some(tree) = (self.tree)(path) else {
+            return if named - self.in_trees < self.most {
+                Place::Named
+            } else {
+                Place::Full
+            };
+        };
+        let held = self.held.entry(tree.clone()).or_default();
+        if *held < self.most {
+            *held += 1;
+            self.in_trees += 1;
+            return Place::Named;
+        }
+        Place::Crowded(top_of(&tree, path))
+    }
+}
+
+/// The entry at the top of `tree` that `path` lies in, or `tree` itself.
+pub(crate) fn top_of(tree: &Path, path: &Path) -> PathBuf {
+    match path
+        .strip_prefix(tree)
+        .ok()
+        .and_then(|below| below.components().next())
+    {
+        Some(first) => tree.join(first),
+        None => tree.to_path_buf(),
     }
 }
 
@@ -151,6 +241,28 @@ pub(crate) fn bursts(
     std::iter::from_fn(move || {
         let first = events.recv().ok()?;
         rest_of_burst(&events, first, quiet_for, most)
+    })
+}
+
+/// [`bursts`] for a watch of several trees (#4740): `tree` names the tree a path lies in, or
+/// none, and the burst holds at most `most` paths of each tree. Past that, a tree's paths are
+/// held by the entry at its top they lie in ([`Burst::crowded`]), so one tree's flood leaves
+/// what the others named as it was. Past `most` paths in no tree, or `most` crowded entries,
+/// the burst is everything, as [`bursts`]' is. Its timing is [`bursts`]'.
+pub(crate) fn bursts_by_tree(
+    events: Receiver<notify::Event>,
+    quiet_for: Duration,
+    most: usize,
+    mut tree: impl FnMut(&Path) -> Option<PathBuf>,
+) -> impl Iterator<Item = Burst> {
+    std::iter::from_fn(move || {
+        let first = events.recv().ok()?;
+        fold(
+            &events,
+            first,
+            quiet_for,
+            &mut Holding::new(most, &mut tree),
+        )
     })
 }
 
@@ -178,8 +290,23 @@ pub(crate) fn rest_of_burst(
     quiet_for: Duration,
     most: usize,
 ) -> Option<Burst> {
+    fold(
+        events,
+        first,
+        quiet_for,
+        &mut Holding::new(most, |_: &Path| None),
+    )
+}
+
+/// [`rest_of_burst`], holding paths as `holding` says.
+fn fold<T: FnMut(&Path) -> Option<PathBuf>>(
+    events: &Receiver<notify::Event>,
+    first: notify::Event,
+    quiet_for: Duration,
+    holding: &mut Holding<T>,
+) -> Option<Burst> {
     let mut burst = Burst::default();
-    burst.add(first, most);
+    burst.add_holding(first, holding);
     let until = Instant::now() + quiet_for;
     loop {
         let left = until.saturating_duration_since(Instant::now());
@@ -187,7 +314,7 @@ pub(crate) fn rest_of_burst(
             return Some(burst);
         }
         match events.recv_timeout(left) {
-            Ok(more) => burst.add(more, most),
+            Ok(more) => burst.add_holding(more, holding),
             Err(RecvTimeoutError::Timeout) => return Some(burst),
             Err(RecvTimeoutError::Disconnected) => return None,
         }
@@ -460,6 +587,57 @@ mod tests {
         }
         assert!(burst.everything);
         assert!(burst.paths.is_empty() && burst.removed.is_empty());
+    }
+
+    #[test]
+    fn a_tree_past_its_cap_is_held_by_its_top_entries_and_leaves_the_others_named() {
+        let tree = |path: &Path| {
+            ["/a", "/b"]
+                .into_iter()
+                .map(PathBuf::from)
+                .find(|tree| path.starts_with(tree))
+        };
+        let mut holding = Holding::new(8, tree);
+        let mut burst = Burst::default();
+        for n in 0..20 {
+            let path = format!("/a/target/debug/{n}");
+            burst.add_holding(on(EventKind::Create(CreateKind::File), &path), &mut holding);
+        }
+        burst.add_holding(
+            on(EventKind::Create(CreateKind::File), "/a/src/lib.rs"),
+            &mut holding,
+        );
+        burst.add_holding(on(EventKind::Create(CreateKind::File), "/a"), &mut holding);
+        burst.add_holding(
+            on(EventKind::Create(CreateKind::File), "/b/src/lib.rs"),
+            &mut holding,
+        );
+
+        assert!(!burst.everything);
+        assert_eq!(
+            burst
+                .paths
+                .iter()
+                .filter(|path| path.starts_with("/a"))
+                .count(),
+            8
+        );
+        assert!(burst.paths.contains(Path::new("/b/src/lib.rs")));
+        assert_eq!(burst.crowded, set(&["/a/target", "/a/src", "/a"]));
+    }
+
+    #[test]
+    fn past_its_cap_outside_every_tree_a_burst_folded_by_tree_is_everything() {
+        let mut holding = Holding::new(8, |path: &Path| {
+            path.starts_with("/a").then(|| PathBuf::from("/a"))
+        });
+        let mut burst = Burst::default();
+        for n in 0..20 {
+            let path = format!("/elsewhere/{n}");
+            burst.add_holding(on(EventKind::Create(CreateKind::File), &path), &mut holding);
+        }
+        assert!(burst.everything);
+        assert!(burst.paths.is_empty() && burst.crowded.is_empty());
     }
 
     #[test]

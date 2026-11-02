@@ -1046,6 +1046,7 @@ fn a_cockpits_ref_moving_tells_its_window_and_nothing_else_does() {
         ])
     );
     let moved = |paths: &[&str]| -> HashSet<PathBuf> { paths.iter().map(PathBuf::from).collect() };
+    let none = HashSet::new();
     assert!(
         refs_moved(
             cockpits(),
@@ -1053,7 +1054,8 @@ fn a_cockpits_ref_moving_tells_its_window_and_nothing_else_does() {
                 "/clone/.git/refs/heads/other",
                 "/clone/.git/refs/heads/piece.lock",
                 "/clone/.git/index",
-            ])
+            ]),
+            &none,
         )
         .is_empty()
     );
@@ -1063,11 +1065,25 @@ fn a_cockpits_ref_moving_tells_its_window_and_nothing_else_does() {
             &moved(&[
                 "/clone/.git/refs/heads/piece.lock",
                 "/clone/.git/refs/heads/piece"
-            ])
+            ]),
+            &none,
         ),
         HashMap::from([("main".to_string(), vec![branch()])])
     );
-    assert!(refs_moved(std::iter::empty(), &moved(&["/clone/.git/packed-refs"])).is_empty());
+    assert!(
+        refs_moved(
+            std::iter::empty(),
+            &moved(&["/clone/.git/packed-refs"]),
+            &none
+        )
+        .is_empty()
+    );
+    // A burst past its cap of the clone holds git's folder whole: its refs may have moved.
+    assert_eq!(
+        refs_moved(cockpits(), &none, &moved(&["/clone/.git"])),
+        HashMap::from([("main".to_string(), vec![branch()])])
+    );
+    assert!(refs_moved(cockpits(), &none, &moved(&["/clone/target"])).is_empty());
 }
 
 /// #1152: a burst naming a cockpit's `HEAD` means its folder may have another branch checked
@@ -1081,6 +1097,7 @@ fn only_a_cockpits_head_moving_finds_its_refs_again() {
         PathBuf::from("/clone/.git/refs/heads/piece"),
     ];
     let moved = |paths: &[&str]| -> HashSet<PathBuf> { paths.iter().map(PathBuf::from).collect() };
+    let none = HashSet::new();
     assert!(!head_moved(
         &refs,
         &moved(&[
@@ -1089,16 +1106,19 @@ fn only_a_cockpits_head_moving_finds_its_refs_again() {
             "/clone/.git/worktrees/piece/HEAD.lock",
             "/clone/.git/worktrees/other/HEAD",
             "/clone/.git/HEAD",
-        ])
+        ]),
+        &none,
     ));
     assert!(head_moved(
         &refs,
         &moved(&[
             "/clone/.git/worktrees/piece/HEAD.lock",
             "/clone/.git/worktrees/piece/HEAD"
-        ])
+        ]),
+        &none,
     ));
-    assert!(!head_moved(&[], &moved(&["/clone/.git/HEAD"])));
+    assert!(!head_moved(&[], &moved(&["/clone/.git/HEAD"]), &none));
+    assert!(head_moved(&refs, &none, &moved(&["/clone/.git"])));
 }
 
 /// What inotify, through notify, watches: one entry per folder, and a recursive watch's
@@ -1441,4 +1461,99 @@ fn a_commit_with_no_file_write_moves_the_cockpit_and_only_the_cockpit() {
 
     watch.focus("main", None);
     assert!(!watch.watching().contains(&heads), "{:?}", watch.watching());
+}
+
+/// A watch on [`crate::watchset::raw::Raw`] listening, whole, to the piece of `root` and to
+/// another one cut beside it, and the piece's folder: the test plays the platform.
+fn listening_to_two_raw(root: &Path) -> (BranchWatch<crate::watchset::raw::Raw>, Heard, PathBuf) {
+    purlis_core::worktree::add(root, "alpha", "thing", "other", None).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let tx = Mutex::new(tx);
+    let watch = BranchWatch::<crate::watchset::raw::Raw>::with_config(
+        Arc::new(move |window: &str, branches| {
+            let _ = tx.lock().unwrap().send((window.to_string(), branches));
+        }),
+        crate::reader(),
+        notify::Config::default(),
+    );
+    let found = root_of(root, "piece");
+    let piece = found.path().to_path_buf();
+    watch
+        .set_from(
+            "main",
+            watch.ticket(),
+            vec![
+                (branch(), found, How::Whole),
+                (named("other"), root_of(root, "other"), How::Whole),
+            ],
+        )
+        .unwrap();
+    (watch, rx, piece)
+}
+
+/// Every telling heard until it has been quiet for two seconds.
+fn everything_told(told: &Heard) -> Vec<(String, Vec<WatchedBranch>)> {
+    std::iter::from_fn(|| told.recv_timeout(Duration::from_secs(2)).ok()).collect()
+}
+
+#[test]
+fn a_burst_over_the_cap_in_one_branch_tells_that_branch_only() {
+    // A build in one branch writes more than a burst holds for it: the other branch listened
+    // to beside it did not move, and is not read again (#4740).
+    use notify::event::{CreateKind, EventKind};
+    let (_dir, root, _piece) = plane();
+    let (_watch, told, piece) = listening_to_two_raw(&root);
+
+    for at in 0..=MOST_PATHS {
+        crate::watchset::raw::raw(
+            EventKind::Create(CreateKind::File),
+            &piece.join(format!("src/deep/{at}.rs")),
+        );
+    }
+
+    let (window, branches) = told.recv_timeout(PATIENCE).expect("the window was told");
+    assert_eq!((window.as_str(), branches), ("main", vec![branch()]));
+    assert_eq!(everything_told(&told), []);
+}
+
+#[test]
+fn a_burst_over_the_cap_only_where_git_ignores_tells_nobody() {
+    // `cargo build` writing thousands of files into an ignored `target/` moves nothing the
+    // status shows, in that branch or any other (#4740).
+    use notify::event::{CreateKind, EventKind};
+    let (_dir, root, _piece) = plane();
+    let (_watch, told, piece) = listening_to_two_raw(&root);
+
+    for at in 0..=MOST_PATHS {
+        crate::watchset::raw::raw(
+            EventKind::Create(CreateKind::File),
+            &piece.join(format!("target/debug/{at}")),
+        );
+    }
+
+    assert_eq!(everything_told(&told), []);
+}
+
+#[test]
+fn an_edit_among_a_builds_writes_past_what_one_check_asks_is_still_told() {
+    // One check looks at `ASKED` paths and passes over what git ignores: an edit left out
+    // of the paths it looked at, behind a build's writes, was never told (#4740).
+    use notify::event::{CreateKind, EventKind};
+    let (_dir, root, _piece) = plane();
+    let (_watch, told, piece) = listening_to_two_raw(&root);
+
+    for at in 0..MOST_PATHS - 1 {
+        crate::watchset::raw::raw(
+            EventKind::Create(CreateKind::File),
+            &piece.join(format!("target/debug/{at}")),
+        );
+    }
+    crate::watchset::raw::raw(
+        EventKind::Create(CreateKind::File),
+        &piece.join("src/deep/edited.rs"),
+    );
+
+    let (window, branches) = told.recv_timeout(PATIENCE).expect("the window was told");
+    assert_eq!((window.as_str(), branches), ("main", vec![branch()]));
+    assert_eq!(everything_told(&told), []);
 }

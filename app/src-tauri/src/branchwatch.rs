@@ -57,10 +57,14 @@
 //! A branch watched folder by folder (inotify) has no watch on a folder git ignores, so there such
 //! a folder's moves are not heard, as they are not by the rest of this watch.
 //!
-//! **Every burst is told by what it named** ([`crate::watchset::bursts`], #1139): a file made
-//! and removed inside one is still a move. A burst that is everything — the platform lost
-//! track, a watcher error, more paths than a burst holds — moves every branch listened to, and
-//! may have made a folder, so a branch watched folder by folder is listed again.
+//! **Every burst is told by what it named** ([`crate::watchset::bursts_by_tree`], #1139): a
+//! file made and removed inside one is still a move. A burst holds [`MOST_PATHS`] of each
+//! branch's paths (#4740); past that, the branch's further paths are held by the entry at its
+//! top they lie in (`target`, `src`), which still goes through the branch's ignore check, so a
+//! build writing thousands of files into an ignored folder moves nothing, and moves no other
+//! branch. A burst that is everything — the platform lost track, a watcher error, more paths
+//! outside every branch than a burst holds — moves every branch listened to, and may have made
+//! a folder, so a branch watched folder by folder is listed again.
 //!
 //! **The one watch per repo** (FD-11, #651). A clone whose save standing is shared
 //! (`purlis_core::reposave::shared_standing`: auto-save's look, the Saving rows) asks to be
@@ -114,10 +118,10 @@ pub(crate) const SKILLS_MOVED: &str = "repo-skills-moved";
 /// How long a burst is folded for, as the tree's watch folds it.
 const QUIET_FOR: Duration = Duration::from_millis(250);
 
-/// The most moved paths one burst holds, across every branch. Past it the burst is everything
-/// and every branch is read again; kept well above what one check asks
-/// (`purlis_core::files::ASKED`), so a burst inside git's own folder or what it ignores is
-/// sorted rather than told.
+/// The most moved paths one burst holds of each branch (#4740). Past it, the branch's further
+/// paths are held by the entries at its top they lie in, and only that branch may have moved;
+/// kept well above what one check asks (`purlis_core::files::ASKED`), so a burst inside git's
+/// own folder or what it ignores is sorted rather than told.
 const MOST_PATHS: usize = 4096;
 
 /// The most branches one window listens to at once.
@@ -220,7 +224,13 @@ struct Inner<W: notify::Watcher> {
     /// The kept clones' trees a loss was heard in since they were last watched: none of them is
     /// covered until it is watched again (D-FD11h).
     stale: HashSet<PathBuf>,
+    /// The folder of every branch and clone listened to, as the watches last followed them:
+    /// what the watch's thread folds each burst by (#4740).
+    trees: Trees,
 }
+
+/// The folders of the branches and clones listened to, shared with the watch's thread.
+type Trees = Arc<Mutex<Vec<PathBuf>>>;
 
 /// How often, at most, the kept clones' trees are watched again after the platform lost track
 /// (#874, L11). Under a build that overflows inotify's queue a loss is heard every burst, four a
@@ -391,6 +401,7 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
                 unmade_until: None,
                 rewatching: Rewatching::default(),
                 stale: HashSet::new(),
+                trees: Trees::default(),
             })),
             told,
             reader,
@@ -459,7 +470,7 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
             inner.by_window.insert(window.to_string(), listened);
         }
         if inner.watcher.is_none() && !inner.by_window.is_empty() {
-            inner.watcher = Some(self.start()?);
+            inner.watcher = Some(self.start(Arc::clone(&inner.trees))?);
         }
         inner.follow();
         Ok(true)
@@ -499,7 +510,8 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
                 }));
             // No watcher could be made, now or lately: nothing is listened to, as a set that
             // could not start one answers; the window's next set tries again.
-            if !inner.started(|| self.start()) {
+            let trees = Arc::clone(&inner.trees);
+            if !inner.started(|| self.start(trees)) {
                 return true;
             }
             inner.follow();
@@ -610,7 +622,8 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
                 );
                 // No watcher could be made: the clone is left alone for a while, as one the
                 // reader will not find is, rather than asked for on the standing's next read.
-                if !held.started(|| start::<W>(&inner, &reader, &told, config)) {
+                let trees = Arc::clone(&held.trees);
+                if !held.started(|| start::<W>(&inner, &reader, &told, config, trees)) {
                     held.kept.remove(&wanted.path);
                     held.refused
                         .insert(wanted.path.clone(), Instant::now() + REFUSED_FOR);
@@ -650,8 +663,8 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
     /// The platform's watcher, and a thread that folds what it reports into bursts and hands
     /// each branch that something moved in to its worker. The thread ends when the watcher is
     /// dropped, which drops the sending half it reads.
-    fn start(&self) -> Result<W, String> {
-        start::<W>(&self.inner, &self.reader, &self.told, self.config)
+    fn start(&self, trees: Trees) -> Result<W, String> {
+        start::<W>(&self.inner, &self.reader, &self.told, self.config, trees)
     }
 }
 
@@ -661,6 +674,7 @@ fn start<W: notify::Watcher + Send + 'static>(
     reader: &Reader,
     told: &Told,
     config: notify::Config,
+    trees: Trees,
 ) -> Result<W, String> {
     let (sent, events) = mpsc::channel();
     let handle: Weak<Mutex<Inner<W>>> = Arc::downgrade(inner);
@@ -669,7 +683,10 @@ fn start<W: notify::Watcher + Send + 'static>(
     std::thread::Builder::new()
         .name("charter-branch-watch".into())
         .spawn(move || {
-            for burst in crate::watchset::bursts(events, QUIET_FOR, MOST_PATHS) {
+            let tree = move |path: &Path| {
+                tree_of(&trees.lock().unwrap_or_else(PoisonError::into_inner), path)
+            };
+            for burst in crate::watchset::bursts_by_tree(events, QUIET_FOR, MOST_PATHS, tree) {
                 let Some(inner) = handle.upgrade() else {
                     return;
                 };
@@ -710,13 +727,15 @@ fn heard<W: notify::Watcher + Send + 'static>(
         let refs_moved = if burst.everything {
             HashMap::new()
         } else {
-            refs_moved(held.cockpits_listened(), &burst.paths)
+            refs_moved(held.cockpits_listened(), &burst.paths, &burst.crowded)
         };
         // A cockpit whose HEAD moved may have another branch checked out now, whose ref is not
         // watched yet; one the platform lost track of may have too.
         let heads_moved: Vec<Root> = held
             .cockpit_roots()
-            .filter(|root| burst.everything || head_moved(root.refs(), &burst.paths))
+            .filter(|root| {
+                burst.everything || head_moved(root.refs(), &burst.paths, &burst.crowded)
+            })
             .cloned()
             .collect();
         (roots, refs_moved, heads_moved)
@@ -734,11 +753,25 @@ fn heard<W: notify::Watcher + Send + 'static>(
         let inside: Vec<PathBuf> = if burst.everything {
             vec![root.path().to_path_buf()]
         } else {
-            burst
-                .paths
-                .iter()
-                .filter(|path| path.starts_with(root.path()))
-                .cloned()
+            // What was crowded first, so the check's cap never drops it: an entry at the top of
+            // this branch stands for every path in it, and one above the branch for all of it.
+            let crowded = burst.crowded.iter().filter_map(|entry| {
+                if entry.starts_with(root.path()) {
+                    Some(entry.clone())
+                } else {
+                    root.path()
+                        .starts_with(entry)
+                        .then(|| root.path().to_path_buf())
+                }
+            });
+            crowded
+                .chain(
+                    burst
+                        .paths
+                        .iter()
+                        .filter(|path| path.starts_with(root.path()))
+                        .cloned(),
+                )
                 .collect()
         };
         if inside.is_empty() {
@@ -815,9 +848,19 @@ fn check<W: notify::Watcher + Send + 'static>(
     {
         let mut held = inner.lock().unwrap_or_else(PoisonError::into_inner);
         let waiting = held.checking.entry(root.path().to_path_buf()).or_default();
-        // Past what one check looks at, the rest only says "more": the burst matters anyway.
-        let room = (purlis_core::files::ASKED + 1).saturating_sub(waiting.moved.len());
-        waiting.moved.extend(moved.into_iter().take(room));
+        // Past what one check looks at, the rest is held by the entries at the branch's top it
+        // lies in (#4740): the check passes over what git ignores, so a path merely left out
+        // behind a build's writes would be an edit never told.
+        for path in moved {
+            if waiting.moved.len() <= purlis_core::files::ASKED {
+                waiting.moved.push(path);
+                continue;
+            }
+            let entry = crate::watchset::top_of(root.path(), &path);
+            if !waiting.moved.contains(&entry) {
+                waiting.moved.push(entry);
+            }
+        }
         waiting.made_folder |= made_folder;
         if waiting.running {
             return;
@@ -989,14 +1032,16 @@ fn ref_folders<'a>(
         .collect()
 }
 
-/// The windows whose cockpit's refs are among `moved`, each with that branch.
+/// The windows whose cockpit's refs are among `moved`, or in an entry of `crowded`, each with
+/// that branch.
 fn refs_moved<'a>(
     cockpits: impl Iterator<Item = (&'a str, &'a WatchedBranch, &'a [PathBuf])>,
     moved: &HashSet<PathBuf>,
+    crowded: &HashSet<PathBuf>,
 ) -> HashMap<String, Vec<WatchedBranch>> {
     let mut told: HashMap<String, Vec<WatchedBranch>> = HashMap::new();
     for (window, branch, refs) in cockpits {
-        if refs.iter().any(|file| moved.contains(file)) {
+        if refs.iter().any(|file| named(file, moved, crowded)) {
             let branches = told.entry(window.to_string()).or_default();
             if !branches.contains(branch) {
                 branches.push(branch.clone());
@@ -1006,11 +1051,26 @@ fn refs_moved<'a>(
     told
 }
 
-/// Whether `moved` names the `HEAD` among a cockpit's `refs`: its folder may have another branch
-/// checked out now.
-fn head_moved(refs: &[PathBuf], moved: &HashSet<PathBuf>) -> bool {
-    refs.iter()
-        .any(|file| file.file_name() == Some(std::ffi::OsStr::new("HEAD")) && moved.contains(file))
+/// Whether `moved`, or an entry of `crowded`, names the `HEAD` among a cockpit's `refs`: its
+/// folder may have another branch checked out now.
+fn head_moved(refs: &[PathBuf], moved: &HashSet<PathBuf>, crowded: &HashSet<PathBuf>) -> bool {
+    refs.iter().any(|file| {
+        file.file_name() == Some(std::ffi::OsStr::new("HEAD")) && named(file, moved, crowded)
+    })
+}
+
+/// Whether a burst named `file`: among what it `moved`, or in an entry it `crowded`.
+fn named(file: &Path, moved: &HashSet<PathBuf>, crowded: &HashSet<PathBuf>) -> bool {
+    moved.contains(file) || crowded.iter().any(|entry| file.starts_with(entry))
+}
+
+/// The deepest of `trees` that `path` lies in: the branch or clone it moved.
+fn tree_of(trees: &[PathBuf], path: &Path) -> Option<PathBuf> {
+    trees
+        .iter()
+        .filter(|tree| path.starts_with(tree))
+        .max_by_key(|tree| tree.components().count())
+        .cloned()
 }
 
 impl<W: notify::Watcher> Inner<W> {
@@ -1204,6 +1264,10 @@ impl<W: notify::Watcher> Drop for Refinding<'_, W> {
 impl<W: notify::Watcher> Inner<W> {
     /// Watches what every window's branches need, and stops watching what none needs.
     fn follow(&mut self) {
+        *self.trees.lock().unwrap_or_else(PoisonError::into_inner) = self
+            .listened()
+            .map(|(root, _)| root.path().to_path_buf())
+            .collect();
         let mut wanted: HashMap<PathBuf, RecursiveMode> = HashMap::new();
         let mut one_by_one: Vec<(usize, PathBuf)> = Vec::new();
         for (root, how) in self.listened() {
