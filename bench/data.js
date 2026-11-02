@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793596068832,
+  "lastUpdate": 1793598626805,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35826,6 +35826,48 @@ window.BENCHMARK_DATA = {
             "value": 102.115879,
             "unit": "ms",
             "extra": "median of 5 runs: 101.211, 101.445, 102.116, 102.402, 103.561 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0847f9feab3b48a7991090b5f7d3911b7ed3c684",
+          "message": "Runners: a project names where its chats run, resolved in one order (#4540)\n\n* Runners: a project names where its chats run, resolved in one order (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: the settings test draws a control as its row does (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: format tests, and core's place types stay plain Rust (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: the app's pool tests know the project level (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: where a chat runs fails closed, and a move puts back what the workspace said (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: format a dropped level's words (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: the settings tests know the project's Runs on (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: the project's Runs on is listed with its level's groups (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: a move's put-back is in the write table, and a dropped level says what it is (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: keep both sides of the pool tests after the rebase (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: a value that can't be read is dropped with a reason, and the docs say what the code does (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n* Runners: a read-only project keeps its Runs on, which is this machine's (part of #4536)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CAB6HF7JHY417DMV736EPV\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T02:44:05Z",
+          "tree_id": "027b6b78ecfbe2ed9f989eb696d8c79f06328dd9",
+          "url": "https://github.com/purlis/purlis/commit/0847f9feab3b48a7991090b5f7d3911b7ed3c684"
+        },
+        "date": 1793598622238,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.532238,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.523, 0.529, 0.532, 0.538, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.415605999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.349, 16.363, 16.416, 16.472, 16.530 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.037124,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.348, 100.962, 101.037, 101.827, 102.251 ms"
           }
         ]
       }
