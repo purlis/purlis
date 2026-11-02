@@ -1084,7 +1084,9 @@ function Ask({
                 size="sm"
                 variant="primary"
                 aria-label={`Answer ${who}`}
-                onPress={() => openAnswer({ chat: ask.session, name: who })}
+                onPress={() =>
+                  openAnswer({ chat: ask.session, name: ask.chain[ask.chain.length - 1] ?? who })
+                }
               >
                 Answer
               </Button>
