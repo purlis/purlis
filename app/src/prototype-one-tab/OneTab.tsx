@@ -822,7 +822,11 @@ export function OneTab({ look, onLook }: { look: Look; onLook: (look: Look) => v
     const q = new URLSearchParams(location.search);
     q.set("s", s.key);
     q.set("v", nv);
-    history.replaceState(null, "", `?${q}`);
+    try {
+      history.replaceState(null, "", `?${q}`);
+    } catch {
+      // A sandboxed frame (the artifact page) refuses a query string: the bar still works.
+    }
   }, [v]);
 
   const onPick = useCallback(
