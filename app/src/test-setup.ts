@@ -1,7 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// First, before anything that imports `theme.ts`: the built-in themes the app's core hands the
+// First of all, before anything loads `react-dom`: the hook React's commits are counted through,
+// which React looks for once, as it is loaded (`reactCommits.testkit.ts`). It counts nothing
+// until a test asks it to.
+import "./reactCommits.testkit";
+// Then, before anything that imports `theme.ts`: the built-in themes the app's core hands the
 // real window as it is created.
 import "./theme/handed.testkit";
 import "@testing-library/jest-dom/vitest";
