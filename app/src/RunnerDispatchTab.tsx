@@ -70,8 +70,8 @@ export function RunnerDispatchTab({ plane, id }: { plane: PlaneId; id: number })
       {read.pool !== null ? (
         <p>
           {read.chat} (chat {read.session}), on pool {read.pool}, asks to{" "}
-          {read.handoff ? "hand its work off to" : "start a task as"} a chat on this machine. Only
-          you start it; it is told what you did on its next turn.
+          {read.handoff ? "hand its work off to" : "start a task as"} a new chat, which runs where
+          Runs on says. Only you start it; it is told what you did on its next turn.
         </p>
       ) : (
         <p>

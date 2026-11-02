@@ -12445,11 +12445,13 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
 /// A chat's open or dispatch heard from a pool waits for the person's Approve.
 mod heard_from_a_pool;
 
-/// **A dispatch says where its chat runs, and the chat keeps it** (#4536): `--this-machine` rides
-/// to the new chat's record, so a relaunch starts it where it ran. A word purlis can't read is
+/// **A dispatch that names where the levels already put it starts at once, and follows them**
+/// (#4536): `--this-machine` in a workspace that runs here asks nobody, and the chat keeps no
+/// choice of its own, so a later change of the levels holds for it. A word purlis can't read is
 /// refused, and nothing is started where the levels say instead.
 #[test]
-fn where_a_dispatch_asked_its_chat_to_run_is_kept_and_a_word_purlis_cannot_read_starts_nothing() {
+fn a_dispatch_naming_where_the_levels_put_it_follows_them_and_a_word_purlis_cannot_read_starts_nothing()
+ {
     let plane = Plane::new();
     let host = Pretend::default();
     let planes = planes_on(&host);
@@ -12475,10 +12477,7 @@ fn where_a_dispatch_asked_its_chat_to_run_is_kept_and_a_word_purlis_cannot_read_
         .iter()
         .find(|one| one.number == Some(chat))
         .expect("the task's chat is recorded");
-    assert_eq!(
-        started.runs_on,
-        Some(purlis_core::machine::StartChoice::ThisMachine)
-    );
+    assert_eq!(started.runs_on, None, "it follows the levels");
 
     let before = held.chats().record().chats.len();
     let refused = dispatched("pool:../elsewhere");

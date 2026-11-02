@@ -258,7 +258,7 @@ pub fn answer(
             if let Err(why) = tickets.spend(dispatch.chat, connection, &dispatch.ticket, now) {
                 return no(why);
             }
-            let wanted = match Wanted::of(&dispatch) {
+            let mut wanted = match Wanted::of(&dispatch) {
                 Ok(wanted) => wanted,
                 Err(why) => return no(why),
             };
@@ -283,6 +283,9 @@ pub fn answer(
                 }
                 return crate::runnerdispatches::hold(held, None, wanted);
             }
+            // A place that is where the levels put it now is no choice of the chat's to keep: the
+            // task follows the levels, so a change the person makes before it starts still holds.
+            wanted.runs_on = None;
             task_dispatched(held, plane, &wanted, arrived)
         }
         // A brokered write, not a handoff: no ticket, because a record is the chat's own to

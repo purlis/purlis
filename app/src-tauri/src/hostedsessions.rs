@@ -1654,35 +1654,41 @@ impl HostLink {
         self.call_until_answered(command)
     }
 
-    /// [`Self::call_until_answered`], refused with the host's code where it gave one; one it
-    /// didn't give (the link ended, the person cancelled) has none.
-    fn call_refused_until_answered(
+    /// **A start's hold, answered or not** (#4536): the host's own refusal apart from what this
+    /// window found itself (no answer in `within`, the link ended, the person cancelled), so a
+    /// runner's words are never taken for this machine's finding. `within` is none where only
+    /// the host's answer, its link's end or a cancel ends the wait.
+    fn call_held_for_a_start(
         &self,
         command: Command,
-    ) -> Result<Answer, purlis_session_protocol::session::Refusal> {
+        within: Option<Duration>,
+    ) -> Result<Answer, Unanswered> {
         let (answered, answer) = std::sync::mpsc::channel();
         let client = Arc::clone(&self.client);
         self.runtime.spawn(async move {
             let _ = answered.send(client.call(command).await);
         });
-        let unanswered = |why: &str| purlis_session_protocol::session::Refusal {
-            code: String::new(),
-            why: why.to_owned(),
-        };
+        let until = within.map(|within| Instant::now() + within);
         loop {
             match answer.recv_timeout(LOOKS_FOR_A_CANCEL_EVERY) {
                 Ok(said) => {
-                    return said.map_err(|why| {
-                        why.refusal()
-                            .cloned()
-                            .unwrap_or_else(|| unanswered(&why.to_string()))
+                    return said.map_err(|why| match why.refusal() {
+                        Some(refused) => Unanswered::Host(refused.clone()),
+                        None => Unanswered::Here(why.to_string()),
                     });
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(unanswered("the session host's link ended"));
+                    return Err(Unanswered::Here("the session host's link ended".to_owned()));
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) if was_cancelled() => {
-                    return Err(unanswered(START_CANCELLED));
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                    if can_be_cancelled() && was_cancelled() =>
+                {
+                    return Err(Unanswered::Here(START_CANCELLED.to_owned()));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                    if until.is_some_and(|until| Instant::now() >= until) =>
+                {
+                    return Err(Unanswered::Here(NOT_IN_TIME.to_owned()));
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             }
@@ -3750,25 +3756,33 @@ fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> 
         project,
         project_path: String::new(),
     };
-    if can_be_cancelled() {
-        link.call_refused_until_answered(hold)
-    } else {
-        link.call_refused_within(hold, a_dispatchs_hold_within(&holding.connection))
-    }
-    .map(|_| ())
-    .map_err(|refused| {
-        // **The runner not coming back is this machine's own finding** (#4536): no answer in
-        // time, the link ended, or this machine's host told the window the link is down. A
-        // refusal that came over the link, with its code, is the runner's and is never marked.
-        let local = refused.code.is_empty() || lock(&link.shared.runner_log).link_is_down();
-        let why = format!("{NOT_HELD} {}", refused.why);
-        match holding.connection.pool() {
-            Some(pool) if local && refused.why != START_CANCELLED => {
-                crate::poolprofiles::unavailable(pool, why)
+    // Read before the hold goes out: this machine's host says a link is down, and a runner can't,
+    // so a refusal while it already was is the host's, not the runner's (#4536).
+    let was_down = lock(&link.shared.runner_log).link_is_down();
+    let within = (!can_be_cancelled()).then(|| a_dispatchs_hold_within(&holding.connection));
+    link.call_held_for_a_start(hold, within)
+        .map(|_| ())
+        .map_err(|unanswered| {
+            // **The runner not coming back is this machine's own finding** (#4536): no answer in
+            // time, the link ended, or a refusal while the link was already down. What a runner
+            // says over a link that is up is never marked, whatever its code.
+            let (here, said) = match unanswered {
+                Unanswered::Here(why) => (why != START_CANCELLED, why),
+                Unanswered::Host(refused) => (was_down, refused.why),
+            };
+            let why = format!("{NOT_HELD} {said}");
+            match holding.connection.pool() {
+                Some(pool) if here => crate::poolprofiles::unavailable(pool, why),
+                _ => why,
             }
-            _ => why,
-        }
-    })
+        })
+}
+
+/// **A start's hold that was not answered with yes** (#4536): what this window found itself, or
+/// the host's refusal as it came.
+enum Unanswered {
+    Here(String),
+    Host(purlis_session_protocol::session::Refusal),
 }
 
 /// How long a window waits to send its `relay_to` once more, where the host refused it because

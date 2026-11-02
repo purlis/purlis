@@ -78,15 +78,17 @@ impl HeldDispatch {
                 "to hand its work off to a chat{as_whom} in workspace {}",
                 moved.workspace
             ),
+            // Where it asks to run, where it named a place (#4536).
             None => format!(
-                "to start the task '{}'{as_whom} on this machine",
-                self.wanted.name
+                "to start the task '{}'{as_whom} {}",
+                self.wanted.name,
+                moves_said(&self.wanted)
             ),
         };
         let brief = purlis_core::shown::one_line(&self.wanted.brief, 240);
         match &self.pool {
             Some(pool) => format!("Asks, from pool {pool}, {what}: {brief}"),
-            None => format!("Asks {what}, {}: {brief}", moves_said(&self.wanted)),
+            None => format!("Asks {what}: {brief}"),
         }
     }
 }
