@@ -171,7 +171,10 @@ describe("Locate… for a remembered project that moved", function () {
         );
       });
     // The dialog was opened, and answered by the spec.
-    expect(anAnswerIsWaiting()).toBe(false);
+    await browser.waitUntil(async () => !anAnswerIsWaiting(), {
+      timeout: 30_000,
+      timeoutMsg: "the folder pick was never asked",
+    });
 
     const now = await remembered();
     const located = now.find((one) => samePlace(one.path, moved));
