@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793599946958,
+  "lastUpdate": 1793602842217,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -35910,6 +35910,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2017725,
             "unit": "ms",
             "extra": "median of 5 runs: 101.407, 101.464, 102.202, 102.307, 102.871 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "186c600b9dbefb86cef4bf2a7166c8926a2333eb",
+          "message": "A background turn doesn't clear a wait (#4649)\n\n* A background turn doesn't clear a wait (#4562)\n\nA turn a line of purlis's own or the chat's own work began is no reply, so a\nchat that needs the person keeps its wait, its state and its ask through it.\nThe person's line ends the wait, at once where it waits behind that turn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CHV7W3QDHKNFJX72DR0X5P\nPurlis-Persona: steward\n\n* Name the background turn in the held-end test's waits (#4562)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CHV7W3QDHKNFJX72DR0X5P\nPurlis-Persona: steward\n\n* Add the background turn's tests and changelog fragment (#4562)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CHV7W3QDHKNFJX72DR0X5P\nPurlis-Persona: steward\n\n* Read the whole asks registry in the background turn's tests; regenerate the UI RPC client (#4562)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CHV7W3QDHKNFJX72DR0X5P\nPurlis-Persona: steward\n\n* Test that the person's answer and a later reply clear a wait (#4562)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CZPGN3B26PE1J80MHM5KMY\nPurlis-Persona: steward\n\n* The person's answer and a later reply end a background turn's wait (#4562)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CZPGN3B26PE1J80MHM5KMY\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T04:02:30Z",
+          "tree_id": "65c896c6adbe5e0755df66f81bbf2a5f56201eba",
+          "url": "https://github.com/purlis/purlis/commit/186c600b9dbefb86cef4bf2a7166c8926a2333eb"
+        },
+        "date": 1793602837822,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5610390000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.536, 0.538, 0.561, 0.566, 0.584 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3069645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.188, 16.302, 16.307, 16.339, 16.353 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.98818299999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.669, 100.885, 100.988, 101.407, 101.953 ms"
           }
         ]
       }
