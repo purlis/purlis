@@ -704,9 +704,11 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     await screen.findByRole("dialog");
     await screen.findByRole("button", { name: "Read again" });
     // The licences (FM-3) are one link, to their tab (#1719). The walk starts on
-    // Close, where the dialog puts the keyboard (#1719).
+    // Close, where the dialog puts the keyboard (#1719). Copy diagnostics (#4774) is the
+    // footer's other button, beside Close.
     expect(await reachableByKeyboard()).toEqual([
       'button "Close"',
+      'button "Copy diagnostics"',
       'button "Read again"',
       'a "Discussions"',
       'a "report a bug"',
