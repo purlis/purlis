@@ -522,18 +522,23 @@ fn a_repository_the_task_made_where_no_clone_is_keeps_its_runner() {
 }
 
 /// **A re-hold never sends code to a fresh runner** (#4569): a window started again holds the
-/// project there again, and the task's commit on the project's own branch stays.
+/// project there again for its chat, and the task's commit on the project's own branch stays.
 #[test]
-fn a_hold_on_a_fresh_runner_that_holds_the_project_sends_no_code_over_its_work() {
+fn a_start_on_a_fresh_runner_that_holds_the_project_sends_no_code_over_its_work() {
     let world = World::on_a_fresh_runner();
-    world.sessions.hold().expect("held on the runner");
+    world
+        .sessions
+        .moving_link_in_a_test()
+        .expect("held, its code sent");
     let kept = world.kept();
     let the_tasks = committed(&kept, "task.md", "the task's work\n");
     // Here, the project's own branch moves on meanwhile.
     let here = committed(&world.root, "here.md", "moved on here\n");
 
     let again = HostedSessions::on_a_pools_runner(Arc::clone(&world.connection), &world.root);
-    again.hold().expect("held again");
+    again
+        .moving_link_in_a_test()
+        .expect("held again for a chat");
 
     assert_eq!(git(&kept, &["rev-parse", "HEAD"]), the_tasks);
     assert_ne!(git(&kept, &["rev-parse", "refs/heads/main"]), here);
