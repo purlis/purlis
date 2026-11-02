@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: a chat's actions in its pane (#4585)</title>
+<!--
+  PROTOTYPE, throwaway. Ticket purlis/purlis#4585 on map #4575 "Chats, tabs and panes: a chat isn't a tab".
+  Question: which of a chat's actions the pane header shows directly and which sit behind "⋯", in a
+  wide and a narrow pane, with the same list on the sidebar row's menu and the palette; and what is
+  left on a tab's right-click menu. Also: which rows don't apply to a shell (#4588), and where Smart
+  close (ADR 0064) lives now that it no longer closes a tab.
+  Fixed by earlier rulings, drawn the same in every variant:
+   - D9 (#4576): a chat's actions live on the pane header, the sidebar row's menu and the palette,
+     one list, one wording. A tab's right-click holds only tab things. Pane things: split, close,
+     drag, Tile all. Nothing lives on one surface only.
+   - D2: close clears a pane and the chat keeps running; End is the chat's own act; no danger cue on close.
+   - #4582: pane head = combined icon, name, "harness · workspace", then the tools at the right.
+   - #4584: the bell has a fixed slot in the head, before split and close.
+   - #4587: an ended chat's pane keeps its last screen with Resume and Clear pane.
+  Variants (the bottom bar, or ?variant=A|B|C):
+   A  One state button + ⋯ : the head shows at most one action, chosen by the chat's state (Stop while
+      it works, Answer while a task asks, Cancel smart close while it wraps up, Brief on a quiet task).
+      Everything else is the ⋯ list.
+   B  The name is the menu: no chat buttons and no ⋯. The chat's icon and name are one button that
+      opens the list. The head carries only marks and the pane's own tools.
+   C  A toolbar that folds: Stop, Restart, Use skill, Ask, Activity and End as icons, folding into ⋯
+      from the right as the pane narrows.
+  Stand-in data, in memory. Nothing calls the core. Tokens: the Purlis built-in theme.
+-->
+<style>
+:root {
+  --behind: #ffffff; --surface-base: #f7f7fd; --surface-raised: #eeeef5; --surface-overlay: #e4e4ec; --surface-sunken: #ececf3;
+  --surface-hover: #dbdce5; --control-base: #e4e4ec; --control-hover: #dbdce5;
+  --text-primary: #252329; --text-secondary: #3b3942; --text-muted: #5d5b67; --text-quiet: #61606c; --text-faint: #7c7a87;
+  --border-strong: #a9a7b5; --border-soft: #d6d5df; --accent: #554691; --accent-surface: #dedcef; --focus-ring: #554691;
+  --term-bg: #e9e9f2; --term-fg: #252329;
+  --wash-warning: #5236011f; --danger-wash: #682e301f; --info-wash: #4d3f8014;
+  --state-working: #20562f; --state-waiting: #523601; --state-failed: #682f2a; --ansi-green: #20562f;
+  --bar-bg: #252329; --bar-fg: #f7f7fd; --menu-bg: #ffffff; --shadow: 0 8px 28px #0002, 0 1px 3px #0002;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --r-control: 7px; --r-tab: 8px; --r-warn: 10px; --r-panel: 12px;
+}
+:root[data-theme="dark"] {
+  --behind: #121215; --surface-base: #17171b; --surface-raised: #1d1d22; --surface-overlay: #24242a; --surface-sunken: #141418;
+  --surface-hover: #2a2a31; --control-base: #24242a; --control-hover: #2a2a31;
+  --text-primary: #e6e4ec; --text-secondary: #c9c7d2; --text-muted: #a09eab; --text-quiet: #91909d; --text-faint: #74727f;
+  --border-strong: #55535f; --border-soft: #2c2c33; --accent: #a99cf0; --accent-surface: #292735; --focus-ring: #a99cf0;
+  --term-bg: #202026; --term-fg: #e6e4ec;
+  --wash-warning: #e5c08a1f; --danger-wash: #f0a9a81f; --info-wash: #b3a8f214;
+  --state-working: #8fc79a; --state-waiting: #e5c08a; --state-failed: #f0aaa2; --ansi-green: #8fc79a;
+  --bar-bg: #e6e4ec; --bar-fg: #17171b; --menu-bg: #24242a; --shadow: 0 8px 28px #0008, 0 1px 3px #0006; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--behind); color: var(--text-primary); font: 14px/1.4 var(--font-ui); padding: 14px 14px 120px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.head { max-width: 1480px; margin: 0 auto 10px; }
+.head h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+.head p { margin: 0; color: var(--text-quiet); font-size: 12px; max-width: 140ch; }
+.work { max-width: 1480px; margin: 0 auto; display: grid; grid-template-columns: minmax(0,1fr) 340px; gap: 14px; align-items: start; }
+.side { display: grid; gap: 12px; }
+.card { background: var(--surface-raised); border-radius: var(--r-panel); padding: 12px 14px; font-size: 12.5px; color: var(--text-secondary); }
+.card h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-quiet); }
+.card ol, .card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.state { margin: 0; font: 11px/1.45 var(--font-mono); color: var(--text-muted); white-space: pre-wrap; }
+
+/* The window: sidebar, then strip + panes. */
+.win { display: grid; grid-template-columns: 250px minmax(0,1fr); height: 600px; background: var(--surface-base); border-radius: var(--r-panel); overflow: hidden; resize: horizontal; min-width: 640px; max-width: 100%; }
+.sb { background: var(--surface-sunken); padding: 8px 6px; display: flex; flex-direction: column; gap: 2px; overflow: auto; font-size: 13px; }
+.sb h3 { margin: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-quiet); display: flex; }
+.sb h3 span { flex: 1; }
+.row { display: flex; align-items: center; gap: 7px; padding: 4px 4px 4px 8px; border-radius: var(--r-control); cursor: pointer; position: relative; min-height: 30px; }
+.row:hover, .row:focus-within { background: var(--surface-hover); }
+.row[data-current] { background: var(--accent-surface); }
+.row[data-shown]::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--border-strong); }
+.row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row.task { margin-left: 18px; }
+.row .more { visibility: hidden; }
+.row:hover .more, .row:focus-within .more, .row .more[aria-expanded="true"] { visibility: visible; }
+.sb[data-rowmore="never"] .row .more { display: none; }
+
+.main { display: flex; flex-direction: column; min-width: 0; }
+.strip { flex: none; display: flex; gap: 2px; padding: 6px 8px 0; background: var(--surface-sunken); }
+.tab { display: inline-flex; align-items: center; gap: 6px; max-width: 230px; padding: 5px 10px; border-radius: var(--r-tab) var(--r-tab) 0 0; color: var(--text-muted); cursor: pointer; font-size: 12.5px; border: 0; background: transparent; }
+.tab[aria-selected="true"] { background: var(--surface-base); color: var(--text-primary); }
+.tab .plus { color: var(--text-faint); font-size: 11px; }
+.panes { flex: 1; min-height: 0; display: flex; gap: 6px; padding: 6px; }
+.pane { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; background: var(--term-bg); border-radius: var(--r-panel); overflow: hidden; position: relative; }
+.pane[data-grow="2"] { flex-grow: 1.6; }
+.pane[data-focused] { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.phead { flex: none; display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 4px 0 10px; font-size: 12.5px; color: var(--text-quiet); }
+.phead .nm { color: var(--text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 3ch; }
+.phead .where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); min-width: 0; flex: 0 1 auto; }
+.phead .grow { flex: 1; min-width: 4px; }
+.namebtn { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 3px 6px 3px 4px; margin-left: -4px; border-radius: var(--r-control); cursor: pointer; min-width: 0; }
+.namebtn:hover, .namebtn[aria-expanded="true"] { background: var(--control-hover); }
+.namebtn .chev { color: var(--text-faint); font-size: 10px; }
+.chip { padding: 1px 8px; border-radius: 999px; background: var(--surface-overlay); white-space: nowrap; font-size: 11.5px; color: var(--text-muted); border: 0; cursor: pointer; }
+.chip:hover { background: var(--control-hover); }
+.tool { border: 0; background: transparent; color: var(--text-muted); min-width: 26px; height: 26px; border-radius: var(--r-control); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 5px; flex: none; }
+.tool:hover, .tool[aria-expanded="true"] { background: var(--control-hover); color: var(--text-primary); }
+.tool svg { width: 15px; height: 15px; }
+.tool.say { padding: 0 9px 0 7px; background: var(--control-base); color: var(--text-primary); font-size: 12px; }
+.tool.say:hover { background: var(--control-hover); }
+.tool.say[data-tone="ask"] { background: var(--wash-warning); }
+.tool .count { font-variant-numeric: tabular-nums; font-size: 11.5px; min-width: 1ch; }
+.bell[data-empty] { color: var(--text-faint); }
+.sep { width: 1px; height: 16px; background: var(--border-soft); margin: 0 3px; flex: none; }
+.mark { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
+.mark .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--state-working); }
+.mark[data-k="wrapping"] .dot { background: var(--state-waiting); animation: breathe 1.6s ease-in-out infinite; }
+.mark[data-k="asking"] .dot { background: var(--state-waiting); }
+.mark[data-k="ended"] .dot { background: var(--text-faint); }
+@keyframes breathe { 50% { opacity: .25; } }
+
+/* The persona icon with its state badge (stand-in for ChatPersonaState). */
+.pi { position: relative; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex: none; }
+.pi[data-p="steward"] { background: #6b5bb5; } .pi[data-p="devops"] { background: #2f7a64; } .pi[data-p="docs"] { background: #9a5a2a; }
+.pi[data-p="shell"] { background: #4a4a55; } .pi[data-p="task"] { background: #3d6a9e; } .pi[data-p="view"] { background: #777; }
+.pi i { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 2px var(--g, var(--surface-sunken)); }
+.pi i[data-s="working"] { background: var(--state-working); } .pi i[data-s="asking"], .pi i[data-s="wrapping"] { background: var(--state-waiting); }
+.pi i[data-s="ended"] { background: var(--text-faint); } .pi i[data-s="idle"] { display: none; }
+.phead .pi i { --g: var(--term-bg); } .tab .pi i { --g: var(--surface-base); } .row[data-current] .pi i { --g: var(--accent-surface); }
+
+/* The terminal and the ended screen. */
+.term { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px 12px 10px; font: 12px/1.5 var(--font-mono); color: var(--term-fg); }
+.term .l { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.term .dim { color: var(--text-faint); } .term .g { color: var(--ansi-green); }
+.term[data-ended] .l { opacity: .55; }
+.endbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 8px 8px; padding: 8px 10px; border-radius: var(--r-warn); background: var(--surface-overlay); font-size: 12.5px; }
+.endbar .grow { flex: 1; min-width: 12ch; color: var(--text-muted); }
+.btn { border: 0; background: var(--control-base); padding: 3px 10px; border-radius: var(--r-control); cursor: pointer; font-size: 12.5px; }
+.btn:hover { background: var(--control-hover); }
+.btn.primary { background: var(--accent); color: var(--surface-base); }
+.btn.quiet { background: transparent; color: var(--text-muted); }
+.band { flex: none; display: grid; gap: 6px; padding: 0 8px 4px; }
+.n { border-radius: var(--r-warn); padding: 7px 10px; background: var(--info-wash); display: flex; gap: 8px; align-items: center; font-size: 12.5px; flex-wrap: wrap; }
+.n[data-tone="warning"] { background: var(--wash-warning); }
+.n .grow { flex: 1; min-width: 14ch; }
+.empty { flex: 1; display: grid; place-content: center; text-align: center; gap: 8px; color: var(--text-muted); font-size: 13px; }
+
+/* Menus, the dialog, the palette. */
+.menu { position: fixed; z-index: 30; min-width: 230px; max-width: 320px; background: var(--menu-bg); border-radius: 10px; box-shadow: var(--shadow); padding: 5px; font-size: 13px; }
+.menu .mi { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; padding: 5px 9px; border-radius: 6px; cursor: pointer; }
+.menu .mi:hover:not([aria-disabled="true"]), .menu .mi:focus-visible { background: var(--control-hover); outline: none; }
+.menu .mi[aria-disabled="true"] { color: var(--text-faint); cursor: default; }
+.menu .mi .k { flex: 1; } .menu .mi .why { font-size: 11px; color: var(--text-faint); }
+.menu .mi .sub { color: var(--text-faint); }
+.menu .mi[data-danger] { color: var(--state-failed); }
+.menu hr { border: 0; border-top: 1px solid var(--border-soft); margin: 4px 6px; }
+.menu .gl { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); padding: 5px 9px 2px; }
+.menu .hd { padding: 6px 9px 6px; display: flex; gap: 8px; align-items: center; font-weight: 600; border-bottom: 1px solid var(--border-soft); margin-bottom: 4px; }
+.menu .hd .where { font-weight: 400; color: var(--text-faint); font-size: 11.5px; }
+.scrim { position: fixed; inset: 0; z-index: 40; background: #0005; display: grid; place-items: center; }
+.dlg { background: var(--menu-bg); border-radius: 14px; padding: 18px 20px; width: 440px; box-shadow: var(--shadow); font-size: 13px; }
+.dlg h4 { margin: 0 0 6px; font-size: 15px; }
+.dlg p { margin: 0 0 12px; color: var(--text-muted); }
+.dlg .ways { display: flex; gap: 8px; justify-content: flex-end; }
+.pal { position: fixed; z-index: 40; left: 50%; top: 70px; transform: translateX(-50%); width: 560px; background: var(--menu-bg); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; font-size: 13px; }
+.pal input { width: 100%; border: 0; background: var(--surface-overlay); color: var(--text-primary); border-radius: 8px; padding: 8px 10px; font: inherit; margin-bottom: 6px; }
+.pal .list { max-height: 420px; overflow: auto; }
+.pal .mi { display: flex; gap: 10px; padding: 5px 10px; border-radius: 6px; cursor: pointer; }
+.pal .mi:hover { background: var(--control-hover); }
+.pal .mi .k { flex: 1; } .pal .mi .grp { color: var(--text-faint); font-size: 11.5px; }
+.pal .mi[aria-disabled="true"] { color: var(--text-faint); }
+.toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); background: var(--text-primary); color: var(--surface-base); padding: 6px 12px; border-radius: 8px; font-size: 12.5px; z-index: 50; }
+
+/* The prototype's bar: dashed, not the design. */
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: var(--bar-bg); color: var(--bar-fg);
+  border: 2px dashed var(--bar-fg); border-radius: 12px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center;
+  font-size: 12px; max-width: calc(100vw - 24px); z-index: 20; }
+.bar .grp { display: flex; gap: 3px; align-items: center; }
+.bar button { border: 0; background: transparent; color: var(--bar-fg); padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; opacity: .75; }
+.bar button[aria-pressed="true"] { opacity: 1; background: color-mix(in srgb, var(--bar-fg) 22%, transparent); font-weight: 600; }
+.bar button:hover { opacity: 1; }
+.bar .lbl { opacity: .6; margin-right: 2px; }
+table.list { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+table.list td { padding: 2px 4px; vertical-align: top; border-top: 1px solid var(--border-soft); }
+table.list td:first-child { color: var(--text-primary); white-space: nowrap; }
+table.list td.no { color: var(--text-faint); text-decoration: line-through; }
+</style>
+</head>
+<body>
+<header class="head">
+  <h1>PROTOTYPE: a chat's actions in its pane</h1>
+  <p>Ticket #4585 on the map "Chats, tabs and panes: a chat isn't a tab". Everything presses. <b>⋯</b> on a pane head and on a sidebar row (on hover) opens <i>the same list</i>; <b>⌘K</b> (or the bar's palette button) opens the palette with that list for the focused pane's chat. <b>Right-click a tab</b> for what's left on it. <b>Right-click a pane head</b> for the chat's list followed by the pane's own rows. Drag the window's bottom-right corner to narrow it, or load scene 6, to see narrow panes. The dashed bar is the prototype's: variant, scene, theme. Keys: <code>[</code> <code>]</code> scene, <code>v</code> variant, <code>t</code> theme.</p>
+</header>
+<main class="work">
+  <div class="win" id="win">
+    <aside class="sb" id="sb" aria-label="Chats"></aside>
+    <section class="main"><div class="strip" id="strip" role="tablist" aria-label="Tabs"></div><div class="panes" id="panes"></div></section>
+  </div>
+  <aside class="side">
+    <div class="card"><h2>This variant</h2><div id="about"></div></div>
+    <div class="card"><h2>This scene</h2><div id="sceneAbout"></div></div>
+    <div class="card"><h2>The one list, for the focused chat</h2><div id="listNow"></div></div>
+    <div class="card"><h2>Last press</h2><pre class="state" id="state">nothing yet</pre></div>
+  </aside>
+</main>
+<nav class="bar" aria-label="Prototype controls">
+  <span class="grp"><span class="lbl">variant</span><button data-v="A">A state button + ⋯</button><button data-v="B">B the name is the menu</button><button data-v="C">C toolbar that folds</button></span>
+  <span class="grp"><span class="lbl">scene</span><button data-s="1">1</button><button data-s="2">2</button><button data-s="3">3</button><button data-s="4">4</button><button data-s="5">5</button><button data-s="6">6</button></span>
+  <span class="grp"><button id="palBtn">⌘K palette</button><button id="theme">light/dark</button></span>
+</nav>
+<script>
+"use strict";
+// ---------- icons (lucide paths, inline) ----------
+const SV = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const I = {
+  more: SV('<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>'),
+  splitR: SV('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>'),
+  splitD: SV('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18"/>'),
+  x: SV('<path d="M18 6 6 18M6 6l12 12"/>'),
+  bell: SV('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'),
+  stop: SV('<rect x="6" y="6" width="12" height="12" rx="1.5"/>'),
+  restart: SV('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>'),
+  skill: SV('<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>'),
+  ask: SV('<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'),
+  activity: SV('<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'),
+  end: SV('<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>'),
+  brief: SV('<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6M16 13H8M16 17H8"/>'),
+  answer: SV('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+  cancel: SV('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>'),
+};
+
+// ---------- the world ----------
+const W = {
+  chats: {
+    1: { id: 1, name: "steward 1", p: "steward", kind: "chat", harness: "Claude Code", ws: "smart-ide", state: "working", skills: 6, model: "Opus", tasks: [2], branch: true, link: "#4585" },
+    2: { id: 2, name: "review the command table", p: "task", kind: "task", of: 1, harness: "Claude Code", ws: "smart-ide", state: "asking" },
+    3: { id: 3, name: "zsh", p: "shell", kind: "shell", harness: "zsh", ws: "smart-ide", state: "idle" },
+    4: { id: 4, name: "devops 2", p: "devops", kind: "chat", harness: "Codex", ws: "volaticloud", state: "ended", skills: 3, model: "gpt-5" },
+    5: { id: 5, name: "docs 1", p: "docs", kind: "chat", harness: "Claude Code", ws: "smart-ide", state: "idle", skills: 4, model: "Sonnet", handed: 6 },
+    6: { id: 6, name: "docs 2 (handoff)", p: "docs", kind: "chat", harness: "Claude Code", ws: "purlis-site", state: "idle", skills: 4, model: "Sonnet" },
+    7: { id: 7, name: "steward 2", p: "steward", kind: "chat", harness: "Claude Code", ws: "smart-ide", state: "idle", skills: 6, model: "Opus", fresh: true },
+  },
+  tabs: [], front: 0, focus: 0,
+};
+const SCENES = {
+  1: { name: "A chat at work, its task asking beside it", about: "One tab split: steward 1 is mid-turn (wide pane), its task asks a question (narrower pane). Compare the two heads, then open ⋯ on each, then the same chats' ⋯ in the sidebar.",
+       tabs: [{ panes: [1, 2], focus: 0 }, { view: "Settings" }], states: { 1: "working", 2: "asking" } },
+  2: { name: "A shell beside a quiet chat", about: "A shell follows a chat's rules (#4588). Its ⋯ is the same list less the rows that need a harness. The right-hand card lists them crossed out.",
+       tabs: [{ panes: [7, 3], focus: 1 }], states: { 7: "idle", 3: "idle" } },
+  3: { name: "An ended chat", about: "devops 2 has ended. Its pane keeps the last screen with Resume and Clear pane (#4587). Its ⋯ keeps what still means something for an ended chat.",
+       tabs: [{ panes: [4], focus: 0 }], states: { 4: "ended" } },
+  4: { name: "Smart close, now that it doesn't close a tab", about: "Press End… on steward 1 and pick Smart close. The chat wraps up where it is: a breathing mark on its head and its sidebar row, and Cancel smart close on both lists. No tab turns into a chip, since a chat has no tab. Then press 'record written' or 'stopped without a record' below.",
+       tabs: [{ panes: [1], focus: 0 }], states: { 1: "idle" }, events: true },
+  5: { name: "A split tab's right-click", about: "Right-click either tab. Only tab things are left: the tab's chat rows are gone, so a split tab no longer acts on its first pane's chat by mistake (#4577). Pressing a tab keeps working as before.",
+       tabs: [{ panes: [1, 5], focus: 1 }, { panes: [6], pinned: true }, { view: "Settings" }], states: { 1: "working", 5: "idle" } },
+  6: { name: "Three narrow panes", about: "Three panes in one tab, each under 420px. Watch what each variant drops first. The bell, split and close keep their slots in every variant.",
+       tabs: [{ panes: [1, 2, 3], focus: 0 }], states: { 1: "working", 2: "asking", 3: "idle" } },
+};
+const VARIANTS = {
+  A: "<b>A · One state button + ⋯</b> (recommended). The head shows at most one chat action, picked by the chat's state: <i>Stop</i> while it works, <i>Answer</i> while a task asks, <i>Cancel smart close</i> while it wraps up, <i>Brief</i> on a quiet task. Nothing when a chat is quiet. The rest is ⋯. Narrow: the harness · workspace line and chips go into ⋯'s header, the state button keeps only its icon.",
+  B: "<b>B · The name is the menu.</b> The chat's icon and name are one button that opens the list. No ⋯, no chat buttons. The head carries marks only (working, asking, wrapping up). Calmest head, but Stop takes two presses and the name doesn't look pressable.",
+  C: "<b>C · A toolbar that folds.</b> Stop, Restart, Use skill, Ask, Activity and End as icon buttons, then ⋯. As the pane narrows they fold into ⋯ from the right. Fastest for a regular, busiest head, and the buttons shift as a pane is resized.",
+};
+const S = { variant: "A", scene: "1", menu: null, wrapping: {}, notes: {} };
+
+// ---------- the one list ----------
+// row: { id, k (menu word), pal (palette word, with the name), g (group), icon, run, off (why it can't run), danger, sub }
+function chatRows(c) {
+  const R = [], add = (r) => R.push(r);
+  const shell = c.kind === "shell", task = c.kind === "task", ended = c.state === "ended";
+  const wrapping = !!S.wrapping[c.id], name = c.name;
+  // now: rows that answer the chat's state, first so the eye finds them.
+  if (task && c.state === "asking") add({ id: "answer", g: "now", k: "Answer its question", pal: `Answer ${name}'s question`, icon: "answer" });
+  if (wrapping) add({ id: "cancelSmart", g: "now", k: "Cancel smart close", pal: `Cancel smart close of ${name}`, icon: "cancel" });
+  if (S.notes[c.id] === "stopped") add({ id: "dismissSmart", g: "now", k: "Dismiss: smart close stopped", pal: `Dismiss ${name}: smart close stopped without its record` });
+  if (ended) add({ id: "resume", g: "now", k: "Resume", pal: `Resume chat ${name}` });
+  // chat
+  add({ id: "rename", g: "chat", k: "Rename…", pal: `Rename chat ${name}…` });
+  if (!shell && !ended) add({ id: "skill", g: "chat", k: "Use skill…", pal: `Use skill in ${name}…`, icon: "skill" });
+  if (!shell && !ended) add({ id: "ask", g: "chat", k: "Ask", sub: "▸", pal: `Ask a persona from ${name}…`, icon: "ask", kids: ["steward", "devops", "docs"] });
+  if (!shell) add({ id: "skills", g: "chat", k: `Skills (${c.skills || 4})`, pal: `Show ${name}'s skills` });
+  if (!shell) add({ id: "harness", g: "chat", k: `${c.harness} · ${c.model || "Opus"}`, pal: `${c.harness} card of ${name}` });
+  add(c.link ? { id: "unlink", g: "chat", k: `Unlink ${c.link}`, pal: `Unlink ${name} from ${c.link}` } : { id: "link", g: "chat", k: "Link to work item…", pal: `Link ${name} to a work item…` });
+  // open
+  add({ id: "newtab", g: "open", k: "Open in new tab", pal: `Open ${name} in a new tab` });
+  if (task) add({ id: "beside", g: "open", k: "Open beside steward 1", pal: `Open ${name} beside steward 1` });
+  if (task) add({ id: "brief", g: "open", k: "Brief", pal: `Brief of ${name}`, icon: "brief" });
+  if (c.handed) add({ id: "goto", g: "open", k: `Go to ${W.chats[c.handed].name}`, pal: `Go to ${W.chats[c.handed].name} (handed off to by ${name})` });
+  add({ id: "activity", g: "open", k: "Activity", pal: `Activity of ${name}`, icon: "activity" });
+  add({ id: "network", g: "open", k: "Network", pal: `Network of ${name}` });
+  // run
+  if (!shell) add({ id: "restart", g: "run", k: c.state === "working" ? "Restart when this turn ends" : ended ? "Restart" : "Restart", pal: `Restart chat ${name}`, icon: "restart", off: ended ? "it has ended: Resume picks it up" : null });
+  if (!shell && !task) add({ id: "fresh", g: "run", k: "Start fresh", pal: `Start chat ${name} fresh`, off: c.fresh ? null : "the project's instructions haven't changed" });
+  if (!shell && !task && !ended) add({ id: "move", g: "run", k: "Move to", sub: "▸", pal: `Move chat ${name} to…`, kids: ["pool-a", "this machine"] });
+  if (!ended && !task) add({ id: "stop", g: "run", k: "Stop", sub: "▸", pal: `Stop chat ${name}`, icon: "stop", off: c.state === "working" || c.state === "asking" ? null : "it isn't working",
+    kids: shell ? ["Stop"] : ["Stop", "Stop and everything below it", "Stop all tasks"] });
+  // branch
+  if (c.branch) { add({ id: "merge", g: "branch", k: "Merge its branch", pal: `Merge ${name}'s branch into its clone` }); add({ id: "rmfolder", g: "branch", k: "Remove its branch folder", pal: `Remove the folder of ${name}'s branch` }); }
+  // end
+  if (task) { add({ id: "report", g: "end", k: "Stop and get its report", pal: `Stop and get its report: ${name}` }); add({ id: "closenow", g: "end", k: "Close now", pal: `Close now: ${name}`, danger: true }); }
+  else if (!ended) add({ id: "end", g: "end", k: "End…", pal: `End chat ${name}…`, icon: "end", danger: true, off: wrapping ? "it's wrapping up: Cancel smart close first" : null });
+  return R;
+}
+// What doesn't apply to a shell, for the card.
+const SHELL_DROPS = ["Use skill…", "Ask ▸", "Skills", "Harness card", "Restart", "Start fresh", "Move to ▸", "Stop ▸ Stop and everything below it", "Stop ▸ Stop all tasks", "Smart close (End… asks only Cancel or End)", "Task rows: Answer, Brief, Open beside, Stop and get its report, Close now"];
+const paneRows = (pane, many) => [
+  { id: "splitR", g: "pane", k: "Split right", pal: "Split right", icon: "splitR" },
+  { id: "splitD", g: "pane", k: "Split down", pal: "Split down", icon: "splitD" },
+  { id: "tile", g: "pane", k: "Tile all", pal: "Tile all panes", off: many ? null : "one pane only" },
+  { id: "copy", g: "pane", k: "Copy", pal: "Copy from the terminal" }, { id: "paste", g: "pane", k: "Paste", pal: "Paste into the terminal" },
+  { id: "f2", g: "pane", k: "Send F2", pal: "Send F2 to the chat in front" },
+  { id: "clear", g: "pane", k: "Close pane", pal: "Close this pane", why: "the chat keeps running" },
+];
+const tabRows = (t, i) => [
+  { id: "pin", k: t.pinned ? "Unpin tab" : "Pin tab" },
+  { id: "tileT", k: "Tile all", off: (t.panes || []).length > 1 ? null : "one pane only" },
+  { id: "newwin", k: "Move to new window", off: "not yet decided (map: Several windows)" },
+  { sep: 1 },
+  { id: "closeOthers", k: "Close other tabs", why: "their chats keep running" },
+  { id: "closeTab", k: "Close tab", why: t.view ? "" : "its chats keep running" },
+];
+const GROUPS = { now: "", chat: "", open: "", run: "", branch: "Branch", end: "", pane: "This pane" };
+
+// ---------- render ----------
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[m]);
+const pi = (c) => `<span class="pi" data-p="${c.p}">${c.p === "shell" ? "$" : c.p === "task" ? "T" : c.p[0].toUpperCase()}<i data-s="${S.wrapping[c.id] ? "wrapping" : c.state}"></i></span>`;
+function loadScene(n) {
+  S.scene = String(n); const sc = SCENES[n]; S.wrapping = {}; S.notes = {}; closeMenu();
+  W.tabs = sc.tabs.map((t) => ({ ...t, panes: t.panes ? [...t.panes] : undefined }));
+  W.front = 0; W.focus = sc.tabs[0].focus || 0;
+  for (const [id, st] of Object.entries(sc.states)) W.chats[id].state = st;
+  render();
+}
+const frontTab = () => W.tabs[W.front];
+const focusedChat = () => { const t = frontTab(); return t.panes && t.panes[W.focus] ? W.chats[t.panes[W.focus]] : null; };
+function render() {
+  document.querySelectorAll(".bar [data-v]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === S.variant));
+  document.querySelectorAll(".bar [data-s]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.s === S.scene));
+  $("#about").innerHTML = VARIANTS[S.variant];
+  const sc = SCENES[S.scene];
+  $("#sceneAbout").innerHTML = `<b>${S.scene} · ${esc(sc.name)}</b><br>${esc(sc.about)}` + (sc.events ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn" id="evRec">record written</button><button class="btn" id="evStop">stopped without a record</button></div>` : "");
+  if (sc.events) { $("#evRec").onclick = () => smartDone(true); $("#evStop").onclick = () => smartDone(false); }
+  renderSidebar(); renderStrip(); renderPanes(); renderList();
+}
+function renderSidebar() {
+  const shown = new Set((frontTab().panes || [])); const fc = focusedChat();
+  const row = (c) => `<div class="row ${c.kind === "task" ? "task" : ""}" data-chat="${c.id}" ${fc && fc.id === c.id ? "data-current" : ""} ${shown.has(c.id) && !(fc && fc.id === c.id) ? "data-shown" : ""} tabindex="0">
+      ${pi(c)}<span class="nm">${esc(c.name)}</span>${S.wrapping[c.id] ? `<span class="mark" data-k="wrapping"><span class="dot"></span></span>` : ""}
+      <button class="tool more" data-rowmore="${c.id}" aria-label="Actions of ${esc(c.name)}" aria-haspopup="menu">${I.more}</button></div>`;
+  const ws = ["smart-ide"], all = Object.values(W.chats).filter((c) => c.ws === "smart-ide");
+  let h = `<h3><span>Chats · smart-ide</span></h3>`;
+  for (const c of all) if (c.kind !== "task") { h += row(c); for (const t of c.tasks || []) h += row(W.chats[t]); }
+  h += `<h3><span>Other workspaces</span></h3>` + row(W.chats[4]) + row(W.chats[6]);
+  $("#sb").innerHTML = h;
+  $("#sb").querySelectorAll(".row").forEach((el) => {
+    el.onclick = (e) => { if (e.target.closest(".more")) return; pick(+el.dataset.chat); };
+    el.oncontextmenu = (e) => { e.preventDefault(); openMenu(e.clientX, e.clientY, chatMenu(W.chats[el.dataset.chat], "sidebar row (right-click)")); };
+  });
+  $("#sb").querySelectorAll("[data-rowmore]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); const r = b.getBoundingClientRect(); openMenu(r.right - 4, r.bottom + 2, chatMenu(W.chats[b.dataset.rowmore], "sidebar row ⋯"), b); });
+}
+function tabLabel(t) {
+  if (t.view) return `<span class="pi" data-p="view">⚙</span><span>${t.view}</span>`;
+  const c = W.chats[t.panes[t === frontTab() ? W.focus : (t.focus || 0)]] || W.chats[t.panes[0]];
+  return `${t.pinned ? "📌 " : ""}${pi(c)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span>${t.panes.length > 1 ? `<span class="plus">⊟+${t.panes.length - 1}</span>` : ""}`;
+}
+function renderStrip() {
+  $("#strip").innerHTML = W.tabs.map((t, i) => `<button class="tab" role="tab" data-tab="${i}" aria-selected="${i === W.front}">${tabLabel(t)}</button>`).join("");
+  $("#strip").querySelectorAll(".tab").forEach((b) => {
+    b.onclick = () => { W.front = +b.dataset.tab; W.focus = W.tabs[W.front].focus || 0; closeMenu(); render(); };
+    b.oncontextmenu = (e) => { e.preventDefault(); const t = W.tabs[+b.dataset.tab]; openMenu(e.clientX, e.clientY, { head: `Tab · ${t.view || W.chats[t.panes[0]].name}${t.panes && t.panes.length > 1 ? " ⊟+" + (t.panes.length - 1) : ""}`, rows: tabRows(t, +b.dataset.tab), from: "tab right-click" }); };
+  });
+}
+const TERM = {
+  working: ['<span class="dim">⏺ Read app/src/actions.ts (lines 330-370)</span>', '<span class="dim">⏺ Read menuModel.ts</span>', "Drafting the shared list for the pane header…", '<span class="g">✻ Working… (2m 14s · esc to interrupt)</span>'],
+  asking: ['<span class="dim">⏺ Compared 56 rows against D9</span>', "Row 33 Send back has no meaning once a task has no tab.", '<b>Question for steward 1:</b> fold Send back into Close pane?', '<span class="g">… waiting for an answer</span>'],
+  idle: ['<span class="dim">⏺ Done. 3 files changed.</span>', "", "> <span class=\"cursor\">▍</span>"],
+  shell: ["aharon@mac purlis % git status -sb", "## prototype/pane-chat-actions", "aharon@mac purlis % <span class=\"cursor\">▍</span>"],
+  ended: ['<span class="dim">⏺ Deployed volaticloud-api to staging.</span>', "All checks passed.", "", '<span class="dim">[chat ended 11:52]</span>'],
+};
+function renderPanes() {
+  const t = frontTab();
+  if (t.view) { $("#panes").innerHTML = `<div class="pane" data-focused><div class="phead"><span class="pi" data-p="view">⚙</span><span class="nm">${t.view}</span><span class="grow"></span><button class="tool bell" data-empty>${I.bell}</button><button class="tool">${I.splitR}</button><button class="tool" aria-label="Close">${I.x}</button></div><div class="empty">A view. It has its own rows, not a chat's.</div></div>`; return; }
+  $("#panes").innerHTML = t.panes.map((id, i) => paneHtml(id, i, t.panes.length)).join("");
+  const ro = new ResizeObserver(() => sizePanes()); $("#panes").querySelectorAll(".pane").forEach((p) => ro.observe(p));
+  wirePanes(); requestAnimationFrame(sizePanes);
+}
+function paneHtml(id, i, n) {
+  if (id === 0) return `<div class="pane" data-pane="${i}" ${i === W.focus ? "data-focused" : ""}><div class="phead"><span class="grow"></span><button class="tool bell" data-empty>${I.bell}</button><button class="tool" data-pane-act="splitR">${I.splitR}</button><button class="tool" data-pane-act="clear" title="Close pane">${I.x}</button></div><div class="empty"><div>Nothing in this pane</div><div style="font-size:12px">5 chats running in smart-ide · pick one in the sidebar</div><div><button class="btn primary">New chat</button></div></div></div>`;
+  const c = W.chats[id], ended = c.state === "ended", wr = S.wrapping[c.id];
+  const lines = ended ? TERM.ended : c.kind === "shell" ? TERM.shell : TERM[c.state] || TERM.idle;
+  const note = S.notes[c.id] === "stopped" ? 1 : 0;
+  let band = "";
+  if (S.notes[c.id] === "stopped") band = `<div class="band"><div class="n" data-tone="warning"><span class="grow">Smart close stopped without its record: the chat ended its turn and wrote nothing.</span><button class="btn" data-run="${c.id}:end">End…</button><button class="btn quiet" data-run="${c.id}:dismissSmart">Dismiss</button></div></div>`;
+  const ended_ = ended ? `<div class="endbar"><span class="grow">${S.notes[c.id] === "recorded" ? "Smart close wrote its record and ended the chat. <a href='#' onclick='return false'>Session record</a>" : "This chat has ended."}</span><button class="btn primary" data-run="${c.id}:resume">Resume</button><button class="btn" data-pane-act="clear" data-i="${i}">Clear pane</button></div>` : "";
+  return `<div class="pane" data-pane="${i}" data-grow="${n === 2 && i === 0 ? 2 : 1}" ${i === W.focus ? "data-focused" : ""}>
+    <div class="phead" data-head="${i}">${headHtml(c, i)}</div>${band}
+    <div class="term" ${ended ? "data-ended" : ""}>${lines.map((l) => `<div class="l">${l}</div>`).join("")}</div>${ended_}</div>`;
+}
+// The head: identity, marks, the variant's chat part, then bell | split | close, always in that order.
+function headHtml(c, i) {
+  const wr = S.wrapping[c.id];
+  const markK = wr ? "wrapping" : c.state === "working" ? "working" : c.state === "asking" ? "asking" : c.state === "ended" ? "ended" : null;
+  const markW = { wrapping: "Wrapping up", working: "Working", asking: "Asking steward 1", ended: "Ended" }[markK];
+  const mark = markK ? `<span class="mark" data-k="${markK}" data-hide-narrow="2"><span class="dot"></span><span data-word>${markW}</span></span>` : "";
+  const where = `<span class="where" data-hide-narrow="1">${esc(c.harness)} · ${esc(c.ws)}</span>`;
+  const notes = S.notes[c.id] === "stopped" ? 1 : 0;
+  const tail = `<button class="tool bell" ${notes ? "" : "data-empty"} aria-label="Notices: ${notes}">${I.bell}<span class="count">${notes || ""}</span></button><span class="sep"></span>
+    <button class="tool" data-pane-act="splitR" aria-label="Split right" title="Split right">${I.splitR}</button>
+    <button class="tool" data-pane-act="splitD" aria-label="Split down" title="Split down" data-hide-narrow="3">${I.splitD}</button>
+    <button class="tool" data-pane-act="clear" aria-label="Close pane" title="Close pane: the chat keeps running in the sidebar">${I.x}</button>`;
+  if (S.variant === "B") {
+    return `<button class="namebtn" data-chatmenu="${c.id}" aria-haspopup="menu" title="${esc(c.name)}: its actions">${pi(c)}<span class="nm">${esc(c.name)}</span><span class="chev">▾</span></button>${mark}${where}<span class="grow"></span>${tail}`;
+  }
+  let chatPart = "";
+  if (S.variant === "A") {
+    const b = stateButton(c);
+    if (b) chatPart = `<button class="tool say" data-tone="${b.tone || ""}" data-run="${c.id}:${b.id}" title="${esc(b.k)}">${I[b.icon]}<span data-word>${esc(b.k)}</span></button>`;
+    chatPart += `<button class="tool" data-chatmenu="${c.id}" aria-label="Chat actions" title="Chat actions" aria-haspopup="menu">${I.more}</button>`;
+  } else {
+    const rows = chatRows(c), pickR = (id) => rows.find((r) => r.id === id);
+    const tb = ["stop", "restart", "skill", "ask", "activity", "end", "report", "brief", "answer", "cancelSmart", "resume"].map(pickR).filter(Boolean).filter((r) => r.icon);
+    chatPart = tb.map((r, k) => `<button class="tool" data-fold="${tb.length - k}" data-run="${c.id}:${r.id}" ${r.off ? `aria-disabled="true" style="opacity:.45"` : ""} title="${esc(r.k)}${r.off ? " (can't: " + esc(r.off) + ")" : ""}" aria-label="${esc(r.k)}">${I[r.icon]}</button>`).join("")
+      + `<button class="tool" data-chatmenu="${c.id}" aria-label="Chat actions" title="Chat actions" aria-haspopup="menu">${I.more}</button>`;
+  }
+  return `${pi(c)}<span class="nm">${esc(c.name)}</span>${mark}${where}<span class="grow"></span>${chatPart}<span class="sep"></span>${tail}`;
+}
+function stateButton(c) {
+  if (S.wrapping[c.id]) return { id: "cancelSmart", k: "Cancel smart close", icon: "cancel" };
+  if (c.kind === "task") return c.state === "asking" ? { id: "answer", k: "Answer", icon: "answer", tone: "ask" } : { id: "brief", k: "Brief", icon: "brief" };
+  if (c.state === "working") return { id: "stop", k: "Stop", icon: "stop" };
+  return null;
+}
+// Narrow: drop in a fixed order, so nothing jumps around at random.
+function sizePanes() {
+  document.querySelectorAll(".pane").forEach((p) => {
+    const w = p.clientWidth, head = p.querySelector(".phead"); if (!head) return;
+    head.querySelectorAll("[data-hide-narrow]").forEach((el) => { const lvl = +el.dataset.hideNarrow; el.style.display = (lvl === 1 && w < 520) || (lvl === 2 && w < 380) || (lvl === 3 && w < 300) ? "none" : ""; });
+    head.querySelectorAll(".mark [data-word]").forEach((el) => el.style.display = w < 470 ? "none" : "");
+    head.querySelectorAll(".tool.say [data-word]").forEach((el) => el.style.display = w < 420 ? "none" : "");
+    // C: fold toolbar buttons from the right as width drops.
+    const folds = [...head.querySelectorAll("[data-fold]")];
+    const room = Math.max(0, Math.floor((w - 300) / 32));
+    folds.forEach((el, k) => el.style.display = k < room ? "" : "none");
+  });
+}
+function wirePanes() {
+  document.querySelectorAll(".pane").forEach((p) => p.addEventListener("mousedown", () => { const i = +p.dataset.pane; if (i !== W.focus) { W.focus = i; frontTab().focus = i; render(); } }));
+  document.querySelectorAll("[data-chatmenu]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); const r = b.getBoundingClientRect(); openMenu(Math.min(r.right, innerWidth - 330), r.bottom + 2, chatMenu(W.chats[b.dataset.chatmenu], "pane head " + (S.variant === "B" ? "name" : "⋯")), b); });
+  document.querySelectorAll("[data-run]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); const [id, act] = b.dataset.run.split(":"); run(W.chats[id], act, "pane head"); });
+  document.querySelectorAll("[data-pane-act]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); paneAct(b.dataset.paneAct, +(b.closest(".pane").dataset.pane)); });
+  document.querySelectorAll("[data-head]").forEach((h) => h.oncontextmenu = (e) => {
+    e.preventDefault(); const i = +h.dataset.head, c = W.chats[frontTab().panes[i]]; const m = chatMenu(c, "pane head right-click");
+    m.rows = [...m.rows, { sep: 1 }, ...paneRows(i, frontTab().panes.length > 1)]; openMenu(e.clientX, e.clientY, m);
+  });
+}
+function renderList() {
+  const c = focusedChat();
+  if (!c) { $("#listNow").textContent = "A view is in front: no chat list."; return; }
+  let h = `<div style="margin-bottom:6px"><b>${esc(c.name)}</b> (${c.kind}${c.state === "ended" ? ", ended" : ""}). Menu word | palette word:</div><table class="list">`;
+  for (const r of chatRows(c)) h += `<tr><td>${esc(r.k)}${r.sub ? " ▸" : ""}</td><td>${esc(r.pal)}${r.off ? ` <i style="color:var(--text-faint)">(can't: ${esc(r.off)})</i>` : ""}</td></tr>`;
+  h += "</table>";
+  if (c.kind === "shell") h += `<div style="margin-top:8px"><b>Left out for a shell:</b><table class="list">${SHELL_DROPS.map((d) => `<tr><td class="no">${esc(d)}</td></tr>`).join("")}</table></div>`;
+  $("#listNow").innerHTML = h;
+}
+
+// ---------- menus ----------
+function chatMenu(c, from) { return { head: `${pi(c)}<span>${esc(c.name)}</span><span class="where">${esc(c.harness)} · ${esc(c.ws)}</span>`, rows: chatRows(c), chat: c, from }; }
+function openMenu(x, y, m, anchor) {
+  closeMenu(); const el = document.createElement("div"); el.className = "menu"; el.setAttribute("role", "menu");
+  let h = m.head ? `<div class="hd">${m.head}</div>` : "", g = null;
+  for (const r of m.rows) {
+    if (r.sep) { h += "<hr>"; g = null; continue; }
+    if (r.g && g !== null && r.g !== g) h += "<hr>";
+    if (r.g && r.g !== g && GROUPS[r.g]) h += `<div class="gl">${GROUPS[r.g]}</div>`;
+    g = r.g || g;
+    h += `<button class="mi" role="menuitem" data-id="${r.id}" ${r.off ? `aria-disabled="true" title="Can't: ${esc(r.off)}"` : ""} ${r.danger ? "data-danger" : ""}><span class="k">${esc(r.k)}${r.why ? ` <span class="why">· ${esc(r.why)}</span>` : ""}${r.off ? `<br><span class="why">${esc(r.off)}</span>` : ""}</span>${r.sub ? `<span class="sub">▸</span>` : ""}</button>`;
+  }
+  el.innerHTML = h; document.body.appendChild(el);
+  const r = el.getBoundingClientRect(); el.style.left = Math.max(8, Math.min(x - (anchor ? r.width : 0), innerWidth - r.width - 8)) + "px"; el.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + "px";
+  S.menu = { el, anchor }; if (anchor) anchor.setAttribute("aria-expanded", "true");
+  el.querySelectorAll(".mi").forEach((b) => b.onclick = () => {
+    if (b.getAttribute("aria-disabled") === "true") return; const row = m.rows.find((x) => x.id === b.dataset.id); closeMenu();
+    if (row.g === "pane") paneAct(row.id, W.focus); else if (m.chat) run(m.chat, row.id, m.from); else tabAct(row.id, m.from);
+  });
+  el.querySelector(".mi:not([aria-disabled])")?.focus();
+}
+function closeMenu() { if (S.menu) { S.menu.el.remove(); S.menu.anchor?.setAttribute("aria-expanded", "false"); S.menu = null; } }
+document.addEventListener("mousedown", (e) => { if (S.menu && !S.menu.el.contains(e.target)) closeMenu(); });
+
+// ---------- doing ----------
+function say(what) { $("#state").textContent = what; const t = document.createElement("div"); t.className = "toast"; t.textContent = what.split("\n")[0]; document.body.appendChild(t); setTimeout(() => t.remove(), 1800); }
+function run(c, act, from) {
+  const row = chatRows(c).find((r) => r.id === act) || { k: act };
+  if (act === "end") return endDialog(c);
+  if (act === "cancelSmart") { delete S.wrapping[c.id]; c.state = "idle"; render(); return say(`Cancel smart close · ${c.name}\nfrom: ${from}\nNothing was sent; the chat goes on.`); }
+  if (act === "resume") { c.state = "idle"; delete S.notes[c.id]; render(); return say(`Resume · ${c.name}\nfrom: ${from}\nThe same pane picks the chat up again.`); }
+  if (act === "dismissSmart") { delete S.notes[c.id]; render(); return say(`Dismissed · ${c.name}`); }
+  if (act === "newtab") { W.tabs.push({ panes: [c.id], focus: 0 }); const t = frontTab(); const i = t.panes ? t.panes.indexOf(c.id) : -1; if (i >= 0 && t.panes.length > 1) { t.panes.splice(i, 1); W.focus = 0; } W.front = W.tabs.length - 1; W.focus = 0; render(); return say(`Open in new tab · ${c.name}\nfrom: ${from}\nA chat on screen moves; it's never shown twice (D1).`); }
+  if (act === "stop" && c.state === "working") { c.state = "idle"; render(); }
+  if (act === "answer") { c.state = "working"; render(); }
+  say(`${row.k} · ${c.name}\nfrom: ${from}\npalette says: ${row.pal || "—"}`);
+}
+function endDialog(c) {
+  const shell = c.kind === "shell";
+  const sc = document.createElement("div"); sc.className = "scrim";
+  sc.innerHTML = `<div class="dlg" role="alertdialog" aria-label="End ${esc(c.name)}?"><h4>End ${esc(c.name)}?</h4><p>Ends the program it runs. ${shell ? "" : "Smart close has the chat write its session record into smart-ide first, then ends it."} Closing its pane instead keeps it running in the sidebar.</p>
+    <div class="ways"><button class="btn" id="dCancel">Cancel</button><button class="btn" id="dEnd">End</button>${shell ? "" : `<button class="btn primary" id="dSmart">Smart close</button>`}</div></div>`;
+  document.body.appendChild(sc); (shell ? $("#dEnd") : $("#dSmart")).focus();
+  const done = () => sc.remove();
+  $("#dCancel").onclick = done; sc.addEventListener("keydown", (e) => { if (e.key === "Escape") done(); });
+  $("#dEnd").onclick = () => { done(); c.state = "ended"; render(); say(`End · ${c.name}\nThe pane keeps its last screen with Resume and Clear pane (#4587).`); };
+  if (!shell) $("#dSmart").onclick = () => { done(); S.wrapping[c.id] = true; c.state = "working"; render(); say(`Smart close · ${c.name}\nIt wraps up where it is: no tab, no chip. The head and the sidebar row breathe; Cancel smart close is on both lists and the palette.`); };
+}
+function smartDone(ok) {
+  const c = W.chats[1]; if (!S.wrapping[1]) return say("Press End… → Smart close on steward 1 first.");
+  delete S.wrapping[1];
+  if (ok) { c.state = "ended"; S.notes[1] = "recorded"; render(); say("The record is written; the chat ends.\nIts pane keeps the last screen with Resume and Clear pane, and links the record."); }
+  else { c.state = "idle"; S.notes[1] = "stopped"; render(); say("Smart close stopped without a record.\nA notice in the pane's band (bell 1) and its row are needs-you; Dismiss is on the list."); }
+}
+function paneAct(act, i) {
+  const t = frontTab(); if (!t.panes) return;
+  if (act === "clear") { const c = W.chats[t.panes[i]]; if (t.panes.length > 1) { t.panes.splice(i, 1); W.focus = 0; } else t.panes[i] = 0; render(); return say(`Close pane${c ? " · " + c.name + " keeps running in the sidebar" : ""}`); }
+  if (act === "splitR" || act === "splitD") { t.panes.splice(i + 1, 0, 0); W.focus = i + 1; render(); return say(`${act === "splitR" ? "Split right" : "Split down"}: an empty pane beside`); }
+  say(paneRows(i, true).find((r) => r.id === act)?.k || act);
+}
+function tabAct(act, from) { const row = tabRows(frontTab()).find((r) => r.id === act); if (act === "pin") { frontTab().pinned = !frontTab().pinned; render(); } say(`${row ? row.k : act}\nfrom: ${from}`); }
+
+// ---------- palette ----------
+function openPalette() {
+  closeMenu(); const c = focusedChat(); const el = document.createElement("div"); el.className = "scrim"; el.style.background = "#0003";
+  const t = frontTab(), rows = [];
+  if (c) for (const r of chatRows(c)) rows.push({ k: r.pal, grp: "this chat", off: r.off, run: () => run(c, r.id, "palette") });
+  if (t.panes) for (const r of paneRows(W.focus, t.panes.length > 1)) rows.push({ k: r.pal, grp: "this pane", off: r.off, run: () => paneAct(r.id, W.focus) });
+  for (const r of tabRows(t).filter((r) => !r.sep)) rows.push({ k: r.k.replace("tab", "this tab").replace("Tile all", "Tile all in this tab"), grp: "this tab", off: r.off, run: () => tabAct(r.id, "palette") });
+  for (const o of Object.values(W.chats)) if (o !== c) rows.push({ k: `Restart chat ${o.name}`, grp: "another chat", run: () => run(o, "restart", "palette") });
+  el.innerHTML = `<div class="pal" role="dialog" aria-label="Command palette"><input placeholder="Type a command… (the focused pane's chat comes first)"><div class="list"></div></div>`;
+  document.body.appendChild(el);
+  const list = $(".list", el), inp = $("input", el);
+  const draw = () => { const q = inp.value.toLowerCase(); list.innerHTML = rows.filter((r) => r.k.toLowerCase().includes(q)).slice(0, 40).map((r, i) => `<div class="mi" data-i="${rows.indexOf(r)}" ${r.off ? 'aria-disabled="true"' : ""}><span class="k">${esc(r.k)}${r.off ? ` <span class="grp">· can't: ${esc(r.off)}</span>` : ""}</span><span class="grp">${r.grp}</span></div>`).join("");
+    list.querySelectorAll(".mi").forEach((m) => m.onclick = () => { const r = rows[+m.dataset.i]; if (r.off) return; el.remove(); r.run(); }); };
+  inp.oninput = draw; draw(); inp.focus();
+  el.addEventListener("mousedown", (e) => { if (e.target === el) el.remove(); }); el.addEventListener("keydown", (e) => { if (e.key === "Escape") el.remove(); });
+}
+function pick(id) {
+  const t = frontTab(); if (!t.panes) { W.front = W.tabs.findIndex((x) => x.panes) ; }
+  const tt = frontTab(); const at = tt.panes.indexOf(id);
+  if (at >= 0) W.focus = at; else tt.panes[W.focus] = id;
+  tt.focus = W.focus; render();
+}
+
+// ---------- bar ----------
+document.querySelectorAll(".bar [data-v]").forEach((b) => b.onclick = () => { S.variant = b.dataset.v; syncUrl(); render(); });
+document.querySelectorAll(".bar [data-s]").forEach((b) => b.onclick = () => { loadScene(b.dataset.s); syncUrl(); });
+$("#palBtn").onclick = openPalette;
+$("#theme").onclick = () => { const r = document.documentElement; r.dataset.theme = r.dataset.theme === "dark" ? "light" : "dark"; syncUrl(); };
+function syncUrl() { try { const u = new URL(location.href); u.searchParams.set("variant", S.variant); u.searchParams.set("s", S.scene); u.searchParams.set("t", document.documentElement.dataset.theme || "light"); history.replaceState(null, "", u); } catch (e) {} }
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input")) return;
+  if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); return openPalette(); }
+  if (e.key === "Escape") closeMenu();
+  if (e.key === "[" || e.key === "]") { const n = ((+S.scene - 1 + (e.key === "]" ? 1 : 5)) % 6) + 1; loadScene(n); syncUrl(); }
+  if (e.key === "v") { S.variant = { A: "B", B: "C", C: "A" }[S.variant]; syncUrl(); render(); }
+  if (e.key === "t") $("#theme").click();
+});
+const q = new URLSearchParams(location.search);
+S.variant = /^[ABC]$/.test(q.get("variant") || "") ? q.get("variant") : "A";
+document.documentElement.dataset.theme = q.get("t") === "dark" ? "dark" : "light";
+window.addEventListener("resize", sizePanes);
+loadScene(SCENES[q.get("s")] ? q.get("s") : "1");
+</script>
+</body>
+</html>
