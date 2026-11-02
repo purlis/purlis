@@ -101,25 +101,18 @@ pub fn recheck(config: &Path) {
     }
 }
 
-/// The pools this machine keeps that `root`'s workspaces run their chats on.
+/// The pools this machine keeps that `root`'s workspaces run their chats on: the project's only
+/// while a workspace follows it (#4591).
 fn pools_of(
     store: &purlis_core::machine::Store,
     pools: &[purlis_core::runners::Pool],
     root: &Path,
 ) -> Vec<String> {
+    let workspaces = purlis_core::workspaces::Plane::open(root).workspaces().ok();
     let mut named: Vec<String> = store
-        .recent(root)
-        .map(|recent| {
-            recent
-                .chats_run_on
-                .values()
-                .chain(&recent.project_chats_run_on)
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
-    named.sort();
-    named.dedup();
+        .pools_named(root, workspaces.as_deref())
+        .into_iter()
+        .collect();
     named.retain(|pool| pools.iter().any(|kept| kept.name() == pool));
     named
 }
@@ -163,6 +156,16 @@ pub async fn projects_not_held() -> Result<Vec<ProjectNotHeld>, String> {
         Ok(now(config.as_deref()))
     })
     .await
+}
+
+/// A recheck lets go of every mark its own store doesn't name, so a test that reads the marks
+/// holds them alone.
+#[cfg(test)]
+pub(crate) fn rechecking() -> std::sync::MutexGuard<'static, ()> {
+    static RECHECKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    RECHECKING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

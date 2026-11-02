@@ -366,3 +366,36 @@ fn where_a_new_chat_would_run_is_said_with_the_level_that_decides_it() {
         (None, RunsOnLevel::ThisMachine, Vec::<String>::new())
     );
 }
+
+#[test]
+fn a_projects_mark_goes_once_its_last_workspace_following_its_pool_runs_here() {
+    let _marks = crate::notheld::rechecking();
+    let config = tempfile::tempdir().unwrap();
+    let plane = config.path().join("shop");
+    std::fs::create_dir_all(plane.join("workspaces").join("app")).unwrap();
+    purlis_core::runners::record_pool(
+        config.path(),
+        &purlis_core::runners::Pool::new(
+            "builds",
+            purlis_core::dockerpool::Image::pinned(IMAGE).unwrap(),
+            purlis_core::runners::Set::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(&plane, 1);
+        store
+            .set_project_chats_run_on(&plane, Some("builds"))
+            .unwrap();
+    })
+    .unwrap();
+    crate::notheld::not_held(&plane, "the runner is stopped");
+
+    set_chats_run_on_at(config.path(), &plane, "app", None).unwrap();
+    let marked = crate::notheld::now(Some(config.path()))
+        .into_iter()
+        .any(|one| std::path::Path::new(&one.root) == plane);
+    crate::notheld::held(&plane);
+    assert!(!marked, "nothing follows the project's pool now");
+}

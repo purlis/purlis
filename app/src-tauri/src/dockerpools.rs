@@ -966,6 +966,8 @@ pub fn follow_project_chats_run_on_at(
     })
     .map_err(|why| format!("Where this workspace's chats run was not kept: {why}"))?;
     set?;
+    // A project none of whose workspaces runs on a pool now is not marked for one (#4591).
+    crate::notheld::recheck(config);
     chats_run_on_at(config, plane, workspace)
 }
 
@@ -1011,6 +1013,8 @@ pub fn set_project_chats_run_on_at(
     })
     .map_err(|why| format!("Where this project's chats run was not kept: {why}"))?;
     set?;
+    // A project none of whose workspaces runs on a pool now is not marked for one (#4591).
+    crate::notheld::recheck(config);
     project_chats_run_on_at(config, plane)
 }
 
@@ -1037,6 +1041,8 @@ pub fn set_chats_run_on_at(
     })
     .map_err(|why| format!("Where this workspace's chats run was not kept: {why}"))?;
     set?;
+    // A project none of whose workspaces runs on a pool now is not marked for one (#4591).
+    crate::notheld::recheck(config);
     chats_run_on_at(config, plane, workspace)
 }
 

@@ -1685,6 +1685,28 @@ impl Store {
         }
     }
 
+    /// **The pools `plane`'s settings run a chat of one of its `workspaces` on** (#4591): each a
+    /// workspace names, and the project's while one of `workspaces` follows it. A project's pool
+    /// nothing follows runs nothing. `None` is a list of workspaces that could not be read, and
+    /// the project's pool counts then.
+    pub fn pools_named(&self, plane: &Path, workspaces: Option<&[String]>) -> BTreeSet<String> {
+        let Some(entry) = self.recent(plane) else {
+            return BTreeSet::new();
+        };
+        let mut named: BTreeSet<String> = entry.chats_run_on.values().cloned().collect();
+        let followed = |workspaces: &[String]| {
+            workspaces.iter().any(|workspace| {
+                self.chat_place(plane, workspace, None).level == PlaceLevel::Project
+            })
+        };
+        if let Some(pool) = &entry.project_chats_run_on
+            && workspaces.is_none_or(followed)
+        {
+            named.insert(pool.clone());
+        }
+        named
+    }
+
     /// **Whether `workspace` of `plane` has something on `pool` still to ask about** (#4591): a
     /// chat kept there, or branches still owed from there (#4590).
     pub fn ran_on(&self, plane: &Path, workspace: &str, pool: &str) -> bool {
