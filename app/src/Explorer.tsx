@@ -53,7 +53,14 @@ import { Breadcrumb, CockpitHeader, focusStands, useAheadBehind } from "./Cockpi
 import { carriedReference, type Referenced } from "./references";
 import { pickable, useFilePicks, type Pickable } from "./filePicks";
 import { useLastRead } from "./editor/lastRead";
-import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
+import {
+  touchingIn,
+  touchingOf,
+  touchSaid,
+  useTouchedBy,
+  useTouches,
+  type TouchingOf,
+} from "./touching";
 import { Button, IconButton, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import {
@@ -420,18 +427,18 @@ export function Explorer({
     [statuses],
   );
   const reads = useBranchFolders(plane, filesWorkspace, open);
-  const touches = useTouching(plane);
-  // What the chats are touching in each branch read here: at most a few hundred paths over the
-  // open branches, so worked out each render rather than remembered.
-  const touching = new Map<string, Touching>();
-  for (const ref of touches.length === 0 ? [] : branches) {
+  // What the chats are touching (#4730): held outside the explorer, which a touch does not
+  // draw again. Each row reads its own mark, worked out once per touch for each branch read here.
+  const touchStore = useTouches(plane);
+  const touching = touchingOf(touchStore, plane, (touches, key) => {
+    const ref = touches.length === 0 ? undefined : branches.find((one) => branchKey(one) === key);
+    if (ref === undefined) return undefined;
     const folder =
       ref.piece === null
         ? state.panels?.paths[ref.repo]
         : state.pieces[ref.repo]?.find((one) => one.piece === ref.piece)?.path;
-    const marks = touchingIn(touches, chats, folder);
-    if (marks.size > 0) touching.set(branchKey(ref), marks);
-  }
+    return touchingIn(touches, chats, folder);
+  });
   const icons = useFileIcons(plane, workspace);
   /** The file rows picked to hand a chat at once (#1151): let go when the files drawn are of
    *  somewhere else. */
@@ -993,7 +1000,7 @@ export function Explorer({
   const topMarks = topKey !== undefined && (
     <>
       {" "}
-      <TouchMark names={touching.get(topKey)?.get("")} />
+      <TouchMarkOf touching={touching} branch={topKey} path="" />
       <ChangeBadge marked={indexes.get(topKey)?.marks.get("")} folder />
     </>
   );
@@ -1861,8 +1868,9 @@ export type FilesOf = {
   filter: string;
   /** Each folder's {@link levelOf}, worked out once per render. */
   levels: Map<string, Level>;
-  /** What the chats are touching in each open branch, by {@link branchKey} (FM-6). */
-  touching?: ReadonlyMap<string, Touching>;
+  /** What the chats are touching in each open branch, by {@link branchKey} (FM-6), which each
+   *  row reads for itself (#4730). */
+  touching?: TouchingOf;
 };
 
 /** One row under a folder of a branch, as both the render and {@link folderNode} walk it. */
@@ -2019,6 +2027,19 @@ function rowSaid(
   ].join(" ");
 }
 
+/** The live mark on `path` of the branch `branch` names, drawn again only when it changes. */
+function TouchMarkOf({
+  touching,
+  branch,
+  path,
+}: {
+  touching: TouchingOf | undefined;
+  branch: string;
+  path: string;
+}) {
+  return <TouchMark names={useTouchedBy(touching, branch, path)} />;
+}
+
 /** The live mark on a file or folder a chat is touching right now (FM-6): a dot, and on hover
  *  and to a screen reader which chats. */
 function TouchMark({ names }: { names: readonly string[] | undefined }) {
@@ -2172,7 +2193,7 @@ function FilesRow({
   const open = isOpen(at.files, branch, always);
   const level = open ? levelOf(at.files, branch) : undefined;
   const marked = at.files.indexes.get(branchKey(branch))?.marks.get(branch.folder);
-  const touchedBy = at.files.touching?.get(branchKey(branch))?.get(branch.folder);
+  const touchedBy = useTouchedBy(at.files.touching, branchKey(branch), branch.folder);
   const picked = pickOf(at, branch.folder, true);
   const press = usePickingPress(at, picked, () => {
     if (!always) at.fold(key, !open);
@@ -2437,7 +2458,7 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
   const refused = entry.refused;
   // Where its preview was last read, so *Open in your editor* opens there (#1143).
   const line = useLastRead(at.plane, at.place, path);
-  const touchedBy = at.files.touching?.get(branchKey(branch))?.get(path);
+  const touchedBy = useTouchedBy(at.files.touching, branchKey(branch), path);
   // Refused and linked files keep their own marks: what they say is that this row is not an
   // ordinary file, which matters more than what kind of file it would be.
   const Mark = refused !== undefined ? FileX : entry.kind === "link" ? FileSymlink : null;

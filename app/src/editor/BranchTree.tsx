@@ -20,7 +20,14 @@ import { commands, type OpenChat, type PlaneId } from "../bindings";
 import { useFileIcons } from "../projectTheme";
 import { placeName, type Place } from "../pieceViews";
 import { useReferenceChats } from "../references";
-import { touchingIn, useTouching, type Touching, type Touches } from "../touching";
+import {
+  touchingIn,
+  touchingOf,
+  useHeldTouches,
+  useTouches,
+  type Touches,
+  type TouchingOf,
+} from "../touching";
 import { ToggleButton } from "../ui/button/Button";
 import { Tree } from "../ui/tree/Tree";
 
@@ -101,7 +108,7 @@ export function BranchTree({
     changedOnly: false,
     filter: "",
     levels: new Map(),
-    touching: touching.size === 0 ? undefined : new Map([[branchKey(place), touching]]),
+    touching,
   };
   const rows = fileTreeRows(workspace, top, files);
   const pickedRow = picked === undefined ? undefined : fileRow({ ...top, folder: picked });
@@ -207,8 +214,9 @@ export function BranchTree({
  * after the last ask. A chat is named as its tab is where the window lends the names
  * (`references.tsx`), else by the core's name for it.
  */
-function useTouchingHere(plane: PlaneId, place: Place): Touching {
-  const touches = useTouching(plane);
+function useTouchingHere(plane: PlaneId, place: Place): TouchingOf {
+  const store = useTouches(plane);
+  const touches = useHeldTouches(store, plane);
   const lent = useReferenceChats();
   const folder = useFolderOnce(plane, place, newest(touches));
   const open = useOpenChatsFor(plane, touches);
@@ -219,7 +227,10 @@ function useTouchingHere(plane: PlaneId, place: Place): Touching {
           ...chat,
           name: lent.chats.find((one) => one.session === chat.session)?.name ?? chat.name,
         }));
-  return touchingIn(touches, named, folder);
+  const key = branchKey(place);
+  return touchingOf(store, plane, (now, of) =>
+    of === key ? touchingIn(now, named, folder) : undefined,
+  );
 }
 
 /** How long after an ask that found nothing a touch asks again (#1605): long enough that a chat
