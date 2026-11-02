@@ -89,7 +89,14 @@ async function fromThePalette(typed: string, id: string, effort: Effort): Promis
   await box.waitForDisplayed({ timeout: 10_000 });
   await box.addValue(typed);
   effort.characters += typed.length;
-  const row = await $(`[id^="${id}"]`);
+  // A chat's row is the focused chat's own (#4753): every chat has one, by its number.
+  const chat = await browser.execute(
+    () =>
+      document.querySelector<HTMLElement>(
+        '.pane.focused[data-session], [data-testid="pane"][data-session]',
+      )?.dataset.session ?? "",
+  );
+  const row = await $(`[id="${id}${chat}"]`);
   await row.waitForExist({ timeout: 20_000, timeoutMsg: `the palette never offered ${typed}` });
   await browser.execute((one: HTMLElement) => one.click(), row);
   effort.presses += 1;

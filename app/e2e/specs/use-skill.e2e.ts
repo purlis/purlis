@@ -38,7 +38,11 @@ async function openThePickerFromThePalette(): Promise<void> {
   await browser.waitUntil(
     async () =>
       browser.execute(() => {
-        const row = document.querySelector<HTMLElement>('[id^="palette-row-chat.useskill:"]');
+        // The chat in front's own row: every chat has one now (#4753).
+        const chat = document.querySelector<HTMLElement>(
+          '.pane.focused[data-session], [data-testid="pane"][data-session]',
+        )?.dataset.session;
+        const row = document.getElementById(`palette-row-chat.useskill:${chat ?? ""}`);
         row?.click();
         return row !== null;
       }),
