@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793611480643,
+  "lastUpdate": 1793614775522,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36120,6 +36120,48 @@ window.BENCHMARK_DATA = {
             "value": 101.399142,
             "unit": "ms",
             "extra": "median of 5 runs: 100.478, 101.289, 101.399, 101.448, 102.166 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "48c302cfd7015ac1112fc32409751441edac1e71",
+          "message": "Runners: a draining runner found stopped keeps its home (#4630)\n\n* Runners: a test that a draining runner found stopped keeps its home\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CQQ13CQ7SMV5PQ0T8W4P7Z\nPurlis-Persona: steward\n\n* Runners: hold a draining runner that stopped during its drain\n\nA stopped runner was counted as having no chats, so a look removed it with its home. As a drain begins, note Docker's last stop; any later stop holds the runner until the person removes it in Devices, even where a link started it again. ADR 0089 amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CQQ13CQ7SMV5PQ0T8W4P7Z\nPurlis-Persona: steward\n\n* Runners: make a hold lasting, and note only the runners a drain takes\n\nReview found a later drain could note a held row's own stop and release it, and that an unnoted row woken by a link was asked. A hold is now a fact on the row. Replace holds a runner already stopped, Settings says a runner is held, and removing one ends its links.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CQQ13CQ7SMV5PQ0T8W4P7Z\nPurlis-Persona: steward\n\n* Runners: Replace dialog baselines, the downgrade note, and a test's wait\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CQQ13CQ7SMV5PQ0T8W4P7Z\nPurlis-Persona: steward\n\n* Runners: a held runner with no container left can be removed\n\nA press failed on a held row whose container a prune took, and a held row with only its home left was refused and reported at each look. The held check now comes first, and Replace's hold is tested.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CQQ13CQ7SMV5PQ0T8W4P7Z\nPurlis-Persona: steward\n\n* Runners: draw the held runner's dialog with the pool's, where every dialog is held\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CQQ13CQ7SMV5PQ0T8W4P7Z\nPurlis-Persona: steward\n\n* Runners: a held runner's sign-ins come only from a home still its own\n\nRemoving a held runner with no container could reach the carry without the check that the home is its own, and could forget a row Docker had only lost sight of. Both are now held to what a runner removed outside purlis is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6CQQ13CQ7SMV5PQ0T8W4P7Z\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T07:39:50Z",
+          "tree_id": "5bcff8eaa66f7bcda33eb0da58617bd28b5a0f8e",
+          "url": "https://github.com/purlis/purlis/commit/48c302cfd7015ac1112fc32409751441edac1e71"
+        },
+        "date": 1793614772379,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3258875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.318, 0.322, 0.326, 0.328, 0.329 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.51885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.515, 16.516, 16.519, 16.523, 16.544 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.23047600000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.567, 101.098, 102.230, 102.458, 102.555 ms"
           }
         ]
       }
