@@ -229,10 +229,17 @@ pub(crate) fn of(studio: &Studio) -> Vec<NeedsYou> {
         });
     }
 
-    // What the lints say of one of the plane's own skills a chat gets (#3780): its text is the
-    // person's to change.
+    // What the lints say of one of the plane's own skills a chat gets (#3780), or that is left
+    // out for that very lint (#4352): its text is the person's to change.
     for skill in &studio.skills {
-        if skill.lint.is_empty() || !level_origin(skill.level).of_the_plane() || !skill.on {
+        let left_out_for_its_lint = skill
+            .left_out
+            .as_ref()
+            .is_some_and(|why| skill.lint.contains(why));
+        if skill.lint.is_empty()
+            || !level_origin(skill.level).of_the_plane()
+            || !(skill.on || left_out_for_its_lint)
+        {
             continue;
         }
         let lines: Vec<String> = skill.lint.iter().map(|one| sentence(one)).collect();

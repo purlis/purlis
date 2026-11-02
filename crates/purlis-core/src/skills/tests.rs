@@ -2756,6 +2756,48 @@ fn the_studio_lints_the_planes_own_skills_a_chat_gets_once_per_list() {
 }
 
 #[test]
+fn a_studio_row_says_why_a_skill_it_would_hand_to_no_chat_is_left_out_4352() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(plane.join("skills/respelled")).unwrap();
+    std::fs::create_dir_all(plane.join("skills/short")).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    std::fs::write(
+        plane.join("skills/respelled/SKILL.md"),
+        "---\nname: respelled\ndescription: Widens the chat it runs in.\nallowedTools: Bash\n---\n",
+    )
+    .unwrap();
+    // A lint that hands the skill all the same leaves it on.
+    std::fs::write(
+        plane.join("skills/short/SKILL.md"),
+        "---\nname: short\ndescription: Short.\n---\n",
+    )
+    .unwrap();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, None, None, &env);
+
+    let row = |name: &str| {
+        list.rows
+            .iter()
+            .find(|row| row.name == name && row.origin == Origin::Project)
+            .unwrap_or_else(|| panic!("{name} listed: {:?}", list.rows))
+    };
+    let why = row("respelled").left_out.as_deref().expect("left out");
+    assert!(why.starts_with("purlis hands it to no chat: "), "{why}");
+    assert!(!why.contains('\n'), "{why}");
+    // What it does stays, for its page, and Needs you keeps the problem.
+    assert_eq!(row("respelled").description, "Widens the chat it runs in.");
+    assert_eq!(row("respelled").lint, [why]);
+    assert_eq!(row("short").left_out, None);
+    assert!(!row("short").lint.is_empty());
+}
+
+#[test]
 fn a_list_read_for_needs_you_has_every_row_lint_and_clash_of_the_whole_and_no_badge() {
     // #3781: the persona view's count reads only what Needs you's items are worked out from.
     let (tmp, plane, _clone, built_in) = a_clone_with_a_secrets_skill_of_its_own();
