@@ -3906,6 +3906,24 @@ fn a_browser_logins_values_are_read_for_the_tool_the_chats_start_armed() {
     assert!(!format!("{login:?}").contains(TOKEN));
 }
 
+/// A private key is filled on no page, however its login came to be declared (#4595).
+#[test]
+fn a_private_key_is_filled_as_no_login() {
+    let project = project();
+    // Spelled in parts, so this fixture reads as no key to a scan.
+    let key = format!("-----BEGIN {0} KEY-----\nabc\n-----END {0} KEY-----\n", "PRIVATE");
+    std::fs::write(
+        project.path().join("team.json"),
+        serde_json::json!({"TOKEN": key, "NAME": "qa-person"}).to_string(),
+    )
+    .unwrap();
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "TOKEN", Some("NAME"))];
+    let why = login_for(&asker, "shop-login", false).unwrap_err();
+    assert!(why.contains("private key"), "{why}");
+    assert!(!why.contains("BEGIN"), "{why}");
+}
+
 /// What no sandboxed chat is handed a login for (#2016): a login its start did not arm, a tool
 /// that is no login, and a vault its persona may not use. Each refusal names no value.
 #[test]

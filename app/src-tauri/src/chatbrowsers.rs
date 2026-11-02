@@ -3127,8 +3127,8 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         .take(session, asker.persona.as_deref(), name)
     {
         // Policy changed since the press holds a grant too.
-        let locks = purlis_core::sandbox::policy::Locks::of(held.root());
-        if let Some(why) = locks.refuses_tool(asker.persona.as_deref().unwrap_or_default(), name) {
+        let persona = asker.persona.as_deref().unwrap_or_default();
+        if let Some(why) = crate::loginasks::refused_now(held.root(), persona, &tool) {
             return Err(why);
         }
         let (login, identity) = purlis_core::secrets::brokered::granted_login(&asker, &tool)?;
@@ -3243,8 +3243,17 @@ fn pool_login_of(
         }
         return Err(why);
     }
+    // The opt-in may have waited: what's read is what it was asked about, as policy says now.
+    if let Some(tool) = &granted
+        && let Some(why) = crate::loginasks::refused_now(held.root(), &persona, tool)
+    {
+        return Err(why);
+    }
     let taken = grants.take(session, asker.persona.as_deref(), name);
     let (login, identity) = match (&granted, &taken) {
+        (Some(granted), Some(taken)) if granted != taken => {
+            return Err(format!("login {name} changed, so nothing was filled"));
+        }
         (Some(_), None) => {
             return Err(format!(
                 "login {name} was used already, so nothing was filled"

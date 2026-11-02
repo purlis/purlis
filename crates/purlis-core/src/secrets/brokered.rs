@@ -1300,17 +1300,6 @@ pub fn granted_login(
 ) -> Result<(purlis_session_protocol::browsing::LogIn, String), String> {
     let (ready, ctx) = granted_ready(asker, tool);
     let (login, identity) = read_login(asker, &tool.name, &ready, &ctx)?;
-    // The mark is by the name in a vault, and one item may have two: no private key is filled.
-    let held = std::iter::once(&login.password).chain(login.user.as_ref());
-    if held
-        .into_iter()
-        .any(|value| crate::sandbox::tools::mint::a_private_key(value.expose()))
-    {
-        return Err(format!(
-            "{} is a private key, so purlis filled nothing",
-            tool.name
-        ));
-    }
     Ok((
         purlis_session_protocol::browsing::LogIn {
             suggested: true,
@@ -1370,11 +1359,21 @@ fn read_login(
         })
     };
     let identity = identity_of_ready(asker, name, ready)?;
+    let user = user_key.map(read).transpose()?;
+    let password = read(pass_key)?;
+    // The `mint` mark is by a name in a vault, and one item may have two: no private key is filled
+    // on a page, whoever declared it, and Always may have saved the line that names it.
+    if std::iter::once(&password)
+        .chain(user.as_ref())
+        .any(|value| crate::sandbox::tools::mint::a_private_key(value.expose()))
+    {
+        return Err(format!("{name} is a private key, so purlis filled nothing"));
+    }
     Ok((
         LogIn {
             address: login.url.clone(),
-            user: user_key.map(read).transpose()?,
-            password: read(pass_key)?,
+            user,
+            password,
             keep: None,
             identity: Some(identity.clone()),
             suggested: false,

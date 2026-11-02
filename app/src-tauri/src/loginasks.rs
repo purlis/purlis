@@ -146,12 +146,38 @@ impl Grants {
             .map(|(one, _)| one.clone())
     }
 
-    /// Replaces the proposal of a login that waits, as the person typed it or as the project
-    /// reads now. Only the app's own answer calls this: no chat's call reaches it.
-    fn redraw(&self, id: u32, proposal: Proposal) {
+    /// Draws a login that waits anew, whole, as the person typed it or as the project reads now.
+    /// Only the app's own answer calls this: no chat's call reaches it.
+    fn redraw(&self, id: u32, judged: Judged) {
         if let Some((one, _)) = self.lock().waits.iter_mut().find(|(one, _)| one.id == id) {
-            one.proposal = proposal;
+            one.proposal = judged.proposal;
+            one.vault_too = judged.vault_too;
+            one.no_always = judged.no_always;
         }
+    }
+
+    /// **Allows the wait numbered `id`, in one step**: the login held for its chat and its call
+    /// told, or nothing where it waits no more, so nothing lands after its chat has gone.
+    fn allow(&self, id: u32, persona: &str, tool: Tool, once: bool) -> bool {
+        let mut inner = self.lock();
+        let Some(at) = inner.waits.iter().position(|(one, _)| one.id == id) else {
+            return false;
+        };
+        let (wait, tell) = inner.waits.remove(at);
+        inner
+            .grants
+            .retain(|one| !(one.session == wait.session && one.tool.name == tool.name));
+        inner.filled.push(tool.clone());
+        inner.grants.push(Grant {
+            session: wait.session,
+            persona: persona.to_owned(),
+            tool,
+            once,
+        });
+        if let Some(tell) = tell {
+            let _ = tell.send(Heard::Allowed);
+        }
+        true
     }
 
     /// Ends the wait numbered `id` with `heard`: answers whether it waited.
@@ -180,21 +206,6 @@ impl Grants {
         let inner = self.lock();
         let mine = || inner.kept.iter().filter(|(chat, _, _)| *chat == session);
         mine().count() >= KEPT_AT_MOST || mine().any(|(_, name, on)| name == login && on == origin)
-    }
-
-    /// Holds `tool` for chat `session`, as `persona`.
-    fn grant(&self, session: u32, persona: &str, tool: Tool, once: bool) {
-        let mut inner = self.lock();
-        inner
-            .grants
-            .retain(|one| !(one.session == session && one.tool.name == tool.name));
-        inner.filled.push(tool.clone());
-        inner.grants.push(Grant {
-            session,
-            persona: persona.to_owned(),
-            tool,
-            once,
-        });
     }
 
     /// The login `name` the person allowed for chat `session` running as `persona`.
@@ -361,6 +372,18 @@ pub fn before_the_login(
             no(NOT_ANSWERED.to_owned())
         }
     }
+}
+
+/// **Why a login allowed from its notice may not be filled now**, where policy changed since the
+/// press: a persona's tools forbidden, or a vault its persona isn't tagged for that policy no
+/// longer lets the person allow.
+pub fn refused_now(root: &Path, persona: &str, tool: &Tool) -> Option<String> {
+    let locks = Locks::of(root);
+    locks.refuses_tool(persona, &tool.name).or_else(|| {
+        let ctx = Ctx::new(root, Env::from_process());
+        brokered::not_tagged(&ctx, Some(persona), &tool.vault)?;
+        locks.vault_grants_refused()
+    })
 }
 
 /// A suggestion as the project reads it now.
@@ -545,7 +568,7 @@ pub fn answer(
             "purlis would fill this on {}. Check it, then choose again.",
             judged.proposal.origin
         );
-        grants.redraw(id, judged.proposal);
+        grants.redraw(id, judged);
         return Ok(Pressed::DrawnAgain { said });
     }
     if press == Press::Always
@@ -586,8 +609,9 @@ pub fn answer(
             proposal.origin
         )
     };
-    grants.grant(session, &proposal.persona, tool, once);
-    grants.end(id, Heard::Allowed);
+    if !grants.allow(id, &proposal.persona, tool, once) {
+        return Err(NO_MORE.to_owned());
+    }
     Ok(Pressed::Done { said })
 }
 

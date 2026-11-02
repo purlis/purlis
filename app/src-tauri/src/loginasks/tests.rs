@@ -257,7 +257,27 @@ fn a_warning_that_came_up_while_the_notice_was_drawn_is_drawn_before_a_press_cou
     let dir = project("");
     let grants = Grants::default();
     let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
-    grants.grant(9, "qa", other_site(dir.path()), true);
+    let other = other_site(dir.path());
+    let (other_id, _other_heard) = grants
+        .raise(LoginWait {
+            id: 0,
+            session: 9,
+            proposal: judged(
+                dir.path(),
+                "qa",
+                "other",
+                &suggested("https://other.example.test/"),
+                &[],
+            )
+            .expect("judged")
+            .proposal,
+            since: 2,
+            vault_too: false,
+            no_always: None,
+            pool: None,
+        })
+        .expect("raised");
+    assert!(grants.allow(other_id, "qa", other, true));
     grants.take(9, Some("qa"), "other");
     let audited = Audited::default();
     let drawn = answered(
@@ -477,6 +497,17 @@ fn a_mint_mark_added_while_the_notice_is_up_refuses_the_press() {
         )
         .is_err()
     );
+    assert!(tool_of(&grants, "shop-login").is_none());
+}
+
+#[test]
+fn a_press_that_lands_after_its_chat_closed_holds_nothing() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    let tool = proposal.tool().expect("a tool");
+    grants.forget(7);
+    assert!(!grants.allow(id, "qa", tool, false));
     assert!(tool_of(&grants, "shop-login").is_none());
 }
 
