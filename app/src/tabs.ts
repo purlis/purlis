@@ -1262,6 +1262,18 @@ function viewsFollow(tabs: Tabs, from: number, to: number): Tabs {
   return byId === tabs.byId ? tabs : { ...tabs, byId };
 }
 
+/**
+ * **The chats open in this window, as one key** (#4729): every session a tab's pane holds, in
+ * ascending order. Equal for two `Tabs` that differ only in which tab is in front, how they are
+ * ordered or split, or what a pane shows in place of its own chat, so what is read again when a
+ * chat is opened or closed is not read again for a switch.
+ */
+export function openChatsKey(tabs: Tabs): string {
+  const open = new Set<number>();
+  for (const id of tabs.order) for (const { session } of panesOf(tabs, id)) open.add(session);
+  return [...open].sort((one, other) => one - other).join(",");
+}
+
 /** The sessions with a pane on screen: the only ones a terminal is drawing. */
 export function visibleSessions(tabs: Tabs): number[] {
   return tabs.inFront === undefined ? [] : shownIn(tabs, tabs.inFront).map((one) => one.session);

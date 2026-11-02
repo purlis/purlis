@@ -263,6 +263,7 @@ import {
   chatOf,
   contentsOf,
   findView,
+  openChatsKey,
   openTab,
   openTabBehind,
   openView,
@@ -1907,15 +1908,20 @@ export const PlaneView = memo(function PlaneView({
 
   // The sidebar is read from the plane, and re-read whenever the chats change: the plane is a
   // directory the operator also edits by hand and another charter process writes, so there is
-  // nothing to invalidate a cache of it. `tabs` is the dependency because opening or ending a
-  // chat is what this window can change about the answer, and `sidebarChanges` because the core
-  // says when something else changed it (charter-app#264) — a change of a kind the sidebar
-  // reads (FD-10).
+  // nothing to invalidate a cache of it. `openHere` is the dependency because opening or ending
+  // a chat is what this window can change about the answer, and `sidebarChanges` because the
+  // core says when something else changed it (charter-app#264) — a change of a kind the sidebar
+  // reads (FD-10). **Not `tabs`** (#4729): a switch between chats already open changes the tabs
+  // and not the answer, and each switch read the plane again and drew the window again.
+  //
+  // **An answer equal to the one held is not drawn** (#4729): the state keeps the object it
+  // holds, so nothing that reads the sidebar is drawn again for a read that found no change.
   //
   // **Only the newest read is drawn.** The core reads the sidebar off the window's thread
   // (SC-2), so two reads can answer in either order, and one asked before a workspace was
   // renamed must not put it back after the read that saw the rename. `gone` is set when a
   // newer read is asked, which is when this effect runs again.
+  const openHere = useMemo(() => openChatsKey(tabs), [tabs]);
   useEffect(() => {
     let gone = false;
     void commands
@@ -1932,7 +1938,9 @@ export const PlaneView = memo(function PlaneView({
           setSidebar(undefined);
           return;
         }
-        setSidebar(next);
+        setSidebar((held) =>
+          held !== undefined && JSON.stringify(held) === JSON.stringify(next) ? held : next,
+        );
         // Focus follows the plane rather than being guessed: whichever workspace was picked,
         // while it still exists — and otherwise **the workspace of the chat in front**,
         // because the strip below shows that workspace's chats and a strip that opened on
@@ -1976,12 +1984,12 @@ export const PlaneView = memo(function PlaneView({
   }, [
     change,
     sidebarChanges,
+    openHere,
     plane,
     replan,
     sandboxMoved,
     startedIn,
     stopsEnded,
-    tabs,
     tasksMoved,
   ]);
 
