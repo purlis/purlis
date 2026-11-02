@@ -9661,6 +9661,7 @@ export const PlaneView = memo(function PlaneView({
               // **Skills** (#3266): this workspace's skills by level, from the Skill studio's own
               // answer, drawn only while its preview is on; the side falls back to Chats meanwhile.
               skills: studioOn && skillsDrawn && (
+                <P4351 id="skills">
                 <SkillsView
                   plane={plane}
                   workspace={ofWorkspace}
@@ -9670,6 +9671,7 @@ export const PlaneView = memo(function PlaneView({
                   onShowInExplorer={revealInExplorer}
                   onRestart={askRestart}
                 />
+                </P4351>
               ),
               // **Changes** (#1676, B-7): what the bottom region drew, the same content.
               changes: (
