@@ -715,6 +715,20 @@ describe("A router's grade running, a page on Routing (#4222)", () => {
     expect(told.ended).not.toHaveBeenCalled();
   });
 
+  it("offers the way back at the foot once it has ended (#4338)", async () => {
+    mockIPC(
+      (cmd) =>
+        cmd === "router_grade_running"
+          ? step({ ended: "whole", said: "It was not recorded." })
+          : null,
+      { shouldMockEvents: true },
+    );
+    renderRunning();
+    await screen.findByTestId("router-grade-ended");
+    expect(screen.queryByRole("button", { name: "Leave it running" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Back to the list" })).toHaveLength(2);
+  });
+
   it("says a grade that ended while the page was away, and opens its scorecard", async () => {
     mockIPC((cmd) => (cmd === "router_grade_running" ? null : null), { shouldMockEvents: true });
     const told = renderRunning();

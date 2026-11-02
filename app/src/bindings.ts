@@ -2174,9 +2174,48 @@ export const commands = {
 	/**
 	 *  **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
 	 *  skill's Grades tab draws its bars and its list from, with whether it has trigger tests and the
-	 *  grade of it running now (#3928), and what a running grade's page starts from.
+	 *  grade of it running now (#3928).
 	 */
 	skillGrades: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<SkillGrades, string>(__TAURI_INVOKE("skill_grades", { plane, level, skill })),
+	/**
+	 *  **Where the skill's grade `grade` is now** (#4338): its latest step while it runs, else `None`
+	 *  (its scorecard then says how it ended). Read only, from this app's own memory of its grades,
+	 *  as Stop is.
+	 */
+	skillGradeRunning: (plane: PlaneId, grade: string) => typedError<{
+	plane: PlaneId,
+	skill: string,
+	/**
+	 *  The copy it grades, by its level (#3978): a same-named copy at another level is another
+	 *  skill, whose tab a step of this one moves nothing on.
+	 */
+	level: SkillLevel,
+	grade: string,
+	ran: number,
+	of: number,
+	/**  What its chats have spent so far, where they said, and the cap it is held to. */
+	tokens: number | null,
+	/**
+	 *  What its chats have cost so far, in dollars, where they said (S6): the running page's
+	 *  spend against the grade's dollar limit.
+	 */
+	cost_usd: number | null,
+	/**  The dollar limit it is held to, where it has one. */
+	limit_usd: number | null,
+	cap: number | null,
+	/**
+	 *  How many of its chats asked the person something and were ended there (SK-59, #3239):
+	 *  said in the grade, as none of them is a run.
+	 */
+	asked: number,
+	/**  How it ended, once it has. */
+	ended: GradeEnded | null,
+	/**
+	 *  What the window says of its end: why its chats did not start, or that it was not
+	 *  recorded.
+	 */
+	said: string | null,
+} | null, string>(__TAURI_INVOKE("skill_grade_running", { plane, grade })),
 	/**
 	 *  **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
 	 *  operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
