@@ -179,8 +179,8 @@ function linkOnAnotherEngine(link: PoolLink | "asking" | undefined): boolean {
  *
  * **It names what goes back to this machine** (#4678, the person's ruling of 2026-11-02): each
  * project and workspace that names the pool, by name, which removing it sets to This machine
- * (ADR 0078, D-4536-3). Where none does, it says nothing of them. While purlis reads them, or
- * where it could not, it says what is true of any: they go back to this machine.
+ * (ADR 0078, D-4536-3). Where none does, it says nothing of them. Remove pool waits for the
+ * read, and where purlis could not read them it says what is true of any, and why.
  */
 export function RemovePool({
   name,
@@ -214,7 +214,13 @@ export function RemovePool({
           <NamedByLine named={named} />
         </>
       }
-      main={{ children: "Remove pool", variant: "danger", onPress: onRemove }}
+      // Pressed only once the question names what goes back (#4678).
+      main={{
+        children: "Remove pool",
+        variant: "danger",
+        onPress: onRemove,
+        isDisabled: named.state === "reading",
+      }}
     />
   );
 }
@@ -222,10 +228,8 @@ export function RemovePool({
 /** What Remove pool's question says of the projects and workspaces that name the pool. */
 function NamedByLine({ named }: { named: NamedBy }) {
   const said = useId();
-  if (named.state === "reading")
-    return (
-      <p className="came-back">Workspaces and projects set to run on it go back to this machine.</p>
-    );
+  // The one local file is read in a moment: nothing is said before it is.
+  if (named.state === "reading") return null;
   if (named.state === "trouble")
     return (
       <p className="came-back">
@@ -245,7 +249,7 @@ function NamedByLine({ named }: { named: NamedBy }) {
         {named.named.flatMap((one) => [
           ...(one.project
             ? [
-                <li key={`${one.path}\0project`}>
+                <li key={`${one.path}\0p`}>
                   {"Project "}
                   <bdi>{one.name}</bdi>
                   {", and the workspaces that follow it"}
@@ -253,7 +257,7 @@ function NamedByLine({ named }: { named: NamedBy }) {
               ]
             : []),
           ...one.workspaces.map((workspace) => (
-            <li key={`${one.path}\0${workspace}`}>
+            <li key={`${one.path}\0w\0${workspace}`}>
               {"Workspace "}
               <bdi>{workspace}</bdi>
               {" in "}

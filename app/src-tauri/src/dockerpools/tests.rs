@@ -210,7 +210,7 @@ fn what_names_a_pool_is_listed_by_project_with_its_directory_name() {
     })
     .unwrap();
     assert_eq!(
-        pool_named_by_on(config.path(), "builds"),
+        pool_named_by_on(config.path(), "builds").unwrap(),
         [PoolNamedBy {
             path: "/planes/shop".to_owned(),
             name: "shop".to_owned(),
@@ -218,7 +218,7 @@ fn what_names_a_pool_is_listed_by_project_with_its_directory_name() {
             workspaces: vec!["api".to_owned()],
         }]
     );
-    assert_eq!(pool_named_by_on(config.path(), "gone"), []);
+    assert_eq!(pool_named_by_on(config.path(), "gone").unwrap(), []);
 }
 
 #[test]

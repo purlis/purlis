@@ -1111,10 +1111,11 @@ pub struct PoolNamedBy {
     pub workspaces: Vec<String>,
 }
 
+/// What names pool `name` on `config`, project by project, or why this machine's store could not
+/// be read.
 #[cfg(unix)]
-/// What names pool `name` on `config`, project by project.
-pub fn pool_named_by_on(config: &std::path::Path, name: &str) -> Vec<PoolNamedBy> {
-    purlis_core::pools::named_by(config, name)
+pub fn pool_named_by_on(config: &std::path::Path, name: &str) -> Result<Vec<PoolNamedBy>, String> {
+    Ok(purlis_core::pools::named_by(config, name)?
         .into_iter()
         .map(|(plane, naming)| PoolNamedBy {
             name: plane.file_name().map_or_else(
@@ -1125,7 +1126,7 @@ pub fn pool_named_by_on(config: &std::path::Path, name: &str) -> Vec<PoolNamedBy
             project: naming.project,
             workspaces: naming.workspaces,
         })
-        .collect()
+        .collect())
 }
 
 /// **What names a pool** (#4678): the projects and workspaces its removal sets back to this machine.
@@ -1135,7 +1136,7 @@ pub async fn pool_named_by(name: String) -> Result<Vec<PoolNamedBy>, String> {
     #[cfg(unix)]
     {
         crate::off_the_window("reading what names the pool", move || {
-            Ok(pool_named_by_on(&config_root()?, &name))
+            pool_named_by_on(&config_root()?, &name)
         })
         .await
     }

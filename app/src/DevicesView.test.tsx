@@ -388,6 +388,10 @@ describe("DevicesView", () => {
       }),
     );
     const again = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    // Remove pool is pressed once the question names what goes back (#4678).
+    await waitFor(() =>
+      expect(within(again).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
     await userEvent.click(within(again).getByRole("button", { name: "Remove pool" }));
     await waitFor(() => expect(removed).toEqual(["builds"]));
     // What could not be removed is said, and every device is read again.
@@ -427,6 +431,10 @@ describe("DevicesView", () => {
       await within(builds).findByRole("button", { name: "Remove pool builds" }),
     );
     const asking = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
-    await waitFor(() => expect(within(asking).queryByText(/go back to this machine/)).toBeNull());
+    // Once the question has read what names the pool, it says nothing of any.
+    await waitFor(() =>
+      expect(within(asking).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
+    expect(within(asking).queryByText(/go back to this machine/)).toBeNull();
   });
 });

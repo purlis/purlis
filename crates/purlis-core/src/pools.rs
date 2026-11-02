@@ -190,17 +190,23 @@ pub fn remove(
 /// **What names pool `name` on this machine** (#4678), plane by plane in the order this machine
 /// keeps them: the projects and workspaces [`remove`] sets back to this machine, which its
 /// question names before anything is removed. A plane where nothing names it isn't listed.
+/// Refused, with why, where this machine's store can't be read at all: nothing there is known,
+/// so it is never said that nothing names the pool.
 pub fn named_by(
     config_root: &Path,
     name: &str,
-) -> Vec<(std::path::PathBuf, crate::machine::NamingPool)> {
-    crate::machine::read(config_root)
+) -> Result<Vec<(std::path::PathBuf, crate::machine::NamingPool)>, String> {
+    let loaded = crate::machine::read(config_root);
+    if let Some(why) = loaded.unreadable {
+        return Err(why);
+    }
+    Ok(loaded
         .store
         .recents
         .iter()
         .map(|recent| (recent.plane.clone(), recent.naming_pool(name)))
         .filter(|(_, naming)| !naming.is_empty())
-        .collect()
+        .collect())
 }
 
 /// Where the person removes a pool, as Settings names it.

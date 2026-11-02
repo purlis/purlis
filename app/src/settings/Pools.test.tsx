@@ -286,6 +286,10 @@ describe("You › This machine › Pools", () => {
     await userEvent.click(await within(group).findByRole("button", { name: "Remove pool builds" }));
     const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
     expect(removed).toEqual([]);
+    // Remove pool is pressed once the question names what goes back (#4678).
+    await waitFor(() =>
+      expect(within(asked).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
     await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
     await waitFor(() => expect(removed).toEqual(["builds"]));
   });
@@ -316,7 +320,11 @@ describe("You › This machine › Pools", () => {
     const group = await screen.findByRole("region", { name: "Pools" });
     await userEvent.click(await within(group).findByRole("button", { name: "Remove pool builds" }));
     const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
-    await waitFor(() => expect(within(asked).queryByText(/go back to this machine/)).toBeNull());
+    // Once the question has read what names the pool, it says nothing of any.
+    await waitFor(() =>
+      expect(within(asked).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
+    expect(within(asked).queryByText(/go back to this machine/)).toBeNull();
     expect(within(asked).getByText(/There is no undo\./)).toBeInTheDocument();
   });
 
@@ -689,6 +697,10 @@ describe("You › This machine › Pools", () => {
 
     await userEvent.click(within(notice).getByRole("button", { name: "Remove" }));
     asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    // Remove pool is pressed once the question names what goes back (#4678).
+    await waitFor(() =>
+      expect(within(asked).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
     await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
 
     await waitFor(() => expect(removed).toEqual(["builds"]));
@@ -1122,6 +1134,10 @@ describe("A cluster pool (#3292)", () => {
     expect(
       within(asked).getByText(/claim is deleted from your team's cluster/),
     ).toBeInTheDocument();
+    // Remove pool is pressed once the question names what goes back (#4678).
+    await waitFor(() =>
+      expect(within(asked).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
     await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
     await waitFor(() => expect(removed).toEqual(["team"]));
   });

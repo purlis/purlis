@@ -40,7 +40,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /** The keyboard starts on Cancel, and Tab goes on to Remove pool. */
-async function walked(alert: HTMLElement, userEvent: { tab: () => Promise<void> }) {
+async function walked(
+  alert: HTMLElement,
+  userEvent: { tab: (options?: { shift?: boolean }) => Promise<void> },
+) {
   await untilFocused(
     () => within(alert).getByRole("button", { name: "Cancel" }),
     "Remove pool: the keyboard starts on Cancel",
@@ -52,6 +55,21 @@ async function walked(alert: HTMLElement, userEvent: { tab: () => Promise<void> 
     "Tab goes on to Remove pool",
   );
   expectFocusInSight();
+  await userEvent.tab({ shift: true });
+  await untilFocused(
+    () => within(alert).getByRole("button", { name: "Cancel" }),
+    "Shift+Tab goes back to Cancel",
+  );
+}
+
+/** Esc answers Cancel, and the question goes. */
+async function dismissed(userEvent: { keyboard: (keys: string) => Promise<void> }) {
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() =>
+    expect(
+      within(document.body).queryByRole("alertdialog", { name: "Remove pool builds?" }),
+    ).toBeNull(),
+  );
 }
 
 /** **A project and a workspace name the pool**: the question names both before anything goes. */
@@ -76,6 +94,7 @@ export const NamesWhatGoesBack: Story = {
     await expect(alert).toHaveAccessibleDescription(/Workspace site in docs/);
     await walked(alert, userEvent);
     await pictureNow();
+    await dismissed(userEvent);
   },
 };
 
@@ -84,9 +103,13 @@ export const NothingNamesIt: Story = {
   play: async ({ userEvent }) => {
     const page = within(document.body);
     const alert = await page.findByRole("alertdialog", { name: "Remove pool builds?" });
-    await waitFor(() => expect(within(alert).queryByText(/go back to this machine/)).toBeNull());
+    await waitFor(() =>
+      expect(within(alert).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
+    await expect(within(alert).queryByText(/go back to this machine/)).toBeNull();
     await expect(within(alert).queryByRole("list")).toBeNull();
     await walked(alert, userEvent);
     await pictureNow();
+    await dismissed(userEvent);
   },
 };

@@ -1638,6 +1638,7 @@ export const commands = {
 	followProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	projectChatsRunOn: __WINDOW_ONLY_RESULT,
 	setProjectChatsRunOn: __WINDOW_ONLY_RESULT,
+	poolNamedBy: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
 	setSendLeavesOut: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
@@ -8579,6 +8580,21 @@ export type PoolLink =
  *  there still, so it is not said to be removed and Make the runner again is not offered.
  */
 { state: "on_another_engine" };
+
+/**
+ *  **A project, and its workspaces, that name a pool** (#4678): what removing the pool sets back
+ *  to this machine, which its question names first.
+ */
+export type PoolNamedBy = {
+	/**  The path this machine keeps the project under. */
+	path: string,
+	/**  What to call it: the directory's own name. */
+	name: string,
+	/**  Whether the project itself names the pool. */
+	project: boolean,
+	/**  The workspaces of it that name the pool, by name. */
+	workspaces: string[],
+};
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {

@@ -304,7 +304,7 @@ fn a_workspace_set_to_run_on_a_pool_runs_there_once_the_pool_is_kept_and_nowhere
     })
     .unwrap();
     assert_eq!(
-        named_by(config.path(), "first"),
+        named_by(config.path(), "first").unwrap(),
         [(
             plane.to_path_buf(),
             crate::machine::NamingPool {
@@ -317,7 +317,17 @@ fn a_workspace_set_to_run_on_a_pool_runs_there_once_the_pool_is_kept_and_nowhere
     remove(config.path(), &fake.docker(), "first", None).unwrap();
     assert_eq!(runs_on(config.path(), plane, Some("ide")), Ok(None));
     assert!(workspaces_on_pools(config.path(), plane).is_empty());
-    assert!(named_by(config.path(), "first").is_empty());
+    assert!(named_by(config.path(), "first").unwrap().is_empty());
+}
+
+#[test]
+fn a_machine_store_that_cannot_be_read_never_says_nothing_names_a_pool() {
+    let config = tempfile::tempdir().unwrap();
+    let elsewhere = config.path().join("elsewhere.json");
+    std::fs::write(&elsewhere, br#"{"version":1,"at":0,"recents":[]}"#).unwrap();
+    std::fs::create_dir_all(crate::machine::dir(config.path())).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, crate::machine::file(config.path())).unwrap();
+    assert!(named_by(config.path(), "first").is_err());
 }
 
 /// The runner image of the desktop's new version, purlis's own.
