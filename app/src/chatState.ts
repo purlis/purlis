@@ -11,6 +11,7 @@
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
+import { heldStore } from "./heldStore";
 import { listen } from "./here";
 
 import {
@@ -569,21 +570,16 @@ export type Chats = { readonly store: ChatStore; readonly plane: PlaneId | undef
 /** A store that is told things, which is the one `useChats` keeps. */
 type HeldStore = ChatStore & { change: (how: (was: Known) => Known) => void };
 
+/** Told to its readers once a frame, so a burst of moves is one commit (`heldStore.ts`). */
 function chatStore(): HeldStore {
-  let known: Known = { states: nothingKnown };
-  const listeners = new Set<() => void>();
+  const held = heldStore<Known>({ states: nothingKnown });
   return {
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => void listeners.delete(listener);
+    subscribe: held.subscribe,
+    statesFor: (plane) => {
+      const known = held.held();
+      return known.plane === plane ? known.states : nothingKnown;
     },
-    statesFor: (plane) => (known.plane === plane ? known.states : nothingKnown),
-    change: (how) => {
-      const now = how(known);
-      if (now === known) return;
-      known = now;
-      for (const listener of [...listeners]) listener();
-    },
+    change: held.change,
   };
 }
 

@@ -22,6 +22,7 @@ import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-s
 import { listen } from "./here";
 import { markOf, useChatsHere, useChatsSelect } from "./chatState";
 import { commands, type ChatDoing, type Doing, type PlaneId } from "./bindings";
+import { heldStore } from "./heldStore";
 
 /** What is known of what the chats are doing. */
 export type Doings = {
@@ -141,21 +142,16 @@ export type DoingsOf = { readonly store: DoingStore; readonly plane: PlaneId | u
 
 type HeldStore = DoingStore & { change: (how: (was: Known) => Known) => void };
 
+/** Told to its readers once a frame, so a burst of tellings is one commit (`heldStore.ts`). */
 function doingStore(): HeldStore {
-  let known: Known = { doings: NOTHING };
-  const listeners = new Set<() => void>();
+  const held = heldStore<Known>({ doings: NOTHING });
   return {
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => void listeners.delete(listener);
+    subscribe: held.subscribe,
+    doingsFor: (plane) => {
+      const known = held.held();
+      return known.plane === plane ? known.doings : NOTHING;
     },
-    doingsFor: (plane) => (known.plane === plane ? known.doings : NOTHING),
-    change: (how) => {
-      const now = how(known);
-      if (now === known) return;
-      known = now;
-      for (const listener of [...listeners]) listener();
-    },
+    change: held.change,
   };
 }
 

@@ -15,6 +15,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { listen } from "./here";
 import { commands, type ChatSkillRun, type OpenRun, type PlaneId } from "./bindings";
+import { heldStore } from "./heldStore";
 
 /** The open run of each chat, by session. A session that is not here has none open. */
 export type OpenRuns = Readonly<Record<number, OpenRun>>;
@@ -78,21 +79,16 @@ export type RunsOf = { readonly store: RunStore; readonly plane: PlaneId | undef
 
 type HeldStore = RunStore & { change: (how: (was: Known) => Known) => void };
 
+/** Told to its readers once a frame, so a burst of runs is one commit (`heldStore.ts`). */
 function runStore(): HeldStore {
-  let known: Known = { runs: NONE };
-  const listeners = new Set<() => void>();
+  const held = heldStore<Known>({ runs: NONE });
   return {
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => void listeners.delete(listener);
+    subscribe: held.subscribe,
+    runsFor: (plane) => {
+      const known = held.held();
+      return known.plane === plane ? known.runs : NONE;
     },
-    runsFor: (plane) => (known.plane === plane ? known.runs : NONE),
-    change: (how) => {
-      const now = how(known);
-      if (now === known) return;
-      known = now;
-      for (const listener of [...listeners]) listener();
-    },
+    change: held.change,
   };
 }
 
