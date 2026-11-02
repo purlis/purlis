@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793657178545,
+  "lastUpdate": 1793660390534,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36708,6 +36708,48 @@ window.BENCHMARK_DATA = {
             "value": 102.183345,
             "unit": "ms",
             "extra": "median of 5 runs: 101.463, 102.021, 102.183, 102.500, 102.554 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d8ca1f836b1f9af94fd6c3e9942def6532819391",
+          "message": "Splits survive a restart: the core holds each tab's tree (#4785)\n\n* Splits survive a restart: the core holds each tab's tree (#4751)\n\nThe record and Chats hold every tab as a binary tree of panes (a chat, a\nview or nothing) with its strip, pin, window, its strip's front tab and\nits focused pane's path. The window reports its tabs in one command,\nwindow_layout, from the same call as a press, so a task the person\npresses onto is held from that moment. A relaunch puts each split, its\nsizes, its views and each strip's front tab back (reopened_layout).\n\nWhat is on screen is derived from the tree: every chat in a pane of the\nfront tab of the drawn strip, and of each tab window's. The core refuses\na layout naming a chat twice or a chat that is not open, and says why.\ntab_shows and chat_in_front retire; a chat's beside and shows are no\nlonger written once a layout is held. A record with no tabs list is read\nthe old way.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXWJNGYGSTKSX43A2YYQ5V\nPurlis-Persona: steward\n\n* Splits survive a restart: mod layout in rustfmt's order (#4751)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXWJNGYGSTKSX43A2YYQ5V\nPurlis-Persona: steward\n\n* Splits survive a restart: the record read is boxed (#4751)\n\nA Record with its layout is past clippy's large_enum_variant bound, so\nHeld carries it boxed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXWJNGYGSTKSX43A2YYQ5V\nPurlis-Persona: steward\n\n* Splits survive a restart: chatsOf exported, retired without a map (#4751)\n\nThe window tests read chatsOf from laidOut.ts, which it exports now; a\nchat written into the record is retired in its constructor, not mapped\n(clippy's unnecessary_map_on_constructor). Prettier's layout.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXWJNGYGSTKSX43A2YYQ5V\nPurlis-Persona: steward\n\n* Splits survive a restart: a refused layout is said again at once (#4751)\n\nThe window forgets a layout the core refused and says it again on its\nnext render, without waiting for the person to change a tab. The test\nheld the old tab_shows timing (said again only at the next change); it\nnow holds that the core ends up with the layout.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXWJNGYGSTKSX43A2YYQ5V\nPurlis-Persona: steward\n\n* Splits survive a restart: a refused layout is never said again unchanged (#4751)\n\nA refusal is the core's verdict on that layout (a chat in two panes, a\nchat not open), so the window remembers the one refused and says it\nagain only once it differs; one taken clears it. Pinned: a core that\nrefuses every layout is told the refused one once, however often the\nwindow draws, and a refused layout reaches the core at the next change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXWJNGYGSTKSX43A2YYQ5V\nPurlis-Persona: steward\n\n* Splits survive a restart: view tabs are still written beside the tree (#4751)\n\nThe record kept views[] empty once a layout was held, which #4751 does\nnot ask for: which view tab was in front, and where a file tab's divider\nwas, are read from it. It is written beside tabs again until the switch\n(#4758) retires it, and a Chats test pins it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXWJNGYGSTKSX43A2YYQ5V\nPurlis-Persona: steward\n\n* Splits survive a restart: the core holds the focused pane a relaunch reads (#4751)\n\nlay_out holds each tab's focused path ending at a pane, as reading the\nrecord does, so what the core holds is what the next launch reads. The\ntest of a tab too wide to keep builds it balanced, under the deepest.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXWJNGYGSTKSX43A2YYQ5V\nPurlis-Persona: steward\n\n* Splits survive a restart: bindings from the generator (#4751)\n\nRegenerated with cargo test -p purlis-app -- --ignored: reopenedLayout's\nanswer is written inline, as specta writes an optional struct.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXWJNGYGSTKSX43A2YYQ5V\nPurlis-Persona: steward\n\n* Splits survive a restart: review fixes (#4751)\n\n- The pressed-onto test starts with the task off screen as its end comes\n  due, so it fails without the one-call press; its twin shows the same\n  task, never pressed onto, is ended.\n- A failed call is no verdict: only the core's refusal is remembered and\n  not said again unchanged; a call that never reached the core is said\n  again at the next draw (tested).\n- A tab dropped for its size takes no chat from the tabs after it.\n- The refusal says what purlis did not do, as docs/ui-copy.md asks.\n- One spelling of a pane's path (Side::path_of, Side::word_of); chatsOf\n  is the walk itself; what the core derives from a layout lives in a\n  testkit, for the window tests that stand in for the core.\n- The notification test says what keeps a notification: the window's\n  own answer, which a stale layout cannot change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXWJNGYGSTKSX43A2YYQ5V\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T19:30:56Z",
+          "tree_id": "3b1360f24dc3dde04c779b1b7f8f8034357cd03d",
+          "url": "https://github.com/purlis/purlis/commit/d8ca1f836b1f9af94fd6c3e9942def6532819391"
+        },
+        "date": 1793660386657,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7075454999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.658, 0.694, 0.708, 0.713, 0.715 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4122305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.299, 16.358, 16.412, 16.572, 17.080 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.011802,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.785, 102.343, 103.012, 103.604, 103.877 ms"
           }
         ]
       }
