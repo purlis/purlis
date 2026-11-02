@@ -2198,10 +2198,24 @@ fn the_folders_above_what_may_be_lifted_are_made_before_a_floor_chat() {
     }
     assert!(!settings.made_folders.contains(&home.join(".config/gh")));
     #[cfg(unix)]
-    std::os::unix::fs::symlink(root.join("elsewhere"), home.join(".kube")).expect("a link");
+    {
+        std::os::unix::fs::symlink(root.join("elsewhere"), home.join(".kube")).expect("a link");
+        std::fs::create_dir(root.join("linked")).expect("a folder");
+        std::fs::create_dir_all(home.join(".local/share")).expect("a folder");
+        let completion = home.join(".local/share/bash-completion");
+        std::os::unix::fs::symlink(root.join("linked"), completion).expect("a link");
+    }
     settings.make_empty();
     assert!(home.join(".local/share/nvim/site").is_dir());
     assert!(!home.join(".local/share/nvim/site/plugin").exists());
+    #[cfg(unix)]
+    assert!(
+        std::fs::read_dir(root.join("linked"))
+            .expect("there")
+            .next()
+            .is_none(),
+        "made through a link"
+    );
     assert!(!home.join(".config/gh").exists());
     #[cfg(unix)]
     assert!(!root.join("elsewhere").exists(), "the link was followed");

@@ -549,6 +549,18 @@ impl Settings {
             if std::fs::symlink_metadata(folder).is_ok() {
                 continue;
             }
+            // Never through a link: each folder above it that is made here must be a folder.
+            let through_a_link = folder.parent().is_some_and(|parent| {
+                self.made_folders.iter().any(|made| made == parent)
+                    && !std::fs::symlink_metadata(parent).is_ok_and(|it| it.file_type().is_dir())
+            });
+            if through_a_link {
+                tracing::warn!(
+                    "purlis: {} was not made for the chat: a folder above it is not a folder",
+                    folder.display()
+                );
+                continue;
+            }
             if let Err(err) = std::fs::create_dir(folder) {
                 tracing::warn!(
                     "purlis: {} was not made for the chat ({err})",

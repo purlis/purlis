@@ -1052,17 +1052,17 @@ pub type BlockTeller = Arc<dyn Fn(ChatBlocked) + Send + Sync + 'static>;
 /// What the window is told of a block a chat's hook sent on `plane`'s socket, or a brokered
 /// run's proxy refused. A harness word the app does not start is no harness: the line is the
 /// chat's own. `has_check`: whether the chat's sandbox was compiled with the system's
-/// certificate check, and `started`: the harness it started, each by the app's own record of
-/// its start ([`blocked_on`]). Where the app has a record, the line's word is not read: what a
-/// Notice says an Allow reaches turns on it.
+/// certificate check, and `started`: what it started as (a harness, or a shell), each by the
+/// app's own record of its start ([`blocked_on`]). Where the app has the chat open, the line's
+/// word is never read: what a Notice says an Allow reaches turns on it.
 pub fn blocked_holding(
     plane: &PlaneId,
     heard: &HeardBlock,
     has_check: bool,
-    started: Option<purlis_core::harness::Harness>,
+    started: Option<Option<purlis_core::harness::Harness>>,
 ) -> ChatBlocked {
     let blocked = &heard.line;
-    let harness = started.or_else(|| {
+    let harness = started.unwrap_or_else(|| {
         blocked
             .harness
             .as_deref()

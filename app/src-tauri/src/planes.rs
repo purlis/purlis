@@ -3267,7 +3267,7 @@ impl Planes {
                     .is_some_and(|held| held.chats().has_certificate_check(block.line.chat));
                 let started = strong
                     .as_ref()
-                    .and_then(|held| held.chats().harness(block.line.chat));
+                    .and_then(|held| held.chats().started_as(block.line.chat));
                 let mut told = hooks::blocked_holding(&plane, &block, has_check, started);
                 if let Some(strong) = strong {
                     // A runner's service is said with that runner's name (#2510).
