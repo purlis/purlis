@@ -17,6 +17,11 @@ use crate::brokered::NotTaken;
 /// How long a tool waits on the app: a wait for text of a minute, and the page settling after.
 const ASKED_WITHIN: Duration = Duration::from_secs(90);
 
+/// How long a suggested login waits on the app (#4595): the person's answer, which the app waits
+/// for at most [`purlis_core::loginask::THE_PERSON_IS_WAITED_FOR`], and the login after it.
+const A_SUGGESTED_LOGIN_WAITS_AT_MOST: Duration =
+    purlis_core::loginask::THE_PERSON_IS_WAITED_FOR.saturating_add(ASKED_WITHIN);
+
 /// Tool `name` called with `args`: what to tell the model, and what the app attached.
 pub fn tool(
     name: &str,
@@ -29,6 +34,17 @@ pub fn tool(
     // A call the agent gave no id is given one of its own, so no two calls share one.
     let call_id = asked.call_id.unwrap_or_else(browsertools::fresh_call_id);
     let changes_id = browsertools::changes_call_id(&call_id);
+    let within = if matches!(
+        asked.asked,
+        Browsing::LogIn {
+            suggested: Some(_),
+            ..
+        }
+    ) {
+        A_SUGGESTED_LOGIN_WAITS_AT_MOST
+    } else {
+        ASKED_WITHIN
+    };
     let replied = crate::brokered::replied(
         move |chat| {
             Ask::Browse(Box::new(BrowseAsk {
@@ -39,7 +55,7 @@ pub fn tool(
                 asked: asked.asked,
             }))
         },
-        ASKED_WITHIN,
+        within,
     );
     let changes_of = if asked.changes {
         changes_of(&replied)

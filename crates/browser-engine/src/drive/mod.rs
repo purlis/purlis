@@ -155,6 +155,9 @@ pub struct Login {
     /// Whether the browser may be signed in already, opened from kept logins (#2021): then
     /// nothing is filled where the page asks for no password.
     pub only_if_asked: bool,
+    /// A chat chose this page and these keys (#4595): the user name goes only into a field that
+    /// says it's one, or beside a password field.
+    pub suggested: bool,
 }
 
 impl fmt::Debug for Login {

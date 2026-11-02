@@ -333,6 +333,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Whether a persona's browser logins may be filled on a pool's runner (#2050): the person's
     // answer alone. No chat opts itself in.
     "answer_pool_login",
+    // A browser login a chat suggested (#4595): the person's answer alone. No chat confirms the
+    // site it suggested.
+    "answer_browser_login",
     // Whether this desktop sends a persona's tool its vault values on a pool's runner (#2047):
     // the person's answer alone. No chat allows its own tool.
     "answer_pool_tool",

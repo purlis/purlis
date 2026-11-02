@@ -246,7 +246,8 @@ export function VaultRefusedNotice({
     >
       {Self} runs as {persona}, and vault <code className="block-allow-target">{vault}</code> is{" "}
       {theirs === null ? "tagged for no persona" : `tagged for ${theirs}`}, so purlis did not open
-      it.{newest.locked !== null && ` ${newest.locked}`}
+      it.{newest.login != null && ` It's for the browser login ${newest.login}.`}
+      {newest.locked !== null && ` ${newest.locked}`}
       {asked &&
         ` ${Self} has already asked ${newest.dispatch_to}: answer that ${requestHere ? "above" : "in the Inbox"}.`}
       {said !== undefined && ` ${said}`}

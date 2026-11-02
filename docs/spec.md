@@ -422,7 +422,9 @@ how it is cited and nothing here is renumbered.
     each of the chat's browser tools by name (`browser_open` to `browser_login`): the person's
     answer to the chat's browser Ask, which the app asks at the first call, is the consent, so
     the harness does not ask beside it; for `browser_login` (#2016), so is this machine's Allow
-    of the persona's tools, without which the login is not armed and nothing is filled. Codex's approval and
+    of the persona's tools, without which the login is not armed and nothing is filled, or, for a
+    login the persona doesn't declare, the person's answer to its one notice (#4595), which
+    confirms the exact site. Codex's approval and
     sandbox are whole-session switches, so it carries none (ADR 0064's measurements). A record's tab resumes that record whichever place is
     in front. **Smart close puts the chat into the background** (SI-8f): its tab shrinks to a
     fixed chip — the chat's icon and the breathing mark, the name in its tooltip — at the chat

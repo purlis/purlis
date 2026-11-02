@@ -702,6 +702,8 @@ export const commands = {
 	 *  each is told on its next turn.
 	 */
 	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
+	/**  **The person's press on a login's notice** (#4595). The window's alone (`ui::WINDOW_ONLY`). */
+	answerBrowserLogin: (plane: PlaneId, session: number, id: number, press: Press, shown: string, typed: string | null, reason: string | null) => typedError<Pressed, string>(__TAURI_INVOKE("answer_browser_login", { plane, session, id, press, shown, typed, reason })),
 	/**
 	 *  **Allow or Keep off on run `run` of chat `session`'s tool on its pool** (#2047): with
 	 *  `allow`, this desktop sends the tool its vault values on the pool's runner for that run
@@ -4893,6 +4895,11 @@ export type AnswerPath =
  *  the chat that asked (#2047).
  */
 { via: "pool-tool"; run: number } | 
+/**
+ *  `answer_browser_login` at the press an option names, on held login `id`, for the proposal
+ *  whose digest is `shown`, with the domain the person typed (#4595).
+ */
+{ via: "browser-login"; id: number; shown: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5067,7 +5074,12 @@ export type AskSource =
  *  One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
  *  lets this desktop send that tool its vault values on the pool's runner for that run alone.
  */
-"pool-tool";
+"pool-tool" | 
+/**
+ *  A browser login a chat suggested, which its persona doesn't declare (#4595): an Allow
+ *  lets purlis fill it on the one origin the person confirmed.
+ */
+"browser-login";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -8755,6 +8767,29 @@ export type LocalModelRow = {
 	harness: string,
 };
 
+/**
+ *  **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
+ *  value: purlis hasn't read one.
+ */
+export type LoginShown = {
+	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
+	domain: string,
+	/**  The page's path on it. */
+	path: string,
+	vault: string,
+	user_key?: string | null,
+	key: string,
+	/**  Plain warnings, said above the choices. */
+	warnings: string[],
+	/**  The line Always writes, shown before it's pressed, and where. */
+	line: string,
+	under: string,
+	/**  Why Always isn't offered, where it isn't. */
+	no_always?: string | null,
+	/**  The persona's chats get the vault too with Always. */
+	vault_too: boolean,
+};
+
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
 export type LostChat = {
 	plane: PlaneId,
@@ -10909,6 +10944,16 @@ export type PresetsChanged = {
 	/**  The whole set now, by the committed file's words: what the Notice sends back once read. */
 	now: string[],
 };
+
+/**  A press on a login's notice. */
+export type Press = "once" | "chat" | "always" | "keep";
+
+/**  What a press answered. */
+export type Pressed = 
+/**  The answer stands: the sentence it leaves. */
+{ kind: "done"; said: string } | 
+/**  The notice was drawn again and takes another press: what changed. */
+{ kind: "drawn-again"; said: string };
 
 /**
  *  **A pool's price per hour, as it declares it** (#3491): its amount the decimal it was
@@ -13161,6 +13206,11 @@ export type Shown = {
 	 *  one: their count, and each as [`Shown::says`] shows it. Absent for an action on one line.
 	 */
 	lines?: LinesShown | null,
+	/**
+	 *  **The site a login would be filled on** (#4595): drawn large and editable. Absent for any
+	 *  other ask.
+	 */
+	login?: LoginShown | null,
 };
 
 /**
@@ -15222,6 +15272,11 @@ export type VaultRefused = {
 	dispatch_to: string | null,
 	/**  Why a policy forbids Allow, where one does: the Notice then offers none. */
 	locked: string | null,
+	/**
+	 *  The browser login the persona declares with this vault, where it does: the one case
+	 *  purlis knows a vault is asked for a login. A `secret` command names none (#4595).
+	 */
+	login?: string | null,
 };
 
 /**

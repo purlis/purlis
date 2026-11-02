@@ -54,6 +54,7 @@ fn login() -> LogIn {
         password: Secret::new("fixture-word".into()),
         keep: None,
         identity: None,
+        suggested: false,
     }
 }
 

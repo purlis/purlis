@@ -240,6 +240,16 @@
       "why": "It writes the window's tabs, which no lane's read draws."
     },
     {
+      "at": "loginasks.rs pressed",
+      "writes": "the project's manifest and this machine's answers about it (sandbox-grants)",
+      "by": ["answerBrowserLogin"]
+    },
+    {
+      "at": "loginasks.rs written",
+      "writes": "the project's manifest and this machine's answers about it (sandbox-grants)",
+      "by": ["answerBrowserLogin"]
+    },
+    {
       "at": "proposals.rs apply_in",
       "writes": "the project's manifest and its local settings",
       "by": ["applyProposedChange"]

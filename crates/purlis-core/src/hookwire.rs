@@ -1669,7 +1669,15 @@ pub enum Browsing {
     /// armed that login, reads its values from the vault itself and hands them to the session
     /// host, whose browser fills them only on the login's own origin. The chat is answered
     /// with the page the login left, never a value.
-    LogIn { login: String },
+    ///
+    /// **`suggested`, for a login the persona doesn't declare** (#4595): the site, vault and keys
+    /// the chat suggests. They're only a suggestion: the app shows them to the person, who
+    /// confirms the site, and what's filled is what the person answered.
+    LogIn {
+        login: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        suggested: Option<crate::loginask::Suggested>,
+    },
 }
 
 /// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path

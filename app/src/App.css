@@ -2013,6 +2013,26 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* A browser login a chat suggests (#4595): the site is what's being confirmed, so it's the
+   largest thing here and is never cut short. */
+.login-site {
+  display: grid;
+  gap: var(--space-1);
+  margin-block: var(--space-2);
+}
+
+.login-site-domain {
+  overflow-wrap: anywhere;
+}
+
+.login-site-warning {
+  color: var(--state-waiting);
+}
+
+.login-site-line {
+  overflow-wrap: anywhere;
+}
+
 .gauge-ok {
   color: var(--state-success);
 }

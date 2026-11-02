@@ -65,6 +65,7 @@ import { useProjectShown } from "./projectShown";
 import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
+import { LoginSite, useTypedSite } from "./LoginSite";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
@@ -542,6 +543,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "browser-site",
   "pool-login",
   "pool-tool",
+  "browser-login",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -566,6 +568,8 @@ type Shape = {
   /** It gets a box for why it is kept blocked, which its chat is told with the answer
    *  (#1987). */
   reason: boolean;
+  /** It's a login's ask, whose site the person may change (#4595). */
+  site: boolean;
   /** It has the queue's Ignore. */
   ignore: boolean;
   /** It has Go to chat: every ask but a profile's, which is about no chat (#2035). */
@@ -603,10 +607,12 @@ function shapeOf(
     // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
     // while it is itself waiting, it gets the box beside the reason (#1700).
     reply: ask.source === "question" && (why === undefined || asked?.(ask.session) === true),
+    site: ask.login != null,
     reason:
       (ask.answer.via === "sandbox-block" ||
         ask.answer.via === "browser" ||
-        ask.answer.via === "browser-sites") &&
+        ask.answer.via === "browser-sites" ||
+        ask.answer.via === "browser-login") &&
       ask.options.some((one) => one.id === "keep"),
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
@@ -684,6 +690,7 @@ function markedLine(line: string): ReactNode[] {
 function stopIds(key: string, shape: Shape, options: readonly Offered[] = []): string[] {
   return [
     key,
+    ...(shape.site ? [`${key}:site`] : []),
     ...(shape.reason ? [`${key}:reason`] : []),
     ...options.map((option) => `${key}:${option.id}`),
     ...(shape.reply ? [`${key}:reply`, `${key}:send`] : []),
@@ -767,6 +774,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "browser-site": "Asks to let its browser reach a new site",
   "pool-login": "Asks to log its browser in on a pool's runner",
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
+  "browser-login": "Asks to log its browser in to a site with vault credentials",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };
@@ -806,6 +814,8 @@ function Ask({
   const [busy, setBusy] = useState(false);
   /** Why the person keeps it blocked, if they say: told to the chat with the answer. */
   const [reason, setReason] = useState("");
+  /** The site as the person changed it, on a login's ask (#4595). */
+  const [typed, setTyped] = useTypedSite(ask);
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
   /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
@@ -820,6 +830,8 @@ function Ask({
     shape.line,
     ...shape.offers.map((one) => one.label),
     changeDrawn ? "drawn" : "",
+    // A login's notice drawn anew has to be read anew (#4595).
+    ask.answer.via === "browser-login" ? ask.answer.shown : "",
   ].join("\n");
   const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
   /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
@@ -835,7 +847,7 @@ function Ask({
     }
     setBusy(true);
     setSaid(undefined);
-    void answerTaken(plane, ask, option.id, option.id === "keep" ? reason : undefined)
+    void answerTaken(plane, ask, option.id, option.id === "keep" ? reason : undefined, typed)
       .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
           setSaid(refused);
@@ -885,6 +897,11 @@ function Ask({
       <Reply plane={plane} ask={ask} stop={key} />
     ) : shape.answers ? (
       <WithWrites ask={ask} onDrawn={onChangeDrawn}>
+        {ask.login != null && (
+          <Stop id={`${key}:site`}>
+            <LoginSite login={ask.login} typed={typed} onTyped={setTyped} />
+          </Stop>
+        )}
         {shape.reason && (
           <Stop id={`${key}:reason`}>
             <TextField
