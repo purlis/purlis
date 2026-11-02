@@ -16,7 +16,8 @@
  * - **The person can reorder the items on an end**, keeping the side an item says: a drag along
  *   the end, or from the keyboard, in the same menu, Move left and Move right, which list the items
  *   and stay up for the next move, because a cell of the bar is no Tab stop to start from. The
- *   order is the caller's to keep, as what is hidden is.
+ *   order is the caller's to keep, as what is hidden is. Once it draws the items otherwise than
+ *   their priorities do, the menu offers Reset order, which puts every item back.
  * - **A press runs a command.** An item purlis draws is a {@link StatusItem} whose press is its
  *   command; an item given as data (an extension's) names a command, which the bar hands to
  *   `onCommand`, and one that names none is its words.
@@ -180,6 +181,7 @@ export function StatusBar({
   order = [],
   onHide,
   onMove,
+  onResetOrder,
   onCommand,
   "aria-label": named,
   "data-testid": testid,
@@ -195,6 +197,9 @@ export function StatusBar({
   /** The person put the item `id` where `onto` stands on its end, whose items are drawn as
    *  `shown`. Absent, the items stay where they are put. */
   onMove?: (id: string, onto: string, shown: readonly string[]) => void;
+  /** The person put every item back in its shipped place: the order is forgotten. Absent, or
+   *  while the order draws what the priorities do, the menu offers no reset. */
+  onResetOrder?: () => void;
   /** Runs an item's command, for an item given as data. */
   onCommand?: (command: string) => void;
   "aria-label": string;
@@ -265,6 +270,12 @@ export function StatusBar({
   if (onHide === undefined) return bar;
   const listed = placedAll(items, order).filter((item) => item.hideable !== false);
   const shown = listed.filter((item) => !hidden.includes(item.id)).map((item) => item.id);
+  // Hidden items count: a reset would move them where they come back.
+  const ids = (from: readonly string[]) => placedAll(items, from).map((item) => item.id);
+  const resettable =
+    onMove !== undefined &&
+    onResetOrder !== undefined &&
+    ids(order).join("\n") !== ids([]).join("\n");
   /** A row for every item the bar draws, in the bar's order, that moves it one place `step`. */
   const moves = (step: -1 | 1) => {
     const way = step < 0 ? "left" : "right";
@@ -361,6 +372,18 @@ export function StatusBar({
               >
                 {moves(1)}
               </Submenu>
+              {/* Last in the section, so its coming as a move lands moves no row the keyboard is
+                  on; a press closes the menu, so it never goes from under the keyboard. */}
+              {resettable && (
+                <MenuItem
+                  id="reset-order"
+                  textValue="Reset order"
+                  onAction={onResetOrder}
+                  data-testid="status-reset-order"
+                >
+                  Reset order
+                </MenuItem>
+              )}
             </MenuSection>
           )}
         </Menu>
