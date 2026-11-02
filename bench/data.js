@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793637735033,
+  "lastUpdate": 1793640072798,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36456,6 +36456,48 @@ window.BENCHMARK_DATA = {
             "value": 101.87415399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.354, 101.623, 101.874, 102.270, 102.468 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "94c9c4c2398e46c2d8b302b47d5268e82003e4b8",
+          "message": "Theme: a stand-in first frame lands its parts when the in-force answer fails (#4722) (#4807)\n\nSince #4694 a first frame standing in for an extension's theme asked for no\nparts, leaving the in-force answer to bring them. If that answer failed, kept\nthe window, or was never asked, the stand-in stayed without parts all session.\n\nThe frame now keeps its ticket and says it stands in. The window lands its\nparts once its ask of what is in force settles with the stand-in still drawn,\nor after five seconds with no ask at all; an answer that draws another theme\nasks nothing, so a working launch still changes once.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6E2GQ76V2X4GZW3DWX409T1\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T13:25:42Z",
+          "tree_id": "803a1240b3233d1b4d2d6ec37b4af79ae9c68b6c",
+          "url": "https://github.com/purlis/purlis/commit/94c9c4c2398e46c2d8b302b47d5268e82003e4b8"
+        },
+        "date": 1793640066972,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5394945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.535, 0.535, 0.539, 0.543, 0.551 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.453503499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.153, 16.429, 16.454, 16.455, 16.458 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.683764,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.495, 101.602, 101.684, 101.732, 102.068 ms"
           }
         ]
       }
