@@ -203,9 +203,8 @@ export const MARKS: Record<string, typeof Plus> = {
  * because it needs you: that would move tabs under the operator's hand, which is the one
  * thing ADR 0039 refuses, and the count and the title bar's ✋ menu already say it.
  *
- * **After those, the caller's order**, which on all three strips is most recently moved first:
- * a tab by its chats' newest move, a workspace by its chats', and a project by the newest move
- * its `PlaneView` reports (`PlaneReport.moved`, charter#401).
+ * **After those, the caller's order**, which on the chat strip is most recently moved first: a
+ * tab by its chats' newest move.
  *
  * **Only rows that bring a tab forward.** Every row is the catalogue's `tab.select:<id>`,
  * which is the same row the tab itself is and the same row the palette lists. Nothing

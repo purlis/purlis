@@ -6,8 +6,9 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
+import { SETTLE_MS as ASKS_SETTLE_MS } from "./asks";
 import { panes } from "./countedPane.testkit";
-import { counts } from "./reactCommits.testkit";
+import { counts, renderedBy } from "./reactCommits.testkit";
 import { stripNamed } from "./test-strips";
 import { themeInForce } from "./theme/inForce.testkit";
 
@@ -95,9 +96,13 @@ const START_OPTIONS = {
 /** What the window sent the core, in order. */
 export type Asked = { cmd: string; plane: string | undefined };
 
+/** The window's listeners for `chat-moved`, by the handler the core calls (`chatMoves`). */
+const moveListeners: number[] = [];
+
 /** A core holding the projects `shape` names, with every call kept. */
 function core(shape: Shape): Asked[] {
   const asked: Asked[] = [];
+  moveListeners.length = 0;
   const roots = Array.from({ length: shape.projects }, (_, n) => rootOf(n));
   const chats = new Map(
     roots.map((root, n) => [root, chatsOf(root, shape, shape.chatsIn?.[n] ?? shape.chats)]),
@@ -108,7 +113,10 @@ function core(shape: Shape): Asked[] {
     const given = (args ?? {}) as Record<string, unknown>;
     const plane = given.plane as string | undefined;
     asked.push({ cmd, plane });
-    if (cmd === "plugin:event|listen") return 1;
+    if (cmd === "plugin:event|listen") {
+      if (given.event === "chat-moved") moveListeners.push(given.handler as number);
+      return 1;
+    }
     const open = chats.get(plane ?? "") ?? [];
     if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
     if (cmd === "planes_to_restore")
@@ -195,6 +203,8 @@ export type Switch = {
   /** How many times React committed for it, until everything it started had settled. */
   commits: number;
   rendered: number;
+  /** How many times each component was drawn for it, by name. */
+  renderedBy: Record<string, number>;
   mounted: number;
   unmounted: number;
   nodesAdded: number;
@@ -307,6 +317,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     });
     watching.observe(document.body, { childList: true, subtree: true });
     Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });
+    renderedBy.clear();
     Object.assign(panes, { started: 0, stopped: 0 });
     watchLayoutReads();
     reads.clear();
@@ -336,6 +347,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       syncMs,
       commits: counts.commits,
       rendered: counts.rendered,
+      renderedBy: Object.fromEntries(renderedBy),
       mounted: counts.mounted,
       unmounted: counts.unmounted,
       nodesAdded: nodes.added,
@@ -352,4 +364,70 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     });
   }
   return out;
+}
+
+/** What a run of chat moves cost the window. */
+export type Moves = {
+  /** How many times React committed for them, until everything they started had settled. */
+  commits: number;
+  /** How many times the window's root (`App`) was drawn again for them. */
+  windowDrawn: number;
+  /** Commands sent to the core for them, by name. */
+  invokes: Record<string, number>;
+};
+
+/**
+ * Mounts the window holding `shape`, brings every project to the front once and the first back,
+ * then has the core push `times` moves of one busy chat of project `of`: the same chat, working
+ * throughout and waiting on nobody, each move newer than the last, as a harness at work makes
+ * them. Answers with what those moves cost.
+ */
+export async function chatMoves(
+  shape: Shape,
+  { of, times }: { of: number; times: number },
+): Promise<Moves> {
+  const asked = core(shape);
+  render(<App />);
+  await waitFor(() => expect(inFront()).toBe(nameOf(0)), { timeout: 20_000 });
+  await settled(asked);
+  for (const n of [...Array.from({ length: shape.projects }, (_, n) => n).slice(1), 0]) {
+    fireEvent.click(projectTab(nameOf(n)));
+    await settled(asked);
+  }
+  const plane = rootOf(of);
+  const move = (at: number) => {
+    for (const handler of moveListeners)
+      window.__TAURI_INTERNALS__.runCallback(handler, {
+        event: "chat-moved",
+        id: 1,
+        payload: {
+          plane,
+          session: 2,
+          state: "working",
+          needs_you: false,
+          queue: [],
+          sequence: 1_000 + at,
+          moved_at: 1_000 + at,
+          reports: [],
+          refusals: [],
+        },
+      });
+  };
+  // The first move says the chat is working; what is counted is every move after it.
+  act(() => move(0));
+  await settled(asked);
+
+  Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });
+  renderedBy.clear();
+  const from = asked.length;
+  for (let at = 1; at <= times; at++) act(() => move(at));
+  // Past the wait after which a burst of moves has the asks read again (`asks.ts`), which is
+  // longer than the one `settled` looks for.
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, ASKS_SETTLE_MS * 4));
+  });
+  await settled(asked);
+  const invokes: Record<string, number> = {};
+  for (const one of asked.slice(from)) invokes[one.cmd] = (invokes[one.cmd] ?? 0) + 1;
+  return { commits: counts.commits, windowDrawn: renderedBy.get("App") ?? 0, invokes };
 }

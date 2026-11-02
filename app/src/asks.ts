@@ -122,7 +122,15 @@ function listReader(
         // A core that answers nothing for it (an older build, a test's mock) holds none.
         const asks = answer.status === "ok" ? (answer.data as Asking | null)?.asks : undefined;
         if (!(live && watched.has(plane) && asks)) return;
-        setHeld((was) => ({ ...was, [plane]: asks }));
+        // **An answer that says what the last one said changes nothing** (#4727): every burst of
+        // a busy chat's moves reads the list again, and a fresh list each time drew the whole
+        // window again for asks that had not moved. The core's answer is plain data, written
+        // the same way each time, so its text is the comparison.
+        setHeld((was) =>
+          was[plane] !== undefined && JSON.stringify(was[plane]) === JSON.stringify(asks)
+            ? was
+            : { ...was, [plane]: asks },
+        );
         lookAtHoldsEnd(plane, asks);
       },
       () => {},
