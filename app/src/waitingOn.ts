@@ -8,7 +8,8 @@
  *
  * - **A real ask** (a permission, or Claude Code's question tool on its permission hook) is
  *   shown as asked: its own words, held with the ask, which no later turn replaces.
- * - **A prompt in its harness's terminal** that purlis holds nothing for is shown by its kind.
+ * - **A prompt in its harness's terminal** that purlis holds nothing for is shown by its kind;
+ *   a form purlis's own server asks through (`ask_operator`) shows its question as asked (#4710).
  * - **Prose**, a chat whose turn ended on the person, shows the message it ended on, and the few
  *   before it can be read back (`Ledger::last_said`, `Ledger::said_before`).
  *
@@ -54,7 +55,10 @@ export function waitOf(waiting: readonly Shown[] | undefined, session: number): 
     const ask = its.find((one) => one.source === source);
     if (ask === undefined) continue;
     if (source === "permission") return { kind: "ask", ask: ask.ask, says: ask.says };
-    if (source === "terminal") return { kind: "prompt", ask: ask.ask, says: ask.says };
+    // A form purlis's server asks through carries its question whole (#4710).
+    if (source === "terminal") {
+      return { kind: "prompt", ask: ask.ask, says: ask.last_message ?? ask.says };
+    }
     return {
       kind: "prose",
       ask: ask.ask,

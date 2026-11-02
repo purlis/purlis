@@ -12,7 +12,7 @@ use std::io;
 
 use super::{
     Answer, Answerer, Ask, ChatToken, ChatTokens, CommitRefused, Hearing, Noticed, Report, Saved,
-    SessionSaved, SpoolLine, StartedByHand,
+    SessionSaved, SpoolLine, StartedByHand, TurnOutput,
 };
 
 /// [`Asking`]'s counterpart where there is no unix socket: it refuses, so a handoff there
@@ -88,6 +88,16 @@ pub fn tell_saved(
     _path: &std::path::Path,
     _token: Option<&ChatToken>,
     _saved: &SessionSaved,
+) -> io::Result<()> {
+    Err(no_channel())
+}
+
+/// [`send`]'s refusal, for what a chat's turn put out: the question `ask_operator` asks
+/// (#4710) is shown by its kind alone here.
+pub fn tell_turn_output(
+    _path: &std::path::Path,
+    _token: Option<&ChatToken>,
+    _output: &TurnOutput,
 ) -> io::Result<()> {
     Err(no_channel())
 }

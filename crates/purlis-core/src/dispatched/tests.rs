@@ -3238,3 +3238,23 @@ fn a_line_the_person_sent_makes_the_next_turn_theirs_until_a_turn_begins_or_ends
     ledger.turn_ended(5);
     assert!(ledger.background_turn(5, true));
 }
+
+#[test]
+fn a_question_asked_in_a_form_stands_past_a_later_turn_and_goes_once_answered() {
+    // #4710: the words purlis's server said it asks, held with that ask.
+    let mut ledger = Ledger::default();
+    ledger.asks_the_person(OWN_CHAT, "Which host do I deploy to?".to_owned());
+    ledger.said_last(OWN_CHAT, "Three tasks are at work.".to_owned());
+    ledger.turn_began_as(OWN_CHAT, true);
+    assert_eq!(ledger.asking(OWN_CHAT), Some("Which host do I deploy to?"));
+    ledger.asked_the_person(OWN_CHAT);
+    assert_eq!(ledger.asking(OWN_CHAT), None);
+
+    // A turn of the person's is their answer too, and so is the chat's close.
+    ledger.asks_the_person(OWN_CHAT, "Push now?".to_owned());
+    ledger.turn_began_as(OWN_CHAT, false);
+    assert_eq!(ledger.asking(OWN_CHAT), None);
+    ledger.asks_the_person(OWN_CHAT, "Push now?".to_owned());
+    ledger.forget(OWN_CHAT, None);
+    assert_eq!(ledger.asking(OWN_CHAT), None);
+}
