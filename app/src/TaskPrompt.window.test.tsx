@@ -21,6 +21,7 @@ import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { theFrameNow } from "./frame.testkit";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * **A task stopped on its harness's permission prompt is said where the person is**
@@ -187,6 +188,7 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
     return null;
   });
   const said = async (event: string, payload: unknown) => {
+    [event, payload] = onTheWire(event, payload);
     const handlers = listeners.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     await act(async () => {

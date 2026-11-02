@@ -18,6 +18,8 @@ import type {
 } from "./bindings";
 import type { Place } from "./pieceViews";
 import { FADE_MS } from "./touching";
+import { onTheWire } from "./chatEvents.testkit";
+import { theFrameNow } from "./frame.testkit";
 
 /**
  * **A live marker on the file a chat is touching** (FM-6, #1109): the render states — a file and
@@ -121,7 +123,11 @@ function draw(focus?: Place) {
 }
 
 const touch = (session: number, path: string, plane: PlaneId = PLANE) =>
-  act(() => emit("chat-touching", { plane, session, path } satisfies ChatTouching));
+  act(async () => {
+    await emit(...onTheWire("chat-touching", { plane, session, path } satisfies ChatTouching));
+    // The touches are drawn at the next frame (`heldStore.ts`); this draws it now.
+    theFrameNow();
+  });
 
 const rowOf = (id: string) => {
   const found = document.querySelector<HTMLElement>(`[data-row="${id}"]`);
@@ -172,6 +178,7 @@ describe("the file a chat is touching", () => {
     expect(markOn("file:svc/one:src/lib.rs")).toBe(said);
     await act(async () => {
       vi.advanceTimersByTime(200);
+      theFrameNow();
     });
     expect(document.querySelector(".touch-mark")).toBeNull();
   });

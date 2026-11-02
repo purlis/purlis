@@ -12,7 +12,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { heldStore } from "./heldStore";
-import { listen } from "./here";
+import { listenForChats } from "./chatEvents";
 
 import {
   commands,
@@ -687,16 +687,13 @@ export function useChats(plane: PlaneId | undefined): Chats {
 
     void (async () => {
       try {
-        const unlisten = await listen<Moved>("chat-moved", (event) => {
-          if (gone || event.payload.plane !== showing.current) return;
+        const unlisten = await listenForChats("moved", (told) => {
+          if (gone || told.plane !== showing.current) return;
           store.change((was) => {
-            const states = moved(
-              was.plane === event.payload.plane ? was.states : nothingKnown,
-              event.payload,
-            );
-            return states === was.states && was.plane === event.payload.plane
+            const states = moved(was.plane === told.plane ? was.states : nothingKnown, told);
+            return states === was.states && was.plane === told.plane
               ? was
-              : { plane: event.payload.plane, states };
+              : { plane: told.plane, states };
           });
         });
         if (gone) unlisten();

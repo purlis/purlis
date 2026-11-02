@@ -2154,9 +2154,6 @@ pub type Doings = Arc<dyn Fn(u32, purlis_core::doing::Said) + Send + Sync + 'sta
 /// for a task alone ([`Hooks::when_output`]).
 pub type Outputs = Arc<dyn Fn(purlis_core::hookwire::TurnOutput) + Send + Sync + 'static>;
 
-/// The event the window is sent when a chat's file tool touches a file (FM-6).
-pub const TOUCHING: &str = "chat-touching";
-
 /// A file a chat's tool touched, as the window marks it in the tree for a few seconds (FM-6,
 /// #1109). It travels in memory only and is never written anywhere (D-86a).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]

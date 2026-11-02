@@ -14,9 +14,10 @@
  * at most {@link AT_MOST_PER_CHAT} paths per chat (its oldest goes first), and at most
  * {@link AT_MOST} in all. The core already caps each chat's rate.
  */
-import { useEffect, useState } from "react";
-import { listen } from "./here";
-import type { ChatTouching, OpenChat, PlaneId } from "./bindings";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { heldStore } from "./heldStore";
+import { listenForChats } from "./chatEvents";
+import type { OpenChat, PlaneId } from "./bindings";
 
 /** How long a touched file stays marked after its chat last touched it. */
 export const FADE_MS = 4000;
@@ -60,8 +61,11 @@ export function nextFade(touches: Touches): number | undefined {
 /** The files `plane`'s chats are touching, fading as they go quiet. */
 export function useTouching(plane: PlaneId | undefined): Touches {
   // Held with the project it is about, so a window moved to another project draws none of the
-  // last one's in the very render it moves.
-  const [held, setHeld] = useState<{ plane?: PlaneId; touches: Touches }>({ touches: [] });
+  // last one's in the very render it moves. Held outside React and told once a frame
+  // (`heldStore.ts`), so the touches in a batch of chat events are drawn in the commit that
+  // draws the rest of it (#4746), and not in commits of their own.
+  const [store] = useState(() => heldStore<Held>({ touches: NONE }));
+  const held = useSyncExternalStore(store.subscribe, store.held);
   const touches = held.plane === plane ? held.touches : NONE;
 
   useEffect(() => {
@@ -70,10 +74,10 @@ export function useTouching(plane: PlaneId | undefined): Touches {
     let stop: (() => void) | undefined;
     void (async () => {
       try {
-        const unlisten = await listen<ChatTouching>("chat-touching", (event) => {
-          if (gone || event.payload.plane !== plane) return;
-          const { session, path } = event.payload;
-          setHeld((was) => {
+        const unlisten = await listenForChats("touching", (told) => {
+          if (gone || told.plane !== plane) return;
+          const { session, path } = told;
+          store.change((was) => {
             const now = Date.now();
             const from = was.plane === plane ? was.touches : NONE;
             return { plane, touches: touched(faded(from, now), session, path, now) };
@@ -89,21 +93,28 @@ export function useTouching(plane: PlaneId | undefined): Touches {
       gone = true;
       stop?.();
     };
-  }, [plane]);
+  }, [plane, store]);
 
   // One timer, for the next touch to fade; it is set again whenever the list changes.
   const due = nextFade(touches);
   useEffect(() => {
     if (due === undefined) return;
     const timer = setTimeout(
-      () => setHeld((was) => ({ ...was, touches: faded(was.touches, Date.now()) })),
+      () =>
+        store.change((was) => {
+          const kept = faded(was.touches, Date.now());
+          return kept === was.touches ? was : { ...was, touches: kept };
+        }),
       Math.max(0, due - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [due]);
+  }, [due, store]);
 
   return touches;
 }
+
+/** What one window holds of the touches, and the project they are about. */
+type Held = { readonly plane?: PlaneId; readonly touches: Touches };
 
 /** No files touched. */
 const NONE: Touches = [];

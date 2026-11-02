@@ -18,6 +18,8 @@ import type {
   PlaneId,
 } from "../bindings";
 import type { Place } from "../pieceViews";
+import { onTheWire } from "../chatEvents.testkit";
+import { theFrameNow } from "../frame.testkit";
 
 /**
  * **The file tab's tree carries the live marker too** (#1154, FM-6's follow-up): a chat touching a
@@ -93,7 +95,11 @@ function core(open: OpenChat[], folderFails = 0) {
 }
 
 const touch = (session: number, path: string, plane: PlaneId = PLANE) =>
-  act(() => emit("chat-touching", { plane, session, path } satisfies ChatTouching));
+  act(async () => {
+    await emit(...onTheWire("chat-touching", { plane, session, path } satisfies ChatTouching));
+    // The touches are drawn at the next frame (`heldStore.ts`); this draws it now.
+    theFrameNow();
+  });
 
 const markOn = (id: string) =>
   document.querySelector(`[data-row="${id}"] .touch-mark`)?.getAttribute("aria-label") ?? undefined;

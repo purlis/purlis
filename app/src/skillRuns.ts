@@ -13,7 +13,7 @@
  */
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
-import { listen } from "./here";
+import { listenForChats } from "./chatEvents";
 import { commands, type ChatSkillRun, type OpenRun, type PlaneId } from "./bindings";
 import { heldStore } from "./heldStore";
 
@@ -130,8 +130,7 @@ export function useSkillRuns(plane: PlaneId | undefined): RunsOf {
     let stop: (() => void) | undefined;
     void (async () => {
       try {
-        const unlisten = await listen<ChatSkillRun>("chat-skill-run", (event) => {
-          const one = event.payload;
+        const unlisten = await listenForChats("skill-run", (one) => {
           if (gone || one.plane !== showing.current) return;
           store.change((was) => ({
             plane: one.plane,

@@ -27,6 +27,8 @@ import type { Shown } from "./shownState";
 import { goToWorkspace, rowSays, stripNamed } from "./test-strips";
 import { findByTip, getByTip, tipOf } from "./ui/tooltip/tooltip.testkit";
 import { theFrameNow } from "./frame.testkit";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * **The Chats section, against the whole window** (#1447): every running chat of the project
@@ -323,8 +325,8 @@ function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask
       reports: string[] = [],
       stopped: Moved["stopped"] = null,
     ) => {
-      const handler = listeners.get("chat-moved");
-      if (handler === undefined) throw new Error("the window is not listening for moves");
+      const handlers = everyListener.get(CHAT_EVENTS) ?? [];
+      if (handlers.length === 0) throw new Error("the window is not listening for moves");
       queued = queue;
       const moved: Moved = {
         plane: PLANE,
@@ -343,12 +345,8 @@ function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask
       // To every listener, as the core's event reaches every one: the asks registry reads its
       // list again on a move too, and which of the two listened last is a race (#1695).
       act(() => {
-        for (const one of everyListener.get("chat-moved") ?? [handler])
-          heard(one, {
-            event: "chat-moved",
-            id: 1,
-            payload: moved,
-          });
+        for (const one of handlers)
+          heard(one, { event: CHAT_EVENTS, id: 1, payload: aBatchOf("moved", moved) });
       });
     },
   };

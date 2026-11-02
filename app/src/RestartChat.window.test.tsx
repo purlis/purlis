@@ -26,11 +26,12 @@ import { SandboxChangedNotice } from "./SandboxChanged";
 import { theCard } from "./chatCard.testkit";
 import { stripNamed } from "./test-strips";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
+import { onTheWire } from "./chatEvents.testkit";
 
 /** The core says the chat moved, and the window draws it: the chat stores tell their readers
  *  once a frame (`heldStore.ts`), and this test reads the result on the next line. */
 async function moved(payload: Record<string, unknown>) {
-  await emit("chat-moved", payload);
+  await emit(...onTheWire("chat-moved", payload));
   theFrameNow();
 }
 

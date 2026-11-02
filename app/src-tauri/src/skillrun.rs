@@ -16,9 +16,6 @@ use purlis_core::skillspan::Tracker;
 
 use crate::planes::PlaneId;
 
-/// The event the window is sent when a chat's open skill run changes.
-pub const EVENT: &str = "chat-skill-run";
-
 /// A skill run open in a chat, as its tab's chip shows it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct OpenRun {
@@ -42,8 +39,8 @@ pub struct OpenRun {
     pub level: Option<String>,
 }
 
-/// What `chat-skill-run` carries, and what `chat_skill_runs` answers a list of: one chat's open
-/// run, or that it has none.
+/// What a `chat-events` batch carries of a chat's skill run, and what `chat_skill_runs` answers
+/// a list of: one chat's open run, or that it has none.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ChatSkillRun {
     pub plane: PlaneId,

@@ -24,6 +24,7 @@ import { askOfBlock } from "./test-asks";
 import { HOLD_RAN_OUT, RETRY_LINE } from "./SandboxBlockNotice";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 import { forgetInbox } from "./inboxRules";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * **A sandbox block becomes a Notice on the chat's tab** (#1338), against the whole window: the
@@ -314,7 +315,7 @@ describe("a block of the chat's own work is never a dead end (#1342)", () => {
 
   it("allows what it shows whole for this chat, then restarts the chat on its conversation", async () => {
     const { asked } = await aChat();
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await act(() => emit("chat-sandbox-blocked", HOST));
 
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
@@ -513,7 +514,7 @@ describe("a block of the chat's own work is never a dead end (#1342)", () => {
 
   it("restarts a chat owed one only once its turn has ended, even after the Notice is gone", async () => {
     const { asked } = await aChat();
-    await act(() => emit("chat-moved", RUNNING));
+    await act(() => emit(...onTheWire("chat-moved", RUNNING)));
     await act(() => emit("chat-sandbox-blocked", HOST));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
     await userEvent.click(
@@ -527,7 +528,7 @@ describe("a block of the chat's own work is never a dead end (#1342)", () => {
     });
     expect(asked("restart_chat")).toEqual([]);
 
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await waitFor(() => expect(asked("restart_chat")).toHaveLength(1));
     expect(await screen.findByText("session 9")).toBeInTheDocument();
   });
@@ -551,7 +552,7 @@ describe("several hosts refused at once are one Notice (#1637)", FLOW, () => {
   const HOSTS = ["a.example.com:443", "b.example.com:443", "c.example.com:443"];
   it("lists every host, allows each with one press, and restarts the chat once", async () => {
     const { asked } = await aChat();
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     for (const host of HOSTS) await act(() => emit("chat-sandbox-blocked", ON(host)));
 
     const notices = await screen.findAllByRole("status", { name: "Sandbox block" });
@@ -594,7 +595,7 @@ describe("several hosts refused at once are one Notice (#1637)", FLOW, () => {
 
   it("guards a press after a host joins at the bound, where the first host is dropped", async () => {
     const { asked } = await aChat();
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     const full = Array.from({ length: AT_MOST_HOSTS }, (_, at) => `h${at}.example.com:443`);
     for (const host of full) await act(() => emit("chat-sandbox-blocked", ON(host)));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
@@ -613,7 +614,7 @@ describe("several hosts refused at once are one Notice (#1637)", FLOW, () => {
 
   it("keeps a host that arrives while the answer is on its way up, asking", async () => {
     const { asked } = await aChat();
-    await act(() => emit("chat-moved", RUNNING));
+    await act(() => emit(...onTheWire("chat-moved", RUNNING)));
     for (const host of HOSTS) await act(() => emit("chat-sandbox-blocked", ON(host)));
     // Every host joins once the registry lists it (#1695): the guard runs from the last join,
     // and the Notice is read once they all have, as the one on screen then.
@@ -741,7 +742,7 @@ describe("a restart a chat is owed for a grant (#1342)", () => {
 
   it("says a failed restart on the chat's pane, with Restart now", async () => {
     await aChat({ error: "purlis did not restart chat 4: it has no conversation to resume." });
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await act(() => emit("chat-sandbox-blocked", HOST));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
     await userEvent.click(
@@ -767,7 +768,7 @@ describe("a new host is asked live (#1666)", () => {
 
   it("says the command waits, and Allow lets it carry on with nothing restarting", async () => {
     const { asked } = await aChat({ live: true });
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await act(() => emit("chat-sandbox-blocked", HELD));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
     expect(notice).toHaveTextContent("purlis holds the connection while you answer");
@@ -989,7 +990,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     let held = false;
     const { asked } = await aChat({}, () => (held ? [ASKED] : []));
     // Mid-turn, so the restart waits for the turn's end and the pane is still this chat's.
-    await act(() => emit("chat-moved", RUNNING));
+    await act(() => emit(...onTheWire("chat-moved", RUNNING)));
     held = true;
     await act(() => emit("chat-sandbox-blocked", HOST));
     await screen.findByRole("status", { name: "Sandbox block" });
@@ -1014,7 +1015,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     );
     // As the Notice's own Allow does: the chat is owed a restart, taken once its turn ends.
     expect(asked("restart_chat")).toEqual([]);
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await waitFor(() =>
       expect(asked("restart_chat")).toEqual([{ plane: PLANE, session: 4, columns: 80, rows: 24 }]),
     );
@@ -1023,7 +1024,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
   it("owes the chat no restart when its proxy took the Allow live (#1666)", async () => {
     let held = false;
     const { asked } = await aChat({ live: true }, () => (held ? [ASKED] : []));
-    await act(() => emit("chat-moved", RUNNING));
+    await act(() => emit(...onTheWire("chat-moved", RUNNING)));
     held = true;
     await act(() => emit("chat-sandbox-blocked", HOST));
     await screen.findByRole("status", { name: "Sandbox block" });
@@ -1042,7 +1043,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     await waitFor(() => expect(asked("allow_sandbox_block")).toHaveLength(1));
     await waitFor(() => expect(screen.queryByRole("status", { name: "Sandbox block" })).toBeNull());
     // The command that asked carried on: the turn's end restarts nothing.
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await new Promise((settled) => setTimeout(settled, 50));
     expect(asked("restart_chat")).toEqual([]);
   });
@@ -1050,7 +1051,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
   it("keeps it blocked from the Inbox by the Notice's own command, which refuses what the proxy holds", async () => {
     let held = false;
     const { asked } = await aChat({}, () => (held ? [ASKED] : []));
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     held = true;
     await act(() => emit("chat-sandbox-blocked", HOST));
     await screen.findByRole("status", { name: "Sandbox block" });
@@ -1076,7 +1077,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
   it("drops the Inbox's ask when the pane's Notice keeps it blocked", async () => {
     let held = false;
     await aChat({}, () => (held ? [ASKED] : []));
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     held = true;
     await act(() => emit("chat-sandbox-blocked", HOST));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
@@ -1103,7 +1104,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     async (words) => {
       let held = false;
       await aChat({}, () => (held ? [ASKED] : []));
-      await act(() => emit("chat-moved", WAITING));
+      await act(() => emit(...onTheWire("chat-moved", WAITING)));
       held = true;
       await act(() => emit("chat-sandbox-blocked", HOST));
       const notice = await screen.findByRole("status", { name: "Sandbox block" });
@@ -1199,7 +1200,7 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
       levels: ["chat", "you"],
     };
     const { asked } = await aChat();
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await act(() => emit("chat-sandbox-blocked", sly));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
     const drawn = within(notice.parentElement ?? notice).getAllByText("/w/gpj.⟦U+202E⟧exe⟦U+200B⟧");
@@ -1225,7 +1226,7 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     expect(notice).toHaveTextContent("purlis holds the connection while you answer");
     // The proxy gave up on its own clock: the registry, read again, holds it no more.
     holding = false;
-    await act(() => emit("chat-moved", RUNNING));
+    await act(() => emit(...onTheWire("chat-moved", RUNNING)));
     await waitFor(() => expect(notice).toHaveTextContent(HOLD_RAN_OUT));
     expect(notice).not.toHaveTextContent("purlis holds the connection while you answer");
   });
@@ -1235,7 +1236,7 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     const { asked } = await aChat({ live: true }, () =>
       askOfBlock(live, ["claude 4"]).map((ask) => ({ ...ask, held_until: null })),
     );
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await act(() => emit("chat-sandbox-blocked", live));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
     await waitFor(() => expect(notice).toHaveTextContent(HOLD_RAN_OUT));
@@ -1263,7 +1264,7 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
   it("offers no retry line after an Allow the held command took at once (#1709)", async () => {
     const live: ChatBlocked = { ...HOST, held: true };
     await aChat({ live: true });
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await act(() => emit("chat-sandbox-blocked", live));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
     await settled();

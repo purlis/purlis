@@ -15,6 +15,7 @@ import { OPEN_RUNNER_WRITE_ASK } from "./runnerWriteOpen";
 import { OPEN_RUNNER_DISPATCH_ASK } from "./runnerDispatchOpen";
 import { PROFILE_SIGN_IN } from "./settings/links";
 import { useSandboxCommands } from "./sandboxAsked";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * The asks registry's window side (#1690): each ask is answered through the command its own
@@ -552,7 +553,7 @@ describe("the list", () => {
 
     // Kept blocked in its Notice: the core no longer holds it, and a chat moving says so.
     waiting = [PERMISSION];
-    await act(() => emit("chat-moved", { plane: PLANE, session: 5 }));
+    await act(() => emit(...onTheWire("chat-moved", { plane: PLANE, session: 5 })));
     await waitFor(() => expect(result.current.held[PLANE]).toEqual([PERMISSION]));
 
     // Answered elsewhere: an answer reads it again whatever it answered.

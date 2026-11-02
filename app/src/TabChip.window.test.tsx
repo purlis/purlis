@@ -25,6 +25,7 @@ import { GRACE_MS, REST_MS } from "./tabTasks";
 import { stripNamed } from "./test-strips";
 import { hoverPlacementOf, hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 import { theFrameNow } from "./frame.testkit";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * **A session's tab wears a chip of its tasks, which opens the menu to switch between them**
@@ -232,6 +233,7 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
     return null;
   });
   const said = async (event: string, payload: unknown) => {
+    [event, payload] = onTheWire(event, payload);
     const handlers = listeners.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     await act(async () => {

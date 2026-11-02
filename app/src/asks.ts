@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import { commands, type Asking, type GrantLevel, type Shown } from "./bindings";
 import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
+import { listenForChats } from "./chatEvents";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
 import { sandboxCommandReturned } from "./sandboxAsked";
@@ -33,12 +34,12 @@ import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn } from "./settings/links";
 
 /**
- * The events after which a project's asks may read differently: its hooks' asks, a chat
- * moving on the board, a dispatch held for a grant, a block heard.
+ * The events after which a project's asks may read differently: its hooks' asks, a dispatch
+ * held for a grant, a block heard. A chat moving on the board is one too, and comes in a batch
+ * of chat events (`chatEvents.ts`).
  */
 export const ASKS_MAY_HAVE_MOVED = [
   ASKS_CHANGED,
-  "chat-moved",
   "dispatch-grant-needed",
   "chat-sandbox-blocked",
 ] as const;
@@ -95,6 +96,7 @@ export function useAsks(planes: readonly string[]): {
         if (typeof plane === "string") reader.soon(plane);
       }).catch(() => undefined),
     );
+    stops.push(listenForChats("moved", (told) => reader.soon(told.plane)).catch(() => undefined));
     return () => {
       moved.delete(reader.soon);
       reader.stop();
