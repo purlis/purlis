@@ -739,6 +739,7 @@ pub fn sandbox_write(
             writes: None,
             lines: None,
             last_message: None,
+            login: None,
         });
     }
     Some(Shown {
