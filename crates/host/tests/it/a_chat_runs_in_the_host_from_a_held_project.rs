@@ -316,6 +316,29 @@ async fn a_terminal_view_attached_with_a_page_of_history_draws_the_newest_and_sa
 }
 
 #[tokio::test]
+async fn how_many_lines_are_older_is_counted_from_the_snapshot_the_view_draws() {
+    let mut linked = linked().await;
+    linked.hold().await;
+    let program = linked.client.start_program(a_harness()).await.unwrap();
+    linked.runs.last().writes(b"1\n2\n3\n4\n5\n");
+    // Output arriving as the view is attached, after it was asked for.
+    linked.runs.last().seen().before_a_view = b"6\n7\n".to_vec();
+
+    let attached = linked
+        .client
+        .attach_terminal_view_within(&program, 2)
+        .await
+        .unwrap();
+
+    assert_eq!(snapshot_of_the_next_view(&mut linked).await, b"6\n7\n");
+    assert_eq!(
+        attached.older,
+        Some(5),
+        "lines 1 to 5 are above the two drawn"
+    );
+}
+
+#[tokio::test]
 async fn a_terminal_view_attached_without_a_page_draws_all_of_it_and_says_nothing_is_older() {
     let mut linked = linked().await;
     linked.hold().await;

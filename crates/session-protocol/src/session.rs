@@ -451,12 +451,6 @@ pub const VERSION: Version = Version {
     minor: 68,
 };
 
-/// The version that first draws a terminal view with a page of its history (#4742).
-pub const KNOWS_VIEW_HISTORY_PAGES: Version = Version {
-    major: 1,
-    minor: 68,
-};
-
 /// The version that first answers `programs_of` on a link between hosts (#4271).
 pub const KNOWS_PROGRAMS_RELAYED: Version = Version {
     major: 1,

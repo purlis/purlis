@@ -251,6 +251,9 @@ pub struct Following {
     pub size: Size,
     /// Everything the program writes after the snapshot, in order.
     pub live: Live,
+    /// How many lines of history the terminal kept above those the snapshot drew, counted
+    /// under the lock the snapshot was taken in (#4742): none where it drew all of them.
+    pub older: usize,
 }
 
 /// A followed view's live bytes: a stream that ends when the program does. Dropping it closes
@@ -456,7 +459,7 @@ impl Session {
     /// the program ended.
     pub fn attach(&self) -> View {
         let (sender, output) = mpsc::channel();
-        let (size, id) = self.open_view(Sends::Blocking(sender), None);
+        let (size, id, _) = self.open_view(Sends::Blocking(sender), None);
         View {
             size,
             output,
@@ -489,12 +492,13 @@ impl Session {
 
     fn following(&self, history: Option<usize>) -> Following {
         let (sender, mut live) = futures_channel::mpsc::unbounded();
-        let (size, id) = self.open_view(Sends::Following(sender), history);
+        let (size, id, older) = self.open_view(Sends::Following(sender), history);
         // The snapshot went in first, under the lock, before any output could follow it.
         let snapshot = live.try_recv().unwrap_or_default();
         Following {
             snapshot,
             size,
+            older,
             live: Live {
                 live,
                 _open: Attachment {
@@ -511,14 +515,18 @@ impl Session {
     }
 
     /// Opens a view whose bytes go to `sends`: the screen as it is first, then the output.
-    /// Answers the size the screen was drawn for, and the view's id. `history` is the most
-    /// lines of history the screen is drawn with, or `None` for all of it.
-    fn open_view(&self, sends: Sends, history: Option<usize>) -> (Size, u64) {
-        let (answers, size, id) = {
+    /// Answers the size the screen was drawn for, the view's id, and how many lines of history
+    /// the screen was drawn without. `history` is the most lines of history the screen is
+    /// drawn with, or `None` for all of it.
+    fn open_view(&self, sends: Sends, history: Option<usize>) -> (Size, u64, usize) {
+        let (answers, size, id, older) = {
             let mut terminal = lock(&self.terminal);
-            let snapshot = match history {
-                Some(most) => terminal.engine.snapshot_within(most),
-                None => terminal.engine.snapshot(),
+            let (snapshot, older) = match history {
+                Some(most) => (
+                    terminal.engine.snapshot_within(most),
+                    terminal.engine.history().saturating_sub(most),
+                ),
+                None => (terminal.engine.snapshot(), 0),
             };
             // The snapshot ends any open update, so the views already watching are left
             // holding bytes the engine is not. They are handed them here rather than waiting
@@ -545,10 +553,10 @@ impl Session {
             if terminal.ended {
                 terminal.close_views();
             }
-            (answers, size, id)
+            (answers, size, id, older)
         };
         self.answer(answers);
-        (size, id)
+        (size, id, older)
     }
 
     /// Hands the program what its terminal owes it: answers the engine gathered while

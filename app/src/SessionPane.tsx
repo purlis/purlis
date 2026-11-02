@@ -370,8 +370,12 @@ export function SessionPane({
     watching.observe(where);
 
     let view: number | undefined;
-    /** Which view's output the pane draws: the one opened last (#4742). */
-    let opening = 0;
+    /** The view asked for last (#4742): the one drawn before it is let go of once it answers. */
+    let asked = 0;
+    /** The view whose output the pane draws: the last asked for that answered. Until the next
+     *  one answers, the one before it is still attached and still drawn, so a page refused or
+     *  slow to answer never leaves the pane showing nothing new. */
+    let drawing = 0;
     /** How many lines of history the view in use left out, above those it drew. */
     let older = 0;
     // **Older history is paged in as the person scrolls up** (#4742): the view is opened again
@@ -382,21 +386,20 @@ export function SessionPane({
     // wants to know when its text reached the grid, so what it gives back travels with the
     // text it belongs to.
     const open = async (history: number) => {
-      const mine = ++opening;
+      const mine = ++asked;
       const again = view !== undefined;
       const waiting: { text: string; written?: () => void }[] = [];
-      let ready = false;
       /** Put back after each piece of a page is written, so the person keeps their place. */
       let keep = () => {};
       const output = new Channel<string>();
       output.onmessage = (text) => {
-        if (gone || mine !== opening) return;
+        if (gone || (mine !== drawing && mine !== asked)) return;
         const benched = bench.paneSent(pane, text);
         const written = () => {
           keep();
           benched?.();
         };
-        if (ready) pane.write(text, written);
+        if (mine === drawing) pane.write(text, written);
         else waiting.push({ text, written });
       };
       // The pane's own size first: a session nobody is showing keeps whatever size it had.
@@ -409,10 +412,12 @@ export function SessionPane({
         else say(opened.error);
         return;
       }
-      if (gone || mine !== opening) {
+      if (gone || mine !== asked) {
         void commands.unwatchSession(plane, session, opened.data.view);
         return;
       }
+      // From here the new view is drawn and the one before it is not.
+      drawing = mine;
       const before = view;
       view = opened.data.view;
       if (before !== undefined) {
@@ -430,7 +435,6 @@ export function SessionPane({
       pane.options.scrollback = opened.data.scrollback;
       newline = opened.data.newline ?? undefined;
       pane.resize(opened.data.columns, opened.data.rows);
-      ready = true;
       for (const held of waiting.splice(0)) pane.write(held.text, held.written);
       // Now that the screen is drawn, the pane's own size applies again.
       fit.fit();
