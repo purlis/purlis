@@ -242,8 +242,6 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
             grade.to_owned(),
             Running {
                 plane: plane.clone(),
-                skill: "deploy".into(),
-                level: None,
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
                 step: RunningStep::Skill(SkillGradeStep {
@@ -671,6 +669,65 @@ fn a_press_on_a_plan_that_changed_is_refused() {
     }
 }
 
+/// #4338: a skill's page reads its grade's step alone, so what refuses its grades leaves it Stop.
+/// It reads no other plane's grade, and no router's.
+#[test]
+fn a_skills_grade_is_read_by_its_id_in_its_plane_and_a_routers_is_not() {
+    let plane: PlaneId = serde_json::from_value(serde_json::json!("plane-of-a-read-step")).unwrap();
+    let other: PlaneId = serde_json::from_value(serde_json::json!("another-plane")).unwrap();
+    let held = |step| Running {
+        plane: plane.clone(),
+        stop: Arc::new(AtomicBool::new(false)),
+        after_edit: None,
+        step,
+    };
+    let skill = SkillGradeStep {
+        plane: plane.clone(),
+        skill: "deploy".into(),
+        level: (&Level::project()).into(),
+        grade: "g-4338".into(),
+        ran: 2,
+        of: 12,
+        tokens: None,
+        cost_usd: None,
+        limit_usd: None,
+        cap: 1_000.0,
+        asked: 0,
+        ended: None,
+        said: None,
+    };
+    let router = crate::routergrade::RouterGradeStep {
+        plane: plane.clone(),
+        router: "relevance".to_owned(),
+        workspace: None,
+        persona: None,
+        grade: "g-4338-router".to_owned(),
+        ran: 0,
+        of: 1,
+        tokens: None,
+        cost_usd: None,
+        limit_usd: None,
+        cap: 1_000.0,
+        ended: None,
+        said: None,
+        recorded: false,
+    };
+    running().insert("g-4338".to_owned(), held(RunningStep::Skill(skill.clone())));
+    running().insert(
+        "g-4338-router".to_owned(),
+        held(RunningStep::Router(router)),
+    );
+    let read = (
+        step_of_grade(&plane, "g-4338"),
+        step_of_grade(&other, "g-4338"),
+        step_of_grade(&plane, "g-4338-router"),
+        step_of_grade(&plane, "g-4338-gone"),
+    );
+    running().remove("g-4338");
+    running().remove("g-4338-router");
+    assert_eq!(read, (Some(skill), None, None, None));
+}
+
 /// #3928: the Grades tab learns from its one read whether the skill has trigger tests, and the
 /// grade of that copy running now at its latest step, so it asks no plan; a grade of another
 /// skill, of the same name's copy at another level, or in another project, is not this one's.
@@ -709,10 +766,10 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
     assert_eq!(lost.tests, 0);
     assert!(lost.tests_refused.is_some());
 
-    let step = |plane: &PlaneId, skill: &str, grade: &str| SkillGradeStep {
+    let step = |plane: &PlaneId, skill: &str, level: &Level, grade: &str| SkillGradeStep {
         plane: plane.clone(),
         skill: skill.to_owned(),
-        level: (&shared).into(),
+        level: level.into(),
         grade: grade.to_owned(),
         ran: 3,
         of: 12,
@@ -734,21 +791,17 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
             grade.to_owned(),
             Running {
                 plane: at.clone(),
-                skill: skill.to_owned(),
-                level: Some(level.clone()),
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
-                step: RunningStep::Skill(step(at, skill, grade)),
+                step: RunningStep::Skill(step(at, skill, level, grade)),
             },
         );
     }
-    // A router's grade is no skill's, even one that names the skill and its level.
+    // A router's grade is no skill's.
     running().insert(
         "g-3928-router".to_owned(),
         Running {
             plane: plane.clone(),
-            skill: "ship-3928".to_owned(),
-            level: Some(shared.clone()),
             stop: Arc::new(AtomicBool::new(false)),
             after_edit: None,
             step: RunningStep::Router(crate::routergrade::RouterGradeStep {
@@ -789,7 +842,10 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
         shared_now, None,
         "the local copy's grade is not the shared copy's"
     );
-    assert_eq!(local_now, Some(step(&plane, "ship-3928", "g-3928-local")));
+    assert_eq!(
+        local_now,
+        Some(step(&plane, "ship-3928", &local, "g-3928-local"))
+    );
 }
 
 fn acme() -> GradeGrader {
