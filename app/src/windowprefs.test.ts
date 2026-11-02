@@ -301,6 +301,22 @@ describe("the first frame, the levels resolved once at creation (#2602, #2582)",
     expect(firstFrameOnce()?.theme.name).toBe("Night");
   });
 
+  it("reads what the window asks for a frame's parts by, and takes anything else for none (#4410)", () => {
+    created({
+      follows_system: false,
+      contrast: "standard",
+      frames: [{ ...frame("Heavy", false, false), parts_later: 3 }],
+    });
+    expect(firstFrameOnce()?.parts_later).toBe(3);
+    forgetTheirTheme();
+    created({
+      follows_system: false,
+      contrast: "standard",
+      frames: [{ ...frame("Heavy", false, false), parts_later: "3" }],
+    });
+    expect(firstFrameOnce()?.parts_later).toBeNull();
+  });
+
   it("says on the first frame which of the person's colours it left out (#3023)", () => {
     const yours = () => aboutThisMachine().filter((one) => one.subject === "your colours");
     const why = "your colour for text.primary is left out: it would put words under their floor";

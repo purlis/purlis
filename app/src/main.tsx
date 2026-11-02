@@ -23,22 +23,24 @@ import { sayAppearance } from "./appearance";
 import { fetchFace } from "./theme/faces";
 import { firstFollowsSystem, firstFrameOnce } from "./windowprefs";
 import { drawNatively } from "./theme/native";
+import { partsLand } from "./theme/partsLater";
 
 // The window's colours, before anything is rendered and therefore before anything is painted:
 // the theme the levels choose for the project and workspace the window was created on (#2602),
 // resolved once by the core's theme engine before the window existed and handed to it with the
 // window (`windowprefs.ts`), so nothing is read or asked on the way to the first frame — the only
 // arrangement ADR 0026's 2 s cold start can afford. The native window was created in the same
-// answer, and the window's later ask of what is in force answers it again: nothing is repainted,
-// unless a theme's parts were still being measured when the window was created (#4337): they
-// land with that answer.
+// answer, and the window's later ask of what is in force answers it again: nothing is repainted.
+// A theme's parts still being measured when the window was created land apart (#4337, #4410):
+// the frame says so, and the window asks below, with no wait on the restore.
 // A theme's fonts are asked for by digest after the frame (`theme/faces.ts`, #2326): the first
 // frame is drawn in each family list's fallback, and nothing waits for a face.
 fetchFacesWith(fetchFace);
 // Its faces wait for the first frame to be on screen (`App.tsx` lets them go), so decoding them
 // is never on the way to it (ADR 0026, #3034).
 holdFacesForTheFirstFrame();
-const first = firstFrameOnce()?.theme ?? DEFAULT_THEME;
+const frame = firstFrameOnce();
+const first = frame?.theme ?? DEFAULT_THEME;
 drawIn(first);
 // The window was created in this theme's native appearance and colour (`nativewindow.rs`);
 // it is told again, for what only the page knows: the system's appearance a theme that follows
@@ -74,6 +76,10 @@ startTheSwitchClock();
 // A command the core has not answered for a while is said on the window's line, and a failed
 // scenario test reads which (`answerWatch.ts`).
 watchTheAnswers();
+
+// The parts the frame was drawn without, watched like any answer, on no one's way to the first
+// paint: the core is measuring them off the window's thread already.
+if (frame !== undefined) void partsLand(frame);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
