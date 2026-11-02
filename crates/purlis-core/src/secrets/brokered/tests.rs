@@ -3911,7 +3911,10 @@ fn a_browser_logins_values_are_read_for_the_tool_the_chats_start_armed() {
 fn a_private_key_is_filled_as_no_login() {
     let project = project();
     // Spelled in parts, so this fixture reads as no key to a scan.
-    let key = format!("-----BEGIN {0} KEY-----\nabc\n-----END {0} KEY-----\n", "PRIVATE");
+    let key = format!(
+        "-----BEGIN {0} KEY-----\nabc\n-----END {0} KEY-----\n",
+        "PRIVATE"
+    );
     std::fs::write(
         project.path().join("team.json"),
         serde_json::json!({"TOKEN": key, "NAME": "qa-person"}).to_string(),
