@@ -83,6 +83,8 @@ export function RunnerDispatchTab({ plane, id }: { plane: PlaneId; id: number })
         )}
         <dt>Works in</dt>
         <dd>{read.works}</dd>
+        <dt>Runs on</dt>
+        <dd>{read.runs_on}</dd>
         <dt>Profile</dt>
         <dd>{read.profile ?? "none this machine offers"}</dd>
         {read.long && (

@@ -29,6 +29,7 @@ const whole = (more: Partial<RunnerDispatchWhole> = {}): RunnerDispatchWhole => 
   handoff: false,
   name: "check prod",
   works: "a new worktree and branch of api",
+  runs_on: "This machine, as the chat asks",
   profile: "work",
   long: false,
   brief,
@@ -59,6 +60,7 @@ describe("a runner chat's dispatch in its own tab", () => {
     expect(facts).toHaveTextContent("devops");
     expect(facts).toHaveTextContent("check prod");
     expect(facts).toHaveTextContent("a new worktree and branch of api");
+    expect(facts).toHaveTextContent("Runs onThis machine, as the chat asks");
     expect(facts).toHaveTextContent("work");
     expect(screen.getByText(/can send it more instructions/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));

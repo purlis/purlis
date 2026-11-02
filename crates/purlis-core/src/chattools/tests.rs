@@ -560,7 +560,9 @@ fn a_dispatch_s_arguments_are_its_name_its_brief_and_a_persona_where_one_is_name
             "in",
             "long",
             "name",
+            "pool",
             "profile",
+            "this_machine",
             "to",
             "wait",
             "wait_seconds"
@@ -1321,4 +1323,20 @@ fn a_removal_s_arguments_are_a_folder_s_names_and_whether_to_delete_its_branch()
     ] {
         assert!(worktree_remove_args(&args(bad.clone())).is_err(), "{bad}");
     }
+}
+
+#[test]
+fn a_dispatch_names_where_it_runs_as_the_command_does() {
+    // #4536: `pool` and `this_machine`, read as `--pool` and `--this-machine` are.
+    assert_eq!(dispatch_runs_on(&args(json!({}))), Ok((None, false)));
+    assert_eq!(
+        dispatch_runs_on(&args(json!({"pool": " builds "}))),
+        Ok((Some("builds".to_owned()), false))
+    );
+    assert_eq!(
+        dispatch_runs_on(&args(json!({"this_machine": true}))),
+        Ok((None, true))
+    );
+    assert!(dispatch_runs_on(&args(json!({"pool": 3}))).is_err());
+    assert!(dispatch_runs_on(&args(json!({"this_machine": "yes"}))).is_err());
 }

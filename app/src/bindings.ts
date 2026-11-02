@@ -12805,6 +12805,11 @@ export type RunnerDispatchWhole = {
 	profile: string | null,
 	/**  Whether it asks for a long-running task. */
 	long: boolean,
+	/**
+	 *  Where it would run (#4536): this machine or a pool, as the chat asked, else where its
+	 *  workspace runs its chats.
+	 */
+	runs_on: string,
 	/**  The brief whole, drawn inertly: escapes written out for what would draw otherwise. */
 	brief: string,
 };

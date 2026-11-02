@@ -258,7 +258,10 @@ pub fn answer(
             if let Err(why) = tickets.spend(dispatch.chat, connection, &dispatch.ticket, now) {
                 return no(why);
             }
-            let wanted = Wanted::of(&dispatch);
+            let wanted = match Wanted::of(&dispatch) {
+                Ok(wanted) => wanted,
+                Err(why) => return no(why),
+            };
             // Heard from a pool, it waits for the person, as an open does: a name purlis would
             // not draw is refused first, so nothing the person could not start waits on them.
             if let Some(pool) = crate::runnerdispatches::heard_from_a_pool(held, wanted.chat) {
@@ -1787,6 +1790,8 @@ struct Opening<'a> {
     task_level: purlis_core::dispatchmode::Level,
     /// Whether it is a short task: a task, not a handoff, and not a long one (#3818).
     short_task: bool,
+    /// Where the dispatch asked it to run (#4536), before its workspace's and its project's own.
+    runs_on: Option<purlis_core::machine::StartChoice>,
 }
 
 /// The project's profiles as one read of them: what a profile is chosen from and the chat is
@@ -1849,6 +1854,7 @@ fn start_on(
         held: start.held.clone(),
         renamed_from: None,
         task_level: opening.task_level,
+        runs_on: opening.runs_on.clone(),
         ..Default::default()
     };
     // **A dispatch decided and reserved before a stop was recorded does not start**
@@ -1964,12 +1970,25 @@ pub struct Wanted {
     pub moved: Option<Moved>,
     /// A long-running task (#3905, `--long`): only a chat's own task asks for one.
     pub long: bool,
+    /// **Where the new chat runs, as it was asked** (`--pool`, `--this-machine`, #4536): before
+    /// the target workspace's and its project's own. `None` follows them. A chat on a pool's
+    /// runner that asks for anything, this machine among it, is held for the person first.
+    pub runs_on: Option<purlis_core::machine::StartChoice>,
 }
 
 impl Wanted {
-    /// What a chat's own ask wants.
-    fn of(ask: &DispatchAsk) -> Self {
-        Self {
+    /// What a chat's own ask wants, or why its word for where it runs can't be read: such a
+    /// dispatch is refused, never started where the levels say instead.
+    fn of(ask: &DispatchAsk) -> Result<Self, String> {
+        let runs_on = match ask.runs_on.as_deref() {
+            None => None,
+            Some(word) => Some(purlis_core::machine::StartChoice::read(word).ok_or_else(|| {
+                "purlis could not read where this task was to run, so nothing was started: \
+                 name a pool this machine keeps with --pool, or --this-machine."
+                    .to_owned()
+            })?),
+        };
+        Ok(Self {
             chat: ask.chat,
             to: ask.to.clone(),
             name: ask.name.clone(),
@@ -1979,7 +1998,8 @@ impl Wanted {
             by: dispatchdecision::By::Chat,
             moved: None,
             long: ask.long,
-        }
+            runs_on,
+        })
     }
 
     /// What a chat's handoff wants (#1444): the same dispatch, in handoff mode. The persona is
@@ -2004,6 +2024,8 @@ impl Wanted {
             }),
             // A handoff's work moved: it owes no report, long or not.
             long: false,
+            // A handoff's chat runs where the workspace it moved to runs its chats.
+            runs_on: None,
         }
     }
 
@@ -3209,6 +3231,7 @@ fn dispatch_noting(
             },
             number: Some(number),
             by_person: wanted.by == By::Person,
+            runs_on: wanted.runs_on.clone(),
             id: named_for.as_ref().map(|(id, _, _, _)| id.clone()),
             worktree: cut.as_ref().map(|cut| dispatchrecord::Worktree {
                 repo: cut.repo.clone(),
@@ -4338,6 +4361,7 @@ pub fn ask_persona(
         // The person asks for a task; a handoff is a chat's own to make.
         moved: None,
         long: false,
+        runs_on: None,
     };
     match dispatch_it(held, plane, &wanted, size)? {
         Dispatched::Started { it, .. } => Ok(*it),

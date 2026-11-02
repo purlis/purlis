@@ -1792,6 +1792,13 @@ pub struct DispatchAsk {
     pub long: bool,
     /// See [`OpenChat`]. Minted by the app, spent once, never written down.
     pub ticket: String,
+    /// **Where the new chat runs** (`--pool`, `--this-machine`, #4536): a pool this machine
+    /// keeps, or this machine, before the target workspace's and its project's own, in
+    /// [`crate::machine::StartChoice::word`]'s word. `None` follows those levels. **A word, never
+    /// a runner**: the pool is looked up among the ones this machine keeps, and a chat on a
+    /// pool's runner that asks for anything is held for the person as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs_on: Option<String>,
 }
 
 /// What a task's report says beside its text, as `purlis dispatch report` hands it over

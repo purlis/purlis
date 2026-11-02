@@ -6,11 +6,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { userEvent } from "@testing-library/user-event";
-import type { StartOptions } from "./bindings";
+import type { StartOptions, StartRunsOn } from "./bindings";
 import { StartChat } from "./StartChat";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ChatsHere, fixedChats } from "./chatState";
+import { querySelectNamed, selectNamed } from "./ui/select/select.testkit";
 
 afterEach(cleanup);
 
@@ -2075,5 +2076,259 @@ describe("a start waiting for its runner (#3709)", () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(readStage).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Runs on: where this chat runs, and why (#4536)", () => {
+  const runsOn = (over: Partial<StartRunsOn> = {}): StartRunsOn => ({
+    pool: "builds",
+    level: "project",
+    at_root: false,
+    pools: ["builds", "gpu"],
+    ...over,
+  });
+
+  function showRunsOn(
+    on: StartRunsOn,
+    more: { poolUnavailable?: string; trouble?: string; onPoolSetup?: () => void } = {},
+  ) {
+    const onStart = vi.fn();
+    const onApprove = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        runsOn={on}
+        onStart={onStart}
+        onApprove={onApprove}
+        onCancel={vi.fn()}
+        {...more}
+      />,
+    );
+    return { onStart, onApprove, user: userEvent.setup() };
+  }
+
+  /** The line under the row that says why. */
+  const why = () => screen.getByRole("heading", { name: "Runs on" }).parentElement?.textContent;
+
+  /** Opens the Runs on choice from the keyboard and picks the option named `name`. */
+  async function choose(user: ReturnType<typeof userEvent.setup>, name: string) {
+    act(() => selectNamed("Runs on").focus());
+    await user.keyboard("{Enter}");
+    await user.click(await screen.findByRole("option", { name }));
+  }
+
+  it.each([
+    [
+      { level: "project", pool: "builds" },
+      "As set (pool builds)",
+      "Pool builds, as this project's chats run.",
+    ],
+    [
+      { level: "workspace", pool: "gpu" },
+      "As set (pool gpu)",
+      "Pool gpu, as this workspace's chats run.",
+    ],
+    [
+      { level: "workspace", pool: null },
+      "As set (this machine)",
+      "This machine, as this workspace's chats run.",
+    ],
+    [
+      { level: "this_machine", pool: null },
+      "As set (this machine)",
+      "This machine: no pool is set for this workspace or the project.",
+    ],
+  ] as const)("says the place and the level that put it there: %o", (over, held, said) => {
+    showRunsOn(runsOn(over));
+
+    expect(selectNamed("Runs on")).toHaveTextContent(held);
+    expect(selectNamed("Runs on")).toHaveAccessibleDescription(said);
+  });
+
+  it("is not drawn where the window did not say where a chat runs", () => {
+    show();
+
+    expect(screen.queryByRole("heading", { name: "Runs on" })).toBeNull();
+  });
+
+  it("sends the pool picked, for this start only, and says no setting changes", async () => {
+    const { onStart, user } = showRunsOn(runsOn());
+
+    await choose(user, "Pool gpu");
+    expect(selectNamed("Runs on")).toHaveAccessibleDescription(
+      "Pool gpu for this start only. No setting changes.",
+    );
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+
+    expect(onStart).toHaveBeenCalledWith("claude", "steward", false, null, false, null, {
+      pool: "gpu",
+    });
+  });
+
+  it("sends this machine as a pool of none", async () => {
+    const { onStart, user } = showRunsOn(runsOn());
+
+    await choose(user, "This machine");
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+
+    expect(onStart).toHaveBeenCalledWith("claude", "steward", false, null, false, null, {
+      pool: null,
+    });
+  });
+
+  it("sends nothing about where while it follows the levels", async () => {
+    const { onStart, user } = showRunsOn(runsOn());
+
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+
+    expect(onStart).toHaveBeenCalledWith("claude", "steward", false, null, false, null);
+  });
+
+  it("carries the choice with an approval too", async () => {
+    const onApprove = vi.fn();
+    render(
+      <StartChat
+        options={options({ profiles: [{ ...ONE.profiles[0], approval: "new" }] })}
+        runsOn={runsOn()}
+        onStart={vi.fn()}
+        onApprove={onApprove}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+
+    await choose(user, "Pool builds");
+    await user.click(screen.getByRole("button", { name: "Approve and start" }));
+
+    expect(onApprove).toHaveBeenCalledWith(
+      "claude",
+      "steward",
+      false,
+      "claude",
+      null,
+      false,
+      null,
+      { pool: "builds" },
+    );
+  });
+
+  it("offers no pool at the project's root, and says a chat there runs here", async () => {
+    const { onStart, user } = showRunsOn(
+      runsOn({ at_root: true, pool: null, level: "this_machine" }),
+    );
+
+    expect(querySelectNamed("Runs on")).toBeNull();
+    expect(why()).toContain("This machine. A chat at the project's root always runs here.");
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+    expect(onStart).toHaveBeenCalledWith("claude", "steward", false, null, false, null);
+  });
+
+  it("offers Pool setup instead of an empty choice where this machine keeps no pool", async () => {
+    const onPoolSetup = vi.fn();
+    const { user } = showRunsOn(runsOn({ pool: null, level: "this_machine", pools: [] }), {
+      onPoolSetup,
+    });
+
+    expect(querySelectNamed("Runs on")).toBeNull();
+    expect(why()).toContain("This machine. No pool is set up on this machine yet.");
+    await user.click(screen.getByRole("button", { name: "Pool setup…" }));
+    expect(onPoolSetup).toHaveBeenCalledTimes(1);
+  });
+
+  it("still offers this machine where a level names a pool that is gone", () => {
+    showRunsOn(runsOn({ pool: "old", level: "workspace", pools: [] }));
+
+    expect(selectNamed("Runs on")).toHaveTextContent("As set (pool old)");
+  });
+
+  it("starts nothing on Enter in its list: Enter picks there", async () => {
+    const { onStart, user } = showRunsOn(runsOn());
+
+    act(() => selectNamed("Runs on").focus());
+    await user.keyboard("{Enter}");
+    await screen.findByRole("option", { name: "This machine" });
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    await waitFor(() => expect(selectNamed("Runs on")).toHaveTextContent("This machine"));
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  describe("a pool that could not be reached", () => {
+    const refused = "Pool builds is stopped, so nothing started.";
+
+    it("offers its three answers, and starts nothing until one is pressed", () => {
+      const { onStart } = showRunsOn(runsOn(), {
+        trouble: refused,
+        poolUnavailable: "builds",
+        onPoolSetup: vi.fn(),
+      });
+
+      expect(screen.getByRole("alert")).toHaveTextContent(refused);
+      for (const name of ["Try again", "Pool setup…", "Run on this machine this once"])
+        expect(screen.getByRole("button", { name })).toBeInTheDocument();
+      expect(onStart).not.toHaveBeenCalled();
+    });
+
+    it("runs on this machine for this one start alone, and the row keeps its choice", async () => {
+      const { onStart, user } = showRunsOn(runsOn(), {
+        trouble: refused,
+        poolUnavailable: "builds",
+      });
+
+      await user.click(screen.getByRole("button", { name: "Run on this machine this once" }));
+
+      expect(onStart).toHaveBeenCalledTimes(1);
+      expect(onStart).toHaveBeenLastCalledWith("claude", "steward", false, null, false, null, {
+        pool: null,
+      });
+      expect(selectNamed("Runs on")).toHaveTextContent("As set (pool builds)");
+    });
+
+    it("tries again with the same choice", async () => {
+      const { onStart, user } = showRunsOn(runsOn(), {
+        trouble: refused,
+        poolUnavailable: "gpu",
+      });
+
+      await choose(user, "Pool gpu");
+      expect(onStart).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+
+      expect(onStart).toHaveBeenLastCalledWith("claude", "steward", false, null, false, null, {
+        pool: "gpu",
+      });
+    });
+
+    it("tries again following the levels when nothing was chosen", async () => {
+      const { onStart, user } = showRunsOn(runsOn(), {
+        trouble: refused,
+        poolUnavailable: "builds",
+      });
+
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+
+      expect(onStart).toHaveBeenLastCalledWith("claude", "steward", false, null, false, null);
+    });
+
+    it("opens Pool setup", async () => {
+      const onPoolSetup = vi.fn();
+      const { onStart, user } = showRunsOn(runsOn(), {
+        trouble: refused,
+        poolUnavailable: "builds",
+        onPoolSetup,
+      });
+
+      await user.click(screen.getByRole("button", { name: "Pool setup…" }));
+
+      expect(onPoolSetup).toHaveBeenCalledTimes(1);
+      expect(onStart).not.toHaveBeenCalled();
+    });
+
+    it("offers none of it beside any other refusal", () => {
+      showRunsOn(runsOn(), { trouble: refused });
+
+      expect(screen.queryByRole("button", { name: "Run on this machine this once" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    });
   });
 });

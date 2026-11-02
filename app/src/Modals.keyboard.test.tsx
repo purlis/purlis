@@ -343,6 +343,52 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     expect(started).toEqual([{ profile: "claude", persona: null, footer: false }]);
   });
 
+  it("reaches the Runs on choice in the picker and picks from it by the keyboard alone (#4536)", async () => {
+    // Where the chat runs is a choice of this start, so it is reached as every other one is:
+    // by Tab, opened by Enter, moved by the arrows and picked by Enter, and Start carries it.
+    const started: unknown[] = [];
+    render(
+      <StartChat
+        options={{
+          profiles: PROFILES,
+          refused: [],
+          personas: [],
+          persona: null,
+          persona_profiles: {},
+          ignore_fix: null,
+          ignore_fix_id: null,
+          declares_none: false,
+        }}
+        runsOn={{ pool: "builds", level: "project", at_root: false, pools: ["builds"] }}
+        onStart={(...args) => started.push(args[6])}
+        onApprove={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(await reachableByKeyboard()).toEqual([
+      'button "Cancel"',
+      'button "Start chat"',
+      'option "No persona"',
+      'radio "claude"',
+      'button "As set (pool builds) Runs on"',
+      'input "Name"',
+      'checkbox "Draw purlis\'s footer in this chat"',
+    ]);
+
+    const runsOn = screen.getByRole("button", { name: /Runs on$/ });
+    act(() => runsOn.focus());
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("option", { name: "This machine" });
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() => expect(runsOn).toHaveTextContent("This machine"));
+    expect(started).toEqual([]);
+
+    act(() => screen.getByRole("button", { name: "Start chat" }).focus());
+    await userEvent.keyboard("{Enter}");
+    expect(started).toEqual([{ pool: null }]);
+  });
+
   it("reaches every row's Review and Remove in the extensions dialog", async () => {
     // **The worst of them, and the one nobody had looked at.** `Add an extension…` is the
     // scope's first edge and `Done` is its last, which left every installed row's two buttons

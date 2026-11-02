@@ -7,6 +7,7 @@ use super::*;
 
 fn a_task(chat: u32, name: &str, brief: &str) -> Wanted {
     Wanted {
+        runs_on: None,
         chat,
         to: None,
         name: name.to_owned(),
@@ -89,4 +90,18 @@ fn a_chat_holds_at_most_eight_and_its_close_takes_them() {
     );
     held.forget(4);
     assert_eq!(held.every().len(), 1);
+}
+
+#[test]
+fn where_a_held_task_would_run_is_said_before_the_person_approves_it() {
+    use purlis_core::machine::StartChoice;
+    assert_eq!(
+        runs_on_said(Some(&StartChoice::ThisMachine)),
+        "This machine, as the chat asks"
+    );
+    assert_eq!(
+        runs_on_said(Some(&StartChoice::Pool("builds".to_owned()))),
+        "Pool builds, as the chat asks"
+    );
+    assert_eq!(runs_on_said(None), "Where its workspace runs its chats");
 }

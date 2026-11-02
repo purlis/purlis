@@ -192,6 +192,9 @@ pub struct RunnerDispatchWhole {
     pub profile: Option<String>,
     /// Whether it asks for a long-running task.
     pub long: bool,
+    /// Where it would run (#4536): this machine or a pool, as the chat asked, else where its
+    /// workspace runs its chats.
+    pub runs_on: String,
     /// The brief whole, drawn inertly: escapes written out for what would draw otherwise.
     pub brief: String,
 }
@@ -215,8 +218,19 @@ pub fn whole_of(held: &Held, one: &HeldDispatch) -> Result<RunnerDispatchWhole, 
         works: inert(&would.works),
         profile: would.profile.as_deref().map(inert),
         long: one.wanted.long,
+        runs_on: runs_on_said(one.wanted.runs_on.as_ref()),
         brief: inert(&one.wanted.brief),
     })
+}
+
+/// **Where a held dispatch would run, in words** (#4536): what the person reads before Approve.
+pub(crate) fn runs_on_said(runs_on: Option<&purlis_core::machine::StartChoice>) -> String {
+    use purlis_core::machine::StartChoice;
+    match runs_on {
+        Some(StartChoice::ThisMachine) => "This machine, as the chat asks".to_owned(),
+        Some(StartChoice::Pool(pool)) => format!("Pool {pool}, as the chat asks"),
+        None => "Where its workspace runs its chats".to_owned(),
+    }
 }
 
 /// **Held dispatch `id` whole, for its own tab**. Window-only: what a runner chat asks to start

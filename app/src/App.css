@@ -1150,6 +1150,19 @@ body {
   font-size: var(--font-size-sm);
 }
 
+/* The Runs on row's control (#4536): as wide as what it says, at the start of its section. */
+.start-chat-runs-on {
+  justify-self: start;
+}
+
+/* What a pool that could not be reached offers (#4536): its three answers in a row. */
+.start-chat-offers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
 /* The footer's summary: the persona on the harness, its icon before the harness's name (R33). */
 .start-chat-summary .harness-icon {
   margin-inline: var(--space-1);
