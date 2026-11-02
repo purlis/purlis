@@ -22,7 +22,7 @@ import {
 import { inWorkspace, skillRowId, type GradingAt } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
+import { expectFocusInSight, untilFocusInSight, untilFocusWithin } from "./stories.testkit";
 import type { GradeRow, GradeScorecard, SkillDraft, SkillGradePlan } from "./bindings";
 
 const SCOPE = inWorkspace("smart-ide");
@@ -374,7 +374,8 @@ export const Grades: Story = {
       name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
     });
     await tabInto(() => open);
-    expectFocusInSight();
+    // The table's cell is scrolled in by React Aria a frame later, late in WebKit (#4026).
+    await untilFocusInSight("Tab to the Scorecard below the checks");
   },
 };
 
