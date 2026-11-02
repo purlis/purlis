@@ -187,7 +187,8 @@ const OPENS_A_DIALOG = [
   "New workspace…",
   "New project…",
   "Rename workspace alpha…",
-  "Link to work item…",
+  // `Link <chat> to a work item…`: the menu's words with the chat's name put in (#4753).
+  "Link ",
   "Make alpha live…",
 ];
 

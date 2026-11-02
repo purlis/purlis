@@ -16,6 +16,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
+import { chatList } from "./menus.testkit";
 import type { Moved, OlderSandbox } from "./bindings";
 import { RESTART_WAITS_FOR_THE_TURN } from "./ChatNotices";
 import { ChatsHere, fixedChats, nothingKnown, type State } from "./chatState";
@@ -189,11 +190,12 @@ async function aChat(now: Partial<Core> = {}) {
   return { ...said, core: held };
 }
 
-/** The menu on chat 4's tab, as a right-click opens it. */
-async function tabMenu() {
+/** Chat 4's one list (#4753), as a right-click on its row opens it: the list its pane's ⋯ and
+ *  the palette have too. */
+async function chatMenu() {
   const strip = stripNamed("Tabs");
-  fireEvent.contextMenu(within(strip).getByRole("tab", { name: /claude 4/ }));
-  return screen.findByRole("menu");
+  const tab = await waitFor(() => within(strip).getByRole("tab", { name: /claude 4/ }));
+  return chatList(tab.querySelector(".tab-name")?.textContent ?? "");
 }
 
 const ASKED = [{ plane: PLANE, session: 4 }];
@@ -208,7 +210,7 @@ describe("Restart chat on a chat's tab", () => {
     const { asked } = await aChat();
     await act(() => emit("chat-moved", WAITING));
 
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Restart" }));
+    await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
 
     await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
     // Asked for first: the core restarts only a chat it owes one.
@@ -221,7 +223,7 @@ describe("Restart chat on a chat's tab", () => {
     const { asked } = await aChat();
     await act(() => emit("chat-moved", RUNNING));
 
-    const menu = await tabMenu();
+    const menu = await chatMenu();
     expect(within(menu).queryByRole("menuitem", { name: "Restart" })).toBeNull();
     await userEvent.click(
       within(menu).getByRole("menuitem", {
@@ -250,7 +252,7 @@ describe("Restart chat on a chat's tab", () => {
       }),
     );
     await userEvent.click(
-      within(await tabMenu()).getByRole("menuitem", {
+      within(await chatMenu()).getByRole("menuitem", {
         name: "Restart when this turn ends",
       }),
     );
@@ -268,7 +270,7 @@ describe("Restart chat on a chat's tab", () => {
   it("says on the pane that an owed restart waits for the turn, and Restart now ends the turn", async () => {
     const { asked } = await aChat();
     await act(() => emit("chat-moved", RUNNING));
-    const menu = await tabMenu();
+    const menu = await chatMenu();
     await userEvent.click(
       within(menu).getByRole("menuitem", {
         name: "Restart when this turn ends",
@@ -306,7 +308,7 @@ describe("Restart chat on a chat's tab", () => {
     await act(() => emit("chat-moved", WAITING));
 
     expect(
-      within(await tabMenu()).getByRole("menuitem", { name: "Restart" }),
+      within(await chatMenu()).getByRole("menuitem", { name: "Restart" }),
     ).toHaveAccessibleDescription(
       "It keeps its conversation and starts on this project's settings as they are now. Mid-turn, it restarts when the turn ends.",
     );
@@ -315,7 +317,7 @@ describe("Restart chat on a chat's tab", () => {
   it("says a chat that reports no state restarts at once, and restarts it: the person pressed for it", async () => {
     const { asked } = await aChat();
 
-    const row = within(await tabMenu()).getByRole("menuitem", {
+    const row = within(await chatMenu()).getByRole("menuitem", {
       name: "Restart",
     });
     // docs/ui-copy.md, "Uncertainty is stated, not hidden": no wait is promised for it.
@@ -337,7 +339,7 @@ describe("Restart chat on a chat's tab", () => {
     });
     const { asked } = await aChat({ held });
 
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Restart" }));
+    await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
 
     await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
     expect(await screen.findByRole("status", { name: "Restart" })).toHaveTextContent(
@@ -363,7 +365,7 @@ describe("Restart chat on a chat's tab", () => {
     const held = await aChat({ notYet });
     await act(() => emit("chat-moved", WAITING));
 
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Restart" }));
+    await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
 
     expect(await screen.findByRole("status", { name: "Restart" })).toHaveTextContent(notYet);
     expect(screen.getByText("session 4")).toBeInTheDocument();
@@ -382,7 +384,7 @@ describe("Restart chat on a chat's tab", () => {
     await aChat({ notices: [line] });
     await act(() => emit("chat-moved", WAITING));
 
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Restart" }));
+    await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
 
     expect(await screen.findByText(line)).toBeInTheDocument();
     // Nothing here offers to start it without the sandbox again.
@@ -395,7 +397,7 @@ describe("Restart chat on a chat's tab", () => {
     const { asked } = await aChat({ refused });
     await act(() => emit("chat-moved", WAITING));
 
-    await userEvent.click(within(await tabMenu()).getByRole("menuitem", { name: "Restart" }));
+    await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
 
     // Why, and what to do about it (S8).
     await waitFor(() =>
@@ -488,12 +490,12 @@ describe("Restart chat on a task's row in the Chats list, for a task with no tab
     expect(screen.getAllByTestId("pane").map((pane) => pane.textContent)).toEqual(["session 4"]);
   });
 
-  it("has no such row for a chat that has a tab: its tab's menu has it", async () => {
+  it("is on the row of a chat with a tab too: the chat's one list (#4753)", async () => {
     await aChat({ tasks: [TASK] });
 
     fireEvent.contextMenu(await row("claude claude 4"));
     await screen.findAllByRole("menuitem");
-    expect(screen.queryByRole("menuitem", { name: "Restart" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Restart" })).toBeInTheDocument();
   });
 });
 
