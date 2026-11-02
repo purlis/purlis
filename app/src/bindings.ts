@@ -1604,6 +1604,40 @@ export const commands = {
 	 */
 	forgeDeviceSignInCancel: (flow: number) => __TAURI_INVOKE<void>("forge_device_sign_in_cancel", { flow }),
 	/**
+	 *  **What the Agent identity tab draws**, read fresh. Each row proves itself against GitHub, so
+	 *  it shows what it acts as now.
+	 */
+	agentIdentities: (plane: PlaneId) => typedError<IdentitiesShown, string>(__TAURI_INVOKE("agent_identities", { plane })),
+	/**
+	 *  **Makes the App on GitHub**: the page opened in the person's browser, its one redirect taken,
+	 *  the key stored, and the page for choosing its repos opened. `owner` is the account's name, an
+	 *  organisation's, or with `personal` the person's own. Answers the client id.
+	 */
+	agentIdentityCreate: (plane: PlaneId, attempt: string, owner: string, personal: boolean, workflows: boolean) => typedError<string, string>(__TAURI_INVOKE("agent_identity_create", { plane, attempt, owner, personal, workflows })),
+	/**  Stop making the App: the listener closes at once, and nothing is kept. */
+	agentIdentityCreateCancel: (attempt: string) => __TAURI_INVOKE<void>("agent_identity_create_cancel", { attempt }),
+	/**
+	 *  **Opens GitHub's page again** for the try under way. The page's address never reaches the
+	 *  window.
+	 */
+	agentIdentityReopen: () => typedError<null, string>(__TAURI_INVOKE("agent_identity_reopen")),
+	/**  **How an App stands on GitHub**, asked as the tab waits for it to be installed. Changes nothing. */
+	agentIdentityStand: (plane: PlaneId, app: string) => typedError<IdentityStand, string>(__TAURI_INVOKE("agent_identity_stand", { plane, app })),
+	/**  **The exact lines Finish adds** (Q11), from the one source Finish writes from. */
+	agentIdentityLines: (app: string, personas: string[]) => typedError<string, string>(__TAURI_INVOKE("agent_identity_lines", { app, personas })),
+	/**
+	 *  **Finish** (Q11, Q17): proves a real token first, so a failed proof writes nothing, then adds
+	 *  the lines, then allows them on this machine. A persona with anything else waiting for an Allow
+	 *  isn't allowed here, nor is the default persona, whose Allow reaches every chat that names no
+	 *  persona: only these lines were shown, so those stay the person's own Allow.
+	 */
+	agentIdentityFinish: (plane: PlaneId, app: string, personas: string[]) => typedError<IdentityFinished, string>(__TAURI_INVOKE("agent_identity_finish", { plane, app, personas })),
+	/**
+	 *  **Removes an identity at once** (Q13): key, tool lines and live tokens, of what this flow
+	 *  made. What remains on GitHub's side is the App itself, and the answer names its page.
+	 */
+	agentIdentityRemove: (plane: PlaneId, app: string) => typedError<IdentityRemoved, string>(__TAURI_INVOKE("agent_identity_remove", { plane, app })),
+	/**
 	 *  Sign in to `kind` on `host` in the person's browser, as the try `attempt`: the forge's
 	 *  authorization page is opened there, its one redirect is taken on a loopback port, and the
 	 *  code is exchanged for a token kept in the account's own keyring item. The account as Settings
@@ -8382,6 +8416,23 @@ export type HowFailed =
  */
 "last_message";
 
+/**  What the tab draws. */
+export type IdentitiesShown = {
+	rows: IdentityRow[],
+	pending: IdentityPending[],
+	owners: IdentityOwner[],
+	personas: string[],
+};
+
+/**  What Finish did. */
+export type IdentityFinished = {
+	row: IdentityRow,
+	/**  What it read as proof. */
+	read: string | null,
+	/**  Personas with an Allow of their own still to give: Finish allows only what it showed. */
+	to_allow: string[],
+};
+
 /**  Where one of a vault's identity variables is read from now (#237). */
 export type IdentityHeld = 
 /**  Moved into the keyring, which is read first. */
@@ -8390,6 +8441,55 @@ export type IdentityHeld =
 "environment" | 
 /**  Nowhere: the vault cannot be read. */
 "unset";
+
+/**  An owner the App can be made under. */
+export type IdentityOwner = {
+	name: string,
+	/**  The person's own account, as their forge sign-in says. */
+	personal: boolean,
+};
+
+/**  An App whose key is kept and whose lines Finish hasn't written. */
+export type IdentityPending = {
+	app: string,
+	stand: IdentityStand | null,
+	trouble: string | null,
+};
+
+/**  What a removal left, for the row to say. */
+export type IdentityRemoved = {
+	/**  The App's page on GitHub, where what remains is deleted. */
+	settings_page: string | null,
+};
+
+/**
+ *  One App's row (Q6, Q17): what it acts as, on how many repos, and for whom. A forge host has
+ *  one, or one per owner where a project's repos are under several.
+ */
+export type IdentityRow = {
+	host: string,
+	/**  The App's public client id. */
+	app: string,
+	personas: string[],
+	/**  What it acts as, where GitHub could say. */
+	acts_as: string | null,
+	repos: number | null,
+	/**  The App's page on GitHub, where it is deleted. */
+	settings_page: string | null,
+	/**  Why GitHub couldn't say. The row stays, and can still be removed. */
+	trouble: string | null,
+	/**  A line this flow didn't write: shown, never read with, and removed in the project file. */
+	by_hand: boolean,
+};
+
+/**  An App as GitHub says it is, before Finish. */
+export type IdentityStand = {
+	acts_as: string,
+	owner: string,
+	installed: boolean,
+	install_page: string,
+	settings_page: string,
+};
 
 /**  One save setting as the project has it: its value, and the file that decided it. */
 export type InForce = {

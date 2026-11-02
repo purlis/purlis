@@ -1153,7 +1153,22 @@ fn allow_persona(
     audit: Audit<'_>,
     at: u64,
 ) -> Result<(), String> {
-    let shown = sandbox::persona::shown_now(root, persona, digest)?;
+    allow_shown(
+        root,
+        &sandbox::persona::shown_now(root, persona, digest)?,
+        audit,
+        at,
+    )
+}
+
+/// [`allow_persona`] for a persona as `shown` has it: audited, kept and recorded the same.
+pub(crate) fn allow_shown(
+    root: &std::path::Path,
+    shown: &sandbox::persona::Shown,
+    audit: Audit<'_>,
+    at: u64,
+) -> Result<(), String> {
+    let persona = shown.persona.as_str();
     audit(
         None,
         &sandbox::grant::Audited {
