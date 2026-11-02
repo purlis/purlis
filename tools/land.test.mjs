@@ -888,6 +888,32 @@ test("a ready that starts no ci run is refused, and nothing is enqueued", () => 
   assert.equal(enqueueCall(got.calls), undefined);
 });
 
+test("a ready whose ci run was cancelled is refused: the draft's green check is all there is", () => {
+  const got = land(["7", "--sha", HEAD], {
+    view: { match: "^pr view 7 ", replies: [{ out: prOf({ isDraft: true }) }] },
+    headRuns: readyRuns(ciRun({ id: 11, name: "ci", event: "pull_request", conclusion: "cancelled" })),
+  });
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /newest ci run ended cancelled/);
+  assert.equal(enqueueCall(got.calls), undefined);
+});
+
+test("a pull request marked ready by hand waits for its newest ci run too", () => {
+  const going = ciRun({ id: 11, name: "ci", event: "pull_request", status: "in_progress", conclusion: null });
+  const headRuns = {
+    match: "head_sha=.*per_page=100",
+    replies: [{ out: runs([draftRun, going]) }, { out: runs([draftRun, ciRun({ id: 11, name: "ci", event: "pull_request" })]) }],
+  };
+  const refused = land(["7", "--sha", HEAD], { headRuns });
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /newest ci run is still going/);
+  assert.equal(enqueueCall(refused.calls), undefined);
+
+  const watched = land(["7", "--sha", HEAD, "--watch"], { headRuns });
+  assert.equal(watched.status, 0, watched.stderr);
+  assert.ok(enqueueCall(watched.calls));
+});
+
 test("a draft is marked ready, and its checks read again, before the enqueue", () => {
   const got = land(["7", "--sha", HEAD], {
     view: { match: "^pr view 7 ", replies: [{ out: prOf({ isDraft: true }) }] },

@@ -456,27 +456,43 @@ function main(options) {
   };
   checksGate(options.watch);
 
+  // A draft runs no macOS job, and `ready_for_review` starts the `ci` run that does. Until that
+  // run's `scenario-checks` posts, the newest `scenario tests (macos-latest)` on the head is the
+  // draft run's, green with its legs skipped: so the checks are read again only once the head's
+  // newest `ci` run is done, and passed. That holds for a pull request marked ready by hand just
+  // before this, too, and for one whose ready run was cancelled, which posts nothing of its own.
+  let after = 0;
   if (pr.isDraft) {
-    // A draft runs no macOS job, and `ready_for_review` starts the `ci` run that does. Until that
-    // run's `scenario-checks` posts, the newest `scenario tests (macos-latest)` on the head is the
-    // draft run's, green with its legs skipped: so the checks are read only once that run is done.
-    const before = lastCiRun(headRuns());
+    after = lastCiRun(headRuns());
     gh(["pr", "ready", options.pr, "--repo", repo], false);
     console.log(`marked #${options.pr} ready for review; waiting for the ci run that starts`);
-    for (let waited = 0; ; waited += Math.max(POLL, 1)) {
-      pause(waited === 0 ? SETTLE : POLL);
-      const run = readyRun(headRuns(), before);
-      if (run && !going(run)) break;
-      if (!run && waited >= UNPOSTED_FOR)
+  }
+  for (let waited = 0; ; waited += Math.max(POLL, 1)) {
+    if (pr.isDraft) pause(waited === 0 ? SETTLE : POLL);
+    const run = readyRun(headRuns(), after);
+    if (!run && !pr.isDraft) break;
+    if (run && !going(run)) {
+      // Its failing required checks are named first, when it has any.
+      if (pr.isDraft || waited > 0) checksGate(true);
+      if (run.conclusion !== "success")
         stop(
-          `marking #${options.pr} ready started no ci run in ${waitedFor(UNPOSTED_FOR)}; its macOS jobs have not run. Push again or rerun ci, and land again.`,
+          `the head's newest ci run ended ${run.conclusion}, so its macOS jobs have not passed: ${run.html_url}. Rerun it or push again, and land again.`,
         );
-      if (waited >= CHECKS_FOR)
-        stop(
-          `the ci run marking #${options.pr} ready started is still going after ${waitedFor(CHECKS_FOR)}: ${run.html_url}`,
-        );
+      break;
     }
-    checksGate(true);
+    if (run && !pr.isDraft && !options.watch)
+      stop(
+        `pull request #${options.pr}'s newest ci run is still going; run again when it finishes, or with --watch: ${run.html_url}`,
+      );
+    if (!run && waited >= UNPOSTED_FOR)
+      stop(
+        `marking #${options.pr} ready started no ci run in ${waitedFor(UNPOSTED_FOR)}; its macOS jobs have not run. Push again or rerun ci, and land again.`,
+      );
+    if (waited >= CHECKS_FOR)
+      stop(
+        `the head's newest ci run is still going after ${waitedFor(CHECKS_FOR)}${run ? `: ${run.html_url}` : ""}`,
+      );
+    if (!pr.isDraft) pause(POLL);
   }
 
   // 7. Enqueue.
