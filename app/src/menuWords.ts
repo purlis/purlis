@@ -92,7 +92,7 @@ export const SUBMENU = {
   stop: { said: "Stop", tip: "Ways to stop this chat, or the tasks it asked for." },
   curate: { said: "Curate", tip: undefined },
   moveTo: { said: "Move to", tip: undefined },
-  branch: { said: "Branch", tip: "The branch folder purlis cut for this chat." },
+  branch: { said: "Branch", tip: "Each acts on the branch folder purlis cut for this chat." },
 } as const;
 
 /**

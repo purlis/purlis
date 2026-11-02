@@ -4074,6 +4074,7 @@ export const FRESH_UNCHANGED =
 function chatRows(now: Now): Offer[] {
   const offers: Offer[] = [];
   const askedBy = now.askedBy ?? askedByOf(now.listed ?? []);
+  const front = chatInFront(now.tabs);
   // **Where policy locks all dispatch there is no Ask row on any chat**, and one row that
   // cannot run says why, in the palette, where a person looks for an action that has gone.
   const askLocked = now.ask?.locked ?? null;
@@ -4246,19 +4247,8 @@ function chatRows(now: Now): Offer[] {
     // **Merge its branch** (#4851, `command-table.md` row 24): for a chat working in a branch
     // folder purlis cut, whatever its kind. Merging is fast-forward only and never pushes, so it
     // is above the line; its folder's removal is below it ({@link chatBranchRemoveRows}).
-    const folder = branchFolderOf(now, session);
-    if (folder !== undefined) {
-      const title = `Merge ${name}'s branch into its clone`;
-      offers.push(
-        branchRowInFront(
-          now,
-          session,
-          "cut" in folder
-            ? can(branchMergeId(session), title, { verb: "mergeWorktree", cut: folder.cut }, name)
-            : cannot(branchMergeId(session), title, folder.why, name),
-        ),
-      );
-    }
+    const merge = branchRow(now, session, name, branchMergeId(session), "merge", front);
+    if (merge !== undefined) offers.push(merge);
 
     // **End…** (#4753): the chat's own row, never a tab's. It asks first (`EndingChat`: Cancel,
     // End, Smart close). A task ends by its own two rows instead, and a chat still restoring has
@@ -4293,57 +4283,70 @@ function branchFolderOf(now: Now, session: number): { cut: Cut } | { why: string
   };
 }
 
-/** A Branch row marked {@link Offer.inFront} where its chat is the one the keyboard is in. */
-function branchRowInFront(now: Now, session: number, offer: Offer): Offer {
-  const focused = focusedContent(now.tabs);
-  return focused?.kind === "session" && focused.session === session
-    ? { ...offer, inFront: true }
-    : offer;
+/** What each of a chat's Branch rows does, and its words in the palette. */
+const BRANCH_ROWS = {
+  merge: {
+    title: (name: string) => `Merge ${name}'s branch into its clone`,
+    does: (cut: Cut): Does => ({ verb: "mergeWorktree", cut }),
+  },
+  remove: {
+    title: (name: string) => `Remove ${name}'s branch folder`,
+    does: (cut: Cut): Does => ({ verb: "removeWorktree", cut, force: false }),
+  },
+  discard: {
+    title: (name: string) => `Discard that work and remove ${name}'s branch folder anyway`,
+    does: (cut: Cut): Does => ({ verb: "removeWorktree", cut, force: true }),
+  },
+} as const;
+
+/**
+ * **One of chat `session`'s Branch rows** (#4851), or `undefined` where it works in no branch
+ * folder. Greyed with its reason where it cannot run, and marked {@link Offer.inFront} where its
+ * chat is the one the keyboard is in.
+ */
+function branchRow(
+  now: Now,
+  session: number,
+  name: string,
+  id: string,
+  row: keyof typeof BRANCH_ROWS,
+  /** The chat the keyboard is in ({@link chatInFront}), worked out once per catalogue. */
+  front: number | undefined,
+): Offer | undefined {
+  const folder = branchFolderOf(now, session);
+  if (folder === undefined) return undefined;
+  const { title, does } = BRANCH_ROWS[row];
+  const offer =
+    "cut" in folder
+      ? can(id, title(name), does(folder.cut), name)
+      : cannot(id, title(name), folder.why, name);
+  return front === session ? { ...offer, inFront: true } : offer;
+}
+
+/** The chat shown in the pane that has the keyboard, if it shows one. */
+function chatInFront(tabs: Tabs): number | undefined {
+  const focused = focusedContent(tabs);
+  return focused?.kind === "session" ? focused.session : undefined;
 }
 
 /**
  * **Remove its branch folder** (#4851, `command-table.md` row 25), for each chat working in
  * one: the folder goes and the branch stays (ADR 0072 §4). Below the line, with the rest that
- * takes something away. And **Discard and remove anyway** (row 26) on the one chat whose removal
- * the core has just refused, beside the row it refused and nowhere before: absent rather than
- * refused, for the reason `worktree.discard:<piece>` is.
+ * takes something away, while its Merge is above it in {@link chatRows}: the catalogue's line
+ * is what keeps Enter on a fresh palette off a removal. And **Discard and remove anyway** (row
+ * 26) on the one chat whose removal the core has just refused, beside the row it refused and
+ * nowhere before: absent rather than refused, for the reason `worktree.discard:<piece>` is.
  */
 function chatBranchRemoveRows(now: Now): Offer[] {
   const offers: Offer[] = [];
+  const front = chatInFront(now.tabs);
   for (const { session, name } of chatsHere(now)) {
-    const folder = branchFolderOf(now, session);
-    if (folder === undefined) continue;
-    const title = `Remove ${name}'s branch folder`;
-    if (!("cut" in folder)) {
-      offers.push(
-        branchRowInFront(now, session, cannot(branchRemoveId(session), title, folder.why, name)),
-      );
-      continue;
-    }
-    offers.push(
-      branchRowInFront(now, session, {
-        ...can(
-          branchRemoveId(session),
-          title,
-          { verb: "removeWorktree", cut: folder.cut, force: false },
-          name,
-        ),
-        note: KEEPS_THE_BRANCH,
-      }),
-    );
-    if (now.refused === branchRemoveId(session))
-      offers.push(
-        branchRowInFront(
-          now,
-          session,
-          can(
-            branchDiscardId(session),
-            `Discard that work and remove ${name}'s branch folder anyway`,
-            { verb: "removeWorktree", cut: folder.cut, force: true },
-            name,
-          ),
-        ),
-      );
+    const remove = branchRow(now, session, name, branchRemoveId(session), "remove", front);
+    if (remove === undefined) continue;
+    offers.push({ ...remove, ...(remove.available ? { note: KEEPS_THE_BRANCH } : {}) });
+    const discard = branchRow(now, session, name, branchDiscardId(session), "discard", front);
+    if (now.refused === branchRemoveId(session) && discard?.available === true)
+      offers.push(discard);
   }
   return offers;
 }
@@ -4581,7 +4584,6 @@ export const BELOW_TOO =
 export const STOPS_IT =
   "A chat another chat started gets one short turn to write what it did, then it ends. The chat that asked is told you stopped it.";
 
-/** The catalogue's id for a chat's Stop row (#1448). */
 /** A chat's Merge its branch row (#4851). */
 export function branchMergeId(session: number): string {
   return `chat.branch.merge:${session}`;
@@ -4597,6 +4599,7 @@ export function branchDiscardId(session: number): string {
   return `chat.branch.discard:${session}`;
 }
 
+/** The catalogue's id for a chat's Stop row (#1448). */
 export function stopId(session: number): string {
   return `chat.stop:${session}`;
 }
