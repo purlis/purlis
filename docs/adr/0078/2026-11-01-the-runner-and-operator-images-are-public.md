@@ -21,4 +21,5 @@ The person made both packages public on 2026-11-02.
    with no runner image in its manifest. *Decided in implementation, to be confirmed* (D-4498-2).
 5. **A candidate is public from its push.** An image is pushed, pulled back and checked, so one
    that fails stays pullable by its digest, untagged and unsigned. A release names only a digest
-   that passed. *Decided in implementation, to be confirmed* (D-4498-3).
+   that passed. One that fails only the check from outside is already tagged and signed, and a
+   release does not name it. *Decided in implementation, to be confirmed* (D-4498-3).

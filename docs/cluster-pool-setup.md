@@ -20,7 +20,7 @@ commands under "If something goes wrong" aren't run in CI.
   or later with Landlock. A runner's volume uses the default class, and sandboxed chats need that
   kernel. You also need a kubeconfig context for the cluster with admin rights, and it has to be
   the current context while you work through this guide.
-- `kubectl`, Helm 4, OpenSSL 3, `git`, `gh`, `curl`, `jq`, `cosign`, Docker and a
+- `kubectl`, Helm 4, OpenSSL 3, `git`, `gh`, `curl`, `jq`, cosign 3, Docker and a
   [Rust toolchain](https://rustup.rs) on your machine. Rust is only for the doctor in step 1. `gh`
   has to be signed in, to any GitHub account. The `openssl` on a Mac is often LibreSSL, which can't
   make this key: run `openssl version` to check.
@@ -297,9 +297,9 @@ They only need step 7, and the operator gives them a namespace of their own for 
   why the runner isn't up, for example `Pulling` with the kubelet's words when the node can't pull.
   A cluster with no default storage class stops here too.
 - **Your nodes can't reach `ghcr.io`:** copy both images to a registry they can pull from with no
-  pull secret, since a runner's pod can't name one. Run
-  `docker buildx imagetools create --tag <your registry>/purlis-runner:guide "$runner"`, and the
-  same for `$operator`, which keeps each digest. Then add
+  pull secret, since a runner's pod can't name one. Sign in to your registry with `docker login`,
+  then run `docker buildx imagetools create --tag <your registry>/purlis-runner:guide "$runner"`,
+  and the same for `$operator`, which keeps each digest. Then add
   `--set image.repository=<your registry>/purlis-cluster-operator` in step 5, and name your registry
   in step 6.
 - **Anything else:** run the doctor from step 1 again.
