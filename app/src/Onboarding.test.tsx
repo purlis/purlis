@@ -413,7 +413,7 @@ describe("a relaunch", () => {
   });
 
   it("shows no harness step after the first time through while a harness is installed", async () => {
-    machine({
+    const { lastKept } = machine({
       kept: { ...FRESH, finished_once: true },
       answers: (cmd) =>
         cmd === "harness_setup_found"
@@ -421,12 +421,11 @@ describe("a relaunch", () => {
           : undefined,
     });
     render(<App />);
-    // Someone back on a machine that has been through the steps is counted through nothing.
+    // Someone back on a machine that has been through the steps is counted through nothing,
+    // once the window has taken the kept place in: the door alone says nothing about that.
     await screen.findByRole("button", { name: "Create a project" });
-    // The button can be drawn before the kept `finished_once` has been read.
-    await waitFor(() =>
-      expect(screen.queryByRole("navigation", { name: "Setting up" })).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(lastKept()).toMatchObject({ finished_once: true }));
+    expect(screen.queryByRole("navigation", { name: "Setting up" })).not.toBeInTheDocument();
     const person = userEvent.setup();
     await person.click(await screen.findByRole("button", { name: "Create a project" }));
     await openRepoByPath(REPO);
@@ -530,16 +529,52 @@ describe("the kept place, read before a door can be pressed (#2400)", () => {
     expect(screen.getByRole("radiogroup", { name: "Where it lives" })).toBeInTheDocument();
   });
 
-  it("guides a window with no project at once, without waiting on the read", async () => {
+  it("opens a window with no project at once, and counts its steps once the read answers", async () => {
     const read = aSlowRead({ kept: FRESH });
     render(<App />);
-    await stepSays("Step 1 of 2: Pick a project");
     const person = userEvent.setup();
     await person.click(await screen.findByRole("button", { name: "Create a project" }));
     await screen.findByRole("heading", { level: 1, name: "Create a project" });
+    expect(screen.queryByRole("navigation", { name: "Setting up" })).toBeNull();
 
     read.answer();
     await stepSays("Step 1 of 2: Pick a project");
     expect(screen.getByRole("radiogroup", { name: "Where it lives" })).toBeInTheDocument();
+  });
+
+  it("counts nothing for someone back on this machine, before or after the read answers", async () => {
+    const read = aSlowRead({ kept: { ...FRESH, finished_once: true } });
+    render(<App />);
+    await screen.findByRole("button", { name: "Create a project" });
+    await waitFor(() => expect(read.calls("onboarding_progress").length).toBeGreaterThan(0));
+    expect(screen.queryByRole("navigation", { name: "Setting up" })).toBeNull();
+
+    read.answer();
+    await waitFor(() => expect(read.lastKept()).toMatchObject({ finished_once: true }));
+    expect(screen.queryByRole("navigation", { name: "Setting up" })).toBeNull();
+  });
+
+  it("counts nothing for someone back on this machine while the harness look is out", async () => {
+    // Which harnesses the machine has changes the count, never whether there is one.
+    const { calls, lastKept } = machine({
+      kept: { ...FRESH, finished_once: true },
+      answers: (cmd) => (cmd === "harness_setup_found" ? new Promise<never>(() => {}) : undefined),
+    });
+    render(<App />);
+    await screen.findByRole("button", { name: "Create a project" });
+    await waitFor(() => expect(calls("harness_setup_found").length).toBeGreaterThan(0));
+    await waitFor(() => expect(lastKept()).toMatchObject({ finished_once: true }));
+    expect(screen.queryByRole("navigation", { name: "Setting up" })).toBeNull();
+  });
+
+  it("counts a fresh machine's steps when the kept place cannot be read", async () => {
+    machine({
+      answers: (cmd) => {
+        if (cmd === "onboarding_progress") throw "the place could not be read";
+        return undefined;
+      },
+    });
+    render(<App />);
+    await stepSays("Step 1 of 2: Pick a project");
   });
 });

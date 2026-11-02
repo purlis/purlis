@@ -59,16 +59,16 @@ const HOVER: &str = "[data-hovered]:not([data-disabled])";
 
 #[test]
 fn a_pinned_pin_under_the_pointer_is_measured_on_the_hover_fill() {
-    // `accent.fill` under the pointer holds the primary mark (4.4:1), but a pinned pin under
-    // the pointer draws the accent on it (2.3:1), which no state alone draws.
-    let theme = purlis_dark(json!({ "titlebar.pin.hover.fill": "accent.fill" }));
+    // `accent.fill-hover` under the pointer holds the primary mark (4.0:1), but a pinned pin
+    // under the pointer draws the accent's words on it (2.8:1), which no state alone draws.
+    let theme = purlis_dark(json!({ "titlebar.pin.hover.fill": "accent.fill-hover" }));
     assert_eq!(fell(&theme), ["titlebar.pin.hover+selected"]);
     let sheet = parts::stylesheet(&theme);
     // The pair draws its own look back, keyed on both states: a pinned pin under the pointer
-    // keeps the card's fill with the accent, as `titlebar.css` draws it.
+    // keeps the card's fill with the accent's words, as `titlebar.css` draws it.
     assert!(
         sheet.contains(&format!(
-            ":where({PIN}{HOVER}[data-selected]) {{ background-color: var(--surface-overlay); color: var(--accent-base); }}"
+            ":where({PIN}{HOVER}[data-selected]) {{ background-color: var(--surface-overlay); color: var(--accent-text); }}"
         )),
         "{sheet}"
     );
@@ -393,7 +393,7 @@ fn a_pinned_pin_under_the_pointer_keeps_its_accent_after_its_hover_falls() {
         let sheet = parts::stylesheet(&theme);
         let drawn = drawn_on(&sheet, "pin", PIN_PAIR);
         assert_eq!(fill_of(&drawn), Some("var(--surface-overlay)"), "{parts}: {sheet}");
-        assert_eq!(words_of(&drawn), Some("var(--accent-base)"), "{parts}: {sheet}");
+        assert_eq!(words_of(&drawn), Some("var(--accent-text)"), "{parts}: {sheet}");
     }
 }
 
@@ -458,15 +458,16 @@ fn a_current_chip_reached_from_the_keyboard_keeps_its_wash_after_its_focus_falls
 
 #[test]
 fn a_pin_s_failing_pair_leaves_a_plain_hovered_pin_the_theme_s_fill() {
-    // `accent.fill` under the pointer holds the primary mark, not the accent of a pinned pin.
-    let theme = purlis_dark(json!({ "titlebar.pin.hover.fill": "accent.fill" }));
+    // `accent.fill-hover` under the pointer holds the primary mark, not the accent's words of a
+    // pinned pin.
+    let theme = purlis_dark(json!({ "titlebar.pin.hover.fill": "accent.fill-hover" }));
     assert_eq!(fell(&theme), ["titlebar.pin.hover+selected"]);
     let sheet = parts::stylesheet(&theme);
     let hovered = drawn_on(&sheet, "pin", &["data-hovered"]);
-    assert_eq!(fill_of(&hovered), Some("var(--accent-fill)"), "{sheet}");
+    assert_eq!(fill_of(&hovered), Some("var(--accent-fill-hover)"), "{sheet}");
     let both = drawn_on(&sheet, "pin", PIN_PAIR);
     assert_eq!(fill_of(&both), Some("var(--surface-overlay)"), "{sheet}");
-    assert_eq!(words_of(&both), Some("var(--accent-base)"), "{sheet}");
+    assert_eq!(words_of(&both), Some("var(--accent-text)"), "{sheet}");
 }
 
 #[test]

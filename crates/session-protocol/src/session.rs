@@ -439,9 +439,20 @@ use crate::view::{Limits, Views};
 /// 1.67 has a runner answer `programs_of` on a link between hosts, with what was opened for the
 /// window that link named (#4271, ruled 2026-11-01). No frame changes. A relay does not ask a
 /// runner before 1.67, which would refuse it, and answers that no program is known of.
+///
+/// 1.68 tells a window that a runner's programs are not known (#4684): a relay refuses
+/// `programs_of` [`PROGRAMS_NOT_KNOWN`] for a runner before 1.67, which it does not ask, so the
+/// window keeps what it knows of the chats there rather than settling them as gone. A window
+/// before 1.68 is answered no programs, as before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 67,
+    minor: 68,
+};
+
+/// The version that is first told a runner's programs are not known (#4684).
+pub const KNOWS_PROGRAMS_NOT_KNOWN: Version = Version {
+    major: 1,
+    minor: 68,
 };
 
 /// The version that first answers `programs_of` on a link between hosts (#4271).
@@ -683,6 +694,13 @@ pub const KEY_CHANGED: &str = "key_changed";
 /// without (1.36, #2899): nothing started. Its `why` says so in the binary's words.
 pub const NO_ENGINE_SANDBOX: &str = "no_engine_sandbox";
 
+/// What the programs of the host a relay links to are is not known (1.68, #4684): a runner
+/// before 1.67 is not asked `programs_of` over a link between hosts. Not that it runs none, so
+/// nothing is settled as gone on it. Its `why` names the runner's version. Only a relay says it, of
+/// a runner it did not ask: a runner's own refusal in these words reaches the window as
+/// [`NOT_ALLOWED`].
+pub const PROGRAMS_NOT_KNOWN: &str = "programs_not_known";
+
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
 pub const REFUSALS: &[&str] = &[
@@ -702,6 +720,7 @@ pub const REFUSALS: &[&str] = &[
     DEVICE_FULL,
     KEY_CHANGED,
     NO_ENGINE_SANDBOX,
+    PROGRAMS_NOT_KNOWN,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
@@ -4548,6 +4567,8 @@ fn unreadable_reply(frame: &[u8]) -> Option<u64> {
     value.get("reply")?.get("re")?.as_u64()
 }
 
+// Held for one turn of the loop that reads it, on its stack: nothing keeps one.
+#[allow(clippy::large_enum_variant)]
 enum Driven {
     Ask(Option<Ask>),
     Frame(Option<Result<Bytes, LinkError>>),

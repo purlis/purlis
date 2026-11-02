@@ -48,6 +48,7 @@ import {
   theirThemeOnce,
 } from "./windowprefs";
 import { drawNatively, forgetNativeWindow } from "./theme/native";
+import { inForceAsked, inForceSettled } from "./theme/partsLater";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { yourEditor } from "./yourEditor";
 import { setDraftHere } from "./themeDrafts";
@@ -725,6 +726,12 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   followLook();
   followThemeFolders();
   if (reread) surveyAgain = true;
+  // A first frame standing in for an extension's theme waits for this to settle, and lands its
+  // own parts if it is still drawn then: an answer that failed or kept the window (#4722).
+  inForceAsked();
+  const settled = () => {
+    if (mine === drawing) void inForceSettled();
+  };
   const handed = handedFor(picked);
   if (handed !== undefined) {
     following = false;
@@ -742,6 +749,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
     // core knows of one, so it is asked after this frame, and draws only when there is one.
     if (where !== null) void drawADraftOver(mine);
     else sayTheDraft(null);
+    settled();
     return;
   }
   const again = surveyAgain;
@@ -759,11 +767,15 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
       personAsked(),
     );
   } catch {
+    settled();
     return;
   }
   // An answer that is not one (a window outside the app, a test's core) keeps what is drawn.
   const given = answered.status === "ok" ? (answered.data as typeof answered.data | null) : null;
-  if (given === null || typeof given !== "object") return;
+  if (given === null || typeof given !== "object") {
+    settled();
+    return;
+  }
   if (again) surveyAgain = false;
   if (mine !== drawing) return;
   sayTheDraft(given.draft);
@@ -785,6 +797,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
     sayTheFloors(typeof given.floors === "string" ? given.floors : null, { theirs });
     draw(theme);
   }
+  settled();
 }
 
 /** What the core said of the theme draft where the window is (#2332), for its strip. */

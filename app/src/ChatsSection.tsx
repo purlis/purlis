@@ -81,7 +81,9 @@ import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
 import { BrowserRows, type BrowserShown } from "./ChatBrowsersShown";
 import { HeadingOffer } from "./PanelSection";
 import { tasksIn } from "./taskBuckets";
-import { Menued } from "./Menus";
+import { Menued, moreForSaid } from "./Menus";
+import { menuIsEmpty } from "./menuModel";
+import { askForAMenu } from "./ui/menu/ContextMenu";
 import { useRevealedTask, type Reveal } from "./revealTask";
 import { useTabStop } from "./roving";
 import { stateClock, useStateSince, type StateClock } from "./stateClock";
@@ -160,9 +162,6 @@ type Moving = {
 
 const sameAsked = (one: readonly number[] | null, other: readonly number[] | null) =>
   one === other || (one !== null && other !== null && sameList(one, other));
-
-/** The chats a chat that handed nothing off handed off to. */
-const NOT_HANDED_OFF: readonly number[] = [];
 
 /** No restart has anything to say. */
 const NO_RESTARTS: Readonly<Record<number, string>> = {};
@@ -658,11 +657,6 @@ export function ChatsSection({
   }
   /** Where each chat's work went by a handoff, the newest first (#1492). */
   const went = useMemo(() => handedOff(rows), [rows]);
-  /** The same by number, for each row's menu: held, so a row is drawn again only for its own. */
-  const wentTo = useMemo(
-    () => new Map([...went].map(([from, chats]) => [from, chats.map((chat) => chat.session)])),
-    [went],
-  );
   /**
    * **The chats that need the person and that the filter hides**, longest waiting first
    * (#1499): their own rows and every row above them are filtered out, so no hand is drawn
@@ -1131,7 +1125,6 @@ export function ChatsSection({
                       byYou={row.byYou === true}
                       handedToName={handed?.[0].name ?? null}
                       handedMore={handed === undefined ? 0 : handed.length - 1}
-                      handedAll={wentTo.get(row.session) ?? NOT_HANDED_OFF}
                       askerWaiting={row.askerWaiting === true}
                       tab={row.tab}
                       current={row.session === front}
@@ -1353,7 +1346,6 @@ const Row = memo(function Row({
   byYou,
   handedToName,
   handedMore,
-  handedAll,
   askerWaiting,
   tab,
   current,
@@ -1407,8 +1399,6 @@ const Row = memo(function Row({
   handedToName: string | null;
   /** How many other open chats it handed off to. */
   handedMore: number;
-  /** Every open chat it handed off to, the newest first: its menu has a row to go to each. */
-  handedAll: readonly number[];
   /** That chat waits to start after a launch, and has not closed (#1513). */
   askerWaiting: boolean;
   tab: boolean;
@@ -1554,7 +1544,7 @@ const Row = memo(function Row({
   });
   return (
     <li role="none" data-level={level}>
-      <Menued on={{ on: "listed", session, handed: handedAll }} offers={offers} onPress={onPress}>
+      <Menued on={{ on: "chat", session }} offers={offers} onPress={onPress}>
         <RovingFocusGroup.Item asChild tabStopId={rowId(session)}>
           <button
             type="button"
@@ -1642,6 +1632,26 @@ const Row = memo(function Row({
           </button>
         </RovingFocusGroup.Item>
       </Menued>
+      {/* **The row's ⋯** (#4753, the person's ruling on #4585): the chat's one list, the menu a
+          right-click, Shift+F10 or the menu key on the row opens, asked for at the row so the
+          two are never two menus. Drawn on hover and while the row has the keyboard, in room
+          kept for it, so nothing moves. **The pointer's and the eye's, as the at-limit line
+          is**: what the row's `li` holds is the tree's, so it is out of the accessibility tree
+          and the tab order, and the keyboard opens the same list with Shift+F10 on the row. */}
+      {!menuIsEmpty({ on: "chat", session }, offers) && (
+        <span className="chat-more" aria-hidden="true">
+          <IconButton
+            size="sm"
+            variant="ghost"
+            aria-label={moreForSaid(name)}
+            excludeFromTabOrder
+            icon={<Ellipsis aria-hidden="true" />}
+            onPress={() => {
+              if (self.current !== null) askForAMenu(self.current);
+            }}
+          />
+        </span>
+      )}
       {/* The popover family's card, held up by the row and standing beside it, never opened
           by a press: a press on a row opens its chat. Beside the row, over the centre, in the
           default arrangement; it turns to the other side where there is no room, as a region

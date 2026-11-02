@@ -892,6 +892,55 @@ mod tests {
         );
     }
 
+    /// #4773: a helper's branch-folder work is refused at the hook in one line, and the chat's
+    /// own add, commit and push, each alone in its call, get no verdict.
+    #[test]
+    fn a_sub_agents_branch_folder_work_is_refused_at_the_hook_and_the_chats_own_is_not() {
+        let fix = Fixture::new();
+        let root = fix.root();
+        let forges = forges();
+        let state = fix.state();
+        let ask = |command: &'static str, agent_id: Option<&'static str>| {
+            let plane = Plane {
+                root: &root,
+                forges: &forges,
+                session_dir: "",
+                launched: Launched::default(),
+            };
+            let call = Call {
+                command,
+                cwd: "",
+                state_dir: &state,
+                caller: Caller {
+                    agent_id,
+                    ..attended()
+                },
+            };
+            verdict(&call, Some(&plane))
+        };
+        for cmd in [
+            "purlis worktree add purlis fix-the-thing",
+            "purlis worktree commit -m \"fix\" --all",
+            "purlis worktree push",
+        ] {
+            let refused = ask(cmd, Some("sub-1")).unwrap_or_else(|| panic!("{cmd:?}"));
+            assert_eq!(
+                refused.reason,
+                crate::dispatchguard::REASON_SUBAGENT_WORKTREE,
+                "{cmd:?}"
+            );
+            assert!(
+                refused
+                    .said()
+                    .contains("this work is a purlis task, so ask your chat to dispatch it."),
+                "{}",
+                refused.said()
+            );
+            assert_eq!(ask(cmd, None), None, "{cmd:?}");
+        }
+        assert_eq!(ask("purlis worktree list", Some("sub-1")), None);
+    }
+
     #[test]
     fn the_handoff_guard_is_gated_where_the_two_prose_guards_are_not() {
         let fix = Fixture::new();

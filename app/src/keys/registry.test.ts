@@ -296,7 +296,7 @@ describe("the key a row shows (N25)", () => {
     expect(rowKey("shell.new", true)).toBe("⌘⇧T");
     expect(rowKey("shell.new", false)).toBe("Ctrl+Shift+T");
     expect(rowKey("tab.close:7", true)).toBe("⌫");
-    expect(rowKey("tab.rename:7", false)).toBe("F2");
+    expect(rowKey("chat.rename:7", false)).toBe("F2");
     expect(rowKey("view.toggle:navigation", true)).toBe("⌘B");
     expect(rowKey("shortcuts.show", true)).toBe("⌘/");
     expect(rowKey("focus.toggle", false)).toBe("Ctrl+Shift+Enter");
@@ -424,8 +424,8 @@ describe("a key in words", () => {
 
 describe("Use skill…'s key (#3954)", () => {
   it("is each chat tab's Use skill… row's, from anywhere in the window", () => {
-    expect(rowKey("tab.useskill:7", true, true)).toBe("⌘⇧S");
-    expect(rowKey("tab.useskill:7", false, true)).toBe("Ctrl+Shift+S");
+    expect(rowKey("chat.useskill:7", true, true)).toBe("⌘⇧S");
+    expect(rowKey("chat.useskill:7", false, true)).toBe("Ctrl+Shift+S");
     expect(shortcut("chat.useSkill").group).toBe("Tabs and chats");
   });
 
@@ -449,7 +449,7 @@ describe("Use skill…'s key (#3954)", () => {
 describe("the palette's keys are the window's", () => {
   it("shows a row's key only where it works from anywhere in the window", () => {
     expect(rowKey("tab.close:7", true, true)).toBeUndefined();
-    expect(rowKey("tab.rename:7", false, true)).toBeUndefined();
+    expect(rowKey("chat.rename:7", false, true)).toBeUndefined();
     expect(rowKey("shell.new", true, true)).toBe("⌘⇧T");
     expect(rowAriaKeys("tab.close:7", true, true)).toBeUndefined();
   });

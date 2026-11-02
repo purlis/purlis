@@ -72,6 +72,14 @@ const READING =
  * progress) is not a standing line.
  */
 const NOT_NOTICES: Record<string, { count: number; why: string }> = {
+  "AgentIdentityFlow.tsx": {
+    count: 1,
+    why: READING,
+  },
+  "AgentIdentityTab.tsx": {
+    count: 1,
+    why: READING,
+  },
   "About.tsx": {
     count: 1,
     why:
@@ -420,6 +428,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "RenameChat.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "RenameWorkspace.tsx": {
     count: 1,
     why: ACTION,
@@ -691,6 +703,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why:
       "a field's error line under its box, why its value is refused, in either of the family's " +
       "boxes (#2905), polite; and a form's one alert summary of a refused send (#3291)",
+  },
+  "ui/status/StatusBar.tsx": {
+    count: 1,
+    why: "what a move from the bar's menu did: the keyboard stays on the row, so it is said (#3030)",
   },
   "ui/table/TableBar.tsx": {
     count: 1,

@@ -187,3 +187,76 @@ pub(super) fn hidden_agents_md(d: &Doctor) -> Option<Row> {
          run (ADR 0085).",
     ))
 }
+
+/// #4775: every clone whose own config git stops on, named with how to take the section out.
+/// A base recorded under no branch, `[branch ""]`, is read by `git config` and refused by every
+/// git that reads a remote, so a fetch, a push and the upstream `workspace clones` counts all
+/// fail on it, and that row reads the clone as one with no upstream. purlis's next cut, update
+/// or push in the clone removes it ([`crate::worktree::mend_nameless_base`]); this says so
+/// before then. A config `git config` cannot read at all is named too, with git's own words.
+/// No row at all where every config reads: one green row per clone would be furniture.
+pub(super) fn clone_git_config(d: &Doctor) -> Option<Row> {
+    const NAME: &str = "clone git config";
+    if !d.has_plane {
+        return None;
+    }
+    let root = d.root.as_path();
+    // A workspace or clone that cannot be listed is `workspace clones`' to name.
+    let (workspaces, _) = fsx::read_workspaces(root).ok()?;
+    let mut nameless: Vec<(String, String)> = Vec::new();
+    let mut unread: Vec<(String, String)> = Vec::new();
+    for ws in &workspaces {
+        let Ok((clones, _)) = fsx::read_clones(root, ws) else {
+            continue;
+        };
+        for clone in clones {
+            let name = clone
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let at = super::one_line(&format!("{ws}/{name}"), super::DISPLAY_LIMIT);
+            let shown = super::one_line(&clone.display().to_string(), super::DISPLAY_LIMIT);
+            // git answers 0 where a key matches and 1 where none does; anything else is a
+            // config it could not read.
+            match git_in(
+                &clone,
+                &["config", "--local", "--get-regexp", r"^branch\.\."],
+            ) {
+                Ok(run) if run.code == Some(0) => nameless.push((at, shown)),
+                Ok(run) if run.code == Some(1) => {}
+                Ok(run) => unread.push((at, super::one_line(&run.err, super::DISPLAY_LIMIT))),
+                Err(why) => unread.push((at, why)),
+            }
+        }
+    }
+    if nameless.is_empty() && unread.is_empty() {
+        return None;
+    }
+    let mut detail = Vec::new();
+    let mut hint = Vec::new();
+    if !nameless.is_empty() {
+        let names: Vec<&str> = nameless.iter().map(|(at, _)| at.as_str()).collect();
+        detail.push(format!(
+            "{} holds [branch \"\"], a section git stops on: every fetch and push in it fails",
+            names.join(", ")
+        ));
+        let commands: Vec<String> = nameless
+            .iter()
+            .map(|(_, clone)| format!("git -C {clone} config --remove-section branch."))
+            .collect();
+        hint.push(format!(
+            "Remove it from your own terminal: {}. purlis's next cut, update or push in the \
+             clone removes it too.",
+            commands.join(" ; ")
+        ));
+    }
+    if !unread.is_empty() {
+        let said: Vec<String> = unread
+            .iter()
+            .map(|(at, why)| format!("{at} ({why})"))
+            .collect();
+        detail.push(format!("git cannot read the config of {}", said.join(", ")));
+        hint.push("Open the clone's .git/config and fix or remove the line git names.".to_owned());
+    }
+    Some(Row::warn(NAME, detail.join("; "), hint.join(" ")))
+}

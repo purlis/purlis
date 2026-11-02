@@ -12,7 +12,8 @@
 //   1. refuses unless the pull request is open, from a branch of this repository (approving a
 //      fork's runs is a person's call), and based on `main`;
 //   2. refuses when its head is not `--sha`, the commit the review approved;
-//   3. refuses while main is red: the newest finished `ci` run of a push to main failed. A pull
+//   3. refuses while main is red: the newest `ci` run of a push to main that ended green or red
+//      (a cancelled or skipped run gives no verdict) failed. A pull
 //      request labelled `fixes-main` lands past a red main, and only it goes to the front of the
 //      queue (`jump`), since a jump restarts every group being built;
 //   4. stops when any run of the head is held for approval (`action_required`), naming each by
@@ -94,16 +95,24 @@ export function fixesMain(pr) {
 }
 
 const RED = new Set(["failure", "timed_out", "startup_failure"]);
+/** The conclusions that say what main is: green, or one of `RED`. */
+const VERDICT = new Set(["success", ...RED]);
 
 /**
  * The run that makes main red, of `runs` (the `ci` workflow's runs of pushes to main), or
- * `undefined`. Main's colour is its newest *finished* push run: a run still going says nothing
- * yet, so a red main stays red until a run goes green, however busy the queue is. A rerun that
- * went green clears it, and a nightly or merge-queue run is not main's.
+ * `undefined`. Main's colour is its newest push run that gave a verdict: it ended green or red.
+ * A run still going says nothing yet, and nor does a cancelled or skipped one: main keeps one
+ * pending `ci` run, so each merge cancels the run waiting behind it, and a job that hits its time
+ * limit ends `failure`, not `cancelled`. So a red main stays red until a run goes green, however
+ * busy the queue is (#4578: from 2026-10-20 to 11-01, reading only the newest finished run called
+ * a red main green for 9.4 of its 48.8 red hours, 170 of 575 push runs being cancelled). A rerun
+ * that went green clears it, and a nightly or merge-queue run is not main's.
  */
 export function redRun(runs) {
   const newest = [...runs]
-    .filter((run) => run.event === "push" && run.status === "completed")
+    .filter(
+      (run) => run.event === "push" && run.status === "completed" && VERDICT.has(run.conclusion),
+    )
     .sort((a, b) => b.run_number - a.run_number || b.run_attempt - a.run_attempt)[0];
   return newest && RED.has(newest.conclusion) ? newest : undefined;
 }
@@ -278,7 +287,9 @@ function main(options) {
       "-f",
       "status=completed",
       "-f",
-      "per_page=1",
+      // A page, not one run: the newest may be cancelled, which gives no verdict. The longest row
+      // of cancelled push runs from 2026-10-20 to 11-01 was 5 (#4578).
+      "per_page=30",
       "--jq",
       ".workflow_runs",
     ]);

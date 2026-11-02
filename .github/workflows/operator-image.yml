@@ -412,13 +412,21 @@ jobs:
       contents: read
     steps:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # The index is read with no sign-in and each architecture's own image is pulled by its digest
+      # in it: one daemon refuses a second pull of the index for another platform (#4784).
       - name: Both architectures pull and the signature verifies, with no token
         env:
           LINE: ${{ needs.index.outputs.image }}
         run: |
           set -euo pipefail
-          docker pull --platform linux/amd64 "$LINE"
-          docker pull --platform linux/arm64 "$LINE"
+          index=$(docker buildx imagetools inspect "$LINE" --format '{{json .Manifest}}')
+          for platform in linux/amd64 linux/arm64; do
+            digest=$(jq -r --arg platform "$platform" \
+              '[.manifests[] | select("\(.platform.os)/\(.platform.architecture)" == $platform) | .digest]
+                | if length == 1 then .[0] else error("the index holds \(length) images for \($platform)") end' \
+              <<< "$index")
+            docker pull --platform "$platform" "${LINE%@*}@$digest"
+          done
           cosign verify "$LINE" \
             --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/operator-image.yml@refs/heads/main" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \

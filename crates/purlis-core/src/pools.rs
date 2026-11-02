@@ -187,6 +187,28 @@ pub fn remove(
     Ok(removed)
 }
 
+/// **What names pool `name` on this machine** (#4678), plane by plane in the order this machine
+/// keeps them: the projects and workspaces [`remove`] sets back to this machine, which its
+/// question names before anything is removed. A plane where nothing names it isn't listed.
+/// Refused, with why, where this machine's store can't be read at all: nothing there is known,
+/// so it is never said that nothing names the pool.
+pub fn named_by(
+    config_root: &Path,
+    name: &str,
+) -> Result<Vec<(std::path::PathBuf, crate::machine::NamingPool)>, String> {
+    let loaded = crate::machine::read(config_root);
+    if let Some(why) = loaded.unreadable {
+        return Err(why);
+    }
+    Ok(loaded
+        .store
+        .recents
+        .iter()
+        .map(|recent| (recent.plane.clone(), recent.naming_pool(name)))
+        .filter(|(_, naming)| !naming.is_empty())
+        .collect())
+}
+
 /// Where the person removes a pool, as Settings names it.
 pub const SETTING: &str = "Settings › This machine › Pools";
 
@@ -252,6 +274,108 @@ pub fn chat_place(
         });
     }
     Ok(place)
+}
+
+/// **Keeps where chat `number` runs** (#4590), as it goes to its runner. Nothing is kept for a
+/// pool this machine doesn't keep: a removal forgets the pool's chats after it forgets the pool,
+/// so a keep that races one is either seen here or taken out by it.
+pub fn keep_chat_on_pool(
+    config_root: &Path,
+    plane: &Path,
+    number: u32,
+    pool: &str,
+    workspace: &str,
+) -> Result<(), String> {
+    let chat = crate::machine::ChatOnPool {
+        pool: pool.to_owned(),
+        workspace: workspace.to_owned(),
+    };
+    crate::machine::update(config_root, |store| {
+        if runners::runner_of(config_root, pool).is_ok() {
+            store.keep_chat_on_pool(plane, number, chat);
+        }
+    })
+    .map(|_| ())
+    .map_err(|why| why.to_string())
+}
+
+/// **Chat `number` no longer runs where it was kept** (#4590): no restart asks for it, and its
+/// branches are still to come back. Nothing is written for a chat with no record, which is every
+/// chat of this machine.
+pub fn leave_chat_on_pool(config_root: &Path, plane: &Path, number: u32) -> Result<(), String> {
+    if chat_on_pool(config_root, plane, number).is_none() {
+        return Ok(());
+    }
+    crate::machine::update(config_root, |store| {
+        store.leave_chat_on_pool(plane, number);
+    })
+    .map(|_| ())
+    .map_err(|why| why.to_string())
+}
+
+/// Forgets chat `number`, which never started on the pool it was kept for (#4590).
+pub fn forget_chat_on_pool(config_root: &Path, plane: &Path, number: u32) -> Result<(), String> {
+    if chat_on_pool(config_root, plane, number).is_none() {
+        return Ok(());
+    }
+    crate::machine::update(config_root, |store| {
+        store.forget_chat_on_pool(plane, number);
+    })
+    .map(|_| ())
+    .map_err(|why| why.to_string())
+}
+
+/// `workspace`'s branches of `pool` came back with no failure (#4590).
+pub fn branches_fetched(
+    config_root: &Path,
+    plane: &Path,
+    pool: &str,
+    workspace: &str,
+) -> Result<(), String> {
+    let owed = branches_to_fetch(config_root, plane)
+        .get(pool)
+        .is_some_and(|workspaces| workspaces.contains(workspace));
+    if !owed {
+        return Ok(());
+    }
+    crate::machine::update(config_root, |store| {
+        store.branches_fetched(plane, pool, workspace);
+    })
+    .map(|_| ())
+    .map_err(|why| why.to_string())
+}
+
+/// Where chat `number` runs, as it was kept (#4590).
+pub fn chat_on_pool(
+    config_root: &Path,
+    plane: &Path,
+    number: u32,
+) -> Option<crate::machine::ChatOnPool> {
+    chats_on_pools(config_root, plane).remove(&number)
+}
+
+/// Every chat of the plane kept on a pool, by its number (#4590).
+pub fn chats_on_pools(
+    config_root: &Path,
+    plane: &Path,
+) -> std::collections::BTreeMap<u32, crate::machine::ChatOnPool> {
+    crate::machine::read(config_root)
+        .store
+        .recent(plane)
+        .map(|recent| recent.chats_on_pools.clone())
+        .unwrap_or_default()
+}
+
+/// The workspaces whose branches are still to come back from each pool (#4590).
+pub fn branches_to_fetch(
+    config_root: &Path,
+    plane: &Path,
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    crate::machine::read(config_root)
+        .store
+        .recent(plane)
+        .map(|recent| recent.branches_to_fetch.clone())
+        .unwrap_or_default()
 }
 
 /// **Every pool a workspace of the plane at `plane` runs its chats on**, with those
@@ -1362,7 +1486,8 @@ pub fn add_cluster(
     let pool = &pool
         .kept_at(&runners::kubeconfig_kept_at(config_root, pool.name()))
         .holding(held)?
-        .minting_in_cluster(seen.mints_in_cluster);
+        .minting_in_cluster(seen.mints_in_cluster)
+        .under_team(seen.team_limits.as_ref());
     runners::record_cluster_pool_locked(config_root, pool, &runners::lock(config_root))?;
     if let Err(why) = runners::keep_kubeconfig(config_root, pool.name(), &context) {
         return Err(forgotten_cluster(config_root, pool.name(), why));
@@ -1590,6 +1715,8 @@ fn told_at_a_link(
     };
     let reached = pool.kubectl(&kubectl.clone().within(VOUCHED_NOW_WITHIN));
     let seen = reached.pool(pool.pool()).map_err(|why| why.to_string())?;
+    runners::keep_cluster_team_limits(config_root, pool.name(), seen.team_limits.as_ref())
+        .map_err(|why| why.to_string())?;
     let moved = runners::keep_cluster_minting(config_root, pool.name(), seen.mints_in_cluster)
         .map_err(|why| why.to_string())?;
     if moved && let Some(tell) = TOLD_OF_MINTING.get() {
