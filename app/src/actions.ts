@@ -4745,6 +4745,9 @@ export function paneCloseOf(
       : contentsOf(tabs, front.id).find((one) => one.pane === pane)?.content;
   if (content?.kind === "view")
     return can("pane.close", "Close this view", { verb: "closePane", ends: false });
+  // An empty pane holds nothing to end (#4755): closing it only takes it away.
+  if (content?.kind === "empty")
+    return can("pane.close", "Close this pane", { verb: "closePane", ends: false });
   if (front === undefined || content === undefined || pane === undefined)
     return cannot(
       "pane.close",

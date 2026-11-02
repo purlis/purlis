@@ -255,7 +255,11 @@ describe("a chat that is restarted", () => {
 
     const shown = now.order.flatMap((id) =>
       contentsOf(now, id).map(({ content }) =>
-        content.kind === "session" ? `chat ${content.session}` : content.view.key,
+        content.kind === "session"
+          ? `chat ${content.session}`
+          : content.kind === "view"
+            ? content.view.key
+            : "empty",
       ),
     );
     expect(shown).toEqual(["chat 12", "12", "8"]);

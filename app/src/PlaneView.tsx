@@ -2093,6 +2093,15 @@ export const PlaneView = memo(function PlaneView({
     },
     [sidebar],
   );
+  /** How many chats run in `workspace`, as the sidebar lists them: what an empty pane says
+   *  (#4755). */
+  const runningIn = useCallback(
+    (workspace: string) =>
+      workspace === OUTSIDE
+        ? (sidebar?.unfiled.length ?? 0)
+        : (sidebar?.workspaces.find((ws) => ws.name === workspace)?.chats.length ?? 0),
+    [sidebar],
+  );
   const filedIn = useCallback<FiledIn>(
     (session) => {
       const at = (chat: number) => {
@@ -2116,6 +2125,7 @@ export const PlaneView = memo(function PlaneView({
     (id) => {
       const lead = contentsOf(tabs, id)[0]?.content;
       if (lead === undefined) return false;
+      if (lead.kind === "empty") return false;
       return lead.kind === "session"
         ? pinnedChats.includes(lead.session)
         : pinnedViews.includes(viewKey(lead.view));
@@ -3085,6 +3095,7 @@ export const PlaneView = memo(function PlaneView({
         pinned: (id) => {
           const lead = contentsOf(next, id)[0]?.content;
           if (lead === undefined) return false;
+          if (lead.kind === "empty") return false;
           return lead.kind === "session"
             ? pinnedChats.includes(lead.session)
             : pinnedViews.includes(viewKey(lead.view));
@@ -10048,6 +10059,8 @@ export const PlaneView = memo(function PlaneView({
                               shared: (path, share) =>
                                 change((tabs) => withShare(tabs, frontTab.id, path, share)),
                             }}
+                            runningIn={runningIn}
+                            tab={frontTab.id}
                           />
                         </TaskEndContext.Provider>
                       ) : tabs.order.some((id) => !isBackground(id)) ? (

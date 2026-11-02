@@ -60,6 +60,7 @@ import type { ExtensionView, Shown } from "./bindings";
 import { qualifierOf, shownOf } from "./finished";
 import { HarnessChip } from "./HarnessCard";
 import { movedAt, stateOf, useChatsHere, useChatsSelect } from "./chatState";
+import { EmptyPane } from "./EmptyPane";
 import { closesOnly, markOf } from "./StripMarks";
 import {
   type RestartAct,
@@ -469,6 +470,8 @@ export function LayoutPanes({
   memory,
   firstTask,
   split,
+  runningIn,
+  tab,
   path = "",
 }: {
   /** The chats the launch has still to start (`restoring.rs`): each one's pane says so, in the
@@ -575,12 +578,51 @@ export function LayoutPanes({
     moved: (view: ViewRef, split: number) => void;
     shared?: (path: string, share: number) => void;
   };
+  /** How many chats run in `workspace`: what an empty pane says (#4755). */
+  runningIn: (workspace: string) => number;
+  /** The tab this is the layout of. Its splits are its own: another tab's never carry over
+   *  (#4755). */
+  tab: number;
   /** This layout's path from its tab's root: `a` for a split's first child, `b` for its
    *  second. The tab's own layout is `""`. */
   path?: string;
 }) {
+  // The pane is one side of a split. Read here: a chat's pane names its breadcrumb `path`.
+  const inSplit = path !== "";
   if (layout.kind === "pane") {
     const content = layout.content;
+    if (content.kind === "empty")
+      // **A pane that shows nothing** (#4755), with the pane's own actions where a view has
+      // them, so it can be split or closed from where it is.
+      return (
+        <div
+          className="pane-frame pane-viewed"
+          data-focused={layout.pane === focused || undefined}
+          onPointerDown={() => onFocus(layout.pane)}
+        >
+          <PaneHead
+            doing={
+              <PaneActions
+                pane={layout.pane}
+                offerFor={offerFor}
+                closeOf={closeOf}
+                onPaneDoes={onPaneDoes}
+              />
+            }
+          />
+          <div
+            className={layout.pane === focused ? "pane view focused" : "pane view"}
+            onFocus={() => onFocus(layout.pane)}
+          >
+            <EmptyPane
+              running={runningIn(content.workspace)}
+              newChat={offerFor("chat.new")}
+              onPress={(offer) => onPaneDoes(layout.pane, offer)}
+              inSplit={inSplit}
+            />
+          </div>
+        </div>
+      );
     if (content.kind === "view") {
       // **A view in a pane, with the pane's own actions** (#3147): split and close are the same
       // rows a chat's pane has, drawn by the same `PaneHead` and `PaneActions` in the same place,
@@ -830,6 +872,10 @@ export function LayoutPanes({
   };
   return (
     <Group
+      // **A tab's sizes are its own** (#4755): the library reads a side's size once, as it
+      // mounts, so a split drawn in this place for another tab is a new one, not that tab's
+      // sizes carried over.
+      key={`tab-${tab}`}
       orientation={layout.direction === "row" ? "horizontal" : "vertical"}
       onLayoutChanged={settled}
     >
@@ -902,6 +948,8 @@ export function LayoutPanes({
               memory={memory}
               firstTask={firstTask}
               split={split}
+              runningIn={runningIn}
+              tab={tab}
             />
           </Panel>
         </Fragment>

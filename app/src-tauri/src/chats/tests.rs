@@ -5500,6 +5500,60 @@ fn what_is_on_screen_is_every_chat_in_the_front_tab_of_the_drawn_strip_and_each_
 }
 
 #[test]
+fn a_pane_shows_a_chat_that_is_not_its_tab_s_own_beside_an_empty_pane_and_the_core_keeps_it() {
+    // #4755: a pane shows any open chat. Here a task sits on another strip's tab, its asker in
+    // no pane at all, beside an empty pane; the core holds it, says it is on screen, and a
+    // relaunch reads it back as it was.
+    use purlis_core::reopen::{HandedFrom, Mode, Owed};
+    let dir = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let before = Chats::new();
+    let asker = before
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let task = before
+        .start(
+            &Chat {
+                from: Some(HandedFrom {
+                    id: None,
+                    chat: asker,
+                    name: "ide.7".to_owned(),
+                    workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),
+                    report: Owed::Due,
+                    mode: Mode::Task,
+                    depth: 1,
+                    root: None,
+                    above: None,
+                    by_person: false,
+                    long: false,
+                }),
+                ..chat(&a_claude(dir.path()), "talk", None)
+            },
+            SIZE,
+        )
+        .unwrap();
+    let laid = on_ops(vec![front_tab(Node::split(
+        Direction::Row,
+        EVEN,
+        Node::Pane(Pane::Empty),
+        Node::chat(task),
+    ))]);
+
+    before
+        .lay_out(laid.clone())
+        .expect("any open chat may be in a pane");
+
+    assert_eq!(before.looked_at(), vec![task]);
+    purlis_core::reopen::write(plane.path(), &before.record()).unwrap();
+    before.end_all();
+    let after = Chats::new();
+    let record = purlis_core::reopen::read_or_refusal(plane.path()).unwrap();
+    after.put_back(&record, SIZE);
+    assert_eq!(after.layout(), Some(laid));
+    after.end_all();
+}
+
+#[test]
 fn a_pane_follows_its_chat_when_that_chat_is_started_again_under_a_new_number() {
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
