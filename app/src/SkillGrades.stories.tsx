@@ -290,9 +290,79 @@ export const Grades: Story = {
       name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
     });
     await tabInto(() => open);
-    expectFocusInSight();
+    await diagnose4672("no delay");
   },
 };
+
+/** DIAGNOSTIC for #4672, removed before review: every frame drawn 300 ms late. */
+export const GradesLateFrame: Story = {
+  play: async ({ canvas }) => {
+    const raf = window.requestAnimationFrame.bind(window);
+    const caf = window.cancelAnimationFrame.bind(window);
+    let next = 1e6;
+    const held = new Map<number, { timer?: number; frame?: number }>();
+    window.requestAnimationFrame = (cb) => {
+      const id = next++;
+      const entry: { timer?: number; frame?: number } = {};
+      held.set(id, entry);
+      entry.timer = window.setTimeout(() => {
+        entry.frame = raf((t) => {
+          held.delete(id);
+          cb(t);
+        });
+      }, 300);
+      return id;
+    };
+    window.cancelAnimationFrame = (id) => {
+      const entry = held.get(id);
+      if (entry === undefined) return caf(id);
+      held.delete(id);
+      if (entry.timer !== undefined) clearTimeout(entry.timer);
+      if (entry.frame !== undefined) caf(entry.frame);
+    };
+    try {
+      const list = await canvas.findByRole("grid", { name: "Grades of deploy" });
+      await waitFor(() => expect(within(list).getAllByRole("row")).toHaveLength(4));
+      const open = within(list).getByRole("button", {
+        name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
+      });
+      await tabInto(() => open);
+      await diagnose4672("frames 300 ms late");
+    } finally {
+      window.requestAnimationFrame = raf;
+      window.cancelAnimationFrame = caf;
+    }
+  },
+};
+
+async function diagnose4672(how: string): Promise<void> {
+  const verdict = () => {
+    try {
+      expectFocusInSight();
+      return "in sight";
+    } catch (error) {
+      const at = (document.activeElement as HTMLElement).getBoundingClientRect();
+      const frame = document.activeElement?.closest("[data-scope='table'][data-part='frame']");
+      const scrollers: string[] = [];
+      for (let up = document.activeElement?.parentElement; up; up = up.parentElement)
+        if (up.scrollTop !== 0 || up.scrollLeft !== 0)
+          scrollers.push(`${up.tagName.toLowerCase()}.${String(up.className)}@${up.scrollLeft},${up.scrollTop}`);
+      return (
+        `OUT (${error instanceof Error ? error.message.slice(-30) : ""}) box ${Math.round(at.left)},${Math.round(at.top)} ` +
+        `${Math.round(at.width)}x${Math.round(at.height)} window ${window.innerWidth}x${window.innerHeight} ` +
+        `frame ${frame === null || frame === undefined ? "?" : `${frame.scrollLeft}/${frame.scrollWidth}-${frame.clientWidth}`} ` +
+        `page ${window.scrollX},${window.scrollY} scrolled [${scrollers.join(" ")}]`
+      );
+    }
+  };
+  const now = verdict();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const frame = verdict();
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const later = verdict();
+  if (now !== "in sight" || frame !== "in sight" || later !== "in sight")
+    throw new Error(`#4672 ${how}: at once ${now} | after a frame ${frame} | after 1.5 s ${later}`);
+}
 
 /**
  * **A skill with no trigger tests**: the tab says what they are, offers nothing to run, and offers
