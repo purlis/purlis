@@ -8379,3 +8379,11 @@ nav.piece-files-head {
     border-bottom: 1px solid var(--border-subtle);
   }
 }
+
+/* The room an approval sentence keeps in a dialog opened before its details (#4736): the kept
+   words take the sentence's own padding, edge and size, so the room is the sentence's. */
+.start-chat-told [data-scope="reserved"][data-part="kept"] {
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 2px solid;
+  font-size: var(--font-size-sm);
+}

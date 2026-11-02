@@ -143,4 +143,92 @@ describe("the new-chat dialog's two answers (#4736)", () => {
     expect(said(asked, "start_chat")).toEqual([]);
     expect(said(asked, "approve_profile")).toEqual([]);
   });
+
+  // ADR 0097 §6: a Start pressed early that turns into a grant is under the person's focus and
+  // pointer. A second press right after must not grant what they have not read.
+  const grants = [
+    {
+      what: "an approval",
+      row: { name: "work", approval: "new", sandbox: null, billed_to: null },
+      button: "Approve and start",
+      said: /Not started\. Its command needs your approval first/,
+    },
+    {
+      what: "a start without the sandbox",
+      row: {
+        name: "work",
+        approval: null,
+        sandbox: {
+          state: "refused",
+          said: "The sandbox cannot be applied here.",
+          install: null,
+          locked: null,
+        },
+        billed_to: null,
+      },
+      button: "Start without the sandbox",
+      said: /Not started\. The sandbox cannot hold this chat here/,
+    },
+  ];
+  it.each(grants)(
+    "never grants $what on a press right after a Start pressed early turned into it",
+    async ({ row, button, said: told }) => {
+      const { asked, answer } = core();
+      render(<App />);
+
+      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+      const dialog = await screen.findByRole("dialog", { name: "Start a chat" });
+      await userEvent.click(within(dialog).getByRole("button", { name: /^Start chat/ }));
+
+      answer([row]);
+
+      const turned = await within(dialog).findByRole("button", { name: button });
+      // The keyboard is taken off it, and the turn is said.
+      expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(within(dialog).getByRole("status").textContent).toMatch(told);
+
+      await userEvent.click(turned);
+
+      expect(said(asked, "approve_profile")).toEqual([]);
+      expect(said(asked, "start_chat")).toEqual([]);
+    },
+  );
+
+  it("approves on a press of its own once the turned Start has held still", async () => {
+    const { asked, answer } = core();
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    const dialog = await screen.findByRole("dialog", { name: "Start a chat" });
+    await userEvent.click(within(dialog).getByRole("button", { name: /^Start chat/ }));
+
+    answer([{ name: "work", approval: "new", sandbox: null, billed_to: null }]);
+
+    const turned = await within(dialog).findByRole("button", { name: "Approve and start" });
+    await waitFor(() => expect((turned as HTMLButtonElement).disabled).toBe(false), {
+      timeout: 2000,
+    });
+    await userEvent.click(turned);
+
+    await waitFor(() => expect(said(asked, "approve_profile")).toHaveLength(1));
+  });
+
+  it("keeps the room of an approval sentence while the details are read", async () => {
+    const { answer } = core();
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    const dialog = await screen.findByRole("dialog", { name: "Start a chat" });
+    const kept = () =>
+      [...dialog.querySelectorAll<HTMLElement>('[data-scope="reserved"][data-part="kept"]')].map(
+        (one) => one.dataset.text ?? "",
+      );
+    expect(kept().some((text) => text.includes("It would run: CLAUDE_CONFIG_DIR"))).toBe(true);
+
+    answer([{ name: "work", approval: "new", sandbox: null, billed_to: null }]);
+
+    // The sentence is drawn in the room it kept: the cards under it do not move.
+    const sentence = await within(dialog).findByText(/purlis has not run this profile before/);
+    expect(sentence.closest('[data-scope="reserved"][data-part="shown"]')).toBeTruthy();
+  });
 });
