@@ -334,6 +334,9 @@ pub struct Held {
     /// is let go of.
     #[expect(dead_code, reason = "held for its drop, which stops the sweep")]
     talk_sweep: crate::activity::Daily,
+    /// What each chat's browser-site count is read from, kept until the policy or the sites
+    /// kept here change (#4739).
+    kept_sites: crate::network::KeptSites,
     /// This plane, once it is in its `Arc`: what a program's end writes the record through.
     me: Arc<std::sync::OnceLock<std::sync::Weak<Held>>>,
 }
@@ -586,6 +589,25 @@ impl Held {
     /// Each chat's browsers, and what the person said they may reach (#2013).
     pub fn browsers(&self) -> &crate::chatbrowsers::ChatBrowsers {
         &self.browsers
+    }
+
+    /// What each chat's browser-site count is read from (#4739): read from the policy files
+    /// once, and again only after [`Self::browser_sites_moved`].
+    pub fn browser_sites_in_force(&self) -> Arc<crate::network::SitesInForce> {
+        self.kept_sites
+            .now(|| crate::network::SitesInForce::read(&self.root))
+    }
+
+    /// This machine's policy changed, or a browser site was kept or removed for every chat
+    /// here: [`Self::browser_sites_in_force`] reads again at its next ask (#4739).
+    pub fn browser_sites_moved(&self) {
+        self.kept_sites.forget();
+    }
+
+    /// Whether [`Self::browser_sites_in_force`] holds a read.
+    #[cfg(test)]
+    pub fn browser_sites_kept(&self) -> bool {
+        self.kept_sites.holds()
     }
 
     /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
@@ -4580,6 +4602,7 @@ impl Planes {
             dispatches: crate::dispatches::Waiting::default(),
             touched_files: crate::taskchanges::Touched::default(),
             talk_sweep,
+            kept_sites: crate::network::KeptSites::default(),
             me,
         }
     }

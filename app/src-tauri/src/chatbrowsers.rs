@@ -3783,7 +3783,7 @@ pub fn sites_allowed(
     if !named_whole(&waiting.sites, &sites) {
         return Err(SITES_NOT_NAMED.to_owned());
     }
-    sites_kept(
+    let kept = sites_kept(
         held.root(),
         &sites,
         level,
@@ -3791,7 +3791,10 @@ pub fn sites_allowed(
         at,
         Some(session),
         held.chats().recorded_chat(session).map(|chat| chat.name),
-    )?;
+    );
+    // After the write, whether or not all of it was made (#4739).
+    held.browser_sites_moved();
+    kept?;
     held.browsers()
         .sites_answered(session, &sites, level == Level::Chat)?;
     for site in &sites {
@@ -3992,7 +3995,10 @@ pub fn person_sites_allowed(
     if !named_whole(&waiting, &sites) {
         return Err(SITES_NOT_NAMED.to_owned());
     }
-    sites_kept(held.root(), &sites, level, audit, at, None, None)?;
+    let kept = sites_kept(held.root(), &sites, level, audit, at, None, None);
+    // After the write, whether or not all of it was made (#4739).
+    held.browser_sites_moved();
+    kept?;
     held.browsers().theirs_answered(program, &sites);
     Ok(())
 }
