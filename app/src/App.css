@@ -8295,6 +8295,12 @@ nav.piece-files-head {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+/* Agent identity (#4485): the tab, and the flow Pool setup's step shares. */
+.agent-identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
   max-width: 660px;
   margin: 0 auto;
   padding: var(--space-8) var(--space-6);
@@ -8304,6 +8310,17 @@ nav.piece-files-head {
   gap: var(--space-2);
 }
 .pool-setup-title {
+.agent-identity-head,
+.agent-identity-row {
+  display: grid;
+  gap: var(--space-3);
+}
+.agent-identity-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.agent-identity-title {
   margin: 0;
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-strong);
@@ -8378,4 +8395,60 @@ nav.piece-files-head {
     border-right: 0;
     border-bottom: 1px solid var(--border-subtle);
   }
+.agent-identity-h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-strong);
+}
+.agent-identity-lead,
+.agent-identity-term,
+.agent-identity-does,
+.agent-identity-say {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: var(--line-height-body);
+}
+.agent-identity-who,
+.agent-identity-fold-body {
+  display: grid;
+  gap: var(--space-3);
+}
+.agent-identity-fold-body {
+  padding-top: var(--space-3);
+}
+.agent-identity-action {
+  display: grid;
+  gap: var(--space-3);
+}
+.agent-identity-waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+}
+.agent-identity-steps {
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--text-secondary);
+  line-height: var(--line-height-body);
+}
+.agent-identity-code {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+.agent-identity-code figcaption {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.agent-identity-code pre {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
 }

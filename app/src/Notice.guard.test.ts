@@ -72,6 +72,14 @@ const READING =
  * progress) is not a standing line.
  */
 const NOT_NOTICES: Record<string, { count: number; why: string }> = {
+  "AgentIdentityFlow.tsx": {
+    count: 1,
+    why: READING,
+  },
+  "AgentIdentityTab.tsx": {
+    count: 1,
+    why: READING,
+  },
   "About.tsx": {
     count: 1,
     why:

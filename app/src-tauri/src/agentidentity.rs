@@ -67,6 +67,8 @@ pub struct IdentityStand {
     pub acts_as: String,
     pub owner: String,
     pub installed: bool,
+    /// Whether it may change CI workflows too.
+    pub workflows: bool,
     pub install_page: String,
     pub settings_page: String,
 }
@@ -114,6 +116,7 @@ fn stand_of(stand: &core::Stand) -> IdentityStand {
         acts_as: stand.acts_as(),
         owner: stand.owner.clone(),
         installed: !stand.installations.is_empty(),
+        workflows: stand.workflows,
         install_page: stand.install_page(),
         settings_page: stand.settings_page(),
     }
@@ -342,15 +345,28 @@ pub async fn agent_identity_finish(
     plane: PlaneId,
     app: String,
     personas: Vec<String>,
+    shown: String,
 ) -> Result<IdentityFinished, String> {
     if personas.is_empty() {
         return Err("Tick at least one persona.".to_owned());
+    }
+    // Finish is the approval (Q11): it writes what the page showed, or nothing.
+    if shown != core::lines_shown(&app, &personas) {
+        return Err(
+            "The lines on this page changed. Look them over and press Finish again.".to_owned(),
+        );
     }
     let ctx = ctx_of(&planes, &plane)?;
     let held = planes.held(&plane)?;
     let network = planes.network().cloned();
     blocking(move || {
         let root = held.root().to_path_buf();
+        let known = purlis_core::workspaces::Plane::open(root.clone())
+            .personas()
+            .map_err(|_| "purlis couldn't read this project's personas. Try again.".to_owned())?;
+        if !personas.iter().all(|persona| known.contains(persona)) {
+            return Err("One of those personas isn't in this project. Reopen this tab.".to_owned());
+        }
         let proof = core::prove(&ctx, &app)?;
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

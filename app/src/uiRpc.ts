@@ -6273,6 +6273,8 @@ export type IdentityStand = {
 	acts_as: string,
 	owner: string,
 	installed: boolean,
+	/**  Whether it may change CI workflows too. */
+	workflows: boolean,
 	install_page: string,
 	settings_page: string,
 };

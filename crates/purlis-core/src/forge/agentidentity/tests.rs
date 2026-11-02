@@ -555,6 +555,17 @@ fn the_app() -> (&'static str, serde_json::Value) {
 }
 
 #[test]
+fn an_app_that_may_change_workflows_says_so() {
+    let mut app = the_app();
+    app.1["permissions"] = serde_json::json!({ "workflows": "write" });
+    let jwt = Api::say(vec![
+        app,
+        ("app/installations?per_page=100", serde_json::json!([])),
+    ]);
+    assert!(stand_over(&jwt).unwrap().workflows);
+}
+
+#[test]
 fn an_app_not_installed_yet_is_said_so_and_mints_nothing() {
     let jwt = Api::say(vec![
         the_app(),

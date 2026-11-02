@@ -1834,6 +1834,7 @@ describe("carrying out a row", () => {
         `newMemory:${JSON.stringify({ kind: "shared" })}`,
         "openView:charter/shared-memory/,Shared memory",
         "openView:charter/shortcuts/,Keyboard shortcuts",
+        "openView:charter/agent-identity/,Agent identity",
         // #1452: the project's dispatches, in a tab of their own.
         "openView:charter/dispatches/,Dispatches",
         // A chat's Activity, one row per chat tab (#1495).
@@ -2483,8 +2484,8 @@ describe("the palette at fifty chats", () => {
     // mode and Keyboard shortcuts, one row each. 920 since #3467: no Plugins group at the Project
     // or the Workspace level. 921 since #2027: Open browsers. 922 since the person's ruling of
     // 2026-10-30: Your settings: Pools is offered with or without a pool, as the group is. 923
-    // since #4536: the project's Runs on.
-    expect(offers).toHaveLength(923);
+    // since #4536: the project's Runs on. 924 since #4485: Agent identity.
+    expect(offers).toHaveLength(924);
   });
 
   /**

@@ -16,6 +16,7 @@ import { useLentMemoryStores } from "./MemoryEdits";
 import {
   Activity,
   Archive,
+  BadgeCheck,
   Brain,
   Bug,
   ChartColumn,
@@ -88,6 +89,7 @@ import { HeadingOffer } from "./PanelSection";
 import { SavingView } from "./SavingView";
 import { LicencesView } from "./LicencesView";
 import { ShortcutsView } from "./keys/ShortcutsView";
+import { AgentIdentityTab } from "./AgentIdentityTab";
 import { DevicesView } from "./DevicesView";
 import { BrowserView } from "./BrowserView";
 import { BrowserTimeline } from "./BrowserTimeline";
@@ -124,6 +126,7 @@ import {
   SAVING_VIEW,
   LICENCES_VIEW,
   SHORTCUTS_VIEW,
+  AGENT_IDENTITY_VIEW,
   DEVICES_VIEW,
   SETTINGS_TAB_TITLE,
   settingsLevelOf,
@@ -343,6 +346,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [BROWSERS_GRID_VIEW.view]: LayoutGrid,
   /** This machine and its runners (#2052, `DevicesView.tsx`). */
   [DEVICES_VIEW.view]: MonitorSmartphone,
+  /** What a chat acts as on a forge (#4485, `AgentIdentityTab.tsx`). */
+  [AGENT_IDENTITY_VIEW.view]: BadgeCheck,
   /** A browser's DevTools, drawn live (#2028, `inspector.ts`). */
   [INSPECTOR_VIEW]: Bug,
 };
@@ -501,6 +506,18 @@ export function ViewPane({
     return (
       <section className="view-pane view-alone" data-testid="view-pane-devices" aria-label={title}>
         <DevicesView />
+      </section>
+    );
+  }
+  // **Agent identity** (#4485): keyed by the plane, whose tool lines and personas it reads.
+  if (view.from === null && view.view === AGENT_IDENTITY_VIEW.view) {
+    return (
+      <section
+        className="view-pane view-alone"
+        data-testid="view-pane-agent-identity"
+        aria-label={title}
+      >
+        <AgentIdentityTab key={plane} plane={plane} />
       </section>
     );
   }

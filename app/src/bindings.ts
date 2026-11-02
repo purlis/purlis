@@ -1634,7 +1634,7 @@ export const commands = {
 	 *  isn't allowed here, nor is the default persona, whose Allow reaches every chat that names no
 	 *  persona: only these lines were shown, so those stay the person's own Allow.
 	 */
-	agentIdentityFinish: (plane: PlaneId, app: string, personas: string[]) => typedError<IdentityFinished, string>(__TAURI_INVOKE("agent_identity_finish", { plane, app, personas })),
+	agentIdentityFinish: (plane: PlaneId, app: string, personas: string[], shown: string) => typedError<IdentityFinished, string>(__TAURI_INVOKE("agent_identity_finish", { plane, app, personas, shown })),
 	/**
 	 *  **Removes an identity at once** (Q13): key, tool lines and live tokens, of what this flow
 	 *  made. What remains on GitHub's side is the App itself, and the answer names its page.
@@ -8605,6 +8605,8 @@ export type IdentityStand = {
 	acts_as: string,
 	owner: string,
 	installed: boolean,
+	/**  Whether it may change CI workflows too. */
+	workflows: boolean,
 	install_page: string,
 	settings_page: string,
 };
