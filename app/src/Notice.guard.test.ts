@@ -428,6 +428,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "RenameChat.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "RenameWorkspace.tsx": {
     count: 1,
     why: ACTION,

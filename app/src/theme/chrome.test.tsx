@@ -80,6 +80,7 @@ import { MidTurn, QuitWarning, type Ending } from "../QuitWarning";
 import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
+import { RenameChat } from "../RenameChat";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
@@ -1262,6 +1263,20 @@ const DIALOGS: Opened[] = [
           trouble="devops has chats open"
           deleting={false}
           onDelete={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "renaming a chat with no tab of its own (#4753)",
+    file: "RenameChat.tsx",
+    open: async () =>
+      render(
+        <RenameChat
+          name="qa 9"
+          trouble="That name is too long."
+          renaming={false}
+          onRename={nothing}
           onCancel={nothing}
         />,
       ),

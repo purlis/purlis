@@ -31,7 +31,7 @@ import {
   type Catalogued,
   type Offer,
 } from "./actions";
-import { Menued } from "./Menus";
+import { ChatMenuButton, Menued } from "./Menus";
 import { RestoringPane } from "./RestoringPane";
 import { NONE_RESTORING } from "./restoringChats";
 import { SessionPane } from "./SessionPane";
@@ -71,24 +71,6 @@ import { IconButton } from "./ui/button/Button";
  * (`LayoutPanes`), each pane's frame and breadcrumb (`PaneFrame`), the Notices that belong to
  * a pane, and the controls in a pane's top corner (`PaneDoing`).
  */
-
-/**
- * **The rows of a task's menu in the Chats list, for a pane to open the same menu on its
- * breadcrumb** (#1489): the catalogue's own rows, picked out by the ids that menu lists
- * (`actions.menuOn`), so the two cannot differ.
- */
-export function listedMenuOf(
-  session: number,
-  offerFor: (id: string) => Offer | undefined,
-): Catalogued {
-  const { above, below } = menuOn({ on: "listed", session });
-  return new Map(
-    [...above, ...below].flatMap((id) => {
-      const offer = offerFor(id);
-      return offer === undefined ? [] : [[id, offer] as const];
-    }),
-  );
-}
 
 /**
  * **The rows of the panes' menu, for a terminal to list under its own** (`TerminalMenu.tsx`):
@@ -219,7 +201,7 @@ export function PaneFrame({
                 <PaneCrumbs crumbs={crumbs} onShow={onShowChat} />
               ) : (
                 <Menued
-                  on={{ on: "listed", session: crumbMenu.session }}
+                  on={{ on: "chat", session: crumbMenu.session }}
                   offers={crumbMenu.offers}
                   onPress={crumbMenu.onPress}
                 >
@@ -414,6 +396,7 @@ export function LayoutPanes({
   focused,
   onFocus,
   offerFor,
+  offers,
   onPaneDoes,
   name,
   handedFrom,
@@ -485,6 +468,9 @@ export function LayoutPanes({
   onFocus: (pane: number) => void;
   /** The catalogue, by row id. There is one list of actions and the panes read it too. */
   offerFor: (id: string) => Offer | undefined;
+  /** The same catalogue, whole: what a chat's ⋯ reads, whose Ask ▸ and Move to ▸ are scans
+   *  of it (#4753). */
+  offers: Catalogued;
   onPaneDoes: (pane: number, offer: Offer | undefined) => void;
   /** The tab's name, which is the title of the view it opened on. */
   name: string;
@@ -639,6 +625,8 @@ export function LayoutPanes({
         // The task it shows inside its session's tab, which can be given a tab of its own or
         // opened beside its session from here (#1489).
         shows={crumb === undefined ? undefined : content.session}
+        // Its ⋯: the list of the chat it shows (#4753).
+        chat={{ session: content.session, offers }}
       />
     );
     const gone = away[layout.pane];
@@ -732,7 +720,7 @@ export function LayoutPanes({
           path !== undefined && path.path[path.path.length - 1].mode === "task"
             ? {
                 session: path.path[path.path.length - 1].session,
-                offers: listedMenuOf(path.path[path.path.length - 1].session, offerFor),
+                offers,
                 onPress: (offer) => onPaneDoes(layout.pane, offer),
               }
             : undefined
@@ -817,6 +805,7 @@ export function LayoutPanes({
               focused={focused}
               onFocus={onFocus}
               offerFor={offerFor}
+              offers={offers}
               onPaneDoes={onPaneDoes}
               name={name}
               handedFrom={handedFrom}
@@ -880,8 +869,12 @@ export function PaneDoing({
   onPaneDoes,
   task = false,
   shows,
+  chat,
 }: {
   pane: number;
+  /** The chat the pane shows, and the catalogue its ⋯ reads (#4753): the chat's one list, the
+   *  same its sidebar row's menu and the palette have. None for a pane showing a view. */
+  chat?: { session: number; offers: Catalogued };
   offerFor: (id: string) => Offer | undefined;
   /** This pane's close, which is not the focused pane's where the two differ (#1486): a pane
    *  beside one that shows a task still closes. For a task's own pane it is the minimise
@@ -906,6 +899,13 @@ export function PaneDoing({
   ];
   return (
     <div className="pane-doing">
+      {chat !== undefined && (
+        <ChatMenuButton
+          session={chat.session}
+          offers={chat.offers}
+          onPress={(offer) => onPaneDoes(pane, offer)}
+        />
+      )}
       {rows.map((id) => {
         const offer = id === "pane.close" ? closeOf(pane) : offerFor(id);
         if (!offer) return null;

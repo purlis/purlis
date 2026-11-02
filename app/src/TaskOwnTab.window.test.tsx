@@ -855,7 +855,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       const { tree, asked } = await drawn(withTasks(), changed);
       await toOwnTab(tree, "talk");
 
-      fireEvent.contextMenu(tab("talk"));
+      await userEvent.click(screen.getByRole("button", { name: "More for talk" }));
       const row = await screen.findByRole("menuitem", { name: "Start fresh" });
       expect(row.getAttribute("aria-disabled")).toBe("true");
       expect(row).toHaveAccessibleDescription(expect.stringContaining("This chat is a task"));
@@ -874,7 +874,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       });
       await toOwnTab(tree, "talk");
 
-      fireEvent.contextMenu(tab("talk"));
+      await userEvent.click(screen.getByRole("button", { name: "More for talk" }));
       await pick("Start fresh");
       const question = await screen.findByRole("alertdialog");
       expect(commandsOf(asked, "start_chat_fresh")).toEqual([]);
@@ -894,7 +894,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     const { tree, asked } = await drawn(withTasks());
     await toOwnTab(tree, "talk");
 
-    fireEvent.contextMenu(tab("talk"));
+    await userEvent.click(screen.getByRole("button", { name: "More for talk" }));
     await pick("Restart");
 
     // Asked where an end of the task is asked (#1488): on its own breadcrumb's line, with
@@ -920,7 +920,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     await waitFor(() => expect(tabNames()).toEqual(["steward 1", "left behind"]));
     expect(crumbsSaid()).toEqual([]);
 
-    fireEvent.contextMenu(tab("left behind"));
+    await userEvent.click(screen.getByRole("button", { name: "More for left behind" }));
     await pick(/^Stop and get its report/);
     const end = await screen.findByRole("alertdialog");
     expect(screen.queryByRole("group", { name: /left behind/ })).toBeNull();
@@ -928,7 +928,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     await userEvent.click(within(end).getByRole("button", { name: /^(Keep|Cancel)/ }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
 
-    fireEvent.contextMenu(tab("left behind"));
+    await userEvent.click(screen.getByRole("button", { name: "More for left behind" }));
     await pick("Restart");
     const restart = await screen.findByRole("alertdialog", { name: "Restart left behind?" });
     expect(commandsOf(asked, "ask_chat_restart")).toEqual([]);
@@ -939,24 +939,21 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     expect(ended(asked)).toEqual([]);
   });
 
-  it("lists a task's Send back above the line of its tab's menu: it ends nothing", async () => {
+  it("lists a task's Send back on its tab's menu, uncoloured: it ends nothing", async () => {
     const { tree } = await drawn(withTasks());
     await toOwnTab(tree, "talk");
 
     fireEvent.contextMenu(tab("talk"));
     const menu = await screen.findByRole("menu");
-    // With the rows that say where a task is drawn, uncoloured, and before every row that ends
-    // something: the menu's last group is what cannot be undone.
+    // Uncoloured: a tab's menu holds the tab's own rows (#4753), and on a task's own tab not
+    // one of them ends anything, so none is drawn in the danger colour.
     const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
     const back = items.findIndex((one) =>
       one.getAttribute("aria-label")?.startsWith("Send back into"),
     );
     expect(back).toBeGreaterThanOrEqual(0);
     expect(items[back]).not.toHaveAttribute("data-variant", "danger");
-    const ends = items.findIndex((one) => one.getAttribute("data-variant") === "danger");
-    expect(ends).toBeGreaterThan(back);
-    const lastGroup = menu.querySelector('[role="group"]:last-of-type');
-    expect(lastGroup?.contains(items[back])).toBe(false);
+    expect(items.filter((one) => one.getAttribute("data-variant") === "danger")).toEqual([]);
   });
 });
 
@@ -1053,7 +1050,7 @@ describe("what the core is told is on screen (M1, M4)", () => {
     expect(tab("steward 1").getAttribute("aria-selected")).toBe("true");
 
     // steward 1 is started again on its conversation: the same tab, in front, is chat 21's.
-    fireEvent.contextMenu(tab("steward 1"));
+    await userEvent.click(screen.getByRole("button", { name: "More for steward 1" }));
     await pick("Restart");
     await waitFor(() => expect(open[0].session).toBe(21));
 
