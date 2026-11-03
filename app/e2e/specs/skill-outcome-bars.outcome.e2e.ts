@@ -154,8 +154,78 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         if (row === null) return false;
         const holder = globalThis as { __openedInMs?: number };
         holder.__openedInMs = undefined;
+        // [DEBUG-4351] a timeline of this opening: each core call and the DOM's milestones.
+        const tl: string[] = []; // [DEBUG-4351]
+        (globalThis as { __tl4351?: string[] }).__tl4351 = tl; // [DEBUG-4351]
+        const internals = (
+          globalThis as {
+            __TAURI_INTERNALS__?: {
+              invoke: (...a: unknown[]) => Promise<unknown>;
+              __orig4351?: unknown;
+            };
+          }
+        ).__TAURI_INTERNALS__; // [DEBUG-4351]
+        if (internals !== undefined) {
+          // [DEBUG-4351]
+          const orig = (internals.__orig4351 ?? internals.invoke) as (
+            ...a: unknown[]
+          ) => Promise<unknown>; // [DEBUG-4351]
+          try {
+            // [DEBUG-4351]
+            internals.__orig4351 = orig; // [DEBUG-4351]
+            internals.invoke = (...a: unknown[]) => {
+              // [DEBUG-4351]
+              const at = performance.now(); // [DEBUG-4351]
+              const name = String(a[0]); // [DEBUG-4351]
+              const t = (globalThis as { __tl4351?: string[] }).__tl4351; // [DEBUG-4351]
+              t?.push(`${(at - started).toFixed(0)} send ${name}`); // [DEBUG-4351]
+              const back = orig.apply(internals, a); // [DEBUG-4351]
+              void back.then(
+                () =>
+                  t?.push(
+                    `${(performance.now() - started).toFixed(0)} back ${name} (${(performance.now() - at).toFixed(0)} ms)`,
+                  ),
+                () => t?.push(`${(performance.now() - started).toFixed(0)} fail ${name}`),
+              ); // [DEBUG-4351]
+              return back; // [DEBUG-4351]
+            }; // [DEBUG-4351]
+            tl.push(internals.invoke === orig ? "invoke not patched" : "invoke patched"); // [DEBUG-4351]
+          } catch (e) {
+            tl.push(`invoke patch failed ${String(e)}`);
+          } // [DEBUG-4351]
+        } // [DEBUG-4351]
+        const seen = new Set<string>(); // [DEBUG-4351]
+        const watch = new MutationObserver(() => {
+          // [DEBUG-4351]
+          for (const [label, q] of [
+            ["tab", '[data-testid="skill-studio"]'],
+            ["palette gone", "#palette-query"],
+            ["row", css],
+          ] as const) {
+            // [DEBUG-4351]
+            const here = document.querySelector(q) !== null; // [DEBUG-4351]
+            const key = `${label}:${here}`; // [DEBUG-4351]
+            if (!seen.has(key) && (label === "palette gone" ? !here : here)) {
+              seen.add(key);
+              tl.push(`${(performance.now() - started).toFixed(0)} dom ${label}`);
+            } // [DEBUG-4351]
+          } // [DEBUG-4351]
+        }); // [DEBUG-4351]
+        watch.observe(document.body, { childList: true, subtree: true }); // [DEBUG-4351]
+        let frames = 0; // [DEBUG-4351]
+        let last = performance.now(); // [DEBUG-4351]
+        const frame = () => {
+          const now = performance.now();
+          if (now - last > 50)
+            tl.push(`${(now - started).toFixed(0)} frame gap ${(now - last).toFixed(0)} ms`);
+          last = now;
+          if (++frames < 120 && holder.__openedInMs === undefined) requestAnimationFrame(frame);
+          else watch.disconnect();
+        }; // [DEBUG-4351]
+        requestAnimationFrame(frame); // [DEBUG-4351]
         const started = performance.now();
         row.click();
+        tl.push(`${(performance.now() - started).toFixed(0)} click returned`); // [DEBUG-4351]
         const look = () => {
           if (document.querySelector(css) === null) requestAnimationFrame(look);
           else
@@ -179,6 +249,10 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       { timeout: 30_000, interval: 100, timeoutMsg: "the studio's Library drew no row in 30 s" },
     );
     samples.push(took as number);
+    const tl = await browser.execute(() => (globalThis as { __tl4351?: string[] }).__tl4351 ?? []); // [DEBUG-4351]
+    console.log(
+      `[DEBUG-4351] opening ${n} took ${Math.round(took as number)} ms: ${(tl as string[]).join(" | ")}`,
+    ); // [DEBUG-4351]
   }
   return samples;
 }
