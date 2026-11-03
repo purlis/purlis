@@ -3514,6 +3514,7 @@ fn bringing_back_puts_each_conversation_at_its_place_in_the_new_home() {
         ".claude/projects/-home-purlis-p/other.jsonl",
         "the new runner's\n",
     );
+    harnesses_ran_in(to.path());
 
     let (said, errors) = conversations_run(from.path(), Some(to.path()));
 
@@ -3683,6 +3684,7 @@ fn bringing_back_takes_what_a_harness_keeps_beside_a_transcript() {
     for rel in beside {
         put(from.path(), rel, &format!("{rel}\n"));
     }
+    harnesses_ran_in(to.path());
 
     let (said, errors) = conversations_run(from.path(), Some(to.path()));
 
@@ -3701,6 +3703,54 @@ fn bringing_back_takes_what_a_harness_keeps_beside_a_transcript() {
             format!("{rel}\n")
         );
     }
+}
+
+/// The folders Claude Code and Codex keep in a runner's home once each has run there, and the
+/// profile `work` made there.
+fn harnesses_ran_in(home: &std::path::Path) {
+    for folder in [
+        ".claude",
+        ".codex",
+        ".local/share/purlis/profiles/work/config",
+    ] {
+        std::fs::create_dir_all(home.join(folder)).unwrap();
+    }
+}
+
+/// **Nothing is brought back where the runner has no place for it yet**: a profile not made on
+/// the new runner yet, or a harness that never ran there. Its folder made by a bring back would
+/// stand in the way of the profile purlis makes there (the runner refuses a profile whose folder
+/// is already there), so those conversations are left, and the runner stays held until they can
+/// come.
+#[cfg(unix)]
+#[test]
+fn nothing_is_brought_back_where_the_runner_has_no_place_for_it_yet() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let made = ".local/share/charter/profiles/work/config/projects/-home-purlis-p/0b5e.jsonl";
+    let not_made = ".local/share/charter/profiles/home/config/projects/-home-purlis-p/1c6f.jsonl";
+    for rel in [made, not_made] {
+        put(from.path(), rel, &format!("{rel}\n"));
+    }
+    std::fs::create_dir_all(to.path().join(".local/share/charter/profiles/work/config")).unwrap();
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 2,
+            left: 1,
+            seen: 0
+        }),
+        "{errors}"
+    );
+    assert!(to.path().join(made).is_file());
+    assert!(
+        !to.path()
+            .join(".local/share/charter/profiles/home")
+            .exists(),
+        "no folder of a profile the runner has not made"
+    );
 }
 
 /// **A read that cannot finish gives no answer**, never one of none: an image with no `realpath`

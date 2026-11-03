@@ -1200,12 +1200,16 @@ pub fn held_for_its_conversations(
 /// (#4861): ten minutes, twice as long after each failure, and never more than four hours. The
 /// looks come every five minutes, so a Docker that cannot read a home is not asked at each.
 fn read_again_after(failures: u32) -> std::time::Duration {
-    const FIRST: std::time::Duration = std::time::Duration::from_secs(10 * 60);
-    const MOST: std::time::Duration = std::time::Duration::from_secs(4 * 60 * 60);
-    FIRST
+    READ_AGAIN_FIRST
         .checked_mul(1 << failures.saturating_sub(1).min(16))
-        .map_or(MOST, |wait| wait.min(MOST))
+        .map_or(READ_AGAIN_MOST, |wait| wait.min(READ_AGAIN_MOST))
 }
+
+/// How long a read of a home that failed once waits before the next (#4861).
+const READ_AGAIN_FIRST: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// The longest a read of a home that keeps failing waits before the next (#4861).
+const READ_AGAIN_MOST: std::time::Duration = std::time::Duration::from_secs(4 * 60 * 60);
 
 /// Whose read of a home is paced: this machine's config root and the runner's container's id,
 /// which no other runner ever has, as a name may be had again.
@@ -1239,9 +1243,7 @@ impl ConversationReads {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         // A wait long over is forgotten, so this does not grow with runners that went.
-        held.retain(|_, (_, until, _)| {
-            now.saturating_duration_since(*until) < read_again_after(u32::MAX)
-        });
+        held.retain(|_, (_, until, _)| now.saturating_duration_since(*until) < READ_AGAIN_MOST);
         let failures = held.get(whose).map_or(0, |(failures, ..)| *failures) + 1;
         held.insert(
             whose.clone(),

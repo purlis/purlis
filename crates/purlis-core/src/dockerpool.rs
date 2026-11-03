@@ -145,6 +145,12 @@ pub const CARRIED_WITHIN: std::time::Duration = std::time::Duration::from_secs(1
 /// out of the home holds. It ends by printing `conversations <found> <left> <seen>`: how many
 /// files it found, how many of those it did not bring back, and how many of those it only sees.
 ///
+/// **It brings back only where the runner has a place for it**: the folder that holds a place,
+/// a profile's `config` or a harness's own folder, must be in the new home already. A profile not
+/// made there yet, or a harness that never ran there, leaves its conversations where they are, so
+/// no folder a bring back made stands in the way of the profile purlis makes there later; the
+/// runner stays held until they can come.
+///
 /// **It fails closed.** A program it needs that the image lacks, a folder it cannot read, or a
 /// file whose real path it cannot read ends it with no answer, which says nothing of the home
 /// ([`Docker::conversations`] refuses), so the runner stays. A home is never taken for an empty one
@@ -169,7 +175,16 @@ for place in "$@"; do
     [ ! -L "$at" ] || continue
     real=$(realpath -- "$at") || exit 1
     [ "$real" = "$at" ] || continue
-    said=$(find "$at" -type f -exec sh -c "$one" sh "$mode" "$from" "$to" "$only_seen" {} +)       || exit 1
+    how=$mode
+    if [ "$mode" = bring ] && [ -z "$only_seen" ]; then
+      rel=${at#"$from/"}
+      up=${rel%/*}
+      if [ ! -d "$to/$up" ] || [ -L "$to/$up" ]; then
+        how=look
+        echo "not brought back: $rel, as the runner has no $up yet" >&2
+      fi
+    fi
+    said=$(find "$at" -type f -exec sh -c "$one" sh "$how" "$from" "$to" "$only_seen" {} +)       || exit 1
     for word in $said; do
       found=$((found + 1))
       case $word in
