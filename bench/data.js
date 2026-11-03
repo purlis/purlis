@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793719236702,
+  "lastUpdate": 1793722367202,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37758,6 +37758,48 @@ window.BENCHMARK_DATA = {
             "value": 101.81964450000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.524, 101.601, 101.820, 102.013, 102.560 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f0474f12e115f8857fd30cf6124cd8753af3e455",
+          "message": "Pool setup: Try it starts a real chat on the pool, and its last screen (#4483) (#4969)\n\n* Pool setup: Try it starts a real chat on the pool, and its last screen (#4483)\n\nTry it's own button starts a chat on the pool, in the tab's workspace or\nthe project's first, on a profile whose harness reports SessionStart at\nlaunch and that the runner has signed in. It waits for that hook (ADR\n0076), closes the chat and keeps the proof. A refusal or a chat that never\nstarts comes back with why and the step that mends it. The last screen\nlists what passed, reads \"works, except for this\" where any line didn't\npass, and opens the picker with the pool chosen on Runs on.\n\nThe core's Try lines no longer always add a skipped gh line, so a setup\nwith every step done reads as passed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G01M2MDGGCXJDMQ7KWGPKG\nPurlis-Persona: steward\n\n* Try it: review fixes (#4483)\n\nA chat whose program is gone fails the try at once, as a grade checks,\ninstead of after two minutes with the wrong cause. Guards release the\npool and close the chat however the try ends. Try it returns the\nworkspace its chat used, and Open a chat opens the picker there, which\nnames that workspace and reads its stage. A workspace that is a link is\nnever used. The last screen says only what was checked; the failure lead\nfollows whether a step mends it. Counted units, a keyboard walk in the\nstories, doc comments.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G01M2MDGGCXJDMQ7KWGPKG\nPurlis-Persona: steward\n\n* Try it: its workspace is held as a branch folder's is (#4483)\n\nThe folder Try it starts its chat in is confine::workspace_dir's: a\nworkspace of the project's own, reached without a link anywhere on the\nway, the check a branch folder already gets.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G01M2MDGGCXJDMQ7KWGPKG\nPurlis-Persona: steward\n\n* Try it's stories: the keyboard walk uses the story's own userEvent (#4483)\n\nWebKit's Tab skips a button unless the key is pressed the way the story's\nown userEvent presses it, as the Button family's stories do.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6G01M2MDGGCXJDMQ7KWGPKG\nPurlis-Persona: steward\n\n* Try it: its wait counted through purlis's counts, and the UI RPC client knows it (#4483)\n\nThe shipped-code guard refuses a plural suffix spelled inline, so the wait\nis said through purlis_core::counts::counted. uiRpc.ts carries the new\nwindow-only command and its types, as the generator writes them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6G01M2MDGGCXJDMQ7KWGPKG\nPurlis-Persona: steward\n\n* Try it's story walks from the step's heading, as the keyboard does (#4483)\n\nThe heading takes the keyboard when the step changes, so Tab walks from it\nto Go to Sign-ins, then to Try again, in WebKit as in Chromium.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6G01M2MDGGCXJDMQ7KWGPKG\nPurlis-Persona: steward\n\n* Try it: only the chat's start spins while trying, and its pictures (#4483)\n\nWhile a try runs, only its one check, the chat's start, is drawn running:\nthe lines it doesn't check stay as they were. The baselines are the stories\nrun's, taken with tools/story-baselines-pull.mjs; Trying's follow from the\nnext run, as this changes it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6G01M2MDGGCXJDMQ7KWGPKG\nPurlis-Persona: steward\n\n* Try it's Trying pictures, from the stories run (#4483)\n\nTaken with tools/story-baselines-pull.mjs from run 41615681329, after only\nthe chat's start spins while trying.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6G01M2MDGGCXJDMQ7KWGPKG\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T14:38:39Z",
+          "tree_id": "b8b5ca6bd8b57398ad85ae1c1662813c6d88dc81",
+          "url": "https://github.com/purlis/purlis/commit/f0474f12e115f8857fd30cf6124cd8753af3e455"
+        },
+        "date": 1793722359012,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5133924999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.502, 0.507, 0.513, 0.526, 0.542 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2432645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.200, 16.209, 16.243, 16.315, 16.762 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.95273449999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.908, 101.832, 101.953, 102.766, 103.035 ms"
           }
         ]
       }
