@@ -13750,6 +13750,17 @@ export type WindowMotion = {
 };
 
 /**
+ *  **A ground of the accent's words comes no nearer a signal's wash than it was** (#4666,
+ *  `purlis_core::theme::NoNearer`): each of `tokens`, turned and laid on each of `over`, is no
+ *  nearer any of `from` laid on the same ground than the value it was turned from.
+ */
+export type WindowNoNearer = {
+	tokens: string[],
+	from: string[],
+	over: string[],
+};
+
+/**
  *  One option of the theme drawn (#2325), as Settings shows it: what it is called, its values,
  *  the value drawn and whether a choice made it (`false`: the theme's default).
  */
@@ -13844,6 +13855,13 @@ export type WindowTint = {
 	hues: WindowHue[],
 	/**  The rules every tint holds, whatever the hue. */
 	apart: WindowApart[],
+	/**  The washes that take the accent's words' answer (#4666). */
+	with_words: string[],
+	/**
+	 *  The grounds a tint keeps as written where turning would bring them nearer the waiting or
+	 *  danger wash, as drawn (#4666, `purlis_core::theme::NO_NEARER`).
+	 */
+	no_nearer: WindowNoNearer,
 };
 
 /**  A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers. */
