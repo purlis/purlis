@@ -478,10 +478,6 @@ export function openTab(
   );
 }
 
-/** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
- *  says (spec #4750 story 44). */
-export const EMPTY_TAB = "New chat";
-
 /**
  * **The strip's `+`: a new tab holding one empty pane** (#4758; spec story 13), in front, after
  * the strip's last tab, on `workspace`'s strip. New chat then fills it, as it fills any focused
