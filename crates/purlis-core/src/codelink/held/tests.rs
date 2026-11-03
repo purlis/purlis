@@ -913,7 +913,7 @@ fn a_file_outside_the_home_another_user_owns_keeps_no_runner() {
     );
 }
 
-/// **A file another user owns that the runner's user may write counts as its own** (#PRNUM):
+/// **A file another user owns that the runner's user may write counts as its own** (#5103):
 /// a task may change it as well as one it owns, so a change keeps the runner.
 #[cfg(unix)]
 #[test]
@@ -1026,7 +1026,7 @@ fn the_first_programs_start_is_marked_once_and_kept() {
 
 /// **A mark that is not the file purlis made says so, which keeps the runner** (#4933), and a
 /// link in its place is never followed, nor a pipe waited on: the program starts, since the
-/// runner is kept for it (#PRNUM).
+/// runner is kept for it (#5103).
 #[cfg(unix)]
 #[test]
 fn a_mark_that_is_not_the_file_purlis_made_keeps_the_runner_and_is_never_followed() {
@@ -1539,7 +1539,7 @@ fn too_many_files_of_its_users_own_where_it_may_not_write_are_said() {
 }
 
 /// **A file another user owns that the runner's user may write, where it may not write in the
-/// folder, is looked at again at each check** (#PRNUM): a task may change it in
+/// folder, is looked at again at each check** (#5103): a task may change it in
 /// place, and a change keeps the runner. One it may not write is not.
 #[cfg(unix)]
 #[test]
@@ -1601,7 +1601,7 @@ fn a_file_its_user_may_write_where_it_may_not_write_the_folder_keeps_the_runner_
 }
 
 /// **A name the runner reports is shown with each character a reader would not see marked**
-/// (#PRNUM): a control, a line end or a bidirectional override in a file's name
+/// (#5103): a control, a line end or a bidirectional override in a file's name
 /// is written as `⟦U+XXXX⟧` in the sentences the window shows.
 #[cfg(unix)]
 #[test]
@@ -1623,7 +1623,7 @@ fn a_name_holding_a_character_a_reader_would_not_see_is_shown_marked() {
     }
 }
 
-/// **What the desktop says a runner holds is shown marked too** (#PRNUM): a path,
+/// **What the desktop says a runner holds is shown marked too** (#5103): a path,
 /// a ref's name or a sentence a runner sent holding a character a reader would not see.
 #[test]
 fn what_a_runner_reports_is_shown_marked_on_the_desktop() {

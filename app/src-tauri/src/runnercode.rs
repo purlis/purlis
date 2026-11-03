@@ -596,8 +596,12 @@ pub(crate) fn not_home(link: &HostLink, project: &str, root: &Path, runner: &str
                 "runner {runner} is too old to list what it holds, so purlis can't tell its work is here"
             )];
         }
+        // What a runner said is marked as the proof's sentences are (#5103).
         Err(why) => {
-            return vec![format!("the runner did not list what it holds: {why}")];
+            return vec![purlis_unicode::marked(
+                &format!("the runner did not list what it holds: {why}"),
+                purlis_unicode::Breaks::Marked,
+            )];
         }
     };
     let held: Vec<codelink::held::Held> = repos

@@ -303,10 +303,28 @@ pub fn purlis_keeps_for_itself(
 
 /// **A program is about to start on a host keeping its projects in `projects`** (#4933): the
 /// first one's start is marked by making [`FIRST_PROGRAM`] there, which is never made again
-/// while it is there. Never through a link. Why it could not be is said: the program does not
-/// start then, since what it kept outside its project could not be found afterwards.
+/// while it is there. Never through a link. Where no mark could be made and nothing stands in
+/// its place, why is said: the program does not start then, since a host started again would
+/// know of no program and look for nothing. Anything else standing there (a folder, a link, a
+/// pipe) lets it start (#5103): [`first_program_at`] says that, which keeps a fresh runner.
 #[cfg(unix)]
 pub fn first_program_starting(projects: &Path) -> Result<(), String> {
+    match mark_first_program(projects) {
+        Ok(()) => Ok(()),
+        Err(why) => match rustix::fs::statat(
+            rustix::fs::CWD,
+            projects.join(FIRST_PROGRAM),
+            rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+        ) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(why),
+        },
+    }
+}
+
+/// [`first_program_starting`]'s making of the mark: why it is not the file purlis made, if not.
+#[cfg(unix)]
+fn mark_first_program(projects: &Path) -> Result<(), String> {
     use rustix::fs::{CWD, Mode, OFlags};
     let not_noted = |e: &dyn std::fmt::Display| {
         format!(
@@ -357,6 +375,22 @@ pub fn first_program_at(projects: &Path) -> Result<Option<std::time::SystemTime>
     changed_at(&stat)
         .map(Some)
         .ok_or_else(|| unknown(format!("{FIRST_PROGRAM} has no time purlis can read")))
+}
+
+/// Whether the user this process runs as may write `name` in `dir`, by its effective ids and
+/// whatever its file system grants beyond the mode (an ACL). A check that can't be made says
+/// it may, so the file counts.
+#[cfg(unix)]
+fn may_write<Fd: rustix::fd::AsFd, P: rustix::path::Arg>(dir: Fd, name: P) -> bool {
+    !matches!(
+        rustix::fs::accessat(
+            dir,
+            name,
+            rustix::fs::Access::WRITE_OK,
+            rustix::fs::AtFlags::EACCESS,
+        ),
+        Err(rustix::io::Errno::ACCESS | rustix::io::Errno::ROFS | rustix::io::Errno::PERM)
+    )
 }
 
 /// When `stat`'s file last had its status changed, which no program can set back.
@@ -525,14 +559,14 @@ fn outside_within(
             }
         }
         for file in &found.files {
-            match rustix::fs::statat(
-                rustix::fs::CWD,
-                beyond.root.join(file),
-                rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
-            ) {
+            let at = beyond.root.join(file);
+            match rustix::fs::statat(rustix::fs::CWD, &at, rustix::fs::AtFlags::SYMLINK_NOFOLLOW) {
                 Ok(stat) => {
-                    if stat.st_uid == beyond.owner && changed_at(&stat).is_none_or(|at| at >= since)
-                    {
+                    let the_users = stat.st_uid == beyond.owner
+                        || (rustix::fs::FileType::from_raw_mode(stat.st_mode)
+                            == rustix::fs::FileType::RegularFile
+                            && may_write(&rustix::fs::CWD, &at));
+                    if the_users && changed_at(&stat).is_none_or(|at| at >= since) {
                         outside.found(format!("/{file}"));
                     }
                 }
@@ -706,11 +740,28 @@ impl Rules<'_> {
         }
     }
 
-    fn counts(self, stat: &rustix::fs::Stat) -> bool {
+    /// Whether a folder or a link found is the user's: in the home and the data home every one
+    /// is; beyond them, one it owns.
+    fn owns(self, stat: &rustix::fs::Stat) -> bool {
         match self {
             Rules::Home | Rules::Data(..) => true,
             Rules::Beyond(owner) => stat.st_uid == owner,
         }
+    }
+
+    /// Whether a file found, `name` in the folder `fd`, is one a task could have changed: one
+    /// [the user owns](Rules::owns), or beyond the home a regular file it may write, whoever
+    /// owns it (#5103).
+    fn counts(
+        self,
+        stat: &rustix::fs::Stat,
+        fd: &rustix::fd::OwnedFd,
+        name: &std::ffi::CStr,
+    ) -> bool {
+        self.owns(stat)
+            || (rustix::fs::FileType::from_raw_mode(stat.st_mode)
+                == rustix::fs::FileType::RegularFile
+                && may_write(fd, name))
     }
 }
 
@@ -964,7 +1015,7 @@ impl Outside {
                         }
                         stack.push(Folder {
                             said_unread: !matches!(rules, Rules::Beyond(_))
-                                || rules.counts(&stat)
+                                || rules.owns(&stat)
                                 || changed_at(&stat).is_none_or(|at| at >= since),
                             rel: rel_now,
                             parent: std::rc::Rc::clone(&fd),
@@ -972,14 +1023,14 @@ impl Outside {
                         });
                     }
                     rustix::fs::FileType::RegularFile | rustix::fs::FileType::Symlink
-                        if rules.counts(&stat) =>
+                        if rules.counts(&stat, &fd, raw) =>
                     {
-                        // Outside every place, a file of its own is kept to be looked at
-                        // again at each check, whatever its time now.
+                        // Outside every place, a file of its own, or one it may write, is kept
+                        // to be looked at again at each check, whatever its time now.
                         if let Some(kept) = self.finding.as_ref().map(|found| found.files.len()) {
                             if kept >= self.most_files {
                                 self.say(format!(
-                                    "the runner's user owns more than {} files \
+                                    "the runner's user may change more than {} files \
                                      where it may not write, so not all were looked at",
                                     self.most_files
                                 ));
@@ -1026,8 +1077,18 @@ impl Outside {
                 ),
             );
         }
-        self.said
+        marked(self.said)
     }
+}
+
+/// `sentences` with each character a reader would not see in them written as its mark,
+/// `⟦U+XXXX⟧` (#5103), by purlis's one rule: a name a runner reports is shown as the
+/// characters it holds.
+fn marked(sentences: Vec<String>) -> Vec<String> {
+    sentences
+        .into_iter()
+        .map(|sentence| purlis_unicode::marked(&sentence, purlis_unicode::Breaks::Marked))
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1436,7 +1497,7 @@ pub fn not_home(root: &Path, project: &str, held: &[Held], unread: &[String]) ->
             ));
         }
     }
-    missing
+    marked(missing)
 }
 
 /// `path`, `/`-separated in a project, as a folder in the project at `root`: only plain names,
