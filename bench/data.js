@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793691075467,
+  "lastUpdate": 1793693891655,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37338,6 +37338,48 @@ window.BENCHMARK_DATA = {
             "value": 101.503282,
             "unit": "ms",
             "extra": "median of 5 runs: 100.821, 101.479, 101.503, 102.396, 102.511 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "156f0cbd2d1766633e8d3dc318e21d8d9c7c9e87",
+          "message": "The pin keys by the tab, and a tab and its row say one state word (#4935) (#4953)\n\n* The pin keys by the tab, and a tab and its row say one state word (#4935)\n\nA tab's pin is the tab's own (Tab.pinned), read and written through the\nlayout model (setPinned, pinsOf; layoutOf and tabsOf carry it), so a tab\nwhose only pane is empty can be pinned and a pin stays whatever its first\npane shows. The window's per-chat and per-view pin lists are gone; a record\nfrom before tabs were recorded is read once onto the tab.\n\nA chat's tab says the word its Chats-list row says: both read\nuseShownState, and the tab's one .state mark carries that word. The\nscenario specs that read the tab's word move with it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FRHJCEEYPTNST602T6S9M6\nPurlis-Persona: steward\n\n* Changelog fragment for #4935\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FRHJCEEYPTNST602T6S9M6\nPurlis-Persona: steward\n\n* Welcome and TaskInTab tests read the tab's new word (#4935)\n\nThe tab's mark now says its row's word, so a queued chat's tab says\n\"needs you\", not \"waiting on you\".\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FRHJCEEYPTNST602T6S9M6\nPurlis-Persona: steward\n\n* Review fixes for #4935\n\nStandards: the dead renamedViewKey (its one caller, the old view pin list,\nis gone) and its test are removed; ShownOf and TabFacts are built from\nRowFacts; factsOf and sandboxOf share one sidebar lookup (listedChatOf);\npinTab's comment says its reason once.\n\nSpec: the window test now also covers a session waiting on its own work,\na shell, and a reported task in a tab of its own. recordedPin's comment\nnames where the core clears a chat's own pin (Chats::lay_out).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6FRHJCEEYPTNST602T6S9M6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T07:03:23Z",
+          "tree_id": "1741e2a72160b95ba4a370612588e23a384f5803",
+          "url": "https://github.com/purlis/purlis/commit/156f0cbd2d1766633e8d3dc318e21d8d9c7c9e87"
+        },
+        "date": 1793693888366,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.32344,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.314, 0.318, 0.323, 0.343, 0.358 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.514401499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.360, 16.446, 16.514, 16.587, 16.599 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4355195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.783, 100.859, 101.436, 101.732, 101.813 ms"
           }
         ]
       }
