@@ -9,6 +9,10 @@ import { askLicencesTab, Licences } from "./LicencesView";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
 import { StatusItem } from "./ui/status/StatusItem";
+import { gatherDiagnostics } from "./diagnostics";
+
+/** What Copy diagnostics says when the clipboard refused the report. */
+const REFUSED = "purlis could not put the diagnostics on the clipboard.";
 
 /** Where every version's notes are, the same text this dialog shows for one of them. */
 const RELEASES = "https://github.com/purlis/purlis/releases";
@@ -64,6 +68,27 @@ export function AboutCharter() {
   const [trouble, setTrouble] = useState<string>();
   /** The licences drawn here, where no project in front took the ask for their tab (#1719). */
   const [licencesHere, setLicencesHere] = useState(false);
+  /** What the last Copy diagnostics came to (#4774), said in the footer. */
+  const [copied, setCopied] = useState<string>("");
+
+  /** Gathers the report and puts it on the clipboard, and says which of the two failed. */
+  const copyDiagnostics = () => {
+    setCopied("");
+    gatherDiagnostics().then(
+      (report) => {
+        const put = navigator.clipboard?.writeText(report);
+        if (put === undefined) {
+          setCopied(REFUSED);
+          return;
+        }
+        put.then(
+          () => setCopied("Diagnostics copied."),
+          () => setCopied(REFUSED),
+        );
+      },
+      (why: unknown) => setCopied(`purlis could not gather the diagnostics: ${String(why)}`),
+    );
+  };
 
   const ask = useCallback(() => {
     // Once. The changelog ships in the binary, so a second ask reads the same bytes.
@@ -111,7 +136,21 @@ export function AboutCharter() {
         // The keyboard starts on Close, as every question's does (#1719): the first thing the
         // keyboard reaches in the body is a link, and Return there would leave the window.
         initialFocus="cancel"
+        summary={
+          <span className="about-copied" role="status">
+            {copied}
+          </span>
+        }
         cancel={{ children: "Close" }}
+        // A report to paste into an issue or a chat in one step (#4774): the version, the
+        // system, the harnesses, the chats and the slow-answer log, with nothing secret in it.
+        main={{
+          children: "Copy diagnostics",
+          variant: "secondary",
+          tooltip:
+            "Copies this version, the system, the harnesses, the chats and the slow-answer log, for a bug report. Nothing secret is copied.",
+          onPress: copyDiagnostics,
+        }}
       >
         <div id="about-what">
           {trouble !== undefined ? (
