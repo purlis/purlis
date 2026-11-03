@@ -685,6 +685,16 @@ describe("a dialog's surface", () => {
     expect(screen.getByRole("textbox")).toHaveFocus();
   });
 
+  it("fades in as it opens, as the family's modals do", async () => {
+    render(
+      <DialogSurface onClose={() => {}} aria-label="Command palette" className="palette">
+        <input aria-label="Run an action" />
+      </DialogSurface>,
+    );
+    const surface = await screen.findByRole("dialog", { name: "Command palette" });
+    expect(surface.closest('[data-part="scrim"]')).toHaveAttribute("data-entering");
+  });
+
   it("closes on a press outside it", async () => {
     const closed = vi.fn();
     render(
@@ -696,7 +706,8 @@ describe("a dialog's surface", () => {
       </>,
     );
     await waitFor(() => expect(screen.getByRole("textbox")).toHaveFocus());
-    await userEvent.click(document.body);
+    const scrim = screen.getByRole("dialog").closest('[data-part="scrim"]');
+    await userEvent.click(scrim as Element);
     expect(closed).toHaveBeenCalledTimes(1);
   });
 });

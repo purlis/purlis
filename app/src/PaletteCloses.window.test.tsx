@@ -161,4 +161,20 @@ describe("the palette coming and going (#4351)", () => {
     expect(pane.closest('[aria-hidden="true"]')).toBeNull();
     expect(document.querySelector("[inert]")).toBeNull();
   });
+
+  it("closes on a press outside it, and the keyboard goes back to the window", async () => {
+    core();
+    render(<App />);
+    await screen.findByTestId("pane");
+    await userEvent.keyboard("{F2}");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    const scrim = palette.closest('[data-part="scrim"]');
+    expect(scrim).not.toBeNull();
+    await userEvent.click(scrim as Element);
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull(),
+    );
+    await settle();
+    expect(document.activeElement === null || palette.contains(document.activeElement)).toBe(false);
+  });
 });

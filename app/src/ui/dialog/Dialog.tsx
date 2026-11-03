@@ -212,9 +212,12 @@ function DialogKeyboard({
   root,
   initialFocus,
   alert,
+  modal,
   closing,
 }: {
   root: RefObject<HTMLElement | null>;
+  /** Whether it made the window behind it inert, which it gives back as it goes. */
+  modal: boolean;
   initialFocus: InitialFocus | undefined;
   alert: boolean;
   /**
@@ -265,13 +268,15 @@ function DialogKeyboard({
   // moment later, after the commit; a control that takes the keyboard as the dialog goes (a tab's
   // rename box a palette row opened) would find it still inert, and its focus would be lost.
   // No dialog is up while another is, so whatever is inert outside this one is this one's.
+  // A surface that is not modal (the palette) made nothing inert, so it gives nothing back.
   useLayoutEffect(() => {
+    if (!modal) return;
     const dialog = root.current;
     return () => {
       for (const held of document.querySelectorAll<HTMLElement>("[inert]"))
         if (!dialog?.contains(held)) held.inert = false;
     };
-  }, [root]);
+  }, [root, modal]);
   // Whether it is still drawn: React's strict mode takes every effect down and puts it back as
   // a dialog first draws, which is not a close, so what a close does waits a microtask and is
   // done only if the dialog did not come back.
@@ -412,8 +417,9 @@ export function useADialogIsUp(): boolean {
 }
 
 /**
- * **The modal itself**: the scrim, the window behind it made unreachable, the keyboard held in
- * it, Esc, the fixed top, the width and the height. `Dialog` and `AlertDialog` draw the family's
+ * **The modal itself**: the scrim, the window behind it made unreachable (unless `modal` is
+ * false: the palette's, `NotModal`), the keyboard held in it, Esc, the fixed top, the width and
+ * the height. `Dialog` and `AlertDialog` draw the family's
  * three rows in it; `DialogSurface` lets a surface with an anatomy of its own (the palette) draw
  * its own.
  */
@@ -484,11 +490,17 @@ function DialogModal({
       data-size={size}
       data-fixed-height={height === undefined ? undefined : ""}
       data-own-anatomy={own ? "" : undefined}
+      // Not modal, it is in React Aria's top layer: a popover that hides what is added outside it
+      // while it is up (a menu still open as F2 opens the palette) leaves it and the scrim it is
+      // in alone, as a modal's own was left. On the dialog, not the scrim, so a press on the
+      // scrim is still a press outside.
+      data-react-aria-top-layer={modal ? undefined : "true"}
     >
       <DialogKeyboard
         root={root}
         initialFocus={initialFocus}
         alert={role === "alertdialog"}
+        modal={modal}
         closing={closing}
       />
       {children}
@@ -540,9 +552,20 @@ function NotModal({
     { isOpen: true, onClose, isDismissable: true, isKeyboardDismissDisabled: true },
     root,
   );
+  // Opening, it fades in as the family's modals do (`dialog.css`, React Aria's `data-entering`),
+  // and only then.
+  const [entering, setEntering] = useState(true);
   return (
     <Overlay>
-      <div {...underlayProps} data-scope="dialog" data-part="scrim">
+      <div
+        {...underlayProps}
+        data-entering={entering ? "" : undefined}
+        onAnimationEnd={(event) => {
+          if (event.target === event.currentTarget) setEntering(false);
+        }}
+        data-scope="dialog"
+        data-part="scrim"
+      >
         <div {...overlayProps} data-scope="dialog" data-part="modal">
           <FocusScope contain>{children}</FocusScope>
         </div>
