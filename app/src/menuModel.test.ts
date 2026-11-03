@@ -661,6 +661,12 @@ describe("the other tabs' menus", () => {
       ["Split right", "Split down", "Tile all", "Send F2 to the chat in front"],
       ["End this pane's chat"],
     ]);
+    // The panes of a tab list that tab's Tile all, greyed at one pane (#4765).
+    const [tab] = world().tabs.order;
+    expect(said(menuOf({ on: "pane", tab }, offers))).toEqual([
+      ["Split right", "Split down", "Tile all", "Send F2 to the chat in front"],
+      ["End this pane's chat"],
+    ]);
     // A workspace's tab opens a shell in that workspace, which has no key.
     expect(
       rowsOf(menuOf({ on: "workspace", workspace: "alpha" }, offers)).find(

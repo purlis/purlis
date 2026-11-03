@@ -151,6 +151,7 @@ export function PaneHeadMenued({
   session,
   offers,
   pane,
+  tab,
   terminal,
   onPress,
   children,
@@ -158,6 +159,8 @@ export function PaneHeadMenued({
   session: number;
   offers: Catalogued;
   pane: Catalogued;
+  /** The tab the pane is in: its Tile all is one of the pane's rows (#4765). */
+  tab?: number;
   /** The terminal the pane draws, where it draws one: its Copy and Paste are pane rows. */
   terminal?: RefObject<PaneTerminal | null>;
   onPress: (offer: Offer) => void;
@@ -167,7 +170,7 @@ export function PaneHeadMenued({
   /** The terminal as the menu opened: whether anything was selected is read then, once. */
   const [terminalNow, setTerminalNow] = useState<PaneTerminal | null>(null);
   const on: MenuOn = { on: "chat", session };
-  if (menuIsEmpty(on, offers) && menuIsEmpty({ on: "pane" }, pane)) return <>{children}</>;
+  if (menuIsEmpty(on, offers) && menuIsEmpty({ on: "pane", tab }, pane)) return <>{children}</>;
   return (
     <ContextMenu
       onOpenChange={(open) => setTerminalNow(open ? (terminal?.current ?? null) : null)}
@@ -176,6 +179,7 @@ export function PaneHeadMenued({
           session={session}
           offers={offers}
           pane={pane}
+          tab={tab}
           terminal={terminalNow}
           onPress={onPress}
         />
@@ -197,17 +201,19 @@ function PaneHeadMenu({
   session,
   offers,
   pane,
+  tab,
   terminal,
   onPress,
 }: {
   session: number;
   offers: Catalogued;
   pane: Catalogued;
+  tab?: number;
   terminal: PaneTerminal | null;
   onPress: (offer: Offer) => void;
 }) {
   const chat = menuOf({ on: "chat", session }, offers);
-  const [rows, ...below] = menuOf({ on: "pane" }, pane).groups;
+  const [rows, ...below] = menuOf({ on: "pane", tab }, pane).groups;
   const copyPaste =
     terminal === null
       ? []
