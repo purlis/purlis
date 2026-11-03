@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793745469072,
+  "lastUpdate": 1793747452282,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38094,6 +38094,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4899325,
             "unit": "ms",
             "extra": "median of 5 runs: 102.001, 102.190, 102.490, 102.582, 103.485 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "70650d610a59ca808365d19ecc89956c8581fdb0",
+          "message": "Extension views: Open beside and offers (#4769) (#5090)\n\n* Extension views: offers in an event's answer, and Open beside's pure model (#4769)\n\nThe core reads an optional 'offer' in an event's answer, one of the extension's own declared views, and refuses any other as an undeclared action is refused. The app relays offers to the window with extension-heard. The window gains besideOf (shape and the 40x8 floor), openViewBesidePane and the offer store's rules.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H7ZSF40HEZTAP2VJ0MZ81S\nPurlis-Persona: steward\n\n* Extension views: Open beside and offers in the window (#4769)\n\nThe view's button gets a beside icon, an ⌥-press and a press menu. The palette gets ⌥Enter. Open beside is refused before the press under the 40x8 floor. Offer notes go on the pane band and in the Notices centre, with Dismiss quiet until relaunch and Stop offers kept in layout.json. Settings › Extensions turns offers back on. A removed extension's offers go, and its open view says it is gone. Bindings regenerated, the event-answer contract test updated, extension-api.md and an ADR 0043 amendment added.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H7ZSF40HEZTAP2VJ0MZ81S\nPurlis-Persona: steward\n\n* ViewOpen stories: padding from a core spacing token (#4769)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H7ZSF40HEZTAP2VJ0MZ81S\nPurlis-Persona: steward\n\n* ViewOpen stories: baselines drawn by #5090's stories run (#4769)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H7ZSF40HEZTAP2VJ0MZ81S\nPurlis-Persona: steward\n\n* Extension views: review fixes (#4769)\n\nA gone view says its extension no longer offers it, turned off or removed,\nrather than claiming it was removed. useViewWent subscribes once. A refused\nbeside carries its need as data instead of parsing it back out of the copy.\nUnused pieces go: placeOfOffer, openedBesideSaid and ViewOpenButton's\npanel-row variant. The palette reuses its aimed row, and showViewBeside no\nlonger clears an offer twice.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H7ZSF40HEZTAP2VJ0MZ81S\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T22:45:11Z",
+          "tree_id": "51d5f99de1d88da06495efadc2d218fa33be6246",
+          "url": "https://github.com/purlis/purlis/commit/70650d610a59ca808365d19ecc89956c8581fdb0"
+        },
+        "date": 1793747447786,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5775425000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.544, 0.562, 0.578, 0.581, 0.583 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.346172,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.075, 16.336, 16.346, 16.380, 16.382 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.068002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.907, 100.955, 101.068, 101.664, 102.690 ms"
           }
         ]
       }
