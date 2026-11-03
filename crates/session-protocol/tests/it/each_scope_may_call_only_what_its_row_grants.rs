@@ -67,6 +67,7 @@ impl Host for Board {
                 cols: 80,
                 rows: 24,
                 kind: Some(kind),
+                older: None,
             }),
             Command::StopAll | Command::KillSwitch => Answer::KillSwitch(session::KillSwitch {
                 stopped: true,
@@ -157,6 +158,7 @@ fn every_command() -> Vec<Command> {
             kind: session::ViewKind::Terminal,
             role: None,
             rate: None,
+            history: None,
         },
         Command::DetachView {
             program: CHAT.into(),
@@ -273,6 +275,7 @@ fn every_command() -> Vec<Command> {
             kind: session::ViewKind::Browser,
             role: Some(session::ViewRole::Focused),
             rate: None,
+            history: None,
         },
         // A write in the event log the host holds: the window's alone (1.8).
         Command::Record {
@@ -516,6 +519,7 @@ fn every_command() -> Vec<Command> {
             kind: session::ViewKind::Inspector,
             role: None,
             rate: None,
+            history: None,
         },
         Command::InspectorInput {
             program: CHAT.into(),

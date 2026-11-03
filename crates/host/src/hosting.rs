@@ -54,6 +54,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
@@ -272,6 +273,13 @@ pub trait Running: Send + Sync + 'static {
         let _ = (role, rate, reads);
         (kind == ViewKind::Terminal).then(|| self.source())
     }
+    /// **Its terminal view, drawn with at most `history` lines of history** (1.71, #4742), and
+    /// where each attach of it counts the lines its terminal keeps above them. `None` where it
+    /// pages none: a view of it then draws all of its history.
+    fn paged_view(&self, history: u32) -> Option<(Arc<dyn Source>, Older)> {
+        let _ = history;
+        None
+    }
     /// The size its views are drawn at, where it is not its terminal's: a browser's page, in
     /// CSS pixels.
     fn view_size(&self) -> Option<(u16, u16)> {
@@ -444,7 +452,19 @@ impl Running for Terminal {
     }
 
     fn source(&self) -> Arc<dyn Source> {
-        Arc::new(TerminalSource(Arc::clone(&self.0)))
+        Arc::new(TerminalSource(Arc::clone(&self.0), None))
+    }
+
+    fn paged_view(&self, history: u32) -> Option<(Arc<dyn Source>, Older)> {
+        let most = usize::try_from(history).unwrap_or(usize::MAX);
+        let older = Older::default();
+        Some((
+            Arc::new(TerminalSource(
+                Arc::clone(&self.0),
+                Some((most, older.clone())),
+            )),
+            older,
+        ))
     }
 
     fn stop(&self) {
@@ -472,13 +492,47 @@ impl Running for Terminal {
     }
 }
 
+/// How a view is asked to show its program: as `role`, at most `rate` frames a second, and
+/// with at most `history` lines of a terminal's history (1.71, #4742).
+struct Shown {
+    role: Option<ViewRole>,
+    rate: Option<u32>,
+    history: Option<u32>,
+}
+
+/// **How many lines of history a paged view's latest snapshot left out above those it drew**
+/// (#4742): counted by each attach under the lock its snapshot is taken in, so output that
+/// arrives between the view being asked for and its snapshot cannot put the count off.
+#[derive(Clone, Default)]
+pub struct Older(Arc<AtomicU32>);
+
+impl Older {
+    /// The snapshot just taken left out `lines`.
+    pub fn counted(&self, lines: usize) {
+        self.0
+            .store(u32::try_from(lines).unwrap_or(u32::MAX), Ordering::Relaxed);
+    }
+
+    fn lines(&self) -> u32 {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
 /// A terminal as a view shows it: its screen as it is now, then what its program writes after,
-/// followed without a thread ([`Session::follow`]).
-struct TerminalSource(Arc<Session>);
+/// followed without a thread ([`Session::follow`]): with at most the lines of history it names,
+/// each time it is attached (#4742), counting those left out, or all of them.
+struct TerminalSource(Arc<Session>, Option<(usize, Older)>);
 
 impl Source for TerminalSource {
     fn attach(&self) -> Attachment {
-        let following = self.0.follow();
+        let following = match &self.1 {
+            Some((history, older)) => {
+                let following = self.0.follow_within(*history);
+                older.counted(following.older);
+                following
+            }
+            None => self.0.follow(),
+        };
         Attachment {
             snapshot: Bytes::from(following.snapshot),
             live: following.live.map(Bytes::from).boxed(),
@@ -2721,29 +2775,42 @@ impl Hosting {
         &self,
         program: &str,
         kind: ViewKind,
-        role: Option<ViewRole>,
-        rate: Option<u32>,
+        shown: Shown,
         peer: &Peer,
     ) -> Result<Answer, Refusal> {
-        let (source, size) = {
+        let Shown {
+            role,
+            rate,
+            history,
+        } = shown;
+        let (source, size, older) = {
             let state = self.state();
             let hosted = state
                 .programs
                 .get(program)
                 .ok_or_else(|| no_such_program(program))?;
             let reads = crate::browsers::Reads::of(peer.version(), peer.scope());
-            let source = hosted
-                .running
-                .view(kind, role, rate, reads)
-                .ok_or_else(|| Refusal {
-                    code: session::MALFORMED.into(),
-                    why: format!("program {program} has no view of that kind"),
-                })?;
+            let paged = history
+                .filter(|_| kind == ViewKind::Terminal)
+                .and_then(|history| hosted.running.paged_view(history));
+            let (source, older) = match paged {
+                Some((source, older)) => (source, Some(older)),
+                None => (
+                    hosted
+                        .running
+                        .view(kind, role, rate, reads)
+                        .ok_or_else(|| Refusal {
+                            code: session::MALFORMED.into(),
+                            why: format!("program {program} has no view of that kind"),
+                        })?,
+                    None,
+                ),
+            };
             let size = match hosted.running.view_size_of(kind) {
                 Some((columns, rows)) => Size { columns, rows },
                 None => hosted.size,
             };
-            (source, size)
+            (source, size, older)
         };
         let view = peer.views().open(source).await.map_err(|why| Refusal {
             code: session::NOT_STARTED.into(),
@@ -2754,6 +2821,8 @@ impl Hosting {
             cols: size.columns,
             rows: size.rows,
             kind: Some(kind),
+            // Counted by the attach the view just opened with, from the snapshot it drew.
+            older: older.map(|older| older.lines()),
         }))
     }
 
@@ -3821,7 +3890,15 @@ impl session::Host for Hosting {
                 kind,
                 role,
                 rate,
-            } => self.attach(&program, kind, role, rate, peer).await,
+                history,
+            } => {
+                let shown = Shown {
+                    role,
+                    rate,
+                    history,
+                };
+                self.attach(&program, kind, shown, peer).await
+            }
             Command::DetachView { program, view } => {
                 self.running(&program)?;
                 peer.views().close(ViewId(view));

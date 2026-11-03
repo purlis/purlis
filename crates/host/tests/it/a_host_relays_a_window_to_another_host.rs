@@ -216,6 +216,46 @@ async fn host_bs_view_is_drawn_in_the_window_and_what_is_typed_reaches_its_progr
 }
 
 #[tokio::test]
+async fn a_page_of_host_bs_history_is_asked_through_host_a_and_drawn_in_the_window() {
+    let mut window = a_window(as_its_window).await;
+    let program = started(&window).await;
+    window.runs.last().writes(b"1\n2\n3\n");
+
+    let attached = window
+        .client
+        .attach_terminal_view_within(&program, 1)
+        .await
+        .expect("host B opens a view");
+    let mut reader = Viewer::default()
+        .accept(
+            timeout(PATIENCE, window.views.accept())
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        attached.older,
+        Some(2),
+        "host B's answer reaches the window"
+    );
+    let mut snapshot = Vec::new();
+    while !reader.snapshot_complete() {
+        if let Chunk::Snapshot(bytes) = timeout(PATIENCE, reader.next())
+            .await
+            .expect("the view draws")
+            .expect("the view is open")
+            .unwrap()
+        {
+            snapshot.extend_from_slice(&bytes);
+        }
+    }
+    assert_eq!(snapshot, b"3\n");
+}
+
+#[tokio::test]
 async fn the_window_is_told_when_host_bs_program_ends() {
     let mut window = a_window(as_its_window).await;
     window

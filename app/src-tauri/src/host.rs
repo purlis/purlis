@@ -257,6 +257,9 @@ pub type SkillRunsHeard =
 pub struct Watching {
     pub view: u32,
     pub size: Size,
+    /// How many lines of history the session keeps above those its screen was drawn with
+    /// (#4742): what the pane asks for as the person scrolls up. None where it drew all.
+    pub older: u32,
 }
 
 /// Whether a session's program is ready to be typed at, as the terminal and the clock say it:
@@ -484,12 +487,21 @@ pub trait SessionHost: Send + Sync {
     /// is, and the size its screen was drawn for.
     fn watch(&self, id: u32, sink: Sink) -> Result<Watching, String>;
 
-    /// [`Self::watch`], for a pane that reports what its terminal has drawn (#4733): each piece
-    /// `sink` is handed counts as the program's output only once [`Self::drawn`] says the pane
-    /// drew it. A pane that falls behind is then behind where its host can see it, and is sent
-    /// a fresh screen rather than a backlog. Where nothing paces a view, it is [`Self::watch`].
-    fn watch_drawn(&self, id: u32, sink: Sink) -> Result<Watching, String> {
+    /// [`SessionHost::watch`], with at most `history` lines of history above the screen, the
+    /// newest (#4742): a pane opens on a page and asks for more as the person scrolls up. A
+    /// session that pages none draws all of it, and says nothing is older.
+    fn watch_within(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
+        let _ = history;
         self.watch(id, sink)
+    }
+
+    /// [`Self::watch_within`], for a pane that reports what its terminal has drawn (#4733): each
+    /// piece `sink` is handed counts as the program's output only once [`Self::drawn`] says the
+    /// pane drew it. A pane that falls behind is then behind where its host can see it, and is
+    /// sent a fresh screen rather than a backlog. Where nothing paces a view, it is
+    /// [`Self::watch_within`].
+    fn watch_drawn(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
+        self.watch_within(id, sink, history)
     }
 
     /// The pane drawing view `view` of session `id` has drawn `pieces` more of what its sink
@@ -1392,6 +1404,7 @@ pub(crate) mod pretend {
                     columns: 80,
                     rows: 24,
                 },
+                older: 0,
             })
         }
         fn unwatch(&self, id: u32, view: u32) -> Result<(), String> {

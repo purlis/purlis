@@ -63,6 +63,7 @@ impl Host for OneChat {
                     cols: 80,
                     rows: 24,
                     kind: Some(ViewKind::Terminal),
+                    older: None,
                 }))
             }
             _ => Ok(Answer::Done),
