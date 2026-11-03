@@ -515,3 +515,72 @@
 .pane-top > .waiting-strip {
   margin: var(--space-4) var(--space-4) 0;
 }
+
+/* ---------------------------------------------------------------------------------------------
+   A task's question, at the top of the pane (#4565).
+   --------------------------------------------------------------------------------------------- */
+
+/* **Above the Notices, in the same runway**: the line that offers where you answer, then the
+   quiz, the band's width. Past the band's room it scrolls inside it, so Send is always reachable
+   and the terminal below keeps its input where it was. */
+.quiz-band {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-4) 0;
+}
+
+.task-quiz.inbox-ask {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+.task-quiz-top-end {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.task-quiz-why {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+/* The asking chat's note, marked as its own: never the task's words. */
+.task-quiz-note {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  margin: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--border-strong);
+  font-size: var(--font-size-sm);
+}
+
+.task-quiz-note-who {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.task-quiz-answer {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.task-quiz-box {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.task-quiz-foot {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+}
