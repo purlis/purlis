@@ -62,7 +62,8 @@ function TerminalStandIn() {
   return <TextArea aria-label="Terminal of steward 4" rows={4} value={text} onChange={setText} />;
 }
 
-/** The steward's pane: the band at its top, and a stand-in for its terminal under it. */
+/** The steward's pane: the band at its top, and a stand-in for its terminal under it. As tall as
+ *  a window's pane, since the top takes at most about half of it and the quiz shows whole. */
 function StewardsPane({ asks }: { asks: Shown[] }) {
   return (
     <QuizPlaces.Provider
@@ -75,7 +76,7 @@ function StewardsPane({ asks }: { asks: Shown[] }) {
       <QuestionsHere.Provider value={{ asks, with_asking_chat: [] }}>
         <div
           className="pane-frame pane-headed"
-          style={{ display: "flex", flexDirection: "column", inlineSize: 760, blockSize: 420 }}
+          style={{ display: "flex", flexDirection: "column", inlineSize: 760, blockSize: 680 }}
         >
           <div className="pane-top">
             <QuizBand plane="/plane" session={4} />
