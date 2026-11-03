@@ -415,13 +415,6 @@ function App() {
    *  only its own list, and the palette opening or closing draws no project again (#4351). */
   const profileNames = useProfileNames();
   const readProfileNames = profileNames.read;
-  const paletteOpened = useCallback(
-    (open: boolean) => {
-      setPaletteOpen(open);
-      if (open && inFrontNow.current !== undefined) readProfileNames(inFrontNow.current);
-    },
-    [readProfileNames],
-  );
   /** Why this launch took longer than the limit, when it did — and nothing when it did not
    *  (charter-app#24). The core decides that; the window only draws it. */
   const [slowStart, setSlowStart] = useState<SlowStart>();
@@ -1353,6 +1346,11 @@ function App() {
     // close brings back must be the opener rather than a Settings left behind.
     if (inFront !== undefined) setSettingsAlone(false);
   }, [inFront]);
+  // The profiles of the project the palette is over are read as it opens, and again when another
+  // project comes to front under it (#1201); never as it closes (#4351).
+  useEffect(() => {
+    if (paletteOpen && inFront !== undefined) readProfileNames(inFront);
+  }, [paletteOpen, inFront, readProfileNames]);
   // **Each switch is timed by the window itself** (`switchClock.ts`): once it has drawn the
   // project that came to the front, which is here, and the doctor's dialog lists what it took.
   useLayoutEffect(() => {
@@ -2837,7 +2835,7 @@ function App() {
         said={said}
         onSettings={followSaid}
         onRun={saying?.run ?? run}
-        onOpened={paletteOpened}
+        onOpened={setPaletteOpen}
       />
 
       {/* What has contributed what to this window (ADR 0041 item 5). Mounted only

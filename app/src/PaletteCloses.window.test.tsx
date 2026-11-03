@@ -54,7 +54,7 @@ const CHAT = {
   from: null,
 };
 
-function core() {
+function core(entries: unknown[] = []) {
   const asked: string[] = [];
   /** The profiles' answer, held until the test lets it land. */
   let answer: () => void = () => undefined;
@@ -76,7 +76,7 @@ function core() {
           answer = () =>
             land({
               shared: { which: "shared", parsed: true, entries: [] },
-              local: { which: "local", parsed: true, entries: [] },
+              local: { which: "local", parsed: true, entries },
             });
         });
       if (cmd === "about_charter") return new Promise(() => {});
@@ -113,6 +113,37 @@ describe("the palette coming and going (#4351)", () => {
     );
     await act(async () => land());
     await settle();
+
+    expect(paneDrawn.times).toBe(drawn);
+  });
+
+  it("draws no project again for a reading of the same profiles", async () => {
+    const { asked, land } = core([
+      { collection: "profiles", id: "profiles:claude", label: "claude", keys: [], values: [] },
+    ]);
+    render(<App />);
+    await screen.findByTestId("pane");
+    await settle();
+    const opening = async () => {
+      const before = asked.filter((one) => one === "project_settings").length;
+      await userEvent.keyboard("{F2}");
+      await screen.findByRole("dialog", { name: "Command palette" });
+      await waitFor(() =>
+        expect(asked.filter((one) => one === "project_settings").length).toBeGreaterThan(before),
+      );
+      await act(async () => land());
+      await settle();
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull(),
+      );
+      await settle();
+    };
+    // The first reading gives the project its list: one draw, which is the point of it.
+    await opening();
+    const drawn = paneDrawn.times;
+
+    await opening();
 
     expect(paneDrawn.times).toBe(drawn);
   });

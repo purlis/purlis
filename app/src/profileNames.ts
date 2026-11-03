@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { commands, type PlaneId, type SettingsFile } from "./bindings";
 
 /** Every project's harness profiles, by name: a list per project that has any. */
@@ -23,15 +23,21 @@ const NONE: ProfileNames = {};
  * **Held by the window, and the same lists while the names are** (#4351): a project's view is
  * given only its own list, so the palette opening or closing changes nothing it is drawn from,
  * and a read that finds the same names keeps the list it had. A project with no profiles is
- * given no list at all, so reading one, the usual project, draws nothing again.
+ * given no list at all, so reading one, the usual project, draws nothing again. **Only a
+ * project's newest read is kept**: two can answer in either order, and an older answer landing
+ * last must not put back names the newer one no longer saw.
  */
 export function useProfileNames(): { of: ProfileNames; read: (plane: PlaneId) => void } {
   const [of, setOf] = useState<ProfileNames>(NONE);
+  /** Each project's newest read, by number. */
+  const newest = useRef(new Map<PlaneId, number>());
   const read = useCallback((plane: PlaneId) => {
+    const asked = (newest.current.get(plane) ?? 0) + 1;
+    newest.current.set(plane, asked);
     void commands
       .projectSettings(plane)
       .then((answer) => {
-        if (answer.status !== "ok") return;
+        if (answer.status !== "ok" || newest.current.get(plane) !== asked) return;
         const next = profileNamesOf(answer.data?.local);
         setOf((was) => {
           const held = was[plane] ?? [];

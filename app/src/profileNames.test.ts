@@ -87,6 +87,30 @@ describe("the projects' profile names", () => {
     expect(result.current.of[PLANE]).toBeUndefined();
   });
 
+  it("keeps the newest read's names when an older read answers after it", async () => {
+    const lands: ((entries: unknown[]) => void)[] = [];
+    mockIPC((cmd) => {
+      if (cmd !== "project_settings") return null;
+      return new Promise((land) => {
+        lands.push((entries) =>
+          land({
+            shared: { which: "shared", parsed: true, entries: [] },
+            local: { which: "local", parsed: true, entries },
+          }),
+        );
+      });
+    });
+    const { result } = renderHook(() => useProfileNames());
+    act(() => result.current.read(PLANE));
+    act(() => result.current.read(PLANE));
+    await waitFor(() => expect(lands).toHaveLength(2));
+
+    await act(async () => lands[1]([entry("profiles", "fast", "fast")]));
+    await act(async () => lands[0]([entry("profiles", "claude", "claude")]));
+
+    expect(result.current.of[PLANE]).toEqual(["fast"]);
+  });
+
   it("names none from a file the core could not parse", async () => {
     const asked = core([entry("profiles", "claude", "claude")], false);
     const { result } = renderHook(() => useProfileNames());
