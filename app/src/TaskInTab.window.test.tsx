@@ -1535,7 +1535,7 @@ describe("closing, while a tab shows a task", () => {
     );
   });
 
-  it("draws no close on the pane, and the only controls that end the task are the breadcrumb's two", async () => {
+  it("draws no close on the pane, and the task's two ways to end are rows of its ⋯ (#4760)", async () => {
     const { tree } = await drawn(withTasks());
     // The session's own pane has its close in its corner, as it always had.
     expect(screen.getByRole("button", { name: "Close this pane" })).toBeTruthy();
@@ -1548,9 +1548,14 @@ describe("closing, while a tab shows a task", () => {
       .queryAllByRole("button")
       .map((button) => button.getAttribute("aria-label") ?? button.textContent ?? "")
       .filter((name) => /\b(end|stop|close)\b/i.test(name) && /talk/.test(name));
-    // The two ways a person ends a task (#1488), in words on the breadcrumb's line: neither
-    // is a close, and nothing else on screen ends the task.
-    expect(ending).toEqual(["Stop and get its report: task talk", "Close now: task talk"]);
+    // The two ways a person ends a task (#1488) are its list's rows, in its ⋯ (#4760): no
+    // button on screen ends the task.
+    expect(ending).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: /^More for talk/ }));
+    const list = await screen.findByRole("menu");
+    expect(within(list).getByRole("menuitem", { name: /^Stop and get its report/ })).toBeTruthy();
+    expect(within(list).getByRole("menuitem", { name: /^Close now/ })).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
     // The splits are the pane's still.
     expect(screen.getAllByRole("button", { name: /^Split/ })).toHaveLength(2);
   });

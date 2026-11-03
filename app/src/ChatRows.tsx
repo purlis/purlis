@@ -35,13 +35,18 @@ import { tabPart } from "./ui/tabs/Tabs";
  */
 export const ChatShownState = memo(function ChatShownState({
   changed = false,
+  markOnly = false,
   ...of
 }: ShownOf & {
   /** Its state changed while its row was not drawn, so it arrives in it (`StateShown`). */
   changed?: boolean;
+  /** Its mark alone, its word said only to a screen reader: a narrow pane's head (#4760). */
+  markOnly?: boolean;
 }) {
   const shown = useShownState(of);
-  return shown === undefined ? null : <StateShown shown={shown} changed={changed} />;
+  return shown === undefined ? null : (
+    <StateShown shown={shown} changed={changed} markOnly={markOnly} />
+  );
 });
 
 /**

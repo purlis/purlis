@@ -749,6 +749,12 @@ body {
    heights guard holds every chip here (`PANE_LINE_CHIPS`). */
 .pane-chips
   > :is(
+    .pane-name,
+    .tab-sandbox,
+    .pane-state-mark,
+    .pane-wrapping,
+    .pane-where,
+    .pane-task-ends,
     .pane-crumbs,
     .pane-brief,
     .chat-gauge,

@@ -607,6 +607,7 @@ import {
 } from "./planeReport";
 import { Doer } from "./StripMarks";
 import type { SandboxSaid } from "./SandboxMark";
+import type { ChatHead } from "./paneHead";
 import {
   type RestartAct,
   type RestartSaid,
@@ -7595,6 +7596,17 @@ export const PlaneView = memo(function PlaneView({
   }, [pretended, pretendedLimits, questions, sidebar, tabs]);
   /** The chats of each tab, as its chip counts them and its menu lists them (#1487). */
   const chatsByTab = useMemo(() => chatsOfTabs(tabs, listedChats), [listedChats, tabs]);
+  /** **What each chat's pane head says of it** (#4760): the chat as the Chats list lists it,
+   *  its sandbox, and whether it wraps up. */
+  const paneHeads = useMemo(() => {
+    const byNumber = new Map(listedChats.map((chat) => [chat.session, chat]));
+    return (session: number): ChatHead | undefined => {
+      const chat = byNumber.get(session);
+      return chat === undefined
+        ? undefined
+        : { chat, sandbox: sandboxOf(session), wrapping: wrapping.has(session) };
+    };
+  }, [listedChats, sandboxOf, wrapping]);
   /** The tab in front and its chats: what the Chats view's This tab lists (#1679). */
   const tabInFront = useMemo(
     () =>
@@ -10361,6 +10373,7 @@ export const PlaneView = memo(function PlaneView({
                             onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
                             offerFor={by}
                             offers={found}
+                            heads={paneHeads}
                             onPaneDoes={onPaneDoes}
                             name={frontTab.name}
                             handedFrom={handedFrom}

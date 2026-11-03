@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { answerId, briefId, smartCloseCancelId, stopId } from "./actions";
+import type { ListedChat } from "./chatsTree";
+import type { SandboxSaid } from "./SandboxMark";
 
 /**
  * **The pane head's model** (#4760, spec #4750 stories 54, 55 and 61; `command-table.md` of
@@ -9,6 +11,15 @@ import { answerId, briefId, smartCloseCancelId, stopId } from "./actions";
  * its parts a narrow pane drops. Pure, so the rules are read and tested here, and the head
  * (`LayoutPanes.PaneFrame`) only draws what these answer.
  */
+
+/** **What a chat's pane head says of it** (#4760): the chat as the Chats list lists it (its
+ *  name, harness, workspace and kind), its sandbox, and whether it is wrapping up. */
+export type ChatHead = {
+  chat: ListedChat;
+  sandbox: SandboxSaid | null;
+  /** Being smart-closed (ADR 0064): the head breathes, and its state button is Cancel. */
+  wrapping: boolean;
+};
 
 /** The one state button: a row of the chat's own list, and the short word the head says. */
 export type StateButton = { id: string; word: string };

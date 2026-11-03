@@ -131,6 +131,59 @@ export function ChatMenuButton({
   );
 }
 
+/**
+ * **A right-click on a chat's pane head** (#4760, spec #4750 story 60): the chat's one list,
+ * the same its ⋯ opens, then under a line the pane's own rows (`menuOn({ on: "pane" })`), of
+ * this pane and not the focused one. `pane` is those rows as this pane offers them: its close is
+ * its own. Inside the panes' menu, so the innermost one opens, as a terminal's does.
+ */
+export function PaneHeadMenued({
+  session,
+  offers,
+  pane,
+  onPress,
+  children,
+}: {
+  session: number;
+  offers: Catalogued;
+  pane: Catalogued;
+  onPress: (offer: Offer) => void;
+  /** The pane head. One element: it is the trigger itself. */
+  children: ReactNode;
+}) {
+  const on: MenuOn = { on: "chat", session };
+  if (menuIsEmpty(on, offers) && menuIsEmpty({ on: "pane" }, pane)) return <>{children}</>;
+  return (
+    <ContextMenu
+      menu={() => <PaneHeadMenu session={session} offers={offers} pane={pane} onPress={onPress} />}
+      onClosed={landSettingsFocus}
+    >
+      {children}
+    </ContextMenu>
+  );
+}
+
+/** That menu's content, made only while it is open, as `CatalogueMenu`'s is. */
+function PaneHeadMenu({
+  session,
+  offers,
+  pane,
+  onPress,
+}: {
+  session: number;
+  offers: Catalogued;
+  pane: Catalogued;
+  onPress: (offer: Offer) => void;
+}) {
+  const chat = menuOf({ on: "chat", session }, offers);
+  const groups = [...chat.groups, ...menuOf({ on: "pane" }, pane).groups];
+  return (
+    <Menu aria-label={chat.about} className="item-menu">
+      <Groups groups={groups} onPress={onPress} />
+    </Menu>
+  );
+}
+
 /** What a chat's ⋯ is called, on its pane and its row (#4753): for the chat it opens the list of. */
 export function moreForSaid(name: string | undefined): string {
   return name === undefined ? "More for this chat" : `More for ${name}`;

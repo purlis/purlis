@@ -4,7 +4,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ScrollText } from "lucide-react";
 import { commands, type BriefOf, type PlaneId, type TaskBrief } from "./bindings";
-import { IconButton } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
 
 /**
@@ -80,20 +80,23 @@ export function briefTitle(name: string): string {
  * whole line it is cut at its edge with the gauge, and the path and its state are what they
  * were without it. The same Brief is on the task's row in the Chats list.
  */
-export function BriefButton({ of }: { of: BriefAsk }) {
+export function BriefButton({ of, word }: { of: BriefAsk; word?: string }) {
   const open = useOpenBrief();
   if (open === undefined) return null;
-  return (
-    <IconButton
-      variant="ghost"
-      size="sm"
-      className="pane-brief"
-      icon={<ScrollText aria-hidden="true" />}
-      tooltip="What this task was sent"
-      aria-label={briefTitle(of.name)}
-      aria-haspopup="dialog"
-      onPress={() => open(of)}
-    />
+  const said = {
+    icon: <ScrollText aria-hidden="true" />,
+    tooltip: "What this task was sent",
+    "aria-label": briefTitle(of.name),
+    "aria-haspopup": "dialog" as const,
+    onPress: () => open(of),
+  };
+  // **A pane head's state button** (#4760): its word beside its icon, where the head has room.
+  return word === undefined ? (
+    <IconButton variant="ghost" size="sm" className="pane-brief" {...said} />
+  ) : (
+    <Button variant="quiet" size="sm" className="pane-brief" {...said}>
+      {word}
+    </Button>
   );
 }
 

@@ -309,6 +309,43 @@ export const TaskEndContext = createContext<TaskEndHand | undefined>(undefined);
 const WORDS: Record<TaskEndWay, string> = { report: "Stop", now: "Close now" };
 
 /**
+ * **The second step, on the line of the pane that shows the task** (#1488): asked where the
+ * person is looking, in place, with Keep focused. Since #4760 the pane head draws no buttons
+ * to end a task (they are rows of its ⋯, `command-table.md`, rule 4), and a press of one of
+ * those rows, its Restart's too, is asked here, on the head's line, as before. Nothing is drawn
+ * while nothing is asked.
+ */
+export function TaskEndAsked({
+  session,
+  focusBack,
+}: {
+  /** The task the pane shows. */
+  session: number;
+  /** Puts the keyboard back in the pane once the second step is answered with Keep. */
+  focusBack?: () => void;
+}) {
+  const hand = useContext(TaskEndContext);
+  const asked = hand?.confirming;
+  if (hand === undefined || asked === undefined) return null;
+  if (asked.where !== "crumb" || asked.session !== session) return null;
+  return (
+    <span className="pane-task-ends asking">
+      <TaskEndConfirm
+        says={asked.says}
+        answer={asked.answer}
+        busy={asked.busy}
+        trouble={asked.trouble}
+        onAnswer={() => hand.onConfirm(true)}
+        onKeep={() => {
+          hand.onConfirm(false);
+          focusBack?.();
+        }}
+      />
+    </span>
+  );
+}
+
+/**
  * **The two ways to end the task a pane shows**, on its breadcrumb's line (#1488): the only
  * place a pane showing a task has an ending control. Two words and no mark, so neither can be
  * taken for the tab's close, which is a cross on the strip. Each is a row of the catalogue
@@ -344,23 +381,7 @@ export function TaskEnds({
     return fitWaysOn(group.current);
   }, [asking, stop, close]);
   if (hand === undefined || (stop === undefined && close === undefined)) return null;
-  const asked = hand.confirming;
-  if (asked !== undefined && asked.where === "crumb" && asked.session === session)
-    return (
-      <span className="pane-task-ends asking">
-        <TaskEndConfirm
-          says={asked.says}
-          answer={asked.answer}
-          busy={asked.busy}
-          trouble={asked.trouble}
-          onAnswer={() => hand.onConfirm(true)}
-          onKeep={() => {
-            hand.onConfirm(false);
-            focusBack?.();
-          }}
-        />
-      </span>
-    );
+  if (asking) return <TaskEndAsked session={session} focusBack={focusBack} />;
   const drawn: [Offer | undefined, TaskEndWay][] = [
     [stop, "report"],
     [close, "now"],

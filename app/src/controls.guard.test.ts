@@ -477,9 +477,17 @@ const STRIP =
 const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 
 /** The chips on a pane's top line (#2484): the breadcrumb, Brief, the gauge, the harness, where
- *  a handed-off chat came from, its work item and its skills (#2775). Each is as tall as the line, the chrome
- *  height, so the line is one height with the ways to end a task beside them. */
+ *  a handed-off chat came from, its work item and its skills (#2775); and since the pane head
+ *  names its chat (#4760), its name, its sandbox, its state, its wrapping-up mark, "harness ·
+ *  workspace" and a task's end asked there. Each is as tall as the line, the chrome height, so
+ *  the line is one height. */
 export const PANE_LINE_CHIPS = [
+  "pane-name",
+  "tab-sandbox",
+  "pane-state-mark",
+  "pane-wrapping",
+  "pane-where",
+  "pane-task-ends",
   "pane-crumbs",
   "pane-brief",
   "chat-gauge",
@@ -773,6 +781,8 @@ export function chipsNotChromeTall(css: string, controls: ReadonlySet<string>): 
 
 /** The components the pane's top line draws a chip with, and the chip each draws. */
 const LINE_CHIP_COMPONENTS: Record<string, string> = {
+  SandboxMark: "tab-sandbox",
+  TaskEndAsked: "pane-task-ends",
   PaneCrumbs: "pane-crumbs",
   BriefButton: "pane-brief",
   ChatGauge: "chat-gauge",
