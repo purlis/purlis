@@ -534,25 +534,44 @@ pub fn owners_on_github(root: &Path) -> Vec<String> {
     owners
 }
 
-/// **The forges the project's clones are on** (#4490, Q49), each once, sorted by host: a forge
-/// the project declares or a kind's own host, as a remote names it. What Pool setup's agent
-/// identity step tells apart: github.com, which it sets up, from a host it can't yet.
+/// A forge host one of the project's clones has a remote on.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct HostFound {
+    /// The host, lower-cased, a host's name as [`super::host_ok`] holds it.
+    pub host: String,
+    /// The kind of forge purlis knows it as, by its own host or the project's declaration; none
+    /// for a host purlis knows no forge at.
+    pub kind: Option<super::Kind>,
+}
+
+/// **The hosts the project's clones have remotes on** (#4490, story 36 of #4469), each once,
+/// sorted by host: what Pool setup's agent identity step tells apart, github.com, which it sets
+/// up, from a host it can't yet, and from no repo at all. A host that isn't a host's name is left
+/// out: it is shown to the person.
 #[must_use]
-pub fn forges_of_the_project(root: &Path) -> Vec<super::Forge> {
+pub fn hosts_of_the_project(root: &Path) -> Vec<HostFound> {
     let known = super::known(root);
-    let mut forges: Vec<super::Forge> = remote_lines(root)
+    let mut hosts: Vec<HostFound> = remote_lines(root)
         .iter()
         .flat_map(|(_, lines)| {
             lines
                 .lines()
                 .filter_map(|line| line.split_once(' ').map(|(_, url)| url.trim()))
-                .filter_map(|url| super::resolve_in(url, &known))
+                .filter_map(|url| match super::resolve_in(url, &known) {
+                    Some(forge) => Some(HostFound {
+                        host: forge.host,
+                        kind: Some(forge.kind),
+                    }),
+                    None => Some(super::host_of(url))
+                        .filter(|host| super::host_ok(host))
+                        .map(|host| HostFound { host, kind: None }),
+                })
                 .collect::<Vec<_>>()
         })
         .collect();
-    forges.sort_by(|a, b| a.host.cmp(&b.host));
-    forges.dedup();
-    forges
+    hosts.sort();
+    hosts.dedup();
+    hosts
 }
 
 /// **An App a persona's tool line names**, read from the project file.

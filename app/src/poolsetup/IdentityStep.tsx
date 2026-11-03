@@ -18,12 +18,12 @@ import { Action, Busy, Say, StepHead } from "./parts";
 
 /**
  * **Pool setup's Agent identity step** (#4490, stories 32 to 36 of #4469). An identity is set up in
- * the step itself, with the flow the Agent identity tab uses ({@link AgentIdentityFlow}, Q34), so the
+ * the step itself, with the flow the Agent identity tab uses ({@link AgentIdentityFlow}, story 34), so the
  * person never leaves the guide. The tab stays where an identity is inspected and removed.
  *
  * What the step stands at is the core's (`purlis_core::poolsetup`): set up, to set up, or repos on a
  * forge host purlis can't set up by itself yet, which is said plainly with the tool line to add by
- * hand (Q49). What an identity acts as, and on how many repos, is GitHub's, read as the tab reads it.
+ * hand (story 36). What an identity acts as, and on how many repos, is GitHub's, read as the tab reads it.
  * Every state but done can be skipped, so the step never dead-ends.
  */
 export function IdentityStep({
@@ -33,6 +33,7 @@ export function IdentityStep({
   changed,
   onNext,
   onOpenIdentity,
+  onOpenSettings,
 }: {
   step: PoolSetupStep;
   pool: string;
@@ -43,6 +44,8 @@ export function IdentityStep({
   onNext: () => void;
   /** Open the Agent identity tab, where an identity is inspected and removed. */
   onOpenIdentity?: () => void;
+  /** Open the project's Settings, where a persona's tool is allowed on this machine. */
+  onOpenSettings?: () => void;
 }) {
   const [shown, setShown] = useState<IdentitiesShown>();
   const [trouble, setTrouble] = useState<string>();
@@ -172,7 +175,10 @@ export function IdentityStep({
     );
   }
 
-  // What only the window or the project can mend: a project to open, a persona's tool to allow.
+  // A persona's tool to allow on this machine (after Finish, or a line added by hand), or a forge
+  // host to declare before anything can be set up there.
+  const allow = step.next?.id === "allow-tool" && onOpenSettings !== undefined;
+  const again = step.next?.id === "check-again";
   return (
     <>
       <StepHead title="Agent identity" />
@@ -182,7 +188,18 @@ export function IdentityStep({
         </p>
       ))}
       {told}
-      <Action does={step.next?.does}>{skipButton}</Action>
+      <Action
+        does={step.next?.does}
+        main={allow || again ? step.next?.label : undefined}
+        onMain={allow ? onOpenSettings : changed}
+      >
+        {allow && (
+          <Button variant="secondary" onPress={changed}>
+            Check again
+          </Button>
+        )}
+        {skipButton}
+      </Action>
     </>
   );
 }

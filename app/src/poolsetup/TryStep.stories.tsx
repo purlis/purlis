@@ -13,7 +13,9 @@ import type { PoolSetupCheck, PoolSetupStep } from "../bindings";
 import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { TryStep } from "./TryStep";
 
+/** A line of Try it, said of what its title names, as the core tags it. */
 const check = (verdict: string, title: string, more: string | null = null): PoolSetupCheck => ({
+  about: /identity|\bgh\b/.test(title) ? "identity" : /signed in/.test(title) ? "signins" : "chat",
   verdict,
   title,
   more,

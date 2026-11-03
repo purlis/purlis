@@ -44,7 +44,7 @@ const BY_HAND: PoolSetupStep = {
   next: {
     id: "check-again",
     label: "Check again",
-    does: "Looks for your tool line again. It changes nothing.",
+    does: "Reads the project's settings again. It changes nothing.",
     command: null,
     url: null,
   },
@@ -147,6 +147,38 @@ describe("IdentityStep", () => {
     expect(changed).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Skip for now" }));
     await waitFor(() => expect(calls.some((call) => call.cmd === "pool_setup_skip")).toBe(true));
+  });
+
+  it("sends the person to Settings to allow a persona's tool, and checks again", async () => {
+    core();
+    const props = {
+      changed: vi.fn(),
+      onNext: vi.fn(),
+      onOpenIdentity: vi.fn(),
+      onOpenSettings: vi.fn(),
+    };
+    render(
+      <IdentityStep
+        step={{
+          ...TO_SET_UP,
+          findings: ["The persona steward declares gh, and this machine hasn't allowed it."],
+          next: {
+            id: "allow-tool",
+            label: "Allow it in Settings",
+            does: "Opens Settings › Sandbox, where you allow the persona's tool on this machine.",
+            command: null,
+            url: null,
+          },
+        }}
+        pool="dev-box"
+        plane="p"
+        {...props}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Allow it in Settings" }));
+    expect(props.onOpenSettings).toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Check again" }));
+    expect(props.changed).toHaveBeenCalled();
   });
 
   it("offers to come back to a step that was skipped", async () => {

@@ -220,7 +220,7 @@ fn every_step_a_person_is_on_says_what_to_do_next() {
         Facts {
             identity: Identity::Elsewhere {
                 host: "git.acme.internal".into(),
-                program: "gh".into(),
+                program: Some("gh".into()),
                 persona: None,
             },
             ..on_a_pool(Runner::Running, signed_in())
@@ -260,7 +260,7 @@ fn repos_on_another_forge_host_are_said_plainly_with_the_tool_line_to_add_by_han
     let mut set = on_a_pool(Runner::Running, signed_in());
     set.identity = Identity::Elsewhere {
         host: "git.acme.internal".into(),
-        program: "gh".into(),
+        program: Some("gh".into()),
         persona: Some("steward".into()),
     };
     let setup = answer(&set);
@@ -275,11 +275,36 @@ fn repos_on_another_forge_host_are_said_plainly_with_the_tool_line_to_add_by_han
     let see = step.see.as_ref().expect("the line to add by hand");
     assert_eq!(
         see.text,
-        "purlis secret set forge token --stdin\n\n\
+        "purlis vault add agent-forge --provider keyring\n\
+         purlis secret set agent-forge token --stdin\n\n\
          [sandbox.personas.steward.tools]\n\
-         gh = { vault = \"forge\", as = \"GH_ENTERPRISE_TOKEN env\", key = \"token\", host = \"git.acme.internal\" }"
+         gh = { vault = \"agent-forge\", as = \"GH_ENTERPRISE_TOKEN env\", key = \"token\", host = \"git.acme.internal\" }"
+    );
+    assert!(
+        see.note.contains("Never use your own token"),
+        "a vault of the agent's own, never the person's: {}",
+        see.note
     );
     assert!(step.skippable, "it never dead-ends: it can be skipped");
+}
+
+#[test]
+fn repos_only_on_a_host_purlis_knows_no_forge_at_say_what_to_declare_and_give_no_line() {
+    let mut set = on_a_pool(Runner::Running, signed_in());
+    set.identity = Identity::Elsewhere {
+        host: "bitbucket.org".into(),
+        program: None,
+        persona: Some("steward".into()),
+    };
+    let setup = answer(&set);
+    let step = setup.step(StepId::Identity).unwrap();
+    assert!(
+        step.findings[0].contains("Settings › Forges"),
+        "{:?}",
+        step.findings
+    );
+    assert_eq!(step.see, None, "no line for a forge purlis doesn't know");
+    assert_eq!(next(&setup, StepId::Identity), ActionId::CheckAgain);
 }
 
 #[test]
@@ -287,7 +312,7 @@ fn a_gitlab_host_is_given_glab_s_line() {
     let mut set = on_a_pool(Runner::Running, signed_in());
     set.identity = Identity::Elsewhere {
         host: "gitlab.com".into(),
-        program: "glab".into(),
+        program: Some("glab".into()),
         persona: None,
     };
     let setup = answer(&set);
@@ -295,7 +320,7 @@ fn a_gitlab_host_is_given_glab_s_line() {
     assert!(
         see.text.ends_with(
             "[sandbox.personas.<persona>.tools]\n\
-             glab = { vault = \"forge\", as = \"GITLAB_TOKEN env\", key = \"token\" }"
+             glab = { vault = \"agent-forge\", as = \"GITLAB_TOKEN env\", key = \"token\" }"
         ),
         "{}",
         see.text

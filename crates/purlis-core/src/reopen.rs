@@ -281,9 +281,10 @@ pub struct Chat {
     pub task_level: crate::dispatchmode::Level,
     /// **A chat no relaunch puts back** (#4976): Pool setup's Try it chat, which lives for the
     /// seconds it takes to report its start. **Never written to the record on disk**: the record
-    /// leaves such a chat out whole, so a launch after a quit mid-try finds nothing of it, and a
-    /// session host still running it closes it as nothing reattached. Not a format change: no
-    /// key is written or read for it.
+    /// leaves such a chat out whole, so a launch after a quit mid-try puts nothing back, and the
+    /// pool's own record of what it kept running closes it on its pool once that is reached. Not
+    /// a format change: no key is written or read for it. **Only for a chat that does no work**:
+    /// what reads the record, a commit's provenance among it, never sees such a chat.
     pub unrecorded: bool,
 }
 

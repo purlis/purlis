@@ -176,6 +176,7 @@ export function PoolSetupTab({
   workspace,
   onOpenChat,
   onOpenIdentity,
+  onOpenSettings,
 }: {
   plane: PlaneId;
   /** The workspace the tab is filed in, where it is in one: where Try it starts its chat. */
@@ -184,6 +185,8 @@ export function PoolSetupTab({
   onOpenChat?: (pool: string, workspace?: string) => void;
   /** Opens the Agent identity tab, where an identity is inspected and removed. */
   onOpenIdentity?: () => void;
+  /** Opens the project's Settings, where a persona's tool is allowed. */
+  onOpenSettings?: () => void;
 }) {
   const [read, setRead] = useState<Read>({ state: "reading" });
   const [showing, setShowing] = useState<string>();
@@ -368,6 +371,7 @@ export function PoolSetupTab({
               }}
               onNext={() => after("identity")}
               onOpenIdentity={onOpenIdentity}
+              onOpenSettings={onOpenSettings}
             />
           ) : step?.id === "try" && madePool !== null ? (
             <TryStep

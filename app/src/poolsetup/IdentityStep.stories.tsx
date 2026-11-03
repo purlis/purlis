@@ -129,7 +129,7 @@ export const AnotherHost: Story = {
       next: {
         id: "check-again",
         label: "Check again",
-        does: "Looks for your tool line again. It changes nothing.",
+        does: "Reads the project's settings again. It changes nothing.",
         command: null,
         url: null,
       },
@@ -160,6 +160,59 @@ export const Skipped: Story = {
     const now = canvas.getByRole("button", { name: "Set it up now" });
     now.focus();
     await untilFocused(() => now, "Set it up now");
+    await expectFocusInSight();
+  },
+};
+
+/** A persona's tool to allow on this machine: Settings, where it is allowed, and Check again. */
+export const ToAllow: Story = {
+  args: {
+    step: {
+      ...TO_SET_UP,
+      findings: ["The persona steward declares gh, and this machine hasn't allowed it."],
+      next: {
+        id: "allow-tool",
+        label: "Allow it in Settings",
+        does: "Opens Settings › Sandbox, where you allow the persona's tool on this machine. It never holds your own sign-in. This step is done once it's allowed.",
+        command: null,
+        url: null,
+      },
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const allow = canvas.getByRole("button", { name: "Allow it in Settings" });
+    allow.focus();
+    await untilFocused(() => allow, "Allow it in Settings");
+    await expectFocusInSight();
+    await userEvent.tab();
+    await untilFocused(() => canvas.getByRole("button", { name: "Check again" }), "Check again");
+    await expectFocusInSight();
+  },
+};
+
+/** Repos on a host purlis knows no forge at: what to declare, and no line to copy. */
+export const UnknownHost: Story = {
+  args: {
+    step: {
+      ...TO_SET_UP,
+      findings: [
+        "Your repos are on bitbucket.org, and purlis knows no forge there, so it can't give the agent an identity on it. If bitbucket.org is a GitHub Enterprise Server or a GitLab, add it in Settings › Forges, then check again. Or skip this for now.",
+      ],
+      next: {
+        id: "check-again",
+        label: "Check again",
+        does: "Reads the project's settings again. It changes nothing.",
+        command: null,
+        url: null,
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const again = canvas.getByRole("button", { name: "Check again" });
+    again.focus();
+    await untilFocused(() => again, "Check again");
     await expectFocusInSight();
   },
 };

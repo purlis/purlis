@@ -28,6 +28,8 @@ pub struct PoolSetupSee {
 /// One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSetupCheck {
+    /// What it checks: `chat`, `signins` or `identity`.
+    pub about: String,
     pub verdict: String,
     pub title: String,
     pub more: Option<String>,
@@ -118,6 +120,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                     .checks
                     .iter()
                     .map(|check| PoolSetupCheck {
+                        about: word(&check.about),
                         verdict: word(&check.verdict),
                         title: check.title.clone(),
                         more: check.more.clone(),
@@ -429,6 +432,10 @@ pub struct PoolSetupTried {
     pub failed: Option<PoolSetupFailed>,
     /// The person cancelled it (#4976): nothing was kept, and its chat is closed.
     pub cancelled: bool,
+    /// What Try it proved of the agent's identity itself (#4490), for the identity's line: a
+    /// read-only token GitHub made for the App, read with and revoked. None where the identity
+    /// step's own line stands: no App of Agent identity's, no repo, or a step not done.
+    pub identity: Option<PoolSetupCheck>,
     /// The workspace its chat started in, where it got that far: where Open a chat opens.
     pub workspace: Option<String>,
 }
@@ -592,7 +599,62 @@ fn failed(why: String, step: Option<purlis_core::poolsetup::StepId>) -> PoolSetu
             step: step.as_ref().map(word),
         }),
         cancelled: false,
+        identity: None,
         workspace: None,
+    }
+}
+
+/// **The longest Try it waits for its runner to start its chat**, Cancel or not: far past a
+/// runner woken and an image pulled, and short of a try nobody can end.
+#[cfg(unix)]
+const TRY_STARTS_WITHIN: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// **Cancels a try once `within` has passed**, and says so, unless the try ended first: dropped,
+/// it lets its waiting thread go at once.
+#[cfg(unix)]
+struct Backstop {
+    ran_out: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    done: Option<std::sync::mpsc::Sender<()>>,
+}
+
+#[cfg(unix)]
+impl Backstop {
+    fn after(within: std::time::Duration, cancel: &Cancel) -> Backstop {
+        use std::sync::atomic::Ordering;
+        let ran_out = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (done, ended) = std::sync::mpsc::channel::<()>();
+        let (flag, cancel) = (
+            std::sync::Arc::clone(&ran_out),
+            std::sync::Arc::clone(cancel),
+        );
+        let spawned = std::thread::Builder::new()
+            .name("purlis-try-backstop".into())
+            .spawn(move || {
+                if let Err(std::sync::mpsc::RecvTimeoutError::Timeout) = ended.recv_timeout(within)
+                {
+                    flag.store(true, Ordering::SeqCst);
+                    cancel.store(true, Ordering::SeqCst);
+                }
+            });
+        if let Err(why) = spawned {
+            tracing::warn!("purlis: Try it runs without its backstop ({why})");
+        }
+        Backstop {
+            ran_out,
+            done: Some(done),
+        }
+    }
+
+    fn ran_out(&self) -> bool {
+        self.ran_out.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Backstop {
+    fn drop(&mut self) {
+        // Its thread hears the end of the try as the channel closes.
+        self.done.take();
     }
 }
 
@@ -601,6 +663,7 @@ fn failed(why: String, step: Option<purlis_core::poolsetup::StepId>) -> PoolSetu
 const CANCELLED: PoolSetupTried = PoolSetupTried {
     failed: None,
     cancelled: true,
+    identity: None,
     workspace: None,
 };
 
@@ -802,13 +865,28 @@ fn try_on(
     if trying_now.cancelled() {
         return Ok(CANCELLED);
     }
+    // A start the person can cancel waits for its runner without a limit of its own, so Try it
+    // keeps one: a page reloaded mid-try has no Cancel to press, and a runner that keeps its link
+    // and never answers would hold the pool's try for good.
+    let backstop = Backstop::after(TRY_STARTS_WITHIN, &trying_now.1);
     // Its own Cancel stops the start as the picker's does (#4976): the wait for the runner ends,
     // and a chat that comes up after is closed.
     let started = crate::hostedsessions::cancelled_by(std::sync::Arc::clone(&trying_now.1), || {
         held.chats().start_ready(&chat, &ready, TRY_SIZE)
     });
+    let ran_out = || {
+        failed(
+            format!(
+                "The runner of {pool} didn't answer within {}. Check the Pool step, then try \
+                 again.",
+                said_as_time(TRY_STARTS_WITHIN)
+            ),
+            None,
+        )
+    };
     let session = match started {
         Ok(session) => session,
+        Err(_) if backstop.ran_out() => return Ok(ran_out()),
         Err(_) if trying_now.cancelled() => return Ok(CANCELLED),
         Err(why) => {
             let step = step_of_a_refused_start(&why);
@@ -827,6 +905,7 @@ fn try_on(
     .err();
     drop(chat_held);
     match ended {
+        Some(NotStarted::Cancelled) if backstop.ran_out() => return Ok(ran_out()),
         Some(NotStarted::Cancelled) => return Ok(CANCELLED),
         Some(NotStarted::Failed(why)) => return Ok(failed(why, None)),
         None => {}
@@ -840,7 +919,71 @@ fn try_on(
     Ok(PoolSetupTried {
         failed: None,
         cancelled: false,
+        identity: proved_identity(&here, &root, pool),
         workspace: Some(workspace),
+    })
+}
+
+/// **What Try it proves of the agent's identity** (#4490), where the identity step reads as set
+/// and the project has a repo: GitHub makes the App a token narrowed to reading metadata, one repo
+/// is read with it, and it is revoked (`agentidentity::prove`, Finish's own proof). It runs in
+/// this process, with the App's key read only to mint, and nothing of the token or the key goes
+/// anywhere. Only an App Agent identity set up is proved: a hand-written line is never signed
+/// with. It doesn't run `gh` or a push in the chat itself.
+#[cfg(unix)]
+fn proved_identity(
+    here: &purlis_core::poolsetup::Here<'_>,
+    root: &std::path::Path,
+    pool: &str,
+) -> Option<PoolSetupCheck> {
+    use purlis_core::forge::agentidentity;
+    use purlis_core::poolsetup::{CheckOf, StepId, Verdict};
+    let setup = purlis_core::poolsetup::read(here, Some(pool)).ok()?;
+    let line = setup
+        .step(StepId::Try)?
+        .checks
+        .iter()
+        .find(|check| check.about == CheckOf::Identity)?;
+    if line.verdict != Verdict::Ok {
+        return None;
+    }
+    let app = agentidentity::held(root)
+        .ok()?
+        .into_iter()
+        .find(agentidentity::Held::ours)?
+        .app;
+    let ctx = purlis_core::secrets::Ctx::new(root, purlis_core::secrets::Env::from_process());
+    let check = |verdict: Verdict, title: String, more: String| PoolSetupCheck {
+        about: word(&CheckOf::Identity),
+        verdict: word(&verdict),
+        title,
+        more: Some(more),
+    };
+    Some(match agentidentity::prove(&ctx, &app) {
+        Ok(proof) => check(
+            Verdict::Ok,
+            match &proof.read {
+                Some(repo) => format!(
+                    "The agent's identity read {repo} on GitHub as {}",
+                    proof.stand.acts_as()
+                ),
+                None => format!(
+                    "The agent's identity got a token from GitHub as {}",
+                    proof.stand.acts_as()
+                ),
+            },
+            "purlis made a read-only token for it and revoked it at once. It doesn't run gh or \
+             git push in the chat itself yet."
+                .to_owned(),
+        ),
+        Err(why) => check(
+            Verdict::Missing,
+            "GitHub didn't confirm the agent's identity".to_owned(),
+            format!(
+                "{} Open Agent identity to see how it stands.",
+                purlis_core::shown::short(&why)
+            ),
+        ),
     })
 }
 
@@ -982,6 +1125,29 @@ mod tests {
             !super::cancel_trying("nowhere"),
             "there was no try to cancel"
         );
+    }
+
+    #[test]
+    fn a_try_s_backstop_cancels_it_once_its_time_is_out_and_says_it_ran_out() {
+        let cancel = super::Cancel::default();
+        let backstop = super::Backstop::after(Duration::from_millis(20), &cancel);
+        let began = std::time::Instant::now();
+        while !cancel.load(std::sync::atomic::Ordering::SeqCst) {
+            assert!(
+                began.elapsed() < Duration::from_secs(10),
+                "it never ran out"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(backstop.ran_out());
+    }
+
+    #[test]
+    fn a_try_that_ends_first_is_never_cancelled_by_its_backstop() {
+        let cancel = super::Cancel::default();
+        drop(super::Backstop::after(Duration::from_millis(50), &cancel));
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(!cancel.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     #[test]

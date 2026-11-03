@@ -8,7 +8,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolSetupCheck, PoolSetupStep } from "../bindings";
 import { TryStep } from "./TryStep";
 
+/** A line of Try it, said of what its title names, as the core tags it. */
 const check = (verdict: string, title: string, more: string | null = null): PoolSetupCheck => ({
+  about: /identity|\bgh\b/.test(title) ? "identity" : /signed in/.test(title) ? "signins" : "chat",
   verdict,
   title,
   more,
@@ -153,6 +155,55 @@ describe("TryStep", () => {
     draw(READY);
     cleanup();
     expect(calls.some((call) => call.cmd === "pool_setup_try_cancel")).toBe(false);
+  });
+
+  it("says in the identity's line what the try proved of the identity itself", async () => {
+    let step = READY;
+    core({
+      pool_setup_try: () => ({
+        failed: null,
+        cancelled: false,
+        workspace: "web",
+        identity: check(
+          "ok",
+          "The agent's identity read acme/web on GitHub as acme-agent[bot]",
+          "purlis made a read-only token for it and revoked it at once.",
+        ),
+      }),
+    });
+    const props = { changed: vi.fn(), onGo: vi.fn(), onOpenChat: vi.fn() };
+    const { rerender } = render(<TryStep step={step} pool="dev-box" plane="p" {...props} />);
+    await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
+    await waitFor(() => expect(props.changed).toHaveBeenCalled());
+    step = PASSED;
+    rerender(<TryStep step={step} pool="dev-box" plane="p" {...props} />);
+    const lines = within(screen.getByRole("list", { name: "What was checked" }));
+    expect(lines.getByText(/read acme\/web on GitHub as acme-agent\[bot\]/)).toBeTruthy();
+    expect(lines.queryByText(/gh through steward/)).toBeNull();
+  });
+
+  it("reads works, except for this, where GitHub didn't confirm the identity", async () => {
+    let step = READY;
+    core({
+      pool_setup_try: () => ({
+        failed: null,
+        cancelled: false,
+        workspace: "web",
+        identity: check(
+          "missing",
+          "GitHub didn't confirm the agent's identity",
+          "It isn't installed.",
+        ),
+      }),
+    });
+    const props = { changed: vi.fn(), onGo: vi.fn(), onOpenChat: vi.fn() };
+    const { rerender } = render(<TryStep step={step} pool="dev-box" plane="p" {...props} />);
+    await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
+    await waitFor(() => expect(props.changed).toHaveBeenCalled());
+    step = PASSED;
+    rerender(<TryStep step={step} pool="dev-box" plane="p" {...props} />);
+    expect(screen.getByRole("heading", { name: "dev-box works, except for this" })).toBeTruthy();
+    expect(screen.queryByText("Everything passed")).toBeNull();
   });
 
   it("ends on what passed, with one button to open a chat there", async () => {

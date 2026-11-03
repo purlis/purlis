@@ -52,7 +52,11 @@ export function TryStep({
   const [failed, setFailed] = useState<Failed>();
   /** Where Try it's chat started, this visit: where Open a chat opens. */
   const [triedIn, setTriedIn] = useState<string>();
-  const checks = step.checks;
+  /** What the try proved of the agent's identity, this visit, in the identity's line (#4490). */
+  const [proved, setProved] = useState<PoolSetupCheck>();
+  const checks = step.checks.map((check) =>
+    proved && check.about === "identity" && check.verdict === "ok" ? proved : check,
+  );
   const passed = step.state === "done";
   // Anything that didn't pass, skipped or not done, keeps the end from reading as done.
   const except = checks.some((check) => check.verdict !== "ok");
@@ -77,6 +81,7 @@ export function TryStep({
     // Cancelled: back to the start, with nothing kept and nothing to say.
     if (tried.data.cancelled) return;
     setTriedIn(tried.data.workspace ?? undefined);
+    setProved(tried.data.identity ?? undefined);
     changed();
   };
 
