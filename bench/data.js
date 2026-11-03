@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793708580643,
+  "lastUpdate": 1793711550970,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37590,6 +37590,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9721145,
             "unit": "ms",
             "extra": "median of 5 runs: 101.662, 101.965, 101.972, 102.556, 102.680 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9634529e7f09f4432759acf0a4cfeea1953df05c",
+          "message": "A paste no longer quits the app: the release profile unwinds, and a Rust panic still aborts (#5004)\n\n* A paste no longer quits the app: the release profile unwinds, so an Objective-C exception under tao's sendEvent: reaches NSApplication, and a Rust panic still aborts\n\nAn Objective-C exception that AppKit raised beneath tao 0.37.1's extern \"C\" sendEvent: (on a\nCmd+V paste, macOS 27.0.1, 0.4.2-dev.1660) aborted the app with 'panic in a function that\ncannot unwind'. tao 0.37.2 (tauri-apps/tao#1354) declares the callbacks C-unwind, which helps\nonly under panic = \"unwind\". So the release profile unwinds, and purlis_core::panicend::fatal,\ncalled first in each shipped binary's main, keeps a Rust panic fatal on any thread, before any\nunwinding. ADR 0092 is amended (accepted 2026-11-03).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G6S9AZSYGG5C85WX9BF99W\nPurlis-Persona: steward\n\n* A panic is made fatal in release builds alone; the new tests open unsteered\n\nfatal() runs only without debug assertions (release, dev-release), the one profile that changed:\na debug build and the tests unwind as they always did, so the fence test's exit 101 stands. The\nnew integration tests open with unsteered!, as every test in tests/it must.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G6S9AZSYGG5C85WX9BF99W\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T10:36:01Z",
+          "tree_id": "bd33f2469444e47d2dba927b8a8d5756862afd36",
+          "url": "https://github.com/purlis/purlis/commit/9634529e7f09f4432759acf0a4cfeea1953df05c"
+        },
+        "date": 1793711547133,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.654194,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.624, 0.647, 0.654, 0.657, 0.664 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.594059,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.299, 16.549, 16.594, 16.636, 16.695 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1133125,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.396, 101.982, 102.113, 102.450, 102.973 ms"
           }
         ]
       }
