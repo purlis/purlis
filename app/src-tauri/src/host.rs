@@ -232,6 +232,9 @@ pub type SkillRunsHeard =
 pub struct Watching {
     pub view: u32,
     pub size: Size,
+    /// How many lines of history the session keeps above those its screen was drawn with
+    /// (#4742): what the pane asks for as the person scrolls up. None where it drew all.
+    pub older: u32,
 }
 
 /// Whether a session's program is ready to be typed at, as the terminal and the clock say it:
@@ -458,6 +461,14 @@ pub trait SessionHost: Send + Sync {
     /// session's output, as text, until the view is closed. The answer says which view that
     /// is, and the size its screen was drawn for.
     fn watch(&self, id: u32, sink: Sink) -> Result<Watching, String>;
+
+    /// [`SessionHost::watch`], with at most `history` lines of history above the screen, the
+    /// newest (#4742): a pane opens on a page and asks for more as the person scrolls up. A
+    /// session that pages none draws all of it, and says nothing is older.
+    fn watch_within(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
+        let _ = history;
+        self.watch(id, sink)
+    }
 
     /// Closes a view. Its session keeps running, with its terminal, for the next pane.
     fn unwatch(&self, id: u32, view: u32) -> Result<(), String>;
@@ -1352,6 +1363,7 @@ pub(crate) mod pretend {
                     columns: 80,
                     rows: 24,
                 },
+                older: 0,
             })
         }
         fn unwatch(&self, id: u32, view: u32) -> Result<(), String> {

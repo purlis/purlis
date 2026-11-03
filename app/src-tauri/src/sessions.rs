@@ -315,7 +315,11 @@ impl SessionHost for Sessions {
             running.watched += 1;
             let id = running.watched;
             running.views.insert(id, open);
-            Ok(Watching { view: id, size })
+            Ok(Watching {
+                view: id,
+                size,
+                older: 0,
+            })
         })
     }
 

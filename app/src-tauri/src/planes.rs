@@ -865,13 +865,21 @@ impl Held {
 
     /// A view of chat `session` opened in its turn in the chat's lane, after every resize sent
     /// before it (#891, #4734), waiting for the host's answer: never on the window's thread.
+    /// `history` is the most lines of history the screen is drawn with, the newest (#4742), or
+    /// all of them.
     pub fn watch_in_turn(
         &self,
         session: u32,
         sink: crate::host::Sink,
+        history: Option<u32>,
     ) -> Result<crate::host::Watching, String> {
-        self.lanes
-            .in_turn(session, || self.chats.sessions().watch(session, sink))
+        self.lanes.in_turn(session, || {
+            let sessions = self.chats.sessions();
+            match history {
+                Some(history) => sessions.watch_within(session, sink, history),
+                None => sessions.watch(session, sink),
+            }
+        })
     }
 
     /// Types `bytes` into chat `session` in its turn in the chat's lane, waiting for the host's

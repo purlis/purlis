@@ -1297,9 +1297,11 @@ export const commands = {
 	 *  as it already is, and then the session's output. Answers with the id that closes the view.
 	 * 
 	 *  Off the window's thread, in its turn in the chat's lane (#4734, ADR 0108): after every
-	 *  resize the pane sent before it (#891), and answered once the host has.
+	 *  resize the pane sent before it (#891), and answered once the host has. `history` is the most
+	 *  lines of history the screen is drawn with, the newest (#4742), or all of them; the answer
+	 *  says how many are older.
 	 */
-	watchSession: (plane: PlaneId, session: number, output: Channel<string>) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output })),
+	watchSession: (plane: PlaneId, session: number, output: Channel<string>, history: number | null) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output, history })),
 	/**
 	 *  Closes a view, for a pane that has gone off screen, in the chat's lane: it answers at once
 	 *  (#4734, ADR 0108). The session keeps running.
@@ -16248,6 +16250,11 @@ export type Watching = {
 	 *  keeps the terminal's own Enter.
 	 */
 	newline: string | null,
+	/**
+	 *  How many lines of history the session keeps above those the view was drawn with
+	 *  (#4742): what the pane asks for, with a larger `history`, as the person scrolls up.
+	 */
+	older: number,
 };
 
 /**  Which of the two ways the person ends a chat (#1488). */
