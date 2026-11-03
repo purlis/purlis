@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793714480683,
+  "lastUpdate": 1793746201983,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -16584,6 +16584,42 @@ window.BENCHMARK_DATA = {
             "value": 706.4,
             "unit": "MB",
             "extra": "median of 6 samples: 679.9, 695.2, 705, 707.9, 708.8, 772.5 MB; window 418.3 MB, session host 288.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8b79764aea87dc63e627f02287406094d9913ac6",
+          "message": "History paging (#4742) and kept terminals (#4735), on main (#5051)\n\n* A view opens on the screen and a page of history; older lines are paged in (#4742), on main\n\nCarried over from #5021 (675d2400e) onto main as of #4925.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXPA87KPQ9ZW0HN396AWMN\nPurlis-Persona: steward\n\n* History paging (#4742): its new files, which the commit before left out\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXPA87KPQ9ZW0HN396AWMN\nPurlis-Persona: steward\n\n* The last three chats shown keep their terminals (#4735), on main\n\nCarried over from #5021 (8fb72705d) onto main as of #4925. A terminal\nopens is a viewOpening until its screen is handed over, ended on every\nexit path and when the terminal is let go of. The history paging opens a\nview again for each page: that open, its paging and the terminal's one\nwritePerFrame live in startTerminal with the terminal they draw, so a\nkept terminal pages too, and release disposes the paging.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXPA87KPQ9ZW0HN396AWMN\nPurlis-Persona: steward\n\n* History paging is session protocol 1.71: main's 1.70 is the browser login's form (#5003)\n\nThe version paragraph and VERSION were resolved to 1.71 in the rebase;\nthese are the doc comments that still named 1.70 for #4742.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXPA87KPQ9ZW0HN396AWMN\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T19:43:42Z",
+          "tree_id": "eaa972b3a5e88c6107f8d1ac67ed21a237b923da",
+          "url": "https://github.com/purlis/purlis/commit/8b79764aea87dc63e627f02287406094d9913ac6"
+        },
+        "date": 1793746197818,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1694.9,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1554, 1694.9, 1847.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 857.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 824.5, 841.9, 853, 862.7, 862.8, 926.2 MB; window 576.8 MB, session host 281.7 MB"
           }
         ]
       }
