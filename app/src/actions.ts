@@ -132,6 +132,7 @@ import {
   type Direction,
   type Tabs,
   type ViewRef,
+  type Tab,
 } from "./tabs";
 import { canTileAll, canUndoLayout, isSplit, zoomedOf } from "./tiling";
 import { isBrowser } from "./browsers";
@@ -411,9 +412,9 @@ export type Does =
    *  second press on a sentence the operator has read. A `force` here would be a row that
    *  discards work with nobody warned — the same objection `worktree.discard` records. */
   | { verb: "removeWorkspace"; workspace: string }
-  /** `inside` is the next and the previous chat in a tab (V100-36): the tab is switched to it
-   *  whatever the person set for a pressed task, so the key never gives a task a tab. */
-  | { verb: "showChat"; session: number; inside?: true }
+  | { verb: "showChat"; session: number }
+  /** ⌘⇧H (#4757): the focused pane goes back to the chat it showed before. Nothing ends. */
+  | { verb: "paneBack" }
   /** Gives a task a tab of its own (#1489). Nothing ends, and nothing is asked. */
   | { verb: "ownTab"; session: number }
   /** Opens a task beside the session that asked for it, inside that session's tab (#1489). */
@@ -1063,7 +1064,9 @@ export type Doing = {
    *  what deletes is `workspace_remove` — never a lower-level call that would be past the
    *  core's guard. */
   removeWorkspace: (workspace: string) => void;
-  showChat: (session: number, inside?: boolean) => void;
+  showChat: (session: number) => void;
+  /** The focused pane goes back to the chat it showed before, or to where that chat is. */
+  paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
   ownTab: (session: number) => void;
   /** Opens a task beside its session, in the session's tab, with the keyboard in it. */
@@ -3401,8 +3404,10 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       doing.removeWorkspace(does.workspace);
       return DID;
     case "showChat":
-      if (does.inside) doing.showChat(does.session, true);
-      else doing.showChat(does.session);
+      doing.showChat(does.session);
+      return DID;
+    case "paneBack":
+      doing.paneBack();
       return DID;
     case "ownTab":
       doing.ownTab(does.session);
@@ -4986,7 +4991,7 @@ function tabChatRows(now: Now): Offer[] {
     tasks: "Show this tab's tasks",
     next: "Next chat in this tab",
     previous: "Previous chat in this tab",
-    own: "Back to this tab's own chat",
+    own: "Back to this pane's previous chat",
   };
   const front = now.tabs.inFront === undefined ? undefined : now.tabs.byId[now.tabs.inFront];
   const pane = front && panesOf(now.tabs, front.id).find((one) => one.pane === front.focused);
@@ -5008,7 +5013,6 @@ function tabChatRows(now: Now): Offer[] {
     (row) => row.placed !== "tab",
   );
   const shown = focusedChat(now.tabs);
-  const showsTask = front.shows?.[pane.pane] !== undefined;
   const hasTasks =
     rows.some((row) => row.level > 1 || (now.finished?.get(row.session)?.length ?? 0) > 0) ||
     front.shows !== undefined;
@@ -5018,7 +5022,7 @@ function tabChatRows(now: Now): Offer[] {
     return to === undefined || to === shown
       ? cannot(id, title, hasTasks ? `${front.name} is the only chat in this tab.` : none)
       : {
-          ...can(id, title, { verb: "showChat", session: to, inside: true }),
+          ...can(id, title, { verb: "showChat", session: to }),
           note: `${taskKeySaid(key, mac)}.${taskKeyNote(key, mac)}`,
         };
   };
@@ -5031,13 +5035,31 @@ function tabChatRows(now: Now): Offer[] {
       : cannot(TAB_TASKS_ID, titles.tasks, none),
     step(NEXT_CHAT_ID, titles.next, 1, "next"),
     step(PREVIOUS_CHAT_ID, titles.previous, -1, "previous"),
-    showsTask
-      ? {
-          ...can(OWN_CHAT_ID, titles.own, { verb: "showChat", session: pane.session }),
-          note: `Shows ${now.nameOf(pane.session)} again. The task goes on. ${taskKeySaid("own", mac)}.`,
-        }
-      : cannot(OWN_CHAT_ID, titles.own, "This tab is showing its own chat."),
+    backRow(now, front, titles.own, mac),
   ];
+}
+
+/**
+ * **⌘⇧H's row** (#4757; spec story 86): the focused pane goes back to the chat it showed
+ * before, and swaps back on a second press; where that chat is on screen in another pane, that
+ * pane comes forward. Nothing ends. Greyed, saying why, where the pane showed nothing else or
+ * that chat has ended.
+ */
+function backRow(now: Now, front: Tab, title: string, mac: boolean): Offer {
+  const before = front.previous?.[front.focused];
+  if (before === undefined)
+    return cannot(OWN_CHAT_ID, title, "This pane has shown no other chat yet.");
+  const listed = now.listed?.some((chat) => chat.session === before) ?? false;
+  if (!listed)
+    return cannot(
+      OWN_CHAT_ID,
+      title,
+      `${now.nameOf(before)} has ended, so there is nothing to go back to.`,
+    );
+  return {
+    ...can(OWN_CHAT_ID, title, { verb: "paneBack" }),
+    note: `Shows ${now.nameOf(before)} again. The chat on screen goes on. ${taskKeySaid("own", mac)}.`,
+  };
 }
 
 /** The tab holding a session, or nothing when no tab does. */

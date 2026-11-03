@@ -3497,6 +3497,17 @@ body {
   --chat-badge-ground: var(--list-selected);
 }
 
+/* **A chat on screen in another pane of this tab** (#4757; the faint on-screen bar accepted on
+   #4582): the selected row's edge, thinner and with no fill, so a press that would jump there is
+   told before it is pressed, and the focused pane's row stays the one selected. */
+.chats-section .chat[data-beside]:not([aria-current]:not([aria-current="false"])) {
+  box-shadow: inset 1px 0 0 var(--list-selected-edge);
+}
+
+.chats-section .chat[data-beside]:not([aria-current]:not([aria-current="false"])):dir(rtl) {
+  box-shadow: inset -1px 0 0 var(--list-selected-edge);
+}
+
 /* The icon's look is `chatPersona.css`'s (#4762): the row sets only its size and its grounds. */
 .chats-section {
   --chat-persona-size: var(--chats-mark);

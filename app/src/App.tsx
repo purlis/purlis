@@ -1763,6 +1763,7 @@ function App() {
       createWorkspace: () => undefined,
       removeWorkspace: () => undefined,
       showChat: () => undefined,
+      paneBack: () => undefined,
       showTabTasks: () => undefined,
       ownTab: () => undefined,
       beside: () => undefined,

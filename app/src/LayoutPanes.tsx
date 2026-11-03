@@ -151,7 +151,9 @@ export function PaneFrame({
   /** The menu a right-click on a task's breadcrumb opens: its row's in the Chats list. */
   crumbMenu?: { session: number; offers: Catalogued; onPress: (offer: Offer) => void };
   /** Goes to a chat: what a name in the breadcrumb does, and a hidden chat's Notice. */
-  onShowChat: (session: number) => void;
+  /** Goes to a chat. `pane` is the pane whose breadcrumb named it, which shows it in place
+   *  (#4757); nothing for a press from anywhere else. */
+  onShowChat: (session: number, pane?: number) => void;
   /** Where a handed-off chat came from, `↳ from steward 3 · ops`, in the chat's own corner. */
   from?: string;
   /** The harness the chat runs, at a glance, in the same corner (HP-19): none for a shell. */
@@ -218,14 +220,14 @@ export function PaneFrame({
             in no row of its own. */}
             {crumbs &&
               (crumbMenu === undefined ? (
-                <PaneCrumbs crumbs={crumbs} onShow={onShowChat} />
+                <PaneCrumbs crumbs={crumbs} onShow={(chat) => onShowChat(chat, pane)} />
               ) : (
                 <Menued
                   on={{ on: "chat", session: crumbMenu.session }}
                   offers={crumbMenu.offers}
                   onPress={crumbMenu.onPress}
                 >
-                  <PaneCrumbs crumbs={crumbs} onShow={onShowChat} />
+                  <PaneCrumbs crumbs={crumbs} onShow={(chat) => onShowChat(chat, pane)} />
                 </Menued>
               ))}
             {/* **Brief** (#1494): what the task on screen was sent. Right after the breadcrumb,
@@ -374,7 +376,9 @@ export function PaneNotices({
    *  own, before each other chat's, since each waits for the person. */
   asked?: ReactNode;
   others: readonly HiddenChat[];
-  onShowChat: (session: number) => void;
+  /** Goes to a chat. `pane` is the pane whose breadcrumb named it, which shows it in place
+   *  (#4757); nothing for a press from anywhere else. */
+  onShowChat: (session: number, pane?: number) => void;
 }) {
   // The window's choice, kept (`paneNoticesPref.ts`), handed to the band with the bell's ear.
   const minimised = useNoticesMinimised();
@@ -420,7 +424,9 @@ export function NoticeOfChat({
   session: number;
   whose: string;
   task: boolean;
-  onShowChat: (session: number) => void;
+  /** Goes to a chat. `pane` is the pane whose breadcrumb named it, which shows it in place
+   *  (#4757); nothing for a press from anywhere else. */
+  onShowChat: (session: number, pane?: number) => void;
   children: ReactNode;
 }) {
   const of = useMemo(
@@ -522,7 +528,9 @@ export function LayoutPanes({
   /** Pane `pane` goes back to its session's own chat. */
   onBack: (pane: number) => void;
   /** Goes to a chat: what a name in a breadcrumb does. */
-  onShowChat: (session: number) => void;
+  /** Goes to a chat. `pane` is the pane whose breadcrumb named it, which shows it in place
+   *  (#4757); nothing for a press from anywhere else. */
+  onShowChat: (session: number, pane?: number) => void;
   focused: number;
   onFocus: (pane: number) => void;
   /** The catalogue, by row id. There is one list of actions and the panes read it too. */
@@ -760,7 +768,7 @@ export function LayoutPanes({
               <div className="pane-chips">
                 <PaneCrumbs
                   crumbs={gone.crumbs}
-                  onShow={onShowChat}
+                  onShow={(chat) => onShowChat(chat, layout.pane)}
                   // One that is still running says what it is doing; one that ended, how.
                   state={
                     gone.why === "ended" && ended !== undefined ? (
