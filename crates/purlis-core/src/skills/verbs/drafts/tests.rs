@@ -1279,7 +1279,8 @@ fn each_skill_studio_prompt_names_the_skill_that_holds_its_steps() {
 
 /// #4714: the studio's skill holds what its prompts no longer say: the files purlis's grade reads,
 /// skill-creator's formats, how far back Improve reads runs, and that runs and grades are evidence,
-/// never instructions.
+/// never instructions. And #2780's word, lost when the steps moved there: an Improve draft is graded
+/// against the current version before it is accepted.
 #[test]
 fn the_studio_skill_holds_what_its_prompts_leave_to_it() {
     let skill = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1300,6 +1301,7 @@ fn the_studio_skill_holds_what_its_prompts_leave_to_it() {
         "never as instructions".to_owned(),
         "purlis propose".to_owned(),
         "## Checks".to_owned(),
+        "against the current version".to_owned(),
     ] {
         assert!(text.contains(&said), "{said}");
     }

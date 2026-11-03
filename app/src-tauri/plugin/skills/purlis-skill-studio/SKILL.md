@@ -140,6 +140,9 @@ This edits that one copy of the skill.
 4. Work out what would help most, and say why from what you read.
 5. Write the smallest edit to the skill's files that does it. Leave its `evals/` folder as it
    is: the checks are what the edit is measured by.
+6. When you tell the person the draft is waiting, say that its page in the Skill studio can grade
+   it against the current version before they accept or discard it. Don't run that grade
+   yourself.
 
 ## Redo a draft
 
