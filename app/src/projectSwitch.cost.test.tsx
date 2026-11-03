@@ -140,5 +140,18 @@ function held(one: Switch): void {
   expect(one.mounted).toBeLessThanOrEqual(MOUNTS);
   expect(one.unmounted).toBeLessThanOrEqual(MOUNTS);
   expect(one.invokedAtOnce).toBeLessThanOrEqual(COMMANDS_AT_ONCE);
-  expect(one.commits).toBeLessThanOrEqual(COMMITS);
+  // A switch over its commits says where each began and what it asked (#3032): a commit only a slow runner
+  // makes is named in the failure itself, where a CI run shows it.
+  expect(one.commits, drewAndAsked(one)).toBeLessThanOrEqual(COMMITS);
+}
+
+/** Where each of a switch's commits began, and what it asked the core. */
+function drewAndAsked(one: Switch): string {
+  const began = one.began
+    .map((roots, at) => `${at + 1}: ${[...new Set(roots)].slice(0, 8).join(", ")}`)
+    .join("; ");
+  const asked = Object.entries(one.invokes)
+    .map(([cmd, times]) => `${cmd} ${times}`)
+    .join(", ");
+  return `${one.commits} commits to ${one.to} (${one.panes} panes), each begun at ${began}. Asked: ${asked}`;
 }

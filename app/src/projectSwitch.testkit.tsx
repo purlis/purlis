@@ -9,7 +9,7 @@ import App from "./App";
 import type { OpenChat } from "./bindings";
 import { SETTLE_MS as ASKS_SETTLE_MS } from "./asks";
 import { panes } from "./countedPane.testkit";
-import { counts, renderedBy } from "./reactCommits.testkit";
+import { commitRoots, counts, renderedBy } from "./reactCommits.testkit";
 import { stripNamed } from "./test-strips";
 import { themeInForce } from "./theme/inForce.testkit";
 
@@ -279,6 +279,8 @@ export type Switch = {
   rendered: number;
   /** How many times each component was drawn for it, by name. */
   renderedBy: Record<string, number>;
+  /** Where each of its commits began: the topmost components drawn in it (`commitRoots`). */
+  began: string[][];
   mounted: number;
   unmounted: number;
   nodesAdded: number;
@@ -417,6 +419,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     watching.observe(document.body, { childList: true, subtree: true });
     Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });
     renderedBy.clear();
+    commitRoots.length = 0;
     Object.assign(panes, { started: 0, stopped: 0 });
     watchLayoutReads();
     reads.clear();
@@ -447,6 +450,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       commits: counts.commits,
       rendered: counts.rendered,
       renderedBy: Object.fromEntries(renderedBy),
+      began: commitRoots.map((roots) => [...roots]),
       mounted: counts.mounted,
       unmounted: counts.unmounted,
       nodesAdded: nodes.added,
