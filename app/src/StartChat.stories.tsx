@@ -321,9 +321,11 @@ export const DetailsPending: Story = {
     await waitFor(() =>
       expect(page.getAllByText(/Checking billing and approval…/)[0]).toBeVisible(),
     );
+    // Held while the dialog is open: once Escape closes it, the story has no opener for the
+    // focus to go back to.
+    expectFocusInSight();
     await pictureNow();
     await userEvent.keyboard("{Escape}");
     await expect(page.getByRole("status")).toHaveTextContent("Cancelled");
-    expectFocusInSight();
   },
 };
