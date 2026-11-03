@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793737798653,
+  "lastUpdate": 1793741544402,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38010,6 +38010,48 @@ window.BENCHMARK_DATA = {
             "value": 102.747109,
             "unit": "ms",
             "extra": "median of 5 runs: 100.223, 101.474, 102.747, 102.770, 104.175 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8b79764aea87dc63e627f02287406094d9913ac6",
+          "message": "History paging (#4742) and kept terminals (#4735), on main (#5051)\n\n* A view opens on the screen and a page of history; older lines are paged in (#4742), on main\n\nCarried over from #5021 (675d2400e) onto main as of #4925.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXPA87KPQ9ZW0HN396AWMN\nPurlis-Persona: steward\n\n* History paging (#4742): its new files, which the commit before left out\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXPA87KPQ9ZW0HN396AWMN\nPurlis-Persona: steward\n\n* The last three chats shown keep their terminals (#4735), on main\n\nCarried over from #5021 (8fb72705d) onto main as of #4925. A terminal\nopens is a viewOpening until its screen is handed over, ended on every\nexit path and when the terminal is let go of. The history paging opens a\nview again for each page: that open, its paging and the terminal's one\nwritePerFrame live in startTerminal with the terminal they draw, so a\nkept terminal pages too, and release disposes the paging.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXPA87KPQ9ZW0HN396AWMN\nPurlis-Persona: steward\n\n* History paging is session protocol 1.71: main's 1.70 is the browser login's form (#5003)\n\nThe version paragraph and VERSION were resolved to 1.71 in the rebase;\nthese are the doc comments that still named 1.70 for #4742.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXPA87KPQ9ZW0HN396AWMN\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T19:43:42Z",
+          "tree_id": "eaa972b3a5e88c6107f8d1ac67ed21a237b923da",
+          "url": "https://github.com/purlis/purlis/commit/8b79764aea87dc63e627f02287406094d9913ac6"
+        },
+        "date": 1793741501648,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.691252,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.668, 0.687, 0.691, 0.694, 0.717 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.508523500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.404, 16.491, 16.509, 16.594, 16.715 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.412423,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.141, 101.325, 101.412, 102.490, 102.932 ms"
           }
         ]
       }
