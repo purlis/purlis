@@ -79,10 +79,13 @@ pub struct Need {
 /// The longest purpose a Secret ask carries, in characters: about a line of the ask.
 pub const MOST_PURPOSE_CHARS: usize = 200;
 
-/// **A chat's purpose as an ask carries it** (#5072): one line, at most
-/// [`MOST_PURPOSE_CHARS`].
+/// **A chat's purpose as an ask carries it** (#5072, #5078): one line, at most
+/// [`MOST_PURPOSE_CHARS`], and masked as a report's text is
+/// ([`crate::dispatchrecord::masked`]): each vault value this process knows and each
+/// credential-shaped stretch, so an ask cannot carry a secret into the window, the trace, a
+/// proposed need or the audit.
 pub fn purpose_said(purpose: &str) -> String {
-    crate::shown::one_line(purpose.trim(), MOST_PURPOSE_CHARS)
+    crate::dispatchrecord::masked(&crate::shown::one_line(purpose.trim(), MOST_PURPOSE_CHARS))
 }
 
 /// **An open Secret ask, as the window shows it**: names only, never a value.
@@ -128,6 +131,9 @@ pub enum Held {
     /// Nobody answered before the hold ran out: the ask stays open and the chat is nudged when
     /// it is answered. `line` is what the chat is told.
     StillOpen { line: String },
+    /// Policy refuses asks for a key the persona does not declare (#5078): nothing was asked,
+    /// and `line` is what the chat is told.
+    Refused { line: String },
 }
 
 /// **Why [`Asks::read_asking`] read nothing.** Its `Display` is what the asker is told.
@@ -149,6 +155,20 @@ impl std::fmt::Display for Unread {
         }
     }
 }
+
+/// What a chat whose ask policy refused hears (#5078).
+fn refused_said(vault: &str, key: &str) -> String {
+    format!(
+        "declined {}: policy turns off asks for a secret your persona does not declare",
+        vault_and_key(vault, key)
+    )
+}
+
+/// Why a decline policy made is said to be one (#5078).
+pub const DECLINED_BY_POLICY: &str = "policy";
+
+/// Told each step of an ask's life, for the event log (#5078): the chat and the step.
+pub type Telling = std::sync::Arc<dyn Fn(u32, crate::eventlog::secretasks::Step) + Send + Sync>;
 
 /// The person's answer to a Secret ask.
 #[derive(Debug)]
@@ -245,10 +265,20 @@ struct Inner {
 }
 
 /// **The Secret asks one project holds open** (module docs).
-#[derive(Debug)]
 pub struct Asks {
     root: PathBuf,
     inner: Mutex<Inner>,
+    /// Told each step, where the app records them ([`Self::telling`]).
+    told: Mutex<Option<Telling>>,
+}
+
+impl std::fmt::Debug for Asks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Asks")
+            .field("root", &self.root)
+            .field("inner", &self.inner)
+            .finish_non_exhaustive()
+    }
 }
 
 /// How long a command waits on the person at most, by the harness the app started its chat on
@@ -311,6 +341,26 @@ impl Asks {
         Self {
             root: root.to_path_buf(),
             inner: Mutex::new(Inner::default()),
+            told: Mutex::new(None),
+        }
+    }
+
+    /// **Tells `told` each step of every ask's life from now on** (#5078): what the app writes
+    /// to the event log, the audit's and telemetry's source. Counts and closed words alone
+    /// ([`crate::eventlog::secretasks::Step`]).
+    pub fn telling(&self, told: Telling) {
+        *self.told.lock().unwrap_or_else(PoisonError::into_inner) = Some(told);
+    }
+
+    /// Tells the step of chat `chat`'s, where anything listens.
+    fn tell(&self, chat: u32, step: crate::eventlog::secretasks::Step) {
+        let told = self
+            .told
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(told) = told {
+            told(chat, step);
         }
     }
 
@@ -361,6 +411,23 @@ impl Asks {
                     line: declined_said(&vault, &key),
                 };
             }
+            // Policy's lock on undeclared keys (#5078): refused here, never shown to the person.
+            if declared.is_none()
+                && crate::sandbox::policy::Locks::of(&self.root).forbids_undeclared_secret_asks()
+            {
+                drop(inner);
+                self.trace(chat, "refused", &vault, &key, 0);
+                self.tell(
+                    chat,
+                    crate::eventlog::secretasks::Step::Refused {
+                        by: crate::eventlog::secretasks::By::Policy,
+                        declared: false,
+                    },
+                );
+                return Held::Refused {
+                    line: refused_said(&vault, &key),
+                };
+            }
             inner.next_waiter += 1;
             let n = inner.next_waiter;
             let (tell, answered) = mpsc::channel();
@@ -370,6 +437,8 @@ impl Asks {
                 n,
             };
             let at = (vault.clone(), key.clone());
+            let is_declared = declared.is_some();
+            let mut raised_id = 0;
             let joined = if let Some(asked) = inner.open.get_mut(&at) {
                 // A chat that tries again waits again: a command of its that stopped waiting is
                 // no longer one to nudge, since this one hears the answer.
@@ -381,10 +450,11 @@ impl Asks {
                 if asked.purpose.is_none() {
                     asked.purpose = purpose;
                 }
-                Some(waiting_on(asked))
+                Some((asked.id, waiting_on(asked)))
             } else {
                 inner.next += 1;
                 let id = inner.next;
+                raised_id = id;
                 inner.open.insert(
                     at,
                     Asked {
@@ -402,9 +472,28 @@ impl Asks {
                 None
             };
             drop(inner);
+            use crate::eventlog::secretasks::Step;
             match joined {
-                Some(waiting) => self.trace(chat, "joined", &vault, &key, waiting),
-                None => self.trace(chat, "raised", &vault, &key, 1),
+                Some((ask, waiting)) => {
+                    self.trace(chat, "joined", &vault, &key, waiting);
+                    self.tell(
+                        chat,
+                        Step::Joined {
+                            ask,
+                            waiting: u32::try_from(waiting).unwrap_or(u32::MAX),
+                        },
+                    );
+                }
+                None => {
+                    self.trace(chat, "raised", &vault, &key, 1);
+                    self.tell(
+                        chat,
+                        Step::Raised {
+                            ask: raised_id,
+                            declared: is_declared,
+                        },
+                    );
+                }
             }
             (answered, n)
         };
@@ -626,6 +715,28 @@ impl Asks {
         if started {
             self.trace(None, what, &vault, &key, waiting);
         }
+        // One step for the ask, under the first chat to ask (#5078).
+        if let Some(&first) = chats.first() {
+            use crate::eventlog::secretasks::{How, Step};
+            let waiting = u32::try_from(chats.len()).unwrap_or(u32::MAX);
+            self.tell(
+                first,
+                if filled {
+                    Step::Filled {
+                        ask: asked.id,
+                        how: How::Value,
+                        waiting,
+                        renamed: (&vault, &key) != (&asked_at.0, &asked_at.1),
+                        made_vault,
+                    }
+                } else {
+                    Step::Declined {
+                        ask: asked.id,
+                        waiting,
+                    }
+                },
+            );
+        }
         let told = crate::askoutcome::Outcome {
             about: crate::askoutcome::About::Secret {
                 vault: vault.clone(),
@@ -826,6 +937,11 @@ pub fn raised_within(
             vault,
             key: line.key.clone(),
             reason: DECLINED_BY_THE_PERSON.to_owned(),
+        },
+        Held::Refused { .. } => Said::Declined {
+            vault,
+            key: line.key.clone(),
+            reason: DECLINED_BY_POLICY.to_owned(),
         },
         Held::StillOpen { .. } => Said::Pending {
             vault,

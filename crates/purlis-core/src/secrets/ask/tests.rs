@@ -1020,3 +1020,161 @@ fn a_persona_that_names_no_vault_is_asked_into_one_named_after_it_made_at_the_fi
         "---\nrole: Shop\nvault: none\n---\n"
     );
 }
+
+// ----------------------------------------------------------------------------------------
+// Policy's lock on undeclared keys, and a metadata-only audit (#5078)
+
+/// A token-shaped value, built where it is used so no source file holds one.
+fn token_shaped() -> String {
+    ["ghp", "_0123456789abcdefABCDEFghij0123456789"].concat()
+}
+
+/// The steps `asks` tells, by chat, as the app writes them to the event log.
+fn steps_told(asks: &Asks) -> std::sync::Arc<Mutex<Vec<(u32, crate::eventlog::secretasks::Step)>>> {
+    let told = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let kept = std::sync::Arc::clone(&told);
+    asks.telling(std::sync::Arc::new(move |chat, step| {
+        kept.lock().unwrap().push((chat, step));
+    }));
+    told
+}
+
+#[test]
+fn policy_refuses_an_undeclared_key_as_declined_policy_and_never_asks_the_person() {
+    let project = project_with_needs();
+    let root = project.path();
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"undeclared-secret-asks": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let asks = Asks::new(root);
+    let told = steps_told(&asks);
+    let said = raised_now(root, &asks, &line(7, "UNDECLARED", None)).unwrap();
+    assert_eq!(
+        said,
+        Said::Declined {
+            vault: "team".into(),
+            key: "UNDECLARED".into(),
+            reason: DECLINED_BY_POLICY.into()
+        }
+    );
+    assert!(asks.open().is_empty(), "the person is never asked");
+    assert_eq!(
+        told.lock().unwrap().as_slice(),
+        [(
+            7,
+            crate::eventlog::secretasks::Step::Refused {
+                by: crate::eventlog::secretasks::By::Policy,
+                declared: false
+            }
+        )]
+    );
+    // A declared key is asked as before, and a key the vault holds still answers filled.
+    assert!(matches!(
+        raised_now(root, &asks, &line(7, "DECLARED", None)),
+        Ok(Said::Pending { .. })
+    ));
+    assert!(matches!(
+        raised_now(root, &asks, &line(7, "TOKEN", None)),
+        Ok(Said::Filled { .. })
+    ));
+    // And a broker miss of an undeclared key is refused the same way.
+    let (held, _) = held_for_nothing(&asks, need(8, "MISSING"));
+    assert!(
+        matches!(&held, Held::Refused { line } if line.contains("policy")),
+        "{held:?}"
+    );
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+}
+
+#[test]
+fn each_step_of_an_ask_is_one_record_with_no_value_name_or_purpose() {
+    use crate::eventlog::secretasks::{How, Step};
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let told = steps_told(&asks);
+    let (waits, waiting) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let asked = &asks;
+        let first = scope.spawn({
+            let waits = waits.clone();
+            move || raised_telling(root, asked, &line(7, "STRIPE", None), &waits)
+        });
+        waiting.recv().unwrap();
+        let second =
+            scope.spawn(move || raised_telling(root, asked, &line(8, "STRIPE", None), &waits));
+        waiting.recv().unwrap();
+        let id = asks.open()[0].id;
+        asks.answer_as(
+            &ctx(root),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            Named {
+                vault: None,
+                key: Some("STRIPE_KEY".into()),
+            },
+            window(),
+        )
+        .unwrap();
+        first.join().unwrap().unwrap();
+        second.join().unwrap().unwrap();
+    });
+    let steps = told.lock().unwrap().clone();
+    let id = match steps[0].1 {
+        Step::Raised { ask, .. } => ask,
+        other => panic!("raised first: {other:?}"),
+    };
+    assert_eq!(
+        steps,
+        [
+            (
+                7,
+                Step::Raised {
+                    ask: id,
+                    declared: false
+                }
+            ),
+            (
+                8,
+                Step::Joined {
+                    ask: id,
+                    waiting: 2
+                }
+            ),
+            (
+                7,
+                Step::Filled {
+                    ask: id,
+                    how: How::Value,
+                    waiting: 2,
+                    renamed: true,
+                    made_vault: false
+                }
+            ),
+        ],
+        "one record a step, the answer's once for every chat"
+    );
+    for (_, step) in steps {
+        let body = step.body().to_string();
+        for never in [VALUE, "STRIPE", "team", "charge test cards"] {
+            assert!(
+                !body.contains(never),
+                "{} holds {never}: {body}",
+                step.kind()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_purpose_that_carries_a_secret_is_masked_before_anyone_reads_it() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    let mut asked = line(7, "STRIPE", None);
+    asked.purpose = format!("the old one was {} and stopped working", token_shaped());
+    raised_now(project.path(), &asks, &asked).unwrap();
+    let purpose = asks.open()[0].purpose.clone().unwrap_or_default();
+    assert!(!purpose.contains(&token_shaped()), "{purpose}");
+    assert!(!traced(project.path()).contains(&token_shaped()));
+}

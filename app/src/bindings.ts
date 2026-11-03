@@ -13394,6 +13394,11 @@ export type SandboxPolicy = {
 	required: string | null,
 	/**  Whether every folder a grant would let a chat write is forbidden. */
 	write_grants: boolean,
+	/**
+	 *  Whether a chat's ask for a secret its persona does not declare is refused (#5078): the
+	 *  chat hears `declined: policy` and the person is never asked.
+	 */
+	undeclared_secret_asks: boolean,
 };
 
 /**  One Internet access preset (`sandbox::Preset`), as Settings shows it. */

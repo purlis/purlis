@@ -267,6 +267,8 @@ export const MY_HOSTS = "project.sandbox.mine";
 
 /** The page of each persona's own hosts (#1407): a sub-page of Sandbox. */
 export const PERSONA_HOSTS = "project.sandbox.personas";
+/** Where policy turns off a chat's asks for a secret its persona does not declare (#5078). */
+export const SECRET_ASKS = "project.sandbox.secretAsks";
 
 /**
  * **A sandbox's hosts as a collection** (#1341): each entry of `[sandbox] hosts` the core lists
@@ -719,6 +721,25 @@ function declaredGroups(
                 collection: personaHostsCollection(read.shared, read.entries.persona),
                 sub: true,
               },
+        ]
+      : []),
+    // A chat's ask for a secret its persona does not declare (#5078, ADR 0109): said, with who
+    // set it, where policy turns such asks off. Nothing to change here.
+    ...(read.sandbox?.policy?.undeclared_secret_asks === true
+      ? [
+          {
+            id: SECRET_ASKS,
+            label: "Secret asks",
+            help: "A chat asks you in the window for a credential it lacks, and a persona declares the ones its work needs.",
+            settings: [
+              lockedRow(
+                `${SECRET_ASKS}.locked`,
+                "Secret asks",
+                `Policy turns off asks for a secret a persona doesn't declare: a chat that asks for one is told it was declined by policy, and you aren't asked. ${read.sandbox.policy.locked_by}`,
+              ),
+            ],
+            sub: true,
+          },
         ]
       : []),
     ...(read.plane !== undefined

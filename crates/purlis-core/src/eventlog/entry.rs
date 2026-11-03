@@ -129,6 +129,13 @@ pub enum Entry {
         number: u32,
         step: super::questions::Step,
     },
+    /// A step of a Secret ask of chat `number`'s ([`Recorder::secret_ask`], #5078): counts and
+    /// closed words alone.
+    SecretAsk {
+        plane: PathBuf,
+        number: u32,
+        step: super::secretasks::Step,
+    },
 }
 
 impl Entry {
@@ -234,6 +241,11 @@ impl Recorder {
                 number,
                 step,
             } => one(self.question(&plane, number, step)),
+            Entry::SecretAsk {
+                plane,
+                number,
+                step,
+            } => one(self.secret_ask(&plane, number, step)),
             Entry::SkillTyped {
                 plane,
                 number,
