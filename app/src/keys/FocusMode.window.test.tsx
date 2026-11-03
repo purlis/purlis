@@ -141,13 +141,13 @@ describe("focus mode run from the palette, opened from a part it hides (#4072)",
     }
     expect(part_.contains(document.activeElement), "the keyboard is in the part").toBe(true);
 
-    // The palette, opened from there, runs Focus mode.
+    // The palette, opened from there, runs Focus this pane, which in no split is Focus mode.
     act(() => {
       fireEvent.keyDown(window, { key: "k", metaKey: MAC, ctrlKey: !MAC });
     });
     const box = await screen.findByRole("combobox", { name: "Run an action" });
-    fireEvent.change(box, { target: { value: "Focus mode" } });
-    const row = await screen.findByRole("option", { name: /^Focus mode/ });
+    fireEvent.change(box, { target: { value: "Focus this pane" } });
+    const row = await screen.findByRole("option", { name: /^Focus this pane/ });
     act(() => row.click());
 
     await waitFor(() => expect(root()).toHaveAttribute("data-focus-mode"));

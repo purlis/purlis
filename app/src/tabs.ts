@@ -365,7 +365,17 @@ export type Tab = {
    * Absent on a tab that is not pinned.
    */
   pinned?: true;
+  /** **The pane zoomed to fill the tab for now** (#4765): drawn alone while the tree stays
+   *  whole, in memory only and never told to the core (`tiling.ts` `zoomedOf`). */
+  zoomed?: number;
+  /** **What Undo puts back** (#4765): the tab's last tree and focus, kept while the tab's
+   *  layout is still `after`, in memory only (`tiling.ts` `undoLayout`). */
+  undo?: LayoutUndo;
 };
+
+/** **What Undo puts back** (#4765): a tab's tree and focus before a move, and the tree the move
+ *  left, which the tab must still be for the Undo to run. */
+export type LayoutUndo = { layout: Layout; focused: number; after: Layout };
 
 /**
  * Which workspace a chat is filed under — the strip its tab appears on.

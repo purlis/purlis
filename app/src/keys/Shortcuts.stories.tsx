@@ -64,9 +64,10 @@ export const TheCheatSheet: Story = {
     await userEvent.tab();
     await untilFocused(() => filter, "The cheat sheet: Tab onto its filter");
     expectFocusInSight();
-    await userEvent.keyboard("work alone");
+    // Focus this pane's own words (#4765): it zooms in a split, and is Focus mode in one pane.
+    await userEvent.keyboard("zoom in a split");
     await waitFor(() => expect(acts(list)).toHaveLength(1));
-    const focus = row(list, /Focus mode/);
+    const focus = row(list, /Focus this pane/);
     const cap = focus.querySelector('[data-part="shortcut"]');
     expect(cap).toHaveTextContent("⌘⇧↩");
     // Heard as words, not as the symbols drawn.

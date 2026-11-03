@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { contentsOf, type Tabs, type ViewRef } from "./tabs";
+import { zoomedOf } from "./tiling";
 
 /**
  * **What a tab wears on the strip** (#4762; `prototype/one-tab-strip` variant A, accepted on
@@ -25,6 +26,8 @@ export type TabFace = {
   more: number;
   /** Every pane's name, in reading order (each split's first child first): the tooltip. */
   panes: string[];
+  /** One pane is zoomed to fill the tab for now (#4765): the tab wears the zoom mark. */
+  zoomed?: true;
 };
 
 /** What a pane is called: a chat as its row names it, a view by its title. A view with no
@@ -69,5 +72,6 @@ export function faceOf(tabs: Tabs, id: number, naming: Naming): TabFace {
     name: nameOf(focused),
     more: panes.length - 1,
     panes: panes.map(nameOf),
+    ...(zoomedOf(tabs, id) === undefined ? {} : { zoomed: true }),
   };
 }

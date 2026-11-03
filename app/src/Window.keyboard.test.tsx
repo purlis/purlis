@@ -411,6 +411,8 @@ describe("the window's tab order", () => {
       // selected chat's tab, and the `+`. A tab's `×` is not a stop.
       "tab steward two",
       "button New tab",
+      // No Tile all at the strip's end (#4765): the tab in front has one pane, so it is not
+      // drawn.
       // The focused pane's own controls, drawn in its top corners left to right — the harness
       // it runs (HP-19), its bell (#4754), then the chat's ⋯ (#4753), split and end — then its
       // terminal. From here Tab is the shell's, and Ctrl+Tab is the way on.

@@ -234,6 +234,7 @@ const DRESS: Readonly<Record<string, Dress>> = {
   // A tab's own rows (#4753): what a tab is, and never a chat's.
   "tab.select": { said: SAID.switchTo, slot: "first", quiet: true },
   "tab.pin": pin,
+  "tab.tile": { said: SAID.tileAll, slot: "first" },
   "tab.keep": { said: SAID.keepOpen, slot: "first" },
   "tab.close": {
     said: unnamed,

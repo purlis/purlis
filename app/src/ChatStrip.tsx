@@ -6,7 +6,14 @@ import { QueueRead } from "./QueueRead";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { SquareTerminal } from "lucide-react";
-import { renameId, workItemSaid, RENAMES_ON_F2, type Offer, type Catalogued } from "./actions";
+import {
+  renameId,
+  tileAllId,
+  workItemSaid,
+  RENAMES_ON_F2,
+  type Offer,
+  type Catalogued,
+} from "./actions";
 import { Menued } from "./Menus";
 import {
   ALONG_THE_STRIP,
@@ -154,6 +161,8 @@ export function ChatStrip({
   openBrowser,
   openSkillRun,
 }: ChatStripProps) {
+  /** Tile all on the tab in front, as the catalogue holds it (#4765). */
+  const tileAll = tabs.inFront === undefined ? undefined : by(tileAllId(tabs.inFront));
   // The tabs drawn, as React Aria's tablist knows them (`ui/tabs/TabStrip`): not a tab being
   // renamed, whose name box is drawn in its place and is not a tab.
   /** The Rename… row of the tab's own chat (#4753): a double-click on its name and F2 on it
@@ -551,6 +560,14 @@ export function ChatStrip({
           )}
         </QueueRead>
       </div>
+      {/* **Tile all, at the strip's right end** (#4765): the tab in front's panes evened into a
+        grid. **Drawn only while it can run**, as the show-more is only while something is
+        hidden: at one pane it has nothing to say, and a button there would take room from the
+        tabs on every strip that is not split. The tab menu and the palette keep its row,
+        greyed with its reason. */}
+      {tileAll?.available === true && (
+        <Doer offer={tileAll} onPress={press} words="Tile all" iconOnly />
+      )}
       {/* **`Split right`, `Split down` and `End this pane's chat` were here and are on the
         panes now** — the operator: *"harnesses panes should each have close button and
         spliting buttons in pane right top corner … so this will fully replace separate

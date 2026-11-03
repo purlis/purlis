@@ -27,6 +27,7 @@ export const SAID = {
   ignore: "Ignore until it asks again",
   end: "End…",
   keepOpen: "Keep open",
+  tileAll: "Tile all",
   thisMachine: "This machine",
   brief: "Brief",
   answer: "Answer its question",
