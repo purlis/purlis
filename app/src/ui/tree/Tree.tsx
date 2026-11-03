@@ -46,6 +46,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type Ref,
+  type RefCallback,
 } from "react";
 import {
   Button as AriaButton,
@@ -255,6 +256,46 @@ function useSaid<E extends HTMLElement>(
     [name, value],
   );
   return useMemo(() => mergeRefs<E>(says, given ?? null), [says, given]);
+}
+
+/**
+ * **What a row is beside its name, said from inside it** (#4730): the ref of an element drawn in
+ * a row's `content` writes `description` on the row as its `aria-description`, and takes it back
+ * when the element goes.
+ *
+ * For words that change far more often than the row, such as a chat's live touch: the part that
+ * says them is drawn again for them, and the row is not. A row drawn again is the tree drawn
+ * again, every row of it, because React Aria builds its collection again for any row that is. A
+ * row whose words come from here passes no `description` of its own.
+ */
+export function useRowDescription<E extends HTMLElement>(
+  description: string | undefined,
+): RefCallback<E> {
+  const row = useRef<HTMLElement | null>(null);
+  return useCallback(
+    (element: E | null) => {
+      // Its own mark, apart from `TreeRow`'s: each takes back only what it wrote.
+      const mark = "data-said-inside-aria-description";
+      const takeBack = (from: HTMLElement | null) => {
+        if (from?.hasAttribute(mark)) {
+          from.removeAttribute("aria-description");
+          from.removeAttribute(mark);
+        }
+      };
+      if (element === null) {
+        takeBack(row.current);
+        row.current = null;
+        return;
+      }
+      row.current = element.closest<HTMLElement>('[role="row"]');
+      if (description === undefined) takeBack(row.current);
+      else {
+        row.current?.setAttribute("aria-description", description);
+        row.current?.setAttribute(mark, "");
+      }
+    },
+    [description],
+  );
 }
 
 /**
