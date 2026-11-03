@@ -390,10 +390,14 @@ spec:
     skip the work tree), every stash and not only the newest, and a file a task wrote in the
     runner's home since its host first started a program, outside its project: a hidden folder
     of the home, a program's own settings, cache or record, is left out, as is a temporary folder
-    (#4781). A file its user saved anywhere else in the runner counts too, such as beside the
-    home on its volume, but in `/proc`, `/sys`, `/dev`, `/run`, `/tmp` and `/var/tmp`; and the
-    time its host first started a program is kept on that volume, so a host started again in
-    the same pod still finds what a task saved before (#4933).
+    (#4781). A file the runner's user owns anywhere else in the runner counts too, such as one
+    beside the home on its volume or in a folder the pool's image gives that user, except in
+    `/proc`, `/sys`, `/dev`, `/run`, `/tmp` and `/var/tmp` and the hidden entries of `/root`
+    and `/home/<name>`; a folder there it can't read is said, unless it is another's that it
+    can't write in either. The time its host first started a program is kept on the home's
+    volume, so a host started again in the same pod still finds what a task saved before
+    (#4933). An image with a very large file system, or a folder its user may write in but not
+    read, keeps its fresh runners until you discard them.
     Only the window of the checkout a task started from lets its runner go, so
     another checkout of the same project never takes it. Anything else missing keeps the
     Claim, and the window says what, with **Fetch again** and **Discard**, never silently. purlis

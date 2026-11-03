@@ -1446,3 +1446,25 @@ fn a_host_that_cannot_mark_its_first_program_starts_none() {
 
     assert_eq!(refused.code, purlis_host::protocol::session::NOT_STARTED);
 }
+
+/// **A mark a task touched or removed since keeps the host's own first start** (#4933): the
+/// earlier of the two is taken, so what the task saved before still keeps the runner.
+#[cfg(unix)]
+#[test]
+fn a_mark_a_task_touched_since_keeps_the_hosts_own_first_start() {
+    use purlis_host::Code;
+    let (_dir, home, projects) = a_runner_home();
+    let moves = Moves::in_home(home.clone());
+    moves.program_starting(&projects).unwrap();
+    std::fs::write(home.join("findings.md"), "what the task found\n").unwrap();
+    std::thread::sleep(held::CHANGED_WITHIN + std::time::Duration::from_millis(200));
+
+    std::fs::remove_file(projects.join(held::FIRST_PROGRAM)).unwrap();
+    moves.program_starting(&projects).unwrap();
+
+    let (_, unread) = moves.repos_held(&projects).unwrap();
+    assert!(
+        unread.iter().any(|one| one.contains("~/findings.md")),
+        "{unread:?}"
+    );
+}

@@ -172,6 +172,11 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
 /// The most files outside the projects a runner names: the rest are counted.
 const MOST_NAMED_OUTSIDE: usize = 5;
 
+/// The deepest a folder outside the projects is looked into, in folders from where its walk
+/// starts: deeper ones are said, so the folders a walk holds open stay far under a process's
+/// limit.
+const MOST_DEPTH: usize = 128;
+
 /// The most sentences of what could not be looked at outside the projects a runner gives: the
 /// rest are counted.
 const MOST_SAID_OUTSIDE: usize = 20;
@@ -211,14 +216,21 @@ pub fn first_program_starting(projects: &Path) -> Result<(), String> {
         )
     };
     std::fs::create_dir_all(projects).map_err(|e| not_noted(&e))?;
-    rustix::fs::openat(
+    // Never waiting on a pipe left in its place, and only ever the file purlis made.
+    let mark = rustix::fs::openat(
         CWD,
         projects.join(FIRST_PROGRAM),
-        OFlags::WRONLY | OFlags::CREATE | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        OFlags::WRONLY | OFlags::CREATE | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
         Mode::RUSR | Mode::WUSR,
     )
-    .map(drop)
-    .map_err(|e| not_noted(&e))
+    .map_err(|e| not_noted(&e))?;
+    let stat = rustix::fs::fstat(&mark).map_err(|e| not_noted(&e))?;
+    if rustix::fs::FileType::from_raw_mode(stat.st_mode) != rustix::fs::FileType::RegularFile {
+        return Err(not_noted(&format!(
+            "{FIRST_PROGRAM} beside its projects is not a file purlis made"
+        )));
+    }
+    Ok(())
 }
 
 /// **When the first program on a host keeping its projects in `projects` started** (#4933), as
@@ -368,6 +380,20 @@ impl Rules {
     }
 }
 
+/// A folder a walk outside the projects has found and not yet looked through.
+#[cfg(unix)]
+struct Folder {
+    /// Its path from where the walk starts.
+    rel: String,
+    /// The folder it is in, held open.
+    parent: std::rc::Rc<rustix::fd::OwnedFd>,
+    /// Its name there; none for where the walk starts.
+    name: Option<std::ffi::CString>,
+    /// Whether it is said where it can't be read, whoever may write in it: always in the home,
+    /// and beyond it where the walk's user owns it or it changed since.
+    said_unread: bool,
+}
+
 /// What the walks outside the projects found, and what they could not look at.
 #[cfg(unix)]
 #[derive(Default)]
@@ -418,30 +444,35 @@ impl Outside {
             }
         };
         // Each folder is opened only as it is looked through, from the one it is in, which is held
-        // open meanwhile: so the open folders are only those of the path being walked.
-        let mut stack: Vec<(
-            String,
-            std::rc::Rc<rustix::fd::OwnedFd>,
-            Option<std::ffi::CString>,
-        )> = vec![(String::new(), std::rc::Rc::new(top_fd), None)];
-        while let Some((rel, parent, name)) = stack.pop() {
-            self.folders += 1;
-            if self.folders > MOST_FOLDERS {
-                self.say(format!(
-                    "the runner holds more than {MOST_FOLDERS} folders outside its projects, so \
-                     not all were looked through"
-                ));
-                return false;
-            }
+        // open meanwhile: so the open folders are only those of the path being walked, and no
+        // more than [`MOST_DEPTH`]. Each is counted as it is found, so the folders waiting are
+        // bounded too.
+        let mut stack: Vec<Folder> = vec![Folder {
+            rel: String::new(),
+            parent: std::rc::Rc::new(top_fd),
+            name: None,
+            said_unread: true,
+        }];
+        self.folders += 1;
+        while let Some(Folder {
+            rel,
+            parent,
+            name,
+            said_unread,
+        }) = stack.pop()
+        {
             let shown_dir = rules.shown(&rel);
-            // A folder its user can't read is said where the user could write in it: what it
-            // can't write holds nothing of a task's that was not there before.
+            // A folder its user can't read is said unless it is another's that the user can't
+            // write in either, unchanged since: that holds nothing of a task's not there before.
+            // A check that can't be made is said.
             let unread = |e: rustix::io::Errno, parent: &rustix::fd::OwnedFd| {
                 e != rustix::io::Errno::ACCESS
-                    || matches!(rules, Rules::Home)
+                    || said_unread
                     || name.as_deref().is_none_or(|name| {
-                        rustix::fs::accessat(parent, name, Access::WRITE_OK, AtFlags::EACCESS)
-                            .is_ok()
+                        !matches!(
+                            rustix::fs::accessat(parent, name, Access::WRITE_OK, AtFlags::EACCESS),
+                            Err(rustix::io::Errno::ACCESS | rustix::io::Errno::ROFS)
+                        )
                     })
             };
             let fd = match &name {
@@ -516,7 +547,30 @@ impl Outside {
                 };
                 match rustix::fs::FileType::from_raw_mode(stat.st_mode) {
                     rustix::fs::FileType::Directory => {
-                        stack.push((rel_now, std::rc::Rc::clone(&fd), Some(raw.to_owned())));
+                        if rel_now.split('/').count() > MOST_DEPTH {
+                            self.say(format!(
+                                "{} on the runner is more than {MOST_DEPTH} folders deep, so it \
+                                 was not looked through",
+                                rules.shown(&rel_now)
+                            ));
+                            continue;
+                        }
+                        self.folders += 1;
+                        if self.folders > MOST_FOLDERS {
+                            self.say(format!(
+                                "the runner holds more than {MOST_FOLDERS} folders outside its \
+                                 projects, so not all were looked through"
+                            ));
+                            return false;
+                        }
+                        stack.push(Folder {
+                            said_unread: matches!(rules, Rules::Home)
+                                || rules.counts(&stat)
+                                || changed_at(&stat).is_none_or(|at| at >= since),
+                            rel: rel_now,
+                            parent: std::rc::Rc::clone(&fd),
+                            name: Some(raw.to_owned()),
+                        });
                     }
                     rustix::fs::FileType::RegularFile | rustix::fs::FileType::Symlink
                         if rules.counts(&stat)

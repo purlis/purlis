@@ -1380,16 +1380,21 @@ pub struct Moves {
     /// The root of the rest of the runner's file system, looked through too for its user's files
     /// (#4933): `/` for `purlis serve` on Linux, where a runner's pod is; none elsewhere.
     beyond: Option<std::path::PathBuf>,
+    /// When this host itself first started a program. The mark beside its projects keeps that
+    /// time for a host started again; this keeps it from a mark a task touched or removed
+    /// since, the earlier of the two being the one taken (#4933).
+    first: std::sync::OnceLock<std::time::SystemTime>,
 }
 
 #[cfg(unix)]
 impl Moves {
-    /// For a host in the home `HOME` names, looking through the rest of its file system too on
-    /// Linux.
-    pub fn from_now() -> Moves {
+    /// For `purlis serve` on a runner: its home as `HOME` names it, and on Linux the rest of
+    /// its file system from `/` too.
+    pub fn on_this_runner() -> Moves {
         Moves {
             home: std::env::var_os("HOME").map(std::path::PathBuf::from),
             beyond: cfg!(target_os = "linux").then(|| std::path::PathBuf::from("/")),
+            first: std::sync::OnceLock::new(),
         }
     }
 
@@ -1398,10 +1403,11 @@ impl Moves {
         Moves {
             home: Some(home),
             beyond: None,
+            first: std::sync::OnceLock::new(),
         }
     }
 
-    /// [`Self::in_home`], looking through `root` too as the rest of its file system.
+    /// This, looking through `root` too as the rest of its file system.
     pub fn and_beyond(self, root: std::path::PathBuf) -> Moves {
         Moves {
             beyond: Some(root),
@@ -1565,7 +1571,9 @@ impl purlis_host::Code for Moves {
                 code: purlis_host::protocol::session::NOT_STARTED.into(),
                 why,
             }
-        })
+        })?;
+        let _ = self.first.set(std::time::SystemTime::now());
+        Ok(())
     }
 
     fn repos_held(
@@ -1580,10 +1588,17 @@ impl purlis_host::Code for Moves {
         // looked through, the rest of its file system (#4933): the projects and purlis's data
         // home they are in are left out by name, wherever they are. Since the first program,
         // as marked beside them, so a host started again keeps that time.
-        match held::first_program_at(projects) {
-            Ok(None) => {}
-            Err(why) => unread.push(why),
-            Ok(Some(since)) => match self
+        let marked = held::first_program_at(projects).unwrap_or_else(|why| {
+            unread.push(why);
+            None
+        });
+        let since = match (marked, self.first.get().copied()) {
+            (Some(marked), Some(here)) => Some(marked.min(here)),
+            (marked, here) => marked.or(here),
+        };
+        match since {
+            None => {}
+            Some(since) => match self
                 .home
                 .as_deref()
                 .filter(|home| home.is_absolute() && home.parent().is_some())

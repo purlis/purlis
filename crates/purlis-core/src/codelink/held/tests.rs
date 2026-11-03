@@ -903,51 +903,72 @@ fn a_file_outside_the_home_another_user_owns_keeps_no_runner() {
     );
 }
 
-/// **A folder the runner's user can neither read nor write is passed over, and one it can only
-/// write in is said** (#4933): the first holds nothing a task made, the second may.
+/// **An unreadable folder outside the home is said unless it is another's, unchanged, that the
+/// runner's user can't write in either** (#4933): only such a one can hold nothing a task made.
 #[cfg(unix)]
 #[test]
-fn a_folder_the_runners_user_cannot_read_is_said_only_where_it_could_write_there() {
+fn a_folder_the_runners_user_cannot_read_is_said_unless_it_could_hold_nothing_of_a_task() {
     use std::os::unix::fs::PermissionsExt;
     if the_runners_user() == 0 {
         return; // Every folder is open to root.
     }
-    let (_dir, root, home, started) = a_runners_root();
-    std::fs::create_dir_all(root.join("root")).unwrap();
-    std::fs::set_permissions(root.join("root"), std::fs::Permissions::from_mode(0o500)).unwrap();
-    std::fs::create_dir_all(root.join("var/locked")).unwrap();
-    std::fs::set_permissions(
-        root.join("var/locked"),
-        std::fs::Permissions::from_mode(0o100),
-    )
-    .unwrap();
-    std::fs::create_dir_all(root.join("var/dropbox")).unwrap();
-    std::fs::set_permissions(
-        root.join("var/dropbox"),
-        std::fs::Permissions::from_mode(0o300),
-    )
-    .unwrap();
-
-    let said = outside_the_projects_and_beyond(
-        &home,
-        &[],
-        Some(started),
-        Some(Beyond {
-            root: &root,
-            owner: the_runners_user(),
-        }),
-    );
-
-    for folder in ["var/locked", "var/dropbox"] {
-        std::fs::set_permissions(root.join(folder), std::fs::Permissions::from_mode(0o700))
-            .unwrap();
+    let (_dir, root, home, _) = a_runners_root();
+    for (folder, mode) in [("var/locked", 0o100), ("var/dropbox", 0o300)] {
+        std::fs::create_dir_all(root.join(folder)).unwrap();
+        std::fs::set_permissions(root.join(folder), std::fs::Permissions::from_mode(mode)).unwrap();
     }
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    // Another user's folders, as the walk sees them.
+    let others = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let said = outside_the_projects_and_beyond(&home, &[], Some(since), Some(others));
+
     assert!(
         says(&said, "/var/dropbox on the runner could not be read"),
         "{said:?}"
     );
     assert!(!says(&said, "/var/locked"), "{said:?}");
     assert_eq!(said.len(), 1, "{said:?}");
+
+    // The user's own folder, shut since, is said however it is shut.
+    std::fs::create_dir_all(root.join("var/mine")).unwrap();
+    std::fs::set_permissions(
+        root.join("var/mine"),
+        std::fs::Permissions::from_mode(0o000),
+    )
+    .unwrap();
+    let mine = Beyond {
+        owner: the_runners_user(),
+        ..others
+    };
+    let said = outside_the_projects_and_beyond(&home, &[], Some(since), Some(mine));
+    for folder in ["var/locked", "var/dropbox", "var/mine"] {
+        std::fs::set_permissions(root.join(folder), std::fs::Permissions::from_mode(0o700))
+            .unwrap();
+    }
+    assert!(
+        says(&said, "/var/mine on the runner could not be read"),
+        "{said:?}"
+    );
+}
+
+/// **A folder too deep is said, not looked into** (#4933): the folders a walk holds open stay
+/// bounded however deep a task nests them.
+#[cfg(unix)]
+#[test]
+fn a_folder_nested_too_deep_outside_the_projects_is_said_and_keeps_the_runner() {
+    let (_dir, home, started) = a_home();
+    let deep: PathBuf = (0..MOST_DEPTH + 2).map(|_| "d").collect();
+    std::fs::create_dir_all(home.join(&deep)).unwrap();
+
+    let said = outside_the_projects(&home, &[], Some(started));
+
+    assert!(says(&said, "folders deep"), "{said:?}");
 }
 
 /// **The first program's start is marked once, and kept** (#4933): a later start, or the host
@@ -986,4 +1007,14 @@ fn a_mark_that_is_not_the_file_purlis_made_keeps_the_runner_and_refuses_a_start(
     let refused = first_program_starting(&projects).unwrap_err();
     assert!(refused.contains("could not note"), "{refused}");
     assert!(!elsewhere.exists(), "never through the link");
+
+    // A pipe in its place is refused at once, never waited on.
+    std::fs::remove_file(projects.join(FIRST_PROGRAM)).unwrap();
+    let made = crate::forklock::status(
+        std::process::Command::new("mkfifo").arg(projects.join(FIRST_PROGRAM)),
+    )
+    .unwrap();
+    assert!(made.success(), "a pipe is made");
+    let refused = first_program_starting(&projects).unwrap_err();
+    assert!(refused.contains("could not note"), "{refused}");
 }
