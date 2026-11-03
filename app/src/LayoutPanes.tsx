@@ -54,7 +54,7 @@ import { EVEN, shareOf, WHOLE } from "./laidOut";
 import { floorAlong, type Size } from "./paneDrop";
 import { drawnOf, offerInRoom, type Drawn, type Folded } from "./paneFold";
 import { PaneRail, type RailPane } from "./PaneRail";
-import { dropPane, GRIP } from "./paneDrag";
+import { dropPane, GRIP, PaneGrip } from "./paneDrag";
 import { paneNamesOf } from "./panePlaces";
 import { type Crumbs } from "./tabChats";
 import { BriefButton, type BriefAsk } from "./Brief";
@@ -291,6 +291,7 @@ export function PaneFrame({
         <PaneDropsOf.Provider value={drops}>
           <PaneHead
             grip={!oneJob}
+            at={tab === undefined || pane === undefined ? undefined : { tab, pane }}
             menu={
               headMenu &&
               ((element) => (
@@ -445,6 +446,7 @@ export function PaneHead({
   menu,
   children,
   grip = true,
+  at,
 }: {
   doing: ReactNode;
   /** Puts the head's right-click around it (#4760): the chat's list, then the pane's rows. */
@@ -452,11 +454,16 @@ export function PaneHead({
   children?: ReactNode;
   /** Whether a press on it, outside its controls, picks the pane up to drag (#4763). */
   grip?: boolean;
+  /** The pane it heads, whose grip control picks it up for placement mode (#4764). */
+  at?: { tab: number; pane: number };
 }) {
   const drawn = (
     // Its hints open below it (#5189): one at a control's end would stand on the row, over the
     // next control, as the bell's did over Split right.
     <div className="pane-head" {...TIPS_BELOW} {...(grip ? { [GRIP]: "" } : {})}>
+      {/* **The grip, first in the head** (#4764): a press, Enter or Space on it picks the pane up
+          to place it with the keys, and a drag from it moves the pane. */}
+      {grip && at !== undefined && <PaneGrip tab={at.tab} pane={at.pane} />}
       {children}
       {doing}
     </div>
@@ -1083,6 +1090,7 @@ export function LayoutPanes({
           {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. Over
               the view's first row, which keeps the room it takes (`paneFrame.css`). */}
           <PaneHead
+            at={{ tab, pane: layout.pane }}
             doing={
               <PaneActions
                 pane={layout.pane}

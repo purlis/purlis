@@ -1,14 +1,34 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { pressed } from "./keys/registry";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowLeftRight,
+  ArrowRight,
+  ArrowUp,
+  GripVertical,
+  SquareArrowOutUpRight,
+} from "lucide-react";
+import { keySaid, pressed } from "./keys/registry";
 import { Notice } from "./Notice";
 import {
   type Box,
   type DropContext,
   dropOn,
   judgeDrop,
+  type Place,
   placeAt,
   previewOf,
   type Size,
@@ -17,9 +37,23 @@ import {
   type Target,
   type Verdict,
 } from "./paneDrop";
+import {
+  firstTarget,
+  groupsOf,
+  pickedUpSaid,
+  placingDrop,
+  PUT_BACK,
+  sameTarget,
+  type Step,
+  stepFrom,
+  targetSaid,
+  targetsOf,
+} from "./panePlacement";
 import { canUndoLayout, recorded, undoLayout } from "./layoutUndo";
 import { UNDO_MS } from "./MemoryEdits";
-import type { LayoutUndo, Tabs } from "./tabs";
+import { contentsOf, type LayoutUndo, type Tabs } from "./tabs";
+import { Button, IconButton } from "./ui/button/Button";
+import { onTooltipEscape } from "./ui/tooltip/Tooltip";
 
 /**
  * **Dragging panes in the window** (#4763): the pointer half of `paneDrop.ts`. Everything a drop
@@ -38,6 +72,10 @@ import type { LayoutUndo, Tabs } from "./tabs";
  * Esc cancels a drag. Holding over a tab for {@link HOLD_MS} brings it forward, so a pane can
  * land in another tab's layout. A refused place is drawn dashed, with its reason.
  *
+ * **Placement mode** (#4764, `panePlacement.ts`) is every drag's route by keys and single presses
+ * (WCAG 2.5.7): a press of a pane's grip ({@link PaneGrip}), Enter or Space on it, or ⌘⇧M on what
+ * has the keyboard picks it up, and its targets are real buttons judged by the same rules.
+ *
  * **The window's one Undo** is drawn and heard here too (`layoutUndo.ts`): the line after a drop,
  * a split or Tile all, and ⌘Z, which put back the same last change as the palette's row.
  */
@@ -52,6 +90,38 @@ export const CHAT_ROW = "data-drag-chat";
 export const STRIP = "data-drop-strip";
 /** A tab on the strip, by its id. */
 export const TAB = "data-drop-tab";
+
+/** A pane's grip as a control (#4764): a press, Enter or Space picks the pane up for placement
+ *  mode, and a drag from it moves the pane as a drag from the rest of its head does. */
+export const GRIP_HANDLE = "data-pane-grip-handle";
+/** One of placement mode's targets, by {@link targetKey}. */
+const PLACE_TARGET = "data-place-target";
+
+/** **Picking something up for placement mode**, for the grips and rows drawn inside the window. */
+export type Placing = {
+  /** Picks `source` up. `from` had the keyboard, and has it again when Esc puts it back (a
+   *  pane's grip has it, where the pane's grip is drawn). Never changes. */
+  pickUp: PickUp;
+  /** What pane `pane`'s grip is called: "Move" and what the pane shows. Changes with the tabs. */
+  gripName: (tab: number, pane: number) => string;
+};
+
+type PickUp = (source: Source, from?: Element | null) => void;
+
+/** Placement mode's pick-up, which never changes, so a sidebar row reading it is never drawn
+ *  again for it; none where nothing can be placed (a story). */
+export const PickUpHere = createContext<PickUp | undefined>(undefined);
+/** What each pane's grip is called, which changes with the tabs: read by the grips alone. */
+const GripNamesHere = createContext<Placing["gripName"] | undefined>(undefined);
+
+/** **Placement mode for what the window draws** (#4764): its pick-up, and its grips' names. */
+export function PlacingHere({ placing, children }: { placing: Placing; children: ReactNode }) {
+  return (
+    <PickUpHere.Provider value={placing.pickUp}>
+      <GripNamesHere.Provider value={placing.gripName}>{children}</GripNamesHere.Provider>
+    </PickUpHere.Provider>
+  );
+}
 
 /** The marks a pane is drawn with so a drag can land in it: its number and its tab's. */
 export function dropPane(tab: number, pane: number): Record<string, string> {
@@ -84,7 +154,16 @@ export type PaneDragging = {
   undoLine: ReactNode;
   /** Puts the last layout change back, and says so: the line's Undo, ⌘Z and the palette's row. */
   undo: () => void;
+  /** Placement mode's pick-up and its grips' names, for {@link PlacingHere}. */
+  placing: Placing;
 };
+
+/** What placement mode holds: what was picked up, the target the keyboard is on, and what had
+ *  the keyboard before. */
+type Held = { source: Source; at: Target; from?: HTMLElement };
+
+/** Where the panes of the tab in front and the strip are on screen, while something is held. */
+type Boxes = { panes: Map<string, Box>; strip?: Box };
 
 /**
  * **Pane dragging for a project's window.** `change` is the window's one way to change its tabs;
@@ -96,6 +175,7 @@ export function usePaneDrag({
   ctx,
   onHoldTab,
   chatNameOf,
+  active = true,
 }: {
   tabs: Tabs;
   change: (how: (tabs: Tabs) => Tabs) => Tabs;
@@ -103,9 +183,18 @@ export function usePaneDrag({
   onHoldTab: (id: number) => void;
   /** A chat's own name, as the core was told it (`Content.chat`), for one dragged from a row. */
   chatNameOf: (session: number) => string;
+  /** Whether this window is the one in front, whose ⌘⇧M picks up what has the keyboard. */
+  active?: boolean;
 }): PaneDragging {
   const [dragging, setDragging] = useState<Dragging>();
   const [said, setSaid] = useState("");
+  const [held, setHeld] = useState<Held>();
+  const [boxes, setBoxes] = useState<Boxes>();
+  /** A pointer drag ended in this very event: the press that a grip hears as it comes up is the
+   *  drag's, never a pick-up. */
+  const dragEnded = useRef(false);
+  /** After a drop with the keys, the grip of the pane that moved takes the keyboard. */
+  const followTheDrop = useRef(false);
   /** The last change whose Undo line went, by its time ({@link UNDO_MS}) or its Dismiss. ⌘Z and
    *  the palette's row work on while the tabs are as it left them. */
   const [lineGone, setLineGone] = useState<LayoutUndo>();
@@ -115,10 +204,10 @@ export function usePaneDrag({
     const timer = window.setTimeout(() => setLineGone(last), UNDO_MS);
     return () => window.clearTimeout(timer);
   }, [last]);
-  const now = useRef({ tabs, ctx, change, onHoldTab, chatNameOf });
+  const now = useRef({ tabs, ctx, change, onHoldTab, chatNameOf, held, boxes });
   useEffect(() => {
-    now.current = { tabs, ctx, change, onHoldTab, chatNameOf };
-  }, [tabs, ctx, change, onHoldTab, chatNameOf]);
+    now.current = { tabs, ctx, change, onHoldTab, chatNameOf, held, boxes };
+  }, [tabs, ctx, change, onHoldTab, chatNameOf, held, boxes]);
 
   // The Undo goes once the layout moves on without it: it is drawn and heard only while it can
   // still put the last change back.
@@ -208,6 +297,8 @@ export function usePaneDrag({
       const up = (at: PointerEvent) => {
         end();
         if (!live) return;
+        dragEnded.current = true;
+        window.setTimeout(() => (dragEnded.current = false), 0);
         // The click that ends a drag is the drag's, never a row's press.
         window.addEventListener("click", swallow, { capture: true, once: true });
         window.setTimeout(() => window.removeEventListener("click", swallow, true), 0);
@@ -272,8 +363,181 @@ export function usePaneDrag({
     return () => window.removeEventListener("pointerdown", down, true);
   }, []);
 
+  // --- Placement mode (#4764) ------------------------------------------------------------------
+
+  const pickUp = useCallback((picked: Source, from?: Element | null) => {
+    if (dragEnded.current) return;
+    const { tabs, ctx, chatNameOf } = now.current;
+    const source: Source =
+      picked.kind === "chat" && picked.chat === ""
+        ? { ...picked, chat: chatNameOf(picked.session) }
+        : picked;
+    if (
+      source.kind === "pane" &&
+      contentsOf(tabs, source.tab).find(({ pane }) => pane === source.pane)?.content.kind ===
+        "empty"
+    ) {
+      setSaid("Not picked up: an empty pane has nothing to move. Close it instead.");
+      return;
+    }
+    setHeld({
+      source,
+      at: firstTarget(groupsOf(tabs, source)),
+      from: from instanceof HTMLElement ? from : undefined,
+    });
+    setSaid(pickedUpSaid(sourceName(tabs, source, ctx)));
+  }, []);
+
+  const gripName = useCallback(
+    (tab: number, pane: number) => {
+      const name = sourceName(tabs, { kind: "pane", tab, pane }, ctx);
+      return name === "" ? "Move this pane" : `Move ${name}`;
+    },
+    [tabs, ctx],
+  );
+
+  /** Ends placement mode. `back` says it was put back, and gives the keyboard to where it was. */
+  const putDown = useCallback((back: "said" | "focused" | "none") => {
+    const was = now.current.held;
+    setHeld(undefined);
+    setBoxes(undefined);
+    if (was === undefined || back === "none") return;
+    setSaid(PUT_BACK);
+    if (back !== "focused") return;
+    const grip =
+      was.source.kind === "pane"
+        ? document.querySelector<HTMLElement>(
+            `[${PANE}="${was.source.pane}"][${TAB}="${was.source.tab}"] [${GRIP_HANDLE}]`,
+          )
+        : null;
+    const to = grip ?? (was.from?.isConnected === true ? was.from : null);
+    to?.focus();
+  }, []);
+
+  /** Drops what is held on `to`, by the pointer's own rules; a refused target says why, and what
+   *  is held stays held. */
+  const placeOn = useCallback((to: Target) => {
+    const { tabs, ctx, held, boxes } = now.current;
+    if (held === undefined) return;
+    const size = to.kind === "pane" ? boxes?.panes.get(paneKey(to.tab, to.pane)) : undefined;
+    const tried = placingDrop(tabs, held.source, to, ctx, size);
+    setSaid(tried.said);
+    if (!tried.dropped) return;
+    now.current.change((current) => placingDrop(current, held.source, to, ctx, size).tabs);
+    followTheDrop.current = true;
+    setHeld(undefined);
+    setBoxes(undefined);
+  }, []);
+
+  const placing = useMemo<Placing>(() => ({ pickUp, gripName }), [pickUp, gripName]);
+
+  // ⌘⇧M picks up what has the keyboard: a sidebar chat, a tab on the strip, or a pane, the
+  // focused one where the keyboard is on none of them.
+  useEffect(() => {
+    if (!active) return;
+    const heard = (event: KeyboardEvent) => {
+      if (pressed(event, ["pane.place"]) === undefined) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat || now.current.held !== undefined) return;
+      const on = document.activeElement;
+      const source = focusedSource(on, now.current.tabs);
+      if (source === undefined) {
+        setSaid("Nothing to pick up. Focus a pane, a chat in the sidebar or a tab.");
+        return;
+      }
+      pickUp(source, on);
+    };
+    window.addEventListener("keydown", heard, true);
+    return () => window.removeEventListener("keydown", heard, true);
+  }, [active, pickUp]);
+
+  const holding = held !== undefined;
+
+  // While something is held: arrows, Tab, Enter, Space and Esc are placement mode's, and a
+  // press anywhere but a target puts it back.
+  useEffect(() => {
+    if (!holding) return;
+    const key = (event: KeyboardEvent) => {
+      const held = now.current.held;
+      if (held === undefined) return;
+      if (event.altKey || event.metaKey || event.ctrlKey) return;
+      const step: Step | undefined =
+        event.key === "Tab"
+          ? event.shiftKey
+            ? "ShiftTab"
+            : "Tab"
+          : !event.shiftKey && event.key in ARROW_KEYS
+            ? (event.key as Step)
+            : undefined;
+      if (step !== undefined) {
+        event.preventDefault();
+        event.stopPropagation();
+        const at = stepFrom(groupsOf(now.current.tabs, held.source), held.at, step);
+        setHeld({ ...held, at });
+        return;
+      }
+      if ((event.key === "Enter" || event.key === " ") && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) placeOn(held.at);
+      }
+    };
+    const press = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(`[${PLACE_TARGET}]`) !== null)
+        return;
+      putDown("said");
+    };
+    // Esc puts it back. It is heard where the first Esc goes while a tooltip is up (the target
+    // the keyboard is on shows one), so one Esc takes both down.
+    const release = onTooltipEscape(() => putDown("focused"));
+    window.addEventListener("keydown", key, true);
+    window.addEventListener("pointerdown", press, true);
+    return () => {
+      release();
+      window.removeEventListener("keydown", key, true);
+      window.removeEventListener("pointerdown", press, true);
+    };
+  }, [holding, putDown, placeOn]);
+
+  // Where the targets are drawn: measured as something is picked up, as the tabs change under
+  // it (a tab brought forward), and as the window is resized.
+  useLayoutEffect(() => {
+    if (!holding) return;
+    const measure = () => setBoxes(measured());
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [holding, tabs]);
+
+  // The keyboard is on the target placement mode is on.
+  const at = held?.at;
+  useEffect(() => {
+    if (at === undefined || boxes === undefined) return;
+    const target = document.querySelector<HTMLElement>(`[${PLACE_TARGET}="${targetKey(at)}"]`);
+    if (target !== null && document.activeElement !== target) target.focus();
+  }, [at, boxes]);
+
+  // After a drop with the keys, the grip of the pane that moved has the keyboard.
+  useEffect(() => {
+    if (!followTheDrop.current) return;
+    followTheDrop.current = false;
+    const front = tabs.inFront;
+    const pane = front === undefined ? undefined : tabs.byId[front]?.focused;
+    if (pane === undefined) return;
+    document
+      .querySelector<HTMLElement>(`[${PANE}="${pane}"][${TAB}="${front}"] [${GRIP_HANDLE}]`)
+      ?.focus();
+  }, [tabs]);
+
+  const targets =
+    held === undefined || boxes === undefined ? null : (
+      <PlacementTargets tabs={tabs} ctx={ctx} held={held} boxes={boxes} onPlace={placeOn} />
+    );
+
   const layer = (
     <>
+      {targets}
       {dragging?.over !== undefined && (
         <div
           className="pane-drop-preview"
@@ -316,14 +580,222 @@ export function usePaneDrag({
       </Notice>
     ) : null;
 
-  return { layer, undoLine, undo: takeBack };
+  return { layer, undoLine, undo: takeBack, placing };
+}
+
+/** The arrow keys placement mode walks a pane's targets with. */
+const ARROW_KEYS: Record<string, true> = {
+  ArrowUp: true,
+  ArrowDown: true,
+  ArrowLeft: true,
+  ArrowRight: true,
+};
+
+const paneKey = (tab: number, pane: number) => `${tab}:${pane}`;
+
+/** A target's key, as its button is marked: its pane and place, or the strip. */
+function targetKey(target: Target): string {
+  return target.kind === "strip" ? "strip" : `${paneKey(target.tab, target.pane)}:${target.place}`;
+}
+
+/** Where every pane and the strip are on screen now. */
+function measured(): Boxes {
+  const panes = new Map<string, Box>();
+  for (const pane of document.querySelectorAll(`[${PANE}]`)) {
+    const r = pane.getBoundingClientRect();
+    const key = paneKey(Number(pane.getAttribute(TAB)), Number(pane.getAttribute(PANE)));
+    panes.set(key, { left: r.left, top: r.top, width: r.width, height: r.height });
+  }
+  const strip = document.querySelector(`[${STRIP}]`)?.getBoundingClientRect();
+  return {
+    panes,
+    strip:
+      strip === undefined
+        ? undefined
+        : { left: strip.left, top: strip.top, width: strip.width, height: strip.height },
+  };
+}
+
+/**
+ * **What placement mode picks up from what has the keyboard** (⌘⇧M): a sidebar row's chat, a
+ * tab on the strip, the pane the keyboard is in, or else the tab in front's focused pane.
+ */
+function focusedSource(on: Element | null, tabs: Tabs): Source | undefined {
+  const row = on?.closest(`[${CHAT_ROW}]`);
+  if (row != null) return { kind: "chat", session: Number(row.getAttribute(CHAT_ROW)), chat: "" };
+  // A pane carries its tab's number too, and the strip may be drawn in a pane's top: a tab is
+  // one on the strip that is not a pane.
+  const tab = on?.closest(`[${TAB}]:not([${PANE}])`);
+  if (tab != null && tab.closest(`[${STRIP}]`) !== null)
+    return { kind: "tab", tab: Number(tab.getAttribute(TAB)) };
+  const pane = on?.closest(`[${PANE}]`);
+  if (pane != null)
+    return {
+      kind: "pane",
+      tab: Number(pane.getAttribute(TAB)),
+      pane: Number(pane.getAttribute(PANE)),
+    };
+  const front = tabs.inFront;
+  const focused = front === undefined ? undefined : tabs.byId[front]?.focused;
+  if (front === undefined || focused === undefined) return undefined;
+  return { kind: "pane", tab: front, pane: focused };
+}
+
+const PLACE_ICON: Record<Place, ReactNode> = {
+  top: <ArrowUp aria-hidden="true" />,
+  left: <ArrowLeft aria-hidden="true" />,
+  middle: <ArrowLeftRight aria-hidden="true" />,
+  right: <ArrowRight aria-hidden="true" />,
+  bottom: <ArrowDown aria-hidden="true" />,
+};
+
+/**
+ * **Placement mode's targets** (#4764): five on every other pane of the tab in front, in a cross
+ * in its middle, and a New tab at the strip's end, each a real button named by what dropping
+ * there would do, or by its place with why it can't be dropped on. Only the one the keyboard is
+ * on is in the tab sequence; Tab and the arrows move it (`stepFrom`). The result of the one it is
+ * on is drawn before the drop, as a pointer's is.
+ */
+function PlacementTargets({
+  tabs,
+  ctx,
+  held,
+  boxes,
+  onPlace,
+}: {
+  tabs: Tabs;
+  ctx: DropContext;
+  held: Held;
+  boxes: Boxes;
+  onPlace: (to: Target) => void;
+}) {
+  const { source, at } = held;
+  const verdictOf = (to: Target): Verdict =>
+    judgeDrop(
+      tabs,
+      source,
+      to,
+      ctx,
+      to.kind === "pane" ? boxes.panes.get(paneKey(to.tab, to.pane)) : undefined,
+    );
+  const button = (to: Target, there: string) => {
+    const verdict = verdictOf(to);
+    const current = sameTarget(to, at);
+    const marks = {
+      [PLACE_TARGET]: targetKey(to),
+      tabIndex: current ? 0 : -1,
+      isDisabled: !verdict.ok,
+      tooltip: verdict.ok ? undefined : verdict.why,
+      "aria-label": verdict.ok ? verdict.says : targetSaid(to, there),
+      onPress: () => onPlace(to),
+    };
+    return to.kind === "strip" ? (
+      <Button {...marks} size="sm" icon={<SquareArrowOutUpRight aria-hidden="true" />}>
+        New tab
+      </Button>
+    ) : (
+      <IconButton {...marks} size="sm" icon={PLACE_ICON[to.place]} />
+    );
+  };
+  const heldBox =
+    source.kind === "pane" ? boxes.panes.get(paneKey(source.tab, source.pane)) : undefined;
+  const atBox = at.kind === "pane" ? boxes.panes.get(paneKey(at.tab, at.pane)) : undefined;
+  const atVerdict = verdictOf(at);
+  return (
+    <>
+      {heldBox !== undefined && tabs.inFront === (source.kind === "pane" ? source.tab : -1) && (
+        <div className="pane-placing-held" aria-hidden="true" style={boxStyle(heldBox)} />
+      )}
+      {atBox !== undefined && at.kind === "pane" && (
+        <div
+          className="pane-drop-preview"
+          data-refused={!atVerdict.ok || undefined}
+          aria-hidden="true"
+          style={boxStyle(previewOf(atBox, at.place))}
+        />
+      )}
+      {groupsOf(tabs, source).map((group) => {
+        if (group.kind === "strip") {
+          if (boxes.strip === undefined) return null;
+          return (
+            <div
+              key="strip"
+              className="pane-placing-strip"
+              style={{
+                top: boxes.strip.top,
+                left: boxes.strip.left + boxes.strip.width,
+                height: boxes.strip.height,
+              }}
+            >
+              {button(group, "")}
+            </div>
+          );
+        }
+        const box = boxes.panes.get(paneKey(group.tab, group.pane));
+        if (box === undefined) return null;
+        const there =
+          sourceName(tabs, { kind: "pane", tab: group.tab, pane: group.pane }, ctx) || "this pane";
+        return (
+          <div
+            key={paneKey(group.tab, group.pane)}
+            role="group"
+            aria-label={`Places by ${there}`}
+            className="pane-placing"
+            style={boxStyle(box)}
+          >
+            {targetsOf(group).map((to) => (
+              <span
+                key={targetKey(to)}
+                className="pane-placing-at"
+                data-place={to.kind === "pane" ? to.place : undefined}
+              >
+                {button(to, there)}
+              </span>
+            ))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+const boxStyle = (box: Box) => ({
+  left: box.left,
+  top: box.top,
+  width: box.width,
+  height: box.height,
+});
+
+/**
+ * **A pane's grip, as a control** (#4764): its press, or Enter or Space on it, picks the pane up
+ * for placement mode, and a drag from it moves the pane as a drag from its head does (#4763).
+ * Drawn only where the window can place a pane ({@link PlacingHere}).
+ */
+export function PaneGrip({ tab, pane }: { tab: number; pane: number }) {
+  const pickUp = useContext(PickUpHere);
+  const gripName = useContext(GripNamesHere);
+  const self = useRef<HTMLButtonElement>(null);
+  if (pickUp === undefined || gripName === undefined) return null;
+  return (
+    <IconButton
+      ref={self}
+      size="sm"
+      variant="ghost"
+      icon={<GripVertical aria-hidden="true" />}
+      aria-label={gripName(tab, pane)}
+      tooltip={`Drag it, or press to place it with the keys (${keySaid("pane.place")})`}
+      {...{ [GRIP_HANDLE]: "" }}
+      onPress={() => pickUp({ kind: "pane", tab, pane }, self.current)}
+    />
+  );
 }
 
 /** What a press on `target` picks up, if anything: a pane by its grip, a sidebar row's chat, or
  *  a tab on the strip (with the strip's box, which it must be pulled down off first). */
 function pickedUp(target: Element): { source: Source; strip?: DOMRect } | undefined {
-  // A press on a control inside a head or a row is that control's, never a drag.
-  const control = target.closest(CONTROLS);
+  // A press on a control inside a head or a row is that control's, never a drag; but the grip's
+  // own control is the grip (#4764).
+  const control = target.closest(`[${GRIP_HANDLE}]`) !== null ? null : target.closest(CONTROLS);
   const inside = (holder: Element) =>
     control !== null && control !== holder && holder.contains(control);
   const grip = target.closest(`[${GRIP}]`);
