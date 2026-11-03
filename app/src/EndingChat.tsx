@@ -136,7 +136,7 @@ export function EndingChat({
         onClose={onCancel}
         title={`${offer.title}?`}
         description={<p className="honest mid-turn">{ENDS_IT}</p>}
-        initialFocus={cancel}
+        initialFocus="cancel"
         cancel={{ ref: cancel }}
         main={{
           children: "End",

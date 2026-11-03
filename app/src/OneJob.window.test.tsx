@@ -161,10 +161,12 @@ describe("a terminal editor opened from a file", () => {
     await opened(2);
     await waitFor(() => expect(frameOf(2)).toBeDefined());
 
-    const job = frameOf(2)!;
+    const job = frameOf(2);
+    const beside = frameOf(1);
+    if (job === undefined || beside === undefined) throw new Error("both panes are drawn");
     expect(job.querySelector(`[${GRIP}]`)).toBeNull();
     expect(within(job).queryByRole("button", { name: /^(Close|End) this pane/ })).toBeNull();
-    expect(frameOf(1)!.querySelector(`[${GRIP}]`)).not.toBeNull();
+    expect(beside.querySelector(`[${GRIP}]`)).not.toBeNull();
   });
 
   it("goes when the editor exits: its split goes, focus goes back, and the core closes it", async () => {

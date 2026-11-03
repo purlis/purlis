@@ -1408,6 +1408,12 @@ export const PlaneView = memo(function PlaneView({
   /** **The one-job programs open** (#4761): a terminal editor or a forge login, drawn beside a
    *  pane, listed nowhere, and gone when it exits. */
   const [oneJobs, setOneJobs] = useState<ReadonlySet<number>>(() => new Set());
+  /** The shells and one-job programs as of the last render, for what reads them outside one: a
+   *  program's exit, End… and Close pane (#4761). */
+  const shellsRef = useRef({ shells, oneJobs });
+  useEffect(() => {
+    shellsRef.current = { shells, oneJobs };
+  }, [shells, oneJobs]);
   /**
    * A harness started by hand in a shell tab, by that tab's session, as its banner says it
    * (ADR 0062). The core says so over `harness-by-hand`; the banner stays until it is dismissed
@@ -3902,7 +3908,7 @@ export const PlaneView = memo(function PlaneView({
     // A task's own pane is never closed (#1489): its control is the minimise, another verb.
     if (going !== undefined && askedByNow(going.session) !== undefined) return;
     // Nor a one-job program's (#4761): it goes when its program exits, and the row says so.
-    if (going !== undefined && shellsNow.current.oneJobs.has(going.session)) return;
+    if (going !== undefined && shellsRef.current.oneJobs.has(going.session)) return;
     // A close is a layout change, so Undo puts it back (#4763, #4583 rule 3): it ended nothing.
     keyboardInto(
       change((tabs) =>
@@ -7134,12 +7140,10 @@ export const PlaneView = memo(function PlaneView({
    *
    * Watched off the store rather than read in a render, as the resume watch above is.
    */
-  const shellsNow = useRef({ shells, oneJobs });
-  shellsNow.current = { shells, oneJobs };
   useEffect(() => {
     const watch = () => {
       const states = chats.store.statesFor(chats.plane);
-      const { shells: open, oneJobs: jobs } = shellsNow.current;
+      const { shells: open, oneJobs: jobs } = shellsRef.current;
       for (const session of open) {
         const state = stateOf(states, session);
         if (state !== "done" && state !== "failed") continue;
@@ -8564,7 +8568,7 @@ export const PlaneView = memo(function PlaneView({
         const drafts = found.drafts;
         // **End… on a shell asks only Cancel or End** (#4761, ADR 0062 as amended 2026-11-02):
         // a shell runs no harness, so it has no record to write and no chats it asked for.
-        if (shellsNow.current.shells.has(session)) {
+        if (shellsRef.current.shells.has(session)) {
           setEndingChat({ offer, session, drafts, fromALink, shell: true });
           return { ok: true };
         }

@@ -61,15 +61,15 @@ describe("a one-job program", () => {
     const job = contentsOf(opened, id).find(
       (one) => one.content.kind === "session" && one.content.session === 9,
     );
-    expect(job).toBeDefined();
-    expect(tab.focused).toBe(job?.pane);
-    expect(isOneJobPane(opened, job!.pane)).toBe(true);
+    if (job === undefined) throw new Error("no pane shows the one-job program");
+    expect(tab.focused).toBe(job.pane);
+    expect(isOneJobPane(opened, job.pane)).toBe(true);
     expect(isOneJobPane(opened, second)).toBe(false);
     // Beside the pane that had the keyboard: the first, which is now a split of it and the job.
     expect(tab.layout).toMatchObject({
       kind: "split",
       children: [
-        { kind: "split", direction: "row", children: [{ pane: first }, { pane: job!.pane }] },
+        { kind: "split", direction: "row", children: [{ pane: first }, { pane: job.pane }] },
         { pane: second },
       ],
     });
