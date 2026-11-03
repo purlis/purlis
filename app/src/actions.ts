@@ -130,6 +130,8 @@ import {
   DEVICES_VIEW,
   type AskedBy,
   type Direction,
+  isOneJob,
+  ONE_JOB_IN_TAB,
   type Tabs,
   type ViewRef,
   type Tab,
@@ -3029,6 +3031,12 @@ export function catalogue(now: Now): Offer[] {
       offers.push(cannot(`tab.close:${tab}`, title, RESTORING_HAS_NO_CLOSE, name));
       continue;
     }
+    // **Nor does a tab a one-job program is in** (#4761): it would leave the program running
+    // with no pane, no row and no End….
+    if (holdsOneJob(now.tabs, tab)) {
+      offers.push(cannot(`tab.close:${tab}`, title, ONE_JOB_IN_TAB, name));
+      continue;
+    }
     offers.push({
       ...can(`tab.close:${tab}`, title, { verb: "closeTab", tab }, name),
       ...(chats === 0 ? {} : { note: chats === 1 ? ONE_CHAT_GOES_ON : CHATS_GO_ON }),
@@ -3051,6 +3059,8 @@ export function catalogue(now: Now): Offer[] {
     if (closes.length === 0) offers.push({ ...cannot(id, title, NO_OTHER_TAB), ...only });
     else if (closes.some(restoring))
       offers.push({ ...cannot(id, title, RESTORING_HAS_NO_CLOSE), ...only });
+    else if (closes.some((one) => holdsOneJob(now.tabs, one)))
+      offers.push({ ...cannot(id, title, ONE_JOB_IN_TAB), ...only });
     else offers.push({ ...can(id, title, { verb: "closeOtherTabs", tab, closes }), ...only });
   }
 
@@ -3946,21 +3956,32 @@ export function stopRows(listed: readonly ListedChat[], stopping: readonly numbe
               ...can(stopBelowId(session), below, { verb: "stopChat", session, below: true }, name),
               note: BELOW_TOO,
             }
-          : cannot(
-              stopBelowId(session),
-              below,
-              `${name} started no chat that is still running.`,
-              name,
-            ),
+          : // **A shell asks for no task** (#4761; spec #4750 story 65): kind hides, so it has
+            // neither of these greyed.
+            chat.shell
+            ? []
+            : cannot(
+                stopBelowId(session),
+                below,
+                `${name} started no chat that is still running.`,
+                name,
+              ),
         // **Stop all tasks** (#1498, V100-53): beside it, and the session keeps running.
         tasksOfIt.has(session)
           ? {
               ...can(stopAllId(session), all, { verb: "stopAllTasks", session }, name),
               note: STOPS_ALL,
             }
-          : cannot(stopAllId(session), all, `${name} has no task open.`, name),
-      ];
+          : chat.shell
+            ? []
+            : cannot(stopAllId(session), all, `${name} has no task open.`, name),
+      ].flat();
     });
+}
+
+/** Whether tab `tab` shows a one-job program (#4761). */
+function holdsOneJob(tabs: Tabs, tab: number): boolean {
+  return contentsOf(tabs, tab).some((one) => isOneJob(one.content));
 }
 
 /** Which of the two ways a person ends a task (the core's `Way`). */
@@ -4905,8 +4926,7 @@ export function paneCloseOf(
   if (content?.kind === "view") return can("pane.close", "Close this view", { verb: "closePane" });
   // **A one-job program's pane has no close** (#4761; spec #4750 story 78): it goes when its
   // program exits, and a close would leave the program running with no pane to draw it.
-  if (content?.kind === "session" && content.oneJob !== undefined)
-    return cannot("pane.close", PANE_CLOSE, ONE_JOB_STAYS);
+  if (isOneJob(content)) return cannot("pane.close", PANE_CLOSE, ONE_JOB_STAYS);
   // An empty pane holds nothing (#4755): closing it only takes it away.
   if (content?.kind === "empty") return can("pane.close", PANE_CLOSE, { verb: "closePane" });
   if (front === undefined || content === undefined || pane === undefined)

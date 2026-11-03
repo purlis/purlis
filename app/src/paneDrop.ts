@@ -7,6 +7,7 @@ import {
   type FiledIn,
   type Layout,
   nothingPinned,
+  isOneJob,
   ONE_JOB_STAYS,
   type Pane,
   panes,
@@ -117,8 +118,7 @@ export function judgeDrop(
     if (pane.content.kind === "empty")
       return refused("An empty pane has nothing to move. Close it instead.");
     // A one-job program stays beside the pane it opened from (#4761; spec #4750 story 78).
-    if (pane.content.kind === "session" && pane.content.oneJob !== undefined)
-      return refused(ONE_JOB_STAYS);
+    if (isOneJob(pane.content)) return refused(ONE_JOB_STAYS);
   }
   if (source.kind === "tab" && tabs.byId[source.tab] === undefined)
     return refused("That tab has closed.");
@@ -152,7 +152,7 @@ export function judgeDrop(
     if (source.kind === "tab")
       return refused("A tab of several panes goes beside a pane, not into one.");
     // Its edges still take a split, but nothing swaps with it or takes its place (#4761).
-    if (target.content.kind === "session" && target.content.oneJob !== undefined)
+    if (isOneJob(target.content))
       return refused(`${there} goes when its program exits. Drop beside it instead.`);
     if (target.content.kind === "empty")
       verdict = {

@@ -43,7 +43,7 @@ import { paneBand } from "./noticeSettle";
 import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
 import { SkillsChip } from "./UseSkill";
-import { harnessCardView, type Layout, type ViewRef } from "./tabs";
+import { harnessCardView, isOneJob, type Layout, type ViewRef } from "./tabs";
 import { EVEN, shareOf, WHOLE } from "./laidOut";
 import { floorAlong } from "./paneDrop";
 import { dropPane, GRIP } from "./paneDrag";
@@ -1068,7 +1068,7 @@ export function LayoutPanes({
           />
         }
         chat={{ session: content.session, offers }}
-        oneJob={content.oneJob !== undefined}
+        oneJob={isOneJob(content)}
       />
     );
     return (
@@ -1078,7 +1078,7 @@ export function LayoutPanes({
         tab={tab}
         session={content.session}
         focused={layout.pane === focused}
-        oneJob={content.oneJob !== undefined}
+        oneJob={isOneJob(content)}
         crumbs={shownPath}
         said={
           endedTask === undefined

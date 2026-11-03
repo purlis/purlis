@@ -655,13 +655,16 @@ function withoutOne(set: ReadonlySet<number>, one: number): ReadonlySet<number> 
   return left;
 }
 
-/** **A forge login's one-job pane is named for the login** (#4761): its first three words,
+/** The words that name a forge login: `gh auth login`, `glab auth login`. */
+const LOGIN_WORDS = 3;
+
+/** **A forge login's one-job pane is named for the login** (#4761): its first words,
  *  `gh auth login`, never the host a held line goes on to name. */
 function loginName(line: string): string {
-  return line.trim().split(/\s+/).slice(0, 3).join(" ");
+  return line.trim().split(/\s+/).slice(0, LOGIN_WORDS).join(" ");
 }
 
-/** What a new shell tab has typed into it: a line spelled out (FR-4's `gh auth login`), a
+/** What a new shell has typed into it: a line spelled out (FR-4's `gh auth login`), a
  *  harness whose compiled-in installer the core types itself (FR-29, V65), or the sandbox's
  *  install command, which the core types and leaves for the person to run (SD-30, V78 c).
  *  `held` is a line typed and left for the person to run: the repo picker's forge login,
@@ -922,8 +925,8 @@ export const PlaneView = memo(function PlaneView({
    *  repository's clone, on the workspace named after it. `at` counts the asks, so each is
    *  answered once. */
   firstChatAsked?: FirstChat;
-  /** A shell tab at the project root with a command typed into it — `gh auth login` or `glab
-   *  auth login` from the first run (FR-4) — asked for once per `at`. */
+  /** A one-job shell at the project root with a command typed into it — `gh auth login` or
+   *  `glab auth login` from the first run (FR-4) — asked for once per `at`. */
   shellAsked?: { typed: string; at: number };
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
@@ -3476,7 +3479,7 @@ export const PlaneView = memo(function PlaneView({
   }, [plane]);
 
   /**
-   * A shell tab at the project root with `shellAsked`'s command typed in (FR-4: `gh auth
+   * A one-job shell at the project root with `shellAsked`'s command typed in (FR-4: `gh auth
    * login` or `glab auth login`, from the first run's "Sign in to GitHub" or "Sign in to
    * GitLab"). Once the plane is read, so the root is known, and once per ask.
    */

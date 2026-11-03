@@ -1344,6 +1344,11 @@ function shownElsewhere(tabs: Tabs, session: number, tab?: number, pane?: number
 /** Why a one-job program's pane has no close, and cannot be picked up (#4761). */
 export const ONE_JOB_STAYS = "This pane goes when its program exits. Quit the program to close it.";
 
+/** Why a tab holding a one-job program has no close (#4761): it would leave the program running
+ *  with no pane to draw it. */
+export const ONE_JOB_IN_TAB =
+  "A program in this tab goes when it exits. Quit it first, then close the tab.";
+
 /**
  * **A one-job program opens beside the focused pane** (#4761; spec #4750 story 66): a terminal
  * editor opened from a file, or a forge login, as a split to the right of the pane with the
@@ -1418,12 +1423,15 @@ function oneJobAt(
   return undefined;
 }
 
+/** Whether `content` is a one-job program ({@link openOneJob}): the one test of it (#4761). */
+export function isOneJob(content: Content | undefined): boolean {
+  return content?.kind === "session" && content.oneJob !== undefined;
+}
+
 /** Whether pane `pane`, in any tab, shows a one-job program ({@link openOneJob}). */
 export function isOneJobPane(tabs: Tabs, pane: number): boolean {
   return tabs.order.some((id) =>
-    contents(tabs.byId[id].layout).some(
-      (one) => one.pane === pane && one.content.kind === "session" && !!one.content.oneJob,
-    ),
+    contents(tabs.byId[id].layout).some((one) => one.pane === pane && isOneJob(one.content)),
   );
 }
 
@@ -1588,8 +1596,7 @@ function pressTarget(tabs: Tabs, workspace: string, at: Pressing): PaneAt | unde
         : here[0];
   const tab = tabs.byId[front];
   // A view is never replaced, nor a one-job program (#4761): it goes when it exits.
-  const takes = (content: Content) =>
-    content.kind !== "view" && !(content.kind === "session" && content.oneJob);
+  const takes = (content: Content) => content.kind !== "view" && !isOneJob(content);
   const focused = contents(tab.layout).find((one) => one.pane === tab.focused)?.content;
   if (focused === undefined || takes(focused)) return { tab: front, pane: tab.focused };
   const used = tabs.used ?? {};

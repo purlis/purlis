@@ -1387,6 +1387,16 @@ impl Drop for StartOnItsOwnRunner<'_> {
     }
 }
 
+/// Whether `chat` is a one-job program ([`Chats::start_one_job`]): its id is among `one_jobs`.
+/// One-job programs are known by id, which is minted before the start, so a record written while
+/// one starts already leaves it out (#4761).
+fn is_a_one_job(chat: &Chat, one_jobs: &std::collections::HashSet<String>) -> bool {
+    chat.identity
+        .id
+        .as_ref()
+        .is_some_and(|id| one_jobs.contains(id))
+}
+
 impl Chats {
     /// Chats whose record is written by `record_it` every time what is open changes, in no
     /// project: what the tests use when the project is not what they are about.
@@ -3890,10 +3900,9 @@ impl Chats {
     /// it from [`Open::one_job`].
     #[cfg(test)]
     pub fn is_one_job(&self, session: u32) -> bool {
-        let id = lock(&self.open)
+        lock(&self.open)
             .get(&session)
-            .and_then(|one| one.chat.identity.id.clone());
-        id.is_some_and(|id| lock(&self.one_jobs).contains(&id))
+            .is_some_and(|one| is_a_one_job(&one.chat, &lock(&self.one_jobs)))
     }
 
     fn start_as(
@@ -5487,13 +5496,7 @@ impl Chats {
             let one_jobs = lock(&self.one_jobs).clone();
             lock(&self.open)
                 .iter()
-                .filter(|(_, one)| {
-                    one.chat
-                        .identity
-                        .id
-                        .as_ref()
-                        .is_some_and(|id| one_jobs.contains(id))
-                })
+                .filter(|(_, one)| is_a_one_job(&one.chat, &one_jobs))
                 .map(|(number, _)| *number)
                 .collect()
         };
@@ -6616,11 +6619,7 @@ impl Chats {
                     sandbox: running.confines.as_ref().map(|confines| confines.level),
                     floorless: floorless.get(&session).cloned(),
                     untaken: untaken.get(&session).cloned(),
-                    one_job: chat
-                        .identity
-                        .id
-                        .as_ref()
-                        .is_some_and(|id| one_jobs.contains(id)),
+                    one_job: is_a_one_job(chat, &one_jobs),
                 })
             })
             .collect()
@@ -6755,12 +6754,7 @@ impl Chats {
             if superseded(chat, Some(session)) {
                 return None;
             }
-            if chat
-                .identity
-                .id
-                .as_ref()
-                .is_some_and(|id| one_jobs.contains(id))
-            {
+            if is_a_one_job(chat, &one_jobs) {
                 return None;
             }
             Some(retired(Chat {
