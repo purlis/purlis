@@ -382,6 +382,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
         "IN_MEMORY",
         &[
             "about_charter",
+            // Copy diagnostics' facts (#4774): the chats held in memory, and one uname(2).
+            "diagnostics_here",
             "activity_chat",
             "pending_asks",
             "asks_waiting",
