@@ -36,39 +36,69 @@ function nameOf(fiber: Fiber): string | undefined {
   return type?.displayName ?? type?.name ?? type?.render?.name;
 }
 
-function drawn(fiber: Fiber): void {
+/**
+ * **Which components were drawn outside one component, by name**, for a test that holds an
+ * update to a part of the window (`drawnOutside`). Empty, and nothing is named, until a test
+ * says which component the update belongs to.
+ */
+export const outside = new Map<string, number>();
+/** The component `outside` is counted around, or none. */
+let inside: string | undefined;
+
+/**
+ * Names, from now on, every component React draws that is not `name` nor drawn inside it, and
+ * forgets what was named before. Each one drawn again counts once a commit.
+ */
+export function drawnOutside(name: string): Map<string, number> {
+  inside = name;
+  outside.clear();
+  return outside;
+}
+
+/** Whether `fiber`, or anything above it, is the component `outside` is counted around. */
+function within(fiber: Fiber, above: boolean): boolean {
+  return above || (inside !== undefined && nameOf(fiber) === inside);
+}
+
+function drawn(fiber: Fiber, isInside: boolean): void {
   counts.rendered += 1;
   const name = nameOf(fiber);
   if (name) renderedBy.set(name, (renderedBy.get(name) ?? 0) + 1);
+  // A memo is its child's wrapper, counted there; a component with no name is still named.
+  if (inside === undefined || isInside || fiber.tag === 14) return;
+  const named = name ?? "(anonymous)";
+  outside.set(named, (outside.get(named) ?? 0) + 1);
 }
 
 export const counts: Counts = { rendered: 0, mounted: 0, unmounted: 0, commits: 0 };
 
-function countMounted(fiber: Fiber | null): void {
+function countMounted(fiber: Fiber | null, above: boolean): void {
   for (let one = fiber; one; one = one.sibling) {
+    const isInside = within(one, above);
     if (COMPONENTS.has(one.tag)) {
       counts.mounted += 1;
-      drawn(one);
+      drawn(one, isInside);
     }
-    countMounted(one.child);
+    countMounted(one.child, isInside);
   }
 }
 
 /** One fiber that was there before: drawn again or not, then its children the same way. A
  *  fiber whose child is its alternate's child bailed out, and nothing below it ran. */
-function countUpdated(fiber: Fiber): void {
+function countUpdated(fiber: Fiber, above: boolean): void {
   const before = fiber.alternate;
+  const isInside = within(fiber, above);
   if (before === null) {
     if (COMPONENTS.has(fiber.tag)) {
       counts.mounted += 1;
-      drawn(fiber);
+      drawn(fiber, isInside);
     }
-    countMounted(fiber.child);
+    countMounted(fiber.child, isInside);
     return;
   }
-  if (COMPONENTS.has(fiber.tag) && (fiber.flags & PERFORMED_WORK) !== 0) drawn(fiber);
+  if (COMPONENTS.has(fiber.tag) && (fiber.flags & PERFORMED_WORK) !== 0) drawn(fiber, isInside);
   if (fiber.child === before.child) return;
-  for (let child = fiber.child; child; child = child.sibling) countUpdated(child);
+  for (let child = fiber.child; child; child = child.sibling) countUpdated(child, isInside);
 }
 
 /** Whether a test file asked for React's commits to be counted (`countReactsCommits`). */
@@ -90,7 +120,7 @@ let counting = false;
   onCommitFiberRoot: (_id: number, root: { current: Fiber }) => {
     if (!counting) return;
     counts.commits += 1;
-    countUpdated(root.current);
+    countUpdated(root.current, false);
   },
   onPostCommitFiberRoot: () => {},
   onCommitFiberUnmount: (_id: number, fiber: Fiber) => {
