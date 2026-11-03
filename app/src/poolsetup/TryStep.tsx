@@ -68,10 +68,11 @@ export function TryStep({
 
   const lines = (label: string) => (
     <CheckList aria-label={label}>
-      {checks.map((check) => (
+      {checks.map((check, at) => (
         <CheckLine
           key={check.title}
-          verdict={trying && check.verdict === "todo" ? "running" : verdictOf(check)}
+          // The chat's start is the one check a try makes; the core puts it first.
+          verdict={trying && at === 0 && check.verdict === "todo" ? "running" : verdictOf(check)}
           title={check.title}
         >
           {check.more}

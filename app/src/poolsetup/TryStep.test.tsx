@@ -100,6 +100,14 @@ describe("TryStep", () => {
     await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
     expect(await screen.findByRole("heading", { name: "Trying it for real" })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("Starting a chat on dev-box");
+    // Only the chat's start is under way: what the try doesn't check doesn't spin.
+    const lines = within(screen.getByRole("list", { name: "The checks" }));
+    expect(lines.getByText(/A chat starts on dev-box/).closest("li")?.textContent).toMatch(
+      /Running/,
+    );
+    expect(lines.getByText(/The agent's identity is set/).closest("li")?.textContent).not.toMatch(
+      /Running/,
+    );
     const busy = screen.getByRole("button", { name: "Starting a test chat" });
     expect(busy.hasAttribute("disabled") || busy.getAttribute("aria-disabled") === "true").toBe(
       true,
