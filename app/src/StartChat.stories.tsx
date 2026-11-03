@@ -335,6 +335,34 @@ async function opened() {
   return page;
 }
 
+/** What covers the middle of `part`, where a person looks for it, or `null` when it is in sight. */
+function coveredAt(part: Element): string | null {
+  const box = part.getBoundingClientRect();
+  const [x, y] = [box.left + box.width / 2, box.top + box.height / 2];
+  if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight)
+    return "outside the window";
+  const top = document.elementFromPoint(x, y);
+  if (top !== null && (top === part || part.contains(top) || top.contains(part))) return null;
+  return top === null ? "nothing" : `${top.tagName.toLowerCase()}.${top.className}`;
+}
+
+/**
+ * **The Runs on row in the picture** (#5016): the row sits below the harness cards, under the
+ * details pane's fold as the dialog opens, so it is scrolled into the pane's sight before
+ * `pictureNow`, and each of its parts (its heading, the row and the line under it that says why)
+ * is held in sight.
+ */
+async function runsOnInSight(page: ReturnType<typeof within>) {
+  const section = page.getByRole("region", { name: "Runs on" });
+  await waitFor(() => {
+    for (const part of section.children) {
+      const covered = coveredAt(part);
+      if (covered !== null)
+        throw new Error(`Runs on: “${part.textContent}” is not in sight (${covered})`);
+    }
+  });
+}
+
 /**
  * **Runs on, following the project's pool** (#4536): the row says the place and the level that
  * put it there. Picked from the keyboard, a pool is for this start only and says so, and Start
@@ -347,6 +375,7 @@ export const RunsOnFollowsTheProject: Story = {
     const runsOn = page.getByRole("button", { name: /Runs on$/ });
     await expect(runsOn).toHaveTextContent("As set (pool builds)");
     await expect(runsOn).toHaveAccessibleDescription("Pool builds, as this project's chats run.");
+    await runsOnInSight(page);
     await pictureNow();
 
     runsOn.focus();
@@ -389,6 +418,7 @@ export const RunsOnThisMachineForTheWorkspace: Story = {
     await expect(runsOn).toHaveAccessibleDescription(
       "This machine, as this workspace's chats run.",
     );
+    await runsOnInSight(page);
     await pictureNow();
   },
 };
@@ -402,6 +432,7 @@ export const RunsOnAtTheRoot: Story = {
       page.getByText("This machine. A chat at the project's root always runs here."),
     ).toBeVisible();
     await expect(page.queryByRole("button", { name: /Runs on$/ })).toBeNull();
+    await runsOnInSight(page);
     await pictureNow();
   },
 };
@@ -415,6 +446,7 @@ export const RunsOnWithNoPool: Story = {
     await expect(
       page.getByText("This machine. No pool is set up on this machine yet."),
     ).toBeVisible();
+    await runsOnInSight(page);
     await pictureNow();
     const setup = page.getByRole("button", { name: "Pool setup…" });
     setup.focus();
