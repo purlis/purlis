@@ -53,6 +53,7 @@ export const EndsOnAPress: Story = {
  *  alone. It ends on a press too, for the story after it. */
 export const FocusTakenAfterAPress: Story = {
   args: { autoFocus: true },
+  parameters: { screenshot: "frame" },
   play: async (context) => {
     const cancel = context.canvas.getByRole("button", { name: "Cancel" });
     await untilFocused(() => cancel, "Cancel, focused as it is drawn");
