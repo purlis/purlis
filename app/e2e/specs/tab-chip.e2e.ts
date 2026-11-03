@@ -78,6 +78,30 @@ async function strip(): Promise<{ tabs: string[]; front: string | null; panes: n
   }, STRIP);
 }
 
+/**
+ * **A probe of the strip at each step of a start** (#4758, while tab-chip's three starts land in
+ * one tab on CI and nowhere else): the strip, its front tab and the panes, every tab selected
+ * anywhere in the window (the workspace in front among them), and the empty panes drawn, written
+ * to the run's log.
+ */
+function probe(start: number): (step: string) => Promise<void> {
+  return async (step) => {
+    const seen = await strip();
+    const elsewhere = await browser.execute(() => ({
+      selected: [...document.querySelectorAll('[role="tab"][aria-selected="true"]')].map(
+        (tab) => tab.textContent ?? "",
+      ),
+      empty: document.querySelectorAll('[data-testid="empty-pane"]').length,
+      dialogs: [...document.querySelectorAll('[role="dialog"]')].map(
+        (one) => one.getAttribute("aria-label") ?? one.getAttribute("aria-labelledby") ?? "",
+      ),
+    }));
+    console.log(
+      `tab-chip probe: start ${start}, ${step}: ${JSON.stringify({ ...seen, ...elsewhere })}`,
+    );
+  };
+}
+
 async function untilShows(text: string): Promise<void> {
   await browser.waitUntil(
     async () => {
@@ -522,7 +546,7 @@ describe("the chip a session's tab wears for its tasks", () => {
     started = [];
     for (let opened = 0; opened < 3; opened++) {
       const known = new Set([...wereAlreadyOpen, ...(await tabNames()), ...mine]);
-      started.push(await startAChat());
+      started.push(await startAChat("New tab", probe(opened + 1)));
       let saw = "nothing was read";
       let came: string | undefined;
       await browser
