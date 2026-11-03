@@ -254,9 +254,51 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         if (!w.__reflowPatched) {
           // [DEBUG-4351]
           w.__reflowPatched = true; // [DEBUG-4351]
-          const note = (name: string, ms: number) => {
-            const t = globalThis as { __tl4351?: string[]; __t04351?: number };
-            if (ms < 3 || t.__tl4351 === undefined || t.__t04351 === undefined) return;
+          const styleOf = window.getComputedStyle.bind(window); // [DEBUG-4351]
+          let inside = false; // [DEBUG-4351]
+          const labelOf = (el: Element) => {
+            const d = (el as HTMLElement).dataset ?? {};
+            const cls = typeof el.className === "string" ? el.className.split(" ")[0] : "";
+            const aria = (el.getAttribute("aria-label") ?? "").slice(0, 24);
+            return `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}${cls ? "." + cls : ""}${d.scope ? "[" + d.scope + "/" + (d.part ?? "") + "]" : ""}${aria ? '"' + aria + '"' : ""}`;
+          }; // [DEBUG-4351]
+          const census = () => {
+            const all = document.body.getElementsByTagName("*").length;
+            const heavy: string[] = [];
+            const walk = (el: Element, depth: number) => {
+              const n = el.getElementsByTagName("*").length;
+              if (n < 150 || depth > 14) return;
+              const kids = Array.from(el.children);
+              const big = kids.find((k) => k.getElementsByTagName("*").length >= n * 0.6);
+              if (big) return walk(big, depth + 1);
+              const shown =
+                (el as Element & { checkVisibility?: () => boolean }).checkVisibility?.() ?? true;
+              heavy.push(`${labelOf(el)}=${n}${shown ? "" : " hidden"}`);
+              for (const k of kids) walk(k, depth + 1);
+            };
+            walk(document.body, 0);
+            return `census ${all} elements, sheets ${document.styleSheets.length}: ${heavy.slice(0, 14).join(", ")}`;
+          }; // [DEBUG-4351]
+          const styleFirst = () => {
+            if (inside) return 0;
+            inside = true;
+            const t0 = performance.now();
+            void styleOf(document.documentElement).color;
+            inside = false;
+            return performance.now() - t0;
+          }; // [DEBUG-4351]
+          const note = (name: string, ms: number, styleMs = 0, self?: unknown) => {
+            const t = globalThis as {
+              __tl4351?: string[];
+              __t04351?: number;
+              __census4351?: boolean;
+            };
+            if (ms + styleMs < 3 || t.__tl4351 === undefined || t.__t04351 === undefined) return;
+            const at = self instanceof Element ? ` on ${labelOf(self)}` : ""; // [DEBUG-4351]
+            if (ms + styleMs >= 40 && !t.__census4351) {
+              t.__census4351 = true;
+              t.__tl4351.push(census());
+            } // [DEBUG-4351]
             const stack = (new Error().stack ?? "")
               .split("\n")
               .slice(2, 7)
@@ -268,16 +310,17 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
               )
               .join(" < ");
             t.__tl4351.push(
-              `${(performance.now() - t.__t04351).toFixed(0)} reflow ${name} ${ms.toFixed(0)} ms: ${stack}`,
+              `${(performance.now() - t.__t04351).toFixed(0)} reflow ${name} style ${styleMs.toFixed(0)} layout ${ms.toFixed(0)} ms${at}: ${stack}`,
             );
           }; // [DEBUG-4351]
           const wrapFn = (proto: object, name: string) => {
             const was = (proto as Record<string, unknown>)[name] as (...a: unknown[]) => unknown;
             if (typeof was !== "function") return;
             (proto as Record<string, unknown>)[name] = function (this: unknown, ...a: unknown[]) {
+              const styleMs = styleFirst(); // [DEBUG-4351]
               const t0 = performance.now();
               const r = was.apply(this, a);
-              note(name, performance.now() - t0);
+              note(name, performance.now() - t0, styleMs, this);
               return r;
             };
           }; // [DEBUG-4351]
@@ -288,9 +331,10 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
             Object.defineProperty(proto, name, {
               ...d,
               get(this: unknown) {
+                const styleMs = styleFirst(); // [DEBUG-4351]
                 const t0 = performance.now();
                 const r = get.call(this);
-                note(name, performance.now() - t0);
+                note(name, performance.now() - t0, styleMs, this);
                 return r;
               },
             });
@@ -318,6 +362,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         } // [DEBUG-4351]
         const started = performance.now();
         (globalThis as { __t04351?: number }).__t04351 = started; // [DEBUG-4351]
+        (globalThis as { __census4351?: boolean }).__census4351 = false; // [DEBUG-4351]
         row.click();
         tl.push(`${(performance.now() - started).toFixed(0)} click returned`); // [DEBUG-4351]
         const look = () => {
