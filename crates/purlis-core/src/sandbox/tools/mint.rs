@@ -74,6 +74,7 @@ pub fn of(
         super::VALUES_KEY,
         super::login::KEY,
         super::login::USER_KEY,
+        super::login::FORM_KEY,
     ]
     .into_iter()
     .find(|key| tool.contains_key(*key))

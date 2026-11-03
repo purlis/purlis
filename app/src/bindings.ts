@@ -3260,6 +3260,14 @@ export const commands = {
 	 */
 	poolSetupWake: (pool: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_wake", { pool })),
 	/**
+	 *  **Try it** (#4483, Q32): starts a real chat on pool `pool`, on the Try it step's own button,
+	 *  waits for the hook its harness reports its session's start by (ADR 0076), closes it, and keeps
+	 *  that it started (`purlis_core::poolsetup::tried`). Nothing is typed into it. A start that is
+	 *  refused, or a chat that never reports its start, comes back as `failed`, with the step that
+	 *  mends it where one does.
+	 */
+	poolSetupTry: (plane: PlaneId, pool: string, workspace: string | null) => typedError<PoolSetupTried, string>(__TAURI_INVOKE("pool_setup_try", { plane, pool, workspace })),
+	/**
 	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 	 *  elsewhere, with what to do instead.
 	 */
@@ -9228,10 +9236,15 @@ export type LocalModelRow = {
  *  value: purlis hasn't read one.
  */
 export type LoginShown = {
-	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
+	/**  The domain of the page it opens, with a port where it has one: `shop.example.com`. */
 	domain: string,
 	/**  The page's path on it. */
 	path: string,
+	/**
+	 *  **The host the password is typed on** (#4995), with a port where it has one: the login
+	 *  form's, which the page may have sent the browser to. The domain where they're one.
+	 */
+	form: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
@@ -9244,6 +9257,10 @@ export type LoginShown = {
 	no_always?: string | null,
 	/**  The persona's chats get the vault too with Always. */
 	vault_too: boolean,
+	/**  **The page the declared login opens now, which this replaces** (#4996). */
+	replaces?: string | null,
+	/**  The host its password is typed on now, with a port where it has one. */
+	replaces_form?: string | null,
 };
 
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
@@ -11335,6 +11352,14 @@ export type PoolSetupCreated = {
 	breaks: string[],
 };
 
+/**  Why Try it didn't pass, and the step that mends it, where one does (#4483). */
+export type PoolSetupFailed = {
+	/**  What happened and what to do, in a sentence or two. */
+	why: string,
+	/**  The step to go to, by its id: `signins` for a sign-in. Null where trying again is it. */
+	step: string | null,
+};
+
 /**  A limit a profile is over. */
 export type PoolSetupOver = {
 	/**  The limit's key, as `pool_limit_set` takes it. */
@@ -11397,6 +11422,14 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+};
+
+/**  What Try it found. */
+export type PoolSetupTried = {
+	/**  Why it didn't pass; null where a real chat started and the proof is kept. */
+	failed: PoolSetupFailed | null,
+	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
+	workspace: string | null,
 };
 
 /**  What the person is asked. */

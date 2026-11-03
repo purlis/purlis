@@ -729,6 +729,7 @@ fn removing_a_profile_wipes_its_kept_browser_logins_and_their_key() {
                 user_key: None,
                 password_key: "pass",
                 page: "https://shop.test/login",
+                form: None,
             },
         ),
     )

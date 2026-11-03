@@ -29,6 +29,9 @@ const BULLETS: &str = "•••••••••••";
 const ADDRESS: &str = "http://fixture.test/frames.html";
 const ORIGIN: &str = "http://fixture.test";
 
+/// Where a site that signs in on another host sends the browser back to (#4995).
+const BACK: &str = "http://app.fixture.test/home";
+
 fn quick() -> Limits {
     Limits {
         login_within: Duration::from_millis(600),
@@ -44,6 +47,7 @@ fn login_at(origin: &str) -> Login {
         password: FILLED.to_owned().into(),
         only_if_asked: false,
         suggested: false,
+        back_to: None,
     }
 }
 
@@ -75,6 +79,9 @@ enum Twist {
     /// As purlis clears what it filled, its world's number comes to name the page's own world,
     /// with no word of it yet: as when the page moves to another process.
     WorldReused,
+    /// Submitted, the form sends the browser back to the site's own page on another origin, as
+    /// a site that signs in on another host does (#4995).
+    GoesBack,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -195,6 +202,9 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
             }
             "Input.dispatchKeyEvent" if p["key"] == "Enter" && p["type"] == "keyDown" => {
                 seen.store(true, Ordering::SeqCst);
+                if twist == Twist::GoesBack {
+                    navigated(engine, on, "LOADER-BACK", BACK);
+                }
                 Some(Ok(json!({})))
             }
             _ => None,
@@ -701,4 +711,70 @@ fn a_field_is_cleared_only_in_purlis_s_world_though_its_number_now_names_the_pag
                 .is_some_and(|object| object.starts_with("OBJECT-"))),
         "cleared in a world of purlis's own"
     );
+}
+
+/// #4995: purlis learns where a page sends the browser to sign in, from a page of its own and
+/// the engine's record of its document, typing nothing.
+#[test]
+fn purlis_finds_where_a_page_shows_its_login_form_and_types_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, false);
+    let answer = browser
+        .call(
+            &id(1),
+            Call::FindLoginForm {
+                address: WebAddress::parse(ADDRESS).unwrap(),
+            },
+        )
+        .unwrap();
+    let page = answer.page.expect("a page");
+    assert_eq!(origin_of(&page.address).as_deref(), Some(ORIGIN));
+    assert!(inserted(&engine).is_empty());
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+}
+
+#[test]
+fn a_page_that_shows_no_login_form_in_time_is_refused() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, false, Twist::AsksNothing);
+    let refused = browser
+        .call(
+            &id(1),
+            Call::FindLoginForm {
+                address: WebAddress::parse(ADDRESS).unwrap(),
+            },
+        )
+        .unwrap_err();
+    match refused {
+        Refusal::NotLoggedIn(why) => assert!(why.contains("no login form appeared"), "{why}"),
+        other => panic!("refused otherwise: {}", ended_as::<()>(&Err(other))),
+    }
+}
+
+/// #4995: a form on another host sends the browser back to the site's page once the login went
+/// through; that is a login that went through, where it names that page's origin alone.
+#[test]
+fn a_login_whose_form_sends_the_browser_back_to_its_page_went_through() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, false, Twist::GoesBack);
+    let back = Login {
+        back_to: Some("http://app.fixture.test".to_owned()),
+        ..login_at(ORIGIN)
+    };
+    let ended = browser.log_in(&back, &|| Ok(())).unwrap();
+    let note = ended
+        .outcome
+        .expect("went through")
+        .note
+        .unwrap_or_default();
+    assert!(
+        note.contains("went back to http://app.fixture.test"),
+        "{note}"
+    );
+    assert_eq!(inserted(&engine), vec![FILLED.to_owned()]);
+
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, false, Twist::GoesBack);
+    let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
+    assert_eq!(ended_as(&ended.outcome), "not logged in");
 }

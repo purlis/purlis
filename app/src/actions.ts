@@ -134,7 +134,8 @@ import {
   type ViewRef,
   type Tab,
 } from "./tabs";
-import { canTileAll, canUndoLayout, isSplit, zoomedOf } from "./tiling";
+import { canTileAll, isSplit, zoomedOf } from "./tiling";
+import { canUndoLayout } from "./layoutUndo";
 import { isBrowser } from "./browsers";
 import { anyPoolKept, startAddingAPool } from "./pools";
 import { isDriven } from "./browserDriving";
@@ -396,8 +397,8 @@ export type Does =
   | { verb: "tileAll"; tab: number }
   /** Focus this pane in a split (#4765): zooms the focused pane, or brings the split back. */
   | { verb: "zoomPane" }
-  /** Undo (#4765): `tab`'s last tree back, once. */
-  | { verb: "undoLayout"; tab: number }
+  /** Undo (#4763, #4765): the window's last layout change put back, once. */
+  | { verb: "undoLayout" }
   | { verb: "pinWorkspace"; workspace: string; pinned: boolean }
   | { verb: "pinProject"; plane: string; pinned: boolean }
   | { verb: "focusWorkspace"; workspace: string }
@@ -1053,8 +1054,8 @@ export type Doing = {
   tileAll: (tab: number) => void;
   /** Zooms the focused pane of the tab in front, or brings its split back (#4765). */
   zoomPane: () => void;
-  /** Puts `tab`'s last tree back (#4765). */
-  undoLayout: (tab: number) => void;
+  /** Puts the last layout change back (#4763, #4765): a drop, a split or Tile all. */
+  undoLayout: () => void;
   pinWorkspace: (workspace: string, pinned: boolean) => Promise<Ran>;
   pinProject: (plane: string, pinned: boolean) => Promise<Ran>;
   focusWorkspace: (workspace: string) => void;
@@ -1614,7 +1615,7 @@ export const FOCUS_THIS_PANE = "Focus this pane";
 export function tileAllId(tab: number): string {
   return `tab.tile:${tab}`;
 }
-/** Undo's row: the tab in front's last layout back (#4765). */
+/** Undo's row: the last layout change put back (#4763, #4765); ⌘Z's too. */
 export const UNDO_LAYOUT_ID = "layout.undo";
 /** Why Tile all cannot run on a tab of one pane (#4765). */
 export const ONE_PANE_TO_TILE = "It has one pane, so there is nothing to tile.";
@@ -2154,15 +2155,12 @@ export function catalogue(now: Now): Offer[] {
     );
   }
 
-  // **Undo** (#4765): the tab in front's last tree, while nothing in it has changed since. Only
-  // while it can run, as the change it undoes was just made; the toast and ⌘Z come with #4763.
-  if (front !== undefined && canUndoLayout(now.tabs, front.id))
+  // **Undo** (#4763, #4765): the window's last layout change, while nothing has changed since.
+  // Only while it can run, as the change it undoes was just made; its toast and ⌘Z run the same.
+  if (canUndoLayout(now.tabs))
     offers.push({
-      ...can(UNDO_LAYOUT_ID, "Undo the last layout change", {
-        verb: "undoLayout",
-        tab: front.id,
-      }),
-      note: "This tab's panes back where they were before.",
+      ...can(UNDO_LAYOUT_ID, "Undo the last layout change", { verb: "undoLayout" }),
+      note: "The panes back where they were before.",
     });
 
   offers.push(...chatRows(now));
@@ -3388,7 +3386,7 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       doing.zoomPane();
       return DID;
     case "undoLayout":
-      doing.undoLayout(does.tab);
+      doing.undoLayout();
       return DID;
     case "pinWorkspace":
       return doing.pinWorkspace(does.workspace, does.pinned);

@@ -1459,6 +1459,14 @@ const PAINTED: ReadonlyMap<string, Painted> = new Map<string, Painted>([
     { own: "the status bar's waiting pill; its icon and words are its own" },
   ],
   [
+    "accent.wash .pane-drop-preview",
+    { own: "where a dragged pane would land, drawn before the drop (#4763); nothing is on it" },
+  ],
+  [
+    "danger.wash .pane-drop-preview[data-refused]",
+    { own: "a refused place for a dragged pane (#4763); its reason is by the pointer, not on it" },
+  ],
+  [
     'overlay.scrim [data-scope="dialog"][data-part="scrim"]',
     { own: "the dim behind a dialog; what it holds is the dialog's opaque ground" },
   ],
