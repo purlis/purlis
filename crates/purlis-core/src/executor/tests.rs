@@ -2203,7 +2203,9 @@ fn an_event_it_does_not_hear_is_refused_and_starts_nothing() {
 }
 
 #[test]
-fn an_event_s_answer_is_that_it_heard_or_an_error_and_nothing_else() {
+/// Since #4769 an event's answer may also offer one of the extension's own declared views
+/// (`extension::tests` holds an offer that is read); anything else is still refused.
+fn an_event_s_answer_is_that_it_heard_an_error_or_an_offer_and_nothing_else() {
     let told = |line: &str| {
         let rig = Rig::new();
         rig.talking(&answering_with(line));
@@ -2220,8 +2222,15 @@ fn an_event_s_answer_is_that_it_heard_or_an_error_and_nothing_else() {
     assert!(
         refused.contains(
             "answered \"blocks\", which is not part of purlis's protocol 2 — this answer is \
-             'charter', and 'error'"
+             'charter', and either 'offer' or 'error'"
         ),
+        "{refused}"
+    );
+
+    let refused = told(r#"{"charter":2,"offer":{"view":"not-declared"}}"#)
+        .expect_err("an offer of a view it does not declare");
+    assert!(
+        refused.contains("offered the view \"not-declared\", which its manifest does not declare"),
         "{refused}"
     );
 

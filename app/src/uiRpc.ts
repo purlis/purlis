@@ -5097,9 +5097,13 @@ export type ExtensionFacts = {
 	notes: string[],
 };
 
-/**  What `extension-heard` carries: the project whose extensions were just told something. */
+/**
+ *  What `extension-heard` carries: the project whose extensions were just told something, and
+ *  the views they offered while they heard it (#4769).
+ */
 export type ExtensionHeard = {
 	plane: PlaneId,
+	offers: ViewOffered[],
 };
 
 /**  One row of "what has contributed what to this window". */
@@ -13842,6 +13846,18 @@ overreach: string | null;
 changes?: ChangeList[] | null }) & { why?: never } | 
 /**  What the view was about is not there any more, and why, in one sentence. */
 ({ kind: "gone"; why: string }) & { blocks?: never; changes?: never; overreach?: never; took_ms?: never };
+
+/**
+ *  One view an extension offered (#4769, `purlis_core::extension::events::Offered`): one of its
+ *  own declared views, about `key`, and about the chat `chat` when it named one. Nothing here
+ *  says where it would go: that is the window's and the person's.
+ */
+export type ViewOffered = {
+	extension: string,
+	view: string,
+	key: string,
+	chat: number | null,
+};
 
 /**
  *  A tab that holds a view, as the window and the record both know it (`reopen::View`).

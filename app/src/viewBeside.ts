@@ -55,3 +55,13 @@ export function besideRefusedSaid(beside: Extract<Beside, { ok: false }>): strin
 export function openedBesideSaid(name: string, there: string, direction: Direction): string {
   return `Opened ${name} ${direction === "row" ? "right of" : "below"} ${there}. Focus is in it.`;
 }
+
+/** **What a view row's two keys do** (#4769): Enter opens it in a tab, ⌥Enter beside the
+ *  focused pane, or says why it can't before it is pressed. */
+export function besideHint(beside: Beside, mac: boolean): string {
+  const enter = mac ? "↩" : "Enter";
+  const alt = mac ? "⌥↩" : "Alt+Enter";
+  return beside.ok
+    ? `${enter} Open in a tab · ${alt} Open beside the focused pane`
+    : `${enter} Open in a tab · ${alt} ${beside.why}`;
+}

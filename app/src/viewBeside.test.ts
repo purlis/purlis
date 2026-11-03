@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { besideLabel, besideOf, besideRefusedSaid, openedBesideSaid } from "./viewBeside";
+import {
+  besideHint,
+  besideLabel,
+  besideOf,
+  besideRefusedSaid,
+  openedBesideSaid,
+} from "./viewBeside";
 import { PANE_FLOOR } from "./paneDrop";
 import {
   contentsOf,
@@ -74,6 +80,15 @@ describe("what Open beside says (#4769)", () => {
     expect(refused.ok).toBe(false);
     if (refused.ok) return;
     expect(besideRefusedSaid(refused)).toBe("Not opened beside: each side needs 40 columns.");
+  });
+
+  it("says the palette's two keys on a view's row, and the reason in ⌥'s place", () => {
+    expect(besideHint(besideOf({ width: 1000, height: 600 }), true)).toBe(
+      "↩ Open in a tab · ⌥↩ Open beside the focused pane",
+    );
+    expect(besideHint(besideOf({ width: 400, height: 100 }), false)).toBe(
+      "Enter Open in a tab · Alt+Enter Too narrow to open beside: each side needs 40 columns",
+    );
   });
 
   it("says where it opened, for the reader, by the split's direction", () => {

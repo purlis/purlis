@@ -29,6 +29,8 @@ import {
   type FileKey,
 } from "./keys/paletteKeys";
 import { onAMac } from "./tabKeys";
+import { paneSize } from "./paneSize";
+import { besideHint, besideOf } from "./viewBeside";
 import { landSettingsFocus } from "./settings/entering";
 import { theKeyboardIsBack, thePaletteIsUp } from "./keyboardBack";
 import { keepTheKeyboardOffWhatFocusModeHides } from "./keys/focusMode";
@@ -481,6 +483,8 @@ export function Palette({
 
   // The aimed file's own answer is the newer one: it is cleared whenever a row runs.
   const showing = fileSaid ?? (said && said.words !== "" ? said : undefined);
+  /** The row the arrows or the query aimed at. */
+  const aimedRow = aimed >= 0 && aimed < rows.length ? rows[aimed] : undefined;
   /** The file the arrows or the query aimed at, which Copy path and Reveal act on. */
   const aimedFile = aimed >= rows.length ? fileRows[aimed - rows.length] : undefined;
   const mac = onAMac();
@@ -573,6 +577,13 @@ export function Palette({
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
             move(-1);
+          } else if (isKey(e.nativeEvent, "palette.beside", mac)) {
+            // ⌥Enter (#4769): a row that opens an extension's view opens it beside the focused
+            // pane; any other row runs as Enter runs it.
+            e.preventDefault();
+            const row = aimed >= 0 && aimed < rows.length ? rows[aimed] : undefined;
+            if (row?.beside !== undefined && row.available) runOffer({ ...row, does: row.beside });
+            else runRow(aimed);
           } else if (isKey(e.nativeEvent, "palette.run", mac)) {
             e.preventDefault();
             runRow(aimed);
@@ -586,6 +597,11 @@ export function Palette({
         }}
       />
 
+      {/* **Open beside, on a row that opens a view** (#4769): the two keys, and the reason in
+          ⌥'s place where the focused pane is too small to split. */}
+      {scope === "actions" && aimedRow?.beside !== undefined && (
+        <p className="palette-through">{besideHint(besideOf(paneSize()), mac)}</p>
+      )}
       {handsBack && (
         <p className="palette-through">
           Press {PASS_THROUGH_KEY} again to send {PASS_THROUGH_KEY} to the chat in front.

@@ -235,6 +235,9 @@ function doing(): Doing & { calls: string[] } {
     openView: vi.fn((view: ViewRef, title: string) => {
       calls.push(`openView:${viewKey(view)},${title}`);
     }),
+    openViewBeside: vi.fn((view: ViewRef, title: string) => {
+      calls.push(`openViewBeside:${viewKey(view)},${title}`);
+    }),
     // The piece is part of what was called, because "which worktree did that row mean" is the
     // whole of what charter-app#174 changed here.
     removeWorktree: vi.fn(async (cut: Cut, force: boolean) => {

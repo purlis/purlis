@@ -18,6 +18,7 @@ import { CHATS_LIST, type ChatsListPrefs } from "./chatsListPrefs";
 import { YOUR_EDITOR } from "./yourEditor";
 import { RAIL_MODE } from "./railMode";
 import { SKILLS_VIEW } from "./skillsViewPrefs";
+import { OFFERS } from "./offersPref";
 import { PANE_NOTICES } from "./paneNoticesPref";
 import { APPEARANCE, type Appearance } from "./appearance";
 import { NOTIFICATIONS, type NotificationPrefs } from "./notificationPrefs";
@@ -547,6 +548,7 @@ const LAYOUT_PREFS = [
   RAIL_MODE,
   SKILLS_VIEW,
   PANE_NOTICES,
+  OFFERS,
 ] as const satisfies readonly {
   readonly key: PrefField;
 }[];
@@ -596,6 +598,8 @@ type Document = {
   /** A pane's notices expanded, for every pane (`paneNotices.ts`, #4754), while they are:
    *  minimised is the default, which the file leaves out. */
   notices?: "expanded";
+  /** The extensions whose offers the person stopped (`offersPref.ts`, #4769), while any is. */
+  offers?: { off: string[] };
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

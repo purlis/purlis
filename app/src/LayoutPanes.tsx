@@ -735,6 +735,7 @@ export function LayoutPanes({
   onRestartAnswer,
   offered,
   onOpenView,
+  onOpenViewBeside,
   onAsk,
   onVaultChanged,
   memory,
@@ -836,6 +837,8 @@ export function LayoutPanes({
   /** The views approved extensions offer, for the buttons a view draws beside itself. */
   offered: readonly ExtensionView[];
   onOpenView: (view: ViewRef, title: string) => void;
+  /** Opens a view beside pane `pane` (#4769), or says why not. */
+  onOpenViewBeside?: (view: ViewRef, title: string, pane?: number) => void;
   /** The operator pressed to have a waiting view in this pane asked. */
   onAsk: (pane: number) => void;
   /** A vault's tab wrote to its vault: the plane's vault list is read again. */
@@ -964,6 +967,9 @@ export function LayoutPanes({
               waits={content.waits === true}
               offered={offered}
               onOpenView={onOpenView}
+              pane={layout.pane}
+              onOpenViewBeside={onOpenViewBeside}
+              onClosePane={() => onPaneDoes(layout.pane, closeOf(layout.pane))}
               onAsk={() => onAsk(layout.pane)}
               onVaultChanged={onVaultChanged}
               offerFor={offerFor}
@@ -1003,6 +1009,7 @@ export function LayoutPanes({
         waiting={waiting}
         onShowInbox={onShowInbox}
         onAnswer={onAnswer}
+        pane={layout.pane}
       />
     );
     const hidden: HiddenChat[] = (others[layout.pane] ?? []).map((other) => ({
@@ -1265,6 +1272,7 @@ export function LayoutPanes({
               onRestartAnswer={onRestartAnswer}
               offered={offered}
               onOpenView={onOpenView}
+              onOpenViewBeside={onOpenViewBeside}
               onAsk={onAsk}
               onVaultChanged={onVaultChanged}
               memory={memory}
