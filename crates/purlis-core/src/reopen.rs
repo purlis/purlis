@@ -37,6 +37,7 @@ mod arrival;
 pub use arrival::{Arrival, CloneSeat, arrive};
 pub mod layout;
 pub use layout::Layout;
+pub mod upgrade;
 
 /// The one version of this file this app writes and reads. A record of any other version is
 /// ignored whole, the way the frame's own manifest is: a format that changed means the
