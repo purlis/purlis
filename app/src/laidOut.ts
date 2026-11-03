@@ -159,14 +159,8 @@ export function withShare(tabs: Tabs, id: number, path: string, share: number): 
 
 /** What {@link tabsOf} needs to know of what came back at a launch. */
 export type Reopening = {
-  /**
-   * Chat `session`'s names, where it came back and is drawn; nothing for one that did not.
-   * `drawnIn` is the chat whose tab a task with no tab of its own is drawn in (#1486): its
-   * nearest asker that has one.
-   */
-  chat: (
-    session: number,
-  ) => { name: string; who: string | null; label: string | null; drawnIn?: number } | undefined;
+  /** Chat `session`'s names, where it came back and is drawn; nothing for one that did not. */
+  chat: (session: number) => { name: string; who: string | null; label: string | null } | undefined;
   /** A recorded view as it is drawn now: renamed, or a studio's put back as the one studio. */
   view: (view: ViewRef, title: string) => { view: ViewRef; title: string };
 };
@@ -195,14 +189,12 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
   const placed = new Set<number>();
   const fronts: Record<string, number> = {};
   let inFront: number | undefined;
-  const inLayout = new Set(laid.tabs.flatMap((one) => chatsOf(one.tree)));
   for (const one of laid.tabs) {
     let panes = next.named.panes;
     const workspace = one.workspace ?? OUTSIDE;
     const byPath = new Map<string, number>();
     const titles = new Map<number, string>();
     const splits: [ViewRef, number][] = [];
-    const shows: Record<number, number> = {};
     const drawn = (node: LaidNode, path: string): Layout | undefined => {
       if (node.kind === "split") {
         const a = drawn(node.a, `${path}a`);
@@ -223,18 +215,9 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
         const chat = reopening.chat(node.chat);
         if (chat === undefined || placed.has(node.chat)) return undefined;
         placed.add(node.chat);
-        // **A task with no tab of its own, in a pane its asker is in no pane of, is that
-        // asker's tab switched to it** (#1486), as the window has always drawn one: the tab is
-        // the asker's, and its pane shows the task.
-        const owner = chat.drawnIn;
-        const asker = owner === undefined ? undefined : reopening.chat(owner);
-        if (owner !== undefined && owner !== node.chat && asker !== undefined)
-          if (!inLayout.has(owner) && !placed.has(owner)) {
-            placed.add(owner);
-            shows[panes + 1] = node.chat;
-            content = { kind: "session", session: owner, chat: asker.name };
-          } else content = { kind: "session", session: node.chat, chat: chat.name };
-        else content = { kind: "session", session: node.chat, chat: chat.name };
+        // **A task comes back as itself, in its pane** (#4757): a press put it there, as any
+        // chat, and no tab is its asker's to be drawn into.
+        content = { kind: "session", session: node.chat, chat: chat.name };
       } else {
         const now = reopening.view(refOf(node.view), node.view.title);
         content = { kind: "view", view: now.view, workspace, waits: true };
@@ -271,9 +254,11 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
           defaultName: name.defaultName,
           layout,
           focused,
-          ...(Object.keys(shows).length > 0 ? { shows } : {}),
           // **The pin is the tab's** (#4935), whatever its first pane holds.
           ...(one.pinned ? { pinned: true as const } : {}),
+          // **The tab's own strip** (#4757), as the record says it: a pane may show a chat of
+          // another workspace, and the tab stays where it was.
+          workspace,
         },
       },
       order: [...next.order, id],

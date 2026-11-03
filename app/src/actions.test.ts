@@ -90,6 +90,7 @@ import {
   showIn,
   splitFocusedPane,
   switchTabTo,
+  press,
   viewKey,
   type Tabs,
   type ViewRef,
@@ -136,6 +137,7 @@ function doing(): Doing & { calls: string[] } {
     createWorkspace: note("createWorkspace"),
     removeWorkspace: note("removeWorkspace"),
     showChat: note("showChat"),
+    paneBack: note("paneBack"),
     showTabTasks: note("showTabTasks"),
     ownTab: note("ownTab"),
     beside: note("beside"),
@@ -2320,6 +2322,8 @@ describe("the palette at fifty chats", () => {
       // `Previous` has `re` in it, and the row is about the tab in front (#1487): it stands
       // with the rows about what is in front, in the catalogue's order.
       "Previous chat in this tab",
+      // `previous` again (#4757): ⌘⇧H's row is about the focused pane, so it stands there too.
+      "Back to this pane's previous chat",
       // **The chat in front's own removal, then the pieces'.** `aboutWhatIsInFront` is the
       // second rule inside this group (charter-app#174): a row about what the operator is
       // looking at, and fifty rows about other worktrees do not get to stand in front of it.
@@ -2335,7 +2339,6 @@ describe("the palette at fifty chats", () => {
       "Show the Repos view",
       "Put the Navigation region away",
       "Put the Attention region away",
-      "Focus the next region",
     ]);
     // Not a cap and not a filter: every name that matched is still listed, below.
     expect(rows.some((row) => row.title === "Switch to tab release.3")).toBe(true);
@@ -2411,9 +2414,10 @@ describe("the palette at fifty chats", () => {
       // since #2027: `Open browsers` (`browsers` has an `r`). One fewer under `r` since the
       // person's ruling of 2026-10-30: `Add a Docker pool…` is `Add a pool…`, with no `r`.
       // One up under `re` since #4851: the merge before it is `chat.branch.merge`, which has no
-      // `re` where `worktree.merge` had.
-      expect(at("re", loaded())).toBe(7);
-      expect(at("r", loaded())).toBe(18);
+      // `re` where `worktree.merge` had. One more under both since #4757: ⌘⇧H's row is `Back to
+      // this pane's previous chat`, about the pane in front, before the branch's in the catalogue.
+      expect(at("re", loaded())).toBe(8);
+      expect(at("r", loaded())).toBe(19);
       expect(at("rem", loaded())).toBe(1);
     });
 
@@ -4002,38 +4006,68 @@ describe("the chats inside the tab in front (#1487)", () => {
     expect(by(rows(onFour), "tasks.next")?.does).toEqual({
       verb: "showChat",
       session: 3,
-      inside: true,
     });
     expect(by(rows(onFour), "tasks.previous")?.does).toEqual({
       verb: "showChat",
       session: 2,
-      inside: true,
     });
 
     const onThree = switchTabTo(own, 3, askedBy);
     expect(by(rows(onThree), "tasks.next")?.does).toEqual({
       verb: "showChat",
       session: 1,
-      inside: true,
     });
   });
 
-  it("goes back to the session's own chat only while the tab shows a task", () => {
+  it("goes back to the pane's previous chat only once the pane has shown another (#4757)", () => {
     const own = two();
     expect(by(rows(own), "tasks.own")).toMatchObject({
       available: false,
-      reason: "This tab is showing its own chat.",
+      reason: "This pane has shown no other chat yet.",
     });
 
-    const onTask = switchTabTo(own, 4, askedBy);
-    const back = by(rows(onTask), "tasks.own");
+    const pressing = { filedIn: () => "ops", frontOf: () => undefined };
+    const onTwo = press(own, { session: 2, chat: "2" }, pressing).tabs;
+    const back = by(rows(onTwo), "tasks.own");
     expect(back).toMatchObject({
-      title: "Back to this tab's own chat",
+      title: "Back to this pane's previous chat",
       available: true,
-      does: { verb: "showChat", session: 1 },
+      does: { verb: "paneBack" },
     });
     expect(back?.note).toContain("Shows chat 1 again.");
     expect(back?.note).toContain("Ctrl+Shift+H");
+
+    const hands = doing();
+    void run(rows(onTwo), "tasks.own", hands);
+    expect(hands.calls).toEqual(["paneBack"]);
+
+    const ended = catalogue(
+      now({
+        tabs: onTwo,
+        listed: chats.filter((chat) => chat.session !== 1),
+        nameOf: (session) => `chat ${session}`,
+      }),
+    );
+    expect(by(ended, "tasks.own")).toMatchObject({
+      available: false,
+      reason: "chat 1 has ended, so there is nothing to go back to.",
+    });
+  });
+
+  it("goes back from a pane a chat left empty, which still remembers that chat (#4757)", () => {
+    const pressing = { filedIn: () => "ops", frontOf: () => undefined };
+    const onTwo = press(two(), { session: 2, chat: "2" }, pressing).tabs;
+    const front = onTwo.byId[onTwo.inFront as number];
+    const cleared = showIn(onTwo, front.id, front.focused, { kind: "empty", workspace: "ops" });
+
+    expect(by(rows(cleared), "tasks.own")).toMatchObject({
+      available: true,
+      does: { verb: "paneBack" },
+    });
+    expect(by(rows(cleared), "tasks.menu")).toMatchObject({
+      available: false,
+      reason: "The pane in focus shows nothing, so it has no tasks.",
+    });
   });
 
   it("lists all four on a tab with no tasks, unable to run and saying why", () => {
@@ -4108,13 +4142,8 @@ describe("the chats inside the tab in front (#1487)", () => {
     const offers = catalogue(now({ tabs: onFour, listed: without, nameOf: String }));
 
     expect(by(offers, "tasks.menu")?.available).toBe(true);
-    expect(by(offers, "tasks.next")?.does).toEqual({ verb: "showChat", session: 1, inside: true });
-    expect(by(offers, "tasks.previous")?.does).toEqual({
-      verb: "showChat",
-      session: 3,
-      inside: true,
-    });
-    expect(by(offers, "tasks.own")?.does).toEqual({ verb: "showChat", session: 1 });
+    expect(by(offers, "tasks.next")?.does).toEqual({ verb: "showChat", session: 1 });
+    expect(by(offers, "tasks.previous")?.does).toEqual({ verb: "showChat", session: 3 });
   });
 });
 

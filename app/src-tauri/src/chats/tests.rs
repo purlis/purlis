@@ -9818,3 +9818,83 @@ fn a_dispatched_chats_choice_of_where_it_runs_puts_nothing_on_a_claim() {
         "it follows the levels"
     );
 }
+
+#[test]
+fn a_task_pressed_into_a_pane_is_held_from_that_layout_and_the_chat_it_replaced_keeps_running() {
+    // #4757: a press shows a chat in the focused pane and says the new layout in the same call.
+    // The task it lands on is on screen from that layout (`dispatched::is_held_back` reads
+    // `looks_at`), so its due end waits for the person; the chat the pane showed before is in
+    // no pane now, and nothing of it ends. A press that moves on lets the task's end go, and a
+    // notification about it is no longer held back.
+    use purlis_core::reopen::{HandedFrom, Mode, Owed};
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let asker = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let task = chats
+        .start(
+            &Chat {
+                from: Some(HandedFrom {
+                    id: None,
+                    chat: asker,
+                    name: "ide.7".to_owned(),
+                    workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),
+                    report: Owed::Due,
+                    mode: Mode::Task,
+                    depth: 1,
+                    root: None,
+                    above: None,
+                    by_person: false,
+                    long: false,
+                }),
+                ..chat(&a_claude(dir.path()), "talk", None)
+            },
+            SIZE,
+        )
+        .unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(asker))]))
+        .unwrap();
+    assert!(!chats.looks_at(task), "the task is in no pane yet");
+
+    // The press: the focused pane shows the task in place of the chat that asked for it.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(task))]))
+        .expect("a press may show any open chat");
+
+    assert!(chats.looks_at(task), "held from the press's own layout");
+    assert!(!chats.looks_at(asker));
+    let looking = |chat_on_screen| crate::asknotify::Looking {
+        window_in_front: true,
+        inbox_open: false,
+        chat_on_screen,
+    };
+    assert!(
+        looking(chats.looks_at(task)).is_looking(),
+        "a notification about the task is held back while the person reads it"
+    );
+    assert!(
+        lock(&chats.open).contains_key(&asker),
+        "the chat the press replaced keeps running"
+    );
+
+    // ⌘⇧H: the pane goes back to the chat that asked.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(asker))]))
+        .unwrap();
+
+    assert!(
+        !chats.looks_at(task),
+        "its end is no longer held by the pane"
+    );
+    assert!(
+        !looking(chats.looks_at(task)).is_looking(),
+        "and a notification about it is sent again"
+    );
+    assert!(
+        lock(&chats.open).contains_key(&task),
+        "and nothing of it ended"
+    );
+    chats.end_all();
+}

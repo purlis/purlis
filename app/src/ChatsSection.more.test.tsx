@@ -267,3 +267,21 @@ describe("the restarts' status beside the tree (#3886)", () => {
     expect(screen.getByRole("status", { name: "Restarts" })).toHaveTextContent(/^$/);
   });
 });
+
+describe("the rows of the chats on screen (#4757)", () => {
+  it("selects the focused pane's chat and marks faintly the chats in the tab's other panes", () => {
+    render(
+      <ChatsHere.Provider value={fixedChats(nothingKnown)}>
+        <ChatsSection rows={chatsTree(THREE)} front={1} besides={new Set([3])} onOpen={() => {}} />
+      </ChatsHere.Provider>,
+    );
+
+    const rowOf = (session: number) =>
+      document.querySelector<HTMLElement>(`[role="treeitem"][data-session="${session}"]`);
+    expect(rowOf(1)).toHaveAttribute("aria-current", "true");
+    expect(rowOf(1)).not.toHaveAttribute("data-beside");
+    expect(rowOf(3)).toHaveAttribute("data-beside");
+    expect(rowOf(3)).not.toHaveAttribute("aria-current");
+    expect(rowOf(2)).not.toHaveAttribute("data-beside");
+  });
+});

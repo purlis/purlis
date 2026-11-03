@@ -150,8 +150,9 @@ export function PaneFrame({
   ending?: ReactNode;
   /** The menu a right-click on a task's breadcrumb opens: its row's in the Chats list. */
   crumbMenu?: { session: number; offers: Catalogued; onPress: (offer: Offer) => void };
-  /** Goes to a chat: what a name in the breadcrumb does, and a hidden chat's Notice. */
-  onShowChat: (session: number) => void;
+  /** Goes to a chat: what a name in the breadcrumb does, in this pane (#4757), and a hidden
+   *  chat's Notice. */
+  onShowChat: (session: number, pane?: number) => void;
   /** Where a handed-off chat came from, `↳ from steward 3 · ops`, in the chat's own corner. */
   from?: string;
   /** The harness the chat runs, at a glance, in the same corner (HP-19): none for a shell. */
@@ -218,14 +219,14 @@ export function PaneFrame({
             in no row of its own. */}
             {crumbs &&
               (crumbMenu === undefined ? (
-                <PaneCrumbs crumbs={crumbs} onShow={onShowChat} />
+                <PaneCrumbs crumbs={crumbs} onShow={(chat) => onShowChat(chat, pane)} />
               ) : (
                 <Menued
                   on={{ on: "chat", session: crumbMenu.session }}
                   offers={crumbMenu.offers}
                   onPress={crumbMenu.onPress}
                 >
-                  <PaneCrumbs crumbs={crumbs} onShow={onShowChat} />
+                  <PaneCrumbs crumbs={crumbs} onShow={(chat) => onShowChat(chat, pane)} />
                 </Menued>
               ))}
             {/* **Brief** (#1494): what the task on screen was sent. Right after the breadcrumb,
@@ -438,6 +439,7 @@ export function LayoutPanes({
   crumbs,
   placed,
   away,
+  backTo,
   finished,
   explaining,
   others,
@@ -497,6 +499,9 @@ export function LayoutPanes({
   explaining?: ChipToExplain;
   /** The panes that show a task they cannot draw, by pane, and why (`TaskAway`). */
   away: Readonly<Record<number, Away>>;
+  /** Where each such pane's way back goes, for a task a press put there (#4757): the chat
+   *  the pane showed before, or `null` to clear it. */
+  backTo?: Readonly<Record<number, string | null>>;
   /** The finished row of each task a pane was left on when it ended, by pane (#1485). */
   finished: Readonly<Record<number, FinishedTask>>;
   /** The chats that live in each pane other than the one it shows, by pane. */
@@ -521,8 +526,9 @@ export function LayoutPanes({
   closeOf: (pane: number) => Offer | undefined;
   /** Pane `pane` goes back to its session's own chat. */
   onBack: (pane: number) => void;
-  /** Goes to a chat: what a name in a breadcrumb does. */
-  onShowChat: (session: number) => void;
+  /** Goes to a chat: what a name in a breadcrumb does, with the pane it was named in, which
+   *  shows it in place (#4757). */
+  onShowChat: (session: number, pane?: number) => void;
   focused: number;
   onFocus: (pane: number) => void;
   /** The catalogue, by row id. There is one list of actions and the panes read it too. */
@@ -760,7 +766,7 @@ export function LayoutPanes({
               <div className="pane-chips">
                 <PaneCrumbs
                   crumbs={gone.crumbs}
-                  onShow={onShowChat}
+                  onShow={(chat) => onShowChat(chat, layout.pane)}
                   // One that is still running says what it is doing; one that ended, how.
                   state={
                     gone.why === "ended" && ended !== undefined ? (
@@ -791,6 +797,7 @@ export function LayoutPanes({
               finished={row && { state: ended, more: qualifierOf(row) }}
               onBack={() => onBack(layout.pane)}
               onOpenAlone={() => onShowChat(last)}
+              backTo={backTo?.[layout.pane]}
             />
           </div>
         </div>
@@ -918,6 +925,7 @@ export function LayoutPanes({
               crumbs={crumbs}
               placed={placed}
               away={away}
+              backTo={backTo}
               finished={finished}
               explaining={explaining}
               others={others}
