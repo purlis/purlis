@@ -1402,6 +1402,9 @@ pub struct Moves {
     /// Every folder purlis keeps for itself on the runner, wherever its environment puts it,
     /// left out of every walk outside the projects (#5028).
     own: Vec<std::path::PathBuf>,
+    /// Where outside its home the runner's user may write, found once for each cutoff and kept,
+    /// since that can't grow (#5030).
+    writable: std::sync::Mutex<Option<held::Writable>>,
 }
 
 #[cfg(unix)]
@@ -1418,6 +1421,7 @@ impl Moves {
             home,
             beyond: cfg!(target_os = "linux").then(|| std::path::PathBuf::from("/")),
             first: std::sync::OnceLock::new(),
+            writable: std::sync::Mutex::new(None),
         }
     }
 
@@ -1428,6 +1432,7 @@ impl Moves {
             beyond: None,
             first: std::sync::OnceLock::new(),
             own: Vec::new(),
+            writable: std::sync::Mutex::new(None),
         }
     }
 
@@ -1664,6 +1669,27 @@ impl purlis_host::Code for Moves {
                         root,
                         owner: rustix::process::geteuid().as_raw(),
                     });
+                    let mut skip = kept.clone();
+                    skip.push(home.clone());
+                    skip.extend(data.clone());
+                    // Found once for the cutoff and what is left out, and kept while whole: what
+                    // the user may write can't grow (#5030).
+                    let found = beyond.map(|beyond| {
+                        let mut cached = self
+                            .writable
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        match cached.as_ref() {
+                            Some(found) if found.since == Some(since) && found.skip == skip => {
+                                found.clone()
+                            }
+                            _ => {
+                                let found = held::writable(beyond, &skip, since);
+                                *cached = found.whole().then(|| found.clone());
+                                found
+                            }
+                        }
+                    });
                     unread.extend(held::outside_with(
                         &home,
                         data.as_deref().map(|data| held::DataHome {
@@ -1673,7 +1699,7 @@ impl purlis_host::Code for Moves {
                         }),
                         &kept,
                         Some(since),
-                        beyond,
+                        beyond.zip(found.as_ref()),
                     ));
                 }
                 None => unread.push(

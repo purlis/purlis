@@ -409,6 +409,9 @@ pub fn outside_the_projects(
 /// (`/root`, `/home/<name>`), for the home's reason. A folder that user can't read is said,
 /// unless it is another's, unchanged since, that the user can neither write in nor pass through:
 /// that holds nothing of theirs that was not there before.
+///
+/// The places that user may write are found here ([`writable`]); a host that checks again keeps
+/// them and calls [`outside_with`].
 #[cfg(unix)]
 pub fn outside_the_projects_and_beyond(
     home: &Path,
@@ -416,7 +419,15 @@ pub fn outside_the_projects_and_beyond(
     since: Option<std::time::SystemTime>,
     beyond: Option<Beyond<'_>>,
 ) -> Vec<String> {
-    outside_with(home, None, skip, since, beyond)
+    let Some(since) = since else {
+        return Vec::new();
+    };
+    let found = beyond.map(|beyond| {
+        let mut skip = skip.to_vec();
+        skip.push(home.to_path_buf());
+        writable(beyond, &skip, since)
+    });
+    outside_with(home, None, skip, Some(since), beyond.zip(found.as_ref()))
 }
 
 /// **purlis's data home on a runner, as the walk of it needs it** (#5029): the folder, the
@@ -433,8 +444,9 @@ pub struct DataHome<'a> {
 /// sentences: each file changed since `since` in the runner's `home` ([`outside_the_projects`]);
 /// in purlis's data home, but what purlis keeps there itself ([`PURLIS_KEEPS`]), the mark of the
 /// first program and a transfer's scratch beside the projects, and each repository listed; and,
-/// where `beyond` is given, in the rest of the runner's file system
-/// ([`outside_the_projects_and_beyond`]). `skip` is left out of every walk but where it holds the data home or is in its
+/// where `beyond` is given, in each place [`writable`] found its user may write, and each file
+/// of its own [`writable`] found elsewhere. What [`writable`] could not look through is said
+/// again. `skip` is left out of every walk but where it holds the data home or is in its
 /// projects. A data home that is the home itself is looked through as the home.
 #[cfg(unix)]
 pub fn outside_with(
@@ -442,7 +454,7 @@ pub fn outside_with(
     data: Option<DataHome<'_>>,
     skip: &[std::path::PathBuf],
     since: Option<std::time::SystemTime>,
-    beyond: Option<Beyond<'_>>,
+    beyond: Option<(Beyond<'_>, &Writable)>,
 ) -> Vec<String> {
     outside_within(home, data, skip, since, beyond, MOST_FOLDERS)
 }
@@ -454,7 +466,7 @@ fn outside_within(
     data: Option<DataHome<'_>>,
     skip: &[std::path::PathBuf],
     since: Option<std::time::SystemTime>,
-    beyond: Option<Beyond<'_>>,
+    beyond: Option<(Beyond<'_>, &Writable)>,
     most: usize,
 ) -> Vec<String> {
     let Some(since) = since else {
@@ -496,18 +508,125 @@ fn outside_within(
             since,
         );
     }
-    if walked && let Some(beyond) = beyond {
+    if walked && let Some((beyond, found)) = beyond {
         skip.push(home.to_path_buf());
-        outside.walk(
-            beyond.root,
-            "",
-            Rules::Beyond(beyond.owner),
-            &skip,
-            &[],
-            since,
-        );
+        // Each place is opened from the root by its path: no folder above it is one its user
+        // owns or may write in, so none can have been made a link since it was found.
+        for place in &found.places {
+            if !outside.walk(
+                beyond.root,
+                place,
+                Rules::Beyond(beyond.owner),
+                &skip,
+                &[],
+                since,
+            ) {
+                break;
+            }
+        }
+        for file in &found.files {
+            match rustix::fs::statat(
+                rustix::fs::CWD,
+                beyond.root.join(file),
+                rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+            ) {
+                Ok(stat) => {
+                    if stat.st_uid == beyond.owner && changed_at(&stat).is_none_or(|at| at >= since)
+                    {
+                        outside.found(format!("/{file}"));
+                    }
+                }
+                Err(rustix::io::Errno::NOENT) => {}
+                Err(e) => outside.say(format!("/{file} on the runner could not be read: {e}")),
+            }
+        }
+        for said in &found.said {
+            outside.say(said.clone());
+        }
     }
     outside.sentences()
+}
+
+/// The most folders a runner's file system is looked through, once for each host, to find where
+/// its user may write ([`writable`]): an image's own folders count here, and never against what
+/// one check looks through.
+pub const MOST_IMAGE_FOLDERS: usize = 2_000_000;
+
+/// The most files of its own outside every place its user may write a runner keeps to look at
+/// again ([`writable`]): past it, what it found is not whole.
+pub const MOST_OWN_FILES: usize = 100_000;
+
+/// **Where on a runner, outside its home, its user may have saved anything** (#5030), as
+/// [`writable`] found it: each place it may write, by its path from the root, each file of its
+/// own outside them, and what could not be looked through, in sentences.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Writable {
+    /// The cutoff it was found with: an unreadable folder unchanged since is passed over.
+    pub since: Option<std::time::SystemTime>,
+    /// What it was told to leave out.
+    pub skip: Vec<std::path::PathBuf>,
+    places: Vec<String>,
+    files: Vec<String>,
+    said: Vec<String>,
+}
+
+impl Writable {
+    /// Each place the user may write, by its path from the root, empty for the root itself.
+    pub fn places(&self) -> &[String] {
+        &self.places
+    }
+
+    /// Whether it may be kept for later checks: it looked through everything, so it says
+    /// nothing, which an error that passes (`EIO`, a lack of memory) could otherwise make last
+    /// as long as the host.
+    pub fn whole(&self) -> bool {
+        self.said.is_empty()
+    }
+}
+
+/// **Every place on the runner from `beyond`'s root, but `skip`, its user may write** (#5030): a
+/// folder it owns, since it could open that one again at any time, or one it may write in now,
+/// and nothing within it is looked at further. Each file it owns outside them is kept too, since
+/// it may change that one wherever it is. What can't be looked through is said, by
+/// [`outside_the_projects_and_beyond`]'s rules for it.
+///
+/// Found once for each host and kept while it is [whole](Writable::whole), since what its user
+/// may write can't grow: a runner's user is never root, holds no capability and can gain none
+/// (`no_new_privileges`, every capability dropped), so a folder it neither owns nor may write in
+/// stays so, and so does every folder above a place it may. So an image's own folders are looked
+/// through once, not at each check.
+#[cfg(unix)]
+pub fn writable(
+    beyond: Beyond<'_>,
+    skip: &[std::path::PathBuf],
+    since: std::time::SystemTime,
+) -> Writable {
+    writable_within(beyond, skip, since, MOST_IMAGE_FOLDERS)
+}
+
+/// [`writable`], looking through no more than `most` folders.
+#[cfg(unix)]
+fn writable_within(
+    beyond: Beyond<'_>,
+    skip: &[std::path::PathBuf],
+    since: std::time::SystemTime,
+    most: usize,
+) -> Writable {
+    let mut outside = Outside::new(most);
+    outside.finding = Some(Writable::default());
+    outside.walk(
+        beyond.root,
+        "",
+        Rules::Beyond(beyond.owner),
+        skip,
+        &[],
+        since,
+    );
+    let mut found = outside.finding.take().unwrap_or_default();
+    found.since = Some(since);
+    found.skip = skip.to_vec();
+    found.said = outside.sentences();
+    found
 }
 
 /// Which part of the runner a walk looks through, and so what it leaves out and how it names a
@@ -602,6 +721,8 @@ struct Outside {
     folders: usize,
     /// The most folders it looks through.
     most: usize,
+    /// Where the walk only finds the places its user may write ([`writable`]), what it found.
+    finding: Option<Writable>,
 }
 
 #[cfg(unix)]
@@ -614,6 +735,7 @@ impl Outside {
             unsaid: 0,
             folders: 0,
             most,
+            finding: None,
         }
     }
 
@@ -728,6 +850,20 @@ impl Outside {
                     }
                 },
             };
+            // Finding where the user may write (#5030): a folder it owns or may write in is a
+            // place, looked through at each check, and nothing in it is looked at here. A check
+            // that can't be made makes it a place.
+            if let (Some(finding), Rules::Beyond(owner)) = (&mut self.finding, rules) {
+                let owned = rustix::fs::fstat(&*fd).is_ok_and(|stat| stat.st_uid == owner);
+                let may_write = !matches!(
+                    rustix::fs::accessat(&*fd, ".", Access::WRITE_OK, AtFlags::EACCESS),
+                    Err(rustix::io::Errno::ACCESS | rustix::io::Errno::ROFS)
+                );
+                if owned || may_write {
+                    finding.places.push(rel);
+                    continue;
+                }
+            }
             let mut dir = match rustix::fs::Dir::read_from(&*fd) {
                 Ok(dir) => dir,
                 Err(e) => {
@@ -814,6 +950,21 @@ impl Outside {
                     rustix::fs::FileType::RegularFile | rustix::fs::FileType::Symlink
                         if rules.counts(&stat) =>
                     {
+                        // Outside every place, a file of its own is kept to be looked at
+                        // again at each check, whatever its time now.
+                        if let Some(kept) = self.finding.as_ref().map(|found| found.files.len()) {
+                            if kept >= MOST_OWN_FILES {
+                                self.say(format!(
+                                    "the runner's user owns more than {MOST_OWN_FILES} files \
+                                     where it may not write, so not all were looked at"
+                                ));
+                                return false;
+                            }
+                            if let Some(finding) = &mut self.finding {
+                                finding.files.push(rel_now);
+                            }
+                            continue;
+                        }
                         if changed_at(&stat).is_none_or(|at| at >= since) {
                             self.found(rules.shown(&rel_now));
                         }

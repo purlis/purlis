@@ -1291,3 +1291,123 @@ fn each_home_purlis_keeps_moved_outside_the_runners_home_keeps_no_runner() {
         "{said:?}"
     );
 }
+
+/// Makes each of `folders` in `root` one the runner's user can't write in, and gives them back.
+#[cfg(unix)]
+struct Shut(Vec<PathBuf>);
+
+#[cfg(unix)]
+impl Shut {
+    fn folders(root: &Path, folders: &[&str]) -> Shut {
+        use std::os::unix::fs::PermissionsExt;
+        let mut shut: Vec<PathBuf> = folders.iter().map(|rel| root.join(rel)).collect();
+        // The deepest first, so each is still open to be shut.
+        shut.sort_by_key(|path| std::cmp::Reverse(path.components().count()));
+        for path in &shut {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o555)).unwrap();
+        }
+        Shut(shut)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Shut {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        for path in self.0.iter().rev() {
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755));
+        }
+    }
+}
+
+/// An image whose own folders, shut to the runner's user, outnumber what one check looks
+/// through, with the volume its home is on (`/var/lib/purlis`) the one place it may write.
+#[cfg(unix)]
+fn a_large_image(folders: usize) -> (tempfile::TempDir, PathBuf, PathBuf, Shut) {
+    let (dir, root, home, _) = a_runners_root();
+    let mut shut = vec![String::new(), "var".to_owned(), "var/lib".to_owned()];
+    for n in 0..folders {
+        let rel = format!("usr/lib/{n:03}");
+        std::fs::create_dir_all(root.join(&rel)).unwrap();
+        shut.push(rel);
+    }
+    shut.extend(["usr", "usr/lib", "usr/share", "usr/share/doc"].map(str::to_owned));
+    let shut: Vec<&str> = shut.iter().map(String::as_str).collect();
+    let shut = Shut::folders(&root, &shut);
+    (dir, root, home, shut)
+}
+
+/// **A large image is looked through once, for where its user may write, and each check walks
+/// only those places** (#5030): an image's own folders, shut to that user, are never what keeps
+/// a fresh runner for its size.
+#[cfg(unix)]
+#[test]
+fn a_large_images_own_folders_are_looked_through_once_and_keep_no_runner_for_their_size() {
+    if the_runners_user() == 0 {
+        return; // Every folder is open to root.
+    }
+    let (_dir, root, home, _shut) = a_large_image(40);
+    let since = std::time::SystemTime::now();
+    // As another user's image: what only ownership would open is shut.
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let found = writable(beyond, std::slice::from_ref(&home), since);
+
+    assert_eq!(found.places(), ["var/lib/purlis"], "{found:?}");
+    assert_eq!(
+        outside_within(&home, None, &[], Some(since), Some((beyond, &found)), 10),
+        Vec::<String>::new(),
+        "40 shut folders are past a bound of 10 a check, and keep nothing"
+    );
+}
+
+/// **An image too large even to look through once is said** (#5030), which keeps the runner as
+/// anything not looked through does.
+#[cfg(unix)]
+#[test]
+fn an_image_too_large_to_look_through_once_is_said() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _shut) = a_large_image(40);
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let found = writable_within(beyond, std::slice::from_ref(&home), since, 10);
+    let said = outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+
+    assert!(says(&said, "more than 10 folders"), "{said:?}");
+}
+
+/// **A place its user owns is looked through whatever its mode** (#5030): the user could open
+/// it again at any time.
+#[cfg(unix)]
+#[test]
+fn a_folder_its_user_owns_is_a_place_it_may_write_however_shut() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _shut) = a_large_image(2);
+    let since = std::time::SystemTime::now();
+
+    let found = writable(
+        Beyond {
+            root: &root,
+            owner: the_runners_user(),
+        },
+        std::slice::from_ref(&home),
+        since,
+    );
+
+    assert_eq!(
+        found.places(),
+        [""],
+        "the root is the user's own: {found:?}"
+    );
+}
