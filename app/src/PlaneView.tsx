@@ -93,6 +93,7 @@ import {
   type Clone,
   type Cut,
   type Doing,
+  type PlacedFrom,
   type Offer,
   type Project,
   type Ran,
@@ -4718,6 +4719,13 @@ export const PlaneView = memo(function PlaneView({
   });
   /** The window's one Undo (#4763, #4765): the palette's row runs the toast's and ⌘Z's. */
   const undoLayoutIn = paneDrag.undo;
+  /** A Place… row's pick-up (#4764): the keyboard goes back, on Esc, to what had it. */
+  const { pickUp } = paneDrag.placing;
+  const placeFrom = useCallback(
+    (from: PlacedFrom) =>
+      pickUp(from.kind === "chat" ? { ...from, chat: "" } : from, document.activeElement),
+    [pickUp],
+  );
 
   /**
    * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the
@@ -7276,6 +7284,7 @@ export const PlaneView = memo(function PlaneView({
       split,
       closePane,
       tileAll: tileAllIn,
+      place: placeFrom,
       zoomPane,
       undoLayout: undoLayoutIn,
       closeTab: close,
@@ -7431,6 +7440,7 @@ export const PlaneView = memo(function PlaneView({
       close,
       closePane,
       tileAllIn,
+      placeFrom,
       undoLayoutIn,
       zoomPane,
       curate,

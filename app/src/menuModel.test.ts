@@ -458,7 +458,7 @@ describe("a chat's list (#4753)", () => {
         "Unlink work item",
       ],
       // Its work went to qa 12, and chat 7 needs you, so it can be ignored until it asks again.
-      ["Go to qa 12", "Open ▸ [Activity, Network]", "Ignore until it asks again"],
+      ["Go to qa 12", "Place…", "Open ▸ [Activity, Network]", "Ignore until it asks again"],
       ["Restart"],
       // The ways to stop it end something too: in the last group, above the row that ends it.
       ["Stop ▸ [Stop, Stop and everything below it, Stop all tasks]", "Start fresh", "End…"],
@@ -509,7 +509,11 @@ describe("a chat's list (#4753)", () => {
       rows.filter((row) => row.keys !== undefined).map((row) => [row.said, row.keys]),
     );
 
-    expect(keys).toEqual({ "Rename…": "F2" });
+    // Place…'s key picks the chat up from its row or its pane (#4764).
+    expect(keys).toEqual({
+      "Rename…": "F2",
+      "Place…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
+    });
   });
 
   it("says Restart waits for the turn while its chat is mid-turn, and names no chat doing it", () => {
@@ -560,7 +564,7 @@ describe("a tab's menu (#4753)", () => {
     // The tab's press switches to it, so Switch to is no row; and a tab behind has its own
     // Close other tabs (#4760), and its own Tile all (#4765).
     expect(said(menuOf({ on: "tab", tab: behind }, offers))).toEqual([
-      ["Pinned", "Tile all"],
+      ["Pinned", "Tile all", "Place…"],
       ["Close other tabs", "Close"],
     ]);
     const inFront = rowsOf(menuOf({ on: "tab", tab: front }, offers));
@@ -583,10 +587,14 @@ describe("a tab's menu (#4753)", () => {
     const keys = Object.fromEntries(
       rows.filter((row) => row.keys !== undefined).map((row) => [row.said, row.keys]),
     );
-    expect(keys).toEqual({ Close: expect.stringMatching(/^(⌫|Delete)$/) });
+    expect(keys).toEqual({
+      Close: expect.stringMatching(/^(⌫|Delete)$/),
+      // Placement mode's key, which picks the tab up from the strip (#4764).
+      "Place…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
+    });
   });
 
-  it("on a view's tab is Pinned, Tile all, Close other tabs and Close, and its Close is not coloured", () => {
+  it("on a view's tab is Pinned, Tile all, Place…, Close other tabs and Close, and its Close is not coloured", () => {
     const withView = openView(tabs, { from: null, view: "vault", key: "forge" }, "forge", "beta");
     const view = withView.order[withView.order.length - 1];
     const menu = menuOf(
@@ -601,6 +609,7 @@ describe("a tab's menu (#4753)", () => {
       ["Pinned", false],
       // Greyed: a tab of one pane has nothing to tile (#4765).
       ["Tile all", false],
+      ["Place…", false],
       ["Close other tabs", false],
       ["Close", false],
     ]);
@@ -642,6 +651,7 @@ describe("the other tabs' menus", () => {
       [
         "Move to its own tab",
         "Open beside console-developer 16",
+        "Place…",
         "Brief",
         "Open ▸ [Activity, Network]",
       ],

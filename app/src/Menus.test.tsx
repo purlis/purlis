@@ -122,12 +122,18 @@ describe("what a menu lists", () => {
     // A tab's own rows (#4753); the tab's press switches to it (#4760). Its close ends nothing
     // (#4756) and is still last, after Close other tabs (#4762).
     const tab = titles({ on: "tab", tab: 1 }, { tabs });
-    expect(tab.above).toEqual(["Pin tab 3 steward", "Tile all in 3 steward"]);
+    expect(tab.above).toEqual([
+      "Pin tab 3 steward",
+      "Tile all in 3 steward",
+      // Placement mode, the keyboard's drag (#4764).
+      "Place tab 3 steward…",
+    ]);
     expect(tab.below).toEqual(["Close other tabs", "Close 3 steward"]);
     // The chat's own list: its Activity only reads (#1495), and End… ends it.
     const chat = titles({ on: "chat", session: 7 }, { tabs });
     expect(chat.above).toEqual([
       "Rename chat 3 steward…",
+      "Place chat 3 steward…",
       "Activity of 3 steward",
       "Network of 3 steward",
     ]);
@@ -331,6 +337,8 @@ describe("a menu on screen", () => {
     expect(rowsIn(menu).map((row) => row.getAttribute("aria-label"))).toEqual([
       "Rename…",
       "Ask",
+      // Where it is drawn, by the keys (#4764).
+      "Place…",
       "Open",
       "Restart",
       "Stop",

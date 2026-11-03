@@ -413,8 +413,11 @@ export function usePaneDrag({
     if (was === undefined || back === "none") return;
     setSaid(PUT_BACK);
     if (back !== "focused") return;
-    const grip = was.source.kind === "pane" ? gripOf(was.source.tab, was.source.pane) : null;
-    const to = grip ?? (was.from?.isConnected === true ? was.from : null);
+    // A pane's grip; a chat's or a tab's own control where it was picked up, or, picked up from a
+    // menu that has gone since, its row or its tab on the strip.
+    const from = was.from?.isConnected === true ? was.from : null;
+    const to =
+      was.source.kind === "pane" ? (homeOf(was.source) ?? from) : (from ?? homeOf(was.source));
     to?.focus();
   }, []);
 
@@ -611,6 +614,20 @@ function gripOf(tab: number, pane: number): HTMLElement | null {
   return document.querySelector<HTMLElement>(
     `[${PANE}="${pane}"][${TAB}="${tab}"] [${GRIP_HANDLE}]`,
   );
+}
+
+/** Where `source` is drawn and takes the keyboard: a pane's grip, a chat's sidebar row, or a
+ *  tab on the strip. */
+function homeOf(source: Source): HTMLElement | null {
+  if (source.kind === "pane") return gripOf(source.tab, source.pane);
+  if (source.kind === "chat")
+    return document.querySelector<HTMLElement>(`[${CHAT_ROW}="${source.session}"]`);
+  const cell = document.querySelector<HTMLElement>(
+    `[${STRIP}] [${TAB}="${source.tab}"]:not([${PANE}])`,
+  );
+  return cell?.matches('[role="tab"]') === true
+    ? cell
+    : (cell?.querySelector<HTMLElement>('[role="tab"]') ?? cell);
 }
 
 /** The tab in front's focused pane, if a tab is in front. */
