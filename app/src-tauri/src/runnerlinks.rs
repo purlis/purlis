@@ -647,9 +647,11 @@ fn on_one_link_within<T>(
         .map_err(|why| format!("the link could not be started: {why}"))?;
     runtime.block_on(async move {
         let mut links = to.keep();
+        // A link made anew: the connector's check of the container, `docker exec` of the
+        // runner's `purlis bridge`, and the handshake, all within this.
         let linked = tokio::time::timeout(ANSWER_WITHIN, links.next())
             .await
-            .map_err(|_| "the runner did not answer in time".to_owned())?;
+            .map_err(|_| LATE.to_owned())?;
         let client = match linked {
             Some(hostlink::Linked::Up(link)) => {
                 Ok(purlis_session_protocol::session::Client::new(*link).0)
@@ -659,7 +661,7 @@ fn on_one_link_within<T>(
         };
         tokio::time::timeout(within, then(client))
             .await
-            .map_err(|_| "the runner did not answer in time".to_owned())?
+            .map_err(|_| LATE.to_owned())?
     })
 }
 
@@ -1068,7 +1070,7 @@ async fn read_off_the_link<T: Send + 'static>(
 }
 
 /// What a call a runner did not answer in time says, where the wait is purlis's own.
-const LATE: &str = "the runner did not answer in time";
+pub(crate) const LATE: &str = "the runner did not answer in time";
 
 /// What it says where the wait is the pool's limit: only this one offers to raise it. A runner's
 /// own words are always marked as its ([`said_by_the_runner`]), so none of them is this.
