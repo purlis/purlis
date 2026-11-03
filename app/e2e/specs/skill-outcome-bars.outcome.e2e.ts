@@ -141,9 +141,9 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     await closeTheViewTabsOpenedSince(wereOpen);
     const already = await $('[data-testid="skill-studio"]').isExisting();
     if (already) throw new Error("the studio's tab is still open, so this would time no opening");
-    // [DEBUG-4351] A/B: 1 drops the tabs layout's :has() rule, 2 keeps #root from going inert, 3 both.
+    // [DEBUG-4351] A/B on the click's style pass: 1 drops every :has() rule, 2 every :focus/:hover/:active rule, 3 every @container and @media block.
     const variant = n % 4; // [DEBUG-4351]
-    await browser.execute((v: number) => {
+    const dropped = await browser.execute((v: number) => {
       const g = globalThis as {
         __variant4351?: number;
         __inertPatched4351?: boolean;
@@ -159,7 +159,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
             ...d,
             set(this: HTMLElement, on: boolean) {
               const w = (globalThis as { __variant4351?: number }).__variant4351 ?? 0;
-              if (this.id === "root" && w >= 2) return;
+              if (this.id === "root" && w >= 99) return;
               set.call(this, on);
             },
           });
@@ -167,11 +167,17 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       }
       for (const one of (g.__dropped4351 ?? []).reverse()) one.sheet.insertRule(one.text, one.at);
       g.__dropped4351 = [];
-      if (v % 2 === 1) {
+      if (v > 0) {
+        const drops = (r: CSSRule) =>
+          v === 1
+            ? r instanceof CSSStyleRule && r.selectorText.includes(":has(")
+            : v === 2
+              ? r instanceof CSSStyleRule && /:(focus|hover|active)/.test(r.selectorText)
+              : r.constructor.name === "CSSContainerRule" || r instanceof CSSMediaRule;
         const walk = (list: CSSRuleList, owner: CSSStyleSheet | CSSGroupingRule) => {
           for (let i = list.length - 1; i >= 0; i--) {
             const r = list[i];
-            if (r instanceof CSSStyleRule && r.selectorText.includes('[data-part="layout"]:has(')) {
+            if (drops(r)) {
               g.__dropped4351?.push({ sheet: owner, at: i, text: r.cssText });
               owner.deleteRule(i);
             } else if ("cssRules" in r) walk((r as CSSGroupingRule).cssRules, r as CSSGroupingRule);
@@ -481,7 +487,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     samples.push(took as number);
     const tl = await browser.execute(() => (globalThis as { __tl4351?: string[] }).__tl4351 ?? []); // [DEBUG-4351]
     console.log(
-      `[DEBUG-4351] opening ${n} variant ${variant} took ${Math.round(took as number)} ms: ${(tl as string[]).join(" | ")}`,
+      `[DEBUG-4351] opening ${n} variant ${variant} (${String(dropped)} rules dropped) took ${Math.round(took as number)} ms: ${(tl as string[]).join(" | ")}`,
     ); // [DEBUG-4351]
     if (n === 2) {
       const got = (await browser.execute(() => {
