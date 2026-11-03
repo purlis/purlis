@@ -745,7 +745,16 @@ impl Drop for RemovesThePool {
                 );
             }
         }
-        let removed = purlis_core::pools::remove(&self.config, &self.docker, &self.name, None);
+        // Whatever a runner of it still holds goes too: a test's pool leaves nothing on Docker.
+        let held =
+            purlis_core::pools::held_of(&self.config, &self.docker, &self.name).unwrap_or_default();
+        let removed = purlis_core::pools::remove_discarding(
+            &self.config,
+            &self.docker,
+            &self.name,
+            None,
+            &held,
+        );
         if !removed
             .as_ref()
             .is_ok_and(|removed| removed.as_ref().is_none_or(|removed| removed.forgotten))

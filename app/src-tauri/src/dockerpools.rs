@@ -164,9 +164,22 @@ pub struct PoolRemoved {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct MadeAgain {
     pub sign_ins_kept: bool,
-    /// **The gone runner's home is kept, held** (#4859): it holds what its chats left, so Devices
-    /// offers to bring their conversations back or discard them.
-    pub home_held: bool,
+    /// What became of the gone runner's home (#4859).
+    pub old_home: OldHome,
+}
+
+/// **What Make the runner again did with the gone runner's home** (#4859), for the pool's row to
+/// say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum OldHome {
+    /// It held no conversation, or was gone too: it was removed.
+    Removed,
+    /// It holds its chats' conversations, so it is kept, held: Devices offers to bring them back
+    /// or discard them.
+    Held,
+    /// It could not be read, so it is kept, held, all the same.
+    Unread,
 }
 
 /// **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
@@ -590,7 +603,11 @@ pub fn make_again_on(machine: &Machine, name: &str) -> Result<MadeAgain, String>
         .map_err(|why| refused_said(&why.to_string()))?;
     Ok(MadeAgain {
         sign_ins_kept: again.sign_ins_kept,
-        home_held: again.home_held,
+        old_home: match again.old_home {
+            purlis_core::pools::OldHome::Removed => OldHome::Removed,
+            purlis_core::pools::OldHome::Held => OldHome::Held,
+            purlis_core::pools::OldHome::Unread => OldHome::Unread,
+        },
     })
 }
 

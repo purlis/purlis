@@ -31,6 +31,9 @@ let removed: string[];
 let removeSays: string | null;
 /** What `pool_named_by` says names a pool (#4678). */
 let namedBy: PoolNamedBy[];
+/** The runners `pool_held_runners` names, and what each removal was told to discard (#4860). */
+let heldRunners: string[];
+let discarded: unknown[];
 /** The held runners the core was asked to remove. */
 let heldRemoved: string[];
 /** The held runners whose conversations the core was asked to bring back, and what it says. */
@@ -95,6 +98,8 @@ beforeEach(() => {
   removed = [];
   removeSays = null;
   namedBy = [];
+  heldRunners = [];
+  discarded = [];
   heldRemoved = [];
   broughtBack = [];
   bringBackSays = undefined;
@@ -105,16 +110,22 @@ beforeEach(() => {
   answerWithinForTests(90_000);
   forgetDevicesForTests();
   mockIPC((cmd, args) => {
-    const a = (args ?? {}) as { pool?: string; runner?: string; name?: string };
+    const a = (args ?? {}) as {
+      pool?: string;
+      runner?: string;
+      name?: string;
+      discarding?: unknown;
+    };
     if (cmd === "devices") {
       devicesRead += 1;
       return structuredClone(shown);
     }
     if (cmd === "devices_disk") return structuredClone(disk);
     if (cmd === "pool_named_by") return structuredClone(namedBy);
-    if (cmd === "pool_held_runners") return [];
+    if (cmd === "pool_held_runners") return structuredClone(heldRunners);
     if (cmd === "remove_docker_pool") {
       removed.push(a.name ?? "");
+      discarded.push(a.discarding);
       return removeSays;
     }
     if (cmd === "docker_pool_remove_held_runner") {
@@ -492,6 +503,28 @@ describe("DevicesView", () => {
         .map((one) => one.textContent),
     ).toEqual(["Workspace site in docs", "Workspace wiki in docs"]);
     expect(removed).toEqual([]);
+  });
+
+  it("removes a pool whose older runner may hold conversations only after asking again, and says which (#4860)", async () => {
+    asked["builds/builds"] = { ...asked["builds/builds"], link: { state: "key_changed" } };
+    heldRunners = ["builds-0a0b0c0d"];
+    render(<DevicesView />);
+    const builds = await waitFor(() => section("Runner builds of pool builds"));
+    await userEvent.click(
+      await within(builds).findByRole("button", { name: "Remove pool builds" }),
+    );
+    const asking = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(await within(asking).findByRole("button", { name: "Remove pool…" }));
+    const again = await screen.findByRole("alertdialog", {
+      name: "Delete the conversations on runner builds-0a0b0c0d?",
+    });
+
+    await userEvent.click(
+      within(again).getByRole("button", { name: "Remove pool and conversations" }),
+    );
+
+    await waitFor(() => expect(removed).toEqual(["builds"]));
+    expect(discarded).toEqual([["builds-0a0b0c0d"]]);
   });
 
   it("leaves the line out of the question where nothing names the pool", async () => {

@@ -8,6 +8,7 @@ import {
   type ClusterPoolAdding,
   type ClusterPoolKey,
   type LimitRefused,
+  type OldHome,
   type PlaneId,
   type RunnerStage,
   type RunsOnPick,
@@ -603,16 +604,25 @@ export function anotherEngineSaid(name: string): string {
 }
 
 /**
- * What a row says once its runner was made again, by whether its sign-ins were carried and
- * whether the old runner's home was kept for its chats' conversations (#4859).
+ * What a row says once its runner was made again, by whether its sign-ins were carried and what
+ * became of the old runner's home (#4859).
  */
-export function madeAgainSaid(name: string, signInsKept: boolean, homeHeld = false): string {
+export function madeAgainSaid(
+  name: string,
+  signInsKept: boolean,
+  oldHome: OldHome = "removed",
+): string {
   const made = signInsKept
     ? `Pool ${name}'s runner was made again, with its sign-ins.`
     : `Pool ${name}'s runner was made again: sign its profiles in again there.`;
-  return homeHeld
-    ? `${made} The old runner's home still holds its chats' conversations, so purlis kept it. Bring them back to the new runner or discard them in Devices.`
-    : made;
+  switch (oldHome) {
+    case "held":
+      return `${made} The old runner's home still holds its chats' conversations, so purlis kept it. Bring them back to the new runner or discard them in Devices.`;
+    case "unread":
+      return `${made} purlis could not read the old runner's home, so it kept it in case it holds conversations. Bring back or discard what it holds in Devices.`;
+    case "removed":
+      return made;
+  }
 }
 
 /**
@@ -631,7 +641,7 @@ export async function makeRunnerAgain(name: string, plane?: string): Promise<str
   set((was) => {
     const remade = { ...was.remade };
     if (said.status === "ok")
-      remade[name] = madeAgainSaid(name, said.data.sign_ins_kept, said.data.home_held);
+      remade[name] = madeAgainSaid(name, said.data.sign_ins_kept, said.data.old_home);
     else Reflect.deleteProperty(remade, name);
     return { ...was, remaking: undefined, remade };
   });

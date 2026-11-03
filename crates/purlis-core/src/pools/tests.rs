@@ -3207,8 +3207,11 @@ fn a_runner_made_again_keeps_the_gone_ones_home_where_it_holds_a_conversation() 
 
     let again = make_again_here(config.path(), &fake, &ours).unwrap();
 
+    assert_eq!(again.old_home, OldHome::Held);
     let gone = runners::named(config.path(), "first").unwrap().unwrap();
     assert!(gone.draining && gone.held, "{gone:?}");
+    // Its sign-ins came already, so a later Discard or bring back carries none again.
+    assert!(gone.carried, "{gone:?}");
     assert_eq!(
         runners::runner_for(config.path(), "first").unwrap().name(),
         again.kept.name()
@@ -3239,6 +3242,7 @@ fn a_runner_made_again_removes_the_gone_ones_home_where_it_holds_none() {
 
     let again = make_again_here(config.path(), &fake, &ours).unwrap();
 
+    assert_eq!(again.old_home, OldHome::Removed);
     assert_eq!(runners::read(config.path()).unwrap(), vec![again.kept]);
     let log = fake.file("log");
     assert!(
@@ -3257,8 +3261,9 @@ fn a_runner_made_again_holds_the_gone_one_whose_home_could_not_be_read() {
     removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
     fake.set("conversations", "");
 
-    make_again_here(config.path(), &fake, &ours).unwrap();
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
 
+    assert_eq!(again.old_home, OldHome::Unread);
     let gone = runners::named(config.path(), "first").unwrap().unwrap();
     assert!(gone.draining && gone.held, "{gone:?}");
     assert!(
@@ -4021,10 +4026,110 @@ fn a_runner_discarded_while_its_home_was_read_is_not_said_to_be_held() {
         ),
     );
 
+    // Docker lists the home the read's mount made again of its name.
+    fake.set("volumes", "purlis-runner-first-home\n");
+
     let refused = held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap_err();
 
-    assert!(refused.to_string().contains("changed"), "{refused}");
+    assert!(refused.to_string().contains("removed while"), "{refused}");
     assert!(runners::named(config.path(), "first").unwrap().is_none());
+    // A home the read's mount made again of its name goes with it.
+    let log = fake.file("log");
+    assert!(
+        log.contains("volume rm --force purlis-runner-first-home"),
+        "{log}"
+    );
+}
+
+/// **A runner that changed while its home was read is read again**, not held on a read of how
+/// it stood before.
+#[test]
+fn a_runner_that_changed_while_its_home_was_read_is_read_again() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 2);
+    let file = |root: &Path| crate::machine::dir(root).join(crate::machine::RUNNERS_FILE);
+    let changed = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(crate::machine::dir(changed.path())).unwrap();
+    std::fs::copy(file(config.path()), file(changed.path())).unwrap();
+    runners::note_locked(
+        changed.path(),
+        "first",
+        |kept| kept.last_stop = Some(7),
+        &runners::lock(changed.path()),
+    )
+    .unwrap();
+    fake.set(
+        "during-run",
+        &format!(
+            "cat '{}' > '{}'\n",
+            file(changed.path()).display(),
+            file(config.path()).display()
+        ),
+    );
+
+    let refused = held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap_err();
+
+    assert!(refused.to_string().contains("changed while"), "{refused}");
+    assert!(
+        !runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .held
+    );
+}
+
+/// **A read that finishes clears its pace**: the next failure waits ten minutes again, not twice
+/// the last.
+#[test]
+fn a_read_that_finishes_clears_its_pace() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 0);
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    let whose = (
+        config.path().to_path_buf(),
+        kept.made.container.as_str().to_owned(),
+    );
+    let at = std::time::Instant::now();
+    conversation_reads().failed(&whose, "it failed", at - read_again_after(1) * 2);
+    assert!(conversation_reads().waiting(&whose, at).is_none());
+
+    assert!(!held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap());
+
+    conversation_reads().failed(&whose, "it failed", at);
+    let waiting = conversation_reads().waiting(&whose, at).unwrap();
+    assert!(waiting.contains("in about 10 minutes"), "{waiting}");
+}
+
+/// **A runner stopped before its drain that no look has read may hold a conversation**, so
+/// removing its pool asks about it (#4860).
+#[test]
+fn a_runner_no_look_has_read_yet_is_named_among_those_that_may_hold_conversations() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 2);
+    // Its stop was noted as its drain began: it stopped before it.
+    let before = runners::named(config.path(), "first").unwrap().unwrap();
+    let ran = fake.docker().ran(&before.made).unwrap();
+    runners::note_locked(
+        config.path(),
+        "first",
+        |kept| kept.last_stop = Some(ran.finished.unwrap_or(0)),
+        &runners::lock(config.path()),
+    )
+    .unwrap();
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert_eq!(
+        drain_look(&kept, fake.docker().ran(&kept.made).unwrap()),
+        DrainLook::StoppedBefore
+    );
+
+    assert_eq!(
+        held_of(config.path(), &fake.docker(), "first").unwrap(),
+        ["first"]
+    );
+    assert!(remove(config.path(), &fake.docker(), "first", None).is_err());
 }
 
 /// **A home whose read failed is not read again at once** (#4861): each failure waits longer

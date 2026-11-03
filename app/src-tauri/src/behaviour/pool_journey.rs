@@ -586,7 +586,11 @@ fn in_the_journey(
     );
     // Its home holds the first chat's conversation, so it is kept, held (#4859), and brought
     // back to the runner made again, which removes it.
-    assert!(again.home_held, "its home holds a conversation");
+    assert_eq!(
+        again.old_home,
+        crate::dockerpools::OldHome::Held,
+        "its home holds a conversation"
+    );
     let gone = purlis_core::runners::draining(&machine.config)
         .expect("read")
         .into_iter()

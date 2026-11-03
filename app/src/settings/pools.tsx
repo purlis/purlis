@@ -184,10 +184,11 @@ function linkOnAnotherEngine(link: PoolLink | "asking" | undefined): boolean {
  * (ADR 0078, D-4536-3). Where none does, it says nothing of them. Remove pool waits for the
  * read, and where purlis could not read them it says what is true of any, and why.
  *
- * **It names the held runners, and then asks again** (#4860, D-4860-1): each older runner kept
- * with its chats' conversations, which go with the pool, and a second question, as Discard asks
- * one, before they do. With none, it is one question. `onRemove` is told the runners it named, and
- * a runner held since then removes nothing.
+ * **It names the runners that may hold conversations, and then asks again** (#4860, D-4860-1):
+ * each older runner kept with its chats' conversations, or not yet read, whose conversations go
+ * with the pool, and a second question, as Discard asks one, before they do. With none, it is one
+ * question. `onRemove` is told the runners it named, and a runner that may hold one and was not
+ * named removes nothing.
  */
 export function RemovePool({
   name,
@@ -215,10 +216,16 @@ export function RemovePool({
       <AlertDialog
         key="again"
         onClose={onCancel}
-        title="Discard their conversations for good?"
+        title={
+          elsewhere
+            ? `Forget the conversations on ${runnersSaid(discarding)}?`
+            : `Delete the conversations on ${runnersSaid(discarding)}?`
+        }
         description={
           <p className="came-back">
-            {`The conversations kept on ${runnersSaid(discarding)} are deleted with pool ${name}, and cannot be brought back. There is no undo.`}
+            {elsewhere
+              ? `They stay on that engine, but purlis forgets them with pool ${name} and can no longer bring them back. To keep them, cancel and keep the pool.`
+              : `They are deleted with pool ${name} and cannot be brought back. To keep them, cancel and keep the pool.`}
           </p>
         }
         main={{
@@ -242,7 +249,7 @@ export function RemovePool({
                 ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
                 : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
           </p>
-          <HeldLine held={held} />
+          <HeldLine held={held} elsewhere={elsewhere} />
           <NamedByLine named={named} />
         </>
       }
@@ -264,8 +271,11 @@ function runnersSaid(runners: readonly string[]): string {
     : `runners ${runners.slice(0, -1).join(", ")} and ${runners[runners.length - 1]}`;
 }
 
-/** What Remove pool's question says of the held runners whose conversations go with the pool. */
-function HeldLine({ held }: { held: HeldRunners }) {
+/**
+ * What Remove pool's question says of the older runners that hold, or may hold, their chats'
+ * conversations, which go with the pool (#4860).
+ */
+function HeldLine({ held, elsewhere }: { held: HeldRunners; elsewhere: boolean }) {
   const said = useId();
   if (held.state === "reading") return null;
   if (held.state === "trouble")
@@ -273,15 +283,16 @@ function HeldLine({ held }: { held: HeldRunners }) {
       <p className="came-back">
         {"purlis could not read whether its older runners still hold chats' conversations: "}
         <bdi>{held.why}</bdi>
-        {". If one does, nothing is removed, and you are asked again."}
+        {". If one does, nothing is removed, and purlis says so."}
       </p>
     );
   if (held.held.length === 0) return null;
   return (
     <>
       <p className="came-back pool-named-lead" id={said}>
-        These older runners still hold conversations from chats that ran on them, and they are
-        deleted with the pool:
+        {elsewhere
+          ? "These older runners may still hold conversations from chats that ran on them. Removing the pool means purlis can no longer bring those conversations back:"
+          : "These older runners may still hold conversations from chats that ran on them. Removing the pool deletes those conversations:"}
       </p>
       <ul className="came-back pool-named-by" aria-labelledby={said}>
         {held.held.map((runner) => (

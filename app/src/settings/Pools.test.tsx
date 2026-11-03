@@ -68,7 +68,7 @@ let version: PoolVersion;
 let added: unknown[];
 let removed: unknown[];
 let madeAgain: string[];
-let madeAgainHomeHeld: boolean;
+let madeAgainOldHome: string;
 let notHeld: { root: string; name: string; why: string; pools: string[] }[];
 let profilesAsked: unknown[];
 /** The runner image a new pool is offered, or why it could not be read. */
@@ -122,7 +122,7 @@ beforeEach(() => {
   added = [];
   removed = [];
   madeAgain = [];
-  madeAgainHomeHeld = false;
+  madeAgainOldHome = "removed";
   notHeld = [];
   profilesAsked = [];
   releaseImage = { state: "local_build" };
@@ -175,7 +175,7 @@ beforeEach(() => {
       if (cmd === "docker_pool_make_again") {
         madeAgain.push(a.name as string);
         link = { state: "linked" };
-        return { sign_ins_kept: true, home_held: madeAgainHomeHeld };
+        return { sign_ins_kept: true, old_home: madeAgainOldHome };
       }
       if (cmd === "docker_pool_version") return version;
       if (cmd === "pool_named_by") return structuredClone(namedBy);
@@ -332,7 +332,7 @@ describe("You › This machine › Pools", () => {
     await userEvent.click(await within(group).findByRole("button", { name: "Remove pool builds" }));
     const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
     const list = await within(asked).findByRole("list", {
-      name: /These older runners still hold conversations from chats that ran on them/,
+      name: /These older runners may still hold conversations from chats that ran on them/,
     });
     expect(
       within(list)
@@ -343,10 +343,10 @@ describe("You › This machine › Pools", () => {
     await userEvent.click(within(asked).getByRole("button", { name: "Remove pool…" }));
 
     const again = await screen.findByRole("alertdialog", {
-      name: "Discard their conversations for good?",
+      name: "Delete the conversations on runner builds-0a0b0c0d?",
     });
     expect(again).toHaveTextContent(
-      "The conversations kept on runner builds-0a0b0c0d are deleted with pool builds, and cannot be brought back. There is no undo.",
+      "They are deleted with pool builds and cannot be brought back. To keep them, cancel and keep the pool.",
     );
     // The second ask opens on Cancel, so two presses on one spot remove nothing.
     await waitFor(() =>
@@ -371,7 +371,7 @@ describe("You › This machine › Pools", () => {
     const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
     await userEvent.click(await within(asked).findByRole("button", { name: "Remove pool…" }));
     const again = await screen.findByRole("alertdialog", {
-      name: "Discard their conversations for good?",
+      name: "Delete the conversations on runner builds-0a0b0c0d?",
     });
 
     await userEvent.click(within(again).getByRole("button", { name: "Cancel" }));
@@ -393,7 +393,7 @@ describe("You › This machine › Pools", () => {
       expect(within(asked).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
     );
     expect(within(asked).queryByText(/go back to this machine/)).toBeNull();
-    expect(within(asked).queryByText(/still hold conversations/)).toBeNull();
+    expect(within(asked).queryByText(/may still hold conversations/)).toBeNull();
     expect(within(asked).getByText(/There is no undo\./)).toBeInTheDocument();
   });
 
@@ -809,7 +809,7 @@ describe("You › This machine › Pools", () => {
   it("says where the old runner's conversations are once the runner is made again beside its kept home (#4859)", async () => {
     pools = [a_pool("builds")];
     link = { state: "removed", home_kept: true };
-    madeAgainHomeHeld = true;
+    madeAgainOldHome = "held";
     render(<App />);
     const nav = await yourSettings();
     await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
@@ -825,6 +825,29 @@ describe("You › This machine › Pools", () => {
     await waitFor(() =>
       expect(group).toHaveTextContent(
         /still holds its chats' conversations, so purlis kept it\. Bring them back to the new runner or discard them in Devices\./,
+      ),
+    );
+  });
+
+  it("says the old runner's home is kept when purlis could not read it (#4859)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "removed", home_kept: true };
+    madeAgainOldHome = "unread";
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    const notice = await waitFor(() => {
+      const found = group.querySelector('[data-cause="pool-runner-removed:builds"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Make the runner again" }));
+
+    await waitFor(() =>
+      expect(group).toHaveTextContent(
+        /purlis could not read the old runner's home, so it kept it in case it holds conversations\. Bring back or discard what it holds in Devices\./,
       ),
     );
   });

@@ -3639,6 +3639,34 @@ fn a_homes_conversations_are_read_by_a_container_that_reaches_nothing() {
     );
 }
 
+/// **A read of a home runs in a container of its own** (#4861): named and labelled for the home it
+/// reads, so a carry or a bring back that clears its own `-copy` container never ends a read that
+/// runs outside the runners lock, and a sweep of the read runner's leftovers takes it.
+#[test]
+fn a_homes_read_runs_in_a_container_named_for_that_home() {
+    let held = made();
+    let pools = Made {
+        container: ContainerId::new(&"b".repeat(64)).unwrap(),
+        runner: Runner::new(
+            "first-fedcba98",
+            image(),
+            User::new(10001, 10001).unwrap(),
+            "/home/purlis",
+        )
+        .unwrap(),
+    };
+
+    let seen = pools.conversations_args(&held, "d", false).join(" ");
+    let brought = pools.conversations_args(&held, "d", true).join(" ");
+
+    assert!(seen.contains("--name purlis-runner-first-read "), "{seen}");
+    assert!(seen.contains(&format!("--label {LABEL}=first ")), "{seen}");
+    assert!(
+        brought.contains("--name purlis-runner-first-fedcba98-copy "),
+        "{brought}"
+    );
+}
+
 /// **What a harness keeps beside a transcript comes back with it** (#4633): Claude Code's
 /// subagents' transcripts and tool results under the session's own folder, and Codex's archived
 /// rollouts, each at its place.

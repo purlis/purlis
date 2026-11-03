@@ -877,6 +877,14 @@ impl Made {
         format!("{}-copy", self.runner.container())
     }
 
+    /// **The name of the container that reads this runner's home for its chats' conversations**
+    /// (#4861): its own, and not [`Made::copy_container`], which carries sign-ins and brings
+    /// conversations back under the runners lock. The read runs outside that lock, so a carry or a
+    /// bring back that starts meanwhile never takes the read's container for a leftover of its own.
+    pub fn read_container(&self) -> String {
+        format!("{}-read", self.runner.container())
+    }
+
     /// **`docker`'s arguments that carry `from`'s sign-ins into this runner's home** (#4011,
     /// ruled 2026-10-30): a container of this runner's image, named for it, labelled as made by
     /// `desktop` and removed once it ends, that mounts `from`'s home volume read-only and this
@@ -951,15 +959,22 @@ impl Made {
         }
         .user
         .spelled();
+        // A read is named and labelled for the home it reads, so a sweep of that runner's leftovers
+        // takes it; a bring back for the runner it writes, as a carry is.
+        let (container, label) = if bring_back {
+            (self.copy_container(), self.runner.name())
+        } else {
+            (home.read_container(), home.runner.name())
+        };
         let mut args: Vec<String> = [
             "run",
             "--rm",
             "--network",
             "none",
             "--name",
-            &self.copy_container(),
+            &container,
             "--label",
-            &format!("{LABEL}={}", self.runner.name()),
+            &format!("{LABEL}={label}"),
             "--label",
             &format!("{DESKTOP_LABEL}={desktop}"),
             "--user",
@@ -3253,11 +3268,16 @@ impl Docker {
         };
         let container = format!("{PREFIX}{name}");
         let volume = format!("{PREFIX}{name}-home");
-        // The container that carried sign-ins to it (#4011) is its leftover too.
+        // The containers that carried sign-ins to it (#4011) and read its home (#4861) are its
+        // leftovers too.
         let mut removed = self.remove_labelled(
             name,
             desktop,
-            &[container.clone(), format!("{container}-copy")],
+            &[
+                container.clone(),
+                format!("{container}-copy"),
+                format!("{container}-read"),
+            ],
         )?;
         // A home volume goes only once no container of its name is left, whoever made it.
         let still = self.read(
@@ -3359,7 +3379,8 @@ impl Docker {
     ) -> Result<Conversations, Refused> {
         self.ran_conversations(
             &with.conversations_args(home, desktop, false),
-            with,
+            home.runner.name(),
+            &home.read_container(),
             desktop,
         )
     }
@@ -3373,20 +3394,26 @@ impl Docker {
         to: &Made,
         desktop: &str,
     ) -> Result<Conversations, Refused> {
-        self.ran_conversations(&to.conversations_args(from, desktop, true), to, desktop)
+        self.ran_conversations(
+            &to.conversations_args(from, desktop, true),
+            to.runner.name(),
+            &to.copy_container(),
+            desktop,
+        )
     }
 
-    /// Runs `args`, a container of `with`'s ([`Made::conversations_args`]), for at most
-    /// [`CONVERSATIONS_WITHIN`], one a run before left going first, as [`Docker::copy_profiles`]
-    /// does.
+    /// Runs `args`, the container `container` labelled for runner `name`
+    /// ([`Made::conversations_args`]), for at most [`CONVERSATIONS_WITHIN`], one a run before left
+    /// going first, as [`Docker::copy_profiles`] does.
     fn ran_conversations(
         &self,
         args: &[String],
-        with: &Made,
+        name: &str,
+        container: &str,
         desktop: &str,
     ) -> Result<Conversations, Refused> {
         let prepared = self.prepared()?;
-        let _ = self.remove_labelled(with.runner.name(), desktop, &[with.copy_container()]);
+        let _ = self.remove_labelled(name, desktop, &[container.to_owned()]);
         let ran = self.ran_prepared(
             &prepared,
             args,
@@ -3400,7 +3427,7 @@ impl Docker {
                     "container".into(),
                     "rm".into(),
                     "--force".into(),
-                    with.copy_container(),
+                    container.to_owned(),
                 ],
                 None,
                 MOST_INSPECTED,
@@ -3409,8 +3436,7 @@ impl Docker {
         let printed = ran.map_err(Refused::from)?;
         conversations_said(&printed).ok_or_else(|| {
             refused(format!(
-                "the home of a runner of pool {} was not read as purlis reads it",
-                with.runner.name()
+                "the home of runner {name} was not read as purlis reads it"
             ))
         })
     }

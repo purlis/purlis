@@ -6923,11 +6923,8 @@ export type MachineWorkspacePin = {
  */
 export type MadeAgain = {
 	sign_ins_kept: boolean,
-	/**
-	 *  **The gone runner's home is kept, held** (#4859): it holds what its chats left, so Devices
-	 *  offers to bring their conversations back or discard them.
-	 */
-	home_held: boolean,
+	/**  What became of the gone runner's home (#4859). */
+	old_home: OldHome,
 };
 
 /**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
@@ -7417,6 +7414,21 @@ export type OfferedSource = {
 	why: string,
 	source: SkillSource,
 };
+
+/**
+ *  **What Make the runner again did with the gone runner's home** (#4859), for the pool's row to
+ *  say.
+ */
+export type OldHome = 
+/**  It held no conversation, or was gone too: it was removed. */
+"removed" | 
+/**
+ *  It holds its chats' conversations, so it is kept, held: Devices offers to bring them back
+ *  or discard them.
+ */
+"held" | 
+/**  It could not be read, so it is kept, held, all the same. */
+"unread";
 
 /**
  *  The chats of a project still running under an older sandbox (#1428), for the Notice after

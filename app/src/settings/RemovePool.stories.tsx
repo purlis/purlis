@@ -123,16 +123,16 @@ export const NothingNamesIt: Story = {
 };
 
 /**
- * **A held runner's conversations go with the pool** (#4860): the question names the runner, its
- * button says another ask follows, and the second ask opens on Cancel.
+ * **Older runners may hold conversations** (#4860): the question names each, and its button says
+ * another ask follows.
  */
-export const NamesHeldRunnersAndAsksAgain: Story = {
+export const NamesHeldRunners: Story = {
   parameters: { heldRunners: ["builds-0a0b0c0d"] },
   play: async ({ userEvent }) => {
     const page = within(document.body);
     const alert = await page.findByRole("alertdialog", { name: "Remove pool builds?" });
     const list = await within(alert).findByRole("list", {
-      name: /These older runners still hold conversations/,
+      name: /These older runners may still hold conversations/,
     });
     await expect(
       within(list)
@@ -143,20 +143,40 @@ export const NamesHeldRunnersAndAsksAgain: Story = {
       () => within(alert).getByRole("button", { name: "Cancel" }),
       "Remove pool: the keyboard starts on Cancel",
     );
+    expectFocusInSight();
     await userEvent.tab();
     await untilFocused(
       () => within(alert).getByRole("button", { name: "Remove pool…" }),
       "Tab goes on to Remove pool…",
     );
-    await userEvent.keyboard("{Enter}");
+    await pictureNow();
+    await dismissed(userEvent);
+  },
+};
+
+/**
+ * **It asks again before their conversations go** (#4860): the second ask names the runner, says
+ * how to keep them, and opens on Cancel.
+ */
+export const AsksAgainAboutHeldRunners: Story = {
+  parameters: { heldRunners: ["builds-0a0b0c0d"] },
+  play: async ({ userEvent }) => {
+    const page = within(document.body);
+    const alert = await page.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(await within(alert).findByRole("button", { name: "Remove pool…" }));
     const again = await page.findByRole("alertdialog", {
-      name: "Discard their conversations for good?",
+      name: "Delete the conversations on runner builds-0a0b0c0d?",
     });
     await untilFocused(
       () => within(again).getByRole("button", { name: "Cancel" }),
       "The second ask starts on Cancel",
     );
     expectFocusInSight();
+    await userEvent.tab();
+    await untilFocused(
+      () => within(again).getByRole("button", { name: "Remove pool and conversations" }),
+      "Tab goes on to Remove pool and conversations",
+    );
     await pictureNow();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(page.queryByRole("alertdialog")).toBeNull());

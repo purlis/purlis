@@ -44,7 +44,7 @@ describe("a runner removed outside purlis", () => {
         if (cmd === "docker_pools_removed") return [{ name: "first", home_kept: false }];
         if (cmd === "docker_pool_make_again") {
           expect(args).toEqual({ name: "first" });
-          return { sign_ins_kept: false, home_held: false };
+          return { sign_ins_kept: false, old_home: "removed" };
         }
         return null;
       },
