@@ -190,6 +190,19 @@ describe("a chat's one list (#4753)", () => {
     expect(shape(2)).toEqual(shape(3));
   });
 
+  it("says End chat in the palette only on End…: a tab's close says Close (#4753 D6, #4756)", () => {
+    // Until #4756 the palette had `End chat X` (the tab's close, which ended the chat) beside
+    // `End chat X…` (the chat's End…). A close ends nothing now, so only End… says End.
+    const { palette } = world();
+    const ends = palette.filter((offer) => offer.title.startsWith("End chat "));
+
+    expect(ends.length).toBeGreaterThan(0);
+    expect(ends.filter((offer) => !offer.id.startsWith("chat.end:"))).toEqual([]);
+    expect(
+      palette.filter((offer) => offer.id.startsWith("tab.close:")).map((o) => o.title),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/^Close /)]));
+  });
+
   it("names the chat in the palette's words, and leaves it out of the menu's", () => {
     const { offers, palette } = world();
     const rows = rowsOf(menuOf({ on: "chat", session: 3 }, offers));

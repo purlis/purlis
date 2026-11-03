@@ -796,9 +796,10 @@ export const commands = {
 	 */
 	openChatTab: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("open_chat_tab", { plane, session })),
 	/**
-	 *  The person sent a task chat's tab back to the Chats list: the tab goes, and the task keeps
-	 *  working. It ends nothing and tells no chat anything. Refused for a chat that is not a task.
-	 *  The record keeps it, so a reloaded window and the next launch draw no tab for it.
+	 *  The person closed a chat's tab, or sent a task's back to the Chats list: the tab goes, and
+	 *  the chat keeps working. It ends nothing, tells no chat anything, and is never refused for an
+	 *  open chat (#4756). The record keeps a task's, so a reloaded window and the next launch draw
+	 *  no tab for it.
 	 */
 	closeChatTab: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("close_chat_tab", { plane, session })),
 	/**
@@ -1629,6 +1630,7 @@ export const commands = {
 	poolSetupSizes: __WINDOW_ONLY_RESULT,
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
+	poolSetupTry: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -6810,10 +6812,15 @@ export type LocalModelRow = {
  *  value: purlis hasn't read one.
  */
 export type LoginShown = {
-	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
+	/**  The domain of the page it opens, with a port where it has one: `shop.example.com`. */
 	domain: string,
 	/**  The page's path on it. */
 	path: string,
+	/**
+	 *  **The host the password is typed on** (#4995), with a port where it has one: the login
+	 *  form's, which the page may have sent the browser to. The domain where they're one.
+	 */
+	form: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
@@ -6826,6 +6833,10 @@ export type LoginShown = {
 	no_always?: string | null,
 	/**  The persona's chats get the vault too with Always. */
 	vault_too: boolean,
+	/**  **The page the declared login opens now, which this replaces** (#4996). */
+	replaces?: string | null,
+	/**  The host its password is typed on now, with a port where it has one. */
+	replaces_form?: string | null,
 };
 
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
@@ -8917,6 +8928,14 @@ export type PoolSetupCreated = {
 	breaks: string[],
 };
 
+/**  Why Try it didn't pass, and the step that mends it, where one does (#4483). */
+export type PoolSetupFailed = {
+	/**  What happened and what to do, in a sentence or two. */
+	why: string,
+	/**  The step to go to, by its id: `signins` for a sign-in. Null where trying again is it. */
+	step: string | null,
+};
+
 /**  A limit a profile is over. */
 export type PoolSetupOver = {
 	/**  The limit's key, as `pool_limit_set` takes it. */
@@ -8979,6 +8998,14 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+};
+
+/**  What Try it found. */
+export type PoolSetupTried = {
+	/**  Why it didn't pass; null where a real chat started and the proof is kept. */
+	failed: PoolSetupFailed | null,
+	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
+	workspace: string | null,
 };
 
 /**  What the person is asked. */

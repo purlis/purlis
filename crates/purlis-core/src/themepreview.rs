@@ -174,8 +174,8 @@ fn choice_properties() -> Value {
             "type": "string",
             "enum": APPEARANCES,
             "description": "Which of the theme's appearances; its first when left out. \
-                            dark-high-contrast is a theme's high-contrast dark, such as \
-                            Purlis's.",
+                            dark-high-contrast and light-high-contrast are a theme's \
+                            high-contrast dark and light, such as Purlis's.",
         },
         "options": {
             "type": "object",
@@ -206,11 +206,15 @@ fn schema() -> Value {
 }
 
 /// The appearances the tool's `appearance` names.
-const APPEARANCES: [&str; 3] = ["dark", "light", HIGH_CONTRAST_DARK];
+const APPEARANCES: [&str; 4] = ["dark", "light", HIGH_CONTRAST_DARK, HIGH_CONTRAST_LIGHT];
 
 /// The high-contrast dark, as the tool's arguments spell it: a theme's dark appearance tagged
 /// high contrast, such as Purlis's.
 pub const HIGH_CONTRAST_DARK: &str = "dark-high-contrast";
+
+/// The high-contrast light, as the tool's arguments spell it: a theme's light appearance tagged
+/// high contrast, such as Purlis's (#4677).
+pub const HIGH_CONTRAST_LIGHT: &str = "light-high-contrast";
 
 /// Whether `name` is this module's tool.
 pub fn is_one(name: &str) -> bool {
@@ -350,8 +354,11 @@ fn appearance(given: Option<&Value>) -> Result<(Option<Appearance>, bool), Strin
         Some(Value::String(said)) if said == HIGH_CONTRAST_DARK => {
             Ok((Some(Appearance::Dark), true))
         }
+        Some(Value::String(said)) if said == HIGH_CONTRAST_LIGHT => {
+            Ok((Some(Appearance::Light), true))
+        }
         Some(_) => Err(format!(
-            "`appearance` is `dark`, `light` or `{HIGH_CONTRAST_DARK}`"
+            "`appearance` is `dark`, `light`, `{HIGH_CONTRAST_DARK}` or `{HIGH_CONTRAST_LIGHT}`"
         )),
     }
 }
@@ -360,7 +367,7 @@ fn appearance(given: Option<&Value>) -> Result<(Option<Appearance>, bool), Strin
 fn known() -> String {
     let ids = crate::extension::BUILT_IN_THEMES;
     format!(
-        "{} (the default: dark, light or {HIGH_CONTRAST_DARK}), {PURLIS_CLASSIC} (dark or light), \
+        "{} (the default: dark, light, {HIGH_CONTRAST_DARK} or {HIGH_CONTRAST_LIGHT}), {PURLIS_CLASSIC} (dark or light), \
          or {} (Purlis's dark or light); a theme folder by its name (dusk), or \
          with its level (workspace:dusk, project:dusk, machine:dusk); {DRAFT}:<folder>, this \
          chat's own theme draft; or an extension's theme (<extension>/<theme>), each as `purlis \
@@ -440,7 +447,7 @@ pub fn chosen(specimen: &Specimen) -> Result<&'static ResolvedTheme, String> {
             .find(|one| one.appearance == asked && one.high_contrast == specimen.high_contrast);
         return match exactly {
             Some(found) => Ok(found),
-            None if specimen.high_contrast => Err(no_high_contrast(&specimen.theme)),
+            None if specimen.high_contrast => Err(no_high_contrast(&specimen.theme, asked)),
             None => Ok(shipped.of(asked).unwrap_or_else(|| shipped.first())),
         };
     }
@@ -451,32 +458,31 @@ pub fn chosen(specimen: &Specimen) -> Result<&'static ResolvedTheme, String> {
             known()
         ));
     };
-    if specimen.high_contrast {
-        // `purlis-dark` names Purlis's dark, which more contrast draws as its high-contrast dark.
-        return theme::purlis()
-            .appearances
-            .iter()
-            .find(|one| one.high_contrast && one.appearance == found.appearance)
-            .ok_or_else(|| no_high_contrast(&specimen.theme));
-    }
     match specimen.appearance {
         Some(asked) if asked != found.appearance => Err(format!(
             "`{}` has only a {} appearance: ask for {} with appearance `{}`",
             specimen.theme,
             word(found.appearance),
             theme::PURLIS,
-            word(asked)
+            word_tagged(asked, specimen.high_contrast)
         )),
+        // `purlis-dark` names Purlis's dark, which more contrast draws as its high-contrast dark,
+        // and `purlis-light` its light, drawn as its high-contrast light (#4677).
+        _ if specimen.high_contrast => theme::purlis()
+            .appearances
+            .iter()
+            .find(|one| one.high_contrast && one.appearance == found.appearance)
+            .ok_or_else(|| no_high_contrast(&specimen.theme, found.appearance)),
         _ => Ok(found),
     }
 }
 
-/// Why `theme` has no high-contrast dark to draw, naming the theme that has one.
-fn no_high_contrast(theme: &str) -> String {
+/// Why `theme` has no high-contrast `appearance` to draw, naming the theme that has one.
+fn no_high_contrast(theme: &str, appearance: Appearance) -> String {
     format!(
-        "`{theme}` has no high-contrast appearance: ask for {} with appearance \
-         `{HIGH_CONTRAST_DARK}`",
-        theme::PURLIS
+        "`{theme}` has no high-contrast appearance: ask for {} with appearance `{}`",
+        theme::PURLIS,
+        word_tagged(appearance, true)
     )
 }
 
@@ -862,7 +868,8 @@ pub fn checked(specimens: &[Specimen]) -> Result<(), String> {
         }
         if specimen.high_contrast && specimen.appearance.is_none() {
             return Err(format!(
-                "high contrast is asked for with an appearance: `{HIGH_CONTRAST_DARK}`"
+                "high contrast is asked for with an appearance: `{HIGH_CONTRAST_DARK}` or \
+                 `{HIGH_CONTRAST_LIGHT}`"
             ));
         }
     }
@@ -912,7 +919,7 @@ pub fn word(appearance: Appearance) -> &'static str {
 pub fn word_tagged(appearance: Appearance, high_contrast: bool) -> &'static str {
     match (appearance, high_contrast) {
         (Appearance::Dark, true) => HIGH_CONTRAST_DARK,
-        (Appearance::Light, true) => "light high-contrast",
+        (Appearance::Light, true) => HIGH_CONTRAST_LIGHT,
         (appearance, false) => word(appearance),
     }
 }

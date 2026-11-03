@@ -315,12 +315,8 @@
   block-size: calc(12rem / 14);
 }
 
+/* A tab's close ends nothing (#4756), so it has the quiet hover and never the danger one. */
 [data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]:hover {
-  background-color: var(--danger-surface);
-  color: var(--danger-text);
-}
-
-[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"][data-keeps]:hover {
   background-color: var(--surface-hover);
   color: var(--text-primary);
 }

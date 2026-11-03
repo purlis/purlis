@@ -59,7 +59,7 @@ export const BASELINE =
  *  it is and counts for nothing, so the set grows with the stories while a take stays as big
  *  as the change. Every drawn picture is still read and checked, one at a time, and only those
  *  written are held. A story's picture is tens of kilobytes; a dialog's on the page, a few
- *  hundred. Each story has a picture in each pictured cell and each browser, twenty today
+ *  hundred. Each story has a picture in each pictured cell and each browser, twenty-four today
  *  (#3040). */
 export const LIMITS = {
   bytes: 2 * 1024 * 1024,

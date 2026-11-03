@@ -254,6 +254,7 @@ describe("a view tab's close, with its unsaved work", () => {
       within(await question()).getByRole("button", { name: "Discard and leave" }),
     );
     expect(deploy.discard).toHaveBeenCalledOnce();
-    await vi.waitFor(() => expect(tabs()).toEqual([]));
+    // Settings is gone; the strip's last tab keeps one empty pane (#4756).
+    await vi.waitFor(() => expect(tabs()).toEqual([false]));
   });
 });

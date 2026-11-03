@@ -40,6 +40,16 @@ vi.mock("./SessionPane", async () => ({
   SessionPane: (await import("./countedPane.testkit")).CountedPane,
 }));
 
+// A read on a wall-clock beat (`everyWhileShown`: the saving rows every 10 s, the alerts, the
+// state clock, a running chat's gauge) is not what a switch costs, and on a slow runner one
+// landed inside a measured switch and drew the window again: 8 commits where a switch makes 5.
+// No beat runs here. What a switch reads as its project comes back is read after the paint
+// (`useOnShownAgain`), not on a beat, and is still counted.
+vi.mock("./whileShown", async (actual) => ({
+  ...(await actual<typeof import("./whileShown")>()),
+  everyWhileShown: () => () => {},
+}));
+
 afterEach(() => {
   cleanup();
   clearMocks();

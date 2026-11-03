@@ -138,7 +138,7 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
       available: true,
       does: { verb: "sendBack", session: 2 },
     });
-    // No row about that tab ends a chat, by any id.
+    // No row about that tab closes it as a layout, by any id: its one row sends it back.
     expect(
       [...rows.values()].filter(
         (row) => row.does.verb === "closeTab" && row.does.tab === tabOf(tabs, 2),
@@ -150,8 +150,8 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
     ).toMatchObject({ id: "pane.close", does: { verb: "sendBack", session: 2 } });
     // The session's own tab still has the one close on the strip.
     expect(rows.get(`tab.close:${tabOf(tabs, 1)}`)).toMatchObject({
-      title: "End chat steward 1",
-      does: { verb: "closeTab", ends: true },
+      title: "Close steward 1",
+      does: { verb: "closeTab" },
     });
     // And the rows about where it is say it: back, and not to its own tab again.
     expect(rows.get(backId(2))?.title).toBe("Send talk back into steward 1's tab");
@@ -173,8 +173,8 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
       does: { verb: "sendBack", session: 2 },
     });
     expect(paneCloseOf(tabs, own.pane, nameOf, askedByOf(all))).toMatchObject({
-      title: "End this pane's chat",
-      does: { verb: "closePane", ends: true },
+      title: "Close this pane",
+      does: { verb: "closePane" },
     });
     const rows = rowsOf(tabs);
     expect(rows.get(besideId(2))).toMatchObject({
@@ -182,7 +182,7 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
       reason: "talk is open beside it.",
     });
     // The tab is the session's, and its close is the session's.
-    expect(rows.get(`tab.close:${id}`)?.title).toBe("End chat steward 1");
+    expect(rows.get(`tab.close:${id}`)?.title).toBe("Close steward 1");
   });
 
   it("says a task whose session has no tab here goes back to the Chats list, and opens beside nothing", () => {

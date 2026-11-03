@@ -262,6 +262,11 @@ pub fn answer(
                 Ok(wanted) => wanted,
                 Err(why) => return no(why),
             };
+            // **A pool this machine doesn't keep can't start anything** (#4965): refused now, as
+            // an unreadable word is, so nobody is asked to approve what no start could take.
+            if let Err(why) = names_a_pool_kept(held, &wanted) {
+                return no(why);
+            }
             // Heard from a pool, it waits for the person, as an open does: a name purlis would
             // not draw is refused first, so nothing the person could not start waits on them.
             if let Some(pool) = crate::runnerdispatches::heard_from_a_pool(held, wanted.chat) {
@@ -3669,6 +3674,31 @@ pub(crate) struct WouldStart {
     /// The workspace it would work in, none at the project's root (#4536): what its levels
     /// of where it runs are read for.
     pub workspace: Option<String>,
+}
+
+/// **Whether the pool `wanted` names, where it names one, is one this machine keeps** (#4965):
+/// a start refuses any other, so a dispatch naming one is refused before anyone is asked. A
+/// machine with no pools kept, or whose pools can't be read, keeps none it could start on.
+fn names_a_pool_kept(held: &Held, wanted: &Wanted) -> Result<(), String> {
+    let Some(purlis_core::machine::StartChoice::Pool(pool)) = &wanted.runs_on else {
+        return Ok(());
+    };
+    let kept = match held.chats().pools_in() {
+        Some(config) => purlis_core::runners::pool_names(&config).map_err(|why| {
+            format!(
+                "purlis could not read the pools this machine keeps, so it can't run on pool \
+                 {pool}: {why}. Nothing was started."
+            )
+        })?,
+        None => Vec::new(),
+    };
+    if kept.iter().any(|one| one == pool) {
+        return Ok(());
+    }
+    Err(format!(
+        "pool {pool} isn't one this machine keeps, so this task can't run there. Nothing was \
+         started: name a pool this machine keeps, or leave out --pool."
+    ))
 }
 
 /// **Whether `wanted` moves work** (#4536): it names a place to run other than where its target

@@ -35,6 +35,13 @@ pub enum Act {
     Open {
         address: String,
     },
+    /// **Where `address` sends a browser to sign in** (1.70, #4995): a new page of purlis's own
+    /// opened at `address` and followed until its own document shows a login form. The answer's
+    /// page is that document, as the engine records it. Nothing is typed. No browser tool of a
+    /// chat's sends it; one a chat sent anyway does no more than `Open`.
+    FindLoginForm {
+        address: String,
+    },
     /// Sends a page to `address`.
     Navigate {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -410,6 +417,11 @@ pub struct LogIn {
     /// always has, on the same origin.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub suggested: bool,
+    /// **The origin of the login's form, where it isn't the page's own** (1.70, #4995): the one
+    /// place the password is typed, the page opened first. A host before 1.70 fills on the
+    /// page's origin alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form: Option<String>,
 }
 
 /// **A kept login** (1.27, #2021, the person's rulings of 2026-10-18): a profile, the persona

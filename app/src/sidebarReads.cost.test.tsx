@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { aWindow, rootOf, settled, windowCommits, type Asked } from "./projectSwitch.testkit";
 import { keepTheirOrder } from "./commandOrder";
+import { askToEnd } from "./menus.testkit";
 
 keepTheirOrder();
 
@@ -122,8 +123,8 @@ describe("when the window reads the sidebar again", () => {
     const { asked } = await aWindow(SHAPE);
     const from = asked.length;
 
-    fireEvent.click(screen.getByRole("button", { name: "End chat steward steward 3" }));
-    const asking = await screen.findByRole("alertdialog", { name: "End chat steward steward 3?" });
+    // Only End… ends a chat (#4756): a close ends nothing.
+    const asking = await askToEnd("steward steward 3");
     fireEvent.click(within(asking).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     await waitFor(() =>

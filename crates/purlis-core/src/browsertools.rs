@@ -725,7 +725,9 @@ fn s_login() -> Value {
             "site": {
                 "type": "string",
                 "description": "For a login your persona doesn't declare: the https address of \
-                                the login page. The person confirms it before anything is filled.",
+                                the login page. The person confirms it before anything is filled. \
+                                For a declared login on the wrong site, the right site, with its \
+                                vault and keys: the person is asked to replace the recorded one.",
             },
             "vault": {
                 "type": "string",

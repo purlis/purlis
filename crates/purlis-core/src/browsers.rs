@@ -409,7 +409,7 @@ impl Browsers for EngineBrowsers {
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let mut keeping = Keeping::new(&home, data);
         if let (Some(kept), Some(site), Some(sites)) = (kept, &kept_site, &sites) {
-            proxy.bind(site)?;
+            proxy.bind(std::slice::from_ref(site))?;
             sites.bound_to(site);
             keeping.open(kept)?;
         }
@@ -715,6 +715,9 @@ pub fn call_of(act: Act) -> Result<drive::Call, String> {
         Act::Open { address: to } => Call::Open {
             address: address(&to)?,
         },
+        Act::FindLoginForm { address: to } => Call::FindLoginForm {
+            address: address(&to)?,
+        },
         Act::Navigate {
             page: on,
             address: to,
@@ -960,16 +963,30 @@ fn not_taken(refusal: drive::Refusal) -> NotTaken {
     }
 }
 
-/// **The driver's login for what the window handed** (#2016): the address, its origin and the
-/// site it is on, and the values, or why it is no login a browser takes.
-pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, Site), String> {
+/// **The driver's login for what the window handed** (#2016): the address, the origin it fills
+/// on, the sites it is held to, and the values, or why it is no login a browser takes. A login
+/// whose form is on another origin (#4995) fills on the form's alone, and is held to its page's
+/// site and its form's.
+pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, Vec<Site>), String> {
     let address = WebAddress::parse(&login.address)
         .map_err(|why| format!("the login's address is not one a browser opens: {why}"))?;
     // https, or plain http on this machine's loopback alone; a name in its ASCII spelling, as
     // the engine records a page's address.
-    let origin = crate::sandbox::tools::login::origin_of(&login.address)?;
-    let (host, port) = judge::site_of(&origin)
-        .ok_or_else(|| "the login's address names no origin purlis can fill on".to_owned())?;
+    let page = crate::sandbox::tools::login::origin_of(&login.address)?;
+    let origin = match &login.form {
+        Some(form) => crate::sandbox::tools::login::form_of(form)?,
+        None => page.clone(),
+    };
+    let site = |origin: &str| {
+        judge::site_of(origin)
+            .map(|(host, port)| Site::of(&host, port))
+            .ok_or_else(|| "the login's address names no origin purlis can fill on".to_owned())
+    };
+    let mut sites = vec![site(&origin)?];
+    let back_to = (origin != page).then(|| page.clone());
+    if back_to.is_some() {
+        sites.push(site(&page)?);
+    }
     Ok((
         drive::Login {
             address,
@@ -981,26 +998,27 @@ pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, Site), String> {
             password: zeroize::Zeroizing::new(login.password.expose().to_owned()),
             only_if_asked: false,
             suggested: login.suggested,
+            back_to,
         },
-        Site::of(&host, port),
+        sites,
     ))
 }
 
 /// **A login purlis performs in a browser whose judge is `sites` and whose reach proxy is
-/// `proxy`** (#2016), at `site`, on `origin`: `run` performs it, and is handed what binds the
-/// browser to `site` alone just before the first value goes in. While it runs, what purlis sends
-/// to `site` goes; once bound, the proxy carries `site` alone for the browser's life, every
-/// connection it carried before ended. Refused, running nothing, for a browser that holds a login
-/// at another site already.
+/// `proxy`** (#2016), at `at` (its form's site, then its page's where that is another, #4995), on
+/// `origin`: `run` performs it, and is handed what binds the browser to those sites alone just
+/// before the first value goes in. While it runs, what purlis sends to them goes; once bound, the
+/// proxy carries them alone for the browser's life, every connection it carried before ended.
+/// Refused, running nothing, for a browser that holds a login at another site already.
 pub fn performed<T>(
     sites: &judge::SiteJudge,
     proxy: &ReachProxy,
-    site: &Site,
+    at: &[Site],
     origin: &str,
     run: impl FnOnce(&dyn Fn() -> Result<(), String>) -> T,
 ) -> Result<T, String> {
     if let Some(held) = sites.bound().sites()
-        && !held.contains(site)
+        && !at.iter().all(|site| held.contains(site))
     {
         return Err(format!(
             "this browser holds a login at {}, and reaches nothing else: open a new browser \
@@ -1011,10 +1029,12 @@ pub fn performed<T>(
                 .join(", "),
         ));
     }
-    sites.logging_in(site);
+    sites.logging_in(at);
     let bind = || -> Result<(), String> {
-        proxy.bind(site)?;
-        sites.bound_to(site);
+        proxy.bind(at)?;
+        for site in at {
+            sites.bound_to(site);
+        }
         Ok(())
     };
     let done = run(&bind);
@@ -1513,7 +1533,7 @@ impl Screen for EngineScreen {
     }
 
     fn log_in(&self, asked: &wire::LogIn) -> Result<LoginEnded, NotActed> {
-        let (mut login, site) = login_of(asked).map_err(NotActed::Refused)?;
+        let (mut login, at) = login_of(asked).map_err(NotActed::Refused)?;
         // Opened from this very kept login, a page that asks for nothing is signed in already.
         // Tried from here, whatever comes of it (#2693).
         let opened_from = {
@@ -1533,7 +1553,7 @@ impl Screen for EngineScreen {
             let held = held.as_ref().ok_or(NotActed::Ended)?;
             (Arc::clone(&held.browser), Arc::clone(&held.proxy))
         };
-        let ended = performed(sites, &proxy, &site, &login.origin, |bind| {
+        let ended = performed(sites, &proxy, &at, &login.origin, |bind| {
             browser.log_in(&login, bind)
         })
         .map_err(NotActed::Refused)?

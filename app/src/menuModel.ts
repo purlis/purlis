@@ -172,15 +172,6 @@ function pinnedNow(offer: Offer): boolean {
   );
 }
 
-/** Whether a close row ends a chat, as the catalogue says. */
-function endsAChat(offer: Offer): boolean {
-  const does = offer.does;
-  if (does.verb === "closeTab" || does.verb === "closePane" || does.verb === "closeOtherTabs")
-    return does.ends;
-  // A row that cannot run carries no verb; its title still says which it is.
-  return does.verb === "nothing" && offer.title.startsWith("End ");
-}
-
 const pin: Dress = { said: SAID.pinned, slot: "first", checked: pinnedNow };
 const stopped = (warns: string, said: Dress["said"] = unnamed): Dress => ({
   said,
@@ -241,8 +232,7 @@ const DRESS: Readonly<Record<string, Dress>> = {
     // A task's own tab keeps the close's id for its minimise (#1489), which sends it back and
     // ends nothing: with the other rows that say where a task is drawn, never among what ends.
     slot: (offer) => (offer.does.verb === "sendBack" ? "open" : "end"),
-    danger: endsAChat,
-    warns: (offer) => (endsAChat(offer) ? WARNS.ends : undefined),
+    // It ends nothing (#4756), so it is never in the danger colour and warns of nothing.
     keys: () => deleteKeySaid(onAMac()),
   },
 
@@ -356,12 +346,8 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "pane.split.right": { said: (offer) => offer.title, slot: "run" },
   "pane.split.down": { said: (offer) => offer.title, slot: "run" },
   "pane.sendkey": { said: (offer) => offer.title, slot: "run" },
-  "pane.close": {
-    said: (offer) => offer.title,
-    slot: "end",
-    danger: endsAChat,
-    warns: (offer) => (endsAChat(offer) ? WARNS.ends : undefined),
-  },
+  // Close pane clears the pane and ends nothing (#4756): no danger colour, no warning.
+  "pane.close": { said: (offer) => offer.title, slot: "end" },
 };
 
 /** The acts this file has words for. */

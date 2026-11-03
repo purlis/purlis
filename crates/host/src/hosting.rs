@@ -3808,7 +3808,9 @@ impl session::Host for Hosting {
             }
             Command::ReposHeld => self.repos_held().await,
             Command::StartProgram(start) => {
-                self.code().program_starting();
+                if let Some(projects) = self.projects_kept_in() {
+                    self.code().program_starting(&projects)?;
+                }
                 match start.kind {
                     ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
                     ProgramKind::Browser => self.start_browser(*start, peer).await,
@@ -3955,7 +3957,7 @@ impl session::Host for Hosting {
                 act,
                 reach,
             } => self.browse(&program, call_id, act, reach).await,
-            Command::LogIn { program, login } => self.log_in(&program, login).await,
+            Command::LogIn { program, login } => self.log_in(&program, *login).await,
             Command::ProgramsOf { project } => self.programs_of(&project, peer),
             // Only the window's link reaches this: the grants refuse every other.
             Command::NoteProgram { program, note } => self.note_program(&program, note, peer),

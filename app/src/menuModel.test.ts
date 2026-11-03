@@ -370,8 +370,6 @@ describe("every menu", () => {
         // Ends the program a chat runs, or every chat of a project.
         "chat.end",
         "chat.fresh",
-        "tab.close",
-        "pane.close",
         "project.close",
         "chat.stop",
         "chat.stop.below",
@@ -388,8 +386,14 @@ describe("every menu", () => {
       ].sort(),
     );
     // Restart keeps the conversation; a branch's folder goes and its branch stays; a repo
-    // taken out of a workspace is deleted nowhere.
-    for (const stem of ["chat.restart", "worktree.remove", "absent.drop"])
+    // taken out of a workspace is deleted nowhere; a close ends nothing (#4756).
+    for (const stem of [
+      "chat.restart",
+      "worktree.remove",
+      "absent.drop",
+      "tab.close",
+      "pane.close",
+    ])
       expect(plain, stem).toContain(stem);
   });
 
@@ -555,7 +559,7 @@ describe("a tab's menu (#4753)", () => {
   it("holds the tab's own rows and no chat's", () => {
     expect(said(menuOf({ on: "tab", tab: behind }, offers))).toEqual([
       ["Switch to", "Pinned", "Tile all"],
-      ["End"],
+      ["Close"],
     ]);
     const inFront = rowsOf(menuOf({ on: "tab", tab: front }, offers));
     expect(inFront.map((row) => row.said)).not.toContain(SAID.switchTo);
@@ -577,7 +581,7 @@ describe("a tab's menu (#4753)", () => {
     const keys = Object.fromEntries(
       rows.filter((row) => row.keys !== undefined).map((row) => [row.said, row.keys]),
     );
-    expect(keys).toEqual({ End: expect.stringMatching(/^(⌫|Delete)$/) });
+    expect(keys).toEqual({ Close: expect.stringMatching(/^(⌫|Delete)$/) });
   });
 
   it("on a view's tab is Pinned, Tile all and Close, and Close is not coloured", () => {
@@ -647,7 +651,7 @@ describe("the other tabs' menus", () => {
     expect(said(menuOf({ on: "pane" }, offers))).toEqual([
       ["New tab", "New shell"],
       ["Split right", "Split down", "Send F2 to the chat in front"],
-      ["End this pane's chat"],
+      ["Close this pane"],
     ]);
     expect(rows.find((row) => row.said === "New shell")?.keys).toMatch(/^(⌘⇧T|Ctrl\+Shift\+T)$/);
     // The same words on a workspace's tab open a shell in that workspace, which has no key.

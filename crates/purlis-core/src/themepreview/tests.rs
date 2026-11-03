@@ -147,7 +147,7 @@ fn no_theme_or_an_odd_value_is_refused_in_words_that_say_what_to_give() {
             json!({"theme": "purlis-classic", "appearance": "sepia"})
         ))
         .expect_err("refused")
-        .contains("`dark`, `light` or `dark-high-contrast`")
+        .contains("`dark`, `light`, `dark-high-contrast` or `light-high-contrast`")
     );
     assert!(
         asked(&args(
@@ -803,6 +803,42 @@ fn purlis_is_drawn_in_its_high_contrast_dark_when_that_is_asked_for() {
     assert_eq!((dark.id.as_str(), dark.high_contrast), ("dark", false));
 }
 
+/// A high-contrast light specimen of `theme`.
+fn sharp_light(theme: &str) -> Specimen {
+    Specimen {
+        appearance: Some(Appearance::Light),
+        ..sharp(theme)
+    }
+}
+
+#[test]
+fn purlis_is_drawn_in_its_high_contrast_light_when_that_is_asked_for() {
+    // #4677: Purlis's sixth shipped appearance, as the tool names it.
+    assert_eq!(
+        asked(&args(
+            json!({"theme": "purlis", "appearance": "light-high-contrast"})
+        )),
+        Ok(vec![sharp_light("purlis")])
+    );
+    for theme in ["purlis", "purlis-light"] {
+        let one = chosen(&sharp_light(theme)).expect("its high-contrast light");
+        assert_eq!(
+            (one.name.as_str(), one.id.as_str(), one.high_contrast),
+            ("Purlis", "light-high-contrast", true),
+            "{theme}"
+        );
+    }
+    assert_eq!(
+        resolved(&Reached::nowhere(), &sharp_light("purlis"))
+            .expect("drawn")
+            .held,
+        None
+    );
+    // Its plain light stays the one tagged light and not high contrast.
+    let light = chosen(&specimen("purlis", Some(Appearance::Light))).expect("light");
+    assert_eq!((light.id.as_str(), light.high_contrast), ("light", false));
+}
+
 #[test]
 fn a_theme_with_no_high_contrast_appearance_is_refused_naming_the_one_that_has_it() {
     // `purlis-dark` names Purlis's dark, which has one (#3034).
@@ -810,14 +846,24 @@ fn a_theme_with_no_high_contrast_appearance_is_refused_naming_the_one_that_has_i
         chosen(&sharp("purlis-dark")).map(|one| one.id.as_str()),
         Ok("dark-high-contrast")
     );
-    for theme in ["purlis-classic", "purlis-light"] {
-        let why = chosen(&sharp(theme)).expect_err("refused");
-        assert!(why.contains("no high-contrast appearance"), "{why}");
-        assert!(
-            why.contains("purlis with appearance `dark-high-contrast`"),
-            "{why}"
-        );
-    }
+    let why = chosen(&sharp("purlis-classic")).expect_err("refused");
+    assert!(why.contains("no high-contrast appearance"), "{why}");
+    assert!(
+        why.contains("purlis with appearance `dark-high-contrast`"),
+        "{why}"
+    );
+    let why = chosen(&sharp_light("purlis-classic")).expect_err("refused");
+    assert!(
+        why.contains("purlis with appearance `light-high-contrast`"),
+        "{why}"
+    );
+    // `purlis-light` has a high-contrast light (#4677), never a dark one in its place.
+    let why = chosen(&sharp("purlis-light")).expect_err("refused");
+    assert!(why.contains("has only a light appearance"), "{why}");
+    assert!(
+        why.contains("purlis with appearance `dark-high-contrast`"),
+        "{why}"
+    );
 }
 
 #[test]
@@ -849,11 +895,11 @@ fn the_tool_says_purlis_is_the_default_and_names_its_high_contrast_dark() {
     let schema = (TOOLS[0].schema)();
     assert_eq!(
         schema["properties"]["appearance"]["enum"],
-        json!(["dark", "light", "dark-high-contrast"])
+        json!(["dark", "light", "dark-high-contrast", "light-high-contrast"])
     );
     assert_eq!(
         schema["properties"]["side_by_side"]["properties"]["appearance"]["enum"],
-        json!(["dark", "light", "dark-high-contrast"])
+        json!(["dark", "light", "dark-high-contrast", "light-high-contrast"])
     );
     let theme = schema["properties"]["theme"]["description"]
         .as_str()

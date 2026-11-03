@@ -390,8 +390,17 @@ spec:
     out, as git leaves it out; a file in no clone, such as one a task wrote in its workspace's
     folder, counts. So does a change git is told not to look at (a file marked unchanged or to
     skip the work tree), every stash and not only the newest, and a file a task wrote in the
-    runner's home since its host started, outside its project: a hidden folder of the home, a
-    program's own settings, cache or record, is left out, as is a temporary folder (#4781).
+    runner's home since its host first started a program, outside its project: a hidden folder
+    of the home, a program's own settings, cache or record, is left out, as is a temporary folder
+    (#4781). A file the runner's user owns anywhere else in the runner counts too, such as one
+    beside the home on its volume or in a folder the pool's image gives that user, except in
+    `/proc`, `/sys`, `/dev`, `/run`, `/tmp` and `/var/tmp` and the hidden entries of `/root`
+    and `/home/<name>`; a folder there it can't read is said, unless it is another's, unchanged
+    since, that it can neither write in nor pass through, and a folder more than 128 deep is
+    said rather than looked into. The time its host first started a program is kept on the home's
+    volume, so a host started again in the same pod still finds what a task saved before
+    (#4933). An image with a very large file system, or a folder its user may write in but not
+    read, keeps its fresh runners until you discard them.
     Only the window of the checkout a task started from lets its runner go, so
     another checkout of the same project never takes it. Anything else missing keeps the
     Claim, and the window says what, with **Fetch again** and **Discard**, never silently. purlis
