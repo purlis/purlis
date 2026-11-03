@@ -557,6 +557,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "pool-login",
   "pool-tool",
   "browser-login",
+  "secret-fill",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -640,7 +641,8 @@ function shapeOf(
       (ask.answer.via === "sandbox-block" ||
         ask.answer.via === "browser" ||
         ask.answer.via === "browser-sites" ||
-        ask.answer.via === "browser-login") &&
+        ask.answer.via === "browser-login" ||
+        ask.answer.via === "secret-fill") &&
       ask.options.some((one) => one.id === "keep"),
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
@@ -805,6 +807,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
   secret: "Asks you for a secret its vault doesn't hold",
   "browser-login": "Asks to log its browser in to a site with vault credentials",
+  "secret-fill": "Asks to put a vault secret into a field of its browser",
   terminal: "In its terminal",
   question: "Waiting on your reply",
   "task-question": "Asks you, through its asking chat",
@@ -872,7 +875,7 @@ function Ask({
     ...shape.offers.map((one) => one.label),
     changeDrawn ? "drawn" : "",
     // A login's notice drawn anew has to be read anew (#4595).
-    ask.answer.via === "browser-login" ? ask.answer.shown : "",
+    ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
   ].join("\n");
   const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
   /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
