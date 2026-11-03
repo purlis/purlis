@@ -2967,28 +2967,60 @@ fn removing_a_pool_clears_it_from_the_project_and_every_workspace() {
 }
 
 #[test]
-fn where_a_workspace_no_folder_is_named_for_runs_its_chats_is_forgotten() {
+fn a_pool_named_for_a_workspace_no_folder_has_becomes_this_machine_and_this_machine_stays() {
     use PlaceLevel::{Project, Workspace};
     let plane = Path::new("/planes/a");
     let mut store = remembering(&["/planes/a"]);
     store.set_project_chats_run_on(plane, Some("team")).unwrap();
     store.set_chats_run_here(plane, "old").unwrap();
     store.set_chats_run_on(plane, "gone", Some("mine")).unwrap();
-    store.set_chats_run_here(plane, "kept").unwrap();
+    store.set_chats_run_on(plane, "kept", Some("mine")).unwrap();
     let there = ["kept".to_owned(), "new".to_owned()];
 
     assert!(store.tidy_workspaces(plane, &there));
     assert!(
         !store.tidy_workspaces(plane, &there),
-        "nothing more to forget"
+        "nothing more to change"
     );
-    assert_eq!(store.every_chats_run_on(plane), vec![]);
-    assert_eq!(store.chat_place(plane, "kept", None).level, Workspace);
-    // A workspace made later under a name that was forgotten follows the project.
-    assert_eq!(store.chat_place(plane, "old", None).level, Project);
-    assert_eq!(store.chat_place(plane, "gone", None).level, Project);
+    assert_eq!(store.every_chats_run_on(plane), vec![("kept", "mine")]);
+    // A folder that comes back under either name runs here, and never on a pool unasked.
+    for name in ["old", "gone"] {
+        let place = store.chat_place(plane, name, None);
+        assert_eq!((place.pool, place.level), (None, Workspace), "{name}");
+    }
+    assert_eq!(store.chat_place(plane, "new", None).level, Project);
     assert_eq!(
         store.recents[0].project_chats_run_on.as_deref(),
         Some("team")
     );
+}
+
+#[test]
+fn only_a_whole_list_of_workspaces_with_no_rename_under_way_is_trusted_for_a_tidy() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = dir.path();
+    assert_eq!(workspaces_surely_there(plane), None, "no workspaces folder");
+    std::fs::create_dir_all(plane.join("workspaces").join("app")).unwrap();
+    assert_eq!(workspaces_surely_there(plane), Some(vec!["app".to_owned()]));
+    let journal = crate::wscmd::rename::journal_path(plane);
+    std::fs::create_dir_all(journal.parent().unwrap()).unwrap();
+    std::fs::write(&journal, r#"{"from":"app","to":"web"}"#).unwrap();
+    assert_eq!(workspaces_surely_there(plane), None, "a rename under way");
+}
+
+#[test]
+fn a_projects_pool_is_named_while_a_workspace_follows_it_or_its_workspaces_cant_be_listed() {
+    let plane = Path::new("/planes/a");
+    let mut store = remembering(&["/planes/a"]);
+    store.set_project_chats_run_on(plane, Some("team")).unwrap();
+    store.set_chats_run_on(plane, "web", Some("mine")).unwrap();
+    store.set_chats_run_here(plane, "here").unwrap();
+    let named = |listed: Option<&[String]>| -> Vec<String> {
+        store.pools_named(plane, listed).into_iter().collect()
+    };
+    let none_follow = ["web".to_owned(), "here".to_owned()];
+    assert_eq!(named(Some(&none_follow)), ["mine"]);
+    let one_follows = ["web".to_owned(), "ide".to_owned()];
+    assert_eq!(named(Some(&one_follows)), ["mine", "team"]);
+    assert_eq!(named(None), ["mine", "team"]);
 }

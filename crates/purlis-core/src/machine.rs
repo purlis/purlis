@@ -1685,23 +1685,29 @@ impl Store {
         }
     }
 
-    /// **Forgets where a workspace of `plane` that isn't in `there` runs its chats** (#4591).
-    /// Answers whether anything changed.
+    /// **Sets a workspace of `plane` that isn't in `there` and names a pool to This machine**
+    /// (#4591). Answers whether anything changed.
     ///
     /// A folder removed or renamed outside purlis leaves its setting under a name nothing has,
-    /// and a workspace made later under that name would take it up unasked. What a chat on a
-    /// pool left, its record and its branches still owed, stays: a put-back settles it (#4590).
+    /// and a workspace made under that name later would take a pool up unasked. So such a name
+    /// never names a pool again: one that names This machine stays as it is, and either keeps a
+    /// folder that comes back on this machine, whatever the project names. What a chat on a pool
+    /// left, its record and its branches still owed, stays: a put-back settles it (#4590).
     pub fn tidy_workspaces(&mut self, plane: &Path, there: &[String]) -> bool {
         let Some(entry) = self.recents.iter_mut().find(|one| one.plane == plane) else {
             return false;
         };
-        let is_there = |workspace: &String| there.contains(workspace);
-        let before = entry.chats_run_on.len() + entry.chats_run_here.len();
-        entry
+        let gone: Vec<String> = entry
             .chats_run_on
-            .retain(|workspace, _| is_there(workspace));
-        entry.chats_run_here.retain(is_there);
-        before != entry.chats_run_on.len() + entry.chats_run_here.len()
+            .keys()
+            .filter(|workspace| !there.contains(workspace))
+            .cloned()
+            .collect();
+        for workspace in &gone {
+            entry.chats_run_on.remove(workspace);
+            entry.chats_run_here.insert(workspace.clone());
+        }
+        !gone.is_empty()
     }
 
     /// **The pools `plane`'s settings run a chat of one of its `workspaces` on** (#4591): each a
@@ -2298,6 +2304,23 @@ pub struct Loaded {
     /// differently: content charter could read and did not understand is replaced, and a file
     /// charter could not read is left exactly where it is.
     pub unreadable: Option<String>,
+}
+
+/// **The workspaces of the plane at `plane`, where the list can be trusted to say what is gone**
+/// (#4591).
+///
+/// `None` where it can't: a plane with no `workspaces/` folder, one whose entries the filesystem
+/// would not all describe, and one with a rename under way, whose folder has moved before its
+/// settings are carried ([`crate::wscmd::rename::in_flight`]).
+pub fn workspaces_surely_there(plane: &Path) -> Option<Vec<String>> {
+    let folder = std::fs::symlink_metadata(plane.join("workspaces")).ok()?;
+    if !folder.is_dir() || crate::wscmd::rename::in_flight(plane).is_some() {
+        return None;
+    }
+    let (names, unread) = crate::workspaces::Plane::open(plane)
+        .read_workspaces()
+        .ok()?;
+    unread.is_empty().then_some(names)
 }
 
 /// Everything charter kept outside a plane, with whatever it would not take back named.
