@@ -326,3 +326,48 @@ fn a_message_queued_while_the_link_was_down_is_still_carried_after_its_host_rest
     assert_eq!(carried(&window), [format!("carried {waits} waits")]);
     assert!(still_queued(&socket).is_empty(), "carried, and so not kept");
 }
+
+#[test]
+fn a_refused_message_behind_a_sender_still_writing_a_lower_one_is_retired_all_the_same() {
+    // Another sender of the chat's is still writing the message numbered below it (#4941): the
+    // retire lists the folder itself, not what a drain may take now, which stops at that part.
+    let (window, holding) = a_window();
+    let here = Arc::new(AtomicBool::new(true));
+    let (_root, socket, token) = a_runner_project();
+    let dir = dispatchqueue::dir_for(&socket, CHAT);
+    std::fs::create_dir_all(&dir).expect("the chat's queue");
+    let writing = dir.join(format!("{:020}.part", 1));
+    std::fs::write(&writing, b"").expect("a sender's part");
+    let refused = queues(&socket, &token, "refused before");
+    let host = a_runner_host(&window, &holding, &here, &socket);
+
+    // The sender gives up, or an hour passes and its part is a dead sender's.
+    std::fs::remove_file(&writing).expect("the part gone");
+    (host.each)(report(CHAT)).expect("the window hears this host");
+    std::thread::sleep(Duration::from_millis(200));
+
+    assert!(carried(&window).is_empty(), "{:?}", window.heard());
+    assert!(
+        !still_queued(&socket).contains(&refused),
+        "retired, not kept for later"
+    );
+}
+
+#[test]
+fn a_message_queued_under_a_build_before_hosts_carried_is_retired_after_a_host_carried_before() {
+    // A host carried here, then `purlis serve` went back to a build from before hosts carried
+    // and forward again (#4941): what was queued in between was refused saying nothing was
+    // sent, whatever a host before it left behind.
+    let (window, holding) = a_window();
+    let here = Arc::new(AtomicBool::new(true));
+    let (_root, socket, token) = a_runner_project();
+    drop(a_runner_host(&window, &holding, &here, &socket));
+    let refused = queues(&socket, &token, "refused in between");
+
+    let host = a_runner_host(&window, &holding, &here, &socket);
+    (host.each)(report(CHAT)).expect("the window hears this host");
+    std::thread::sleep(Duration::from_millis(200));
+
+    assert!(carried(&window).is_empty(), "{:?}", window.heard());
+    assert!(!still_queued(&socket).contains(&refused), "retired");
+}

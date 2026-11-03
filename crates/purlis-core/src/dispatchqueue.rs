@@ -61,10 +61,11 @@ const DIGITS: usize = 20;
 /// ([`crate::dispatchtalk::Talk::keep_at`]), beside the queues and under their denial.
 pub const RECORDS: &str = "records.json";
 
-/// **The marker a runner's host leaves the first time it carries these queues** (#4895): where
-/// it is, the host started since retires nothing, since what waits was queued while a host
-/// carried, and its sender was told it waits.
-pub const CARRIES: &str = "carries";
+/// **What a runner's host told each chat waits** (#4895, #4941): the ids of the messages whose
+/// `Deliver` it answered, so a host started since carries those and retires the rest. A message
+/// no host answered for was queued while none carried, under a build that refused it saying
+/// nothing was sent, and is never delivered.
+pub const TOLD_WAITS: &str = "waits.json";
 
 /// What a queued message's MAC is over, ahead of its body: so no spool line's MAC is ever a
 /// message's, or the other way round.
@@ -279,9 +280,9 @@ pub fn records_for(socket: &Path) -> PathBuf {
     queues_for(socket).join(RECORDS)
 }
 
-/// Where a runner's host marks that it carries these queues ([`CARRIES`]), beside `socket`.
-pub fn carries_for(socket: &Path) -> PathBuf {
-    queues_for(socket).join(CARRIES)
+/// Where a runner's host keeps what it told each chat waits ([`TOLD_WAITS`]), beside `socket`.
+pub fn told_waits_for(socket: &Path) -> PathBuf {
+    queues_for(socket).join(TOLD_WAITS)
 }
 
 /// Where every chat's queue is.
@@ -543,6 +544,24 @@ pub fn waiting(socket: &Path, chat: u32) -> Vec<Found> {
 
 /// [`waiting`], in the spool directory `spool`.
 fn waiting_in(spool: &Path, chat: u32) -> Vec<Found> {
+    found_in(spool, chat, Parts::StopAtTheFirst)
+}
+
+/// **Every message chat `chat` has queued, oldest first, whatever is still being written**
+/// (#4941): what a host retires, where [`waiting`] stops at the lowest `.part`. Nothing is
+/// removed.
+pub fn every_queued(socket: &Path, chat: u32) -> Vec<Found> {
+    found_in(&spool_dir(socket), chat, Parts::LookPast)
+}
+
+/// Whether a look at a queue stops at a message still being written.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Parts {
+    StopAtTheFirst,
+    LookPast,
+}
+
+fn found_in(spool: &Path, chat: u32, parts: Parts) -> Vec<Found> {
     let dir = spool.join(DIR).join(chat.to_string());
     if crate::contain::no_link_on_the_way(spool, &dir).is_err() {
         return Vec::new();
@@ -550,12 +569,12 @@ fn waiting_in(spool: &Path, chat: u32) -> Vec<Found> {
     let Ok(mut numbers) = numbers(&dir) else {
         return Vec::new();
     };
-    // **Never past a message still being written**: a sender that took a lower number than
-    // another is still writing it, and one delivered after it would raise the floor over it.
-    // What comes after the lowest `.part` waits for the next look.
+    // **Never past a message still being written**, for a drain: a sender that took a lower
+    // number than another is still writing it, and one delivered after it would raise the floor
+    // over it. What comes after the lowest `.part` waits for the next look.
     let writing = numbers
         .iter()
-        .filter(|(_, part)| *part)
+        .filter(|(_, part)| *part && parts == Parts::StopAtTheFirst)
         .map(|(seq, _)| *seq)
         .min();
     numbers.retain(|(seq, part)| !part && writing.is_none_or(|first| *seq < first));
@@ -682,6 +701,13 @@ fn raise(socket: &Path, chat: u32, message: &Waiting) {
 
 #[cfg(not(unix))]
 fn raise(_: &Path, _: u32, _: &Waiting) {}
+
+/// **The message is retired, never delivered** (#4941): removed, and the floor of its chat's
+/// numbers left where it is, so a message numbered below it that a sender is still writing is
+/// not taken for one delivered already.
+pub fn retired(message: &Waiting) {
+    let _ = std::fs::remove_file(&message.path);
+}
 
 /// A file that did not check is removed.
 pub fn drop_unchecked(path: &Path) {
