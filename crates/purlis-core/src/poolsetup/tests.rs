@@ -520,7 +520,7 @@ fn read_picks_up_a_choice_made_since_the_last_read() {
 
 #[test]
 fn with_no_project_open_identity_says_to_open_one() {
-    assert_eq!(identity_in(None), Identity::NoProject);
+    assert_eq!(identity_in(None, &[]), Identity::NoProject);
 }
 
 #[test]
