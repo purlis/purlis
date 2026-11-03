@@ -231,6 +231,49 @@ impl Node {
         }
     }
 
+    /// This tree with every pane of a chat `gone` names taken out, and where `focused` (a path
+    /// into it, or `None` where the focus is not in it) is now: a split that loses one child
+    /// is its other child, and a focus that was in the child taken out goes to the one kept.
+    /// `None` where nothing is left.
+    fn without(
+        self,
+        gone: &dyn Fn(u32) -> bool,
+        focused: Option<&[Side]>,
+    ) -> Option<(Self, Option<Vec<Side>>)> {
+        match self {
+            Self::Pane(Pane::Chat(number)) if gone(number) => None,
+            Self::Pane(pane) => Some((Self::Pane(pane), focused.map(|_| Vec::new()))),
+            Self::Split(split) => {
+                let Split {
+                    direction,
+                    share,
+                    a,
+                    b,
+                } = *split;
+                // A path that ends at a split goes on into its first child (`to_a_pane`).
+                let (in_a, in_b) = match focused {
+                    Some([Side::B, rest @ ..]) => (None, Some(rest)),
+                    Some([Side::A, rest @ ..]) => (Some(rest), None),
+                    Some([]) => (Some(&[][..]), None),
+                    None => (None, None),
+                };
+                let was_focused = focused.is_some();
+                match (a.without(gone, in_a), b.without(gone, in_b)) {
+                    (Some((a, at_a)), Some((b, at_b))) => {
+                        let focused = at_a
+                            .map(|path| [&[Side::A][..], &path].concat())
+                            .or_else(|| at_b.map(|path| [&[Side::B][..], &path].concat()));
+                        Some((Self::split(direction, share, a, b), focused))
+                    }
+                    (Some((kept, at)), None) | (None, Some((kept, at))) => {
+                        Some((kept, at.or_else(|| was_focused.then(Vec::new))))
+                    }
+                    (None, None) => None,
+                }
+            }
+        }
+    }
+
     /// `path` as far as it goes in this tree, then on into each split's first child until it
     /// ends at a pane.
     pub fn to_a_pane(&self, path: &[Side]) -> Vec<Side> {
@@ -294,6 +337,26 @@ impl Layout {
     pub fn held(mut self) -> Self {
         for tab in &mut self.tabs {
             tab.focused = tab.tree.to_a_pane(&tab.focused);
+        }
+        self
+    }
+
+    /// **This layout with every pane of a chat `gone` names taken out** (#4761): what a
+    /// one-job program's split leaves, since one is never recorded (spec #4750). The pane it
+    /// was beside takes its split's place, as the window draws it once the program exits, and
+    /// takes the focus where the one-job pane had it. A tab with nothing else in it keeps an
+    /// empty pane, so no tab goes because of one.
+    #[must_use]
+    pub fn without(mut self, gone: impl Fn(u32) -> bool) -> Self {
+        for tab in &mut self.tabs {
+            let tree = std::mem::replace(&mut tab.tree, Node::Pane(Pane::Empty));
+            match tree.without(&gone, Some(&tab.focused)) {
+                Some((tree, focused)) => {
+                    tab.focused = tree.to_a_pane(&focused.unwrap_or_default());
+                    tab.tree = tree;
+                }
+                None => tab.focused = Vec::new(),
+            }
         }
         self
     }

@@ -169,8 +169,8 @@ export async function endChatById(session: number, plane?: string): Promise<void
 }
 
 /**
- * Runs chat `session`'s End… from the palette, answers the question's Close and waits until the
- * question has gone; answers the row's id.
+ * Runs chat `session`'s End… from the palette, answers the question's Close (End, for a shell)
+ * and waits until the question has gone; answers the row's id.
  */
 async function pressItsEnd(session: number): Promise<string> {
   const row = `chat.end:${session}`;
@@ -179,8 +179,9 @@ async function pressItsEnd(session: number): Promise<string> {
     async () =>
       browser.execute(() => {
         const asking = document.querySelector('[role="alertdialog"]');
+        // A chat's question ends it on Close; a shell's asks only Cancel or End (#4761).
         const close = [...(asking?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
-          (button) => button.textContent?.trim() === "Close",
+          (button) => ["Close", "End"].includes(button.textContent?.trim() ?? ""),
         );
         close?.click();
         return close !== undefined;

@@ -487,8 +487,9 @@ how it is cited and nothing here is renumbered.
     `$EDITOR`, is started as a program with `+line` and the file as arguments, never through a
     shell; the path is handed on as the system spells it, so a name that is not UTF-8 is not
     rewritten. A terminal editor purlis knows (vi, vim, nvim, nano, `emacs -nw`, hx, micro,
-    kak and others, a fixed list) opens in a shell tab of its own in the file's branch folder,
-    in front, run there as the same program and arguments, never through a shell (#1042). An editor that exits at once with
+    kak and others, a fixed list) opens as a one-job pane in the file's branch folder: a split
+    beside the focused pane, with the keyboard, gone when the editor exits and never recorded
+    (#4761), run there as the same program and arguments, never through a shell (#1042). An editor that exits at once with
     an error, as an unknown terminal editor with no terminal does, is said in a sentence rather
     than dropped. The core checks the path exactly
     as it checks a read, so a file the light editor would refuse is never handed on. With no

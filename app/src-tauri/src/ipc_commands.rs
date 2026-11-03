@@ -199,6 +199,7 @@ macro_rules! app_commands {
                 firsttask::first_task_started,
                 open_session,
                 open_shell_in_branch,
+                open_one_job_shell,
                 close_session,
                 ignore_needs_you,
                 task_failure_seen,

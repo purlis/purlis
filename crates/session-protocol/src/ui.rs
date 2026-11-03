@@ -302,6 +302,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "start_chat_here",
     "open_session",
     "open_shell_in_branch",
+    "open_one_job_shell",
     "first_task_run",
     "resume_session",
     "retry_chat_that_did_not_start",

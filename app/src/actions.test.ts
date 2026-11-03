@@ -95,6 +95,8 @@ import {
   switchTabTo,
   press,
   viewKey,
+  openOneJob,
+  ONE_JOB_IN_TAB,
   type Tabs,
   type ViewRef,
 } from "./tabs";
@@ -515,6 +517,18 @@ describe("the one list of actions", () => {
     // And not on rows that only navigate: a note on everything is a note on nothing.
     expect(by(offers, "tab.select:1")?.note).toBeUndefined();
     expect(by(offers, "chat.new")?.note).toBeUndefined();
+  });
+
+  it("has no close for a tab a one-job program is in, nor Close other tabs over it (#4761)", () => {
+    // Taking its tab away would leave the program running with no pane, no row and no End….
+    const tabs = openOneJob(openTab(noTabs(), 7, "3", "steward"), 9, "vim notes.md");
+    const offers = catalogue(now({ tabs, otherTabs: () => [1] }));
+
+    expect(by(offers, "tab.close:1")).toMatchObject({ available: false, reason: ONE_JOB_IN_TAB });
+    expect(by(offers, "tab.closeOthers:1")).toMatchObject({
+      available: false,
+      reason: ONE_JOB_IN_TAB,
+    });
   });
 
   it("says of a tab of several chats that they go on", () => {
@@ -3657,6 +3671,13 @@ describe("stopping a chat (#1448)", () => {
     // A chat stopping with nothing under it has only the one row.
     expect(stopRows(three, [3]).some((row) => row.id === stopBelowId(3))).toBe(false);
     expect(rows.find((row) => row.id === stopId(1))?.title).toBe("Stop chat chat 1");
+  });
+
+  it("gives a shell no Stop all tasks, and no greyed row for what is below it (#4761)", () => {
+    // Spec #4750 story 65: a shell's list has no harness rows. It asks for no task.
+    const rows = stopRows([{ ...listed(1), shell: true }], []);
+
+    expect(rows.map((row) => row.id)).toEqual([stopId(1)]);
   });
 
   it("counts no handoff as below the chat it came from", () => {

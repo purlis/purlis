@@ -176,6 +176,11 @@ pub struct Open {
     /// Why what it was doing could not be taken from the session host as it was reattached
     /// (#2006): its tab says so until the Notice is dismissed. `None` for any other chat.
     pub untaken: Option<String>,
+    /// **Whether it is a one-job program** (#4761, ADR 0062 and 0081 as amended 2026-11-02): a
+    /// terminal editor opened from a file, or a forge login, drawn as a split beside the pane
+    /// it was opened from and gone when its program exits. Never recorded
+    /// ([`Chats::start_one_job`]), and no sidebar row.
+    pub one_job: bool,
 }
 
 /// Who an open chat is beyond this launch, and the directory it works in.
@@ -780,6 +785,10 @@ pub struct Chats {
     /// Why what each chat reattached was doing could not be taken from the session host, by
     /// session (#2006): [`Open::untaken`].
     untaken: Mutex<HashMap<u32, String>>,
+    /// **The one-job programs open, by chat id** (#4761): never recorded, and their panes left
+    /// out of the layout held ([`Self::start_one_job`]). By id and not by number, so a record
+    /// written while one is starting, before its number is known, leaves it out too.
+    one_jobs: Mutex<std::collections::HashSet<String>>,
     /// The older Claude Code a chat's late notes say it is on (#1699): marked said once the
     /// window takes them ([`Self::start_notes`]), not before.
     older_in_notes: Mutex<HashMap<u32, purlis_core::sandbox::ClaudeCodeVersion>>,
@@ -1378,6 +1387,16 @@ impl Drop for StartOnItsOwnRunner<'_> {
     }
 }
 
+/// Whether `chat` is a one-job program ([`Chats::start_one_job`]): its id is among `one_jobs`.
+/// One-job programs are known by id, which is minted before the start, so a record written while
+/// one starts already leaves it out (#4761).
+fn is_a_one_job(chat: &Chat, one_jobs: &std::collections::HashSet<String>) -> bool {
+    chat.identity
+        .id
+        .as_ref()
+        .is_some_and(|id| one_jobs.contains(id))
+}
+
 impl Chats {
     /// Chats whose record is written by `record_it` every time what is open changes, in no
     /// project: what the tests use when the project is not what they are about.
@@ -1426,6 +1445,7 @@ impl Chats {
             replacing: Mutex::new(std::collections::HashSet::new()),
             floorless: Mutex::new(HashMap::new()),
             untaken: Mutex::new(HashMap::new()),
+            one_jobs: Mutex::new(std::collections::HashSet::new()),
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
             pools_in: None,
@@ -3851,6 +3871,40 @@ impl Chats {
         self.start_as(chat, size, true, Why::New)
     }
 
+    /// **A one-job program** (#4761, ADR 0062 and 0081 as amended 2026-11-02): a terminal
+    /// editor opened from a file, or a forge login typed into a shell, started as the
+    /// operator's own shell is ([`Self::start_operator_shell`]).
+    ///
+    /// **Never written to the record**, from before its start: its id is minted here and held
+    /// in [`Self::one_jobs`] first, so no record written while it starts names it, and its
+    /// pane is left out of every layout held ([`Self::lay_out`]). A quit or a relaunch puts
+    /// none back. Its split goes when its program exits, which the window carries out.
+    pub fn start_one_job(&self, chat: &Chat, size: Size) -> Result<u32, String> {
+        let id = minted();
+        lock(&self.one_jobs).insert(id.clone());
+        let chat = Chat {
+            identity: purlis_core::reopen::Identity {
+                id: Some(id.clone()),
+                device: self.device.clone(),
+                run: None,
+                resumed_from: None,
+            },
+            ..chat.clone()
+        };
+        self.start_operator_shell(&chat, size).inspect_err(|_| {
+            lock(&self.one_jobs).remove(&id);
+        })
+    }
+
+    /// Whether chat `session` is a one-job program ([`Self::start_one_job`]). The window reads
+    /// it from [`Open::one_job`].
+    #[cfg(test)]
+    pub fn is_one_job(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|one| is_a_one_job(&one.chat, &lock(&self.one_jobs)))
+    }
+
     fn start_as(
         &self,
         chat: &Chat,
@@ -5226,6 +5280,9 @@ impl Chats {
         lock(&self.untaken).remove(&session);
         lock(&self.ended).remove(&session);
         let gone = lock(&self.open).remove(&session);
+        if let Some(id) = gone.as_ref().and_then(|one| one.chat.identity.id.as_ref()) {
+            lock(&self.one_jobs).remove(id);
+        }
         // A Try it's scratch chat takes its throwaway piece with it, where no other open chat
         // stands in it (SK-9): a restart starts before the chat it replaces ends.
         if let Some(cwd) = gone.as_ref().and_then(|gone| gone.chat.cwd.clone())
@@ -5433,7 +5490,17 @@ impl Chats {
         for running in lock(&self.open).values_mut() {
             running.chat.pinned = false;
         }
-        let held = Some(layout.held());
+        // **A one-job split is never recorded** (#4761, spec #4750): its pane is left out, and
+        // the pane it was beside takes its split's place.
+        let one_job: Vec<u32> = {
+            let one_jobs = lock(&self.one_jobs).clone();
+            lock(&self.open)
+                .iter()
+                .filter(|(_, one)| is_a_one_job(&one.chat, &one_jobs))
+                .map(|(number, _)| *number)
+                .collect()
+        };
+        let held = Some(layout.without(|number| one_job.contains(&number)).held());
         let changed = std::mem::replace(&mut *lock(&self.layout), held.clone()) != held;
         if changed {
             self.write_it_down();
@@ -6520,6 +6587,7 @@ impl Chats {
         // Read out before `open` is held, as `order` is: no lock here is taken under another.
         let floorless = lock(&self.floorless).clone();
         let untaken = lock(&self.untaken).clone();
+        let one_jobs = lock(&self.one_jobs).clone();
         let open = lock(&self.open);
         let front = *lock(&self.front);
         ordered
@@ -6551,6 +6619,7 @@ impl Chats {
                     sandbox: running.confines.as_ref().map(|confines| confines.level),
                     floorless: floorless.get(&session).cloned(),
                     untaken: untaken.get(&session).cloned(),
+                    one_job: is_a_one_job(chat, &one_jobs),
                 })
             })
             .collect()
@@ -6585,6 +6654,9 @@ impl Chats {
             .collect();
         let models = lock(&self.models).clone();
         let layout = lock(&self.layout).clone();
+        // **A one-job program is never written** (#4761): read before `open`, as each lock here
+        // is taken alone.
+        let one_jobs = lock(&self.one_jobs).clone();
         // Taken before `open`, which `front` does not hold.
         let front = self.front();
         let open = lock(&self.open);
@@ -6680,6 +6752,9 @@ impl Chats {
             };
             let chat = &running.chat;
             if superseded(chat, Some(session)) {
+                return None;
+            }
+            if is_a_one_job(chat, &one_jobs) {
                 return None;
             }
             Some(retired(Chat {
@@ -7109,6 +7184,8 @@ impl Chats {
                 sandbox: None,
                 floorless: None,
                 untaken: None,
+                // A one-job program is never recorded, so a launch puts none back.
+                one_job: false,
             })
             .collect()
     }

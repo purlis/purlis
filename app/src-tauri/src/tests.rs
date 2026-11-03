@@ -620,6 +620,7 @@ fn ending_a_chat_is_the_window_s_alone_and_never_in_the_link_s_client() {
         "start_chat_here",
         "open_session",
         "open_shell_in_branch",
+        "open_one_job_shell",
         "first_task_run",
         "resume_session",
         "retry_chat_that_did_not_start",

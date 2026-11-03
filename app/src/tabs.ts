@@ -272,7 +272,19 @@ export type Content =
    * was told it — separate from the tab's `name`, because a split starts a second chat under
    * the first one's name and the core must be told that name, not the sentence the tab draws.
    */
-  | { kind: "session"; session: number; chat: string }
+  | {
+      kind: "session";
+      session: number;
+      chat: string;
+      /**
+       * **A one-job program** (#4761; ADR 0062 and 0081 as amended 2026-11-02): a terminal
+       * editor opened from a file, or a forge login, opened beside the pane `returnTo` with the
+       * keyboard ({@link openOneJob}). Its split goes when its program exits and the keyboard
+       * goes back to `returnTo` ({@link oneJobEnded}). It has no grip, close or swap, nothing a
+       * press replaces, and the core never records it. Absent on every other chat's pane.
+       */
+      oneJob?: { returnTo?: number };
+    }
   /**
    * A view. **It carries its workspace, because it has nothing else to be filed by**: a chat is
    * on the strip of the workspace it works in (the plane's answer, `FiledIn`), and a view works
@@ -1329,6 +1341,116 @@ function shownElsewhere(tabs: Tabs, session: number, tab?: number, pane?: number
   );
 }
 
+/** Why a one-job program's pane has no close, and cannot be picked up (#4761). */
+export const ONE_JOB_STAYS = "This pane goes when its program exits. Quit the program to close it.";
+
+/** Why a tab holding a one-job program has no close (#4761): it would leave the program running
+ *  with no pane to draw it. */
+export const ONE_JOB_IN_TAB =
+  "A program in this tab goes when it exits. Quit it first, then close the tab.";
+
+/**
+ * **A one-job program opens beside the focused pane** (#4761; spec #4750 story 66): a terminal
+ * editor opened from a file, or a forge login, as a split to the right of the pane with the
+ * keyboard, in the same tab and with the keyboard, so what the person was reading stays on
+ * screen. That pane is where the keyboard goes back to when it exits ({@link oneJobEnded}).
+ * With no tab in front it opens in a tab of its own, which goes with it.
+ */
+export function openOneJob(tabs: Tabs, session: number, chat: string): Tabs {
+  const tab = frontTab(tabs);
+  if (tab === undefined) {
+    const opened = openTab(tabs, session, chat);
+    const id = opened.inFront;
+    if (id === undefined) return opened;
+    const own = opened.byId[id];
+    const layout = replace(own.layout, own.focused, (found) =>
+      found.content.kind === "session"
+        ? { ...found, content: { ...found.content, oneJob: {} } }
+        : found,
+    );
+    return { ...opened, byId: { ...opened.byId, [id]: { ...own, layout } } };
+  }
+  return insertPane(tabs, {
+    tab: tab.id,
+    pane: tab.focused,
+    direction: "row",
+    side: "after",
+    content: { kind: "session", session, chat, oneJob: { returnTo: tab.focused } },
+  });
+}
+
+/**
+ * **A one-job program exited: its split goes** (#4761; spec #4750 story 66). The pane it was
+ * beside takes the split's place, and the keyboard goes back to the pane it opened from, or,
+ * where that has gone, to the first pane left. A tab it was alone in closes. Answers `tabs`
+ * itself where no pane shows it.
+ */
+export function oneJobEnded(
+  tabs: Tabs,
+  session: number,
+  filedIn: FiledIn,
+  pinned: Pinned = nothingPinned,
+): Tabs {
+  const found = oneJobAt(tabs, session);
+  if (found === undefined) return tabs;
+  const tab = tabs.byId[found.tab];
+  const left = without(tab.layout, found.pane);
+  if (!left) return closeTab(tabs, tab.id, filedIn, pinned);
+  const kept = panes(left);
+  const focused =
+    tab.focused !== found.pane
+      ? tab.focused
+      : kept.some((one) => one.pane === found.returnTo)
+        ? (found.returnTo as number)
+        : kept[0].pane;
+  return {
+    ...tabs,
+    byId: { ...tabs.byId, [tab.id]: showing({ ...tab, layout: left, focused }, tab.shows) },
+  };
+}
+
+/** Where one-job program `session` is drawn, and the pane it opened from. */
+function oneJobAt(
+  tabs: Tabs,
+  session: number,
+): { tab: number; pane: number; returnTo?: number } | undefined {
+  for (const id of tabs.order) {
+    for (const { pane, content } of contents(tabs.byId[id].layout))
+      if (content.kind === "session" && content.session === session && content.oneJob)
+        return { tab: id, pane, returnTo: content.oneJob.returnTo };
+  }
+  return undefined;
+}
+
+/** Whether `content` is a one-job program ({@link openOneJob}): the one test of it (#4761). */
+export function isOneJob(content: Content | undefined): boolean {
+  return content?.kind === "session" && content.oneJob !== undefined;
+}
+
+/** Whether pane `pane`, in any tab, shows a one-job program ({@link openOneJob}). */
+export function isOneJobPane(tabs: Tabs, pane: number): boolean {
+  return tabs.order.some((id) =>
+    contents(tabs.byId[id].layout).some((one) => one.pane === pane && isOneJob(one.content)),
+  );
+}
+
+/**
+ * **A shell whose program exited leaves its pane empty** (#4761; spec #4750 story 64, ADR 0062
+ * as amended 2026-11-02): the pane stays in its place, showing nothing, and the keyboard stays
+ * where it was. The core closes the shell, so its row goes. Answers `tabs` itself where no pane
+ * shows it.
+ */
+export function shellExited(tabs: Tabs, session: number, filedIn: FiledIn): Tabs {
+  for (const id of tabs.order) {
+    const at = contents(tabs.byId[id].layout).find(
+      (one) => one.content.kind === "session" && one.content.session === session,
+    );
+    if (at !== undefined)
+      return showIn(tabs, id, at.pane, { kind: "empty", workspace: filedIn(session) });
+  }
+  return tabs;
+}
+
 /** A chat a press shows: its number, its own name, and what a tab named after it says. */
 export type PressedChat = {
   session: number;
@@ -1472,12 +1594,14 @@ function pressTarget(tabs: Tabs, workspace: string, at: Pressing): PaneAt | unde
         ? remembered
         : here[0];
   const tab = tabs.byId[front];
-  if (contents(tab.layout).find((one) => one.pane === tab.focused)?.content.kind !== "view")
-    return { tab: front, pane: tab.focused };
+  // A view is never replaced, nor a one-job program (#4761): it goes when it exits.
+  const takes = (content: Content) => content.kind !== "view" && !isOneJob(content);
+  const focused = contents(tab.layout).find((one) => one.pane === tab.focused)?.content;
+  if (focused === undefined || takes(focused)) return { tab: front, pane: tab.focused };
   const used = tabs.used ?? {};
   const candidates = here.flatMap((id) =>
     contents(tabs.byId[id].layout)
-      .filter((one) => one.content.kind !== "view")
+      .filter((one) => takes(one.content))
       .map((one) => ({ tab: id, pane: one.pane })),
   );
   // Stable, so panes never used keep the strip's order.

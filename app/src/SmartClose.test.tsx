@@ -442,7 +442,8 @@ function restored(session: number, name: string, { inFront = false, pinned = fal
     in_front: inFront,
     resumed: null,
     fresh: null,
-    profile: null,
+    // On a profile, so a chat and not a shell: End… on a shell has no Smart close (#4761).
+    profile: "claude",
     persona: null,
     unreported: null,
     guessed: null,
