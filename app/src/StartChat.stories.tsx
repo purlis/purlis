@@ -341,9 +341,13 @@ function coveredAt(part: Element): string | null {
   const [x, y] = [box.left + box.width / 2, box.top + box.height / 2];
   if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight)
     return "outside the window";
+  // The part itself or something inside it: an ancestor there, such as the pane that clips it, is
+  // drawn where the part is not.
   const top = document.elementFromPoint(x, y);
-  if (top !== null && (top === part || part.contains(top) || top.contains(part))) return null;
-  return top === null ? "nothing" : `${top.tagName.toLowerCase()}.${top.className}`;
+  if (top !== null && part.contains(top)) return null;
+  if (top === null) return "nothing is drawn there";
+  const name = top.tagName.toLowerCase();
+  return `under ${typeof top.className === "string" && top.className ? `${name}.${top.className.split(" ").join(".")}` : name}`;
 }
 
 /**
@@ -354,6 +358,7 @@ function coveredAt(part: Element): string | null {
  */
 async function runsOnInSight(page: ReturnType<typeof within>) {
   const section = page.getByRole("region", { name: "Runs on" });
+  section.scrollIntoView({ block: "center" });
   await waitFor(() => {
     for (const part of section.children) {
       const covered = coveredAt(part);
