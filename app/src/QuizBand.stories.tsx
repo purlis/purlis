@@ -151,7 +151,12 @@ function theCore() {
   mockIPC((cmd, args) => {
     const session = (args as { session?: number } | undefined)?.session;
     if (cmd === "task_question")
-      return { task: `task ${session}`, asked: "steward 4", number: session, question: "Which one?" };
+      return {
+        task: `task ${session}`,
+        asked: "steward 4",
+        number: session,
+        question: "Which one?",
+      };
     if (cmd === "answer_task_question") {
       window.dispatchEvent(new Event(MOVE));
       return null;

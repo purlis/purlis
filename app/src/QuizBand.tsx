@@ -232,9 +232,7 @@ export function QuizBand({ plane, session }: { plane: PlaneId; session: number }
         // The quiz's own height, measured as it went, so nothing under the band moves.
         <div className="quiz-band-quiz" style={{ minBlockSize: `${pausing.height}px` }}>
           <Card variant="ask" className="inbox-ask task-quiz task-quiz-pause">
-            {pausing.sent !== undefined && (
-              <p className="ui-text-body">{sentSaid(pausing.sent)}</p>
-            )}
+            {pausing.sent !== undefined && <p className="ui-text-body">{sentSaid(pausing.sent)}</p>}
             <p className="ui-text-secondary">{NEXT_SOON}</p>
           </Card>
         </div>
