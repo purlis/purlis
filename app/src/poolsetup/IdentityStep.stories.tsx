@@ -172,8 +172,8 @@ export const ToAllow: Story = {
       findings: ["The persona steward declares gh, and this machine hasn't allowed it."],
       next: {
         id: "allow-tool",
-        label: "Allow it in Settings",
-        does: "Opens your project's Settings: allow the persona's tool there, under Sandbox, on this machine. It never holds your own sign-in. This step is done once it's allowed.",
+        label: "Allow it in Settings › Project",
+        does: "Opens Settings › Project: allow the persona's tool there, under Sandbox, on this machine. It never holds your own sign-in. This step is done once it's allowed.",
         command: null,
         url: null,
       },
@@ -181,9 +181,9 @@ export const ToAllow: Story = {
   },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    const allow = canvas.getByRole("button", { name: "Allow it in Settings" });
+    const allow = canvas.getByRole("button", { name: "Allow it in Settings › Project" });
     allow.focus();
-    await untilFocused(() => allow, "Allow it in Settings");
+    await untilFocused(() => allow, "Allow it in Settings › Project");
     await expectFocusInSight();
     await userEvent.tab();
     await untilFocused(() => canvas.getByRole("button", { name: "Check again" }), "Check again");

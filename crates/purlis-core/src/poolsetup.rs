@@ -666,8 +666,8 @@ fn identity_reading(facts: &Facts) -> Reading {
     let allow = || {
         action(
             ActionId::AllowTool,
-            "Allow it in Settings",
-            "Opens your project's Settings: allow the persona's tool there, under Sandbox, on \
+            "Allow it in Settings › Project",
+            "Opens Settings › Project: allow the persona's tool there, under Sandbox, on \
              this machine. It never holds your own sign-in. This step is done once it's allowed.",
         )
     };

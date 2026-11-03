@@ -164,8 +164,8 @@ describe("IdentityStep", () => {
           findings: ["The persona steward declares gh, and this machine hasn't allowed it."],
           next: {
             id: "allow-tool",
-            label: "Allow it in Settings",
-            does: "Opens your project's Settings: allow the persona's tool there, under Sandbox, on this machine.",
+            label: "Allow it in Settings › Project",
+            does: "Opens Settings › Project: allow the persona's tool there, under Sandbox, on this machine.",
             command: null,
             url: null,
           },
@@ -175,7 +175,7 @@ describe("IdentityStep", () => {
         {...props}
       />,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Allow it in Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Allow it in Settings › Project" }));
     expect(props.onOpenSettings).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Check again" }));
     expect(props.changed).toHaveBeenCalled();
