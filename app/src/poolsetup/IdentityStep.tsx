@@ -149,7 +149,7 @@ export function IdentityStep({
           </p>
         ))}
         <p className="pool-setup-does">{step.see.note}</p>
-        <CodeBlock label="The token, and the tool line" text={step.see.text} />
+        <CodeBlock label="The commands, and the tool line" text={step.see.text} />
         {told}
         <Action does={step.next?.does} main={step.next?.label} onMain={changed}>
           {skipButton}

@@ -124,7 +124,7 @@ export const AnotherHost: Story = {
     step: {
       ...TO_SET_UP,
       findings: [
-        "purlis can't set up git.acme.internal by itself yet: one-click setup works for github.com. You can still do this by hand, and it works just as well. Make a token on git.acme.internal for the agent, not for you, keep it in a vault and add the tool line below. purlis notices it and marks this step done.",
+        "purlis can't set up git.acme.internal by itself yet: one-click setup works for github.com. You can still do this by hand, and it works just as well. Make a token on git.acme.internal for the agent, not for you, keep it in a vault of its own and add the tool line below. Once this machine allows it, this step is done.",
       ],
       next: {
         id: "check-again",
@@ -134,8 +134,8 @@ export const AnotherHost: Story = {
         url: null,
       },
       see: {
-        note: "Keep the token in a vault, then add this line to your project's settings. purlis marks this step done once it is there.",
-        text: 'purlis secret set forge token --stdin\n\n[sandbox.personas.steward.tools]\ngh = { vault = "forge", as = "GH_ENTERPRISE_TOKEN env", key = "token", host = "git.acme.internal" }',
+        note: "These make a vault of the agent's own and keep its token there, then the line goes in your project's settings. Never use your own token: a chat would act as you.",
+        text: 'purlis vault add agent-forge --provider keyring\npurlis secret set agent-forge token --stdin\n\n[sandbox.personas.steward.tools]\ngh = { vault = "agent-forge", as = "GH_ENTERPRISE_TOKEN env", key = "token", host = "git.acme.internal" }',
       },
     },
   },
@@ -173,7 +173,7 @@ export const ToAllow: Story = {
       next: {
         id: "allow-tool",
         label: "Allow it in Settings",
-        does: "Opens Settings › Sandbox, where you allow the persona's tool on this machine. It never holds your own sign-in. This step is done once it's allowed.",
+        does: "Opens your project's Settings: allow the persona's tool there, under Sandbox, on this machine. It never holds your own sign-in. This step is done once it's allowed.",
         command: null,
         url: null,
       },

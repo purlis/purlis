@@ -49,8 +49,8 @@ const BY_HAND: PoolSetupStep = {
     url: null,
   },
   see: {
-    note: "Keep the token in a vault, then add this line to your project's settings.",
-    text: 'purlis secret set forge token --stdin\n\n[sandbox.personas.steward.tools]\ngh = { vault = "forge", as = "GH_ENTERPRISE_TOKEN env", key = "token", host = "git.acme.internal" }',
+    note: "These make a vault of the agent's own and keep its token there, then the line goes in your project's settings. Never use your own token: a chat would act as you.",
+    text: 'purlis vault add agent-forge --provider keyring\npurlis secret set agent-forge token --stdin\n\n[sandbox.personas.steward.tools]\ngh = { vault = "agent-forge", as = "GH_ENTERPRISE_TOKEN env", key = "token", host = "git.acme.internal" }',
   },
 };
 
@@ -165,7 +165,7 @@ describe("IdentityStep", () => {
           next: {
             id: "allow-tool",
             label: "Allow it in Settings",
-            does: "Opens Settings › Sandbox, where you allow the persona's tool on this machine.",
+            does: "Opens your project's Settings: allow the persona's tool there, under Sandbox, on this machine.",
             command: null,
             url: null,
           },

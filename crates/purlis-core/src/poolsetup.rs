@@ -667,8 +667,8 @@ fn identity_reading(facts: &Facts) -> Reading {
         action(
             ActionId::AllowTool,
             "Allow it in Settings",
-            "Opens Settings › Sandbox, where you allow the persona's tool on this machine. It \
-             never holds your own sign-in. This step is done once it's allowed.",
+            "Opens your project's Settings: allow the persona's tool there, under Sandbox, on \
+             this machine. It never holds your own sign-in. This step is done once it's allowed.",
         )
     };
     match &facts.identity {
@@ -912,7 +912,9 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool, repos: bool) -> Vec<Check
             CheckOf::Identity,
             Verdict::Skip,
             "gh and git push weren't checked: this project has no repo yet".to_owned(),
-            Some("Once a workspace holds a clone of a repo, try it again to check them."),
+            Some(
+                "Once a clone in a workspace has a remote on a forge, try it again to check them.",
+            ),
         ),
         Some(step) if step.state == StepState::Done => check(
             CheckOf::Identity,
@@ -1132,6 +1134,16 @@ fn sign_ins_of(here: &Here<'_>, docker: &Docker, name: &str) -> SignIns {
         }
     }
     SignIns::Read(read)
+}
+
+/// **The persona and forge tool the agent identity step reads as set**, where it does, in the
+/// project at `root`: what Try it may prove, and only that (#4490). Reads no clone.
+#[must_use]
+pub fn identity_set_in(root: &Path) -> Option<(String, String)> {
+    match identity_in(Some(root), &[]) {
+        Identity::Set { persona, tool } => Some((persona, tool)),
+        _ => None,
+    }
 }
 
 fn identity_in(plane: Option<&Path>, hosts: &[HostFound]) -> Identity {

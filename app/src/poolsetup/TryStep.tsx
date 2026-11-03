@@ -73,6 +73,7 @@ export function TryStep({
     setTrying(true);
     under.current = true;
     setFailed(undefined);
+    setProved(undefined);
     const tried = await commands.poolSetupTry(plane, pool, workspace ?? null);
     under.current = false;
     setTrying(false);

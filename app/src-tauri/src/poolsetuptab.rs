@@ -947,10 +947,16 @@ fn proved_identity(
     if line.verdict != Verdict::Ok {
         return None;
     }
+    // The App behind the very persona and tool the step reads as set, and only a line Agent
+    // identity wrote: a proof never stands in for another identity than the line it replaces.
+    let (persona, tool) = purlis_core::poolsetup::identity_set_in(root)?;
+    if tool != "gh" {
+        return None;
+    }
     let app = agentidentity::held(root)
         .ok()?
         .into_iter()
-        .find(agentidentity::Held::ours)?
+        .find(|held| held.ours() && held.personas.contains(&persona))?
         .app;
     let ctx = purlis_core::secrets::Ctx::new(root, purlis_core::secrets::Env::from_process());
     let check = |verdict: Verdict, title: String, more: String| PoolSetupCheck {
@@ -976,14 +982,19 @@ fn proved_identity(
              git push in the chat itself yet."
                 .to_owned(),
         ),
-        Err(why) => check(
-            Verdict::Missing,
-            "GitHub didn't confirm the agent's identity".to_owned(),
-            format!(
-                "{} Open Agent identity to see how it stands.",
-                purlis_core::shown::short(&why)
-            ),
-        ),
+        Err(why) => {
+            let why = purlis_core::shown::short(why.trim());
+            let why = if why.ends_with(['.', '!', '?']) {
+                why
+            } else {
+                format!("{why}.")
+            };
+            check(
+                Verdict::Missing,
+                "GitHub didn't confirm the agent's identity".to_owned(),
+                format!("{why} Open Agent identity to see how it stands."),
+            )
+        }
     })
 }
 
