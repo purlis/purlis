@@ -8,17 +8,9 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn } from "storybook/test";
-import type { Offer } from "./actions";
 import { EndedBand } from "./EndedBand";
+import { StateShown } from "./StateShown";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
-
-const RESTART: Offer = {
-  id: "chat.restart:4",
-  title: "Restart chat steward 4",
-  available: true,
-  reason: "",
-  does: { verb: "restartChat", session: 4 },
-};
 
 function Band(props: Parameters<typeof EndedBand>[0]) {
   return (
@@ -30,7 +22,7 @@ function Band(props: Parameters<typeof EndedBand>[0]) {
 
 const meta = {
   component: Band,
-  args: { session: 4, name: "steward 4", resume: RESTART, onResume: fn(), onClear: fn() },
+  args: { session: 4, name: "steward 4", resume: fn(), onClear: fn() },
 } satisfies Meta<typeof Band>;
 
 export default meta;
@@ -45,7 +37,7 @@ export const WithResume: Story = {
     await untilFocused(() => canvas.getByRole("button", { name: "Resume" }), "Tab to Resume");
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
-    await expect(args.onResume).toHaveBeenCalledWith(RESTART);
+    await expect(args.resume).toHaveBeenCalled();
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("button", { name: "Clear pane" }),
@@ -67,5 +59,24 @@ export const ClearPaneOnly: Story = {
       "Tab to Clear pane",
     );
     expectFocusInSight();
+  },
+};
+
+/** **A task a pane was left on, ended** (#4757): how it ended, as its finished row says it, the
+ *  core's word beside it, and its report, as text. */
+export const TaskWithReport: Story = {
+  args: {
+    name: "sweep",
+    how: (
+      <StateShown
+        shown={{ kind: "failed", word: "failed", shape: "cross", token: "state.failed" }}
+      />
+    ),
+    more: "blocked",
+    report: "The queue is locked.\nNothing was changed.",
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText(/sweep ended:/)).toBeVisible();
+    await expect(canvas.getByRole("region", { name: "Report from sweep" })).toBeVisible();
   },
 };

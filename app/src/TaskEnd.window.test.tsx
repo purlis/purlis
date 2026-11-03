@@ -1012,8 +1012,8 @@ describe("what its row says afterwards", () => {
       finished.push({ ...ended(how, word), chat: 4 });
       await coreEnds(4);
 
-      // The pane stays on the task, as ended, and says how in the row's word.
-      const away = await screen.findByTestId("task-away");
+      // The pane stays on the task, as ended, and its band says how in the row's word (#4756).
+      const away = await screen.findByRole("status", { name: /^Ended/ });
       await waitFor(() => expect(away.querySelector(".shown-state .word")?.textContent).toBe(word));
       expect(away.querySelector(".shown-state .shape")?.getAttribute("data-shape")).toBe(shape);
       // Said once: no second word beside it, and never "cancelled".

@@ -56,7 +56,6 @@ import { PaneCrumbs } from "./PaneCrumbs";
 import { ChipExplained, type ChipToExplain } from "./ChipExplained";
 import { TaskEnds } from "./TaskEnd";
 import { giveKeyboardTo } from "./paneKeyboard";
-import { endedState, TaskAway, type Away } from "./TaskAway";
 import { StateShown } from "./StateShown";
 import { ViewPane } from "./Views";
 import type { FirstTaskDoes } from "./FirstTaskTab";
@@ -65,7 +64,7 @@ import { qualifierOf, shownOf } from "./finished";
 import { HarnessChip } from "./HarnessCard";
 import { movedAt, stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { EmptyPane } from "./EmptyPane";
-import { EndedBand, endedBy } from "./EndedBand";
+import { EndedBand, endedBy, endedState, resumeOf } from "./EndedBand";
 import { markOf } from "./StripMarks";
 import {
   type RestartAct,
@@ -139,10 +138,15 @@ export function PaneFrame({
   others,
   doing,
   ended,
+  said,
   focused = false,
   children,
 }: {
   plane: PlaneId;
+  /** **How the path is said for a task that has ended** (#4757, #4756): its state after the
+   *  path, the names of chats no longer open, and its Brief, which a task read by its finished
+   *  row's record has (#1494) and one whose row is gone has not (`null`). */
+  said?: { state?: ReactNode; gone?: (session: number) => boolean; brief?: BriefAsk | null };
   /** **The chat's program has ended** (#4756): the ended band, under the header and the
    *  notices, above the last screen. */
   ended?: ReactNode;
@@ -231,7 +235,12 @@ export function PaneFrame({
             in no row of its own. */}
             {crumbs &&
               (crumbMenu === undefined ? (
-                <PaneCrumbs crumbs={crumbs} onShow={(chat) => onShowChat(chat, pane)} />
+                <PaneCrumbs
+                  crumbs={crumbs}
+                  onShow={(chat) => onShowChat(chat, pane)}
+                  state={said?.state}
+                  gone={said?.gone}
+                />
               ) : (
                 <Menued
                   on={{ on: "chat", session: crumbMenu.session }}
@@ -243,7 +252,9 @@ export function PaneFrame({
               ))}
             {/* **Brief** (#1494): what the task on screen was sent. Right after the breadcrumb,
             before anything else the line holds for a task. */}
-            {crumbs && <BriefButton of={briefOfShown(crumbs)} />}
+            {crumbs && said?.brief !== null && (
+              <BriefButton of={said?.brief ?? briefOfShown(crumbs)} />
+            )}
             {crumbs && ending}
             {/* The chat's skills, and the way to them in the Skills view (#2775, S8). */}
             {/* Not beside a task's breadcrumb: that line is the fullest a pane has, and the
@@ -460,8 +471,8 @@ export function LayoutPanes({
   layout,
   crumbs,
   placed,
-  away,
-  backTo,
+  endedTasks,
+  unread,
   finished,
   explaining,
   others,
@@ -471,7 +482,6 @@ export function LayoutPanes({
   onShowInbox,
   onAnswer,
   closeOf,
-  onBack,
   onShowChat,
   focused,
   onFocus,
@@ -505,6 +515,7 @@ export function LayoutPanes({
   tab,
   chatName,
   onClearPane,
+  onResumeTask,
   path = "",
 }: {
   /** The chats the launch has still to start (`restoring.rs`): each one's pane says so, in the
@@ -522,11 +533,11 @@ export function LayoutPanes({
   placed: Readonly<Record<number, Crumbs>>;
   /** The session of the tab whose chip the first dispatch explains, on its own pane (#1501). */
   explaining?: ChipToExplain;
-  /** The panes that show a task they cannot draw, by pane, and why (`TaskAway`). */
-  away: Readonly<Record<number, Away>>;
-  /** Where each such pane's way back goes, for a task a press put there (#4757): the chat
-   *  the pane showed before, or `null` to clear it. */
-  backTo?: Readonly<Record<number, string | null>>;
+  /** **The panes left on a task that has ended** (#4757), by pane: the path it last had. Each
+   *  keeps the task's last screen, read-only, under the ended band (#4756). */
+  endedTasks: Readonly<Record<number, Crumbs>>;
+  /** The panes whose task is not known yet (the list of chats is not read): nothing is drawn. */
+  unread: ReadonlySet<number>;
   /** The finished row of each task a pane was left on when it ended, by pane (#1485). */
   finished: Readonly<Record<number, FinishedTask>>;
   /** The chats that live in each pane other than the one it shows, by pane. */
@@ -549,8 +560,6 @@ export function LayoutPanes({
   onAnswer?: (words: string, ask: Shown) => void;
   /** The close of pane `pane`, decided for that pane and not for the one in focus. */
   closeOf: (pane: number) => Offer | undefined;
-  /** Pane `pane` goes back to its session's own chat. */
-  onBack: (pane: number) => void;
   /** Goes to a chat: what a name in a breadcrumb does, with the pane it was named in, which
    *  shows it in place (#4757). */
   onShowChat: (session: number, pane?: number) => void;
@@ -627,6 +636,9 @@ export function LayoutPanes({
   chatName: (session: number) => string;
   /** Clear pane: pane `pane` shows nothing, and its chat goes on in the sidebar (#4756). */
   onClearPane: (pane: number) => void;
+  /** Resume, on the band of pane `pane` left on a task that ended: its finished row reopened
+   *  in that pane (#1485, #4756). */
+  onResumeTask: (pane: number, task: FinishedTask) => void;
   /** This layout's path from its tab's root: `a` for a split's first child, `b` for its
    *  second. The tab's own layout is `""`. */
   path?: string;
@@ -766,6 +778,21 @@ export function LayoutPanes({
     // **Or its own chat, with a path to say** (#1489): a task in a pane of its own, and the
     // session it is beside. The same line, so each side of a split says which chat it is.
     const path = crumb ?? placed[layout.pane];
+    // A task the list of chats has not been read for yet: nothing is known of it, so nothing
+    // is drawn (#1486).
+    if (unread.has(layout.pane)) return <div className="pane-frame" {...dropPane(tab, layout.pane)} />;
+    // **A task this pane was left on that has ended** (#4757): its last screen stays, read-only,
+    // under the ended band (#4756), and its path says how it ended, as its finished row says it
+    // where it has one: one word for one end.
+    const endedTask = endedTasks[layout.pane];
+    const row = endedTask === undefined ? undefined : finished[layout.pane];
+    const endedAs =
+      endedTask === undefined
+        ? undefined
+        : row === undefined
+          ? endedState(endedTask)
+          : shownOf(row);
+    const shownPath = endedTask ?? path;
     const doing = (
       <PaneActions
         pane={layout.pane}
@@ -774,7 +801,7 @@ export function LayoutPanes({
         onPaneDoes={onPaneDoes}
         // No close on a pane showing a task: nothing on screen ends the task, and the
         // session's close is its tab's (#1486).
-        task={crumb !== undefined || away[layout.pane] !== undefined}
+        task={crumb !== undefined || endedTask !== undefined}
         // The task it shows inside its session's tab, which can be given a tab of its own or
         // opened beside its session from here (#1489).
         shows={crumb === undefined ? undefined : content.session}
@@ -782,72 +809,6 @@ export function LayoutPanes({
         chat={{ session: content.session, offers }}
       />
     );
-    const gone = away[layout.pane];
-    if (gone !== undefined) {
-      // **A task this pane shows and cannot draw** (#1486): no terminal, so nothing typed
-      // reaches a chat, and the pane says what it shows and why, with the way back.
-      if (gone.why === "unread") return <div className="pane-frame" />;
-      // How it ended, as its finished row says it where it has one: one word for one end.
-      const row = finished[layout.pane];
-      const ended = row === undefined ? endedState(gone.crumbs) : shownOf(row);
-      const last = gone.crumbs.path[gone.crumbs.path.length - 1].session;
-      return (
-        <div
-          className="pane-frame pane-headed"
-          data-focused={layout.pane === focused || undefined}
-          onPointerDown={() => onFocus(layout.pane)}
-          {...dropPane(tab, layout.pane)}
-        >
-          {/* As `PaneFrame` draws them: the band and the header, above what the pane shows. */}
-          <div className="pane-top">
-            <PaneNotices
-              band={paneBand(plane, layout.pane)}
-              notices={null}
-              asked={asked[layout.pane]}
-              others={hidden}
-              onShowChat={onShowChat}
-            />
-            <PaneHead doing={doing}>
-              <div className="pane-chips">
-                <PaneCrumbs
-                  crumbs={gone.crumbs}
-                  onShow={(chat) => onShowChat(chat, layout.pane)}
-                  // One that is still running says what it is doing; one that ended, how.
-                  state={
-                    gone.why === "ended" && ended !== undefined ? (
-                      <StateShown shown={ended} />
-                    ) : undefined
-                  }
-                  gone={(session) => !hidden.some((other) => other.session === session)}
-                />
-                {/* A task that has ended is read by its finished row's record (#1494), and has
-                no Brief here once that row is gone; one still running, by its chat. */}
-                {(gone.why !== "ended" || row !== undefined) && (
-                  <BriefButton
-                    of={
-                      gone.why === "ended" && row !== undefined
-                        ? { dispatch: row.id, name: row.name }
-                        : briefOfShown(gone.crumbs)
-                    }
-                  />
-                )}
-              </div>
-            </PaneHead>
-          </div>
-          <div className="pane-body">
-            <TaskAway
-              away={gone}
-              focused={layout.pane === focused}
-              report={row?.report}
-              finished={row && { state: ended, more: qualifierOf(row) }}
-              onBack={() => onBack(layout.pane)}
-              onOpenAlone={() => onShowChat(last)}
-              backTo={backTo?.[layout.pane]}
-            />
-          </div>
-        </div>
-      );
-    }
     return (
       <PaneFrame
         plane={plane}
@@ -855,11 +816,23 @@ export function LayoutPanes({
         tab={tab}
         session={content.session}
         focused={layout.pane === focused}
-        crumbs={path}
+        crumbs={shownPath}
+        said={
+          endedTask === undefined
+            ? undefined
+            : {
+                state: endedAs === undefined ? undefined : <StateShown shown={endedAs} />,
+                gone: (session) => !hidden.some((other) => other.session === session),
+                // Read by its finished row's record (#1494): none once that row is gone.
+                brief: row === undefined ? null : { dispatch: row.id, name: row.name },
+              }
+        }
         // **The two ways to end the task this pane shows**, beside its path (#1488): on a
         // session's pane switched to a task, and on a task's own pane, in a tab of its own or
         // beside its session (#1489). Never on the session's own one-name path beside a task.
+        // Nothing is left to end on a task that has ended.
         ending={
+          endedTask === undefined &&
           path !== undefined &&
           path.path[path.path.length - 1].mode === "task" && (
             <TaskEnds
@@ -882,7 +855,7 @@ export function LayoutPanes({
             : undefined
         }
         onShowChat={onShowChat}
-        from={path === undefined ? handedFrom[content.session] : undefined}
+        from={shownPath === undefined ? handedFrom[content.session] : undefined}
         harness={glances[content.session]}
         onOpenCard={(glance) => onOpenView(harnessCardView(glance.name), glance.label)}
         workItem={workItems[content.session]}
@@ -893,7 +866,7 @@ export function LayoutPanes({
             {noticesOf(content.session)}
             {/* The first dispatch on this machine explains the chip, on the session's own
                 pane (#1501). */}
-            {path === undefined && (
+            {shownPath === undefined && (
               <ChipExplained plane={plane} session={content.session} chip={explaining} />
             )}
           </>
@@ -902,12 +875,25 @@ export function LayoutPanes({
         others={hidden}
         doing={doing}
         ended={
-          ended && !restoring.has(content.session) ? (
+          endedTask !== undefined ? (
+            // **A task's way back is its finished row's Reopen** (#1485), in this pane, where
+            // the row says it can be reopened.
+            <EndedBand
+              session={content.session}
+              name={endedTask.path[endedTask.path.length - 1].name}
+              how={endedAs === undefined ? undefined : <StateShown shown={endedAs} />}
+              more={row === undefined ? undefined : qualifierOf(row)}
+              report={row?.report || undefined}
+              resume={row?.reopens ? () => onResumeTask(layout.pane, row) : undefined}
+              onClear={() => onClearPane(layout.pane)}
+            />
+          ) : ended && !restoring.has(content.session) ? (
             <EndedBand
               session={content.session}
               name={chatName(content.session)}
-              resume={offerFor(restartId(content.session))}
-              onResume={(offer) => onPaneDoes(layout.pane, offer)}
+              resume={resumeOf(offerFor(restartId(content.session)), (offer) =>
+                onPaneDoes(layout.pane, offer),
+              )}
               onClear={() => onClearPane(layout.pane)}
             />
           ) : undefined
@@ -926,7 +912,7 @@ export function LayoutPanes({
               offers: paneMenuOf(offerFor),
               onPress: (offer) => onPaneDoes(layout.pane, offer),
             }}
-            readOnly={ended}
+            readOnly={ended || endedTask !== undefined}
           />
         )}
       </PaneFrame>
@@ -990,8 +976,8 @@ export function LayoutPanes({
               layout={child}
               crumbs={crumbs}
               placed={placed}
-              away={away}
-              backTo={backTo}
+              endedTasks={endedTasks}
+              unread={unread}
               finished={finished}
               explaining={explaining}
               others={others}
@@ -1001,7 +987,6 @@ export function LayoutPanes({
               onShowInbox={onShowInbox}
               onAnswer={onAnswer}
               closeOf={closeOf}
-              onBack={onBack}
               onShowChat={onShowChat}
               focused={focused}
               onFocus={onFocus}
@@ -1035,6 +1020,7 @@ export function LayoutPanes({
               tab={tab}
               chatName={chatName}
               onClearPane={onClearPane}
+              onResumeTask={onResumeTask}
             />
           </Panel>
         </Fragment>

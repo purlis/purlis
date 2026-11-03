@@ -1532,36 +1532,12 @@ body {
   white-space: nowrap;
 }
 
-/* **A pane whose tab shows a task that is not there to be drawn** (#1486, `TaskAway.tsx`): in
-   the terminal's place and on its surface, under the pane's top line, which still says the
-   path. A sentence, how it ended, and the way back. Nothing here is a terminal, so nothing
-   typed reaches a chat. */
-.task-away {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  align-items: flex-start;
-  height: 100%;
-  padding: var(--space-8) var(--space-5) var(--space-5);
-  overflow: auto;
-  color: var(--text-primary);
-  background: var(--terminal-background);
-}
-
-.task-away p {
-  margin: 0 0 var(--space-2);
-  max-width: 40rem;
-}
-
-.task-away-ways {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.task-away-report {
+/* **A task's report on the band of a pane left on it as it ended** (#4757, `EndedBand.tsx`):
+   text, every character, wrapped and never cut, in a box of its own that scrolls. */
+.ended-report {
   max-width: 100%;
-  max-height: 50vh;
+  max-height: 30vh;
+  margin: var(--space-2) 0 0;
   overflow: auto;
   white-space: pre-wrap;
 }

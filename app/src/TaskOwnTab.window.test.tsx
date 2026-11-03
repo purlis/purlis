@@ -1007,7 +1007,7 @@ describe("a session's pane goes: its tasks' own tabs stay where they are, by eve
     // (#4756): the session goes on in the sidebar.
     await waitFor(() => expect(onScreen()).toEqual([4]));
     expect(commandsOf(asked, "close_session")).toEqual([]);
-    expect(row(tree, "talk")).toBeTruthy();
+    expect(row(tree, "steward 1")).toBeTruthy();
     // The core is not left believing the closed session is on screen.
     await waitFor(() => expect(panedSaid(asked)).not.toContain(1));
   });

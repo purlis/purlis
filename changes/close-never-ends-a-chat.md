@@ -6,4 +6,5 @@
   empty pane (#4756).
 - **A chat whose program ended keeps its pane.** Its last screen stays, read-only, under a line
   that says it ended, with Resume to start it again on its conversation and Clear pane. The
-  keyboard stays where it was (#4756).
+  keyboard stays where it was (#4756). A task left in a pane as it ended does the same: the line
+  says how it ended and shows its report, and Resume reopens it in that pane (#4757).
