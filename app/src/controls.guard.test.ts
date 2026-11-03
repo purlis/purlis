@@ -490,7 +490,6 @@ export const PANE_LINE_CHIPS = [
   "pane-where",
   "pane-task-ends",
   "pane-crumbs",
-  "pane-brief",
   "chat-gauge",
   "pane-harness",
   "pane-from",
@@ -785,7 +784,6 @@ const LINE_CHIP_COMPONENTS: Record<string, string> = {
   SandboxMark: "tab-sandbox",
   TaskEndAsked: "pane-task-ends",
   PaneCrumbs: "pane-crumbs",
-  BriefButton: "pane-brief",
   ChatGauge: "chat-gauge",
   HarnessChip: "pane-harness",
   SkillsChip: "pane-skills",
@@ -1126,14 +1124,15 @@ export const plantedTall = { minBlockSize: 32 };
       </div>
       <div className="other"><Ignored /></div>
     `;
+    // Brief is no chip of the line since #4760: it is the state button's, in the pane's actions.
     expect(lineChildren(planted)).toEqual({
-      chips: ["pane-crumbs", "pane-brief", "pane-from"],
-      unlisted: ["<span pane-seventh>", "<NewChip>"],
+      chips: ["pane-crumbs", "pane-from"],
+      unlisted: ["<BriefButton>", "<span pane-seventh>", "<NewChip>"],
     });
   });
 
   it("fails a top-line chip with no chrome height, and one held off it", () => {
-    const controls = new Set(["pane-harness", "pane-brief"]);
+    const controls = new Set(["pane-harness", "pane-skills"]);
     expect(
       chipsNotChromeTall(".pane-chips > .chat-gauge { height: var(--size-chrome); }", controls),
     ).toEqual(PANE_LINE_CHIPS.filter((chip) => chip !== "chat-gauge"));
@@ -1143,12 +1142,12 @@ export const plantedTall = { minBlockSize: 32 };
     ]);
     expect(
       cssHeights(
-        ".pane-chips > .pane-harness { height: var(--size-control); } .pane-brief { min-height: var(--size-control); }",
+        ".pane-chips > .pane-harness { height: var(--size-control); } .pane-skills { min-height: var(--size-control); }",
         controls,
       ),
     ).toEqual([
       ".pane-chips > .pane-harness | height: var(--size-control) (a strip)",
-      ".pane-brief | min-height: var(--size-control) (a strip)",
+      ".pane-skills | min-height: var(--size-control) (a strip)",
     ]);
   });
 
