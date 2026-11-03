@@ -42,6 +42,7 @@ export const REVIEW: PublishReviewView = {
   ],
   broken: ["gone"],
   body: "Published with purlis.",
+  forge_says_no_push: false,
   grades: [
     {
       skill: "deploy",
@@ -69,6 +70,9 @@ export const STOPPED: PublishReviewView = {
 };
 
 export const LOCAL: PublishReviewView = { ...REVIEW, local: ["deploy"] };
+
+/** A source whose forge says the person's account may not push to it (#4342). */
+export const FORGE_SAYS_NO_PUSH: PublishReviewView = { ...REVIEW, forge_says_no_push: true };
 
 export const EXPORT: ExportReview = {
   skills: ["deploy", "notify"],

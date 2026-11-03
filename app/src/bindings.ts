@@ -11977,6 +11977,11 @@ export type PublishReviewView = {
 	grades: PublishGrade[],
 	/**  The request's description, whole. */
 	body: string,
+	/**
+	 *  Whether the forge says the person's account may not push to the source (#4342). The page
+	 *  says so up front and offers Export, and never refuses on it: the push answers for itself.
+	 */
+	forge_says_no_push: boolean,
 	accepted: PublishAccepted,
 };
 

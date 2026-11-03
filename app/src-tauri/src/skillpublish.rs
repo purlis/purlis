@@ -94,6 +94,9 @@ pub struct PublishReviewView {
     pub grades: Vec<PublishGrade>,
     /// The request's description, whole.
     pub body: String,
+    /// Whether the forge says the person's account may not push to the source (#4342). The page
+    /// says so up front and offers Export, and never refuses on it: the push answers for itself.
+    pub forge_says_no_push: bool,
     pub accepted: PublishAccepted,
 }
 
@@ -202,6 +205,7 @@ fn view_of(review: &PublishReview, forge: &OnTheForge) -> PublishReviewView {
             .collect(),
         broken: review.outgoing.broken.iter().map(|one| esc(one)).collect(),
         body: esc(&review.body),
+        forge_says_no_push: review.may_push == Some(false),
         grades: review
             .grades
             .iter()
@@ -248,6 +252,7 @@ pub(crate) async fn skill_publish_review(
                 &(&level).into(),
                 &name,
                 &core,
+                &forge,
             )?;
             Ok(view_of(&review, &forge))
         })
