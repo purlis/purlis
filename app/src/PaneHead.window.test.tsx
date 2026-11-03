@@ -99,6 +99,7 @@ function core() {
       if (cmd === "owed_restarts") return [];
       if (cmd === "asks_waiting") return { plane: PLANE, asks: [] };
       if (cmd === "mcp_failures") return [];
+      if (cmd === "smart_closing") return [];
       return null;
     },
     { shouldMockEvents: true },
@@ -133,6 +134,14 @@ describe("a chat's pane head", () => {
     expect(head().querySelector(".pane-where")).toHaveTextContent(/^claude · alpha$/);
     // The badge moved from the tab to the head (#4760): named for a screen reader.
     expect(within(head()).getByRole("img", { name: "floor" })).toBeInTheDocument();
+  });
+
+  it("and its row in the Chats list says the same sandbox (#4760)", async () => {
+    await aPane();
+
+    const tree = await screen.findByRole("tree", { name: "Chats of this project" });
+    const row = await within(tree).findByRole("treeitem", { name: new RegExp(`^${NAME}`) });
+    expect(within(row).getByRole("img", { name: "floor" })).toBeInTheDocument();
   });
 
   it("ends with ⋯, the bell, Split right, Split down and Close, in that order", async () => {
@@ -186,6 +195,27 @@ describe("a chat's pane head", () => {
     // Nothing of a tab's and nothing of the window's.
     expect(items).not.toContain("Pinned");
     expect(items).not.toContain("New tab");
+  });
+});
+
+describe("a chat wrapping up (#4760)", () => {
+  /** The core telling the window a step of chat 4's smart close. */
+  const step = (phase: string) =>
+    act(() => emit("smart-close", { plane: PLANE, session: 4, phase, record: null }));
+
+  it("breathes on its row in the Chats list, and the mark goes when it is cancelled", async () => {
+    await aPane();
+    const tree = await screen.findByRole("tree", { name: "Chats of this project" });
+    const row = await within(tree).findByRole("treeitem", { name: new RegExp(`^${NAME}`) });
+    expect(row.querySelector('[data-mark="wrapping-up"]')).toBeNull();
+
+    await step("sent");
+
+    await waitFor(() => expect(row.querySelector('[data-mark="wrapping-up"]')).not.toBeNull());
+    expect(row.querySelector('[data-mark="wrapping-up"]')).toHaveClass("breathing");
+
+    await step("cancelled");
+    await waitFor(() => expect(row.querySelector('[data-mark="wrapping-up"]')).toBeNull());
   });
 });
 
