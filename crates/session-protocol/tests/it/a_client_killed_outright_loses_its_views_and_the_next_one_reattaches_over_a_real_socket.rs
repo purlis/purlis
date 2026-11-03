@@ -62,6 +62,7 @@ impl Host for Ticking {
                     cols: 80,
                     rows: 24,
                     kind: Some(kind),
+                    older: None,
                 }))
             }
             Command::DetachView { view, .. } => {

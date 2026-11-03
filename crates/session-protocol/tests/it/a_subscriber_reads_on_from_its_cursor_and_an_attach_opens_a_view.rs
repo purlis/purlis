@@ -64,6 +64,7 @@ impl Host for Logged {
                     cols: 80,
                     rows: 24,
                     kind: Some(ViewKind::Terminal),
+                    older: None,
                 }))
             }
             _ => Err(Refusal {
@@ -178,6 +179,7 @@ async fn an_attach_answers_with_the_view_it_opened_beside_the_lane() {
             cols: 80,
             rows: 24,
             kind: None,
+            older: None,
         }
     );
     let mut reader = Viewer::default()

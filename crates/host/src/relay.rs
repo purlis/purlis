@@ -740,6 +740,7 @@ struct KeptView {
     kind: ViewKind,
     role: Option<ViewRole>,
     rate: Option<u32>,
+    history: Option<u32>,
     epoch: u32,
 }
 
@@ -750,6 +751,7 @@ impl KeptView {
             kind: self.kind,
             role: self.role,
             rate: self.rate,
+            history: self.history,
         }
     }
 }
@@ -1540,6 +1542,7 @@ impl session::Host for Relay {
                 kind,
                 role,
                 rate,
+                history,
             } => {
                 let (upstream, _changing) = relayed.up_changing(peer).await?;
                 let view = KeptView {
@@ -1547,6 +1550,7 @@ impl session::Host for Relay {
                     kind,
                     role,
                     rate,
+                    history,
                     epoch: 0,
                 };
                 let answer = upstream.call(view.attach()).await?;

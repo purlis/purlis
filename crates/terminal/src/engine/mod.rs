@@ -83,6 +83,15 @@ pub trait Engine: Send {
     /// leave the program owed an answer, so [`Engine::take_replies`] follows a snapshot.
     fn snapshot(&mut self) -> Vec<u8>;
 
+    /// [`Engine::snapshot`] with at most `history` lines of history above the screen: the
+    /// newest, which are what a view that opens shows first (#4742). The lines left out are
+    /// [`Engine::history`] less `history`, and a view that wants them asks again for more.
+    fn snapshot_within(&mut self, history: usize) -> Vec<u8>;
+
+    /// How many lines of history the terminal keeps above its screen now, at most
+    /// [`SCROLLBACK`].
+    fn history(&self) -> usize;
+
     /// Bytes the terminal owes the program, such as answers to a cursor-position query.
     /// They must be written back to the program's input, or programs that ask will hang.
     fn take_replies(&mut self) -> Vec<u8>;
