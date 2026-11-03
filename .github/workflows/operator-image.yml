@@ -197,21 +197,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node tools/image-registry.mjs visibility
 
-      - name: Build the operator's image, to check it here
-        if: env.PUBLISH != 'true'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: ${{ runner.temp }}/context
-          file: operator/Dockerfile
-          platforms: linux/${{ matrix.arch }}
-          provenance: false
-          load: true
-          tags: purlis-cluster-operator:candidate
-      # Pushed by digest only: an untagged image nothing names until `index` does, after the
-      # check has passed on the very bytes pushed.
-      - name: Build the operator's image and push it by digest
-        id: push
-        if: env.PUBLISH == 'true'
+      # Built once, into a file, on every run alike (#4512): the image the checks below run on is
+      # loaded from this file, and a publishing run pushes this same file after they pass.
+      - name: Build the operator's image into a file
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ runner.temp }}/context
@@ -224,23 +212,56 @@ jobs:
             org.opencontainers.image.title=purlis cluster operator
             org.opencontainers.image.description=purlis in your cluster: turns Pools and Claims into runners
             org.opencontainers.image.licenses=Apache-2.0
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-      - name: Pull back what was pushed, to check exactly that
-        if: env.PUBLISH == 'true'
-        env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+          outputs: type=docker,name=purlis-cluster-operator:candidate,dest=${{ runner.temp }}/candidate.tar
+      # The file's one manifest names the image by its digest; the image loaded has to be that
+      # manifest's (its config's digest, or the manifest's own on a containerd image store).
+      - name: Load the file, and name its digest
+        id: candidate
         run: |
           set -euo pipefail
-          docker pull "$IMAGE@$DIGEST"
-          docker tag "$IMAGE@$DIGEST" purlis-cluster-operator:candidate
+          digest=$(tar -xOf "$RUNNER_TEMP/candidate.tar" index.json \
+            | jq -r '.manifests | if length == 1 then .[0].digest else error("the file holds \(length) manifests") end')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::the file's manifest is '$digest'"; exit 1; }
+          config=$(tar -xOf "$RUNNER_TEMP/candidate.tar" "blobs/sha256/${digest#sha256:}" | jq -r .config.digest)
+          docker load --input "$RUNNER_TEMP/candidate.tar"
+          id=$(docker image inspect --format '{{.Id}}' purlis-cluster-operator:candidate)
+          if [ "$id" != "$digest" ] && [ "$id" != "$config" ]; then
+            echo "::error::the image loaded is $id, not the file's $digest (config $config)"
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: The operator's image is what the cluster runs, and its binary starts
         run: node tools/operator-image-check.mjs purlis-cluster-operator:candidate "$ARCH"
 
+      # Pushed only now, after every check above passed, by digest only: an untagged image
+      # nothing names until `index` does. skopeo sends the file as it is: it refuses a push to a
+      # digest the manifest does not have, and `--preserve-digests` refuses to change one.
+      - name: Push the checked file by its digest
+        if: env.PUBLISH == 'true'
+        env:
+          DIGEST: ${{ steps.candidate.outputs.digest }}
+        run: skopeo copy --preserve-digests "oci-archive:$RUNNER_TEMP/candidate.tar" "docker://$IMAGE@$DIGEST"
+      # What a run that publishes nothing can do of the push: the same copy of the same file,
+      # into a folder, and the manifest copied is the digest's.
+      - name: The checked file copies by its digest unchanged
+        if: env.PUBLISH != 'true'
+        env:
+          DIGEST: ${{ steps.candidate.outputs.digest }}
+        run: |
+          set -euo pipefail
+          skopeo copy --preserve-digests "oci-archive:$RUNNER_TEMP/candidate.tar" "dir:$RUNNER_TEMP/copied"
+          copied="sha256:$(sha256sum "$RUNNER_TEMP/copied/manifest.json" | cut -d' ' -f1)"
+          if [ "$copied" != "$DIGEST" ]; then
+            echo "::error::the copy's manifest is $copied, not $DIGEST"
+            exit 1
+          fi
+
       - name: Record this architecture's digest
         if: env.PUBLISH == 'true'
         env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+          DIGEST: ${{ steps.candidate.outputs.digest }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/digests"
@@ -315,23 +336,13 @@ jobs:
           node tools/image-registry.mjs anonymous \
             "$(cat "$RUNNER_TEMP/digests/amd64")" "$(cat "$RUNNER_TEMP/digests/arm64")"
 
-      # `main` only moves forward, as the runner image's does: the image of an older commit can
-      # finish last. It is still tagged `sha-<commit>` and signed; `main` stays on the later one.
-      - name: One index for both architectures, tagged sha-<commit>, and main when it moves forward
+      # Tagged `sha-<commit>` only: `main` moves last, in `tag-main`, once `outside` has pulled
+      # and checked this index with no sign-in (#4512).
+      - name: One index for both architectures, tagged sha-<commit>
         id: index
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          order=$(node tools/image-registry.mjs order "$SHA")
-          echo "$order"
-          tags=(--tag "$IMAGE:sha-$SHA")
-          case "$order" in
-            main:*) tags+=(--tag "$IMAGE:main") ;;
-            sha-only:*) echo "::notice::main is not moved: ${order#sha-only: }" ;;
-            *) echo "::error::tools/image-registry.mjs answered neither main nor sha-only: $order"; exit 1 ;;
-          esac
-          docker buildx imagetools create "${tags[@]}" \
+          docker buildx imagetools create --tag "$IMAGE:sha-$SHA" \
             "$IMAGE@$(cat "$RUNNER_TEMP/digests/amd64")" \
             "$IMAGE@$(cat "$RUNNER_TEMP/digests/arm64")"
           digest=$(docker buildx imagetools inspect "$IMAGE:sha-$SHA" --format '{{json .Manifest}}' | jq -r .digest)
@@ -342,7 +353,6 @@ jobs:
             exit 1
           fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          case "$order" in main:*) echo "main=true" ;; *) echo "main=false" ;; esac >> "$GITHUB_OUTPUT"
 
       # Keyless: the certificate names this workflow on `main` as the signer, and the
       # signature goes in Sigstore's public transparency log. `--recursive` signs each
@@ -373,11 +383,8 @@ jobs:
       - name: Record the digest
         env:
           DIGEST: ${{ steps.index.outputs.digest }}
-          MAIN: ${{ steps.index.outputs.main }}
         run: |
           set -euo pipefail
-          tags="\`sha-$SHA\`"
-          if [ "$MAIN" = true ]; then tags="$tags and \`main\`"; fi
           mkdir -p "$RUNNER_TEMP/record"
           echo "$IMAGE@$DIGEST" > "$RUNNER_TEMP/record/operator-image.txt"
           node tools/operator-install.mjs "$RUNNER_TEMP/record/install" "$IMAGE@$DIGEST"
@@ -387,7 +394,7 @@ jobs:
             echo
             echo "\`$IMAGE@$DIGEST\`"
             echo
-            echo "Commit \`$SHA\`, tagged $tags, linux/amd64 and linux/arm64, signed and verified."
+            echo "Commit \`$SHA\`, tagged \`sha-$SHA\`, linux/amd64 and linux/arm64, signed and verified."
             echo "The run's \`operator-image\` artifact holds the install naming it: \`install/\`, the plain manifests and the chart."
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -431,3 +438,61 @@ jobs:
             --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/operator-image.yml@refs/heads/main" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /dev/null
+
+  # **`main`, moved last** (#4512): only once `outside` has pulled the index and checked it as
+  # someone outside would, so `:main` only ever names an image that passed. `main` only moves
+  # forward, as the runner image's does: the image of an older commit can finish last. It is still
+  # tagged `sha-<commit>` and signed; `main` stays on the later one. The tag is put on the index
+  # `index` handed on, by its digest, and read back: it has to name that digest.
+  tag-main:
+    name: main, moved last
+    needs: [plan, index, outside]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # `contents: read` is for the checkout of the commit's own tools and for comparing two
+    # commits of `main`; `packages: write` moves the tag. It signs nothing.
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SHA: ${{ needs.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: main moves to the checked index, when that moves it forward
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINE: ${{ needs.index.outputs.image }}
+        run: |
+          set -euo pipefail
+          case "$LINE" in
+            "$IMAGE"@sha256:*) ;;
+            *) echo "::error::index handed back '$LINE'"; exit 1 ;;
+          esac
+          order=$(node tools/image-registry.mjs order "$SHA")
+          echo "$order"
+          case "$order" in
+            main:*) ;;
+            sha-only:*) echo "::notice::main is not moved: ${order#sha-only: }"; exit 0 ;;
+            *) echo "::error::tools/image-registry.mjs answered neither main nor sha-only: $order"; exit 1 ;;
+          esac
+          docker buildx imagetools create --tag "$IMAGE:main" "$LINE"
+          tagged=$(docker buildx imagetools inspect "$IMAGE:main" --format '{{json .Manifest}}' | jq -r .digest)
+          if [ "$tagged" != "${LINE#*@}" ]; then
+            echo "::error::main names $tagged, not ${LINE#*@}"
+            exit 1
+          fi
+          echo "\`main\` names \`$LINE\`." >> "$GITHUB_STEP_SUMMARY"

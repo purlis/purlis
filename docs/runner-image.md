@@ -14,8 +14,9 @@ own, as long as it keeps the contract below.
   that the registry serves both images to anyone who has not signed in. If either check cannot
   get a clear answer, the run stops. Once the image is signed and attested, a job with no
   registry sign-in pulls both architectures and checks the signature and the provenance, and a
-  release does not name an image that fails. An image that fails its checks after the push
-  stays in the package, untagged and unsigned; pull only a digest a release names. If the
+  release does not name an image that fails. An image that fails its checks is never pushed.
+  An image can still be left in the package untagged and unsigned when a later step fails, such
+  as the other architecture's build; pull only a digest a release names. If the
   package is ever deleted, every run stops until someone pushes a new one by hand and makes it
   public in its settings.
 - **What:** `linux/amd64` and `linux/arm64` under one index. Each architecture is built on
@@ -90,10 +91,12 @@ own, as long as it keeps the contract below.
   For a stable release's image, end the identity with `@refs/tags/v<version>`. Add
   `--source-digest <commit>` to check that it was built from a given commit.
 
-- **Checked:** each architecture's image is pushed untagged, by digest, and pulled back.
-  The contract below then runs on exactly the bytes that were pushed. Nothing is tagged or
-  signed until it has passed for both architectures. A pull request that changes the image
-  builds and checks it the same way, and pushes nothing.
+- **Checked before it is pushed:** each architecture's image is built once, into a file. The
+  contract below runs on the image loaded from that file, and only then is the same file pushed,
+  untagged, by its digest; the push refuses to change a byte of it. Nothing is tagged or signed
+  until the contract has passed for both architectures, and `main` moves last, only after the
+  check with no sign-in has passed. A pull request that changes the image builds and checks it
+  the same way, and pushes nothing.
 
 The image is Ubuntu 26.04 LTS (its base pinned by digest) with `ca-certificates`, `git` and
 `tini`, `gh` and `glab`, the libraries and the font the browser engine needs (below), the

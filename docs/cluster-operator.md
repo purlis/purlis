@@ -46,12 +46,13 @@ step. This page is the reference behind it.
 - **What:** `linux/amd64` and `linux/arm64` under one index, each built on a GitHub runner of
   that architecture with the pinned toolchain, `cargo auditable` and the operator's `release`
   profile, no cache, into [`operator/Dockerfile`](../operator/Dockerfile). Each architecture's
-  image is pushed untagged, by digest, and pulled back; nothing is tagged or signed until
-  `tools/operator-image-check.mjs` has passed on exactly those bytes: Linux on that
-  architecture, a numbered user who is not root, the operator as the whole default command,
-  and a binary that starts there.
+  image is built once, into a file, and `tools/operator-image-check.mjs` runs on the image
+  loaded from it: Linux on that architecture, a numbered user who is not root, the operator as
+  the whole default command, and a binary that starts there. Only then is the same file pushed,
+  untagged, by its digest, so an image that fails is never pushed; nothing is tagged or signed
+  until both architectures passed.
 - **Tags:** `sha-<commit>`, and `main` for the image of the latest commit; `main` only moves
-  forward. Tags can move, so name the image by its **digest**. The run's summary records it.
+  forward, and only once the image has been pulled and checked with no sign-in. Tags can move, so name the image by its **digest**. The run's summary records it.
   Its `operator-image` artifact holds the digest and `install/`: this commit's plain
   manifests and chart, with `operator.yaml`'s image and the chart's default `image.repository`
   and `image.digest` set to that image (#2281). So an install from it names the image built
