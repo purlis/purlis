@@ -293,6 +293,8 @@ fn arguments(tool: &str, todo: &str) -> Value {
         "dispatch_note" => json!({ "text": "Half painted" }),
         "dispatch_ask" => json!({ "question": "Which blue?", "wait_seconds": 1 }),
         "ask_operator" => json!({ "question": "Ship it?" }),
+        // A Secret ask (#5072): the app's to answer, and it writes nothing of the project's.
+        "secret_ask" => json!({ "key": "STRIPE_KEY", "purpose": "charge test cards" }),
         // A browser tool (#2013) is the app's to answer, and writes nothing of the project's.
         browser if purlis_core::browsertools::is_one(browser) => json!({}),
         // The theme specimen (#2330) is the app's to draw, from its own fixture.

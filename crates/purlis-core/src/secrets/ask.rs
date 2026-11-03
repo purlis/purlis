@@ -1114,7 +1114,8 @@ pub fn ask_the_window(
     _vault: Option<&str>,
 ) -> Result<Said, String> {
     Err(
-        "a secret ask is answered in purlis's window, which this platform does not reach yet"
+        "a secret ask is answered in purlis's window, which a chat on this system has no \
+         socket to reach: ask the person to add the key to the vault themselves"
             .to_owned(),
     )
 }

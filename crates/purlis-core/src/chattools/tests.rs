@@ -128,6 +128,7 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "dispatch_cancel",
             "dispatch_close",
             "dispatch_report",
+            "secret_ask",
             "dispatch_note",
             "dispatch_ask",
             "ask_operator",
