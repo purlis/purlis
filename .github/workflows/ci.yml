@@ -153,6 +153,44 @@ jobs:
         id: scope
         uses: ./.github/actions/change-scope
 
+  # A merge group's run that no longer counts ends itself. When an entry leaves the queue (red,
+  # conflict, removed) the queue deletes the groups behind it and builds them again, but GitHub
+  # leaves their runs going: each group's ref is its own, so the concurrency group above never
+  # supersedes them. On 2026-11-03 nine such runs held runners for up to an hour while the five
+  # live groups waited for one from 10:01 to past 10:30, and twice that day the person had to
+  # cancel them by hand. This job asks every minute whether its group's branch is still there and
+  # cancels its own run when it is gone; it ends when every other job of the run has.
+  stale-group:
+    name: a merge group that left the queue stops
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel this run once its group's branch is deleted
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          RUN: ${{ github.run_id }}
+          ME: a merge group that left the queue stops
+        run: |
+          while :; do
+            sleep 60
+            # Only a 404 says the group is gone; a failed call says nothing and is asked again.
+            status=$(gh api -i "repos/$REPO/git/ref/heads/$BRANCH" 2>/dev/null | head -1 | awk '{print $2}')
+            if [ "$status" = 404 ]; then
+              echo "::notice::$BRANCH left the merge queue; cancelling run $RUN"
+              gh run cancel "$RUN" -R "$REPO"
+              exit 0
+            fi
+            left=$(gh api --paginate "repos/$REPO/actions/runs/$RUN/jobs?per_page=100" \
+              -q "[.jobs[] | select(.name != \"$ME\" and .status != \"completed\")] | length" 2>/dev/null \
+              | awk '{s += $1} END {print (NR ? s : -1)}')
+            [ "$left" = 0 ] && exit 0
+          done
+
   # The Rust suite in four parts on four runners, each building the tests and running a quarter
   # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
   # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
