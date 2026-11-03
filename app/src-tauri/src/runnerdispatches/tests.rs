@@ -83,16 +83,16 @@ fn a_chat_holds_at_most_eight_and_its_close_takes_them() {
     for _ in 0..AT_MOST_PER_CHAT {
         assert!(
             held.note(Some("builds"), None, a_task(4, "t", "b"), 100)
-                .is_some()
+                .is_ok()
         );
     }
-    assert!(
-        held.note(Some("builds"), None, a_task(4, "t", "b"), 100)
-            .is_none()
+    assert_eq!(
+        held.note(Some("builds"), None, a_task(4, "t", "b"), 100),
+        Err(NotHeld::Full)
     );
     assert!(
         held.note(Some("builds"), None, a_task(5, "t", "b"), 100)
-            .is_some()
+            .is_ok()
     );
     held.forget(4);
     assert_eq!(held.every().len(), 1);
@@ -158,11 +158,76 @@ fn a_refused_moves_chat_is_told_it_is_not_asked_again_for_that_place() {
     let id = held
         .note(None, None, a_move(4, "builds"), 100)
         .expect("held");
-    let said = refused_said(&held.refuse(id).expect("it was held"));
+    let said = refused_said(&held.refuse(id).expect("it was held").one);
     assert!(said.starts_with("the person refused it"), "{said}");
     assert!(said.contains("pool builds"), "{said}");
     assert!(
         said.contains("refused from now on without asking the person"),
         "{said}"
     );
+}
+
+/// **Refuse takes the chat's other asks to the same place with it** (#4862): the person isn't
+/// left to answer, one by one, asks about a place they just refused. Its asks to another place,
+/// and another chat's, still wait.
+#[test]
+fn refuse_takes_the_chats_other_asks_to_the_same_place_with_it() {
+    let held = RunnerDispatches::default();
+    let first = held
+        .note(None, None, a_move(4, "builds"), 100)
+        .expect("held");
+    let again = held
+        .note(None, None, a_move(4, "builds"), 101)
+        .expect("held");
+    let elsewhere = held
+        .note(None, None, a_move(4, "tests"), 102)
+        .expect("held");
+    let another_chat = held
+        .note(None, None, a_move(5, "builds"), 103)
+        .expect("held");
+
+    let refused = held.refuse(first).expect("it was held");
+
+    assert_eq!(refused.one.id, first);
+    let with_it: Vec<u32> = refused.with_it.iter().map(|one| one.id).collect();
+    assert_eq!(with_it, vec![again]);
+    let left: Vec<u32> = held.every().iter().map(|one| one.id).collect();
+    assert_eq!(left, vec![elsewhere, another_chat]);
+}
+
+/// A move to a place the person refused the chat is not held: `note` says why, so the check
+/// and the hold are one step, and the person is never asked again in between.
+#[test]
+fn a_move_to_a_refused_place_is_not_held() {
+    let held = RunnerDispatches::default();
+    let id = held
+        .note(None, None, a_move(4, "builds"), 100)
+        .expect("held");
+    held.refuse(id).expect("it was held");
+
+    assert_eq!(
+        held.note(None, None, a_move(4, "builds"), 101),
+        Err(NotHeld::RefusedBefore(StartChoice::Pool(
+            "builds".to_owned()
+        )))
+    );
+    assert!(held.every().is_empty());
+}
+
+/// **A restart keeps what the person refused** (#4862): the same chat started again under a new
+/// number is not let ask them again.
+#[test]
+fn a_chat_started_again_keeps_the_places_the_person_refused_it() {
+    let held = RunnerDispatches::default();
+    let builds = StartChoice::Pool("builds".to_owned());
+    let id = held
+        .note(None, None, a_move(4, "builds"), 100)
+        .expect("held");
+    held.refuse(id).expect("it was held");
+
+    held.followed(4, 9);
+    held.forget(4);
+
+    assert!(held.refused_before(9, &builds));
+    assert!(!held.refused_before(4, &builds));
 }
