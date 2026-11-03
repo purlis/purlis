@@ -273,9 +273,9 @@ pub const NOTHING_SAID: &str = "(its harness said no last message for that turn)
 /// than refused, since the task did not write it as one. Each line is masked as tool output is
 /// ([`crate::secrets::mcpstart::masked`]: vault values and credential shapes), a character
 /// purlis will not draw becomes U+FFFD, and the text is cut on a character to the report's
-/// bound, marked. [`NOTHING_SAID`] where there is none.
+/// bound, in its middle, marked, so its head and its closing question stay (#4563). [`NOTHING_SAID`] where there is none.
 pub fn last_message_summary(last: Option<&str>) -> String {
-    const CUT: &str = "\n…";
+    const CUT: &str = "\n…\n";
     let Some(last) = last.map(str::trim).filter(|last| !last.is_empty()) else {
         return NOTHING_SAID.to_owned();
     };
@@ -298,12 +298,18 @@ pub fn last_message_summary(last: Option<&str>) -> String {
         .collect();
     let mut text = drawable.trim().to_owned();
     if text.len() > crate::handoff::MOST_REPORT_BYTES {
-        let mut end = crate::handoff::MOST_REPORT_BYTES - CUT.len();
-        while !text.is_char_boundary(end) {
-            end -= 1;
+        // **Its head and its tail, cut in the middle** (#4563): a turn's question is most often
+        // its last line, and its first says what it is about.
+        let room = crate::handoff::MOST_REPORT_BYTES - CUT.len();
+        let mut head = room / 4;
+        while !text.is_char_boundary(head) {
+            head -= 1;
         }
-        text.truncate(end);
-        text.push_str(CUT);
+        let mut tail = text.len() - (room - head);
+        while !text.is_char_boundary(tail) {
+            tail += 1;
+        }
+        text = format!("{}{CUT}{}", &text[..head], &text[tail..]);
     }
     match crate::handoff::report_summary(&text) {
         Ok(text) => text,
@@ -2295,15 +2301,36 @@ mod tests {
         crate::secrets::seen::remember("first half 4kq\n\tsecond half 4kq");
         let said = last_message_summary(Some("It printed:\nfirst half 4kq\n\tsecond half 4kq\nok"));
         assert!(!said.contains("half 4kq"), "{said}");
-        // Cut on a character to the report's bound, and marked.
+        // Cut on a character to the report's bound, and marked where it was cut.
         let long = last_message_summary(Some(&"é".repeat(crate::handoff::MOST_REPORT_BYTES)));
         assert!(
             long.len() <= crate::handoff::MOST_REPORT_BYTES,
             "{}",
             long.len()
         );
-        assert!(long.ends_with("\n…"));
+        assert!(long.contains("\n…\n"), "{long}");
         assert!(crate::handoff::report_summary(&long).is_ok());
+    }
+
+    #[test]
+    fn a_long_last_message_keeps_its_head_and_its_closing_question() {
+        // #4563: a turn's question is most often its last line, so the middle is what goes.
+        let middle = "Read the file and ran the checks. ".repeat(400);
+        let said = last_message_summary(Some(&format!(
+            "I looked at the pool limits.\n{middle}\nShould I re-record the fixture?"
+        )));
+        assert!(
+            said.len() <= crate::handoff::MOST_REPORT_BYTES,
+            "{}",
+            said.len()
+        );
+        assert!(said.starts_with("I looked at the pool limits.\n"), "{said}");
+        assert!(
+            said.ends_with("\nShould I re-record the fixture?"),
+            "{said}"
+        );
+        assert_eq!(said.matches("\n…\n").count(), 1, "{said}");
+        assert!(crate::handoff::report_summary(&said).is_ok());
     }
 
     #[test]

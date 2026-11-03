@@ -206,7 +206,7 @@ pub(crate) async fn skill_level_accept(
     let held = planes.held(&plane)?;
     crate::off_the_window("accepting the folder", move || {
         crate::skillchange::flag_on()?;
-        purlis_core::skills::levels::accept(held.root(), &folder)?;
+        level_accepted(held.root(), &held.chats().skills_now(), &folder)?;
         Ok(SkillChanged::default())
     })
     .await
@@ -225,10 +225,36 @@ pub(crate) async fn skill_levels_confirm(
     let held = planes.held(&plane)?;
     crate::off_the_window("accepting the project's folders", move || {
         crate::skillchange::flag_on()?;
-        purlis_core::skills::levels::confirm(held.root(), &folders)?;
+        levels_confirmed(held.root(), &held.chats().skills_now(), &folders)?;
         Ok(SkillChanged::default())
     })
     .await
+}
+
+/// [`purlis_core::skills::levels::accept`], and then each open chat's kept skill stamp is read
+/// again (#4813 review): which folders were accepted is part of what a chat would start on now,
+/// and it is kept in the app state, which the plane's watch never tells of. Forgotten whether or
+/// not the accept wrote all it meant to.
+fn level_accepted(
+    root: &std::path::Path,
+    skills_now: &crate::chats::SkillsNow,
+    folder: &str,
+) -> Result<(), String> {
+    let accepted = purlis_core::skills::levels::accept(root, folder);
+    skills_now.forget();
+    accepted
+}
+
+/// [`purlis_core::skills::levels::confirm`], and then each open chat's kept skill stamp is read
+/// again, as [`level_accepted`].
+fn levels_confirmed(
+    root: &std::path::Path,
+    skills_now: &crate::chats::SkillsNow,
+    folders: &[String],
+) -> Result<(), String> {
+    let confirmed = purlis_core::skills::levels::confirm(root, folders);
+    skills_now.forget();
+    confirmed
 }
 
 /// **Rejects a draft**: deletes it.
@@ -681,4 +707,40 @@ pub(crate) fn sweep(root: &std::path::Path, record: &purlis_core::reopen::Record
         &ids,
     );
     drafts::sweep_tries(root, &cwds);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A plane with the workspace `ops`.
+    fn a_plane() -> tempfile::TempDir {
+        let plane = tempfile::tempdir().expect("a plane");
+        std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").expect("a manifest");
+        std::fs::create_dir_all(plane.path().join("workspaces/ops")).expect("a workspace");
+        plane
+    }
+
+    #[test]
+    fn the_studios_accept_of_a_folder_makes_the_chats_read_their_skills_again() {
+        // #4813 review: what a chat would start on now reads which folders were accepted, from
+        // the app state the plane's watch never tells of.
+        let plane = a_plane();
+        let skills_now = crate::chats::SkillsNow::default();
+
+        level_accepted(plane.path(), &skills_now, "workspaces/ops").expect("accepted");
+
+        assert_eq!(skills_now.forgotten(), 1);
+    }
+
+    #[test]
+    fn the_studios_accept_of_the_projects_folders_makes_the_chats_read_their_skills_again() {
+        let plane = a_plane();
+        let skills_now = crate::chats::SkillsNow::default();
+
+        levels_confirmed(plane.path(), &skills_now, &["workspaces/ops".to_owned()])
+            .expect("confirmed");
+
+        assert_eq!(skills_now.forgotten(), 1);
+    }
 }

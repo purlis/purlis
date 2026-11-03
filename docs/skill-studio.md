@@ -127,8 +127,9 @@ The **Skills** view in the left sidebar lists the same skills for the chat in fr
 - **Left out** is folded at first. Each skill in it says why. A plugin the chat didn't load folds
   to one line, with **Copy command** where a command would put it right.
 
-With no chat in front, the view answers for a new chat, and the heading reads **A new chat gets**
-instead of *In this chat*.
+While the Skill studio or another tab that isn't a chat is in front, the view keeps answering for
+the chat you were last in, until that chat's tab closes. With no chat to answer for, it answers
+for a new chat, and the heading reads **A new chat gets** instead of *In this chat*.
 
 A chat keeps the skills it started with. When a skill changes, purlis offers to restart the chat
 on the same conversation, so it picks the change up.

@@ -24,6 +24,38 @@ fn the_policy_watch_tells_a_change_once_and_a_rewrite_to_the_same_locks_never() 
     assert!(watch.moved(Locks::none()), "the policy went");
 }
 
+#[test]
+fn a_policy_change_the_watch_tells_is_in_the_next_count_of_a_chats_browser_sites() {
+    // #4739: each chat's browser-site count is read from what its project keeps of the policy,
+    // read once; the watch's word that the policy changed has every open project read it again
+    // before the window hears and asks.
+    use sandbox::policy::{Locks, set_for_this_test};
+    let dir = tempfile::tempdir().expect("a project");
+    std::fs::write(dir.path().join("charter.toml"), "schema = 1\n").expect("its manifest");
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
+    let held = planes.held(&planes.open(dir.path())).expect("it is open");
+    let site = sandbox::browser_reach::Site::parse("example.com:443").expect("a site");
+    let mine = [(1, site)];
+    let count = || held.browser_sites_in_force().of_chat(&mine, 1);
+    assert_eq!(count(), 1, "the site allowed for chat 1 alone");
+
+    // Policy now keeps no Allow for one chat: unseen until the watch tells of it.
+    set_for_this_test(Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"allow-scopes": ["you", "project"]}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    ));
+    assert_eq!(count(), 1, "the policy was read again with no change told");
+
+    policy_moved(&planes);
+    assert!(!held.browser_sites_kept());
+    assert_eq!(count(), 0, "the next count is the new policy's");
+    set_for_this_test(Locks::none());
+}
+
 // ---- the live ask (#1666) ----------------------------------------------------------------
 
 #[test]
