@@ -458,3 +458,55 @@ function without(layout: Layout, pane: number): Layout | undefined {
   if (!second) return first;
   return { ...layout, children: [first, second] };
 }
+
+/** A box on screen, in CSS pixels. */
+export type Box = { left: number; top: number; width: number; height: number };
+
+/**
+ * **Where the result of a drop is drawn before it** (#4583): the half of the pane the source
+ * would take for an edge, the whole pane for its middle.
+ */
+export function previewOf(pane: Box, place: Place): Box {
+  const halfWidth = pane.width / 2;
+  const halfHeight = pane.height / 2;
+  switch (place) {
+    case "left":
+      return { ...pane, width: halfWidth };
+    case "right":
+      return { ...pane, left: pane.left + halfWidth, width: halfWidth };
+    case "top":
+      return { ...pane, height: halfHeight };
+    case "bottom":
+      return { ...pane, top: pane.top + halfHeight, height: halfHeight };
+    case "middle":
+      return pane;
+  }
+}
+
+/**
+ * **The smallest a side of a split may be, in pixels, along `direction`** (#4763): a pane's
+ * floor, and a split along the same direction the sum of its sides', since each of them keeps
+ * its own. A separator stops there, so it keeps the floor a drop keeps.
+ */
+export function floorAlong(layout: Layout, direction: "row" | "column"): number {
+  if (layout.kind === "pane") return direction === "row" ? PANE_FLOOR.width : PANE_FLOOR.height;
+  const [a, b] = layout.children.map((child) => floorAlong(child, direction));
+  return layout.direction === direction ? a + b : Math.max(a, b);
+}
+
+/**
+ * **The tabs a drop's Undo puts back** (#4583: Undo after every layout change, ⌘Z), or nothing
+ * once the tabs have moved on from what the drop left: what was dragged since, or a chat opened
+ * or closed, is not taken back by an Undo it never saw. Focus and the front tab moving are no
+ * such change.
+ */
+export function undone(now: Tabs, before: Tabs, after: Tabs): Tabs | undefined {
+  const same =
+    now.order.length === after.order.length &&
+    now.order.every(
+      (id, at) => after.order[at] === id && now.byId[id]?.layout === after.byId[id]?.layout,
+    );
+  if (!same) return undefined;
+  // Numbers handed out since stay handed out: a pane or a tab never reuses one.
+  return { ...before, named: now.named };
+}

@@ -2,7 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { type DropContext, dropOn, judgeDrop, PANE_FLOOR, placeAt, type Source } from "./paneDrop";
+import {
+  type DropContext,
+  dropOn,
+  floorAlong,
+  judgeDrop,
+  PANE_FLOOR,
+  placeAt,
+  previewOf,
+  type Source,
+  undone,
+} from "./paneDrop";
 import {
   type Content,
   contentsOf,
@@ -11,6 +21,7 @@ import {
   noTabs,
   openTab,
   openView,
+  selectTab,
   showIn,
   type Tabs,
   type ViewRef,
@@ -489,5 +500,82 @@ describe("where in a pane the pointer is picks the place (#4763)", () => {
     [0.2, 0.05, "top"],
   ] as const)("at %s, %s it is %s", (x, y, place) => {
     expect(placeAt(x, y)).toBe(place);
+  });
+});
+
+describe("what is drawn before a drop (#4763)", () => {
+  const pane = { left: 100, top: 50, width: 800, height: 400 };
+  it.each([
+    ["left", { left: 100, top: 50, width: 400, height: 400 }],
+    ["right", { left: 500, top: 50, width: 400, height: 400 }],
+    ["top", { left: 100, top: 50, width: 800, height: 200 }],
+    ["bottom", { left: 100, top: 250, width: 800, height: 200 }],
+    ["middle", pane],
+  ] as const)("the %s place draws its half, or the whole pane", (place, box) => {
+    expect(previewOf(pane, place)).toEqual(box);
+  });
+});
+
+describe("a separator keeps the floor a drop keeps (#4763)", () => {
+  it("is a pane's floor for one pane, and adds up along a split's own direction", () => {
+    const { tabs, tab } = three(); // row(1 column(2 3))
+    const layout = tabs.byId[tab].layout;
+    expect(floorAlong(layout, "row")).toBe(PANE_FLOOR.width * 2);
+    expect(floorAlong(layout, "column")).toBe(PANE_FLOOR.height * 2);
+    if (layout.kind !== "split") throw new Error("a split");
+    expect(floorAlong(layout.children[0], "row")).toBe(PANE_FLOOR.width);
+    expect(floorAlong(layout.children[1], "column")).toBe(PANE_FLOOR.height * 2);
+  });
+});
+
+describe("Undo puts the last layout back (#4763)", () => {
+  it("restores the tabs from before the drop", () => {
+    const { tabs, first, second } = twoTabs();
+    const after = dropOn(
+      tabs,
+      paneSource(tabs, second, 5),
+      { kind: "pane", tab: first, pane: paneOf(tabs, first, 1), place: "left" },
+      ctx,
+    );
+    const back = undone(after, tabs, after);
+    expect(back && strip(back)).toEqual(["1", "row(4 5)"]);
+    expect(back?.inFront).toBe(second);
+  });
+
+  it("still restores once the focus or the front tab moved", () => {
+    const { tabs, first, second } = twoTabs();
+    const after = dropOn(tabs, paneSource(tabs, second, 5), { kind: "strip", at: 0 }, ctx);
+    const moved = selectTab(after, first);
+    expect(undone(moved, tabs, after) && strip(undone(moved, tabs, after) as Tabs)).toEqual([
+      "1",
+      "row(4 5)",
+    ]);
+  });
+
+  it("takes nothing back once the layout changed since", () => {
+    const { tabs, first, second } = twoTabs();
+    const after = dropOn(tabs, paneSource(tabs, second, 5), { kind: "strip", at: 0 }, ctx);
+    const opened = openTab(after, 9, "9", "steward");
+    expect(undone(opened, tabs, after)).toBeUndefined();
+    const dragged = dropOn(after, { kind: "tab", tab: first }, { kind: "strip", at: 0 }, ctx);
+    expect(undone(dragged, tabs, after)).toBeUndefined();
+    const split = dropOn(
+      after,
+      { kind: "chat", session: 7, chat: "7" },
+      { kind: "pane", tab: first, pane: paneOf(after, first, 1), place: "right" },
+      ctx,
+    );
+    expect(undone(split, tabs, after)).toBeUndefined();
+  });
+
+  it("never hands out a number twice after an Undo", () => {
+    const { tabs, first } = twoTabs();
+    const after = dropOn(
+      tabs,
+      { kind: "chat", session: 7, chat: "7" },
+      { kind: "pane", tab: first, pane: paneOf(tabs, first, 1), place: "right" },
+      ctx,
+    );
+    expect(undone(after, tabs, after)?.named).toEqual(after.named);
   });
 });

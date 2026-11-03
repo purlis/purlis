@@ -13,7 +13,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Group, Panel } from "react-resizable-panels";
+import { Group, Panel, useParentGroup } from "react-resizable-panels";
 import { Separator } from "./ui/panel/Separator";
 import {
   type ChatBlocked,
@@ -46,7 +46,9 @@ import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
 import { SkillsChip } from "./UseSkill";
 import { harnessCardView, type Layout, type ViewRef } from "./tabs";
-import { shareOf, WHOLE } from "./laidOut";
+import { EVEN, shareOf, WHOLE } from "./laidOut";
+import { floorAlong } from "./paneDrop";
+import { dropPane, GRIP } from "./paneDrag";
 import { type Crumbs } from "./tabChats";
 import { BriefButton, type BriefAsk } from "./Brief";
 import { PaneCrumbs } from "./PaneCrumbs";
@@ -119,6 +121,7 @@ export function paneMenuOf(offerFor: (id: string) => Offer | undefined): Catalog
 export function PaneFrame({
   plane,
   pane,
+  tab,
   session,
   crumbs,
   ending,
@@ -139,6 +142,8 @@ export function PaneFrame({
   plane: PlaneId;
   /** The pane it draws, by its number in the tabs: its band is remembered by it (#3167). */
   pane?: number;
+  /** The tab it is a pane of: with `pane`, where a dragged pane lands (#4763). */
+  tab?: number;
   session: number;
   /** Whether the keyboard is in this pane: a split says which of its panes has it (#2914). */
   focused?: boolean;
@@ -193,6 +198,7 @@ export function PaneFrame({
       ref={frame}
       className="pane-frame pane-headed"
       data-focused={focused || undefined}
+      {...(tab === undefined || pane === undefined ? {} : dropPane(tab, pane))}
       // A reference dropped on the chat's pane is typed into it, unsent (FM-9).
       onDragOver={overChat}
       onDrop={(event) => {
@@ -272,9 +278,18 @@ export function PaneFrame({
  * `children` it is the actions alone at the top right of a pane, as a view's pane draws them
  * (#3147).
  */
-export function PaneHead({ doing, children }: { doing: ReactNode; children?: ReactNode }) {
+export function PaneHead({
+  doing,
+  children,
+  grip = true,
+}: {
+  doing: ReactNode;
+  children?: ReactNode;
+  /** Whether a press on it, outside its controls, picks the pane up to drag (#4763). */
+  grip?: boolean;
+}) {
   return (
-    <div className="pane-head">
+    <div className="pane-head" {...(grip ? { [GRIP]: "" } : {})}>
       {children}
       {doing}
     </div>
@@ -611,8 +626,11 @@ export function LayoutPanes({
           className="pane-frame pane-viewed"
           data-focused={layout.pane === focused || undefined}
           onPointerDown={() => onFocus(layout.pane)}
+          {...dropPane(tab, layout.pane)}
         >
+          {/* An empty pane has nothing to pick up, so its head is no grip (#4583). */}
           <PaneHead
+            grip={false}
             doing={
               <PaneActions
                 pane={layout.pane}
@@ -647,6 +665,7 @@ export function LayoutPanes({
           className="pane-frame pane-viewed"
           data-focused={layout.pane === focused || undefined}
           onPointerDown={() => onFocus(layout.pane)}
+          {...dropPane(tab, layout.pane)}
         >
           {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. Over
               the view's first row, which keeps the room it takes (`paneFrame.css`). */}
@@ -752,6 +771,7 @@ export function LayoutPanes({
           className="pane-frame pane-headed"
           data-focused={layout.pane === focused || undefined}
           onPointerDown={() => onFocus(layout.pane)}
+          {...dropPane(tab, layout.pane)}
         >
           {/* As `PaneFrame` draws them: the band and the header, above what the pane shows. */}
           <div className="pane-top">
@@ -807,6 +827,7 @@ export function LayoutPanes({
       <PaneFrame
         plane={plane}
         pane={layout.pane}
+        tab={tab}
         session={content.session}
         focused={layout.pane === focused}
         crumbs={path}
@@ -912,10 +933,18 @@ export function LayoutPanes({
          * A split has exactly two children and they never swap, so the side IS the identity.
          */
         <Fragment key={side}>
-          {side === 1 && <Separator className="pane-split" aria-label="Resize the split" />}
+          {side === 1 && (
+            <EvenedSeparator
+              sides={[`pane-${sideOf(0)}`, `pane-${sideOf(1)}`]}
+              onEven={() => split.shared?.(path, EVEN)}
+            />
+          )}
           <Panel
             id={`pane-${sideOf(side)}`}
             defaultSize={`${(side === 0 ? share : WHOLE - share) / 10}%`}
+            // **A separator keeps the floor a drop keeps** (#4763): about 40 columns by 8 rows
+            // for each pane on this side, in pixels.
+            minSize={floorAlong(child, layout.direction)}
           >
             <LayoutPanes
               path={sideOf(side)}
@@ -971,6 +1000,31 @@ export function LayoutPanes({
         </Fragment>
       ))}
     </Group>
+  );
+}
+
+/**
+ * **A split's separator, which evens the split** (#4583): a double-click on it, or Enter while
+ * it has the keyboard, puts both sides at half, and says so to the tab (`onEven`). The arrow
+ * keys resize it by 5%, which is the library's own step.
+ */
+function EvenedSeparator({ sides, onEven }: { sides: [string, string]; onEven: () => void }) {
+  const group = useParentGroup();
+  const even = () => {
+    group?.setLayout({ [sides[0]]: EVEN / 10, [sides[1]]: (WHOLE - EVEN) / 10 });
+    onEven();
+  };
+  return (
+    <Separator
+      className="pane-split"
+      aria-label="Resize the split"
+      // The library's own double-click puts a side back at its first size; this one evens it.
+      disableDoubleClick
+      onDoubleClick={even}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") even();
+      }}
+    />
   );
 }
 

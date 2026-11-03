@@ -433,6 +433,8 @@ import { NewVault } from "./NewVault";
 import { OpenVault, useVaults } from "./Vaults";
 import { usePlaneEdits } from "./PlaneEdits";
 import { MemoryStores, useMemoryEdits, useMemoryStores } from "./MemoryEdits";
+import { usePaneDrag } from "./paneDrag";
+import type { DropContext } from "./paneDrop";
 import type { MemoryTargets } from "./memoryMoves";
 import { AddToAChat } from "./AddToAChat";
 import { handReferences } from "./referencesMany";
@@ -4614,6 +4616,38 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     nameOfNow.current = nameOf;
   }, [nameOf]);
+
+  /** What a pane drop is judged against (#4763): where chats are filed, and what each is called. */
+  const dropContext = useMemo<DropContext>(
+    () => ({
+      filedIn,
+      pinned: isPinned,
+      background: isBackground,
+      name: (content) =>
+        content.kind === "session"
+          ? nameOf(content.session)
+          : content.kind === "view"
+            ? (tabs.byId[findView(tabs, content.view)?.tab ?? -1]?.name ?? content.view.view)
+            : "the empty pane",
+    }),
+    [filedIn, isBackground, isPinned, nameOf, tabs],
+  );
+  const holdTab = useCallback((id: number) => change((tabs) => selectTab(tabs, id)), [change]);
+  const ownNameOf = useCallback(
+    (session: number) =>
+      [...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []), ...(sidebar?.unfiled ?? [])].find(
+        (chat) => chat.session === session,
+      )?.name ?? String(session),
+    [sidebar],
+  );
+  /** **Dragging panes: split, swap and move** (#4763), its Undo line and what it draws. */
+  const paneDrag = usePaneDrag({
+    tabs,
+    change,
+    ctx: dropContext,
+    onHoldTab: holdTab,
+    chatNameOf: ownNameOf,
+  });
 
   /**
    * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the
@@ -9719,6 +9753,11 @@ export const PlaneView = memo(function PlaneView({
 
       {/* A memory's Delete, which can be undone for a few seconds (SI-9b, ADR 0065 Q8). */}
       {memoryEdits.undo}
+      {/* A pane dropped, which Undo or ⌘Z puts back (#4763). */}
+      {paneDrag.undoLine}
+      {/* While a pane is dragged: where it would land and what it would do, drawn over
+          everything at fixed places, and said to a reader. */}
+      {paneDrag.layer}
 
       {/* By the chat's id, never its name: two waiting chats can share a name (a split's chat
             takes its tab's), and each Notice acts on its own chat alone. */}

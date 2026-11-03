@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { CHAT_ROW } from "./paneDrag";
 import {
   memo,
   useCallback,
@@ -1595,6 +1596,8 @@ const Row = memo(function Row({
             data-tab={tab}
             // The chat's number, as a pane carries it: what a reveal finds the row by (#1490).
             data-session={session}
+            // Dragged onto a pane or the strip, it lands there (#4763); a press stays a press.
+            {...{ [CHAT_ROW]: String(session) }}
             onClick={() => {
               // A press focuses the row too: that is no rest of the keyboard.
               away();

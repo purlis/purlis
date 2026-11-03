@@ -617,6 +617,19 @@ export const SHORTCUTS: readonly Shortcut[] = [
     matches: isTask("own"),
   },
   {
+    id: "layout.undo",
+    does: "Undo the last layout change",
+    group: "Tabs and chats",
+    where: "window",
+    kind: "key",
+    chords: { mac: [cmd("z")], other: [ctl("z")] },
+    said: (mac) => (mac ? "⌘Z" : "Ctrl+Z"),
+    // A field's and an editor's own Undo come first, and off a Mac Ctrl+Z is the chat's
+    // (#4763): its handler holds it as not runnable in a field, so the field keeps the key.
+    yields: ["modal", "dialog", "palette", "editor", "terminal-off-mac", "typing"],
+    matches: (e, mac) => isChord(e, mac ? cmd("z") : ctl("z")),
+  },
+  {
     id: "tab.rename",
     does: "Rename the focused chat tab",
     group: "Tabs and chats",
