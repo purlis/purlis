@@ -322,6 +322,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A question's trail, opened from its line in the Activity above (#4567).
     "question_trail",
     "task_question",
+    // What an asking chat answered a question the person had open (#4566).
+    "task_question_answered",
     // Answers as the person.
     "answer_task_question",
     // What stands and what waits: the person's and every chat's, so never a link's to read.

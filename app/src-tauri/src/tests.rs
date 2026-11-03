@@ -671,7 +671,7 @@ fn what_chats_said_to_each_other_is_read_by_the_window_alone_and_never_in_the_li
     // chats wrote, read by a session the caller names: Tauri's IPC, and no second route.
     let bindings = std::fs::read_to_string(BINDINGS).unwrap();
     let client = ui_rpc_client();
-    for command in ["activity", "task_question"] {
+    for command in ["activity", "task_question", "task_question_answered"] {
         let called = format!("(\"{command}\"");
         assert!(bindings.contains(&called), "the window reads it: {command}");
         assert!(!client.contains(&called), "served on a link: {command}");

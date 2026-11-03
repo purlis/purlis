@@ -121,3 +121,61 @@ describe("which question a pane draws as a quiz (#4565)", () => {
     expect(quizIn([reached(12, 200)], 4, "top", topOf)?.ask.session).toBe(12);
   });
 });
+
+describe("several questions at once (#4566)", () => {
+  /** Chat 12 is a task with a tab of its own whose tasks 31 and 32 are at home in it. */
+  const nested = (task: number) =>
+    task === 31 || task === 32 ? 12 : task >= 20 ? 20 : task > 4 ? 4 : undefined;
+
+  it("counts the questions waiting at a mid-level chat behind its own, from the top", () => {
+    const asks = [reached(12, 300), reached(31, 100), reached(32, 200)];
+    const quiz = quizIn(asks, 12, "top", nested);
+    expect(quiz?.ask.session).toBe(12);
+    expect(quiz?.own).toBe(true);
+    expect(quiz?.more).toBe(2);
+  });
+
+  it("counts none behind a task's own question from each session", () => {
+    const asks = [reached(12, 300), reached(31, 100)];
+    expect(quizIn(asks, 12, "each", nested)?.more).toBe(0);
+  });
+
+  /** Task 13 is stopped on a prompt in its own terminal, which the window cannot draw. */
+  const prompt: Shown = {
+    session: 13,
+    ask: "terminal:13",
+    says: "Waiting in its terminal: a question",
+    options: [],
+    source: "terminal",
+    chain: [],
+    answer: { via: "in-its-pane" },
+    since: null,
+  } as unknown as Shown;
+
+  it("takes a task's question the window cannot draw the same route, linked from the top", () => {
+    const quiz = quizIn([prompt], 4, "top", topOf);
+    expect(quiz?.ask.session).toBe(13);
+    expect(quiz?.drawn).toBe(false);
+    expect(quiz?.own).toBe(false);
+  });
+
+  it("queues it with the rest, behind every question whose age is known", () => {
+    const quiz = quizIn([prompt, reached(11, 100)], 4, "top", topOf);
+    expect(quiz?.ask.session).toBe(11);
+    expect(quiz?.drawn).toBe(true);
+    expect(quiz?.more).toBe(1);
+  });
+
+  it("leaves a prompt in its own pane to its terminal and the waiting strip", () => {
+    expect(quizIn([prompt], 13, "top", topOf)).toBeUndefined();
+  });
+
+  it("never takes a prompt of a chat that is no task", () => {
+    const own = { ...prompt, session: 4, ask: "terminal:4" } as Shown;
+    expect(quizIn([own], 4, "top", topOf)).toBeUndefined();
+  });
+
+  it("leaves a task's prompt in its pane and the Inbox from each session", () => {
+    expect(quizIn([prompt], 4, "each", topOf)).toBeUndefined();
+  });
+});

@@ -1311,6 +1311,7 @@ export const commands = {
 	activityChat: (plane: PlaneId, key: string) => typedError<number | null, string>(__TAURI_INVOKE("activity_chat", { plane, key })),
 	questionTrail: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
+	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
 	answerTaskQuestion: __WINDOW_ONLY_RESULT,
 	resumeSession: __WINDOW_ONLY_RESULT,
 	/**
@@ -3514,6 +3515,25 @@ export type ChangedIn = {
 	more: number,
 	/**  Why purlis could not read what changed there, where it could not. */
 	unread: string | null,
+};
+
+/**
+ *  **What an asking chat answered a task's question, as the window shows it** (#4566): the line
+ *  a quiz leaves when an agent answered it first, which says who said what and offers the
+ *  person's later word.
+ */
+export type ChatAnsweredShown = {
+	/**  The task, by the name the person sees it under. */
+	task: string,
+	/**  The asking chat that answered, by its name. */
+	from: string,
+	/**  What it answered, masked, **as text**: a chat's own words, never drawn as markup. */
+	said: string,
+	/**
+	 *  The question it answered, in the task's words: what the person's word is held to
+	 *  (`answer_task_question`).
+	 */
+	question: string,
 };
 
 /**

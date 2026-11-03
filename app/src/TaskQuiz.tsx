@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { useState } from "react";
 import type { PlaneId, ReachedWhy, Shown } from "./bindings";
 import { answerHowSaid, useAnswerQuestion } from "./AnswerQuestion";
 import { KindMark, useNow } from "./InboxRow";
@@ -45,6 +46,7 @@ export function TaskQuiz({
   now: given,
   onOpenTask,
   onAnswered,
+  onTyped,
 }: {
   plane: PlaneId;
   /** The question, as the asks registry lists it (`source: "task-question"`). */
@@ -58,19 +60,30 @@ export function TaskQuiz({
   onOpenTask: (task: number) => void;
   /** The answer was taken. */
   onAnswered: () => void;
+  /** What is in the box, as it changes: kept by the band, should an agent answer first. */
+  onTyped?: (text: string) => void;
 }) {
   const read = useNow();
   const now = given ?? read;
   const task = ask.chain[ask.chain.length - 1] ?? `chat ${ask.session}`;
   const who = ask.chain.length > 2 ? ask.chain.join(" › ") : `${task} asks`;
+  /** The answer was taken: the box is emptied and held until the registry's next list takes
+   *  the quiz away, so a second Enter sends nothing (#4566). */
+  const [taken, setTaken] = useState(false);
   const answering = useAnswerQuestion({
     plane,
     session: ask.session,
     task,
-    onDone: onAnswered,
+    onDone: () => {
+      setTaken(true);
+      setText("");
+      onTyped?.("");
+      onAnswered();
+    },
     takesFocus: false,
   });
   const { asked, text, setText, sending, refused, setRefused, send, box, ids } = answering;
+  const held = taken || sending || asked === undefined || asked === null;
   const why = ask.answer.via === "task-question" ? ask.answer : undefined;
   const age = ask.since == null ? undefined : agoSaid(ask.since * 1000, now);
   return (
@@ -117,7 +130,7 @@ export function TaskQuiz({
         aria-label={`Answer ${task}'s question`}
         onSubmit={(event) => {
           event.preventDefault();
-          void send();
+          if (!taken) void send();
         }}
       >
         <TextArea
@@ -129,24 +142,20 @@ export function TaskQuiz({
           error={refused}
           rows={Math.min(Math.max(2, text.split("\n").length), 10)}
           value={text}
-          isDisabled={sending || asked === undefined || asked === null}
+          isDisabled={held}
           onChange={(to) => {
             setText(to);
             setRefused(undefined);
+            onTyped?.(to);
           }}
           onKeyDown={(event) => {
             if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
             if (event.shiftKey || event.altKey) return;
             event.preventDefault();
-            void send();
+            if (!taken) void send();
           }}
         />
-        <Button
-          size="sm"
-          variant="primary"
-          type="submit"
-          isDisabled={sending || asked === undefined || asked === null}
-        >
+        <Button size="sm" variant="primary" type="submit" isDisabled={held}>
           Send
         </Button>
       </Form>

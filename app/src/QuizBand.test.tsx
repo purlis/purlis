@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Shown } from "./bindings";
 import { QuestionsHere } from "./QuestionsHere";
-import { QuizBand, QuizPlaces } from "./QuizBand";
+import { PAUSE_MS, QuizBand, QuizPlaces } from "./QuizBand";
 import { forgetThisLaunch } from "./regions";
 import { setWhereYouAnswer, whereYouAnswer } from "./whereYouAnswer";
 
@@ -33,25 +33,44 @@ const QUESTION: Shown = {
 const openTask = vi.fn();
 const openSettings = vi.fn();
 
-function Pane({ session, asks }: { session: number; asks: Shown[] }) {
+/** Tasks 7 and 8 are at home in steward 4's tab (chat 4); task 21 in talk 2's (chat 20). */
+const topOf = (task: number) => (task === 7 || task === 8 ? 4 : task === 21 ? 20 : undefined);
+
+function Pane({ session, asks }: { session: number | number[]; asks: Shown[] }) {
   return (
-    <QuizPlaces.Provider
-      value={{ topOf: (task) => (task === 7 ? 4 : undefined), openTask, openSettings }}
-    >
+    <QuizPlaces.Provider value={{ topOf, openTask, openSettings }}>
       <QuestionsHere.Provider value={{ asks, with_asking_chat: [] }}>
-        <QuizBand plane={PLANE} session={session} />
+        {(Array.isArray(session) ? session : [session]).map((one) => (
+          <div key={one} data-testid={`pane-${one}`}>
+            <QuizBand plane={PLANE} session={one} />
+          </div>
+        ))}
       </QuestionsHere.Provider>
     </QuizPlaces.Provider>
   );
 }
 
+/** What the pretend core was sent to answer, and what it says an asking chat answered. */
+let sent: Record<string, unknown>[] = [];
+let chatAnswered: unknown = null;
+
 beforeEach(() => {
   forgetThisLaunch();
-  mockIPC((cmd) =>
-    cmd === "task_question"
-      ? { task: "developer 7", asked: "steward 4", number: 1, question: "Which one should win?" }
-      : null,
-  );
+  sent = [];
+  chatAnswered = null;
+  mockIPC((cmd, args) => {
+    const session = (args as { session?: number } | undefined)?.session;
+    if (cmd === "task_question")
+      return session === 8
+        ? { task: "designer 8", asked: "steward 4", number: 2, question: "Which colour?" }
+        : { task: "developer 7", asked: "steward 4", number: 1, question: "Which one should win?" };
+    if (cmd === "answer_task_question") {
+      sent.push(args as Record<string, unknown>);
+      return null;
+    }
+    if (cmd === "task_question_answered") return chatAnswered;
+    return null;
+  });
 });
 afterEach(() => {
   cleanup();
@@ -120,6 +139,149 @@ describe("where a task's question is drawn (#4565)", () => {
     const user = userEvent.setup();
     render(<Pane session={4} asks={[QUESTION]} />);
     expect(openTask).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Open task" }));
+    expect(openTask).toHaveBeenCalledWith(7);
+  });
+});
+
+/** A second question, asked after the first, at the same top. */
+const SECOND: Shown = {
+  ...QUESTION,
+  session: 8,
+  ask: "task-question:8:2",
+  says: "Which colour?",
+  chain: ["steward 4", "designer 8"],
+  since: (QUESTION.since ?? 0) + 60,
+};
+
+const AGENT_SAID = {
+  task: "developer 7",
+  from: "steward 4",
+  said: "Per project.",
+  question: "Which one should win?",
+};
+
+describe("several questions at once (#4566)", () => {
+  beforeEach(() => setWhereYouAnswer({ offered: true }));
+
+  it("pauses before the next quiz, keeping its place, so a second click lands on nothing", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<Pane session={4} asks={[QUESTION, SECOND]} />);
+    const box = screen.getByRole("textbox", { name: "Your answer" });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    await user.type(box, "Per project{Enter}");
+    await waitFor(() => expect(sent).toHaveLength(1));
+    // The registry's next list has it gone, and the next one waiting.
+    rerender(<Pane session={4} asks={[SECOND]} />);
+    expect(screen.getByText("Sent to developer 7.")).toBeInTheDocument();
+    expect(screen.getByText("The next question comes in a moment.")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "designer 8 asks" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
+    await waitFor(
+      () => expect(screen.getByRole("group", { name: "designer 8 asks" })).toBeInTheDocument(),
+      { timeout: PAUSE_MS * 3 },
+    );
+    expect(screen.queryByText("Sent to developer 7.")).not.toBeInTheDocument();
+  });
+
+  it("closes quietly when the asking chat answers first, leaving who said what until dismissed", async () => {
+    const user = userEvent.setup();
+    chatAnswered = AGENT_SAID;
+    const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
+    expect(quiz()).toBeInTheDocument();
+    rerender(<Pane session={4} asks={[]} />);
+    expect(await screen.findByText('steward 4 told developer 7: "Per project."')).toBeInTheDocument();
+    expect(quiz()).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // It stays, whatever the registry lists next (the person's ruling).
+    rerender(<Pane session={4} asks={[]} />);
+    expect(screen.getByText('steward 4 told developer 7: "Per project."')).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Go to task" }));
+    expect(openTask).toHaveBeenCalledWith(7);
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/told developer 7/)).not.toBeInTheDocument();
+  });
+
+  it("sends the person's word in place of the chat's on Say otherwise", async () => {
+    const user = userEvent.setup();
+    chatAnswered = AGENT_SAID;
+    const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
+    rerender(<Pane session={4} asks={[]} />);
+    await user.click(await screen.findByRole("button", { name: "Say otherwise…" }));
+    expect(screen.getByText("developer 7 is told this replaces steward 4's answer.")).toBeInTheDocument();
+    // The person's own press: the box may take the keyboard, as no quiz arriving ever does.
+    const box = screen.getByRole("textbox", { name: "What you want instead" });
+    expect(box).toHaveFocus();
+    await user.type(box, "Per runner");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      session: 7,
+      number: 1,
+      question: "Which one should win?",
+      text: "Per runner",
+    });
+    expect(
+      await screen.findByText("developer 7 was told your word replaces steward 4's answer."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/your word replaces/)).not.toBeInTheDocument();
+  });
+
+  it("keeps what the person typed when the chat answers first, to send as their word", async () => {
+    const user = userEvent.setup();
+    chatAnswered = AGENT_SAID;
+    const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
+    const box = screen.getByRole("textbox", { name: "Your answer" });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    await user.type(box, "Per runner");
+    rerender(<Pane session={4} asks={[]} />);
+    expect(
+      await screen.findByText(
+        'steward 4 answered first: "Per project." What you typed is still in the box.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "What you want instead" })).toHaveValue(
+      "Per runner",
+    );
+    await user.click(screen.getByRole("button", { name: "Send as your word" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ session: 7, number: 1, text: "Per runner" });
+  });
+
+  it("leaves no line and no error where the person answered it elsewhere", async () => {
+    const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
+    rerender(<Pane session={4} asks={[]} />);
+    await waitFor(() => expect(quiz()).not.toBeInTheDocument());
+    expect(screen.queryByText(/told developer 7/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("offers the choice in one place only, with two tops side by side", () => {
+    setWhereYouAnswer({ offered: false });
+    const third: Shown = { ...QUESTION, session: 21, ask: "task-question:21:3" };
+    render(<Pane session={[4, 20]} asks={[QUESTION, third]} />);
+    expect(screen.getAllByText(LINE)).toHaveLength(1);
+    expect(screen.getAllByRole("group", { name: "developer 7 asks" })).toHaveLength(2);
+  });
+
+  it("links a task's question the window cannot draw to its pane, from the top", async () => {
+    const user = userEvent.setup();
+    const prompt = {
+      session: 7,
+      ask: "terminal:7",
+      says: "Waiting in its terminal: a question",
+      options: [],
+      source: "terminal",
+      // The registry names every ask's chain from the app's own record.
+      chain: ["steward 4", "developer 7"],
+      answer: { via: "in-its-pane" },
+      since: null,
+    } as unknown as Shown;
+    render(<Pane session={4} asks={[prompt]} />);
+    expect(
+      screen.getByText("developer 7 asks something this tab cannot draw. Answer it in the task's pane."),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open task" }));
     expect(openTask).toHaveBeenCalledWith(7);
   });
