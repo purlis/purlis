@@ -227,6 +227,40 @@ describe("the Skill studio", () => {
     expect(within(row).queryByText("Widens.")).toBeNull();
   });
 
+  it("says the whole of a reason its line cuts short under the pointer, and none of one that fits (#4711)", async () => {
+    const long =
+      "Left out: a name starting with purlis- is purlis's own, so this one is never handed on";
+    // jsdom draws nothing: the long reason's line is wider than its box, as a browser cuts it.
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.textContent === long ? 400 : 100;
+    });
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => 100);
+    answering(
+      studio([
+        skill("purlis-own", {
+          on: false,
+          left_out: "a name starting with purlis- is purlis's own, so this one is never handed on",
+        }),
+        skill("off-here", { on: false, left_out: "off here" }),
+      ]),
+    );
+    try {
+      renderStudio();
+      const user = userEvent.setup();
+
+      await user.hover(await screen.findByTestId("skill-off-here"));
+      await new Promise((done) => setTimeout(done, 600));
+      expect(screen.queryByRole("tooltip")).toBeNull();
+
+      await user.hover(screen.getByTestId("skill-purlis-own"));
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(long);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it("keeps the Library's tools to search and chips, with New skill… the one way in (#4041)", async () => {
     answering(studio([skill("deploy")]));
 

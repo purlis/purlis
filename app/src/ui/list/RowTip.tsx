@@ -30,9 +30,15 @@ import {
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
-import { AnchoredTooltip, onTooltipEscape, TOOLTIP_DELAY, type Tip } from "../tooltip/Tooltip";
+import {
+  AnchoredTooltip,
+  onTooltipEscape,
+  says,
+  TOOLTIP_DELAY,
+  type Tip,
+} from "../tooltip/Tooltip";
 import { useWindowLeft } from "../windowLeft";
-import { RowScope } from "./Row";
+import { RowCutWords, RowScope } from "./Row";
 
 /** What a row with a tooltip hands its element, and draws inside it. */
 export interface RowTipped {
@@ -52,6 +58,10 @@ export function useRowTip(
   /** Shown to the pointer alone: a tip that only repeats the row (a file's path) would be heard
    *  on every arrow step. Nothing shows it on the keyboard, and so no Esc is spent on it. */
   pointerOnly = false,
+  /** The tip is the row's own words, cut short where they are drawn (`RowBelow`'s
+   *  `tipWhenCut`): shown to the eye, never the row's description, since a reader already hears
+   *  them whole as the row's. */
+  repeats = false,
 ): RowTipped {
   // Where the pointer rested as the delay ran out (its x in the window), while it is shown.
   const [pointed, setPointed] = useState<number | null>(null);
@@ -84,10 +94,29 @@ export function useRowTip(
     drawn: (keyboardOn) =>
       (pointed !== null || (keyboardOn && !pointerOnly)) &&
       !dismissed && (
-        <Shown pointer={pointed} onEscape={() => setDismissed(true)}>
+        <Shown pointer={pointed} describes={!repeats} onEscape={() => setDismissed(true)}>
           {tip}
         </Shown>
       ),
+  };
+}
+
+/**
+ * **A list's row's tooltip, or the whole of its line cut short** (#4711): the row's own `tip`
+ * where it has one; else, while a `RowBelow` that asks (`tipWhenCut`) is cut by its clamp, that
+ * line's whole words, never as the row's description. `hold` draws the row's content where its
+ * `RowBelow` can say it is cut.
+ */
+export function useListRowTip(tip: Tip | undefined): {
+  tipped: RowTipped;
+  hold: (content: ReactNode) => ReactNode;
+} {
+  const [cut, setCut] = useState<string>();
+  const own = tip !== undefined && says(tip);
+  const tipped = useRowTip(own ? tip : cut, false, !own);
+  return {
+    tipped,
+    hold: (content) => <RowCutWords.Provider value={setCut}>{content}</RowCutWords.Provider>,
   };
 }
 
@@ -102,11 +131,14 @@ interface Place {
 /** The tooltip while it is up, which the first Esc takes down. */
 function Shown({
   pointer,
+  describes,
   onEscape,
   children,
 }: {
   /** The pointer's x in the window, where the pointer opened it. */
   pointer: number | null;
+  /** It is said as the row's description while it is shown. */
+  describes: boolean;
   onEscape: () => void;
   children: Tip;
 }) {
@@ -127,7 +159,7 @@ function Shown({
   useEffect(() => {
     const row = anchor.current?.closest(`[data-scope="${scope}"][data-part="root"]`);
     const shown = tooltip.current;
-    if (!row || !shown) return;
+    if (!describes || !row || !shown) return;
     if (shown.id === "") shown.id = fallback;
     const id = shown.id;
     const was = row.getAttribute("aria-describedby");
@@ -139,7 +171,7 @@ function Shown({
       if (now.length === 0) row.removeAttribute("aria-describedby");
       else row.setAttribute("aria-describedby", now.join(" "));
     };
-  }, [fallback, scope, placed]);
+  }, [fallback, scope, placed, describes]);
   const at = placed ? place.at : null;
   return (
     <>

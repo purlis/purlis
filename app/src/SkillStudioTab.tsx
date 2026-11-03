@@ -1133,7 +1133,10 @@ export function SkillStudioTab({
             <Badge>{skill.label}</Badge>
             {mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
           </RowTrail>
-          <RowBelow clamp={1}>{lineOf(skill)}</RowBelow>
+          {/* A reason cut short reads whole in the row's tooltip (#4711). */}
+          <RowBelow clamp={1} tipWhenCut={skill.left_out !== null}>
+            {lineOf(skill)}
+          </RowBelow>
         </ListRow>
       );
     };
