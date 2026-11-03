@@ -1581,6 +1581,36 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     expect(await screen.findByRole("button", { name: "1 thing waits on you" })).toBeTruthy();
   });
 
+  it("draws a question that reached the person as a quiz at the top of its session's pane, and moves no keyboard (#4565)", async () => {
+    const { move, question } = core([
+      chat(1, "alpha"),
+      chat(2, "alpha", { label: "talk", from: tabbed() }),
+    ]);
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(2));
+    move(2, "running", 10);
+    const typing = document.activeElement;
+
+    // With its asking chat, it is on the task's row only: no quiz.
+    await question(2, "with");
+    expect(screen.queryByTestId("task-quiz")).toBeNull();
+
+    await question(2, "reached");
+
+    const quiz = await screen.findByTestId("task-quiz");
+    expect(quiz.getAttribute("data-task")).toBe("2");
+    expect(quiz.closest(".pane-top")).not.toBeNull();
+    expect(within(quiz).getByText("steward 1 passed this on.")).toBeTruthy();
+    expect(document.activeElement).toBe(typing);
+    // Still in its count and the Inbox's.
+    expect(await screen.findByRole("button", { name: "1 thing waits on you" })).toBeTruthy();
+
+    // Answered elsewhere: gone from the pane with the registry's next list.
+    await question(2, "gone");
+    await waitFor(() => expect(screen.queryByTestId("task-quiz")).toBeNull());
+  });
+
   it("says how many questions are with their asking chat on a folded row, and draws no hand for them", async () => {
     const { move, question } = core([
       chat(1, "alpha"),

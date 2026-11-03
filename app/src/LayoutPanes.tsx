@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { QuizBand } from "./QuizBand";
 import {
   createContext,
   Fragment,
@@ -206,6 +207,9 @@ export function PaneFrame({
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
         {strip}
+        {/* **A task's question, as a quiz at the top of the pane** (#4565): above the pane's
+            head, where the reviewed prototype drew it, so the terminal's input never moves for it. */}
+        <QuizBand plane={plane} session={session} />
         <PaneHead
           doing={
             <PaneBellAt.Provider value={bellAt}>
