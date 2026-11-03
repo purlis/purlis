@@ -369,9 +369,6 @@ export type Tab = {
   /** **The pane zoomed to fill the tab for now** (#4765): drawn alone while the tree stays
    *  whole, in memory only and never told to the core (`tiling.ts` `zoomedOf`). */
   zoomed?: number;
-  /** **What Undo puts back** (#4765): the tab's last tree and focus, kept while the tab's
-   *  layout is still `after`, in memory only (`tiling.ts` `undoLayout`). */
-  undo?: LayoutUndo;
   /**
    * **The strip this tab is on** (#4757; spec #4750, "A tab records its workspace"), once a
    * press has shown a chat in it. Absent until then, and the tab is on its first pane's strip
@@ -387,9 +384,12 @@ export type Tab = {
   previous?: Readonly<Record<number, number>>;
 };
 
-/** **What Undo puts back** (#4765): a tab's tree and focus before a move, and the tree the move
- *  left, which the tab must still be for the Undo to run. */
-export type LayoutUndo = { layout: Layout; focused: number; after: Layout };
+/**
+ * **What Undo puts back** (#4763, #4765): the window's tabs before its last layout change and
+ * after it, and what the change did, in the past tense. One for the window: a drop can change
+ * two tabs at once, or make one. In memory only (`layoutUndo.ts`).
+ */
+export type LayoutUndo = { before: Tabs; after: Tabs; did: string };
 
 /**
  * Which workspace a chat is filed under — the strip its tab appears on.
@@ -422,6 +422,9 @@ export type Tabs = {
    * used last that shows a chat or nothing ({@link press}). Stamped by {@link noteUsed}.
    */
   used?: Readonly<Record<number, number>>;
+  /** **The last layout change, which Undo and ⌘Z put back** (#4763), while the tabs are still
+   *  as it left them. Never told to the core. */
+  undo?: LayoutUndo;
 };
 
 /** Where `view`'s divider was, or `undefined` when it never moved. */
@@ -2145,9 +2148,11 @@ function frontTab(tabs: Tabs): Tab | undefined {
   return tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
 }
 
-type Pane = Extract<Layout, { kind: "pane" }>;
+/** One pane of a layout. */
+export type Pane = Extract<Layout, { kind: "pane" }>;
 
-function panes(layout: Layout): Pane[] {
+/** Every pane of `layout`, in reading order. */
+export function panes(layout: Layout): Pane[] {
   return layout.kind === "pane" ? [layout] : layout.children.flatMap(panes);
 }
 
@@ -2156,7 +2161,7 @@ function contents(layout: Layout): { pane: number; content: Content }[] {
 }
 
 /** `layout` with the pane `pane` put through `change`. */
-function replace(layout: Layout, pane: number, change: (found: Pane) => Layout): Layout {
+export function replace(layout: Layout, pane: number, change: (found: Pane) => Layout): Layout {
   if (layout.kind === "pane") return layout.pane === pane ? change(layout) : layout;
   return {
     ...layout,
@@ -2165,7 +2170,7 @@ function replace(layout: Layout, pane: number, change: (found: Pane) => Layout):
 }
 
 /** `layout` without the pane `pane`, or nothing when it was the only one. */
-function without(layout: Layout, pane: number): Layout | undefined {
+export function without(layout: Layout, pane: number): Layout | undefined {
   if (layout.kind === "pane") return layout.pane === pane ? undefined : layout;
   const [first, second] = layout.children.map((child) => without(child, pane));
   if (!first) return second;

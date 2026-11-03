@@ -634,6 +634,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: "a filter that matches no shortcut says so where the cheat sheet's list was (#2921)",
   },
+  "paneDrag.tsx": {
+    count: 1,
+    why: "what a pane drag says to a reader as it goes (picked up, dropped, put back), heard and never drawn (#4763)",
+  },
   "references.tsx": {
     count: 1,
     why: "the reference picker saying it found no chat, inside its menu",

@@ -353,7 +353,8 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
-import { tileAll, undoLayout, zoomedLayout, zoomFocusedPane } from "./tiling";
+import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
+import { recorded } from "./layoutUndo";
 import { layoutOf, tabsOf, withShare } from "./laidOut";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -433,6 +434,8 @@ import { NewVault } from "./NewVault";
 import { OpenVault, useVaults } from "./Vaults";
 import { usePlaneEdits } from "./PlaneEdits";
 import { MemoryStores, useMemoryEdits, useMemoryStores } from "./MemoryEdits";
+import { usePaneDrag } from "./paneDrag";
+import type { DropContext } from "./paneDrop";
 import type { MemoryTargets } from "./memoryMoves";
 import { AddToAChat } from "./AddToAChat";
 import { handReferences } from "./referencesMany";
@@ -3670,7 +3673,10 @@ export const PlaneView = memo(function PlaneView({
       const before = now.current;
       // The tab that was to be split can have closed while the picker was open. Nothing
       // would show that session, so it is ended rather than left running unseen.
-      if (change((tabs) => splitFocusedPane(tabs, where.split, session, name)) === before) {
+      // A split is a layout change, so Undo puts it back (#4763); its chat runs on in the sidebar.
+      const split = (tabs: Tabs) =>
+        recorded(tabs, splitFocusedPane(tabs, where.split, session, name), "Split the pane.");
+      if (change(split) === before) {
         void commands.closeSession(plane, session);
       }
       return undefined;
@@ -3806,10 +3812,6 @@ export const PlaneView = memo(function PlaneView({
   // Tile all, its Undo and Focus this pane (#4765): the tab's own panes rearranged, nothing
   // started or ended.
   const tileAllIn = useCallback((tab: number) => change((tabs) => tileAll(tabs, tab)), [change]);
-  const undoLayoutIn = useCallback(
-    (tab: number) => change((tabs) => undoLayout(tabs, tab)),
-    [change],
-  );
   const zoomPane = useCallback(() => change(zoomFocusedPane), [change]);
 
   useEffect(() => {
@@ -4650,6 +4652,40 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     nameOfNow.current = nameOf;
   }, [nameOf]);
+
+  /** What a pane drop is judged against (#4763): where chats are filed, and what each is called. */
+  const dropContext = useMemo<DropContext>(
+    () => ({
+      filedIn,
+      pinned: isPinned,
+      background: isBackground,
+      name: (content) =>
+        content.kind === "session"
+          ? nameOf(content.session)
+          : content.kind === "view"
+            ? (tabs.byId[findView(tabs, content.view)?.tab ?? -1]?.name ?? "this view")
+            : "the empty pane",
+    }),
+    [filedIn, isBackground, isPinned, nameOf, tabs],
+  );
+  const holdTab = useCallback((id: number) => change((tabs) => selectTab(tabs, id)), [change]);
+  const ownNameOf = useCallback(
+    (session: number) =>
+      [...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []), ...(sidebar?.unfiled ?? [])].find(
+        (chat) => chat.session === session,
+      )?.name ?? String(session),
+    [sidebar],
+  );
+  /** **Dragging panes: split, swap and move** (#4763), its Undo line and what it draws. */
+  const paneDrag = usePaneDrag({
+    tabs,
+    change,
+    ctx: dropContext,
+    onHoldTab: holdTab,
+    chatNameOf: ownNameOf,
+  });
+  /** The window's one Undo (#4763, #4765): the palette's row runs the toast's and ⌘Z's. */
+  const undoLayoutIn = paneDrag.undo;
 
   /**
    * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the
@@ -9755,6 +9791,11 @@ export const PlaneView = memo(function PlaneView({
 
       {/* A memory's Delete, which can be undone for a few seconds (SI-9b, ADR 0065 Q8). */}
       {memoryEdits.undo}
+      {/* A pane dropped, which Undo or ⌘Z puts back (#4763). */}
+      {paneDrag.undoLine}
+      {/* While a pane is dragged: where it would land and what it would do, drawn over
+          everything at fixed places, and said to a reader. */}
+      {paneDrag.layer}
 
       {/* By the chat's id, never its name: two waiting chats can share a name (a split's chat
             takes its tab's), and each Notice acts on its own chat alone. */}
