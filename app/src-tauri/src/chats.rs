@@ -7021,8 +7021,16 @@ impl Chats {
         *lock(&self.focus) = record.focus.clone();
         // The stored layout stands until the window reports one (#4751): what is on screen is
         // read from it meanwhile, so a task the person left in front is not ended under them
-        // before the window is drawn.
-        *lock(&self.layout) = record.layout.clone();
+        // before the window is drawn. **A record from before tabs were recorded is read into
+        // one here** (#4758), filed by where each chat works as the sidebar files it: the front
+        // tab at quit, and tabs with a split, a view or a pin, stay; a plain one-chat tab
+        // closes into the sidebar. The next write keeps it, so this runs once.
+        *lock(&self.layout) = Some(record.layout.clone().unwrap_or_else(|| {
+            let plane = purlis_core::workspaces::Plane::open(&self.project);
+            purlis_core::reopen::upgrade::upgraded(record, &|chat: &Chat| {
+                chat.cwd.as_deref().and_then(|cwd| plane.workspace_of(cwd))
+            })
+        }));
         // Every chat here starts a program. A record with thousands in it — a runaway, or a
         // file nobody meant — would start them all. The cap is far above the fifty the
         // product is for, so it never meets an operator; it is only ever a backstop. What it
@@ -8157,3 +8165,7 @@ mod letting_go_tests;
 #[cfg(test)]
 #[path = "chats/tests/windows.rs"]
 mod windows_tests;
+
+#[cfg(test)]
+#[path = "chats/tests/switching.rs"]
+mod switching_tests;
