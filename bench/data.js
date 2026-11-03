@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793675322418,
+  "lastUpdate": 1793676837457,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37044,6 +37044,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4911115,
             "unit": "ms",
             "extra": "median of 5 runs: 100.333, 100.373, 101.491, 101.741, 102.428 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d5927690af85ec574625e479ad5b6593990131ab",
+          "message": "Image workflows: check before push, main last; operator image provenance and SBOM (#4931)\n\n* Image workflows: check before the push, and move main last (#4512)\n\nEach architecture's image is built once into a file. The check runs on\nthe image loaded from it, and only then is the same file pushed by its\ndigest with skopeo, which refuses to change it. A candidate that fails\nis never pushed. A run that publishes nothing copies the file by its\ndigest into a folder, so a pull request runs the build, load, check and\ncopy that a publishing run does.\n\nindex tags sha-<commit> only. A new last job, tag-main, moves main\nafter outside has pulled and checked the index, only when the order\ncheck says it moves forward, and reads the tag back to confirm it names\nthe index that passed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FDRM8RW5AM54DYHJ1W2980\nPurlis-Persona: steward\n\n* Operator image: provenance, SBOM and digest shape check (#4513)\n\noperator-image.yml gains the runner image's sbom and attest jobs: an\nSBOM of each architecture's pushed image, read by the syft release.yml\npins, naming the operator's own crate and the base image's packages;\nSLSA provenance on the index and each SBOM on its architecture's image,\npushed beside the image and verified in the run, pinned to this\nworkflow, this commit and a GitHub-hosted runner. A run that publishes\nnothing asks the same SBOM questions of the image it built.\n\nindex now checks each digest file holds a sha256 digest before naming\nan image by it, as the runner's jobs do. outside verifies the\nprovenance with the command docs/cluster-operator.md gives, the only\nstep there that holds a token. The header comment also catches up with\nthe check-before-push order of #4512.\n\nThe SBOM and provenance test now holds both images.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FDRM8RW5AM54DYHJ1W2980\nPurlis-Persona: steward\n\n* Image workflows: review fixes for #4512 and #4513\n\n- The registry sign-in and the visibility check now come after every\n  check, just before the push, so no write credential is on the runner\n  while the image under check runs.\n- index compares the index's children with the two digests checked,\n  whatever the sha tag names, before anything signs it.\n- The image line handed between jobs must be the image and a full\n  sha256 digest, not only start with it.\n- The tests hold the load step's order and output, the dry run's\n  compare, the sign-in's place, the index's children check, and any\n  mention of the main tag.\n- The operator's attest comments say the run's commit, and long\n  comment and doc lines are rewrapped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FDRM8RW5AM54DYHJ1W2980\nPurlis-Persona: steward\n\n* Image workflows: keep a dev release inside its group's deadline\n\nrelease-workflow.test.mjs holds the longest chain of a dev release's\njobs to 240 minutes, and the runner image's tag-main added 10. The\nrunner image's index and outside take about a minute each on main\n(55 s and 29 s on the last dev release), so their deadlines go from\n15 to 10 minutes, and tag-main, which moves one tag, gets 5 in both\nworkflows. The chain is 235 minutes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FDRM8RW5AM54DYHJ1W2980\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T02:08:02Z",
+          "tree_id": "262c31bd305bdf4691ecf34a273ac83a1ace1d7d",
+          "url": "https://github.com/purlis/purlis/commit/d5927690af85ec574625e479ad5b6593990131ab"
+        },
+        "date": 1793676833974,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.345148,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.323, 0.338, 0.345, 0.353, 0.354 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5237135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.407, 16.500, 16.524, 16.547, 16.552 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8600385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.223, 101.501, 101.860, 101.956, 102.189 ms"
           }
         ]
       }
