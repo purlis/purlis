@@ -842,6 +842,7 @@ impl Probe {
             &extension::project::Choices::read(&self.plane()),
             event,
         )
+        .notes
     }
 
     /// Every event the probe wrote down, one line each.
@@ -1322,13 +1323,21 @@ fn a_built_in_hears_and_briefs_while_on_and_does_neither_once_turned_off_on_this
     };
 
     let executor = Executor::with_built_in(built_in.clone()).with_deadline(PATIENT);
-    assert!(events::deliver(&executor, &probe.config(), &choices, &Event::PlaneSaved).is_empty());
+    assert!(
+        events::deliver(&executor, &probe.config(), &choices, &Event::PlaneSaved)
+            .notes
+            .is_empty()
+    );
     assert_eq!(heard(), 1);
     assert_eq!(brief().parts.len(), 1);
     assert_eq!(heard(), 2, "the chat start was told too");
 
     extension::set_on(&probe.config(), &built_in, "extension-probe", false).expect("turned off");
-    assert!(events::deliver(&executor, &probe.config(), &choices, &Event::PlaneSaved).is_empty());
+    assert!(
+        events::deliver(&executor, &probe.config(), &choices, &Event::PlaneSaved)
+            .notes
+            .is_empty()
+    );
     assert_eq!(brief(), AtSessionStart::default());
     assert_eq!(heard(), 2, "a built-in turned off heard something");
 }

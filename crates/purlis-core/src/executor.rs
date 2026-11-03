@@ -402,6 +402,15 @@ pub(crate) trait Talk {
 #[cfg(unix)]
 const LOOK_FOR_A_STOP: Duration = Duration::from_millis(100);
 
+/// What telling an extension about an event came back with ([`Executor::tell`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Told {
+    /// What charter saw it write outside its declared paths while it heard, when it did.
+    pub overreach: Option<String>,
+    /// The view it offered, when it offered one of its own (#4769).
+    pub offer: Option<extension::events::Offered>,
+}
+
 /// What [`Executor::put`] came back with, before it is shaped into an [`Answer`] or an [`Acted`].
 struct Put {
     blocks: Option<Vec<panel::Block>>,
@@ -415,6 +424,8 @@ struct Put {
     round_trip: Duration,
     overreach: Option<String>,
     actions: Vec<extension::Action>,
+    /// An event's answer: the view it offered (#4769).
+    offer: Option<extension::events::Offered>,
 }
 
 /// The executor, as a value the app holds for as long as it runs.
@@ -519,18 +530,22 @@ impl Executor {
     ///
     /// The caller has already finished the action the event reports; nothing answered here can
     /// change it ([`crate::extension::events::deliver`]). `Ok` carries what charter saw it write
-    /// outside its declared paths while it heard (charter-app#341's report), when it did.
+    /// outside its declared paths while it heard (charter-app#341's report), when it did, and
+    /// the view it offered (#4769), when it offered one of its own.
     pub fn tell(
         &self,
         config_root: &Path,
         project: &extension::project::Choices,
         extension: &str,
         event: &extension::events::Event,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Told, String> {
         self.put(config_root, project, extension, Asked::Event(event), |_| {
             serde_json::Value::Null
         })
-        .map(|put| put.overreach)
+        .map(|put| Told {
+            overreach: put.overreach,
+            offer: put.offer,
+        })
     }
 
     /// Ask `extension`'s program for its section of a chat's session-start briefing, or say why
@@ -1055,6 +1070,7 @@ impl Executor {
                     round_trip,
                     overreach,
                     actions: found.manifest.actions.clone(),
+                    offer: None,
                 });
             }
         };
@@ -1072,6 +1088,7 @@ impl Executor {
                 round_trip,
                 overreach,
                 actions: found.manifest.actions.clone(),
+                offer: None,
             });
         }
         if let Asked::Studio { .. } = asked {
@@ -1087,12 +1104,16 @@ impl Executor {
                 round_trip,
                 overreach,
                 actions: found.manifest.actions.clone(),
+                offer: None,
             });
         }
+        let mut offer = None;
         let (answered, section) = match asked {
             // An event's answer is that it heard, or an `error`: nothing charter draws.
             Asked::Event(_) => {
-                reply_of(extension, &line, protocol, &[]).map_err(with_report)?;
+                let doc = reply_of(extension, &line, protocol, &["offer"]).map_err(with_report)?;
+                offer =
+                    offer_of(extension, &found.manifest, doc.get("offer")).map_err(with_report)?;
                 (None, None)
             }
             Asked::Briefing(_) => {
@@ -1133,6 +1154,7 @@ impl Executor {
             round_trip,
             overreach,
             actions: found.manifest.actions.clone(),
+            offer,
         })
     }
 
@@ -2283,6 +2305,73 @@ fn declared_view(
                  offers now."
             )
         })
+}
+
+/// The keys an offer may carry (#4769). Anything else refuses the answer whole: an offer says
+/// which view and what about, and never where.
+const OFFER_KEYS: [&str; 3] = ["view", "key", "chat"];
+
+/// The longest subject an offer may name, in bytes: a persona's name, never a document.
+const LONGEST_OFFERED_KEY: usize = 200;
+
+/// **An event answer's `offer`** (#4769), or nothing where it made none: one of `manifest`'s own
+/// declared views, refused the way an undeclared action on a row is
+/// ([`offered_only_declared`]), so an extension can never offer another's view or purlis's.
+fn offer_of(
+    extension: &str,
+    manifest: &extension::Manifest,
+    offer: Option<&serde_json::Value>,
+) -> Result<Option<extension::events::Offered>, String> {
+    let offer = match offer {
+        None | Some(serde_json::Value::Null) => return Ok(None),
+        Some(serde_json::Value::Object(offer)) => offer,
+        Some(_) => {
+            return Err(format!(
+                "'{extension}' answered an 'offer' that is not an object naming a 'view'"
+            ));
+        }
+    };
+    if let Some(stray) = offer.keys().find(|key| !OFFER_KEYS.contains(&key.as_str())) {
+        return Err(format!(
+            "'{extension}' offered a view with {:?}, which an offer does not carry: an offer is \
+             'view', 'key' and 'chat', and never says where the view goes",
+            crate::shown::readable(stray, 64)
+        ));
+    }
+    let Some(serde_json::Value::String(view)) = offer.get("view") else {
+        return Err(format!(
+            "'{extension}' answered an 'offer' without the 'view' it offers"
+        ));
+    };
+    if !manifest.views.iter().any(|it| &it.id == view) {
+        return Err(format!(
+            "'{extension}' offered the view {:?}, which its manifest does not declare, so purlis \
+             showed no offer — an extension offers only the views you approved",
+            crate::shown::readable(view, 64)
+        ));
+    }
+    let key = match offer.get("key") {
+        None | Some(serde_json::Value::Null) => String::new(),
+        Some(serde_json::Value::String(key)) if key.len() <= LONGEST_OFFERED_KEY => key.clone(),
+        Some(_) => {
+            return Err(format!(
+                "'{extension}' offered a view with a 'key' that is not text of at most \
+                 {LONGEST_OFFERED_KEY} bytes"
+            ));
+        }
+    };
+    let chat = match offer.get("chat") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(chat) => Some(chat.as_u64().ok_or_else(|| {
+            format!("'{extension}' offered a view about a 'chat' that is not a chat's number")
+        })?),
+    };
+    Ok(Some(extension::events::Offered {
+        extension: extension.to_owned(),
+        view: view.clone(),
+        key,
+        chat,
+    }))
 }
 
 /// Refuse a program that is not a file charter can start directly.

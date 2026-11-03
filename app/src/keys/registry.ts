@@ -791,7 +791,20 @@ export const SHORTCUTS: readonly Shortcut[] = [
     chords: both(bare("Enter")),
     said: (mac) => (mac ? "↩" : "Enter"),
     yields: [],
-    matches: (e) => e.key === "Enter",
+    matches: (e) => e.key === "Enter" && !e.altKey,
+  },
+  {
+    // **Open beside has no chord of its own** (#4769, the orchestrator's ruling on #4699): ⌥ on
+    // the press that opens a view, which on a palette row is ⌥Enter (Alt+Enter off a Mac).
+    id: "palette.beside",
+    does: "Open the view aimed at beside the focused pane",
+    group: "Palette",
+    where: "palette",
+    kind: "key",
+    chords: both(bare("Enter", { alt: true })),
+    said: (mac) => (mac ? "⌥↩" : "Alt+Enter"),
+    yields: [],
+    matches: (e) => e.key === "Enter" && e.altKey,
   },
   {
     id: "palette.aim",

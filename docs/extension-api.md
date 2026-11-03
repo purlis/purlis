@@ -86,6 +86,30 @@ confined extension. `settings` is there too, with the person's values, if the ma
 settings. An answer is one line of JSON, or `{"charter": 4, "error": "<sentence>"}`. An answer
 has 5 seconds, unless this page says otherwise.
 
+### An event's answer may offer a view
+
+An extension that declares `events` is told what happened, after it happened, with `event` and
+the `workspace` it happened in. It answers `{"charter": <its protocol>}`, or an `error`. Since
+#4769 the answer may also carry one `offer`, naming one of the views its own manifest declares:
+
+```json
+{ "charter": 2, "offer": { "view": "stats", "key": "steward", "chat": 4 } }
+```
+
+- `view` is required, and must be one of the extension's declared views. Any other view refuses
+  the whole answer, as a row offering an undeclared action does.
+- `key` is what the view is about, a persona's name. It is optional, and empty means the whole
+  plane's view.
+- `chat` is optional: the chat the offer is about, by its number.
+- Nothing else goes in an offer, and nothing says where the view would go.
+
+An offer opens nothing. The window shows it as one quiet note, on the chat's pane band while that
+chat is on screen and in the Notices centre, and asks the program nothing until the person
+presses Open or Open beside. A second offer of the same view and subject, while one stands or the
+view is open, adds nothing. Only an event the window tells is shown: one the command line or a
+chat's start tells has no window to show it in. The key is additive: an answer without it means
+what it always meant.
+
 ### A panel
 
 Asked with `ask` `panel`, naming `panel`, `skill` and the skill's text `files`, each `path`,

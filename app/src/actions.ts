@@ -463,6 +463,10 @@ export type Does =
    *  here rather than only a click on the panel because a menu is a third reader of this list
    *  (`Menus.tsx`) and the persona rows had nothing in it to read (charter-app#174). */
   | { verb: "openView"; view: ViewRef; title: string }
+  /** **Open beside** (#4769): an extension's view in a split beside the focused pane, or the
+   *  pane showing it brought forward. Refused before anything moves where a side would fall
+   *  under the minimum pane size, with Open in a tab offered instead. */
+  | { verb: "openViewBeside"; view: ViewRef; title: string }
   /** Resumes a session from its record (SI-8d): a NEW chat in the record's place, on its
    *  harness, given its conversation where it can be, and told the record in its briefing. It
    *  starts a chat, so it answers a `Ran` — the core can refuse. */
@@ -749,6 +753,11 @@ export type Offer = {
    * pieces `remove` must still find this chat's folder before fifty others (charter-app#174).
    */
   inFront?: true;
+  /**
+   * **What ⌥Enter on the row does instead** (#4769): a row that opens an extension's view opens
+   * it beside the focused pane. Only such a row has one; ⌥Enter on any other row runs it.
+   */
+  beside?: Does;
 };
 
 /** The window as it now stands: everything an offer's availability is decided from. */
@@ -1098,6 +1107,8 @@ export type Doing = {
   /** Opens a view's tab, or brings forward the one showing it. It reads and changes nothing
    *  by itself, so it answers no `Ran`. */
   openView: (view: ViewRef, title: string) => void;
+  /** Opens a view beside the focused pane (#4769), or says why not. */
+  openViewBeside: (view: ViewRef, title: string) => void;
   /** Resumes a session from its record at `path`, in a tab of its own. */
   resumeSession: (path: string) => Promise<Ran>;
   /** Opens a memory's tab: previewed, or kept when `keep` (SI-9b). */
@@ -2881,18 +2892,17 @@ export function catalogue(now: Now): Offer[] {
   // after approval and not only at it (ADR 0041 item 5). The whole plane's view, never
   // one persona's — a persona's is opened from that persona's own tab.
   for (const view of now.views ?? []) {
-    offers.push(
-      can(
+    const ref: ViewRef = { from: view.extension, view: view.id, key: "" };
+    offers.push({
+      ...can(
         `view.open:${view.extension}/${view.id}`,
         `Open ${view.title} from ${view.extension}`,
-        {
-          verb: "openView",
-          view: { from: view.extension, view: view.id, key: "" },
-          title: view.title,
-        },
+        { verb: "openView", view: ref, title: view.title },
         view.title,
       ),
-    );
+      // ⌥Enter opens it beside the focused pane (#4769).
+      beside: { verb: "openViewBeside", view: ref, title: view.title },
+    });
   }
 
   // **And every command an approved extension adds**, named with its name so where it came
@@ -2903,16 +2913,23 @@ export function catalogue(now: Now): Offer[] {
     const id = `ext.command:${command.extension}/${command.id}`;
     offers.push(
       command.does.kind === "open"
-        ? can(
-            id,
-            title,
-            {
-              verb: "openView",
+        ? {
+            ...can(
+              id,
+              title,
+              {
+                verb: "openView",
+                view: { from: command.extension, view: command.does.view, key: "" },
+                title: command.does.title,
+              },
+              command.title,
+            ),
+            beside: {
+              verb: "openViewBeside",
               view: { from: command.extension, view: command.does.view, key: "" },
               title: command.does.title,
             },
-            command.title,
-          )
+          }
         : can(
             id,
             title,
@@ -3421,6 +3438,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "openView":
       doing.openView(does.view, does.title);
+      return DID;
+    case "openViewBeside":
+      doing.openViewBeside(does.view, does.title);
       return DID;
     case "openMemory":
       doing.openMemory(does.ref, does.title, does.keep);

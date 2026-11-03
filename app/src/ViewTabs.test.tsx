@@ -672,7 +672,7 @@ describe("a project's own extensions (charter-app#253)", () => {
     await userEvent.click(await within(panel).findByRole("row", { name: /steward/ }));
 
     const tab = await screen.findByTestId("view-pane-charter-persona-steward");
-    expect(await within(tab).findByRole("button", { name: /Statistics/ })).toBeInTheDocument();
+    expect(await within(tab).findByRole("button", { name: "Statistics" })).toBeInTheDocument();
     expect(within(panel).queryByRole("button", { name: /Statistics/ })).toBeNull();
   });
 

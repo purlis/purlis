@@ -282,6 +282,7 @@ import {
   chatOf,
   contentsOf,
   findView,
+  openViewBesidePane,
   openChatsKey,
   openTab,
   openTabBehind,
@@ -354,6 +355,10 @@ import {
 } from "./tabs";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
+import { heardOffers, offersInForce, viewOpened } from "./offerStore";
+import { OfferNotices, type OfferOpening, OfferOpeningContext } from "./ViewOpen";
+import { paneSize } from "./paneSize";
+import { besideOf as viewBesideOf, besideRefusedSaid } from "./viewBeside";
 import { layoutOf, tabsOf, withShare } from "./laidOut";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -468,6 +473,7 @@ import { PersonaHostsNotice } from "./PersonaHostsNotice";
 import { ProjectDispatchNotice } from "./ProjectDispatchNotice";
 import type {
   ExtensionCommand,
+  ExtensionHeard,
   ExtensionView,
   Offered,
   PanelView,
@@ -4214,6 +4220,8 @@ export const PlaneView = memo(function PlaneView({
         if (opening.place !== undefined) openViewAt(studioHistoryOf(plane, view), opening.place);
       }
       present((tabs, strip) => openView(tabs, view, title, on ?? strip));
+      // Opening an extension's view by any route clears its offer (#4769).
+      viewOpened(plane, view);
       // Opening Settings, or bringing it forward, is a way into it: the keyboard goes there too
       // (#1206, `settings/entering.ts`).
       const place = placeOfView(view, plane);
@@ -4717,6 +4725,99 @@ export const PlaneView = memo(function PlaneView({
   });
   /** The window's one Undo (#4763, #4765): the palette's row runs the toast's and ⌘Z's. */
   const undoLayoutIn = paneDrag.undo;
+
+  /**
+   * **Open beside** (#4769): `view` in a split beside pane `at` (the view's own pane for a
+   * button on a view, the note's pane for an offer), or beside the focused pane where none is
+   * named (a panel row, the palette, the Notices centre). A view already open is brought
+   * forward, never opened twice. A split that would leave a side under the minimum is refused
+   * before anything moves, said with Open in a tab (`viewBeside.ts`). The split is a layout
+   * change, so its Undo line follows (#4763), and its offer goes.
+   */
+  const showViewBeside = useCallback(
+    (view: ViewRef, title: string, at?: number) => {
+      const tabs = now.current;
+      const front = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
+      const pane = at ?? front?.focused;
+      if (findView(tabs, view) !== undefined || pane === undefined) {
+        showView(view, title);
+        return;
+      }
+      const beside = viewBesideOf(paneSize(at));
+      if (!beside.ok) {
+        setReport({
+          from: "view.beside",
+          refused: true,
+          words: besideRefusedSaid(beside),
+          ways: [{ label: "Open in a tab", onPress: () => showView(view, title) }],
+        });
+        return;
+      }
+      const there = tabs.order
+        .flatMap((id) => contentsOf(tabs, id))
+        .find((one) => one.pane === pane)?.content;
+      const name = there === undefined ? "this pane" : dropContext.name(there);
+      present((was, strip) =>
+        recorded(
+          was,
+          openViewBesidePane(was, pane, view, title, strip, beside.direction),
+          `Opened ${title} beside ${name}.`,
+        ),
+      );
+      viewOpened(plane, view);
+    },
+    [dropContext, plane, present, showView],
+  );
+
+  const viewsNow = useRef(views);
+  useEffect(() => {
+    viewsNow.current = views;
+    offersInForce(plane, views);
+  }, [plane, views]);
+  // **Offers heard** (#4769): what the extensions that heard an event in this project offered,
+  // each judged against what is in force here, what the person stopped and what is open. A
+  // removed extension's offers are withdrawn as what is in force changes.
+  useEffect(() => {
+    let gone = false;
+    let stop: (() => void) | undefined;
+    void (async () => {
+      try {
+        const unlisten = await listen<ExtensionHeard>("extension-heard", (event) => {
+          if (gone || event.payload.plane !== plane) return;
+          heardOffers(
+            plane,
+            event.payload.offers.map((offer) => ({
+              extension: offer.extension,
+              view: offer.view,
+              key: offer.key,
+              ...(offer.chat === null ? {} : { chat: offer.chat }),
+            })),
+            {
+              declared: viewsNow.current,
+              open: (view) => findView(now.current, view) !== undefined,
+            },
+          );
+        });
+        if (gone) unlisten();
+        else stop = unlisten;
+      } catch {
+        // No window to listen in.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane]);
+  const offerOpening = useMemo<OfferOpening>(
+    () => ({
+      plane,
+      declared: views,
+      onOpen: (view, name, how, pane) =>
+        how === "beside" ? showViewBeside(view, name, pane) : showView(view, name),
+    }),
+    [plane, showView, showViewBeside, views],
+  );
 
   /**
    * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the
@@ -7321,6 +7422,7 @@ export const PlaneView = memo(function PlaneView({
       // key (`purlis_core::panel::Panel::key`), and it is written here because the catalogue
       // is not a reader of the panel list.
       openView: showView,
+      openViewBeside: showViewBeside,
       resumeSession: (path: string) => resumeSession(path),
       pickVault,
       createVault,
@@ -7473,6 +7575,7 @@ export const PlaneView = memo(function PlaneView({
       sendBackOf,
       showTabTasks,
       showView,
+      showViewBeside,
       split,
       stoppedFor,
       windowDoes,
@@ -9743,6 +9846,11 @@ export const PlaneView = memo(function PlaneView({
             {dormantSays(name)}
           </Notice>
         ))}
+      {/* **Every offer an extension made of its view** (#4769): one quiet note each, here in the
+          Notices centre, and on the band of the chat it is about while that chat is on screen. */}
+      <OfferOpeningContext.Provider value={offerOpening}>
+        <OfferNotices />
+      </OfferOpeningContext.Provider>
       {forgottenPins.map(({ name, after }) => (
         <Notice
           key={name}
@@ -10288,83 +10396,87 @@ export const PlaneView = memo(function PlaneView({
                     <div className="panes" {...panelRoot("content")} {...tabPanelOf(panelNamedBy)}>
                       {frontTab ? (
                         <TaskEndContext.Provider value={taskEndHand}>
-                          <LayoutPanes
-                            plane={plane}
-                            restoring={restoringChats}
-                            // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
-                            // session that asked, while the tab is switched to it.
-                            // A zoomed pane is drawn alone, the tree kept whole (#4765).
-                            layout={zoomedLayout(
-                              tabs,
-                              frontTab.id,
-                              layoutShown(tabs, frontTab.id) ?? frontTab.layout,
-                            )}
-                            crumbs={frontCrumbs}
-                            placed={frontPlaced}
-                            endedTasks={frontEndedPanes}
-                            unread={frontUnread}
-                            finished={frontFinished}
-                            explaining={chipToExplain}
-                            others={frontOthers}
-                            asked={frontAsked}
-                            asks={asksHere}
-                            waiting={waiting}
-                            onShowInbox={showInbox}
-                            onAnswer={answeredOnPane}
-                            closeOf={closeOfPane}
-                            onShowChat={showChatFromPane}
-                            focused={frontTab.focused}
-                            onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
-                            offerFor={by}
-                            offers={found}
-                            heads={paneHeads}
-                            onPaneDoes={onPaneDoes}
-                            name={frontTab.name}
-                            handedFrom={handedFrom}
-                            glances={glances}
-                            workItems={workItems}
-                            byHand={byHand}
-                            onByHand={answerByHand}
-                            startNotes={startNotes}
-                            onDismissStartNote={dismissStartNote}
-                            onRestartChat={askRestart}
-                            blocks={frontBlocks}
-                            onDismissBlock={dismissBlock}
-                            onRestarted={chatRestarted}
-                            onAllowed={oweRestart}
-                            restartsSaid={restartsSaid}
-                            onRestartAnswer={answerRestart}
-                            offered={views}
-                            onOpenView={showView}
-                            onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
-                            onVaultChanged={reloadVaults}
-                            memory={{
-                              // The views follow the disk themselves (`ViewPane`), so a memory saved
-                              // redraws the views and not this whole window (FD-10).
-                              changed: memoryEdits.changed,
-                              onSaved: memoryEdits.onSaved,
-                              onClose: closeView,
-                              showInstead: (from, to, title) => {
-                                change((tabs) => showInstead(tabs, from, to, title));
-                                // The level switcher moving Settings is a way into it (#1206).
-                                const place = placeOfView(to, plane);
-                                if (place !== undefined) enterSettings(place);
-                              },
-                            }}
-                            firstTask={firstTaskDoes}
-                            onNewChatOn={newChatOn}
-                            split={{
-                              of: (view) => splitOf(tabs, view),
-                              moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
-                              shared: (path, share) =>
-                                change((tabs) => withShare(tabs, frontTab.id, path, share)),
-                            }}
-                            runningIn={runningIn}
-                            tab={frontTab.id}
-                            chatName={nameOf}
-                            onClearPane={clearPane}
-                            onResumeTask={(pane, task) => void resumeTaskIn(pane, task)}
-                          />
+                          <OfferOpeningContext.Provider value={offerOpening}>
+                            <LayoutPanes
+                              plane={plane}
+                              restoring={restoringChats}
+                              // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
+                              // session that asked, while the tab is switched to it.
+                              // A zoomed pane is drawn alone, the tree kept whole (#4765).
+                              layout={zoomedLayout(
+                                tabs,
+                                frontTab.id,
+                                layoutShown(tabs, frontTab.id) ?? frontTab.layout,
+                              )}
+                              crumbs={frontCrumbs}
+                              placed={frontPlaced}
+                              endedTasks={frontEndedPanes}
+                              unread={frontUnread}
+                              finished={frontFinished}
+                              explaining={chipToExplain}
+                              others={frontOthers}
+                              asked={frontAsked}
+                              asks={asksHere}
+                              waiting={waiting}
+                              onShowInbox={showInbox}
+                              onAnswer={answeredOnPane}
+                              closeOf={closeOfPane}
+                              onShowChat={showChatFromPane}
+                              focused={frontTab.focused}
+                              onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
+                              offerFor={by}
+                              offers={found}
+                              heads={paneHeads}
+                              onPaneDoes={onPaneDoes}
+                              name={frontTab.name}
+                              handedFrom={handedFrom}
+                              glances={glances}
+                              workItems={workItems}
+                              byHand={byHand}
+                              onByHand={answerByHand}
+                              startNotes={startNotes}
+                              onDismissStartNote={dismissStartNote}
+                              onRestartChat={askRestart}
+                              blocks={frontBlocks}
+                              onDismissBlock={dismissBlock}
+                              onRestarted={chatRestarted}
+                              onAllowed={oweRestart}
+                              restartsSaid={restartsSaid}
+                              onRestartAnswer={answerRestart}
+                              offered={views}
+                              onOpenView={showView}
+                              onOpenViewBeside={showViewBeside}
+                              onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
+                              onVaultChanged={reloadVaults}
+                              memory={{
+                                // The views follow the disk themselves (`ViewPane`), so a memory saved
+                                // redraws the views and not this whole window (FD-10).
+                                changed: memoryEdits.changed,
+                                onSaved: memoryEdits.onSaved,
+                                onClose: closeView,
+                                showInstead: (from, to, title) => {
+                                  change((tabs) => showInstead(tabs, from, to, title));
+                                  // The level switcher moving Settings is a way into it (#1206).
+                                  const place = placeOfView(to, plane);
+                                  if (place !== undefined) enterSettings(place);
+                                },
+                              }}
+                              firstTask={firstTaskDoes}
+                              onNewChatOn={newChatOn}
+                              split={{
+                                of: (view) => splitOf(tabs, view),
+                                moved: (view, split) =>
+                                  change((tabs) => setSplit(tabs, view, split)),
+                                shared: (path, share) =>
+                                  change((tabs) => withShare(tabs, frontTab.id, path, share)),
+                              }}
+                              runningIn={runningIn}
+                              tab={frontTab.id}
+                              chatName={nameOf}
+                              onClearPane={clearPane}
+                              onResumeTask={(pane, task) => void resumeTaskIn(pane, task)}
+                            />
+                          </OfferOpeningContext.Provider>
                         </TaskEndContext.Provider>
                       ) : tabs.order.length > 0 ? (
                         // Chats are running — just not in the workspace being looked at. Saying

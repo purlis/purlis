@@ -92,9 +92,22 @@ function ask(plane: PlaneId, workspace: string | undefined) {
   })();
 }
 
+/** Who hears an approval, a removal or a turn on or off: the window's survey of what
+ *  extensions offer is taken again (`Views.tsx`, #4769). */
+const changedListeners = new Set<() => void>();
+
+/** Calls `listener` whenever {@link extensionsChanged} is; answers the way to stop. */
+export function onExtensionsChanged(listener: () => void): () => void {
+  changedListeners.add(listener);
+  return () => {
+    changedListeners.delete(listener);
+  };
+}
+
 /** Ask `plane` again, for every workspace it was asked about — after its settings or a
  *  workspace's were saved, or an extension was approved. With no plane, every one. */
 export function extensionsChanged(plane?: PlaneId) {
+  for (const listener of [...changedListeners]) listener();
   // Every place ever asked about, including one whose last question failed: a save is exactly
   // when a failed answer should be asked for again.
   let asked = false;

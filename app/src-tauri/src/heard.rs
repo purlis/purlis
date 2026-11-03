@@ -17,6 +17,9 @@
 //!   and is kept, a few per project, for `extension_facts` to hand the window beside its own
 //!   ("N extension notes" on the status line). Then the window is told ([`HEARD`]) so it reads
 //!   the facts again — which is also how a badge an extension refreshed from the event shows.
+//! - **An offer is the window's to show** (#4769). A view an extension offered while it heard
+//!   is handed to the window with the same message, never opened: the window holds it as one
+//!   quiet note until the person presses Open or Open beside, or dismisses it.
 //! - **Its own executor**, stopped at exit with the views' one. An event and a view may each
 //!   have one question in flight to the same extension; two events wait their turn
 //!   (`Executor::tell`).
@@ -46,10 +49,35 @@ pub(crate) struct Heard {
     notes: Arc<Mutex<HashMap<PathBuf, Vec<String>>>>,
 }
 
-/// What `extension-heard` carries: the project whose extensions were just told something.
+/// What `extension-heard` carries: the project whose extensions were just told something, and
+/// the views they offered while they heard it (#4769).
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub(crate) struct ExtensionHeard {
     pub plane: PlaneId,
+    pub offers: Vec<ViewOffered>,
+}
+
+/// One view an extension offered (#4769, `purlis_core::extension::events::Offered`): one of its
+/// own declared views, about `key`, and about the chat `chat` when it named one. Nothing here
+/// says where it would go: that is the window's and the person's.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub(crate) struct ViewOffered {
+    pub extension: String,
+    pub view: String,
+    pub key: String,
+    pub chat: Option<u32>,
+}
+
+impl From<events::Offered> for ViewOffered {
+    fn from(offer: events::Offered) -> Self {
+        Self {
+            extension: offer.extension,
+            view: offer.view,
+            key: offer.key,
+            // A chat's number is the window's `u32`; one past it names no chat there is.
+            chat: offer.chat.and_then(|chat| u32::try_from(chat).ok()),
+        }
+    }
 }
 
 impl Heard {
@@ -78,12 +106,12 @@ impl Heard {
         let _ = std::thread::Builder::new()
             .name(format!("extension event {}", event.kind().as_str()))
             .spawn(move || {
-                deliver(&executor, &notes, &config, &root, &event);
+                let offers = deliver(&executor, &notes, &config, &root, &event);
                 crate::windows::emit_for_plane(
                     &app,
                     &plane.clone(),
                     HEARD,
-                    ExtensionHeard { plane },
+                    ExtensionHeard { plane, offers },
                 );
             });
     }
@@ -99,24 +127,32 @@ impl Heard {
     }
 }
 
-/// [`Heard::tell`]'s work, on the thread it starts: deliver, and keep what went wrong.
+/// [`Heard::tell`]'s work, on the thread it starts: deliver, keep what went wrong, and answer
+/// the views offered, for the window.
 fn deliver(
     executor: &Executor,
     notes: &Mutex<HashMap<PathBuf, Vec<String>>>,
     config: &Path,
     root: &Path,
     event: &Event,
-) {
+) -> Vec<ViewOffered> {
     let choices = Choices::read_in(root, event.workspace());
-    let said = events::deliver(executor, config, &choices, event);
+    let delivered = events::deliver(executor, config, &choices, event);
+    let offers = delivered
+        .offers
+        .into_iter()
+        .map(ViewOffered::from)
+        .collect();
+    let said = delivered.notes;
     if said.is_empty() {
-        return;
+        return offers;
     }
     let mut notes = notes.lock().unwrap_or_else(PoisonError::into_inner);
     let kept = notes.entry(root.to_path_buf()).or_default();
     kept.extend(said);
     let over = kept.len().saturating_sub(MOST_NOTES);
     kept.drain(..over);
+    offers
 }
 
 #[cfg(all(test, unix))]
@@ -134,6 +170,8 @@ mod tests {
             r#"{"version": 2, "id": "script", "name": "Script", "state": "state",
                 "capabilities": ["events"],
                 "contributes": {"runs": "bin/script",
+                                "views": [{"id": "stats", "title": "Statistics",
+                                           "about": "personas"}],
                                 "events": {"hears": ["workspace-created"]}}}"#,
         )
         .expect("a manifest");
@@ -187,6 +225,35 @@ mod tests {
         assert!(heard.notes_for(&root).is_empty());
         let told = std::fs::read_to_string(dir.path().join("ext/state/heard")).expect("told");
         assert!(told.contains(r#""event":"workspace-created""#), "{told}");
+    }
+
+    #[test]
+    fn a_view_offered_while_it_heard_is_handed_to_the_window_and_leaves_no_note() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let config = hearing(
+            dir.path(),
+            r#"{"charter":2,"offer":{"view":"stats","key":"steward"}}"#,
+        );
+        let heard = roomy();
+        let root = dir.path().join("plane");
+        std::fs::create_dir_all(&root).expect("a plane");
+
+        let offers = deliver(&heard.executor, &heard.notes, &config, &root, &created());
+
+        assert!(
+            heard.notes_for(&root).is_empty(),
+            "{:?}",
+            heard.notes_for(&root)
+        );
+        assert_eq!(
+            offers,
+            [ViewOffered {
+                extension: "script".into(),
+                view: "stats".into(),
+                key: "steward".into(),
+                chat: None,
+            }]
+        );
     }
 
     #[test]
