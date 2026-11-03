@@ -1038,6 +1038,57 @@ describe("a row of the Chats list (V100-19, V100-50)", () => {
   });
 });
 
+describe("a chat's tab and its row say one state word (#4935)", () => {
+  /** The tab on the strip whose name starts with `name`. */
+  const tabOf = (name: string) => {
+    const found = [...document.querySelectorAll<HTMLElement>('[data-strip="Tabs"] [role="tab"]')]
+      .filter((tab) => tab.querySelector(".tab-name")?.textContent === name)
+      .at(0);
+    if (found === undefined) throw new Error(`no tab named ${name}`);
+    return found;
+  };
+  /** What the tab says its chat is doing: its one `.state` mark's name, as the scenario specs
+   *  read it (`chat.state.e2e.ts`). */
+  const tabSays = (name: string) => tabOf(name).querySelector(".state")?.getAttribute("aria-label");
+
+  // Every state the board says, and the queue's word on the one that waits.
+  const states: [string, State, number[]][] = [
+    ["at work", "running", []],
+    ["asking for the person", "waiting", [1]],
+    ["waiting, not asking", "waiting", []],
+    ["done", "done", []],
+    ["failed", "failed", []],
+    ["not heard from", "unknown", []],
+  ];
+
+  it.each(states)("says the same word on both, %s", async (_, state, queue) => {
+    const { move } = core(threeSessions());
+    render(<App />);
+    await section();
+    await waitFor(() => expect(shape()).toHaveLength(4));
+    await waitFor(() => expect(tabOf("steward 1")).toBeTruthy());
+
+    move(1, state, queue);
+
+    await waitFor(() => expect(word("steward 1")).toBeTruthy());
+    expect(tabSays("steward 1")).toBe(word("steward 1"));
+    expect(tabOf("steward 1").querySelectorAll(".state")).toHaveLength(1);
+  });
+
+  it("says the same word on both for a session waiting on its task", async () => {
+    const { move } = core(threeSessions());
+    render(<App />);
+    await section();
+    await waitFor(() => expect(shape()).toHaveLength(4));
+
+    move(4, "running");
+    move(1, "waiting");
+
+    await waitFor(() => expect(word("steward 1")).toBe("waiting on 1 task"));
+    expect(tabSays("steward 1")).toBe("waiting on 1 task");
+  });
+});
+
 describe("the keys of a row (#1499)", () => {
   const up = async () => {
     const held = core([

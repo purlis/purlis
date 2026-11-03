@@ -40,7 +40,7 @@ import { NONE_RESTORING, RESTORING } from "./restoringChats";
 import { closeOnDelete, renameOnF2 } from "./tabKeys";
 import { TabRename } from "./TabRename";
 import { type ChatRow } from "./chatsTree";
-import { showsStopping, TabMarks } from "./ChatRows";
+import { showsStopping, TabMarks, type TabFacts } from "./ChatRows";
 import { faceOf, type Naming, type TabFace } from "./tabFace";
 import type { Ref } from "./fits";
 import type { StateClock } from "./stateClock";
@@ -120,6 +120,7 @@ export function ChatStrip({
   stopping,
   shells,
   personaOf,
+  factsOf,
   naming,
   pinsIconOnly,
   narrow,
@@ -421,6 +422,7 @@ export function ChatStrip({
                               id={id}
                               face={faceAt(id)}
                               personaOf={personaOf}
+                              factsOf={factsOf}
                               sandbox={sandboxOf?.(chatOf(tabs, id))}
                               shells={shells}
                               wrapping={wrapping}
@@ -532,6 +534,7 @@ export function ChatStrip({
                     id={id}
                     face={faceAt(id)}
                     personaOf={personaOf}
+                    factsOf={factsOf}
                     sandbox={sandboxOf?.(chatOf(tabs, id))}
                     updates={planeUpdates}
                     shells={shells}
@@ -621,6 +624,9 @@ type ChatStripProps = {
   narrow: boolean;
   /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it. */
   sandboxOf?: (session: number | undefined) => SandboxSaid | null;
+  /** What chat `session`'s row reads its state from beside the board, so its tab says the
+   *  row's word (#4935). */
+  factsOf?: (session: number) => TabFacts | undefined;
   taskNameOf: (id: number) => string | undefined;
   taskTabOf: (id: number) => { asker: string | undefined } | undefined;
   tabHasTasks: (id: number) => boolean;

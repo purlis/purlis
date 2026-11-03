@@ -32,7 +32,7 @@ import { memoryKey } from "./memories";
 import { SAID, SUBMENU, WARNS } from "./menuWords";
 import { terminalGroup, terminalRows } from "./terminalRows";
 import { GRANT_WORDS } from "../eslint.ui-rules.js";
-import { noTabs, openTab, openView, selectTab } from "./tabs";
+import { noTabs, openTab, openView, selectTab, setPinned } from "./tabs";
 
 /**
  * **How every context menu is drawn** (`menuModel.ts`; `docs/ui-primitives.md`, "Menus").
@@ -120,7 +120,7 @@ function world(over: Partial<Now> = {}): { now: Now; offers: Catalogued; tabs: N
       chat(11, { name: names[11], mode: "task", parent: 7, from: names[7], tab: false }),
       chat(12, { name: names[12], mode: "handoff", parent: 7, from: names[7], tab: false }),
     ],
-    pinned: { chats: [], workspaces: ["alpha"], projects: [] },
+    pinned: { workspaces: ["alpha"], projects: [] },
     projects: [
       { plane: "/plane", name: "charter" },
       { plane: "/other", name: "umbrella" },
@@ -566,7 +566,7 @@ describe("a tab's menu (#4753)", () => {
       rowsOf(menuOf({ on: "tab", tab: behind }, from)).find((row) => row.said === SAID.pinned);
 
     expect(pin(offers)?.checked).toBe(false);
-    const held = world({ pinned: { chats: [7], workspaces: [], projects: [] } });
+    const held = world({ tabs: setPinned(world().tabs, behind, true) });
     expect(pin(held.offers)?.checked).toBe(true);
     // The catalogue's row is the one that would unpin it.
     expect(pin(held.offers)?.offer.title).toMatch(/^Unpin /);

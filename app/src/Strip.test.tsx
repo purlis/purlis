@@ -561,7 +561,8 @@ describe("the strip's tabs (#4762)", () => {
   });
 
   it("says its state on its first `.state` mark, the corner dot being only seen", async () => {
-    // The scenario specs read `tab.$(".state")` for the state's word (`chat.state.e2e.ts`).
+    // The scenario specs read `tab.$(".state")` for the state's word (`chat.state.e2e.ts`). It
+    // is the row's word (#4935): a turn ended with nothing asked of the person is idle.
     const { move } = core([chat(1)]);
     render(<App />);
     await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
@@ -570,7 +571,7 @@ describe("the strip's tabs (#4762)", () => {
 
     const tab = within(strip()).getAllByRole("tab")[0];
     await waitFor(() =>
-      expect(tab.querySelector(".state")?.getAttribute("aria-label")).toBe("waiting on you"),
+      expect(tab.querySelector(".state")?.getAttribute("aria-label")).toBe("idle"),
     );
     expect(tab.querySelectorAll(".state")).toHaveLength(1);
   });

@@ -86,6 +86,8 @@ import {
   openView,
   selectTab,
   panesOf,
+  setPinned,
+  showIn,
   splitFocusedPane,
   switchTabTo,
   viewKey,
@@ -1570,17 +1572,9 @@ describe("the one list of actions", () => {
       const id = tabs.inFront as number;
 
       expect(by(catalogue(now({ tabs })), `tab.pin:${id}`)?.title).toBe("Pin tab steward");
-      expect(
-        by(
-          catalogue(
-            now({
-              tabs,
-              pinned: { chats: [], views: [viewKey(STEWARD)], workspaces: [], projects: [] },
-            }),
-          ),
-          `tab.pin:${id}`,
-        )?.title,
-      ).toBe("Unpin tab steward");
+      expect(by(catalogue(now({ tabs: setPinned(tabs, id, true) })), `tab.pin:${id}`)?.title).toBe(
+        "Unpin tab steward",
+      );
     });
 
     it("offers no rename, because a view's tab is named after what it shows", () => {
@@ -2113,12 +2107,31 @@ describe("the one pin, a tab's (#4762)", () => {
     const id = tabs.inFront as number;
 
     expect(by(catalogue(now({ tabs })), `tab.pin:${id}`)?.title).toBe("Pin tab 3 steward");
-    expect(
-      by(
-        catalogue(now({ tabs, pinned: { chats: [7], workspaces: [], projects: [] } })),
-        `tab.pin:${id}`,
-      )?.title,
-    ).toBe("Unpin tab 3 steward");
+    expect(by(catalogue(now({ tabs: setPinned(tabs, id, true) })), `tab.pin:${id}`)?.title).toBe(
+      "Unpin tab 3 steward",
+    );
+  });
+
+  it("is offered on a tab whose only pane is empty, and is the tab's whatever it shows (#4935)", () => {
+    const opened = openTab(noTabs(), 7, "3 steward");
+    const id = opened.inFront as number;
+    const empty = showIn(opened, id, 1, { kind: "empty", workspace: OUTSIDE });
+
+    const offered = by(catalogue(now({ tabs: empty })), `tab.pin:${id}`);
+    expect(offered?.available).toBe(true);
+    expect(offered?.does).toEqual({ verb: "pinTab", tab: id, pinned: true });
+
+    // Pinned, and its pane then shows another chat: the row still unpins the same tab.
+    const other = showIn(setPinned(empty, id, true), id, 1, {
+      kind: "session",
+      session: 8,
+      chat: "8",
+    });
+    expect(by(catalogue(now({ tabs: other })), `tab.pin:${id}`)?.does).toEqual({
+      verb: "pinTab",
+      tab: id,
+      pinned: false,
+    });
   });
 });
 

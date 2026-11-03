@@ -28,10 +28,9 @@ const PERSONA: ViewRef = { from: null, view: "persona", key: "steward" };
 const EMPTY: Content = { kind: "empty", workspace: "ops" };
 const chat = (session: number): Content => ({ kind: "session", session, chat: String(session) });
 
-/** Every chat on `ops`, nothing pinned, no other strip remembered, every chat known. */
+/** Every chat on `ops`, no other strip remembered, every chat known. */
 const onOps: Saying = {
   workspaceOf: () => "ops",
-  pinned: () => false,
   frontOf: () => undefined,
   told: () => true,
 };
