@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793731773155,
+  "lastUpdate": 1793735010119,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37926,6 +37926,48 @@ window.BENCHMARK_DATA = {
             "value": 102.13115450000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.702, 101.923, 102.131, 102.137, 103.097 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1b3e2d4806163c1d6b2465fc8fdaef4d0c0c0962",
+          "message": "Project switch cost: a switch over its commits names where each began (#3032) (#5081)\n\n#3032 still fails now and then on CI after #5034 (beats held) and #5048\n(reads behind the paint in one task): #5023's PR run, 2026-11-03, \"expected\n7 to be less than or equal to 6\". A local hunt caught one source (a row\nclock's tick) but not the one CI hits, and the failure says only the count.\n\nThe counter now logs, for each commit, the topmost components drawn in it\n(where its drawing began), and the budget's failure message lists them per\ncommit with the commands the switch asked. The next CI failure names the\ncommit nobody expected.\n\nRefs #3032\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GH0PNGHH8EFJG7N6SVE7R7\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T18:11:32Z",
+          "tree_id": "3c8cf9c122b748f6da634f399a250db764a63ba3",
+          "url": "https://github.com/purlis/purlis/commit/1b3e2d4806163c1d6b2465fc8fdaef4d0c0c0962"
+        },
+        "date": 1793734957914,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.345107,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.330, 0.344, 0.345, 0.347, 0.351 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.569904,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.376, 16.417, 16.570, 16.586, 16.644 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.29807149999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.049, 101.213, 101.298, 101.765, 101.972 ms"
           }
         ]
       }
