@@ -6919,7 +6919,12 @@ impl Chats {
 
     /// One hand of [`Self::finish_put_back`]: takes a place at the gate, then the chat that
     /// matters most among the ones still to start, until none is left.
-    fn start_what_is_coming(&self, size: Size, asked: std::time::Instant, opened: &Mutex<Vec<u32>>) {
+    fn start_what_is_coming(
+        &self,
+        size: Size,
+        asked: std::time::Instant,
+        opened: &Mutex<Vec<u32>>,
+    ) {
         PUTTING_BACK_HERE.set(true);
         loop {
             let place = self.gate.enter(&|| crate::restoring::Rank {

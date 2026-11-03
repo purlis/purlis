@@ -29,9 +29,16 @@ fn a_start_that_did_not_start_says_so_and_how_far_it_got() {
     let mut clock = Clock::asked_at(asked);
     clock.passed(Phase::Gate, at(asked, 5));
 
-    let line = clock.line("chat 3", &Err("the host closed the link".to_owned()), at(asked, 9));
+    let line = clock.line(
+        "chat 3",
+        &Err("the host closed the link".to_owned()),
+        at(asked, 9),
+    );
 
-    assert_eq!(line, "purlis: start of chat 3: 9 ms (gate +5); did not start");
+    assert_eq!(
+        line,
+        "purlis: start of chat 3: 9 ms (gate +5); did not start"
+    );
 }
 
 #[test]
@@ -78,5 +85,8 @@ fn a_timed_start_takes_the_marks_its_start_made() {
 
     assert_eq!(started, Ok(5));
     assert_eq!(seen, Some(vec![Phase::Gate, Phase::Ready, Phase::Host]));
-    assert!(CLOCK.with_borrow(Option::is_none), "the clock is taken off the thread");
+    assert!(
+        CLOCK.with_borrow(Option::is_none),
+        "the clock is taken off the thread"
+    );
 }

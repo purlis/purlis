@@ -170,7 +170,9 @@ struct WaitingGuard(std::sync::MutexGuard<'static, Option<Waiting>>);
 
 impl WaitingGuard {
     fn asked(&mut self, session: u32, at: Instant) {
-        self.0.get_or_insert_with(Waiting::default).asked(session, at);
+        self.0
+            .get_or_insert_with(Waiting::default)
+            .asked(session, at);
     }
 
     fn heard(&mut self, session: u32, at: Instant) -> Option<Duration> {

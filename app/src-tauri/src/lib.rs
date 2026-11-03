@@ -155,7 +155,6 @@ mod removalasks;
 mod repolist;
 mod restored;
 mod restoring;
-mod starttiming;
 #[cfg(unix)]
 mod routedsessions;
 #[cfg(unix)]
@@ -179,6 +178,7 @@ mod slowstart;
 mod smartclose;
 mod specimen;
 mod staleclones;
+mod starttiming;
 mod stopping;
 #[cfg(test)]
 mod storythemes;
