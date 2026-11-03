@@ -8,7 +8,7 @@ import { browser, expect, $ } from "@wdio/globals";
 import { A_TURN, aTurnIsWanted, built, READY, theRunsEnvironment } from "../harness.js";
 import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import { keptEmpty } from "../reach.js";
+import { openedSince, tabNames } from "../reach.js";
 
 /**
  * **A chat's `ctx`/`cache` gauge, end to end** — everything but Claude Code itself.
@@ -49,14 +49,6 @@ async function planeRoot(): Promise<string> {
   const said = await $('[data-testid="status-project"]');
   await said.waitForDisplayed({ timeout: 30_000 });
   return ((await said.getAttribute("data-directory")) ?? "").trim();
-}
-
-async function tabNames(): Promise<string[]> {
-  return browser.execute(() =>
-    [
-      ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
-    ].map((tab) => tab.textContent ?? ""),
-  );
 }
 
 async function aPaneShows(text: string): Promise<boolean> {
@@ -109,8 +101,7 @@ describe("a chat's context gauge", () => {
     // one an older chat has too.
     await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
-      async () =>
-        (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab) || keptEmpty(tab)),
+      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
       { timeout: 20_000, timeoutMsg: "the gauge spec left a chat open behind it" },
     );
   });

@@ -11,7 +11,7 @@ import {
   whereTheKeyboardIs,
 } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import { keptEmpty } from "../reach.js";
+import { KEPT_EMPTY, openedSince } from "../reach.js";
 
 /**
  * The command palette against the real app, driven by the keyboard and nothing else.
@@ -167,8 +167,7 @@ describe("the command palette", () => {
     // one an older chat has too.
     await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
-      async () =>
-        (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab) || keptEmpty(tab)),
+      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
       { timeout: 20_000, timeoutMsg: "the palette spec left a chat open behind it" },
     );
   });
@@ -329,7 +328,7 @@ describe("the command palette", () => {
 
     // Counted without the strip's kept empty tab, which Clear pane leaves where the chat's tab
     // was the strip's last (#5019).
-    const chats = (names: string[]) => names.filter((tab) => !keptEmpty(tab)).length;
+    const chats = (names: string[]) => names.filter((tab) => tab !== KEPT_EMPTY).length;
     await browser.waitUntil(async () => chats(await tabNames()) === chats(before) - 1, {
       timeout: 15_000,
       timeoutMsg: `the chat the palette was asked to close is still open: ${before.join(", ")}`,

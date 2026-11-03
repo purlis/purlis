@@ -7,6 +7,7 @@ import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { harnessesRunning, logLine } from "../processes.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
+import { KEPT_EMPTY } from "../reach.js";
 
 /**
  * The skeleton, driven the way a person drives it: buttons, tabs and typing, against the real
@@ -105,13 +106,14 @@ async function tabsOpen(): Promise<number> {
   const palette = await $('[role="dialog"][aria-label="Command palette"]');
   await palette.waitForDisplayed({ timeout: 20_000 });
   const counted = await browser.execute(
-    () =>
+    (kept: string) =>
       // A tab's close, by its row's id (#4756): one per tab, and never a chat's End…. Not a
       // strip's kept empty tab, "New chat" (#4756, #5019): one an ended chat's Clear pane left
       // on another workspace's strip is a tab this strip never draws, and holds no chat.
       [...document.querySelectorAll('[id^="palette-row-tab.close:"]')].filter(
-        (row) => !(row.textContent ?? "").includes("Close New chat"),
+        (row) => !(row.textContent ?? "").includes(`Close ${kept}`),
       ).length,
+    KEPT_EMPTY,
   );
   await browser.keys(["Escape"]);
   await expect(palette).not.toBeDisplayed();

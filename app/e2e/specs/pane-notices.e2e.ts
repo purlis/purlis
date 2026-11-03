@@ -6,7 +6,7 @@ import { READY } from "../harness.js";
 import { pressAndStart, pressOnly } from "../opening.js";
 import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import { keptEmpty } from "../reach.js";
+import { openedSince } from "../reach.js";
 
 /**
  * **A Notice in a pane fits its pane, measured** (#1481), **in a row of its own above the
@@ -560,8 +560,7 @@ describe("a Notice in a pane", () => {
     // one an older chat has too.
     await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
-      async () =>
-        (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab) || keptEmpty(tab)),
+      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
       { timeout: 20_000, timeoutMsg: "the pane-notices spec left a chat open behind it" },
     );
   });

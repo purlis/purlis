@@ -12,7 +12,7 @@ import {
   startAChat,
   type Started,
 } from "../started.js";
-import { keptEmpty } from "../reach.js";
+import { openedSince } from "../reach.js";
 
 /**
  * **A session's tab wears a chip of its tasks, measured and driven in the real WebView**
@@ -613,8 +613,7 @@ describe("the chip a session's tab wears for its tasks", () => {
     await tried(() => browser.setWindowSize(was.width, was.height));
     await tried(() => endChatsStartedHere(started));
     await browser.waitUntil(
-      async () =>
-        (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab) || keptEmpty(tab)),
+      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
       { timeout: 20_000, timeoutMsg: "the tab-chip spec left a chat open behind it" },
     );
   });

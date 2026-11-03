@@ -11,7 +11,7 @@ import {
   type Started,
 } from "../started.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
-import { keptEmpty } from "../reach.js";
+import { openedSince } from "../reach.js";
 
 /**
  * **A task's own tab draws a minimise and no close, and a task beside its session is two panes
@@ -250,8 +250,7 @@ describe("a task in a tab of its own, and beside its session", () => {
     }
     await endChatsStartedHere([mine]);
     await browser.waitUntil(
-      async () =>
-        (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab) || keptEmpty(tab)),
+      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
       { timeout: 20_000, timeoutMsg: "the task-own-tab spec left a chat open behind it" },
     );
   });

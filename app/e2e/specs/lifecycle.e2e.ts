@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { endEveryChat, pressAndStart } from "../opening.js";
 import { browser, expect, $ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { keptEmpty } from "../reach.js";
+import { openedSince, tabNames as namesOnTheStrip } from "../reach.js";
 
 /**
  * The window over a day: closed to the tray with every session still running, and asked to
@@ -112,7 +112,7 @@ describe("the window over a day", () => {
     // Left as found: the next spec file shares this app process.
     await endEveryChat();
     // The strip's last tab keeps one empty pane (#4756, #5019): not one this spec opened.
-    await browser.waitUntil(async () => (await tabNames()).every(keptEmpty), {
+    await browser.waitUntil(async () => openedSince([], await namesOnTheStrip()).length === 0, {
       timeout: 15_000,
       timeoutMsg: "the tabs this spec opened were still there",
     });
