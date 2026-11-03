@@ -5,8 +5,8 @@
  * **A view tab's back and forward keys** (#3667): ⌘[ and ⌘] on a Mac, Alt+← and Alt+→ elsewhere.
  *
  * **Why these.** ⌘[ and ⌘] are Back and Forward in every Mac program with a history (Finder,
- * Safari, Xcode, VS Code), and nothing of the window's had them: ⌘⇧[ and ⌘⇧] stay free for the
- * strip's next and previous tab (`taskKeys.ts`). Off a Mac Ctrl does not take ⌘'s place here:
+ * Safari, Xcode, VS Code), and nothing of the window's had them: ⌘⇧[ and ⌘⇧] are the
+ * strip's next and previous tab (`moveKeys.ts`). Off a Mac Ctrl does not take ⌘'s place here:
  * Ctrl+[ is Escape to a terminal and Ctrl+[ Ctrl+] are an editor's indent, while Alt+← and Alt+→
  * are Back and Forward in every browser and in VS Code on Windows and Linux. A bracket is read by
  * what the key types, and where a layout has no bracket without AltGr, by the key in its place.

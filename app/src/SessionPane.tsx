@@ -530,11 +530,21 @@ export { opensFind };
  * On the capture phase of the pane, so it runs before xterm's own listener on its textarea,
  * and stops the event there. WebKit has no default action for Ctrl+Tab (its tab handler
  * returns early on Ctrl), so where the keyboard goes is decided here, along the same sequence
- * Tab walks (`tabSequence.ts`).
+ * Tab walks (`tabSequence.ts`), past a split's resize handle, so it lands on the next pane's
+ * head.
  */
 export function leavesTheChat(event: KeyboardEvent<HTMLElement>) {
   if (!isKey(event.nativeEvent, "chat.leave")) return;
   event.preventDefault();
   event.stopPropagation();
-  moveAlong(event.currentTarget, event.shiftKey);
+  moveAlong(event.currentTarget, event.shiftKey, isASplitHandle);
+}
+
+/**
+ * **A split's resize handle is passed on the way out of a terminal** (#4767, ruled on #4699):
+ * Ctrl+Tab out of one pane's terminal lands on the next pane's head, not on the handle between
+ * the two panes, which Tab still reaches. A region's handle is no pane's, and stays a stop.
+ */
+function isASplitHandle(el: HTMLElement): boolean {
+  return el.getAttribute("role") === "separator" && el.classList.contains("pane-split");
 }

@@ -231,25 +231,6 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
   });
 });
 
-describe("the next and the previous chat in a tab (fix round 1)", () => {
-  it("are a press like any other, which never gives a chat a tab (#4757)", async () => {
-    const rows = rowsOf(sessions());
-    const next = rows.get("tasks.next");
-    expect(next?.does).toEqual({ verb: "showChat", session: 2 });
-    const calls: unknown[][] = [];
-    const doing = new Proxy({} as Doing, {
-      get:
-        (_, verb: string) =>
-        (...args: unknown[]) => {
-          calls.push([verb, ...args]);
-        },
-    });
-    if (next === undefined) throw new Error("no row");
-    await perform(next, doing);
-    expect(calls).toEqual([["showChat", 2]]);
-  });
-});
-
 describe("starting a task fresh (fix round 1, M2; #1609)", () => {
   const freshRows = (tasksStartFresh?: boolean) => {
     const tabs = moveToOwnTab(sessions(), 2, "talk", "devops", null);

@@ -44,7 +44,7 @@ import { Group, Panel } from "react-resizable-panels";
 import { Count } from "../badge/Badge";
 import { Button, ButtonRow } from "../button/Button";
 import { Select } from "../select/Select";
-import { aModalIsUp, inADialog, inAMenu } from "../../keys/contexts";
+import { aModalIsUp, inADialog, inAMenu, VIEW_HOLDER } from "../../keys/contexts";
 import { pressed } from "../../keys/registry";
 import { Separator } from "./Separator";
 import type { HistorySteps } from "./viewHistory";
@@ -457,6 +457,8 @@ export function ViewFrame({
       tabIndex={-1}
       data-scope="view-frame"
       data-part="root"
+      // Its Back and Forward keys are its own off a Mac, before the window's pane keys.
+      {...{ [VIEW_HOLDER]: "" }}
       data-narrow={narrow ? "" : undefined}
       onKeyDown={(event) => {
         // A key something inside already answered (a tab's arrows) is its own.

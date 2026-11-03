@@ -1203,7 +1203,7 @@ describe("the keys for the chats inside a tab", () => {
       await waitFor(() => expect(onScreen()).toEqual([2]));
       const field = typingIn("<input data-typing-in />");
 
-      // steward 2 has no tasks: none of the four rows can run.
+      // steward 2 has no tasks: its tasks row cannot run.
       const reached = fireEvent.keyDown(field, { key: "J", ctrlKey: true, shiftKey: true });
 
       expect(reached).toBe(true);
@@ -1220,23 +1220,16 @@ describe("the keys for the chats inside a tab", () => {
     });
   });
 
-  it("goes to the next chat in the tab as a press, and ⌘⇧H back to the pane's previous one (#4757)", async () => {
+  it("goes to the next tab with Ctrl+Shift+], not to the next chat in this one (#4767)", async () => {
     await drawn(withTasks());
     pane(1).focus();
 
-    // Next is a press: the pane shows talk in steward 1's place, then deep in talk's.
+    // The key that stepped through a tab's chats brings the next tab forward now, round the
+    // strip's end, and the tab's own chat keeps its pane.
     chord("}", "BracketRight");
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-    await waitFor(() => expect(document.activeElement).toBe(pane(4)));
+    await waitFor(() => expect(onScreen()).toEqual([2]));
     chord("}", "BracketRight");
-    await waitFor(() => expect(onScreen()).toEqual([7]));
-
-    // ⌘⇧H swaps the pane back to the chat it showed before, and again to come back.
-    chord("H");
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-    await waitFor(() => expect(document.activeElement).toBe(pane(4)));
-    chord("H");
-    await waitFor(() => expect(onScreen()).toEqual([7]));
+    await waitFor(() => expect(onScreen()).toEqual([1]));
     // No tab was added on the way.
     expect(within(strip()).getAllByRole("tab")).toHaveLength(2);
   });
@@ -1263,7 +1256,6 @@ describe("the keys for the chats inside a tab", () => {
     pane(2).focus();
 
     chord("J");
-    chord("}", "BracketRight");
     chord("H");
 
     expect(menu()).toBeNull();
