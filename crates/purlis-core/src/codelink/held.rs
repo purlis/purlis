@@ -729,10 +729,8 @@ pub fn not_home(root: &Path, project: &str, held: &[Held], unread: &[String]) ->
         }
         if !stashes.is_empty() {
             missing.push(format!(
-                "{at} on the runner holds {} stashed change{} ({}), which Fetch again does not \
-                 bring back",
-                stashes.len(),
-                if stashes.len() == 1 { "" } else { "s" },
+                "{at} on the runner holds {} ({}), which Fetch again does not bring back",
+                crate::counts::counted(stashes.len(), "stashed change", "stashed changes"),
                 stashes
                     .iter()
                     .take(3)
