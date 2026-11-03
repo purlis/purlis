@@ -11,6 +11,7 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     // First: the release build unwinds, and a Rust panic still ends the process (`panicend`).
+    #[cfg(not(debug_assertions))]
     purlis_core::panicend::fatal();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let [verb, dir] = args.as_slice()

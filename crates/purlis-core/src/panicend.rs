@@ -10,7 +10,8 @@
 //!
 //! A panic of purlis's own must still end the process, as it did under `abort`: no `Drop` runs
 //! after it, nothing catches it, and a thread never dies alone while the rest go on. So each
-//! shipped binary calls [`fatal`] first in its `main`. Its hook runs every hook installed before
+//! shipped binary calls [`fatal`] first in its `main`, in a build without debug assertions
+//! (`release`, `dev-release`). A debug build and the tests unwind, as they always have. Its hook runs every hook installed before
 //! it and after it (the app's panic log, the guard's refusal), and then aborts, before any
 //! unwinding starts.
 

@@ -14,6 +14,7 @@ const CHILD: &str = "PURLIS_TEST_PANIC_END_CHILD";
 /// does nothing.
 #[test]
 fn panicking_child() {
+    purlis_core::unsteered!();
     if std::env::var_os(CHILD).is_none() {
         return;
     }
@@ -25,6 +26,7 @@ fn panicking_child() {
 
 #[test]
 fn a_panic_on_a_thread_aborts_the_whole_process_after_the_hooks_before_it_have_run() {
+    purlis_core::unsteered!();
     let ran = purlis_core::forklock::output(
         std::process::Command::new(std::env::current_exe().expect("the test binary"))
             .args([

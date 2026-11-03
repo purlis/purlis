@@ -22,7 +22,8 @@ beneath a `C-unwind` Rust function caught by its Objective-C caller only under `
 - **`panic = "unwind"` in `release`**, and tao 0.37.2.
 - **A Rust panic still ends the process, on any thread, before anything unwinds.** Each shipped
   binary (`charter-app`, `purlis`, `persona-statistics`) calls `purlis_core::panicend::fatal`
-  first in its `main`: its hook runs the hooks around it (the app's `panics.log`, the guard's
-  refusal) and then aborts. So no `Drop` runs after a panic and nothing catches one, as before.
+  first in its `main`, in a build without debug assertions (both channels' profiles; a debug
+  build and the tests unwind, as they always did): its hook runs the hooks around it (the
+  app's `panics.log`, the guard's refusal) and then aborts. So no `Drop` runs after a panic and nothing catches one, as before.
   `a_panic_on_any_thread_ends_a_shipped_binary` holds it.
 - **What it costs:** unwind tables and landing pads make the binaries somewhat larger.

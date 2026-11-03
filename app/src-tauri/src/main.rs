@@ -7,6 +7,7 @@
 fn main() {
     // First: the release build unwinds so an Objective-C exception can reach NSApplication,
     // and a Rust panic, on any thread, still ends the process (`panicend`).
+    #[cfg(not(debug_assertions))]
     purlis_core::panicend::fatal();
     // Started as purlis's own wrap of a chat on Linux (#1040), the hidden `_sandbox`: become it
     // before anything of the app starts, so the program that starts a chat can wrap it. Each
