@@ -22,6 +22,7 @@ import { forgetThisLaunch } from "./regions";
 import type { Shown } from "./shownState";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { theFrameNow } from "./frame.testkit";
 
 /**
  * **A session waiting on its tasks says so, counts them, and is flagged only for what
@@ -59,6 +60,13 @@ declare global {
   interface Window {
     __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
   }
+}
+
+/** An event from the core, and the frame the window draws it in: the chat stores tell their
+ *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
+function heard(handler: number, message: unknown) {
+  window.__TAURI_INTERNALS__.runCallback(handler, message);
+  theFrameNow();
 }
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
@@ -197,7 +205,7 @@ function core(open: OpenChat[], rows: FinishedTask[] = []) {
     if (handlers.length === 0) throw new Error("the window is not listening for changes");
     await act(async () => {
       for (const handler of handlers)
-        window.__TAURI_INTERNALS__.runCallback(handler, {
+        heard(handler, {
           event: "plane-changed",
           id: 1,
           payload: {
@@ -249,7 +257,7 @@ function core(open: OpenChat[], rows: FinishedTask[] = []) {
         ...more,
       };
       act(() => {
-        window.__TAURI_INTERNALS__.runCallback(handler, {
+        heard(handler, {
           event: "chat-moved",
           id: 1,
           payload: moved,
