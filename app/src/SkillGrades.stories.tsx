@@ -22,7 +22,12 @@ import {
 import { inWorkspace, skillRowId, type GradingAt } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusInSight, untilFocusWithin } from "./stories.testkit";
+import {
+  expectFocusInSight,
+  inAWindow,
+  untilFocusInSight,
+  untilFocusWithin,
+} from "./stories.testkit";
 import type { GradeRow, GradeScorecard, SkillDraft, SkillGradePlan } from "./bindings";
 
 const SCOPE = inWorkspace("smart-ide");
@@ -347,6 +352,26 @@ async function tabInto(target: () => Element | null, steps = 60): Promise<void> 
   await untilFocusWithin(target, "the keyboard reaches it by Tab");
 }
 
+/**
+ * **The story's window holds the whole studio it draws** (#4672). A story test's window is
+ * vitest's 414 px by default, narrower than the 1,100 px studio, so the window itself scrolled
+ * sideways to the Grades list's last column; React Aria then centred the whole table, wider than
+ * that window, and in WebKit the Scorecard ended outside it. The app's window is never narrower
+ * than its panel, so the story is put in one as wide as what it draws, and it says so if it is not.
+ */
+async function inAWindowThatFits(): Promise<void> {
+  const page = document.documentElement;
+  const resized = await inAWindow(
+    Math.ceil(page.scrollWidth),
+    Math.max(window.innerHeight, Math.ceil(page.scrollHeight)),
+  );
+  // Only a story test can size its window; in Storybook's own page the window is the person's.
+  if (!resized) return;
+  await expect(page.scrollWidth, "the studio is wider than the story's window").toBeLessThanOrEqual(
+    window.innerWidth,
+  );
+}
+
 /** deploy's grades, the latest of which ran its outcome evals too. */
 const BOTH: GradeRow[] = GRADES.map((one, at) =>
   at === 0 ? { ...one, outcome_arms: { with: 75, without: 20, previous: null } } : one,
@@ -373,6 +398,7 @@ export const Grades: Story = {
     await expect(within(job).getAllByRole("meter")).toHaveLength(2);
     const list = await canvas.findByRole("grid", { name: "Grades of deploy" });
     await waitFor(() => expect(within(list).getAllByRole("row")).toHaveLength(4));
+    await inAWindowThatFits();
     const open = within(list).getByRole("button", {
       name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
     });
