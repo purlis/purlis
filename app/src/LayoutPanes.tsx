@@ -1008,7 +1008,13 @@ export function LayoutPanes({
  * it has the keyboard, puts both sides at half, and says so to the tab (`onEven`). The arrow
  * keys resize it by 5%, which is the library's own step.
  */
-function EvenedSeparator({ sides, onEven }: { sides: [string, string]; onEven: () => void }) {
+export function EvenedSeparator({
+  sides,
+  onEven,
+}: {
+  sides: [string, string];
+  onEven: () => void;
+}) {
   const group = useParentGroup();
   const even = () => {
     group?.setLayout({ [sides[0]]: EVEN / 10, [sides[1]]: (WHOLE - EVEN) / 10 });
