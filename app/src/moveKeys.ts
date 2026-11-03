@@ -53,8 +53,7 @@ const ARROWS: Readonly<Record<string, Toward>> = {
  * shortcuts sheet's.
  */
 export function tabStepOf(e: KeyboardEvent, mac: boolean): TabStep | undefined {
-  if (!e.shiftKey || e.altKey) return undefined;
-  if (mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey) return undefined;
+  if (!heldWithShift(e, mac)) return undefined;
   if (e.key === "]" || e.key === "}") return "next";
   if (e.key === "[" || e.key === "{") return "previous";
   if (e.code !== "BracketRight" && e.code !== "BracketLeft") return undefined;
@@ -69,6 +68,20 @@ export function paneStepSaid(mac: boolean): string {
 
 /** How the rows and the sheet spell the next or the previous tab's key. */
 export function tabStepSaid(step: TabStep, mac: boolean): string {
-  const bracket = step === "next" ? "]" : "[";
-  return mac ? `⌘⇧${bracket}` : `Ctrl+Shift+${bracket}`;
+  return withShiftSaid(step === "next" ? "]" : "[", mac);
+}
+
+/**
+ * Whether ⌘⇧ is held on a Mac, or Ctrl+Shift elsewhere, and nothing else: the modifiers of the
+ * tab keys here and of the focused chat's keys (`taskKeys.ts`). A Mac's Ctrl chords stay a
+ * terminal's, and Alt with them is AltGr off a Mac.
+ */
+export function heldWithShift(e: KeyboardEvent, mac: boolean): boolean {
+  if (!e.shiftKey || e.altKey) return false;
+  return mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+}
+
+/** How a ⌘⇧ chord is spelled on this platform: `⌘⇧J`, or `Ctrl+Shift+J`. */
+export function withShiftSaid(key: string, mac: boolean): string {
+  return mac ? `⌘⇧${key}` : `Ctrl+Shift+${key}`;
 }

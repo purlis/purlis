@@ -43,7 +43,8 @@ const { evaluateKeyboardEvent } = (await import(/* @vite-ignore */ KEYBOARD)) as
  * opposite: it IS a byte, and that is why it is left.
  */
 
-/** The window's keys this ruling claims, read from the registry so a new chord is covered. */
+/** The window's keys this ruling claims. Their chords are read from the registry, so a chord
+ *  added to one of them is covered; a new key is added here. */
 const CLAIMED = ["pane.focus", "tab.next", "tab.previous", "tasks.menu", "pane.back"];
 
 /** The key codes xterm.js reads, for the keys these chords use. */
@@ -102,8 +103,8 @@ describe("the keys for panes, tabs and a chat's tasks are no bytes to a harness 
 
   it.each(cases)("$one.id $chord.key on a $platform keyboard", ({ one, platform, chord }) => {
     const leftToTheChat =
-      one.yields.includes(platform === "mac" ? "terminal" : "terminal-off-mac") ||
-      one.yields.includes("terminal");
+      one.yields.includes("terminal") ||
+      (platform === "other" && one.yields.includes("terminal-off-mac"));
     if (leftToTheChat) expect(bytesOf(chord, platform)).not.toEqual([]);
     else expect(bytesOf(chord, platform)).toEqual([]);
   });

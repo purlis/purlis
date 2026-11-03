@@ -497,6 +497,17 @@ describe("the keys once a chat isn't a tab (#4767, ruled on #4699)", () => {
     expect(pressed(mac, ["pane.focus"], { mac: true })?.id).toBe("pane.focus");
   });
 
+  it("leaves an editor its own Alt and an arrow off a Mac, and ⌘⌥ with Up and Down on one", () => {
+    const editor = landOn({}, { [EDITOR_HOLDER]: "" });
+    const other = keystroke({ key: "ArrowUp", alt: true }, editor);
+    expect(pressed(other, ["pane.focus"], { mac: false })).toBeUndefined();
+    // On a Mac it keeps ⌘⌥ with Up and Down (a cursor above or below), not Left and Right.
+    const up = keystroke({ key: "ArrowUp", meta: true, alt: true }, editor);
+    expect(pressed(up, ["pane.focus"], { mac: true })).toBeUndefined();
+    const left = keystroke({ key: "ArrowLeft", meta: true, alt: true }, editor);
+    expect(pressed(left, ["pane.focus"], { mac: true })?.id).toBe("pane.focus");
+  });
+
   it("takes the next and previous tab from a chat on either keyboard", () => {
     const terminal = landOn({}, { [CHAT_KEYBOARD]: "" });
     const mac = keystroke({ key: "}", code: "BracketRight", meta: true, shift: true }, terminal);

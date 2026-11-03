@@ -24,6 +24,8 @@
  * Shift is NOT held. So plain Ctrl+J (newline) and Ctrl+H (backspace) still reach the shell. A
  * Mac's `Ctrl` chords stay the terminal's whatever is held with them.
  */
+import { heldWithShift, withShiftSaid } from "./moveKeys";
+
 export type TaskKey = "menu" | "back";
 
 /**
@@ -32,8 +34,7 @@ export type TaskKey = "menu" | "back";
  * nothing of this window's twice.
  */
 export function taskKeyOf(e: KeyboardEvent, mac: boolean): TaskKey | undefined {
-  if (!e.shiftKey || e.altKey) return undefined;
-  if (mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey) return undefined;
+  if (!heldWithShift(e, mac)) return undefined;
   if (e.key === "J" || e.key === "j") return "menu";
   if (e.key === "H" || e.key === "h") return "back";
   return undefined;
@@ -41,8 +42,7 @@ export function taskKeyOf(e: KeyboardEvent, mac: boolean): TaskKey | undefined {
 
 /** How the rows and the docs spell each key, on this platform. */
 export function taskKeySaid(key: TaskKey, mac: boolean): string {
-  const letter = key === "menu" ? "J" : "H";
-  return mac ? `⌘⇧${letter}` : `Ctrl+Shift+${letter}`;
+  return withShiftSaid(key === "menu" ? "J" : "H", mac);
 }
 
 /** The catalogue's row each key presses. */

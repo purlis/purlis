@@ -13,8 +13,8 @@
  *   files, a dialog, a menu, a focused tab, a list's row, a chat's terminal, an editor, a form).
  * - **What it yields to** (`yields`): a modal dialog that is up (the operator's ruling of
  *   2026-10-24), any dialog that has the keyboard, the palette while it is up, a chat's terminal
- *   (always, for its Ctrl chords, or off a Mac only), a tab that renames on the key, an editor, a
- *   field it would be typed into. A key that yields does nothing there: the event goes on to whoever
+ *   (always, for its Ctrl chords, or off a Mac only), a view off a Mac (its Back and Forward), a
+ *   tab that renames on the key, an editor, a field it would be typed into. A key that yields does nothing there: the event goes on to whoever
  *   has the keyboard, as any key the window has no use for does.
  * - **How it is recognised** (`matches`): by the function that has always recognised it, beside
  *   its reasons (`sideKeys.ts`, `taskKeys.ts`, `workspaceSwitch.ts` and the rest), so a layout's
@@ -603,9 +603,15 @@ export const SHORTCUTS: readonly Shortcut[] = [
       other: ARROW_KEYS.map((key) => bare(key, { alt: true })),
     },
     said: paneStepSaid,
-    // Off a Mac Alt and an arrow is a byte to a terminal (word movement) and a view's Back and
-    // Forward (`moveKeys.ts`), and an editor moves a line on Alt with Up and Down.
-    yields: ["dialog", "menu", "terminal-off-mac", "view-off-mac", "editor", "typing"],
+    // Off a Mac Alt and an arrow is a byte to a terminal (word movement), a view's Back and
+    // Forward (`moveKeys.ts`), and an editor's own (CodeMirror moves a line on Alt with Up and
+    // Down, and by syntax on Alt with Left and Right). On a Mac an editor adds a cursor above or
+    // below on ⌘⌥ with Up and Down, and keeps those two.
+    yields: ["dialog", "menu", "terminal-off-mac", "view-off-mac", "editor-chords"],
+    editorKeeps: {
+      mac: ["ArrowUp", "ArrowDown"].map((key) => cmd(key, { alt: true })),
+      other: ARROW_KEYS.map((key) => bare(key, { alt: true })),
+    },
     matches: (e, mac) => paneStepOf(e, mac) !== undefined,
   },
   {

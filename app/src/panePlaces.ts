@@ -52,6 +52,21 @@ function placesOf(layout: Layout): Place[] {
   return out;
 }
 
+/** Which edge of a pane toward `to` meets which edge of the pane it moves from. */
+const MEETING: Readonly<Record<Toward, readonly [Edge, Edge]>> = {
+  right: ["left", "right"],
+  left: ["right", "left"],
+  down: ["top", "bottom"],
+  up: ["bottom", "top"],
+};
+type Edge = "left" | "top" | "right" | "bottom";
+
+/** Which way the pane beside a split's child is: after the first child, before the second. */
+const ACROSS: Readonly<Record<"row" | "column", readonly [Toward, Toward]>> = {
+  row: ["right", "left"],
+  column: ["down", "up"],
+};
+
 /** How much of two spans lie over each other. */
 const overlap = (a0: number, a1: number, b0: number, b1: number) =>
   Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
@@ -69,12 +84,8 @@ export function paneToward(layout: Layout, from: number, to: Toward): number | u
   let best: { pane: number; along: number; start: number } | undefined;
   for (const one of places) {
     if (one.pane === from) continue;
-    const meets =
-      (to === "right" && same(one.left, at.right)) ||
-      (to === "left" && same(one.right, at.left)) ||
-      (to === "down" && same(one.top, at.bottom)) ||
-      (to === "up" && same(one.bottom, at.top));
-    if (!meets) continue;
+    const [theirs, ours] = MEETING[to];
+    if (!same(one[theirs], at[ours])) continue;
     const along = across
       ? overlap(one.top, one.bottom, at.top, at.bottom)
       : overlap(one.left, one.right, at.left, at.right);
@@ -136,8 +147,7 @@ export function paneTakingTheSpace(layout: Layout, closed: number): number | und
   const found = splitHolding(layout, closed);
   if (found === undefined) return undefined;
   const { split, first } = found;
-  const to: Toward = split.direction === "row" ? (first ? "right" : "left") : first ? "down" : "up";
-  return paneToward(layout, closed, to);
+  return paneToward(layout, closed, ACROSS[split.direction][first ? 0 : 1]);
 }
 
 /** The split pane `pane` is a direct child of, and whether it is the first child. */
