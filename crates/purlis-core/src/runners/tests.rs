@@ -1330,6 +1330,33 @@ fn a_pools_limit_is_saved_marked_as_the_persons_and_makes_no_new_runner() {
     assert_eq!(chosen(config.path()).get(ProfileFiles), None, "a reset");
 }
 
+/// **#4396**: a Docker pool's runner holds at most half its memory of a profile, so a size above
+/// it is refused as it is set, a size kept from before holds to it, and raising Memory raises it.
+#[test]
+fn a_docker_pools_profile_size_is_held_to_half_its_memory() {
+    use crate::poollimits::LimitId::{Memory, ProfileSize};
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &Pool::new("builds", Image::pinned(IMAGE).unwrap(), Set::default()).unwrap(),
+    )
+    .unwrap();
+    let chosen = |config: &Path| chosen_limits_of(config, "builds").unwrap();
+    set_pool_limit(config.path(), "builds", ProfileSize, Some(1000)).unwrap();
+    set_pool_limit(config.path(), "builds", Memory, Some(1024)).unwrap();
+
+    assert_eq!(chosen(config.path()).in_force(ProfileSize), 512);
+    let refused = set_pool_limit(config.path(), "builds", ProfileSize, Some(600))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("Raise Memory"), "{refused}");
+    set_pool_limit(config.path(), "builds", ProfileSize, Some(512)).unwrap();
+
+    set_pool_limit(config.path(), "builds", Memory, Some(4096)).unwrap();
+    set_pool_limit(config.path(), "builds", ProfileSize, Some(1024)).unwrap();
+    assert_eq!(chosen(config.path()).in_force(ProfileSize), 1024);
+}
+
 /// **#4287**: what the team set is kept with the pool, refuses a value above it in the command's
 /// words, keeps the person's own value, and follows the Pool at each link.
 #[test]

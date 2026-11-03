@@ -194,7 +194,7 @@ fn limits_lines(held: &runners::PoolLimitsHeld) -> Vec<String> {
             .iter()
             .find(|one| one.limit == limit.id)
             .map(poollimits::RefusedValue::said)
-            .or_else(|| held.chosen.over_team_said(limit.id))
+            .or_else(|| held.chosen.over_highest_said(limit.id))
             .unwrap_or_default();
         lines.push(format!(
             "{}\t{}\t{whose}\t{}\t{refused}",
@@ -215,13 +215,13 @@ fn limits_json(held: &runners::PoolLimitsHeld) -> serde_json::Value {
                 "unit": limit.unit.word(),
                 "default": held.chosen.default_of(limit.id),
                 "defaultByTeam": held.chosen.default_by_team(limit.id),
-                "highest": held.chosen.team_highest(limit.id),
+                "highest": held.chosen.highest(limit.id),
                 "set": held.chosen.get(limit.id),
                 "inForce": held.chosen.in_force(limit.id),
                 "applies": limit.takes_effect.said(),
                 "refused": held.refused.iter().find(|one| one.limit == limit.id)
                     .map(purlis_core::poollimits::RefusedValue::said)
-                    .or_else(|| held.chosen.over_team_said(limit.id)),
+                    .or_else(|| held.chosen.over_highest_said(limit.id)),
             })
         })
         .collect();
