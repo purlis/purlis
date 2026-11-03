@@ -2320,6 +2320,11 @@ pub fn workspaces_surely_there(plane: &Path) -> Option<Vec<String>> {
     let (names, unread) = crate::workspaces::Plane::open(plane)
         .read_workspaces()
         .ok()?;
+    // Asked again: a rename that began after the first look moves its folder before it carries
+    // anything, and it writes its journal before either.
+    if crate::wscmd::rename::in_flight(plane).is_some() {
+        return None;
+    }
     unread.is_empty().then_some(names)
 }
 
